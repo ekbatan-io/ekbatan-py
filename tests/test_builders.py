@@ -29,7 +29,7 @@ def test_copy_starts_from_the_row_you_have():
 
     assert same == wallet
     assert same is not wallet
-    assert same.events == wallet.events, "copy_base carries the events across"
+    assert same.events == wallet.events, "the events come across too"
 
 
 def test_the_builder_sets_any_field_of_the_target():
@@ -186,20 +186,6 @@ def test_domain_methods_chain_and_their_events_accumulate():
         "WalletMoneyWithdrawn",
         "WalletClosed",
     ]
-
-
-def test_copy_base_takes_only_the_frameworks_fields():
-    """The same narrow meaning it has in Java: for hand-writing a copy() that sets the rest."""
-    wallet = a_wallet()
-    partial = Builder(Wallet).copy_base(wallet)
-
-    with pytest.raises(TypeError, match="owner_id"):
-        partial.build()
-
-    finished = partial.owner_id(wallet.owner_id).currency("USD").balance(wallet.balance).build()
-    assert finished.id == wallet.id
-    assert finished.version == wallet.version
-    assert finished.currency == "USD"
 
 
 def test_copy_from_takes_every_field():

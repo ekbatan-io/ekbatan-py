@@ -59,6 +59,17 @@ The difference from Java is that no builder is generated. Java needs an annotati
 emit a CRTP builder per class; here one `Builder` resolves fields from the dataclass at call
 time, so a new model needs no build step and no generated file to keep in sync.
 
+## `copyBase` is gone; `copy_from` replaces it
+
+Java's `Model.Builder` has `copyBase`, which takes the framework's fields and leaves the
+subclass's for you to set on the next lines. It exists to support hand-writing a `copy()`,
+which is the boilerplate a Python base class does not need - so the builder has `copy_from`
+instead, which takes every field, and the inherited `copy()` uses it.
+
+Nothing was calling `copyBase`'s equivalent here, and two near-identical names on one builder
+is a paper cut for every reader. If you want a `copy()` that deliberately differs, override it
+and start from `copy_from`.
+
 ## Row mapping is by field name unless you say otherwise
 
 Java requires `toRecord` / `fromRecord` on every repository. Here they default to mapping

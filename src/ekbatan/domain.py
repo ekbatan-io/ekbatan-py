@@ -131,24 +131,12 @@ class Builder[T]:
         """Attach an event. The only way one enters the outbox."""
         return self.set(events=(*self._values.get("events", ()), event))
 
-    def copy_base(self, other: Any) -> Self:
-        """Take only the framework's own fields - id, state, version, and a model's timestamps
-        and events - from an existing instance.
-
-        The same meaning it has in Java, and for the same use: you are hand-writing a
-        ``copy()`` and will set the domain fields yourself on the next lines. If you are not
-        doing that, you want :meth:`copy_from`, which is what the inherited ``copy()`` uses.
-        """
-        for name in _BASE_FIELDS & _field_names(type(other)):
-            self._values[name] = getattr(other, name)
-        return self
-
     def copy_from(self, other: Any) -> Self:
         """Take every field from an existing instance - the framework's and your own.
 
-        This is what makes an inherited ``copy()`` possible. Java has no equivalent because a
-        base class there cannot enumerate a subclass's fields, which is why every Java model
-        writes out its own ``copy()`` and why one of them will eventually forget a field.
+        This is what makes an inherited ``copy()`` possible. Java has no equivalent, because a
+        base class there cannot enumerate a subclass's fields; that is why every Java model
+        writes out its own ``copy()``, and why one of them eventually forgets a field.
         """
         for name in _field_names(type(other)):
             self._values[name] = getattr(other, name)
@@ -189,11 +177,6 @@ class Builder[T]:
 
 def _field_names(target: type) -> frozenset[str]:
     return frozenset(f.name for f in dataclasses.fields(target))
-
-
-def _base_fields() -> frozenset[str]:
-    """The fields this framework declares, as opposed to the ones your model adds."""
-    return frozenset(Model.__dataclass_fields__) | frozenset(Entity.__dataclass_fields__)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -283,7 +266,3 @@ class Model[ID, S: Enum](Persistable[ID, S]):
         change would re-publish them and a consumer would see one deposit twice.
         """
         return dataclasses.replace(self, events=())
-
-
-#: Resolved once the classes below exist. Everything else is yours.
-_BASE_FIELDS = _base_fields()
