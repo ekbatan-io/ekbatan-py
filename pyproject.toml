@@ -3,14 +3,13 @@ name = "ekbatan"
 version = "0.1.0.dev0"
 description = "A persistence framework for event-driven systems, with an ergonomic built-in outbox pattern."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = "Apache-2.0"
 authors = [{ name = "Hossein Bakhtiari" }]
 keywords = ["outbox", "persistence", "event-driven", "cdc", "sharding", "sqlalchemy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Database",
@@ -50,7 +49,7 @@ pythonpath = ["src"]
 addopts = "-q"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 files = ["src", "examples"]
 

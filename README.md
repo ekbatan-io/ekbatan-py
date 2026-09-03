@@ -93,7 +93,7 @@ uv run ruff check .
 
 ```python
 class PayStipend(DistributedJob):
-    name = "wallet-stipend"                      # the primary key of its row, cluster-wide
+    name = "wallet-stipend"  # the primary key of its row, cluster-wide
     schedule = Every(timedelta(days=1))
 
     def run(self, context: JobContext) -> None:
@@ -106,10 +106,13 @@ class NotifyOnDeposit:
     event_type = WalletMoneyDeposited
 
     def handle(self, envelope: EventEnvelope[WalletMoneyDeposited]) -> None:
-        self.executor.execute(Notify(), NotifyParams(
-            wallet_id=UUID(envelope.model_id),
-            recipient=envelope.action_params["recipient"],   # not in the event, and rightly so
-        ))
+        self.executor.execute(
+            Notify(),
+            NotifyParams(
+                wallet_id=UUID(envelope.model_id),
+                recipient=envelope.action_params["recipient"],  # not in the event, and rightly so
+            ),
+        )
 
 
 with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):

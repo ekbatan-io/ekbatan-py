@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from ..clock import Clock, to_storage
-from ..domain import Persistable
+from ..domain import Model, Persistable
 
 __all__ = ["ActionPlan", "Changes"]
 
@@ -100,6 +100,9 @@ class ActionPlan:
         return self._by_type.setdefault(model_type, Changes())
 
     def _stamp_new[P: Persistable[Any, Any]](self, model: P) -> P:
+        """Fill in the timestamps a model has. An entity has none - it is state, not history."""
+        if not isinstance(model, Model):
+            return model
         now = to_storage(self._clock.now())
         changes: dict[str, Any] = {}
         if model.created_date is None:
@@ -109,4 +112,6 @@ class ActionPlan:
         return model.evolve(**changes) if changes else model
 
     def _stamp_updated[P: Persistable[Any, Any]](self, model: P) -> P:
+        if not isinstance(model, Model):
+            return model.evolve(version=model.version + 1)
         return model.evolve(version=model.version + 1, updated_date=to_storage(self._clock.now()))

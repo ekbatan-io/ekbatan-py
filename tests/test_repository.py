@@ -128,7 +128,9 @@ def test_predicate_reads_apply_the_same_filter(wallets):
 def test_an_entity_round_trips_without_events(registry, clock):
     notes = Repository(Notification, NOTIFICATIONS, registry, clock=clock)
     stored = notes.add(
-        Notification(id=uuid4(), wallet_id=uuid4(), kind="MONEY_DEPOSITED", recipient="ada@x")
+        Notification.create(
+            id=uuid4(), wallet_id=uuid4(), kind="MONEY_DEPOSITED", recipient="ada@x"
+        )
     )
     found = notes.get(stored.id)
     assert found == stored
@@ -150,7 +152,10 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
     there = Wallet.open(
         id=sharded_uuid(mexico), owner_id=uuid4(), currency="MXN", balance=Decimal("2.00")
     )
-    wallets.add_all([here, there])
+    # One call per shard: a batch spanning two databases would need a transaction that spans
+    # them, and there isn't one.
+    wallets.add(here)
+    wallets.add(there)
 
     assert wallets.count(shard=ShardIdentifier(0, 0)) == 1
     assert wallets.count(shard=mexico) == 1

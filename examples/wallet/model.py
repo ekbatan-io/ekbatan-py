@@ -11,7 +11,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
-from ekbatan.domain import Entity, Model, ModelEvent
+from ekbatan.domain import Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
 
 
@@ -92,9 +92,26 @@ class Wallet(Model[UUID, WalletState]):
 
 @dataclass(frozen=True, kw_only=True)
 class Notification(Entity[UUID]):
-    """An entity: the persistence layer tracks it, the event stream does not care."""
+    """An entity: the persistence layer tracks it, the event stream does not care.
+
+    No timestamps, because an entity is state rather than history - and nothing here is worth
+    telling the rest of the system about, which is exactly what makes it an entity.
+    """
 
     wallet_id: UUID
     kind: str
     recipient: str
     message: str | None = None
+
+    @classmethod
+    def create(
+        cls, *, id: UUID, wallet_id: UUID, kind: str, recipient: str, message: str | None = None
+    ) -> Notification:
+        return cls(
+            id=id,
+            state=GenericState.ACTIVE,
+            wallet_id=wallet_id,
+            kind=kind,
+            recipient=recipient,
+            message=message,
+        )

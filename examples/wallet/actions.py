@@ -110,7 +110,7 @@ class Notify(Action[NotifyParams, Notification]):
 
     def perform(self, params: NotifyParams) -> Notification:
         return self.plan.add(
-            Notification(
+            Notification.create(
                 id=uuid4(),
                 wallet_id=params.wallet_id,
                 kind=params.kind,

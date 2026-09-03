@@ -29,7 +29,7 @@ from .action import (
 )
 from .clock import Clock, FixedClock, SystemClock
 from .config import DataSourceConfig, ShardConfig, ShardingConfig
-from .domain import Entity, GenericState, Model, ModelEvent, Persistable
+from .domain import Builder, Entity, GenericState, Model, ModelEvent, Persistable
 from .errors import (
     ConnectivityError,
     CrossShardError,
@@ -68,6 +68,7 @@ __all__ = [
     "Action",
     "ActionExecutor",
     "ActionPlan",
+    "Builder",
     "Clock",
     "ConnectivityError",
     "CrossShardError",

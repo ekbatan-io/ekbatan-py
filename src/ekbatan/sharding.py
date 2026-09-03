@@ -96,8 +96,22 @@ def read_shard(value: uuid.UUID) -> ShardIdentifier | None:
 class ShardingStrategy(Protocol):
     """How a repository decides where one row belongs."""
 
-    def shard_for(self, key: object) -> ShardIdentifier | None:
-        """The shard this key names, or ``None`` to use the default."""
+    @property
+    def uses_shard_aware_id(self) -> bool:
+        """Whether an id alone is enough to say where its row lives.
+
+        A strategy routing on something other than the id - a tenant column, a lookup table -
+        cannot answer ``find(id)`` without reading first, and says so here rather than
+        guessing. Its repository has to override the id-based resolution.
+        """
+        ...
+
+    def shard_for_id(self, key: object) -> ShardIdentifier | None:
+        """The shard this id names, or ``None`` to use the default."""
+        ...
+
+    def shard_for(self, persistable: object) -> ShardIdentifier | None:
+        """The shard this row belongs on. Usually its id, but a strategy may read any field."""
         ...
 
 
@@ -106,7 +120,12 @@ class NoSharding:
 
     __slots__ = ()
 
-    def shard_for(self, key: object) -> ShardIdentifier | None:
+    uses_shard_aware_id = True
+
+    def shard_for_id(self, key: object) -> ShardIdentifier | None:
+        return None
+
+    def shard_for(self, persistable: object) -> ShardIdentifier | None:
         return None
 
     def __repr__(self) -> str:
@@ -114,11 +133,18 @@ class NoSharding:
 
 
 class EmbeddedBitsSharding:
-    """Read the shard out of the id's own bits."""
+    """Read the shard out of the id's own bits.
+
+    No lookup table and no extra column, which is what lets a caller holding an id get routing
+    for free. An id that carries no shard - one minted before the deployment was sharded, or by
+    something else entirely - resolves to nothing and the caller falls back to the default.
+    """
 
     __slots__ = ()
 
-    def shard_for(self, key: object) -> ShardIdentifier | None:
+    uses_shard_aware_id = True
+
+    def shard_for_id(self, key: object) -> ShardIdentifier | None:
         if isinstance(key, ShardIdentifier):
             return key
         if isinstance(key, uuid.UUID):
@@ -130,6 +156,9 @@ class EmbeddedBitsSharding:
                 return None
         return None
 
+    def shard_for(self, persistable: object) -> ShardIdentifier | None:
+        return self.shard_for_id(getattr(persistable, "id", persistable))
+
     def __repr__(self) -> str:
         return "EmbeddedBitsSharding()"
 
@@ -137,4 +166,4 @@ class EmbeddedBitsSharding:
 def resolve_shard(
     strategy: ShardingStrategy, key: object, default: ShardIdentifier
 ) -> ShardIdentifier:
-    return strategy.shard_for(key) or default
+    return strategy.shard_for_id(key) or default

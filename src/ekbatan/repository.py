@@ -13,17 +13,35 @@ from __future__ import annotations
 
 import dataclasses
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import ColumnElement, Row, Table, bindparam, delete, func, insert, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Connection,
+    Row,
+    Table,
+    bindparam,
+    delete,
+    func,
+    insert,
+    select,
+    update,
+)
 
 from .clock import Clock, SystemClock, to_storage
-from .domain import DELETED, Persistable
-from .errors import EntityNotFoundError, StaleRecordError, ValidationError
-from .persistence import DatabaseRegistry
+from .domain import DELETED, Model, Persistable
+from .errors import (
+    CrossShardError,
+    EntityNotFoundError,
+    StaleRecordError,
+    UnsupportedError,
+    ValidationError,
+)
+from .persistence import DatabaseRegistry, TransactionManager
 from .sharding import NoSharding, ShardIdentifier, ShardingStrategy
 
 __all__ = ["Repository"]
@@ -85,10 +103,134 @@ class Repository[M: Persistable[Any, Any], K]:
         }
         return self.model_type(**kwargs)
 
-    # ------------------------------------------------------------- addressing
+    # ------------------------------------------------------- where the queries run
 
-    def shard_for(self, key: object) -> ShardIdentifier:
-        return self.registry.effective_shard(self.sharding.shard_for(key))
+    def shard_for(self, key: K) -> ShardIdentifier:
+        """The shard an id names, after falling back for one this deployment does not have."""
+        self._require_id_based()
+        return self.registry.effective_shard(self.sharding.shard_for_id(key))
+
+    def shard_of(self, model: M) -> ShardIdentifier:
+        """The shard a row belongs on. A strategy may read any field, not only the id."""
+        return self.registry.effective_shard(self.sharding.shard_for(model))
+
+    def shard_of_all(self, models: Sequence[M]) -> ShardIdentifier:
+        """The one shard a batch belongs on, or a refusal.
+
+        A batch that spans shards would need a transaction that spans databases, and there
+        isn't one. Refusing here is what keeps a repository call from quietly becoming several
+        independent commits - the caller can always split it themselves and mean it.
+        """
+        if isinstance(self.sharding, NoSharding) or not models:
+            return self.registry.default_shard
+        shards = {self.shard_of(m) for m in models}
+        if len(shards) > 1:
+            raise CrossShardError(sorted(str(s) for s in shards))
+        return shards.pop()
+
+    @contextmanager
+    def db(
+        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Connection]:
+        """A writer connection for one shard, in a transaction of its own.
+
+        It does **not** join an open transaction. That is occasionally what you want - a write
+        that must survive the surrounding rollback, an audit row - and almost always not, so
+        reach for :meth:`tx_db_else_db` unless you specifically mean to be outside. Opening a
+        second connection to a shard you are already writing to can also deadlock, which is the
+        other reason this is the deliberate choice rather than the default one.
+        """
+        with self._manager(key, model, shard).primary.connect() as conn, conn.begin():
+            yield conn
+
+    def dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
+        """Every shard's writer, one at a time, each in its own transaction.
+
+        For work that is genuinely per-database - a backfill, a repair. Each shard commits on
+        its own, so a failure part way leaves the earlier ones committed.
+        """
+        for shard in self.registry.shards:
+            with self.db(shard=shard) as conn:
+                yield shard, conn
+
+    @contextmanager
+    def readonly_db(
+        self, *, key: K | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Connection]:
+        """A reader connection, which may be a replica.
+
+        Inside an open transaction it hands back that transaction instead: a read there has to
+        see the writes it has already made, and a replica by definition has not.
+        """
+        with self._manager(key, None, shard).connection(readonly=True) as conn:
+            yield conn
+
+    def readonly_dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
+        """Every shard's reader, one at a time."""
+        for shard in self.registry.shards:
+            with self.readonly_db(shard=shard) as conn:
+                yield shard, conn
+
+    def tx_db(
+        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
+    ) -> Connection | None:
+        """The transaction already open on this shard, or ``None``.
+
+        For code that must behave differently depending on whether it is inside one. Most code
+        should not care, and should call :meth:`tx_db_else_db`.
+        """
+        from .persistence import _open
+
+        return _open().get(self._manager(key, model, shard).shard)
+
+    @contextmanager
+    def tx_db_else_db(
+        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Connection]:
+        """The transaction open on this shard, or a short-lived one if there is none.
+
+        What every built-in read and write uses, and what a subclass writing its own query
+        should use. It is why the same repository call reads naturally inside a unit of work
+        and in a script: inside one it joins, outside one it stands alone.
+        """
+        with self._manager(key, model, shard).connection() as conn:
+            yield conn
+
+    def dialect(self, *, shard: ShardIdentifier | None = None) -> str:
+        """Which database this shard speaks, for the rare query that has to differ.
+
+        Reach for it sparingly. A dialect difference visible in a repository is one the
+        framework failed to hide, and the next dialect will need the same branch again.
+        """
+        return self._manager(None, None, shard).dialect
+
+    def column(self, name: str) -> Any:
+        """One of this table's columns, by name - for building a predicate in a subclass
+        without importing the table."""
+        try:
+            return self.table.c[name]
+        except KeyError:
+            raise ValidationError(
+                f"{self.table.name} has no column {name!r}; it has {sorted(self.table.c.keys())}"
+            ) from None
+
+    def _manager(
+        self, key: K | None, model: M | None, shard: ShardIdentifier | None
+    ) -> TransactionManager:
+        if shard is not None:
+            return self.registry.manager(self.registry.effective_shard(shard))
+        if model is not None:
+            return self.registry.manager(self.shard_of(model))
+        if key is not None:
+            return self.registry.manager(self.shard_for(key))
+        return self.registry.manager(self.registry.default_shard)
+
+    def _require_id_based(self) -> None:
+        if not self.sharding.uses_shard_aware_id:
+            raise UnsupportedError(
+                f"{type(self.sharding).__name__} cannot resolve a shard from an id alone, so "
+                f"{type(self).__name__} has to override shard_for() to say where a row lives."
+            )
 
     def _live(self, *criteria: ColumnElement[bool]) -> tuple[ColumnElement[bool], ...]:
         """Every read narrows to rows that are not soft-deleted.
@@ -106,7 +248,7 @@ class Repository[M: Persistable[Any, Any], K]:
     def find(self, key: K) -> M | None:
         """The row, or ``None``. The lookup that treats absence as ordinary."""
         stmt = select(self.table).where(*self._live(self.id_column == key))
-        with self.registry.manager(self.shard_for(key)).connection(readonly=True) as conn:
+        with self.readonly_db(key=key) as conn:
             row = conn.execute(stmt).first()
         return self.from_row(row) if row is not None else None
 
@@ -127,7 +269,7 @@ class Repository[M: Persistable[Any, Any], K]:
         found: list[M] = []
         for shard, shard_keys in by_shard.items():
             stmt = select(self.table).where(*self._live(self.id_column.in_(shard_keys)))
-            with self.registry.manager(shard).connection(readonly=True) as conn:
+            with self.readonly_db(shard=shard) as conn:
                 found += [self.from_row(r) for r in conn.execute(stmt)]
         return found
 
@@ -150,7 +292,7 @@ class Repository[M: Persistable[Any, Any], K]:
         stmt = (
             select(func.count()).select_from(self.table).where(*self._live(self.id_column == key))
         )
-        with self.registry.manager(self.shard_for(key)).connection(readonly=True) as conn:
+        with self.readonly_db(key=key) as conn:
             return bool(conn.execute(stmt).scalar_one())
 
     def exists_where(
@@ -169,34 +311,49 @@ class Repository[M: Persistable[Any, Any], K]:
         predicate says nothing about where its rows live - so this fans out, and the caller
         that knows better narrows it with ``shard=``.
         """
-        shards = (shard,) if shard is not None else self.registry.shards
-        rows: list[Row[Any]] = []
-        for target in shards:
-            with self.registry.manager(target).connection(readonly=True) as conn:
-                rows += list(conn.execute(stmt))
-        return rows
+        if shard is not None:
+            with self.readonly_db(shard=shard) as conn:
+                return list(conn.execute(stmt))
+        return [row for _, conn in self.readonly_dbs() for row in conn.execute(stmt)]
 
     # ----------------------------------------------------------------- writes
 
     def add(self, model: M) -> M:
+        """Insert one row, and hand back what was written."""
         return self.add_all([model])[0]
 
+    def add_no_result(self, model: M) -> None:
+        """Insert one row without building the result.
+
+        Present because the Java implementation distinguishes them - there, returning the row
+        costs a ``RETURNING`` clause or a re-read. Here the value is already in hand and this
+        saves nothing, so use it to say the result is not wanted, not to go faster.
+        """
+        self.add_all([model])
+
     def add_all(self, models: Sequence[M]) -> list[M]:
-        """Insert, one statement per shard however many rows there are.
+        """Insert, one statement however many rows there are.
 
         A staging area that flushes row by row has thrown away its only advantage, so the batch
         goes out as one ``executemany`` and the cost of ten rows is the cost of one round trip.
         """
         if not models:
             return []
+        shard = self.shard_of_all(models)
         stamped = [self._stamp_new(m) for m in models]
-        for shard, group in self._group(stamped):
-            with self.registry.manager(shard).connection() as conn:
-                conn.execute(insert(self.table), [self.to_row(m) for m in group])
+        with self.tx_db_else_db(shard=shard) as conn:
+            conn.execute(insert(self.table), [self.to_row(m) for m in stamped])
         return stamped
 
+    def add_all_no_result(self, models: Sequence[M]) -> None:
+        self.add_all(models)
+
     def update(self, model: M) -> M:
+        """Update one row under the optimistic lock."""
         return self.update_all([model])[0]
+
+    def update_no_result(self, model: M) -> None:
+        self.update_all([model])
 
     def update_all(self, models: Sequence[M]) -> list[M]:
         """Update under the optimistic lock, all of them or none.
@@ -208,6 +365,7 @@ class Repository[M: Persistable[Any, Any], K]:
         """
         if not models:
             return []
+        shard = self.shard_of_all(models)
         stamped = [self._stamp_updated(m) for m in models]
 
         stmt = (
@@ -221,29 +379,30 @@ class Repository[M: Persistable[Any, Any], K]:
                 }
             )
         )
+        params = [
+            {
+                "_id": _to_column(m.id),
+                "_prior": m.version - 1,
+                **{f"_v_{k}": v for k, v in self.to_row(m).items() if k != self.id_column.name},
+            }
+            for m in stamped
+        ]
 
-        for shard, group in self._group(stamped):
-            manager = self.registry.manager(shard)
-            params = [
-                {
-                    "_id": _to_column(m.id),
-                    "_prior": m.version - 1,
-                    **{f"_v_{k}": v for k, v in self.to_row(m).items() if k != self.id_column.name},
-                }
-                for m in group
-            ]
-            with manager.connection() as conn:
-                affected = self._execute_locked(conn, stmt, params)
-                if affected != len(params):
-                    # Raised inside the transaction, so it rolls back. Raised after it, the
-                    # rows that did match would already be committed and the caller would be
-                    # told the batch failed while half of it had happened.
-                    raise StaleRecordError(
-                        f"expected to update {len(params)} {self.model_type.__name__} row(s) "
-                        f"but matched {affected}; one was concurrently modified or is gone",
-                        model=self.model_type.__name__,
-                    )
+        with self.tx_db_else_db(shard=shard) as conn:
+            affected = self._execute_locked(conn, stmt, params)
+            if affected != len(params):
+                # Raised inside the transaction, so it rolls back. Raised after it, the rows
+                # that did match would already be committed and the caller would be told the
+                # batch failed while half of it had happened.
+                raise StaleRecordError(
+                    f"expected to update {len(params)} {self.model_type.__name__} row(s) "
+                    f"but matched {affected}; one was concurrently modified or is gone",
+                    model=self.model_type.__name__,
+                )
         return stamped
+
+    def update_all_no_result(self, models: Sequence[M]) -> None:
+        self.update_all(models)
 
     def delete(self, model: M) -> M:
         """Soft delete: move the row to ``DELETED`` so every read stops seeing it."""
@@ -262,18 +421,15 @@ class Repository[M: Persistable[Any, Any], K]:
     def hard_delete(self, key: K) -> int:
         """Remove the row for real. Rare, and deliberately harder to reach than ``delete``."""
         stmt = delete(self.table).where(self.id_column == key)
-        with self.registry.manager(self.shard_for(key)).connection() as conn:
+        with self.tx_db_else_db(key=key) as conn:
             return int(conn.execute(stmt).rowcount)
 
     # --------------------------------------------------------------- internals
 
-    def _group(self, models: Sequence[M]) -> list[tuple[ShardIdentifier, list[M]]]:
-        grouped: dict[ShardIdentifier, list[M]] = {}
-        for model in models:
-            grouped.setdefault(self.shard_for(model.id), []).append(model)
-        return list(grouped.items())
-
     def _stamp_new(self, model: M) -> M:
+        """Fill in the timestamps a model has and an entity does not."""
+        if not isinstance(model, Model):
+            return model
         now = to_storage(self.clock.now())
         changes: dict[str, Any] = {}
         if model.created_date is None:
@@ -283,7 +439,7 @@ class Repository[M: Persistable[Any, Any], K]:
         return model.evolve(**changes) if changes else model
 
     def _stamp_updated(self, model: M) -> M:
-        if model.updated_date is not None:
+        if not isinstance(model, Model) or model.updated_date is not None:
             return model
         return model.evolve(updated_date=to_storage(self.clock.now()))
 

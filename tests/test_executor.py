@@ -262,7 +262,9 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
         def perform(self, params: None) -> None:
             from examples.wallet.model import Notification
 
-            self.plan.add(Notification(id=uuid4(), wallet_id=uuid4(), kind="X", recipient="ada@x"))
+            self.plan.add(
+                Notification.create(id=uuid4(), wallet_id=uuid4(), kind="X", recipient="ada@x")
+            )
 
     with pytest.raises(ValidationError, match="no repository was given for Notification"):
         executor.execute(WritesAnUnknownThing(), None)

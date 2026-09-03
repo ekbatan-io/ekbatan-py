@@ -39,16 +39,25 @@ WalletMoneyDeposited(amount=amount, new_balance=new_balance)
 A parameter that can only ever be passed one correct value is a parameter that will one day be
 passed a different one. The stored row is identical.
 
-## `evolve()` instead of a builder
+## The builder is not generated
 
-Java needs a generated CRTP builder to produce a changed copy of an immutable model. Python has
-`dataclasses.replace`, so a change is one call and the event rides along with it:
+Both forms are here. `copy()` returns a builder with the same surface Java's has - `with_event`,
+`with_initial_version`, `increase_version`, `copy_base`, `build`, and a setter for every field:
+
+```python
+wallet.copy().balance(new_balance).with_event(WalletMoneyDeposited(...)).build()
+```
+
+`evolve()` is the short form for a change touching one or two fields, and is what the reference
+application uses:
 
 ```python
 return self.evolve(balance=new_balance, emit=WalletMoneyDeposited(...))
 ```
 
-No generated builder, no `copy().withEvent(...).build()`, and no annotation processor.
+The difference from Java is that no builder is generated. Java needs an annotation processor to
+emit a CRTP builder per class; here one `Builder` resolves fields from the dataclass at call
+time, so a new model needs no build step and no generated file to keep in sync.
 
 ## Row mapping is by field name unless you say otherwise
 
@@ -58,13 +67,6 @@ storage form. Override them when the shapes differ; most repositories never do.
 
 This is the largest single reduction in application code, and the one most at risk of being
 undone by a well-meant refactor - so it is stated here.
-
-## `Entity` has a fixed lifecycle
-
-Java parameterises `Entity` by a state enum. Here it is always `GenericState` - active or
-deleted. Something needing a lifecycle of its own almost certainly has state changes worth
-telling the rest of the system about, which makes it a `Model`. Subclass `Persistable`
-directly in the rare case that is wrong.
 
 ## Timestamps are stamped when the change is staged
 
