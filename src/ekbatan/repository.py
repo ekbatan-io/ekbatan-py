@@ -24,12 +24,17 @@ from sqlalchemy import (
     Connection,
     Row,
     Table,
+    any_,
     bindparam,
+    column,
     delete,
     func,
     insert,
+    literal,
     select,
+    union_all,
     update,
+    values,
 )
 
 from .clock import Clock, SystemClock, to_storage
@@ -66,12 +71,15 @@ class Repository[M: Persistable[Any, Any], K]:
         sharding: ShardingStrategy | None = None,
         clock: Clock | None = None,
         state_column: str = "state",
+        batch_size: int = 500,
     ) -> None:
         self.model_type = model_type
         self.table = table
         self.registry = registry
         self.sharding = sharding or NoSharding()
         self.clock = clock or SystemClock()
+        self.batch_size = batch_size
+        self._single_stmt: Any = None
 
         pk = list(table.primary_key.columns)
         if len(pk) != 1:
@@ -269,20 +277,43 @@ class Repository[M: Persistable[Any, Any], K]:
         return found
 
     def find_many(self, keys: Iterable[K]) -> list[M]:
-        """The rows that exist, in no promised order. An empty input is an empty result -
-        never ``IN ()``, and never an accidental full-table read."""
-        by_shard: dict[ShardIdentifier, list[K]] = {}
-        for key in keys:
+        """The rows that exist, in no promised order.
+
+        Duplicates are collapsed before the query - asking twice for the same id is a caller's
+        accident, not an instruction to fetch it twice. An empty input is an empty result:
+        never ``IN ()``, and never an accidental full-table read.
+        """
+        unique = list(dict.fromkeys(_to_column(k) for k in keys))
+        if not unique:
+            return []
+
+        by_shard: dict[ShardIdentifier, list[Any]] = {}
+        for key in unique:
             by_shard.setdefault(self.shard_for(key), []).append(key)
 
         found: list[M] = []
         for shard, shard_keys in by_shard.items():
-            stmt = select(self.table).where(
-                *self._live(self.id_column.in_([_to_column(k) for k in shard_keys]))
-            )
             with self.readonly_db(shard=shard) as conn:
-                found += [self.from_row(r) for r in conn.execute(stmt)]
+                for chunk in _chunks(shard_keys, self.batch_size):
+                    stmt = select(self.table).where(*self._live(self._id_among(conn, chunk)))
+                    found += [self.from_row(r) for r in conn.execute(stmt)]
         return found
+
+    def _id_among(self, conn: Any, keys: Sequence[Any]) -> Any:
+        """``id = ANY(:array)`` on Postgres, ``id IN (…)`` elsewhere.
+
+        Not a stylistic preference. ``IN`` expands to one placeholder per id, so the statement
+        text changes with the length of the list and a server-side plan cache misses on every
+        new length - a service looking up two ids, then three, then two, re-plans each time.
+        ``ANY`` takes the whole list as a single array parameter: one statement text, one
+        cached plan, one bind. Only Postgres has it, so everything else keeps ``IN`` and the
+        chunking above keeps that from meeting a parameter limit.
+        """
+        if conn.dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import ARRAY
+
+            return self.id_column == any_(literal(list(keys), ARRAY(self.id_column.type)))
+        return self.id_column.in_(keys)
 
     def find_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
@@ -369,46 +400,39 @@ class Repository[M: Persistable[Any, Any], K]:
         self.update_all([model])
 
     def update_all(self, models: Sequence[M]) -> list[M]:
-        """Update under the optimistic lock, all of them or none.
+        """Update under the optimistic lock, all of them or none, in one statement per chunk.
 
-        Each row is written ``WHERE id = ? AND version = ?`` against the version the caller
-        read. If the affected count is short, someone else got there first and the whole batch
-        is refused - partial application is the worst outcome available, because the caller is
-        told it failed and half of it happened anyway.
+        Not ``executemany``. SQLAlchemy rewrites a batched INSERT into a single multi-row
+        statement, but there is no equivalent for UPDATE - an executemany there is N statements,
+        pipelined at best, and N server-side plans. So the batch is turned into one derived
+        table joined against the target, which is one statement, one plan, and one pass.
+
+        Each row is matched on ``id`` and the version the caller read. If the affected count is
+        short, someone else got there first and the whole batch is refused - partial application
+        is the worst outcome available, because the caller is told it failed and half of it
+        happened anyway. The count is trustworthy because every row's version changes, so no
+        row can be silently reported as unaffected for having been written its own values.
         """
         if not models:
             return []
         shard = self.shard_of_all(models)
         stamped = [self._stamp_updated(m) for m in models]
 
-        stmt = (
-            update(self.table)
-            .where(self.id_column == bindparam("_id"), self.table.c.version == bindparam("_prior"))
-            .values(
-                {
-                    name: bindparam(f"_v_{name}")
-                    for name in self._columns
-                    if name != self.id_column.name
-                }
-            )
-        )
-        params = [
-            {
-                "_id": _to_column(m.id),
-                "_prior": m.version - 1,
-                **{f"_v_{k}": v for k, v in self.to_row(m).items() if k != self.id_column.name},
-            }
-            for m in stamped
-        ]
-
         with self.tx_db_else_db(shard=shard) as conn:
-            affected = self._execute_locked(conn, stmt, params)
-            if affected != len(params):
+            if len(stamped) == 1:
+                # One row does not need a derived table, and building one would cost more than
+                # it saves.
+                affected = conn.execute(self._single_update(), self._bind(stamped[0])).rowcount
+            else:
+                affected = sum(
+                    self._batch_update(conn, chunk) for chunk in _chunks(stamped, self.batch_size)
+                )
+            if affected != len(stamped):
                 # Raised inside the transaction, so it rolls back. Raised after it, the rows
                 # that did match would already be committed and the caller would be told the
                 # batch failed while half of it had happened.
                 raise StaleRecordError(
-                    f"expected to update {len(params)} {self.model_type.__name__} row(s) "
+                    f"expected to update {len(stamped)} {self.model_type.__name__} row(s) "
                     f"but matched {affected}; one was concurrently modified or is gone",
                     model=self.model_type.__name__,
                 )
@@ -456,16 +480,87 @@ class Repository[M: Persistable[Any, Any], K]:
             return model
         return model.evolve(updated_date=to_storage(self.clock.now()))
 
-    def _execute_locked(self, conn: Any, stmt: Any, params: list[dict[str, Any]]) -> int:
-        """Run the version-guarded update and report how many rows it actually matched.
+    def _single_update(self) -> Any:
+        """``UPDATE … SET … WHERE id = ? AND version = ?``, built once and reused."""
+        if self._single_stmt is None:
+            self._single_stmt = (
+                update(self.table)
+                .where(
+                    self.id_column == bindparam("_id"),
+                    self.table.c.version == bindparam("_prior"),
+                )
+                .values(
+                    {
+                        name: bindparam(f"_v_{name}")
+                        for name in self._columns
+                        if name != self.id_column.name
+                    }
+                )
+            )
+        return self._single_stmt
 
-        Drivers disagree on whether an ``executemany`` can report that number. Where one
-        cannot, the batch is sent row by row instead - slower, and the alternative is to skip
-        the check, which would turn the optimistic lock into a decoration.
+    def _bind(self, model: M) -> dict[str, Any]:
+        row = self.to_row(model)
+        return {
+            "_id": row[self.id_column.name],
+            "_prior": model.version - 1,
+            **{f"_v_{k}": v for k, v in row.items() if k != self.id_column.name},
+        }
+
+    def _batch_update(self, conn: Any, models: Sequence[M]) -> int:
+        """One UPDATE for the whole chunk, joined against a derived table of the new values.
+
+        Two shapes, because the dialects genuinely differ. Postgres has a ``VALUES`` table
+        constructor with named columns, and its planner reads one scan node from it. MySQL's
+        equivalent needs ``VALUES ROW(...)`` and only from 8.0.19, and SQLite's cannot be given
+        column names at all - so everything else gets a ``UNION ALL`` of selects, which every
+        version of every one of them understands.
+
+        Every value is bound against its target column's type, never inferred from the value's
+        runtime class. Inference is how a timestamp acquires a zone it never had and the
+        database shifts it by the session offset - invisibly, and only outside UTC.
         """
-        if len(params) > 1 and not conn.dialect.supports_sane_multi_rowcount:
-            return sum(int(conn.execute(stmt, p).rowcount) for p in params)
-        return int(conn.execute(stmt, params).rowcount)
+        prior = "_prior_version"
+        names = [prior, *self._columns]
+        rows = [(m.version - 1, *(self.to_row(m)[name] for name in self._columns)) for m in models]
+        types = {prior: self.table.c.version.type} | {
+            name: col.type for name, col in self._columns.items()
+        }
+
+        source: Any
+        if conn.dialect.name != "postgresql":
+            source = union_all(
+                *[
+                    select(
+                        *[
+                            literal(value, types[name]).label(name)
+                            for name, value in zip(names, row, strict=True)
+                        ]
+                    )
+                    for row in rows
+                ]
+            ).subquery("v")
+        else:
+            source = values(*[column(name, types[name]) for name in names], name="v").data(rows)
+
+        assigned = {name: source.c[name] for name in self._columns if name != self.id_column.name}
+        stmt = (
+            update(self.table)
+            .values(assigned)
+            .where(
+                self.id_column == source.c[self.id_column.name],
+                self.table.c.version == source.c[prior],
+            )
+        )
+        return int(conn.execute(stmt).rowcount)
+
+
+def _chunks[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
+    """A statement carries one bind parameter per column per row, and every server has a
+    ceiling on how many it will take - 65535 on Postgres, a packet size on MySQL. Chunking is
+    what keeps a large batch from becoming a failure that only appears in production."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
 
 
 def _concrete_types(model_type: type) -> dict[str, Any]:

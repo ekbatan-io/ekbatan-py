@@ -86,6 +86,23 @@ class WalletId(ShardedId["Wallet"]): ...
 entries in a set rather than one. `Id[Wallet]` still works and still satisfies a checker; the
 named subclass is what makes the interpreter agree.
 
+## Writes do not read the row back
+
+Java's `add` and `update` end in `RETURNING` on Postgres, so what comes back is the database's
+view of the row - defaults, triggers, anything computed server-side. This port returns the
+value it staged.
+
+The round-trip count is identical either way; the difference is what you get. Two reasons for
+the choice:
+
+- `addAll` in Java fetches every inserted row back over the wire, and a caller inserting a
+  thousand rows almost never wants them. The cost is real and is paid by default.
+- A model here is a frozen dataclass the application constructed. Handing back something
+  *different* from what it staged is the surprise, not the service.
+
+If you rely on a server-side default or trigger, override `add`/`update` and use
+`.returning()` - `tx_db_else_db()` gives you the connection to do it on.
+
 ## Row mapping is by field name unless you say otherwise
 
 Java requires `toRecord` / `fromRecord` on every repository. Here they default to mapping
