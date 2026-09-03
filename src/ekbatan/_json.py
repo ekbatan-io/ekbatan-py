@@ -44,6 +44,13 @@ def canonical(value: Any) -> Any:
         return value.name
     if isinstance(value, bytes):
         return value.hex()
+    from .ids import TypedValue
+
+    if isinstance(value, TypedValue):
+        # The primitive inside, not the wrapper. An Id[Wallet] has to reach the outbox as the
+        # uuid string a consumer can join on - rendering it as {"value": "..."} would make
+        # every payload this port writes unreadable to every other.
+        return canonical(value.value)
     if isinstance(value, Mapping):
         return {str(k): canonical(v) for k, v in value.items()}
     if isinstance(value, Sequence | set | frozenset):

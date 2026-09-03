@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from ekbatan import Action, Repository
 from ekbatan.errors import ValidationError
+from ekbatan.ids import Id
 
 from .model import Notification, Wallet
 
@@ -22,31 +23,31 @@ class CreateWalletParams:
     owner_id: UUID
     currency: str
     initial_balance: Decimal
-    wallet_id: UUID | None = None
+    wallet_id: Id[Wallet] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
 class DepositParams:
-    wallet_id: UUID
+    wallet_id: Id[Wallet]
     amount: Decimal
     recipient: str
 
 
 @dataclass(frozen=True, kw_only=True)
 class TransferParams:
-    from_wallet_id: UUID
-    to_wallet_id: UUID
+    from_wallet_id: Id[Wallet]
+    to_wallet_id: Id[Wallet]
     amount: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
 class WalletIdParams:
-    wallet_id: UUID
+    wallet_id: Id[Wallet]
 
 
 @dataclass(frozen=True, kw_only=True)
 class NotifyParams:
-    wallet_id: UUID
+    wallet_id: Id[Wallet]
     kind: str
     recipient: str
     message: str | None = None
@@ -56,7 +57,7 @@ class CreateWallet(Action[CreateWalletParams, Wallet]):
     def perform(self, params: CreateWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
-                id=params.wallet_id or uuid4(),
+                id=params.wallet_id or Id[Wallet].random(),
                 owner_id=params.owner_id,
                 currency=params.currency,
                 balance=params.initial_balance,
@@ -65,7 +66,7 @@ class CreateWallet(Action[CreateWalletParams, Wallet]):
 
 
 class DepositMoney(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
+    def __init__(self, wallets: Repository[Wallet, Id[Wallet]]) -> None:
         self.wallets = wallets
 
     def perform(self, params: DepositParams) -> Wallet:
@@ -74,7 +75,7 @@ class DepositMoney(Action[DepositParams, Wallet]):
 
 
 class CloseWallet(Action[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
+    def __init__(self, wallets: Repository[Wallet, Id[Wallet]]) -> None:
         self.wallets = wallets
 
     def perform(self, params: WalletIdParams) -> Wallet:
@@ -89,7 +90,7 @@ class TransferMoney(Action[TransferParams, tuple[Wallet, Wallet]]):
     """Two models, one transaction. Both balances move or neither does, and nothing in here
     arranges that."""
 
-    def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
+    def __init__(self, wallets: Repository[Wallet, Id[Wallet]]) -> None:
         self.wallets = wallets
 
     def perform(self, params: TransferParams) -> tuple[Wallet, Wallet]:
@@ -111,7 +112,7 @@ class Notify(Action[NotifyParams, Notification]):
     def perform(self, params: NotifyParams) -> Notification:
         return self.plan.add(
             Notification.create(
-                id=uuid4(),
+                id=Id[Notification].random(),
                 wallet_id=params.wallet_id,
                 kind=params.kind,
                 recipient=params.recipient,
@@ -127,7 +128,7 @@ class DepositThenFail(Action[DepositParams, Wallet]):
     other way.
     """
 
-    def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
+    def __init__(self, wallets: Repository[Wallet, Id[Wallet]]) -> None:
         self.wallets = wallets
 
     def perform(self, params: DepositParams) -> Wallet:

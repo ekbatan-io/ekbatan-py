@@ -23,10 +23,11 @@ from examples.wallet.actions import (
     TransferParams,
     WalletIdParams,
 )
-from examples.wallet.model import WalletState
+from examples.wallet.model import Wallet, WalletState
 from sqlalchemy import event
 
 from ekbatan.errors import ValidationError
+from ekbatan.ids import Id
 
 
 def a_wallet(executor, balance="100.00", currency="EUR"):
@@ -133,7 +134,9 @@ def test_outbox_rows_follow_the_order_events_were_attached(executor, wallets, ou
 def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, outbox, notifications):
     executor.execute(
         Notify(),
-        NotifyParams(wallet_id=uuid4(), kind="MONEY_DEPOSITED", recipient="ada@example.com"),
+        NotifyParams(
+            wallet_id=Id[Wallet].random(), kind="MONEY_DEPOSITED", recipient="ada@example.com"
+        ),
     )
 
     rows = outbox()

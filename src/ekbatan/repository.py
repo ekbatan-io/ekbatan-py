@@ -41,6 +41,7 @@ from .errors import (
     UnsupportedError,
     ValidationError,
 )
+from .ids import TypedValue
 from .persistence import DatabaseRegistry, TransactionManager
 from .sharding import NoSharding, ShardIdentifier, ShardingStrategy
 
@@ -204,6 +205,14 @@ class Repository[M: Persistable[Any, Any], K]:
         """
         return self._manager(None, None, shard).dialect
 
+    def id_matches(self, key: K) -> Any:
+        """``id = ?``, with a typed id unwrapped on the way to the column.
+
+        For a subclass writing its own statement. ``self.id_column == key`` would hand the
+        wrapper straight to the driver, which knows nothing about it.
+        """
+        return self.id_column == _to_column(key)
+
     def column(self, name: str) -> Any:
         """One of this table's columns, by name - for building a predicate in a subclass
         without importing the table."""
@@ -247,7 +256,7 @@ class Repository[M: Persistable[Any, Any], K]:
 
     def find(self, key: K) -> M | None:
         """The row, or ``None``. The lookup that treats absence as ordinary."""
-        stmt = select(self.table).where(*self._live(self.id_column == key))
+        stmt = select(self.table).where(*self._live(self.id_column == _to_column(key)))
         with self.readonly_db(key=key) as conn:
             row = conn.execute(stmt).first()
         return self.from_row(row) if row is not None else None
@@ -268,7 +277,9 @@ class Repository[M: Persistable[Any, Any], K]:
 
         found: list[M] = []
         for shard, shard_keys in by_shard.items():
-            stmt = select(self.table).where(*self._live(self.id_column.in_(shard_keys)))
+            stmt = select(self.table).where(
+                *self._live(self.id_column.in_([_to_column(k) for k in shard_keys]))
+            )
             with self.readonly_db(shard=shard) as conn:
                 found += [self.from_row(r) for r in conn.execute(stmt)]
         return found
@@ -290,7 +301,9 @@ class Repository[M: Persistable[Any, Any], K]:
 
     def exists(self, key: K) -> bool:
         stmt = (
-            select(func.count()).select_from(self.table).where(*self._live(self.id_column == key))
+            select(func.count())
+            .select_from(self.table)
+            .where(*self._live(self.id_column == _to_column(key)))
         )
         with self.readonly_db(key=key) as conn:
             return bool(conn.execute(stmt).scalar_one())
@@ -420,7 +433,7 @@ class Repository[M: Persistable[Any, Any], K]:
 
     def hard_delete(self, key: K) -> int:
         """Remove the row for real. Rare, and deliberately harder to reach than ``delete``."""
-        stmt = delete(self.table).where(self.id_column == key)
+        stmt = delete(self.table).where(self.id_column == _to_column(key))
         with self.tx_db_else_db(key=key) as conn:
             return int(conn.execute(stmt).rowcount)
 
@@ -481,6 +494,8 @@ def _concrete_types(model_type: type) -> dict[str, Any]:
 
 
 def _to_column(value: Any) -> Any:
+    if isinstance(value, TypedValue):
+        return _to_column(value.value)
     if isinstance(value, Enum):
         return value.name
     if isinstance(value, datetime):
@@ -491,6 +506,10 @@ def _to_column(value: Any) -> Any:
 def _from_column(value: Any, hint: Any) -> Any:
     if value is None:
         return None
+    # `Id[Wallet]` is a generic alias, so the class to rebuild is its origin.
+    origin = typing.get_origin(hint) or hint
+    if isinstance(origin, type) and issubclass(origin, TypedValue):
+        return value if isinstance(value, origin) else origin(value)
     if isinstance(hint, type) and issubclass(hint, Enum) and not isinstance(value, Enum):
         return hint[str(value)]
     return value

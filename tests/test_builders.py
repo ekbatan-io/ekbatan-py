@@ -17,10 +17,13 @@ from examples.wallet.model import Wallet, WalletMoneyDeposited, WalletState
 
 from ekbatan.domain import Builder, Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
+from ekbatan.ids import Id
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
-    return Wallet.open(id=uuid4(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance))
+    return Wallet.open(
+        id=Id[Wallet].random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+    )
 
 
 def test_copy_starts_from_the_row_you_have():

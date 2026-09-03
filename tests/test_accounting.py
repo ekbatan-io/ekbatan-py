@@ -21,6 +21,7 @@ from examples.wallet.actions import (
 from examples.wallet.model import Wallet
 
 from ekbatan import Action, count_statements
+from ekbatan.ids import Id
 
 
 def a_wallet(executor, balance="100.00"):
@@ -66,7 +67,12 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
     class CreateMany(Action[int, list[Wallet]]):
         def perform(self, params: int) -> list[Wallet]:
             return self.plan.add_all(
-                Wallet.open(id=uuid4(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00"))
+                Wallet.open(
+                    id=Id[Wallet].random(),
+                    owner_id=uuid4(),
+                    currency="EUR",
+                    balance=Decimal("1.00"),
+                )
                 for _ in range(params)
             )
 

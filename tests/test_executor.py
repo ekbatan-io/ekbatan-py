@@ -22,11 +22,11 @@ from ekbatan import (
     Repository,
     RetryPolicy,
     ShardIdentifier,
-    sharded_uuid,
 )
 from ekbatan.action.outbox import OutboxRecord
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, EkbatanError, StaleRecordError, ValidationError
+from ekbatan.ids import Id, ShardedId
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -119,7 +119,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     executor.execute(
         CreateWallet(),
         CreateWalletParams(
-            wallet_id=sharded_uuid(GLOBAL),
+            wallet_id=ShardedId[Wallet].generate(GLOBAL),
             owner_id=uuid4(),
             currency="EUR",
             initial_balance=Decimal("1.00"),
@@ -128,7 +128,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     there = executor.execute(
         CreateWallet(),
         CreateWalletParams(
-            wallet_id=sharded_uuid(MEXICO),
+            wallet_id=ShardedId[Wallet].generate(MEXICO),
             owner_id=uuid4(),
             currency="MXN",
             initial_balance=Decimal("2.00"),
@@ -150,7 +150,7 @@ class CreateOnBothShards(Action[None, tuple[Wallet, Wallet]]):
         return (
             self.plan.add(
                 Wallet.open(
-                    id=sharded_uuid(GLOBAL),
+                    id=ShardedId[Wallet].generate(GLOBAL),
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("1.00"),
@@ -158,7 +158,7 @@ class CreateOnBothShards(Action[None, tuple[Wallet, Wallet]]):
             ),
             self.plan.add(
                 Wallet.open(
-                    id=sharded_uuid(MEXICO),
+                    id=ShardedId[Wallet].generate(MEXICO),
                     owner_id=uuid4(),
                     currency="MXN",
                     balance=Decimal("2.00"),
@@ -263,7 +263,12 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
             from examples.wallet.model import Notification
 
             self.plan.add(
-                Notification.create(id=uuid4(), wallet_id=uuid4(), kind="X", recipient="ada@x")
+                Notification.create(
+                    id=Id[Notification].random(),
+                    wallet_id=Id[Wallet].random(),
+                    kind="X",
+                    recipient="ada@x",
+                )
             )
 
     with pytest.raises(ValidationError, match="no repository was given for Notification"):

@@ -13,6 +13,7 @@ from uuid import UUID
 
 from ekbatan.domain import Builder, Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
+from ekbatan.ids import Id
 
 
 class WalletState(Enum):
@@ -46,13 +47,13 @@ class WalletClosed(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[UUID, WalletState]):
+class Wallet(Model[Id["Wallet"], WalletState]):
     owner_id: UUID
     currency: str
     balance: Decimal
 
     @classmethod
-    def open(cls, *, id: UUID, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
+    def open(cls, *, id: Id[Wallet], owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
         return (
             Builder(cls)
             .id(id)
@@ -106,21 +107,27 @@ class Wallet(Model[UUID, WalletState]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Notification(Entity[UUID]):
+class Notification(Entity[Id["Notification"]]):
     """An entity: the persistence layer tracks it, the event stream does not care.
 
     No timestamps, because an entity is state rather than history - and nothing here is worth
     telling the rest of the system about, which is exactly what makes it an entity.
     """
 
-    wallet_id: UUID
+    wallet_id: Id[Wallet]
     kind: str
     recipient: str
     message: str | None = None
 
     @classmethod
     def create(
-        cls, *, id: UUID, wallet_id: UUID, kind: str, recipient: str, message: str | None = None
+        cls,
+        *,
+        id: Id[Notification],
+        wallet_id: Id[Wallet],
+        kind: str,
+        recipient: str,
+        message: str | None = None,
     ) -> Notification:
         return cls(
             id=id,

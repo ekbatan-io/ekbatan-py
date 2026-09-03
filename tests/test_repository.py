@@ -10,9 +10,10 @@ from examples.wallet.schema import NOTIFICATIONS, WALLETS
 
 from ekbatan.clock import FixedClock
 from ekbatan.errors import EntityNotFoundError, StaleRecordError
+from ekbatan.ids import Id, ShardedId
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import Repository
-from ekbatan.sharding import EmbeddedBitsSharding, ShardIdentifier, sharded_uuid
+from ekbatan.sharding import EmbeddedBitsSharding, ShardIdentifier
 
 
 @pytest.fixture
@@ -21,7 +22,9 @@ def wallets(registry: DatabaseRegistry, clock: FixedClock) -> Repository[Wallet,
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
-    return Wallet.open(id=uuid4(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance))
+    return Wallet.open(
+        id=Id[Wallet].random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+    )
 
 
 def test_an_inserted_row_reads_back_exactly(wallets, clock):
@@ -114,7 +117,11 @@ def test_a_deleted_row_is_invisible_to_every_read(wallets):
 
 def test_predicate_reads_apply_the_same_filter(wallets):
     _ada, grace, gone = (
-        wallets.add(Wallet.open(id=uuid4(), owner_id=uuid4(), currency=c, balance=Decimal("1.00")))
+        wallets.add(
+            Wallet.open(
+                id=Id[Wallet].random(), owner_id=uuid4(), currency=c, balance=Decimal("1.00")
+            )
+        )
         for c in ("EUR", "USD", "EUR")
     )
     wallets.delete(gone.next_version())
@@ -129,7 +136,10 @@ def test_an_entity_round_trips_without_events(registry, clock):
     notes = Repository(Notification, NOTIFICATIONS, registry, clock=clock)
     stored = notes.add(
         Notification.create(
-            id=uuid4(), wallet_id=uuid4(), kind="MONEY_DEPOSITED", recipient="ada@x"
+            id=Id[Notification].random(),
+            wallet_id=Id[Wallet].random(),
+            kind="MONEY_DEPOSITED",
+            recipient="ada@x",
         )
     )
     found = notes.get(stored.id)
@@ -144,13 +154,16 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
     )
     mexico = ShardIdentifier(1, 0)
     here = Wallet.open(
-        id=sharded_uuid(ShardIdentifier(0, 0)),
+        id=ShardedId[Wallet].generate(ShardIdentifier(0, 0)),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
     )
     there = Wallet.open(
-        id=sharded_uuid(mexico), owner_id=uuid4(), currency="MXN", balance=Decimal("2.00")
+        id=ShardedId[Wallet].generate(mexico),
+        owner_id=uuid4(),
+        currency="MXN",
+        balance=Decimal("2.00"),
     )
     # One call per shard: a batch spanning two databases would need a transaction that spans
     # them, and there isn't one.

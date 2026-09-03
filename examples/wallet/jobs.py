@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
-from uuid import UUID
 
 from ekbatan import ActionExecutor, Repository
 from ekbatan.jobs import DistributedJob, Every, JobContext, Schedule
@@ -23,7 +22,7 @@ class PayStipend(DistributedJob):
     def __init__(
         self,
         executor: ActionExecutor,
-        wallets: Repository[Wallet, UUID],
+        wallets: Repository[Wallet, object],
         amount: Decimal = Decimal("1.00"),
     ) -> None:
         self.executor = executor
@@ -52,7 +51,7 @@ class PayStipend(DistributedJob):
 class CountWallets(DistributedJob):
     """Reads and writes nothing. The shape of a reporting job."""
 
-    def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
+    def __init__(self, wallets: Repository[Wallet, object]) -> None:
         self.wallets = wallets
         self.last_count = 0
 

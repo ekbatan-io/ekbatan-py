@@ -15,17 +15,21 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from .errors import ValidationError
 
 __all__ = [
+    "DEFAULT_SHARD",
     "EmbeddedBitsSharding",
     "NoSharding",
     "ShardIdentifier",
     "ShardingStrategy",
+    "read_shard",
     "resolve_shard",
     "sharded_uuid",
+    "uuid_instant",
 ]
 
 GROUP_BITS = 8
@@ -50,6 +54,10 @@ class ShardIdentifier:
         if not 0 <= self.member <= MAX_MEMBER:
             raise ValidationError(f"member must be 0..{MAX_MEMBER}, got {self.member}")
 
+    @classmethod
+    def of(cls, group: int, member: int) -> ShardIdentifier:
+        return cls(group, member)
+
     def __str__(self) -> str:
         return f"{self.group}:{self.member}"
 
@@ -58,7 +66,10 @@ class ShardIdentifier:
         return (self.group << MEMBER_BITS) | self.member
 
 
+#: Where a single-database deployment lives, and the fallback for an id naming a shard this
+#: deployment has not configured.
 DEFAULT_SHARD = ShardIdentifier(0, 0)
+ShardIdentifier.DEFAULT = DEFAULT_SHARD  # type: ignore[attr-defined]
 
 
 def sharded_uuid(shard: ShardIdentifier, *, at_ms: int | None = None) -> uuid.UUID:
@@ -77,6 +88,19 @@ def sharded_uuid(shard: ShardIdentifier, *, at_ms: int | None = None) -> uuid.UU
     lsb = (0b10 << 62) | (shard.bits << _RANDOM_BITS) | ((noise >> 12) & ((1 << _RANDOM_BITS) - 1))
 
     return uuid.UUID(int=(msb << 64) | lsb)
+
+
+def uuid_instant(value: uuid.UUID) -> datetime | None:
+    """When a version 7 id was minted, read out of the id itself.
+
+    Version 7 puts a millisecond timestamp in the high bits, which is what makes these ids sort
+    by creation time. Reading it back gives you a free created-at for anything holding an id -
+    useful for a range scan on the primary key, or for spotting a row far older than its
+    neighbours without joining anything.
+    """
+    if value.version != 7:
+        return None
+    return datetime.fromtimestamp((value.int >> 80) / 1000, tz=UTC)
 
 
 def read_shard(value: uuid.UUID) -> ShardIdentifier | None:
@@ -147,6 +171,7 @@ class EmbeddedBitsSharding:
     def shard_for_id(self, key: object) -> ShardIdentifier | None:
         if isinstance(key, ShardIdentifier):
             return key
+        key = getattr(key, "value", key)  # an Id or any other typed wrapper
         if isinstance(key, uuid.UUID):
             return read_shard(key)
         if isinstance(key, str):

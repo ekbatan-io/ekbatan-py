@@ -48,6 +48,7 @@ from .events import (
     EventHandlerRegistry,
     NotificationState,
 )
+from .ids import Id, ShardedId, TypedValue, unwrap
 from .jobs import Daily, DistributedJob, Every, FixedDelay, JobContext, JobRegistry, Schedule
 from .locks import InProcessLock, KeyedLock, Lease, MariaDBLock, MySQLLock, PostgresLock
 from .migrations import emit_ddl, migrate, migrate_registry
@@ -55,16 +56,20 @@ from .persistence import DatabaseRegistry, TransactionManager
 from .repository import Repository
 from .schema import notifications_table, outbox_table, scheduled_tasks_table
 from .sharding import (
+    DEFAULT_SHARD,
     EmbeddedBitsSharding,
     NoSharding,
     ShardIdentifier,
     ShardingStrategy,
+    read_shard,
     sharded_uuid,
+    uuid_instant,
 )
 
 __version__ = "0.1.0.dev0"
 
 __all__ = [
+    "DEFAULT_SHARD",
     "Action",
     "ActionExecutor",
     "ActionPlan",
@@ -91,6 +96,7 @@ __all__ = [
     "FixedClock",
     "FixedDelay",
     "GenericState",
+    "Id",
     "InProcessLock",
     "JobContext",
     "JobRegistry",
@@ -111,6 +117,7 @@ __all__ = [
     "Schedule",
     "ShardConfig",
     "ShardIdentifier",
+    "ShardedId",
     "ShardingConfig",
     "ShardingStrategy",
     "SingleTableOutbox",
@@ -118,6 +125,7 @@ __all__ = [
     "StatementCount",
     "SystemClock",
     "TransactionManager",
+    "TypedValue",
     "UnsupportedError",
     "ValidationError",
     "__version__",
@@ -129,6 +137,9 @@ __all__ = [
     "migrate_registry",
     "notifications_table",
     "outbox_table",
+    "read_shard",
     "scheduled_tasks_table",
     "sharded_uuid",
+    "unwrap",
+    "uuid_instant",
 ]

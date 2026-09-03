@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
-from uuid import UUID
 
 from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
+from ekbatan.ids import Id
 
 from .actions import Notify, NotifyParams
-from .model import WalletClosed, WalletMoneyDeposited
+from .model import Wallet, WalletClosed, WalletMoneyDeposited
 
 
 class RecordingHandler:
@@ -96,7 +96,7 @@ class NotifyOnDeposit:
         self.executor.execute(
             Notify(),
             NotifyParams(
-                wallet_id=UUID(envelope.model_id or ""),
+                wallet_id=Id[Wallet].of(envelope.model_id or ""),
                 kind="MONEY_DEPOSITED",
                 recipient=str(envelope.action_params.get("recipient", "")),
                 message=f"deposited {envelope.event.amount}, balance {envelope.event.new_balance}",
