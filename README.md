@@ -62,25 +62,58 @@ you could do to this design.
 Schema classes are generated with `sqlacodegen`. Postgres via psycopg 3, MySQL and MariaDB via
 PyMySQL. Migrations with yoyo, which runs plain per-dialect SQL files.
 
-## Status
+## What is here
 
-Early. Working, tested, and typed:
+| | |
+|---|---|
+| **models and entities** | frozen dataclasses; a change is `evolve(..., emit=...)` |
+| **the plan and the executor** | one transaction per shard, rows then events, retry on a lost race |
+| **the outbox** | one table, canonical JSON, and a seam to replace the whole store |
+| **repositories** | field-name mapping, optimistic locking, soft deletion, batches as one statement |
+| **sharding** | shard bits in the id, per-shard commits, cross-shard refused by default |
+| **keyed locks** | in-process, Postgres advisory, MySQL and MariaDB `GET_LOCK`; reentrant, watchdogged |
+| **the local event handler** | fan-out and dispatch, at-least-once, capped backoff, retention |
+| **distributed jobs** | one slot, one execution, across the cluster |
+| **schema and migrations** | the framework's tables as metadata, DDL per dialect, yoyo across every shard |
+| **statement accounting** | so the cost claims are checkable rather than asserted |
 
-- models, entities and events
-- the plan, actions, and the executor
-- the single-table JSON outbox, and a seam to replace it
-- repositories: reads, batches, the optimistic lock, soft deletion
-- sharding: routing by id, per-shard commits, cross-shard refusal
-- retry, and the errors that are worth retrying
+Only `event-streaming` is missing, and it is not planned: publishing runs inside Kafka Connect,
+in a JVM, whichever language wrote the row.
 
-Not yet: keyed locks, distributed jobs, the local event handler. See
-[DIVERGENCE.md](DIVERGENCE.md) for where this port deliberately differs from the Java one.
+[DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one.
 
 ```
 uv sync
-uv run pytest        # 35 passing
+uv run pytest        # 80 passing
 uv run mypy          # strict, clean
 uv run ruff check .
+```
+
+## What a job, a handler and a lock look like
+
+```python
+class PayStipend(DistributedJob):
+    name = "wallet-stipend"                      # the primary key of its row, cluster-wide
+    schedule = Every(timedelta(days=1))
+
+    def run(self, context: JobContext) -> None:
+        for wallet in self.wallets.all():
+            self.executor.execute(DepositMoney(self.wallets), DepositParams(...))
+
+
+class NotifyOnDeposit:
+    name = "wallet-deposit-notification"
+    event_type = WalletMoneyDeposited
+
+    def handle(self, envelope: EventEnvelope[WalletMoneyDeposited]) -> None:
+        self.executor.execute(Notify(), NotifyParams(
+            wallet_id=UUID(envelope.model_id),
+            recipient=envelope.action_params["recipient"],   # not in the event, and rightly so
+        ))
+
+
+with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
+    ...
 ```
 
 Behaviour is pinned by [ekbatan-spec](https://github.com/ekbatan-io/ekbatan-spec), which is

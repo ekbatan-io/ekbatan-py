@@ -87,8 +87,27 @@ inherit the plan. That is correct - another thread is another connection, and qu
 one would corrupt both - and it is the one thing about this that surprises people, so
 `current_plan()` says so in its error message rather than returning `None`.
 
-## Not yet ported
+## The scheduler is this framework's, not a dependency's
 
-`keyed-locks`, `distributed-jobs`, `local-event-handler` and `event-streaming` are unimplemented
-and therefore undeclared. `event-streaming` is not planned: publishing runs inside Kafka
-Connect, in a JVM, whichever language wrote the row.
+Java delegates distributed jobs to db-scheduler. There is no Python library with the same
+shape, so the claim-and-heartbeat loop is implemented here - about two hundred lines - against
+db-scheduler's own table layout, so a Java service and a Python service can coordinate through
+one `scheduled_tasks` table rather than each running the nightly report.
+
+Schedules are `Every`, `FixedDelay` and `Daily`. Cron is not built in: parsing it needs a
+dependency, and a `Schedule` is one method.
+
+## Handlers are duck-typed
+
+Java's `EventHandler` is an interface. Here it is a `Protocol`: anything with `name`,
+`event_type` and `handle` is a handler, so an existing class can subscribe without inheriting
+anything. `aliases` is optional and read with `getattr`, which is what makes a handler rename
+possible without every handler declaring an empty set.
+
+## Not ported
+
+`event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus
+a routing transform, running inside Kafka Connect, in a JVM, regardless of which language wrote
+the row. A Python service does not need a Python connector; it needs the same connector pointed
+at its database. What it does owe is the schema that connector reads, which is
+`ekbatan.schema` and is checked by the conformance suite's cross-compatibility scenarios.

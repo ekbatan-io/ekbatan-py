@@ -10,7 +10,6 @@ from __future__ import annotations
 from sqlalchemy import (
     CHAR,
     BigInteger,
-    Boolean,
     Column,
     DateTime,
     MetaData,
@@ -20,6 +19,8 @@ from sqlalchemy import (
     Text,
     Uuid,
 )
+
+from ekbatan.schema import notifications_table, outbox_table, scheduled_tasks_table
 
 metadata = MetaData()
 
@@ -50,23 +51,9 @@ NOTIFICATIONS = Table(
     Column("message", Text),
 )
 
-#: The outbox. Its shape is a contract, not an implementation detail - a Debezium connector,
-#: a CDC pipeline, or another language's Ekbatan service binds to these column names.
-EVENTS = Table(
-    "events",
-    metadata,
-    Column("id", Uuid, primary_key=True),
-    Column("namespace", String(255), nullable=False),
-    Column("action_id", Uuid, nullable=False),
-    Column("action_name", String(255), nullable=False),
-    Column("action_params", Text, nullable=False),
-    Column("started_date", DateTime, nullable=False),
-    Column("completion_date", DateTime, nullable=False),
-    Column("model_id", String(255)),
-    Column("model_type", String(255)),
-    Column("event_type", String(255)),
-    Column("payload", Text),
-    Column("event_date", DateTime, nullable=False),
-    Column("delivered", Boolean, nullable=False),
-    schema=None,
-)
+#: The framework's own tables. Their shape is a contract - a Debezium connector, a CDC
+#: pipeline, or another language's Ekbatan service binds to these column names - so they are
+#: built rather than transcribed.
+EVENTS = outbox_table(metadata)
+EVENT_NOTIFICATIONS = notifications_table(metadata)
+SCHEDULED_TASKS = scheduled_tasks_table(metadata)

@@ -139,3 +139,49 @@ def sharded(sharded_registry: DatabaseRegistry, clock: FixedClock):
         clock=clock,
     )
     return executor, wallets
+
+
+@pytest.fixture
+def pipeline(registry: DatabaseRegistry, clock: FixedClock):
+    """Fan-out and dispatch over a registry, wired to a fresh handler registry."""
+    from examples.wallet.schema import EVENT_NOTIFICATIONS, EVENTS
+
+    from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
+
+    def build(*handlers, **dispatch_options):
+        subscriptions = EventHandlerRegistry(handlers)
+        fanout = EventFanout(
+            registry,
+            subscriptions,
+            events=EVENTS,
+            notifications=EVENT_NOTIFICATIONS,
+            clock=clock,
+        )
+        dispatch = EventDispatch(
+            registry,
+            subscriptions,
+            notifications=EVENT_NOTIFICATIONS,
+            clock=clock,
+            **dispatch_options,
+        )
+        return fanout, dispatch
+
+    return build
+
+
+@pytest.fixture
+def notifications_in(registry: DatabaseRegistry):
+    """Count queue rows by state, across every shard."""
+    from collections import Counter
+
+    from examples.wallet.schema import EVENT_NOTIFICATIONS
+    from sqlalchemy import select
+
+    def count() -> Counter[str]:
+        seen: Counter[str] = Counter()
+        for shard in registry.shards:
+            with registry.manager(shard).connection(readonly=True) as conn:
+                seen.update(r[0] for r in conn.execute(select(EVENT_NOTIFICATIONS.c.state)))
+        return seen
+
+    return count

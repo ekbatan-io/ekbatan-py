@@ -210,10 +210,17 @@ def _engine(config: object) -> Engine:
     from .config import DataSourceConfig
 
     assert isinstance(config, DataSourceConfig)
+    from ._json import dumps, loads
+
     kwargs: dict[str, object] = {
         "echo": config.echo,
         "future": True,
         "connect_args": dict(config.connect_args),
+        # Canonical form is not a preference: decimals as strings at their stored scale,
+        # timestamps zone-less UTC to the microsecond, keys sorted. Two ports must produce
+        # byte-identical JSON for the same event or a consumer cannot join them.
+        "json_serializer": dumps,
+        "json_deserializer": loads,
     }
     if config.dialect != "sqlite":
         kwargs |= {

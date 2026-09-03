@@ -15,7 +15,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-__all__ = ["canonical", "dumps", "loads"]
+__all__ = ["canonical", "decode", "dumps", "loads"]
 
 
 def canonical(value: Any) -> Any:
@@ -67,3 +67,57 @@ def dumps(value: Any) -> str:
 
 def loads(text: str | bytes | None) -> Any:
     return None if text is None else json.loads(text)
+
+
+def decode[T](target: type[T], data: Mapping[str, Any]) -> T:
+    """Rebuild a dataclass from what :func:`dumps` wrote.
+
+    The inverse of :func:`canonical`, driven by the target's own annotations - a field typed
+    ``Decimal`` is rebuilt from its string, a ``datetime`` from its ISO form, an enum from its
+    name. Without this a handler would receive the JSON and have to re-parse its own event,
+    which is a mapping layer per handler and a place for each of them to get it wrong.
+    """
+    import dataclasses
+    import typing
+
+    hints = typing.get_type_hints(target)
+    fields = {f.name for f in dataclasses.fields(target)}  # type: ignore[arg-type]
+    return target(
+        **{name: _revive(value, hints.get(name)) for name, value in data.items() if name in fields}
+    )
+
+
+def _revive(value: Any, hint: Any) -> Any:
+    import dataclasses
+    import typing
+
+    if value is None or hint is None:
+        return value
+
+    # `Decimal | None` and friends: the interesting type is the one that is not None.
+    if typing.get_origin(hint) in (typing.Union, __import__("types").UnionType):
+        candidates = [a for a in typing.get_args(hint) if a is not type(None)]
+        hint = candidates[0] if len(candidates) == 1 else None
+        if hint is None:
+            return value
+
+    if hint is Decimal:
+        return Decimal(str(value))
+    if hint is uuid.UUID:
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+    if hint is datetime:
+        if isinstance(value, datetime):
+            return value
+        text = str(value)
+        return datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    if isinstance(hint, type):
+        if issubclass(hint, Enum):
+            return hint[str(value)]
+        if dataclasses.is_dataclass(hint) and isinstance(value, Mapping):
+            return decode(hint, value)
+    origin = typing.get_origin(hint)
+    if origin in (list, tuple, set, frozenset) and isinstance(value, list):
+        (inner,) = typing.get_args(hint)[:1] or (None,)
+        items = [_revive(v, inner) for v in value]
+        return origin(items) if origin is not list else items
+    return value

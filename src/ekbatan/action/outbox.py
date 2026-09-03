@@ -20,7 +20,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy import Connection, Table, insert
 
-from .._json import dumps
+from .._json import canonical
 from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..sharding import ShardIdentifier
@@ -93,7 +93,7 @@ class SingleTableOutbox:
         self._types_by_name: dict[str, type] = {}
 
     def persist(self, conn: Connection, record: OutboxRecord) -> None:
-        params = dumps(record.action_params)
+        params = canonical(record.action_params)
         common = {
             "namespace": record.namespace,
             "action_id": record.action_id,
@@ -127,7 +127,7 @@ class SingleTableOutbox:
                     "model_id": emitted.model_id,
                     "model_type": emitted.model_type,
                     "event_type": self._event_type(emitted.event),
-                    "payload": dumps(emitted.event.payload()),
+                    "payload": canonical(emitted.event.payload()),
                 }
                 for emitted in record.events
             ]

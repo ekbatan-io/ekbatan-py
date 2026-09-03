@@ -6,7 +6,6 @@ the reasoning lives.
 
 from __future__ import annotations
 
-import json
 from decimal import Decimal
 from uuid import uuid4
 
@@ -62,7 +61,7 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
     assert deposited["delivered"] is False
     # The scale is the column's, not the caller's: the wallet came back from a
     # DECIMAL(19,4), so its balance carries four places and the sum does too.
-    assert json.loads(deposited["payload"]) == {"amount": "50.00", "new_balance": "150.0000"}
+    assert deposited["payload"] == {"amount": "50.00", "new_balance": "150.0000"}
 
 
 def test_a_failed_unit_of_work_writes_neither(executor, wallets, outbox):
@@ -172,7 +171,7 @@ def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
     )
 
     deposited = next(r for r in outbox() if r["event_type"] == "WalletMoneyDeposited")
-    assert json.loads(deposited["action_params"]) == {
+    assert deposited["action_params"] == {
         "wallet_id": str(wallet.id),
         "amount": "1.00",
         "recipient": "ada@example.com",
@@ -202,7 +201,7 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
     deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDeposited"]
     assert len(deposits) == 2
     assert len({r["action_id"] for r in deposits}) == 2, "two invocations are two units of work"
-    assert [json.loads(r["payload"])["amount"] for r in deposits] == ["1.00", "2.00"]
+    assert [r["payload"]["amount"] for r in deposits] == ["1.00", "2.00"]
 
 
 def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, clock):
