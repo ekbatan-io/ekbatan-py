@@ -152,3 +152,37 @@ def test_an_event_carries_no_identity():
     assert set(ModelEvent.__dataclass_fields__) == set(), (
         "which model an event is about is known by the model it is attached to"
     )
+
+
+def test_with_event_can_be_called_as_many_times_as_the_change_needs():
+    wallet = a_wallet()
+    built = (
+        wallet.copy()
+        .with_event(WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110")))
+        .with_event(WalletMoneyDeposited(amount=Decimal("5"), new_balance=Decimal("115")))
+        .balance(Decimal("115"))
+        .build()
+    )
+
+    assert [e.event_type for e in built.events] == [
+        "WalletCreated",
+        "WalletMoneyDeposited",
+        "WalletMoneyDeposited",
+    ], "each call appends; the last one does not replace the others"
+    assert [e.amount for e in built.events[1:]] == [Decimal("10"), Decimal("5")], (
+        "and they keep the order they were attached in, which is the order they reach the outbox"
+    )
+
+
+def test_domain_methods_chain_and_their_events_accumulate():
+    wallet = a_wallet()
+    closed = wallet.deposit(Decimal("50")).withdraw(Decimal("20")).close()
+
+    assert closed.balance == Decimal("130.00")
+    assert closed.state is WalletState.CLOSED
+    assert [e.event_type for e in closed.events] == [
+        "WalletCreated",
+        "WalletMoneyDeposited",
+        "WalletMoneyWithdrawn",
+        "WalletClosed",
+    ]
