@@ -50,16 +50,25 @@ class Purse(Model[Id["Purse"], PurseState]):
     balance: Decimal
 
 
+def _prepare(registry):
+    """This module brings its own table, so it creates and empties it itself - the shared
+    fixture only knows about the wallet application's."""
+    for shard in registry.shards:
+        engine = registry.manager(shard).primary
+        metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(PURSES.delete())
+
+
 @pytest.fixture
 def purses(registry, clock):
-    metadata.create_all(registry.default.primary)
+    _prepare(registry)
     return Repository(Purse, PURSES, registry, clock=clock)
 
 
 @pytest.fixture
 def sharded_purses(sharded_registry, clock):
-    for shard in sharded_registry.shards:
-        metadata.create_all(sharded_registry.manager(shard).primary)
+    _prepare(sharded_registry)
     return Repository(Purse, PURSES, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock)
 
 

@@ -84,12 +84,27 @@ in a JVM, whichever language wrote the row.
 
 [DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one.
 
+## Testing
+
 ```
-uv sync
-uv run pytest        # 80 passing
-uv run mypy          # strict, clean
+uv run pytest                      # SQLite, about two seconds
+uv run pytest --dialects=postgres  # in a container
+uv run pytest --dialects=all       # every test, on all four
+uv run mypy                        # strict
 uv run ruff check .
 ```
+
+125 tests. 82 of them are parametrised over the dialect, so `--dialects=all` runs 371.
+
+There are no per-dialect test classes. Java needs one subclass per dialect per suite -
+`PgRepositoryTest`, `MysqlRepositoryTest`, `MariadbRepositoryTest` - because that is how JUnit
+parametrises a class. Here one fixture is parametrised, so a test cannot be accidentally left
+out of a dialect.
+
+SQLite is the default and is **not** a supported production dialect. It is there because a
+suite needing a daemon to run at all is a suite people stop running; the claim that this
+framework works is a claim about Postgres, MySQL and MariaDB, and CI runs all three on every
+push - plus Postgres again under a non-UTC process, which is where the timestamp defects hide.
 
 ## What a job, a handler and a lock look like
 

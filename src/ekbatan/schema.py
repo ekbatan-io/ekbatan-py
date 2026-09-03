@@ -15,7 +15,10 @@ Two rules that outlive any one dialect:
 
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import (
+    CHAR,
     JSON,
     BigInteger,
     Boolean,
@@ -30,6 +33,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
+from sqlalchemy.types import TypeDecorator
 
 __all__ = [
     "json_column",
@@ -37,6 +41,7 @@ __all__ = [
     "outbox_table",
     "scheduled_tasks_table",
     "timestamp_column",
+    "uuid_column",
 ]
 
 
@@ -53,6 +58,33 @@ def timestamp_column() -> DateTime:
     from sqlalchemy.dialects import mysql
 
     return DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb")
+
+
+class _CanonicalUuid(TypeDecorator[uuid.UUID]):
+    """A uuid stored as its canonical 36-character text, for dialects with no uuid type.
+
+    SQLAlchemy's default for those is ``CHAR(32)`` - the hex digits with the hyphens stripped.
+    That round-trips perfectly well within one application and is unreadable to everything
+    else: a Java service writing ``d5143465-787a-...`` and a Python service writing
+    ``d5143465787a...`` cannot join on ``model_id``, and neither notices, because both queries
+    succeed and return nothing.
+    """
+
+    impl = CHAR(36)
+    cache_ok = True
+
+    def process_bind_param(self, value: object, dialect: object) -> str | None:
+        return None if value is None else str(value)
+
+    def process_result_value(self, value: object, dialect: object) -> uuid.UUID | None:
+        if value is None:
+            return None
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+
+
+def uuid_column() -> Uuid[uuid.UUID]:
+    """The type a uuid column has: native where the dialect has one, canonical text where not."""
+    return Uuid().with_variant(_CanonicalUuid(), "mysql", "mariadb")
 
 
 def json_column() -> JSON:
@@ -74,9 +106,9 @@ def outbox_table(metadata: MetaData, *, name: str = "events", schema: str | None
     return Table(
         name,
         metadata,
-        Column("id", Uuid, primary_key=True),
+        Column("id", uuid_column(), primary_key=True),
         Column("namespace", String(255), nullable=False),
-        Column("action_id", Uuid, nullable=False),
+        Column("action_id", uuid_column(), nullable=False),
         Column("action_name", String(255), nullable=False),
         # Not null: every row carries the full input of the unit of work that produced it, so
         # one row is a complete audit record without a join - and so a consumer can read a
@@ -114,11 +146,11 @@ def notifications_table(
     return Table(
         name,
         metadata,
-        Column("id", Uuid, primary_key=True),
-        Column("event_id", Uuid, nullable=False),
+        Column("id", uuid_column(), primary_key=True),
+        Column("event_id", uuid_column(), nullable=False),
         Column("handler_name", String(255), nullable=False),
         Column("namespace", String(255), nullable=False),
-        Column("action_id", Uuid, nullable=False),
+        Column("action_id", uuid_column(), nullable=False),
         Column("action_name", String(255), nullable=False),
         Column("action_params", json_column(), nullable=False),
         Column("started_date", timestamp_column(), nullable=False),

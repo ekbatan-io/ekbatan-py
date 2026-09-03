@@ -17,20 +17,24 @@ from sqlalchemy import (
     String,
     Table,
     Text,
-    Uuid,
 )
 
-from ekbatan.schema import notifications_table, outbox_table, scheduled_tasks_table
+from ekbatan.schema import (
+    notifications_table,
+    outbox_table,
+    scheduled_tasks_table,
+    uuid_column,
+)
 
 metadata = MetaData()
 
 WALLETS = Table(
     "wallets",
     metadata,
-    Column("id", Uuid, primary_key=True),
+    Column("id", uuid_column(), primary_key=True),
     Column("version", BigInteger, nullable=False),
     Column("state", String(24), nullable=False),
-    Column("owner_id", Uuid, nullable=False),
+    Column("owner_id", uuid_column(), nullable=False),
     Column("currency", CHAR(3), nullable=False),
     Column("balance", Numeric(19, 4), nullable=False),
     Column("created_date", DateTime, nullable=False),
@@ -40,10 +44,10 @@ WALLETS = Table(
 NOTIFICATIONS = Table(
     "notifications",
     metadata,
-    Column("id", Uuid, primary_key=True),
+    Column("id", uuid_column(), primary_key=True),
     Column("version", BigInteger, nullable=False),
     Column("state", String(24), nullable=False),
-    Column("wallet_id", Uuid, nullable=False),
+    Column("wallet_id", uuid_column(), nullable=False),
     Column("kind", String(48), nullable=False),
     Column("recipient", String(255), nullable=False),
     Column("message", Text),

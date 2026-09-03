@@ -30,6 +30,10 @@ dev = [
     "mypy>=1.11",
     "ruff>=0.6",
     "sqlacodegen>=4.0",
+    # The suite runs on SQLite by default and against real servers with --dialects=all.
+    "testcontainers[postgres,mysql]>=4.15",
+    "psycopg[binary]>=3.2",
+    "PyMySQL>=1.1",
 ]
 
 [project.urls]
@@ -47,6 +51,7 @@ packages = ["src/ekbatan"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+markers = ["slow: needs a container"]
 
 [tool.mypy]
 python_version = "3.13"
