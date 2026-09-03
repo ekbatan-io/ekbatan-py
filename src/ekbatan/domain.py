@@ -11,9 +11,15 @@ Two shapes, and the difference between them is the whole point of the framework:
   and nothing else.
 
 Both are frozen dataclasses. A change produces a new instance, which is what makes "the value
-you are holding is the value that will be written" true rather than aspirational. There are two
-ways to make one - a builder, reached through :meth:`Persistable.copy`, and :meth:`evolve` for
-when a builder is more ceremony than the change deserves.
+you are holding is the value that will be written" true rather than aspirational, and
+:meth:`Persistable.copy` is how you make one::
+
+    return self.copy().with_event(WalletMoneyDeposited(...)).balance(new_balance).build()
+
+Unlike the Java implementation, ``copy()`` is inherited rather than written per model. There it
+is abstract and every model implements the same six lines, handing each field back to its
+builder, because Java cannot reconstruct a subclass whose shape it does not know. Here the
+fields come off the dataclass, so a model that gains one gains it everywhere at once.
 """
 
 from __future__ import annotations
@@ -186,7 +192,12 @@ class Persistable[ID, S: Enum]:
         return Builder(type(self)).copy_base(self)
 
     def evolve(self, **changes: Any) -> Self:
-        """This row with some fields changed - the short form of ``copy().…​.build()``."""
+        """This row with some fields changed.
+
+        The shorthand the framework uses internally - stamping a timestamp, marking a row
+        deleted. In a domain model prefer :meth:`copy`, so that every change in the codebase
+        reads the same way.
+        """
         return dataclasses.replace(self, **changes)
 
     def next_version(self) -> Self:
@@ -231,18 +242,10 @@ class Model[ID, S: Enum](Persistable[ID, S]):
         return True
 
     def evolve(self, *, emit: ModelEvent | Iterable[ModelEvent] = (), **changes: Any) -> Self:
-        """This model with some fields changed, and whatever it emitted in changing::
+        """This model with some fields changed, and whatever it emitted in changing.
 
-            def deposit(self, amount: Decimal) -> "Wallet":
-                new_balance = self.balance + amount
-                return self.evolve(
-                    balance=new_balance,
-                    emit=WalletMoneyDeposited(amount=amount, new_balance=new_balance),
-                )
-
-        There is no publish call and no outbox in sight, which is the point. The event is a
-        fact about the change, written in the same transaction, so there is no moment at which
-        one exists without the other.
+        The shorthand, equivalent to ``copy().with_event(...).…​.build()``. Prefer the builder
+        in a domain model; this exists for the framework's own one-field changes.
         """
         emitted = (emit,) if isinstance(emit, ModelEvent) else tuple(emit)
         return dataclasses.replace(self, events=self.events + emitted, **changes)

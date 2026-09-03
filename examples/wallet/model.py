@@ -1,6 +1,6 @@
 """The wallet domain.
 
-Read ``deposit`` first. It is the whole argument for the framework: five lines, one of which
+Read ``deposit`` first. It is the whole argument for the framework: a few lines, one of which
 says what happened, and no mention anywhere of a transaction, a flush, a publish, or an outbox.
 """
 
@@ -11,7 +11,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
-from ekbatan.domain import Entity, GenericState, Model, ModelEvent
+from ekbatan.domain import Builder, Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
 
 
@@ -53,22 +53,35 @@ class Wallet(Model[UUID, WalletState]):
 
     @classmethod
     def open(cls, *, id: UUID, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
-        return cls(
-            id=id,
-            state=WalletState.OPENED,
-            owner_id=owner_id,
-            currency=currency,
-            balance=balance,
-            events=(WalletCreated(owner_id=owner_id, currency=currency, initial_balance=balance),),
+        return (
+            Builder(cls)
+            .id(id)
+            .state(WalletState.OPENED)
+            .owner_id(owner_id)
+            .currency(currency)
+            .balance(balance)
+            .with_initial_version()
+            .with_event(
+                WalletCreated(owner_id=owner_id, currency=currency, initial_balance=balance)
+            )
+            .build()
         )
+
+    # There is no copy() to write. Java declares it abstract and every model implements the
+    # same six lines - hand each field back to the builder - because Java cannot reconstruct a
+    # subclass it does not know the shape of. Here copy() is inherited and reads the fields
+    # off the dataclass, so a model that gains a field gains it everywhere at once instead of
+    # in one place and not the other.
 
     def deposit(self, amount: Decimal) -> Wallet:
         if amount <= 0:
             raise ValidationError(f"deposit amount must be positive, got {amount}")
         new_balance = self.balance + amount
-        return self.evolve(
-            balance=new_balance,
-            emit=WalletMoneyDeposited(amount=amount, new_balance=new_balance),
+        return (
+            self.copy()
+            .with_event(WalletMoneyDeposited(amount=amount, new_balance=new_balance))
+            .balance(new_balance)
+            .build()
         )
 
     def withdraw(self, amount: Decimal) -> Wallet:
@@ -77,9 +90,11 @@ class Wallet(Model[UUID, WalletState]):
         if amount > self.balance:
             raise ValidationError(f"cannot withdraw {amount}: balance is {self.balance}")
         new_balance = self.balance - amount
-        return self.evolve(
-            balance=new_balance,
-            emit=WalletMoneyWithdrawn(amount=amount, new_balance=new_balance),
+        return (
+            self.copy()
+            .with_event(WalletMoneyWithdrawn(amount=amount, new_balance=new_balance))
+            .balance(new_balance)
+            .build()
         )
 
     def close(self) -> Wallet:
@@ -87,7 +102,7 @@ class Wallet(Model[UUID, WalletState]):
         # emit nothing - the smallest case where "no events" and "no change" have to agree.
         if self.state is WalletState.CLOSED:
             return self
-        return self.evolve(state=WalletState.CLOSED, emit=WalletClosed())
+        return self.copy().with_event(WalletClosed()).state(WalletState.CLOSED).build()
 
 
 @dataclass(frozen=True, kw_only=True)

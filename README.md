@@ -22,9 +22,11 @@ class Wallet(Model[UUID, WalletState]):
         if amount <= 0:
             raise ValidationError(f"deposit amount must be positive, got {amount}")
         new_balance = self.balance + amount
-        return self.evolve(
-            balance=new_balance,
-            emit=WalletMoneyDeposited(amount=amount, new_balance=new_balance),
+        return (
+            self.copy()
+            .with_event(WalletMoneyDeposited(amount=amount, new_balance=new_balance))
+            .balance(new_balance)
+            .build()
         )
 ```
 
