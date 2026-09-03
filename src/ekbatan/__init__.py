@@ -16,6 +16,7 @@ outbox.
 
 from .accounting import StatementCount, count_statements
 from .action import (
+    DEFAULT_RETRIES,
     Action,
     ActionExecutor,
     ActionPlan,
@@ -24,6 +25,7 @@ from .action import (
     OutboxRecord,
     RetryPolicy,
     SingleTableOutbox,
+    current_clock,
     current_plan,
     current_principal,
 )
@@ -69,6 +71,7 @@ from .sharding import (
 __version__ = "0.1.0.dev0"
 
 __all__ = [
+    "DEFAULT_RETRIES",
     "DEFAULT_SHARD",
     "Action",
     "ActionExecutor",
@@ -130,6 +133,7 @@ __all__ = [
     "ValidationError",
     "__version__",
     "count_statements",
+    "current_clock",
     "current_plan",
     "current_principal",
     "emit_ddl",

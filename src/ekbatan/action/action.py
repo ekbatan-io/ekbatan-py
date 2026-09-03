@@ -20,16 +20,19 @@ task at once.
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
+from datetime import datetime
 from typing import Any
 
+from ..clock import Clock, SystemClock
 from ..errors import EkbatanError
 from .plan import ActionPlan
 
-__all__ = ["Action", "current_plan", "current_principal"]
+__all__ = ["Action", "current_clock", "current_plan", "current_principal"]
 
 _plan: ContextVar[ActionPlan | None] = ContextVar("ekbatan_plan", default=None)
 _principal: ContextVar[str | None] = ContextVar("ekbatan_principal", default=None)
+_clock: ContextVar[Clock | None] = ContextVar("ekbatan_clock", default=None)
 
 
 def current_plan() -> ActionPlan:
@@ -51,6 +54,17 @@ def current_principal() -> str | None:
     return _principal.get()
 
 
+def current_clock() -> Clock:
+    """The clock this invocation is running against.
+
+    The executor's, so a frozen clock in a test freezes the whole unit of work - the model's
+    timestamps, the outbox row's, and anything the action reads for itself. An action calling
+    ``datetime.now()`` directly is an action that cannot be tested at a fixed instant.
+    """
+    clock = _clock.get()
+    return clock if clock is not None else SystemClock()
+
+
 class Action[P, R]:
     """One unit of business work."""
 
@@ -68,6 +82,15 @@ class Action[P, R]:
     def principal(self) -> str | None:
         return current_principal()
 
+    @property
+    def clock(self) -> Clock:
+        """The executor's clock. Use it rather than reaching for the wall clock."""
+        return current_clock()
+
+    def now(self) -> datetime:
+        """Shorthand for ``self.clock.now()``."""
+        return self.clock.now()
+
     def perform(self, params: P) -> R:
         raise NotImplementedError
 
@@ -78,17 +101,23 @@ class Action[P, R]:
 class _Binding:
     """Binds the per-invocation state for the duration of one ``perform``."""
 
-    __slots__ = ("_plan", "_principal", "_tokens")
+    __slots__ = ("_clock", "_plan", "_principal", "_tokens")
 
-    def __init__(self, plan: ActionPlan, principal: str | None) -> None:
+    def __init__(self, plan: ActionPlan, principal: str | None, clock: Clock) -> None:
         self._plan = plan
         self._principal = principal
-        self._tokens: list[Any] = []
+        self._clock = clock
+        self._tokens: list[Token[Any]] = []
 
     def __enter__(self) -> ActionPlan:
-        self._tokens = [_plan.set(self._plan), _principal.set(self._principal)]
+        self._tokens = [
+            _plan.set(self._plan),
+            _principal.set(self._principal),
+            _clock.set(self._clock),
+        ]
         return self._plan
 
     def __exit__(self, *exc: object) -> None:
+        _clock.reset(self._tokens[2])
         _principal.reset(self._tokens[1])
         _plan.reset(self._tokens[0])

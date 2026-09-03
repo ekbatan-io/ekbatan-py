@@ -13,11 +13,12 @@ import re
 import time
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import Table
 
+from .._tracing import span
 from ..clock import Clock, SystemClock, to_storage
 from ..domain import Model, Persistable
 from ..errors import CrossShardError, EkbatanError, StaleRecordError, ValidationError
@@ -38,13 +39,15 @@ _NAMESPACE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class RetryPolicy:
-    """When to try again.
+    """When to try again, for one class of failure.
 
-    The default absorbs one lost race on a version check. More than that hides a real problem;
-    none at all pushes an ordinary contention case into every caller.
+    A configuration holds several of these, because the answers genuinely differ: a lost
+    version race deserves one quick retry, an unreachable lock service deserves a few slower
+    ones, and a validation error deserves none at all. One policy for everything has to pick
+    the wrong number for something.
     """
 
-    on: type[Exception] | tuple[type[Exception], ...] = StaleRecordError
+    on: type[BaseException] | tuple[type[BaseException], ...] = StaleRecordError
     attempts: int = 1
     delay: float = 0.1
 
@@ -60,16 +63,49 @@ class RetryPolicy:
         return isinstance(error, self.on)
 
 
+#: One quick retry on a lost version race, and nothing else. Enough to absorb ordinary
+#: contention; not enough to hide a real problem.
+DEFAULT_RETRIES: tuple[RetryPolicy, ...] = (RetryPolicy(),)
+
+
 @dataclass(frozen=True, kw_only=True, slots=True)
 class ExecutionConfig:
     """Per-call policy."""
 
-    retry: RetryPolicy | None = field(default_factory=RetryPolicy)
+    #: Tried in order; the first whose `on` matches wins. Order is the only precedence rule,
+    #: so a narrow policy goes before a broad one.
+    retries: tuple[RetryPolicy, ...] = DEFAULT_RETRIES
     allow_cross_shard: bool = False
 
     @classmethod
     def no_retry(cls, **kwargs: Any) -> ExecutionConfig:
-        return cls(retry=None, **kwargs)
+        """A failure reaches the caller unchanged.
+
+        For a unit of work whose side effects are not safe to repeat - and the caller is the
+        only one who knows that.
+        """
+        return cls(retries=(), **kwargs)
+
+    def policy_for(self, error: BaseException) -> tuple[RetryPolicy, BaseException] | None:
+        """The policy for this failure, looking through what it was raised from.
+
+        A driver wrapping a conflict, or a handler re-raising one, would otherwise be
+        unrecognisable - the retryable failure is there, one link down. Python's own traceback
+        walks the chain the same way: an explicit ``raise … from …`` first, then the error that
+        was being handled, unless that was deliberately suppressed.
+        """
+        seen: set[int] = set()
+        current: BaseException | None = error
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            for policy in self.retries:
+                if policy.matches(current):
+                    return policy, current
+            following = current.__cause__
+            if following is None and not current.__suppress_context__:
+                following = current.__context__
+            current = following
+        return None
 
 
 DEFAULT = ExecutionConfig()
@@ -127,35 +163,53 @@ class ActionExecutor:
         """Run one unit of work and commit what it staged."""
         policy = config or self.config
         name = action.name
-        attempts = 1 + (policy.retry.attempts if policy.retry else 0)
+        retried = 0
 
-        for attempt in range(1, attempts + 1):
-            started = to_storage(self.clock.now())
-            # A fresh plan per attempt. If it survived a failed one, the retry would commit the
-            # first attempt's staged changes on top of its own - two deposits for one call.
-            plan = ActionPlan(self.clock)
-            try:
-                with _Binding(plan, principal):
-                    result = action.perform(params)
-                self._commit(name, plan, params, started, policy)
-                return result
-            except Exception as error:
-                retryable = policy.retry is not None and policy.retry.matches(error)
-                if retryable and attempt < attempts:
+        with span("ekbatan.action.execute", action=name, principal=principal or "") as execution:
+            started_at = time.monotonic()
+            LOG.info("executing %s [principal=%s]", name, principal or "")
+            while True:
+                started = to_storage(self.clock.now())
+                # A fresh plan per attempt. If it survived a failed one, the retry would commit
+                # the first attempt's staged changes on top of its own - two deposits for one
+                # call.
+                plan = ActionPlan(self.clock)
+                try:
+                    with span("ekbatan.action.perform"), _Binding(plan, principal, self.clock):
+                        result = action.perform(params)
+                    self._commit(name, plan, params, started, policy)
+                except BaseException as error:
+                    # BaseException, not Exception. Something that is not an ordinary error -
+                    # a cancellation, a failure the runtime raises - still failed this unit of
+                    # work, and catching only Exception meant it was recorded as neither a
+                    # success nor a failure: no log line, no span status, nothing.
+                    match = policy.policy_for(error) if isinstance(error, Exception) else None
+                    if match is not None and retried < match[0].attempts:
+                        retried += 1
+                        chosen, cause = match
+                        LOG.warning(
+                            "retrying %s (%d/%d) after %s: %s",
+                            name,
+                            retried,
+                            chosen.attempts,
+                            type(cause).__name__,
+                            cause,
+                        )
+                        execution.event("retry", count=retried, error=type(cause).__name__)
+                        time.sleep(chosen.delay)
+                        continue
+                    execution.failed(error)
+                    LOG.error("%s failed: %s: %s", name, type(error).__name__, error)
+                    raise
+                else:
+                    execution.set(outcome="success", retries=retried)
                     LOG.info(
-                        "%s: %s on attempt %d/%d, retrying in %.0fms",
+                        "%s completed in %.0fms [principal=%s]",
                         name,
-                        type(error).__name__,
-                        attempt,
-                        attempts,
-                        policy.retry.delay * 1000,  # type: ignore[union-attr]
+                        (time.monotonic() - started_at) * 1000,
+                        principal or "",
                     )
-                    time.sleep(policy.retry.delay)  # type: ignore[union-attr]
-                    continue
-                LOG.error("%s failed: %s: %s", name, type(error).__name__, error)
-                raise
-
-        raise EkbatanError("unreachable")  # pragma: no cover
+                    return result
 
     # ---------------------------------------------------------------- committing
 
@@ -166,6 +220,18 @@ class ActionExecutor:
         params: Any,
         started: Any,
         policy: ExecutionConfig,
+    ) -> None:
+        with span("ekbatan.action.persist", action=action_name) as persisting:
+            self._flush(action_name, plan, params, started, policy, persisting)
+
+    def _flush(
+        self,
+        action_name: str,
+        plan: ActionPlan,
+        params: Any,
+        started: Any,
+        policy: ExecutionConfig,
+        persisting: Any,
     ) -> None:
         by_shard = self._group_by_shard(plan)
 
@@ -189,6 +255,11 @@ class ActionExecutor:
             except Exception as error:
                 if committed:
                     # The documented consequence of opting in, and the only notice anyone gets.
+                    persisting.set(
+                        partial_commit=True,
+                        committed_shards=str([str(x) for x in committed]),
+                        failed_shard=str(shard),
+                    )
                     LOG.critical(
                         "%s PARTIALLY COMMITTED: shards %s are committed and will not roll "
                         "back; shard %s failed with %s: %s",
@@ -201,6 +272,7 @@ class ActionExecutor:
                 raise
 
         if len(by_shard) > 1:
+            persisting.set(cross_shard=True, shards=len(by_shard))
             LOG.warning(
                 "%s spans %d shards %s; each committed on its own",
                 action_name,

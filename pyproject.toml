@@ -58,6 +58,13 @@ python_version = "3.13"
 strict = true
 files = ["src", "examples"]
 
+# OpenTelemetry is optional at runtime and absent from the dev environment on purpose: the
+# framework must work without it, and a type checker that demanded it would quietly make it
+# required.
+[[tool.mypy.overrides]]
+module = "opentelemetry.*"
+ignore_missing_imports = true
+
 # Tests are checked, but not made to annotate every fixture and helper. Strictness in the
 # library is a promise to its users; strictness in a test file is a tax on writing tests.
 [[tool.mypy.overrides]]

@@ -66,9 +66,28 @@ class ActionPlan:
 
         Handing back the incremented copy is what lets the rest of the unit of work read
         forward instead of reasoning about what the database is going to do later.
+
+        **A row moves forward one version per unit of work, not per call.** Staging the same
+        row a second time replaces what is staged and keeps the version already assigned, so
+        two changes to one wallet are one write, guarded against the version that was actually
+        read. Incrementing again would write ``WHERE version = 2`` against a row still at 1 and
+        fail as a phantom conflict - with nothing concurrent anywhere near it.
         """
-        stamped = self._stamp_updated(model)
-        self._changes(type(model)).updates[stamped.id] = stamped
+        changes = self._changes(type(model))
+        pending = changes.updates.get(model.id)
+        if pending is not None:
+            staged = model.evolve(version=pending.version)
+        elif model.id in changes.additions:
+            # Changed after being staged for insert: still one insert, with the later values.
+            inserted = self._stamp_touched(
+                model.evolve(version=changes.additions[model.id].version)
+            )
+            changes.additions[inserted.id] = inserted
+            return inserted
+        else:
+            staged = model.evolve(version=model.version + 1)
+        stamped = self._stamp_touched(staged)
+        changes.updates[stamped.id] = stamped
         return stamped
 
     def update_all[P: Persistable[Any, Any]](self, models: Iterable[P]) -> list[P]:
@@ -111,7 +130,8 @@ class ActionPlan:
             changes["updated_date"] = changes.get("created_date", now)
         return model.evolve(**changes) if changes else model
 
-    def _stamp_updated[P: Persistable[Any, Any]](self, model: P) -> P:
+    def _stamp_touched[P: Persistable[Any, Any]](self, model: P) -> P:
+        """Mark when it changed. An entity has no timestamps, so there is nothing to mark."""
         if not isinstance(model, Model):
-            return model.evolve(version=model.version + 1)
-        return model.evolve(version=model.version + 1, updated_date=to_storage(self._clock.now()))
+            return model
+        return model.evolve(updated_date=to_storage(self._clock.now()))
