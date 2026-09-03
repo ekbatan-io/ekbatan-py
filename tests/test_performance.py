@@ -161,3 +161,51 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
 
     repo.find(wallet.id)
     assert touched == ["1:0"], "the id said which database; nothing else was asked"
+
+
+def test_asking_whether_a_row_exists_does_not_count_them_all(wallets, sql):
+    wallets.add_all(some_wallets(20))
+    sql.clear()
+
+    assert wallets.exists_where(WALLETS.c.currency == "EUR") is True
+
+    statement = kind(sql, "SELECT")[0][0].upper()
+    assert "COUNT" not in statement, (
+        "counting reads every matching row to answer yes or no; on a predicate matching a "
+        "million rows that is a million rows of work for one bit"
+    )
+    assert "LIMIT" in statement
+
+
+def test_a_column_that_needs_no_conversion_is_not_inspected_per_row(wallets):
+    """Which conversion a column needs is a property of the model, not of the row.
+
+    Deciding it per field per row means ninety thousand isinstance chains to read ten thousand
+    rows, all reaching the same conclusion.
+    """
+    from ekbatan.repository import _identity
+
+    assert wallets._to_col["currency"] is _identity
+    assert wallets._to_col["balance"] is _identity
+    assert wallets._to_col["version"] is _identity
+    assert wallets._to_col["state"] is not _identity, "an enum is stored by name"
+    assert wallets._to_col["id"] is not _identity, "a typed id is unwrapped"
+    assert wallets._to_col["created_date"] is not _identity, (
+        "an optional timestamp is still normalised - `datetime | None` is a union, and the "
+        "half that matters is the half that is not None"
+    )
+
+
+def test_a_batch_statement_is_composed_once_per_size(wallets):
+    stored = wallets.add_all(some_wallets(6))
+
+    first = wallets._union_update(len(stored))
+    wallets._union_stmts[len(stored)] = first
+    again = wallets._union_stmts.get(len(stored))
+
+    assert again is first, (
+        "a 500-row UNION ALL costs about 25ms to build, against 5ms for the VALUES form, so it "
+        "is composed once per chunk size and then only re-bound"
+    )
+    binds = wallets._union_binds(stored)
+    assert len(binds) == len(stored) * (len(wallets._columns) + 1)

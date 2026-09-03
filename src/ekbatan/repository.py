@@ -12,10 +12,13 @@ a script.
 from __future__ import annotations
 
 import dataclasses
+import types
 import typing
-from collections.abc import Iterable, Iterator, Sequence
+import uuid
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime, time
+from decimal import Decimal
 from enum import Enum
 from typing import Any
 
@@ -52,6 +55,9 @@ from .sharding import NoSharding, ShardIdentifier, ShardingStrategy
 
 __all__ = ["Repository"]
 
+#: The column carrying the version each row was read at, in a batch update's derived table.
+_PRIOR = "_prior_version"
+
 
 class Repository[M: Persistable[Any, Any], K]:
     """Rows of one table, as models.
@@ -80,6 +86,7 @@ class Repository[M: Persistable[Any, Any], K]:
         self.clock = clock or SystemClock()
         self.batch_size = batch_size
         self._single_stmt: Any = None
+        self._union_stmts: dict[int, Any] = {}
 
         pk = list(table.primary_key.columns)
         if len(pk) != 1:
@@ -96,20 +103,33 @@ class Repository[M: Persistable[Any, Any], K]:
         if missing:
             raise ValidationError(f"{table.name} has no column(s) named {missing}")
 
+        # Which conversion each column needs is a property of the model, not of the row, so it
+        # is decided once here rather than re-derived per field per row. Reading ten thousand
+        # rows otherwise runs ninety thousand isinstance chains and as many typing.get_origin
+        # calls, for an answer that never changes.
+        self._to_col = {name: _writer_for(self._types.get(name)) for name in self._columns}
+        self._from_col = {name: _reader_for(self._types.get(name)) for name in self._columns}
+
     # ---------------------------------------------------------------- mapping
 
     def to_row(self, model: M) -> dict[str, Any]:
         """The model as column values. Override when names or shapes differ."""
-        return {name: _to_column(getattr(model, name)) for name in self._columns}
+        return {name: write(getattr(model, name)) for name, write in self._to_col.items()}
 
     def from_row(self, row: Row[Any]) -> M:
         """A row as a model. Override alongside :meth:`to_row`."""
         mapping = row._mapping
-        kwargs = {
-            name: _from_column(mapping[name], self._types.get(name))
-            for name in self._columns
-            if name in mapping
-        }
+        try:
+            # The common case is a full row, and asking "is this column present?" once per
+            # column per row is forty thousand questions to read five thousand rows, all with
+            # the same answer.
+            kwargs = {name: read(mapping[name]) for name, read in self._from_col.items()}
+        except KeyError:
+            kwargs = {
+                name: read(mapping[name])
+                for name, read in self._from_col.items()
+                if name in mapping
+            }
         return self.model_type(**kwargs)
 
     # ------------------------------------------------------- where the queries run
@@ -331,18 +351,27 @@ class Repository[M: Persistable[Any, Any], K]:
         return self.find_where(shard=shard)
 
     def exists(self, key: K) -> bool:
-        stmt = (
-            select(func.count())
-            .select_from(self.table)
-            .where(*self._live(self.id_column == _to_column(key)))
-        )
+        stmt = self._presence(self.id_column == _to_column(key))
         with self.readonly_db(key=key) as conn:
-            return bool(conn.execute(stmt).scalar_one())
+            return conn.execute(stmt).first() is not None
 
     def exists_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> bool:
-        return self.count(*criteria, shard=shard) > 0
+        """Whether any row matches - which is not the same question as how many do.
+
+        Counting reads every matching row to answer yes or no. On a predicate matching a
+        million rows that is a million rows of work for one bit of information, and it is the
+        shape a "does this customer have any orders" check most often takes.
+        """
+        stmt = self._presence(*criteria)
+        if shard is not None:
+            with self.readonly_db(shard=shard) as conn:
+                return conn.execute(stmt).first() is not None
+        return any(conn.execute(stmt).first() is not None for _, conn in self.readonly_dbs())
+
+    def _presence(self, *criteria: ColumnElement[bool]) -> Any:
+        return select(literal(1)).select_from(self.table).where(*self._live(*criteria)).limit(1)
 
     def count(self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None) -> int:
         stmt = select(func.count()).select_from(self.table).where(*self._live(*criteria))
@@ -384,7 +413,8 @@ class Repository[M: Persistable[Any, Any], K]:
         if not models:
             return []
         shard = self.shard_of_all(models)
-        stamped = [self._stamp_new(m) for m in models]
+        now = to_storage(self.clock.now())
+        stamped = [self._stamp_new(m, now) for m in models]
         with self.tx_db_else_db(shard=shard) as conn:
             conn.execute(insert(self.table), [self.to_row(m) for m in stamped])
         return stamped
@@ -416,7 +446,8 @@ class Repository[M: Persistable[Any, Any], K]:
         if not models:
             return []
         shard = self.shard_of_all(models)
-        stamped = [self._stamp_updated(m) for m in models]
+        now = to_storage(self.clock.now())
+        stamped = [self._stamp_updated(m, now) for m in models]
 
         with self.tx_db_else_db(shard=shard) as conn:
             if len(stamped) == 1:
@@ -463,11 +494,15 @@ class Repository[M: Persistable[Any, Any], K]:
 
     # --------------------------------------------------------------- internals
 
-    def _stamp_new(self, model: M) -> M:
-        """Fill in the timestamps a model has and an entity does not."""
+    def _stamp_new(self, model: M, now: datetime) -> M:
+        """Fill in the timestamps a model has and an entity does not.
+
+        The instant is read once per batch and passed in: a thousand rows written together
+        were written at one moment, and asking the clock a thousand times both costs more and
+        says something less true.
+        """
         if not isinstance(model, Model):
             return model
-        now = to_storage(self.clock.now())
         changes: dict[str, Any] = {}
         if model.created_date is None:
             changes["created_date"] = now
@@ -475,10 +510,10 @@ class Repository[M: Persistable[Any, Any], K]:
             changes["updated_date"] = changes.get("created_date", now)
         return model.evolve(**changes) if changes else model
 
-    def _stamp_updated(self, model: M) -> M:
+    def _stamp_updated(self, model: M, now: datetime) -> M:
         if not isinstance(model, Model) or model.updated_date is not None:
             return model
-        return model.evolve(updated_date=to_storage(self.clock.now()))
+        return model.evolve(updated_date=now)
 
     def _single_update(self) -> Any:
         """``UPDATE … SET … WHERE id = ? AND version = ?``, built once and reused."""
@@ -511,7 +546,7 @@ class Repository[M: Persistable[Any, Any], K]:
         """One UPDATE for the whole chunk, joined against a derived table of the new values.
 
         Two shapes, because the dialects genuinely differ. Postgres has a ``VALUES`` table
-        constructor with named columns, and its planner reads one scan node from it. MySQL's
+        constructor with named columns and its planner reads one scan node from it. MySQL's
         equivalent needs ``VALUES ROW(...)`` and only from 8.0.19, and SQLite's cannot be given
         column names at all - so everything else gets a ``UNION ALL`` of selects, which every
         version of every one of them understands.
@@ -520,39 +555,69 @@ class Repository[M: Persistable[Any, Any], K]:
         runtime class. Inference is how a timestamp acquires a zone it never had and the
         database shifts it by the session offset - invisibly, and only outside UTC.
         """
-        prior = "_prior_version"
-        names = [prior, *self._columns]
-        rows = [(m.version - 1, *(self.to_row(m)[name] for name in self._columns)) for m in models]
-        types = {prior: self.table.c.version.type} | {
+        if conn.dialect.name == "postgresql":
+            return int(conn.execute(self._values_update(models)).rowcount)
+
+        # Building a 500-row UNION ALL costs about 25ms, against 5ms for the VALUES form, so
+        # this one is composed once per chunk size and then only re-bound. Chunks are almost
+        # always full, so the cache holds two entries: the full size, and the last remainder.
+        size = len(models)
+        stmt = self._union_stmts.get(size)
+        if stmt is None:
+            stmt = self._union_update(size)
+            if len(self._union_stmts) < 16:
+                self._union_stmts[size] = stmt
+        return int(conn.execute(stmt, self._union_binds(models)).rowcount)
+
+    def _derived_types(self) -> dict[str, Any]:
+        return {_PRIOR: self.table.c.version.type} | {
             name: col.type for name, col in self._columns.items()
         }
 
-        source: Any
-        if conn.dialect.name != "postgresql":
-            source = union_all(
-                *[
-                    select(
-                        *[
-                            literal(value, types[name]).label(name)
-                            for name, value in zip(names, row, strict=True)
-                        ]
-                    )
-                    for row in rows
-                ]
-            ).subquery("v")
-        else:
-            source = values(*[column(name, types[name]) for name in names], name="v").data(rows)
+    def _assignments(self, source: Any) -> dict[str, Any]:
+        return {name: source.c[name] for name in self._columns if name != self.id_column.name}
 
-        assigned = {name: source.c[name] for name in self._columns if name != self.id_column.name}
-        stmt = (
+    def _joined(self, source: Any) -> Any:
+        return (
             update(self.table)
-            .values(assigned)
+            .values(self._assignments(source))
             .where(
                 self.id_column == source.c[self.id_column.name],
-                self.table.c.version == source.c[prior],
+                self.table.c.version == source.c[_PRIOR],
             )
         )
-        return int(conn.execute(stmt).rowcount)
+
+    def _values_update(self, models: Sequence[M]) -> Any:
+        """Postgres: ``UPDATE … FROM (VALUES …) AS v (cols)``."""
+        types = self._derived_types()
+        rows = [(m.version - 1, *(self.to_row(m)[name] for name in self._columns)) for m in models]
+        source = values(*[column(name, types[name]) for name in types], name="v").data(rows)
+        return self._joined(source)
+
+    def _union_update(self, size: int) -> Any:
+        """Everyone else: ``UPDATE … JOIN (SELECT … UNION ALL SELECT …) v``, bound by name."""
+        types = self._derived_types()
+        source = union_all(
+            *[
+                select(
+                    *[
+                        bindparam(f"b{i}_{name}", type_=coltype).label(name)
+                        for name, coltype in types.items()
+                    ]
+                )
+                for i in range(size)
+            ]
+        ).subquery("v")
+        return self._joined(source)
+
+    def _union_binds(self, models: Sequence[M]) -> dict[str, Any]:
+        binds: dict[str, Any] = {}
+        for i, model in enumerate(models):
+            row = self.to_row(model)
+            binds[f"b{i}_{_PRIOR}"] = model.version - 1
+            for name in self._columns:
+                binds[f"b{i}_{name}"] = row[name]
+        return binds
 
 
 def _chunks[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
@@ -586,6 +651,51 @@ def _concrete_types(model_type: type) -> dict[str, Any]:
             for param, arg in zip(params, typing.get_args(orig), strict=False):
                 bindings[param] = bindings.get(arg, arg)
     return {name: bindings.get(hint, hint) for name, hint in hints.items()}
+
+
+#: Types the driver takes as they are. Nothing to convert, so nothing to check per row.
+_VERBATIM = (str, int, float, bool, bytes, uuid.UUID, Decimal, date, time)
+
+
+def _bare(hint: Any) -> Any:
+    """`datetime | None` is a union, and the interesting half is the half that is not None."""
+    if typing.get_origin(hint) in (typing.Union, types.UnionType):
+        rest = [a for a in typing.get_args(hint) if a is not type(None)]
+        return rest[0] if len(rest) == 1 else None
+    return hint
+
+
+def _writer_for(hint: Any) -> Callable[[Any], Any]:
+    """How to hand this column's values to the driver, decided once from the declared type."""
+    hint = _bare(hint)
+    origin = typing.get_origin(hint) or hint
+    if isinstance(origin, type):
+        if issubclass(origin, TypedValue):
+            return lambda v: v.value if isinstance(v, TypedValue) else v
+        if issubclass(origin, Enum):
+            return lambda v: v.name if isinstance(v, Enum) else v
+        if issubclass(origin, datetime):
+            return lambda v: to_storage(v) if v is not None else None
+        if origin in _VERBATIM:
+            return _identity
+    # An untyped or unrecognised column: fall back to inspecting each value.
+    return _to_column
+
+
+def _reader_for(hint: Any) -> Callable[[Any], Any]:
+    """And how to rebuild them, likewise."""
+    hint = _bare(hint)
+    origin = typing.get_origin(hint) or hint
+    if isinstance(origin, type):
+        if issubclass(origin, TypedValue):
+            return lambda v: None if v is None else (v if isinstance(v, origin) else origin(v))
+        if issubclass(origin, Enum):
+            return lambda v: None if v is None else (v if isinstance(v, Enum) else origin[str(v)])
+    return _identity
+
+
+def _identity(value: Any) -> Any:
+    return value
 
 
 def _to_column(value: Any) -> Any:
