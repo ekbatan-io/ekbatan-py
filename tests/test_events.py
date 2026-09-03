@@ -18,10 +18,9 @@ from examples.wallet.actions import (
     WalletIdParams,
 )
 from examples.wallet.handlers import NotifyOnDeposit, failing, fatal, on_close, succeeding
-from examples.wallet.model import Wallet
+from examples.wallet.model import WalletId
 
 from ekbatan.events import backoff
-from ekbatan.ids import Id
 
 
 def a_wallet(executor, balance="100.00"):
@@ -87,7 +86,7 @@ def test_an_event_nobody_subscribes_to_stays_available(executor, wallets, pipeli
 def test_a_sentinel_row_is_never_fanned_out(executor, pipeline, notifications_in):
     fanout, _ = pipeline(succeeding("email"))
     executor.execute(
-        Notify(), NotifyParams(wallet_id=Id[Wallet].random(), kind="X", recipient="ada@example.com")
+        Notify(), NotifyParams(wallet_id=WalletId.random(), kind="X", recipient="ada@example.com")
     )
     assert fanout.drain_once() == 0, "a row with no event type belongs on no topic"
     assert notifications_in() == {}

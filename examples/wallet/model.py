@@ -13,7 +13,19 @@ from uuid import UUID
 
 from ekbatan.domain import Builder, Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
-from ekbatan.ids import Id
+from ekbatan.ids import Id, ShardedId
+
+
+class WalletId(ShardedId["Wallet"]):
+    """A wallet's identity, and the database its row lives in.
+
+    Named rather than spelled ``ShardedId[Wallet]`` so the distinction survives into the
+    running program: ``WalletId(u) == NotificationId(u)`` is False without a checker involved.
+    """
+
+
+class NotificationId(Id["Notification"]):
+    """A notification's identity. Not sharded - notifications are not routed by id here."""
 
 
 class WalletState(Enum):
@@ -47,13 +59,13 @@ class WalletClosed(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[Id["Wallet"], WalletState]):
+class Wallet(Model[WalletId, WalletState]):
     owner_id: UUID
     currency: str
     balance: Decimal
 
     @classmethod
-    def open(cls, *, id: Id[Wallet], owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
+    def open(cls, *, id: WalletId, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
         return (
             Builder(cls)
             .id(id)
@@ -107,14 +119,14 @@ class Wallet(Model[Id["Wallet"], WalletState]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Notification(Entity[Id["Notification"]]):
+class Notification(Entity[NotificationId]):
     """An entity: the persistence layer tracks it, the event stream does not care.
 
     No timestamps, because an entity is state rather than history - and nothing here is worth
     telling the rest of the system about, which is exactly what makes it an entity.
     """
 
-    wallet_id: Id[Wallet]
+    wallet_id: WalletId
     kind: str
     recipient: str
     message: str | None = None
@@ -123,8 +135,8 @@ class Notification(Entity[Id["Notification"]]):
     def create(
         cls,
         *,
-        id: Id[Notification],
-        wallet_id: Id[Wallet],
+        id: NotificationId,
+        wallet_id: WalletId,
         kind: str,
         recipient: str,
         message: str | None = None,

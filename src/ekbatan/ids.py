@@ -10,6 +10,21 @@ asking anything else.
 
 Passing the wrong one is then a type error rather than an empty result at three in the morning.
 Raw UUIDs keep working everywhere; this is an option, not a tax.
+
+**Give each model a named id type.** ``Id[Wallet]`` satisfies a type checker, but Python erases
+the parameter at runtime exactly as Java does, so ``Id[Wallet](u) == Id[Note](u)`` is true once
+the program is running. A one-line subclass is a real type and is therefore checked twice - by
+the checker, and by the interpreter::
+
+    class WalletId(ShardedId["Wallet"]): ...
+    class NoteId(Id["Note"]): ...
+
+    WalletId(u) == NoteId(u)        # False, at runtime, with no checker involved
+    {WalletId(u), NoteId(u)}        # two entries, not one
+
+The subclass keeps every factory - ``random()``, ``of()``, ``generate(shard)`` - and stays an
+``Id``, so nothing else has to know about it. Prefer it; ``Id[Wallet]`` is the shorthand for
+when you do not.
 """
 
 from __future__ import annotations
@@ -21,7 +36,13 @@ from functools import total_ordering
 from typing import Any, Self
 
 from .errors import ValidationError
-from .sharding import ShardIdentifier, read_shard, sharded_uuid, uuid_instant
+from .sharding import (
+    DEFAULT_SHARD,
+    ShardIdentifier,
+    read_shard,
+    sharded_uuid,
+    uuid_instant,
+)
 
 __all__ = ["Id", "ShardedId", "TypedValue", "unwrap"]
 
@@ -129,6 +150,16 @@ class ShardedId[M](Id[M]):
     @classmethod
     def generate(cls, shard: ShardIdentifier) -> Self:
         return cls(sharded_uuid(shard))
+
+    @classmethod
+    def random(cls) -> Self:
+        """A fresh id on the default shard.
+
+        Overridden because the inherited version mints a version 4 uuid, which carries no
+        shard - and :attr:`shard` would then have to raise on an id this class had just
+        produced. A sharded id with no shard named belongs on the default one.
+        """
+        return cls.generate(DEFAULT_SHARD)
 
     @property
     def shard(self) -> ShardIdentifier:

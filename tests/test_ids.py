@@ -186,3 +186,63 @@ def test_an_id_for_an_unconfigured_shard_still_stores_and_reads(sharded_purses):
     assert stranger.id.shard == ShardIdentifier(7, 2), (
         "the id keeps saying what it always said; only this deployment differs"
     )
+
+
+# ---------------------------------------------------------- runtime discrimination
+
+
+class PurseId(ShardedId["Purse"]):
+    """A named id type: a real class, so the distinction survives into the running program."""
+
+
+class LedgerId(Id["Ledger"]):
+    pass
+
+
+def test_named_id_types_are_different_at_runtime_not_only_to_a_checker():
+    raw = uuid4()
+
+    assert PurseId(raw) != LedgerId(raw), (
+        "a generic parameter is erased at runtime; a subclass is not"
+    )
+    assert PurseId(raw) == PurseId(raw)
+    assert len({PurseId(raw), LedgerId(raw)}) == 2, "and they do not collide in a set either"
+    assert PurseId(raw) != raw, "nor with the bare uuid"
+
+
+def test_a_generic_alias_cannot_do_the_same():
+    """Stated so nobody is surprised by it later."""
+    raw = uuid4()
+
+    class A:
+        pass
+
+    class B:
+        pass
+
+    assert Id[A](raw) == Id[B](raw), (
+        "Python erases the parameter exactly as Java erases its own - use a named subclass "
+        "when you want the interpreter to check too"
+    )
+
+
+def test_a_named_id_keeps_every_factory():
+    routed = PurseId.generate(MEXICO)
+    assert isinstance(routed, PurseId)
+    assert routed.shard == MEXICO
+    assert routed.minted_at is not None
+    assert isinstance(PurseId.of(str(routed.value)), PurseId)
+
+
+def test_a_sharded_id_with_no_shard_named_goes_to_the_default():
+    """The inherited random() would mint a version 4 uuid, and .shard would then have to raise
+    on an id this class had just produced."""
+    assert PurseId.random().shard == GLOBAL
+
+
+def test_a_named_id_still_matches_its_base_class():
+    raw = uuid4()
+    assert PurseId(raw) == ShardedId["Purse"](raw), (
+        "a row read back is rebuilt as whatever its field declares, so the family has to agree"
+    )
+    assert isinstance(PurseId(raw), Id)

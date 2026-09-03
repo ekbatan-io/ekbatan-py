@@ -11,12 +11,11 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from examples.wallet.model import Wallet
+from examples.wallet.model import Wallet, WalletId
 from examples.wallet.schema import WALLETS
 from sqlalchemy import func, select
 
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
-from ekbatan.ids import Id, ShardedId
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsSharding, NoSharding, ShardIdentifier
 
@@ -33,7 +32,7 @@ def sharded_wallets(sharded_registry, clock):
 
 def a_wallet(shard: ShardIdentifier, currency: str = "EUR") -> Wallet:
     return Wallet.open(
-        id=ShardedId[Wallet].generate(shard),
+        id=WalletId.generate(shard),
         owner_id=uuid4(),
         currency=currency,
         balance=Decimal("1.00"),
@@ -51,7 +50,7 @@ def test_a_shard_can_be_named_by_id_by_row_or_directly(sharded_wallets):
 
 
 def test_an_id_naming_an_unconfigured_shard_falls_back(sharded_wallets):
-    stranger = ShardedId[Wallet].generate(ShardIdentifier(9, 3))
+    stranger = WalletId.generate(ShardIdentifier(9, 3))
     assert sharded_wallets.shard_for(stranger) == GLOBAL, (
         "a staging database with one shard still has to read production's ids"
     )
@@ -115,7 +114,7 @@ def test_db_deliberately_does_not_join(registry, wallets):
 
 def test_a_write_inside_a_transaction_joins_it(registry, wallets):
     wallet = Wallet.open(
-        id=Id[Wallet].random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
     )
     try:
         with registry.default.transaction():
@@ -131,7 +130,7 @@ def test_a_write_inside_a_transaction_joins_it(registry, wallets):
 
 def test_readonly_db_inside_a_transaction_sees_its_writes(registry, wallets):
     wallet = Wallet.open(
-        id=Id[Wallet].random(), owner_id=uuid4(), currency="EUR", balance=Decimal("7.00")
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("7.00")
     )
     with registry.default.transaction():
         wallets.add(wallet)
@@ -192,15 +191,13 @@ def test_column_refuses_a_name_the_table_does_not_have(wallets):
 
 def test_the_no_result_writes_write(wallets):
     one = Wallet.open(
-        id=Id[Wallet].random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
     )
     wallets.add_no_result(one)
     assert wallets.get(one.id).balance == Decimal("1.0000")
 
     many = [
-        Wallet.open(
-            id=Id[Wallet].random(), owner_id=uuid4(), currency="EUR", balance=Decimal("2.00")
-        )
+        Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("2.00"))
         for _ in range(3)
     ]
     wallets.add_all_no_result(many)

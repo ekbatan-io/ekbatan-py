@@ -11,7 +11,7 @@ from examples.wallet.actions import (
     DepositMoney,
     DepositParams,
 )
-from examples.wallet.model import Wallet, WalletMoneyDeposited
+from examples.wallet.model import NotificationId, Wallet, WalletId, WalletMoneyDeposited
 from examples.wallet.schema import EVENTS
 from sqlalchemy import func, select
 
@@ -26,7 +26,6 @@ from ekbatan import (
 from ekbatan.action.outbox import OutboxRecord
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, EkbatanError, StaleRecordError, ValidationError
-from ekbatan.ids import Id, ShardedId
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -119,7 +118,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     executor.execute(
         CreateWallet(),
         CreateWalletParams(
-            wallet_id=ShardedId[Wallet].generate(GLOBAL),
+            wallet_id=WalletId.generate(GLOBAL),
             owner_id=uuid4(),
             currency="EUR",
             initial_balance=Decimal("1.00"),
@@ -128,7 +127,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     there = executor.execute(
         CreateWallet(),
         CreateWalletParams(
-            wallet_id=ShardedId[Wallet].generate(MEXICO),
+            wallet_id=WalletId.generate(MEXICO),
             owner_id=uuid4(),
             currency="MXN",
             initial_balance=Decimal("2.00"),
@@ -150,7 +149,7 @@ class CreateOnBothShards(Action[None, tuple[Wallet, Wallet]]):
         return (
             self.plan.add(
                 Wallet.open(
-                    id=ShardedId[Wallet].generate(GLOBAL),
+                    id=WalletId.generate(GLOBAL),
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("1.00"),
@@ -158,7 +157,7 @@ class CreateOnBothShards(Action[None, tuple[Wallet, Wallet]]):
             ),
             self.plan.add(
                 Wallet.open(
-                    id=ShardedId[Wallet].generate(MEXICO),
+                    id=WalletId.generate(MEXICO),
                     owner_id=uuid4(),
                     currency="MXN",
                     balance=Decimal("2.00"),
@@ -264,8 +263,8 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
 
             self.plan.add(
                 Notification.create(
-                    id=Id[Notification].random(),
-                    wallet_id=Id[Wallet].random(),
+                    id=NotificationId.random(),
+                    wallet_id=WalletId.random(),
                     kind="X",
                     recipient="ada@x",
                 )

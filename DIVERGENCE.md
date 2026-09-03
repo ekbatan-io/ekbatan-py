@@ -70,6 +70,22 @@ Nothing was calling `copyBase`'s equivalent here, and two near-identical names o
 is a paper cut for every reader. If you want a `copy()` that deliberately differs, override it
 and start from `copy_from`.
 
+## Identifiers get a named type, not a generic parameter
+
+Java writes `Id<Wallet>` and `ShardedId<Wallet>` and gets erasure at runtime, so
+`id.equals(otherId)` compares uuids and nothing else. Python erases the same way, so the same
+spelling has the same hole.
+
+The port therefore gives each model a one-line id type:
+
+```python
+class WalletId(ShardedId["Wallet"]): ...
+```
+
+`WalletId(u) == NotificationId(u)` is then False with no checker involved, and they are two
+entries in a set rather than one. `Id[Wallet]` still works and still satisfies a checker; the
+named subclass is what makes the interpreter agree.
+
 ## Row mapping is by field name unless you say otherwise
 
 Java requires `toRecord` / `fromRecord` on every repository. Here they default to mapping

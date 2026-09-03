@@ -13,16 +13,15 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 import pytest
-from examples.wallet.model import Wallet, WalletMoneyDeposited, WalletState
+from examples.wallet.model import Wallet, WalletId, WalletMoneyDeposited, WalletState
 
 from ekbatan.domain import Builder, Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
-from ekbatan.ids import Id
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=Id[Wallet].random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
     )
 
 
