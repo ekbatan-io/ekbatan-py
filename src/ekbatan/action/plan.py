@@ -17,6 +17,7 @@ from typing import Any, cast
 
 from ..clock import Clock, to_storage
 from ..domain import Model, Persistable
+from ..errors import ValidationError
 
 __all__ = ["ActionPlan", "Changes"]
 
@@ -54,8 +55,10 @@ class ActionPlan:
 
     def add[P: Persistable[Any, Any]](self, model: P) -> P:
         """Stage an insert. Returns the row as it will be written, timestamps and all."""
+        changes = self._changes(type(model))
+        self._refuse_if_staged(changes, model)
         stamped = self._stamp_new(model)
-        self._changes(type(model)).additions[stamped.id] = stamped
+        changes.additions[stamped.id] = stamped
         return stamped
 
     def add_all[P: Persistable[Any, Any]](self, models: Iterable[P]) -> list[P]:
@@ -66,32 +69,38 @@ class ActionPlan:
 
         Handing back the incremented copy is what lets the rest of the unit of work read
         forward instead of reasoning about what the database is going to do later.
-
-        **A row moves forward one version per unit of work, not per call.** Staging the same
-        row a second time replaces what is staged and keeps the version already assigned, so
-        two changes to one wallet are one write, guarded against the version that was actually
-        read. Incrementing again would write ``WHERE version = 2`` against a row still at 1 and
-        fail as a phantom conflict - with nothing concurrent anywhere near it.
         """
         changes = self._changes(type(model))
-        pending = changes.updates.get(model.id)
-        if pending is not None:
-            staged = model.evolve(version=pending.version)
-        elif model.id in changes.additions:
-            # Changed after being staged for insert: still one insert, with the later values.
-            inserted = self._stamp_touched(
-                model.evolve(version=changes.additions[model.id].version)
-            )
-            changes.additions[inserted.id] = inserted
-            return inserted
-        else:
-            staged = model.evolve(version=model.version + 1)
-        stamped = self._stamp_touched(staged)
+        self._refuse_if_staged(changes, model)
+        stamped = self._stamp_updated(model)
         changes.updates[stamped.id] = stamped
         return stamped
 
     def update_all[P: Persistable[Any, Any]](self, models: Iterable[P]) -> list[P]:
         return [self.update(m) for m in models]
+
+    def _refuse_if_staged(self, changes: Changes, model: Persistable[Any, Any]) -> None:
+        """One row, staged once.
+
+        A unit of work is one write per row, so staging the same row twice cannot mean two
+        writes - and the second call would have to either overwrite the first silently or
+        invent a version the database has never held. Both are worse than saying so.
+
+        The first value handed back is what makes it plain: after ``a = plan.update(x)``, a
+        second staging would leave ``a`` claiming a version it no longer has and a balance
+        nobody is going to write. Compose the changes on the model instead, and stage the
+        result once - which is also how it reads best.
+        """
+        staged = model.id in changes.additions or model.id in changes.updates
+        if not staged:
+            return
+        name = type(model).__name__
+        raise ValidationError(
+            f"{name} {model.id} is already staged in this unit of work. A unit of work writes "
+            f"each row once, so two changes to one row have to be composed before they are "
+            f"staged - `wallet.deposit(10).withdraw(5)`, then one plan.update - rather than "
+            f"staged one after another."
+        )
 
     # ------------------------------------------------------------------ reading
 
@@ -130,8 +139,8 @@ class ActionPlan:
             changes["updated_date"] = changes.get("created_date", now)
         return model.evolve(**changes) if changes else model
 
-    def _stamp_touched[P: Persistable[Any, Any]](self, model: P) -> P:
-        """Mark when it changed. An entity has no timestamps, so there is nothing to mark."""
+    def _stamp_updated[P: Persistable[Any, Any]](self, model: P) -> P:
+        """Move the version on, and mark when it changed. An entity has no timestamps."""
         if not isinstance(model, Model):
-            return model
-        return model.evolve(updated_date=to_storage(self._clock.now()))
+            return model.evolve(version=model.version + 1)
+        return model.evolve(version=model.version + 1, updated_date=to_storage(self._clock.now()))

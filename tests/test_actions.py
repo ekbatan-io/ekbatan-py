@@ -194,26 +194,95 @@ class StagesTwice(Action[DepositParams, Wallet]):
         return self.plan.update(once.deposit(params.amount))
 
 
-def test_staging_one_row_twice_leaves_one_row(executor, wallets, outbox):
+class ComposesThenStages(Action[DepositParams, Wallet]):
+    """The same two changes, written the way they should be."""
+
+    def __init__(self, wallets) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: DepositParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount).deposit(params.amount))
+
+
+def test_staging_one_row_twice_is_refused(executor, wallets, outbox):
+    """A unit of work writes each row once, so two stagings cannot mean two writes. Collapsing
+    them silently would leave the value handed back by the first call claiming a version it no
+    longer has and a balance nobody is going to write."""
+    wallet = a_wallet(executor)
+    before = len(outbox())
+
+    with pytest.raises(ValidationError, match="already staged"):
+        executor.execute(
+            StagesTwice(wallets),
+            DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
+        )
+
+    assert wallets.get(wallet.id).version == 1, "and nothing was written"
+    assert len(outbox()) == before
+
+
+def test_the_error_says_what_to_do_instead(executor, wallets):
+    wallet = a_wallet(executor)
+    with pytest.raises(ValidationError) as raised:
+        executor.execute(
+            StagesTwice(wallets),
+            DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
+        )
+    message = str(raised.value)
+    assert "already staged" in message
+    assert "composed" in message, "an error that does not say what to do instead is half an error"
+    assert "Wallet" in message and str(wallet.id) in message
+
+
+def test_composing_first_then_staging_once_works(executor, wallets, outbox):
     wallet = a_wallet(executor)
     before = len(outbox())
 
     result = executor.execute(
-        StagesTwice(wallets),
+        ComposesThenStages(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
     )
 
-    assert result.version == 2, (
-        "a row moves forward one version per unit of work, not per call - it is written once, "
-        "so it is one version later"
-    )
     stored = wallets.get(wallet.id)
     assert stored.balance == Decimal("10.0000"), "both changes landed"
-    assert stored.version == 2
+    assert stored.version == 2, "one write, one version"
     assert stored == result, "and what the action returned is what the database holds"
 
-    events = [r for r in outbox()[before:] if r["event_type"]]
-    assert len(events) == 2, "both events ride along, because both changes happened"
+    events = [r["event_type"] for r in outbox()[before:] if r["event_type"]]
+    assert events == ["WalletMoneyDeposited", "WalletMoneyDeposited"], (
+        "both events ride along, because both changes happened"
+    )
+
+
+def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
+    class CreateThenTopUp(Action[None, Wallet]):
+        def perform(self, params: None) -> Wallet:
+            fresh = self.plan.add(
+                Wallet.open(
+                    id=WalletId.random(),
+                    owner_id=uuid4(),
+                    currency="EUR",
+                    balance=Decimal("10.00"),
+                )
+            )
+            return self.plan.update(fresh.deposit(Decimal("5.00")))
+
+    with pytest.raises(ValidationError, match="already staged"):
+        executor.execute(CreateThenTopUp(), None)
+
+    assert wallets.count() == 0
+
+
+def test_staging_the_same_row_twice_in_one_batch_is_refused(clock):
+    from ekbatan.action import ActionPlan
+
+    plan = ActionPlan(clock)
+    wallet = Wallet.open(
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+    )
+    with pytest.raises(ValidationError, match="already staged"):
+        plan.add_all([wallet, wallet])
 
 
 def test_a_plan_reports_what_it_is_holding(clock):
@@ -248,31 +317,3 @@ def test_the_framework_runs_without_a_tracing_stack(executor):
 
     assert executor.execute(ReadsTheClock(), None) is not None
     assert isinstance(tracing_enabled(), bool)
-
-
-def test_a_row_changed_after_being_staged_for_insert_is_still_one_insert(executor, wallets, outbox):
-    """Inserting then changing in the same unit of work is one row, with the later values -
-    not an insert followed by an update against a version the database has never seen."""
-
-    class CreateThenTopUp(Action[None, Wallet]):
-        def perform(self, params: None) -> Wallet:
-            fresh = self.plan.add(
-                Wallet.open(
-                    id=WalletId.random(),
-                    owner_id=uuid4(),
-                    currency="EUR",
-                    balance=Decimal("10.00"),
-                )
-            )
-            return self.plan.update(fresh.deposit(Decimal("5.00")))
-
-    result = executor.execute(CreateThenTopUp(), None)
-
-    stored = wallets.get(result.id)
-    assert stored.balance == Decimal("15.0000")
-    assert stored.version == 1, "it was inserted once; nothing has updated it yet"
-    assert wallets.count() == 1
-    assert [r["event_type"] for r in outbox() if r["event_type"]] == [
-        "WalletCreated",
-        "WalletMoneyDeposited",
-    ]
