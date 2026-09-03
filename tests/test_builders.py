@@ -186,3 +186,49 @@ def test_domain_methods_chain_and_their_events_accumulate():
         "WalletMoneyWithdrawn",
         "WalletClosed",
     ]
+
+
+def test_copy_base_takes_only_the_frameworks_fields():
+    """The same narrow meaning it has in Java: for hand-writing a copy() that sets the rest."""
+    wallet = a_wallet()
+    partial = Builder(Wallet).copy_base(wallet)
+
+    with pytest.raises(TypeError, match="owner_id"):
+        partial.build()
+
+    finished = partial.owner_id(wallet.owner_id).currency("USD").balance(wallet.balance).build()
+    assert finished.id == wallet.id
+    assert finished.version == wallet.version
+    assert finished.currency == "USD"
+
+
+def test_copy_from_takes_every_field():
+    wallet = a_wallet()
+    assert Builder(Wallet).copy_from(wallet).build() == wallet
+
+
+def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():
+    """The whole reason copy() is not written per model."""
+
+    @dataclass(frozen=True, kw_only=True)
+    class ShardedWallet(Model[UUID, WalletState]):
+        owner_id: UUID
+        currency: str
+        balance: Decimal
+        aliases: tuple[str, ...] = ()
+
+    wallet = ShardedWallet(
+        id=uuid4(),
+        state=WalletState.OPENED,
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("100.00"),
+        aliases=("main", "eu"),
+    )
+    changed = wallet.copy().balance(Decimal("150.00")).build()
+
+    assert changed.balance == Decimal("150.00")
+    assert changed.aliases == ("main", "eu"), (
+        "a field added to the model must not need copy() edited to survive a change"
+    )
+    assert changed.owner_id == wallet.owner_id
