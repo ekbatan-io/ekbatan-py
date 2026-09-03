@@ -40,9 +40,15 @@ def test_an_inserted_row_reads_back_exactly(wallets, clock):
 
 
 def test_a_row_read_back_carries_no_events(wallets):
-    stored = wallets.add(a_wallet())
-    assert stored.events, "the model that was written had an event attached"
-    assert wallets.get(stored.id).events == (), "the row read back must not re-emit it"
+    written = a_wallet()
+    assert written.events, "the model handed to the repository had an event attached"
+
+    stored = wallets.add(written)
+
+    assert stored.events == (), (
+        "what comes back is the database's view of the row, and events are not a column"
+    )
+    assert wallets.get(written.id).events == (), "nor on a later read"
 
 
 def test_a_missing_row_is_absent_or_an_error(wallets):

@@ -85,8 +85,8 @@ class Repository[M: Persistable[Any, Any], K]:
         self.sharding = sharding or NoSharding()
         self.clock = clock or SystemClock()
         self.batch_size = batch_size
-        self._single_stmt: Any = None
-        self._union_stmts: dict[int, Any] = {}
+        self._single_stmt: dict[bool, Any] = {}
+        self._union_stmts: dict[tuple[int, bool], Any] = {}
 
         pk = list(table.primary_key.columns)
         if len(pk) != 1:
@@ -392,72 +392,111 @@ class Repository[M: Persistable[Any, Any], K]:
     # ----------------------------------------------------------------- writes
 
     def add(self, model: M) -> M:
-        """Insert one row, and hand back what was written."""
+        """Insert one row and hand back what the database now holds."""
         return self.add_all([model])[0]
 
     def add_no_result(self, model: M) -> None:
-        """Insert one row without building the result.
-
-        Present because the Java implementation distinguishes them - there, returning the row
-        costs a ``RETURNING`` clause or a re-read. Here the value is already in hand and this
-        saves nothing, so use it to say the result is not wanted, not to go faster.
-        """
-        self.add_all([model])
+        """Insert one row without reading it back."""
+        self.add_all_no_result([model])
 
     def add_all(self, models: Sequence[M]) -> list[M]:
-        """Insert, one statement however many rows there are.
+        """Insert, one statement however many rows there are, and read the rows back.
 
-        A staging area that flushes row by row has thrown away its only advantage, so the batch
-        goes out as one ``executemany`` and the cost of ten rows is the cost of one round trip.
+        Reading back is ``RETURNING`` where the dialect has it, so it costs no extra round
+        trip - but it does put every inserted row on the wire, which for a large batch is real
+        money. That is what :meth:`add_all_no_result` is for: same write, no result set. The
+        choice is the caller's, because only the caller knows whether anything is going to look
+        at the rows.
+
+        Where there is no ``RETURNING`` - MySQL and MariaDB - the staged values come back
+        instead, so the two paths differ only in whether a server-side default or trigger is
+        visible.
         """
         if not models:
             return []
         shard = self.shard_of_all(models)
         now = to_storage(self.clock.now())
         stamped = [self._stamp_new(m, now) for m in models]
+        rows = [self.to_row(m) for m in stamped]
+
         with self.tx_db_else_db(shard=shard) as conn:
-            conn.execute(insert(self.table), [self.to_row(m) for m in stamped])
+            if conn.dialect.insert_returning:
+                written = conn.execute(
+                    insert(self.table).returning(self.table, sort_by_parameter_order=True),
+                    rows,
+                )
+                return [self.from_row(r) for r in written]
+            conn.execute(insert(self.table), rows)
         return stamped
 
     def add_all_no_result(self, models: Sequence[M]) -> None:
-        self.add_all(models)
+        """Insert without reading anything back.
+
+        For the thousand-row import whose rows nobody is going to read. Never asks for
+        ``RETURNING``, so nothing crosses the wire on the way home.
+        """
+        if not models:
+            return
+        shard = self.shard_of_all(models)
+        now = to_storage(self.clock.now())
+        rows = [self.to_row(self._stamp_new(m, now)) for m in models]
+        with self.tx_db_else_db(shard=shard) as conn:
+            conn.execute(insert(self.table), rows)
 
     def update(self, model: M) -> M:
-        """Update one row under the optimistic lock."""
+        """Update one row under the optimistic lock, and hand back what the database holds."""
         return self.update_all([model])[0]
 
     def update_no_result(self, model: M) -> None:
-        self.update_all([model])
+        self.update_all_no_result([model])
 
     def update_all(self, models: Sequence[M]) -> list[M]:
-        """Update under the optimistic lock, all of them or none, in one statement per chunk.
+        """Update under the optimistic lock, all of them or none, and read the rows back.
 
-        Not ``executemany``. SQLAlchemy rewrites a batched INSERT into a single multi-row
-        statement, but there is no equivalent for UPDATE - an executemany there is N statements,
-        pipelined at best, and N server-side plans. So the batch is turned into one derived
-        table joined against the target, which is one statement, one plan, and one pass.
+        One statement per chunk. Not ``executemany``: SQLAlchemy rewrites a batched INSERT into
+        a single multi-row statement, but there is no equivalent for UPDATE - an executemany
+        there is N statements and N server-side plans, pipelined at best. So the batch becomes
+        one derived table joined against the target.
 
-        Each row is matched on ``id`` and the version the caller read. If the affected count is
-        short, someone else got there first and the whole batch is refused - partial application
-        is the worst outcome available, because the caller is told it failed and half of it
-        happened anyway. The count is trustworthy because every row's version changes, so no
-        row can be silently reported as unaffected for having been written its own values.
+        If the affected count is short, someone else got there first and the whole batch is
+        refused: partial application is the worst outcome available, because the caller is told
+        it failed and half of it happened anyway. The count is trustworthy because every row's
+        version changes, so no row can be reported unaffected for having been written its own
+        values.
         """
+        written = self._apply_updates(models, read_back=True)
+        return written if written is not None else []
+
+    def update_all_no_result(self, models: Sequence[M]) -> None:
+        """Update without reading anything back."""
+        self._apply_updates(models, read_back=False)
+
+    def _apply_updates(self, models: Sequence[M], *, read_back: bool) -> list[M] | None:
         if not models:
-            return []
+            return [] if read_back else None
         shard = self.shard_of_all(models)
         now = to_storage(self.clock.now())
         stamped = [self._stamp_updated(m, now) for m in models]
 
         with self.tx_db_else_db(shard=shard) as conn:
+            returning = read_back and conn.dialect.update_returning
+            written: list[Row[Any]] = []
+            affected = 0
+
             if len(stamped) == 1:
-                # One row does not need a derived table, and building one would cost more than
-                # it saves.
-                affected = conn.execute(self._single_update(), self._bind(stamped[0])).rowcount
+                stmt = self._single_update(returning=returning)
+                result = conn.execute(stmt, self._bind(stamped[0]))
+                if returning:
+                    written = list(result)
+                    affected = len(written)
+                else:
+                    affected = result.rowcount
             else:
-                affected = sum(
-                    self._batch_update(conn, chunk) for chunk in _chunks(stamped, self.batch_size)
-                )
+                for chunk in _chunks(stamped, self.batch_size):
+                    rows, count = self._batch_update(conn, chunk, returning=returning)
+                    written += rows
+                    affected += count
+
             if affected != len(stamped):
                 # Raised inside the transaction, so it rolls back. Raised after it, the rows
                 # that did match would already be committed and the caller would be told the
@@ -467,10 +506,15 @@ class Repository[M: Persistable[Any, Any], K]:
                     f"but matched {affected}; one was concurrently modified or is gone",
                     model=self.model_type.__name__,
                 )
-        return stamped
 
-    def update_all_no_result(self, models: Sequence[M]) -> None:
-        self.update_all(models)
+        if not read_back:
+            return None
+        if not returning:
+            return stamped
+        # RETURNING makes no promise about order, and a caller handing in a list expects the
+        # same list back.
+        by_id = {row._mapping[self.id_column.name]: row for row in written}
+        return [self.from_row(by_id[self.to_row(m)[self.id_column.name]]) for m in stamped]
 
     def delete(self, model: M) -> M:
         """Soft delete: move the row to ``DELETED`` so every read stops seeing it."""
@@ -515,10 +559,10 @@ class Repository[M: Persistable[Any, Any], K]:
             return model
         return model.evolve(updated_date=now)
 
-    def _single_update(self) -> Any:
+    def _single_update(self, *, returning: bool = False) -> Any:
         """``UPDATE … SET … WHERE id = ? AND version = ?``, built once and reused."""
-        if self._single_stmt is None:
-            self._single_stmt = (
+        if self._single_stmt.get(returning) is None:
+            stmt = (
                 update(self.table)
                 .where(
                     self.id_column == bindparam("_id"),
@@ -532,7 +576,8 @@ class Repository[M: Persistable[Any, Any], K]:
                     }
                 )
             )
-        return self._single_stmt
+            self._single_stmt[returning] = stmt.returning(self.table) if returning else stmt
+        return self._single_stmt[returning]
 
     def _bind(self, model: M) -> dict[str, Any]:
         row = self.to_row(model)
@@ -542,7 +587,9 @@ class Repository[M: Persistable[Any, Any], K]:
             **{f"_v_{k}": v for k, v in row.items() if k != self.id_column.name},
         }
 
-    def _batch_update(self, conn: Any, models: Sequence[M]) -> int:
+    def _batch_update(
+        self, conn: Any, models: Sequence[M], *, returning: bool = False
+    ) -> tuple[list[Row[Any]], int]:
         """One UPDATE for the whole chunk, joined against a derived table of the new values.
 
         Two shapes, because the dialects genuinely differ. Postgres has a ``VALUES`` table
@@ -556,18 +603,31 @@ class Repository[M: Persistable[Any, Any], K]:
         database shifts it by the session offset - invisibly, and only outside UTC.
         """
         if conn.dialect.name == "postgresql":
-            return int(conn.execute(self._values_update(models)).rowcount)
+            stmt = self._values_update(models)
+            return self._run_update(conn, stmt, None, returning)
 
         # Building a 500-row UNION ALL costs about 25ms, against 5ms for the VALUES form, so
         # this one is composed once per chunk size and then only re-bound. Chunks are almost
         # always full, so the cache holds two entries: the full size, and the last remainder.
         size = len(models)
-        stmt = self._union_stmts.get(size)
+        stmt = self._union_stmts.get((size, returning))
         if stmt is None:
             stmt = self._union_update(size)
-            if len(self._union_stmts) < 16:
-                self._union_stmts[size] = stmt
-        return int(conn.execute(stmt, self._union_binds(models)).rowcount)
+            if returning:
+                stmt = stmt.returning(self.table)
+            if len(self._union_stmts) < 32:
+                self._union_stmts[(size, returning)] = stmt
+        return self._run_update(conn, stmt, self._union_binds(models), returning)
+
+    def _run_update(
+        self, conn: Any, stmt: Any, binds: dict[str, Any] | None, returning: bool
+    ) -> tuple[list[Row[Any]], int]:
+        stmt = stmt.returning(self.table) if returning and binds is None else stmt
+        result = conn.execute(stmt) if binds is None else conn.execute(stmt, binds)
+        if returning:
+            rows = list(result)
+            return rows, len(rows)
+        return [], int(result.rowcount)
 
     def _derived_types(self) -> dict[str, Any]:
         return {_PRIOR: self.table.c.version.type} | {

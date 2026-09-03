@@ -224,10 +224,14 @@ class ActionExecutor:
                 if issubclass(model_type, Model):
                     events += _events_of(additions)
                     events += _events_of(updates)
+                # The no-result variants deliberately. The plan already holds the values that
+                # were staged and the events came off those; nothing here reads a written row
+                # back, so asking the database to return every one of them would be paid on
+                # every unit of work for nothing.
                 if additions:
-                    repo.add_all(additions)
+                    repo.add_all_no_result(additions)
                 if updates:
-                    repo.update_all(updates)
+                    repo.update_all_no_result(updates)
 
             self.outbox.persist(
                 _connection(self.registry, shard),

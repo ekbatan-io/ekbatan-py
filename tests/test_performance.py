@@ -209,3 +209,75 @@ def test_a_batch_statement_is_composed_once_per_size(wallets):
     )
     binds = wallets._union_binds(stored)
     assert len(binds) == len(stored) * (len(wallets._columns) + 1)
+
+
+# --------------------------------------------------- reading the written rows back, or not
+
+
+def test_a_reading_write_asks_for_returning_and_a_no_result_one_does_not(wallets, sql):
+    """The pair exists so the caller can decide. Making both behave the same would remove the
+    choice and leave two names for one thing."""
+    wallets.add_all(some_wallets(3))
+    assert "RETURNING" in kind(sql, "INSERT")[0][0].upper()
+
+    sql.clear()
+    wallets.add_all_no_result(some_wallets(3))
+    assert "RETURNING" not in kind(sql, "INSERT")[0][0].upper(), (
+        "the thousand-row import whose rows nobody reads must not put them on the wire"
+    )
+
+    stored = wallets.all()
+    sql.clear()
+    wallets.update_all([w.evolve(balance=Decimal("2.00")).next_version() for w in stored])
+    assert "RETURNING" in kind(sql, "UPDATE")[0][0].upper()
+
+    stored = wallets.all()
+    sql.clear()
+    wallets.update_all_no_result([w.evolve(balance=Decimal("3.00")).next_version() for w in stored])
+    assert "RETURNING" not in kind(sql, "UPDATE")[0][0].upper()
+
+
+def test_a_reading_write_hands_back_the_database_view_in_the_order_asked_for(wallets):
+    written = some_wallets(25)
+    stored = wallets.add_all(written)
+
+    assert [w.id for w in stored] == [w.id for w in written], (
+        "RETURNING makes no promise about order, and a caller handing in a list expects the "
+        "same list back"
+    )
+    assert all(w.events == () for w in stored), "events are not a column"
+    assert all(w.balance == Decimal("1.0000") for w in stored), (
+        "and the scale is the column's, which is the point of reading it back"
+    )
+
+    updated = wallets.update_all([w.evolve(balance=Decimal("4.00")).next_version() for w in stored])
+    assert [w.id for w in updated] == [w.id for w in stored]
+    assert all(w.version == 2 for w in updated)
+
+
+def test_a_write_with_no_returning_still_costs_one_statement(wallets, sql):
+    wallets.add_all_no_result(some_wallets(40))
+    assert len(kind(sql, "INSERT")) == 1
+
+    stored = wallets.all()
+    sql.clear()
+    wallets.update_all_no_result([w.evolve(balance=Decimal("5.00")).next_version() for w in stored])
+    assert len(kind(sql, "UPDATE")) == 1
+
+
+def test_a_unit_of_work_does_not_pay_to_read_its_own_writes_back(executor, wallets, sql):
+    """The plan already holds what was staged and the events came off those, so the executor
+    has no use for the written rows."""
+    from examples.wallet.actions import CreateWallet, CreateWalletParams
+
+    sql.clear()
+    executor.execute(
+        CreateWallet(),
+        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+    )
+
+    writes = [s for s, _, _ in sql if s.lstrip().upper().startswith(("INSERT", "UPDATE"))]
+    assert writes, "it did write something"
+    assert not any("RETURNING" in s.upper() for s in writes), (
+        "paying for a result set on every unit of work, for values nobody reads"
+    )
