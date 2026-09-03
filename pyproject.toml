@@ -46,6 +46,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ekbatan"]
+# Without this marker a checker ignores the package's annotations entirely, and every user
+# gets the types of a library that shipped none - while the classifiers claim otherwise.
+artifacts = ["src/ekbatan/py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

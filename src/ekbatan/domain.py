@@ -29,7 +29,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 from .errors import ValidationError
 
@@ -96,8 +96,17 @@ class Builder[T]:
 
     __slots__ = ("_target", "_values")
 
-    def __init__(self, target: type[T], values: dict[str, Any] | None = None) -> None:
-        self._target = target
+    #: Set by a generated subclass so it needs no constructor argument.
+    builds: ClassVar[type[Any] | None] = None
+
+    def __init__(self, target: type[T] | None = None, values: dict[str, Any] | None = None) -> None:
+        resolved = target or type(self).builds
+        if resolved is None:
+            raise ValidationError(
+                f"{type(self).__name__} does not know what it builds; pass the type, or "
+                f"subclass it with `builds = YourModel`"
+            )
+        self._target: type[T] = resolved
         self._values: dict[str, Any] = dict(values or {})
 
     # -- the fields every persistable has, spelled out so a type checker sees them ----------

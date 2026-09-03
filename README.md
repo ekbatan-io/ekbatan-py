@@ -79,11 +79,39 @@ PyMySQL. Migrations with yoyo, which runs plain per-dialect SQL files.
 | **schema and migrations** | the framework's tables as metadata, DDL per dialect, yoyo across every shard |
 | **statement accounting** | so the cost claims are checkable rather than asserted |
 | **test support** | `run_action` runs a unit of work against a bare plan, with no database |
+| **typed builders** | `python -m ekbatan.codegen` - the one thing Python cannot infer |
 
 Only `event-streaming` is missing, and it is not planned: publishing runs inside Kafka Connect,
 in a JVM, whichever language wrote the row.
 
 [DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one.
+
+## Typed builders
+
+`wallet.copy().balance(...)` works for every model with nothing generated, and refuses an
+unknown field at the point of the call. What it cannot do is tell a *type checker* that
+`.balance(...)` takes a `Decimal`: the setters are resolved by name at runtime, so a checker
+sees only `__getattr__`.
+
+That is the one thing worth generating, and the only thing this generates:
+
+```
+uv run python -m ekbatan.codegen myapp.model --out myapp/builders.py
+```
+
+```python
+wallet(existing).balance("oops").build()
+# error: Argument 1 to "balance" of "WalletBuilder" has incompatible type "str";
+#        expected "Decimal"
+```
+
+Everything else Java's `@AutoBuilder` emits - constructing, copying, incrementing a version -
+already needs no generation here, so none is done. The output is ordinary Python: commit it,
+read it, regenerate it when a model changes. A stale one is a type error rather than a wrong
+answer, because `build()` still calls the real constructor.
+
+`examples/wallet_service` uses it, including the three-line `copy()` override that makes a
+model's own methods typed too.
 
 ## Layout
 
