@@ -85,6 +85,25 @@ in a JVM, whichever language wrote the row.
 
 [DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one.
 
+## Layout
+
+```
+src/ekbatan/          the library
+tests/
+  fixtures/           the domain the suite is written against - owned by the suite
+  unit/               no database, ever. 56 tests, about a second
+  integration/        everything that touches one. 118 tests, on any dialect
+examples/
+  wallet_service/     a standalone application. Imports only ekbatan; imported by nothing
+```
+
+Three separate things with three separate jobs, and they do not import each other. The suite's
+domain exists to exercise every shape worth exercising, including a few no application would
+want; the example exists to show what good code looks like. Coupled, every change made for
+coverage lands in the documentation and every change made for clarity breaks the suite.
+`tests/test_structure.py` enforces the separation, including that nothing in `unit/` asks for a
+database.
+
 ## Testing
 
 An action's business logic needs no database. `run_action` runs one against a bare plan and
@@ -94,7 +113,7 @@ reports what it staged:
 staged = run_action(DepositMoney(wallet), DepositParams(amount=Decimal("50.00"), ...))
 
 assert staged.result.balance == Decimal("150.00")
-assert staged.emitted(WalletMoneyDeposited)[0].amount == Decimal("50.00")
+assert staged.emitted(MoneyDeposited)[0].amount == Decimal("50.00")
 assert staged.updated(Wallet) == [staged.result]
 ```
 
@@ -104,14 +123,18 @@ state and events land *together* is a test against a database, and no test-suppo
 substitutes for it.
 
 ```
-uv run pytest                      # SQLite, about two seconds
-uv run pytest --dialects=postgres  # in a container
-uv run pytest --dialects=all       # every test, on all four
-uv run mypy                        # strict
+uv run pytest tests/unit              # no database at all, about a second
+uv run pytest                         # the whole suite, on SQLite
+uv run pytest --dialects=postgres     # in a container
+uv run pytest --dialects=all          # every test, on all four
+uv run pytest examples                # the examples' own tests
+uv run python -m examples.wallet_service
+
+uv run mypy                           # strict, on the library and the examples
 uv run ruff check .
 ```
 
-125 tests. 82 of them are parametrised over the dialect, so `--dialects=all` runs 371.
+175 tests. 114 of them are parametrised over the dialect, so `--dialects=all` runs 517.
 
 There are no per-dialect test classes. Java needs one subclass per dialect per suite -
 `PgRepositoryTest`, `MysqlRepositoryTest`, `MariadbRepositoryTest` - because that is how JUnit
@@ -122,36 +145,6 @@ SQLite is the default and is **not** a supported production dialect. It is there
 suite needing a daemon to run at all is a suite people stop running; the claim that this
 framework works is a claim about Postgres, MySQL and MariaDB, and CI runs all three on every
 push - plus Postgres again under a non-UTC process, which is where the timestamp defects hide.
-
-## What a job, a handler and a lock look like
-
-```python
-class PayStipend(DistributedJob):
-    name = "wallet-stipend"  # the primary key of its row, cluster-wide
-    schedule = Every(timedelta(days=1))
-
-    def run(self, context: JobContext) -> None:
-        for wallet in self.wallets.all():
-            self.executor.execute(DepositMoney(self.wallets), DepositParams(...))
-
-
-class NotifyOnDeposit:
-    name = "wallet-deposit-notification"
-    event_type = WalletMoneyDeposited
-
-    def handle(self, envelope: EventEnvelope[WalletMoneyDeposited]) -> None:
-        self.executor.execute(
-            Notify(),
-            NotifyParams(
-                wallet_id=UUID(envelope.model_id),
-                recipient=envelope.action_params["recipient"],  # not in the event, and rightly so
-            ),
-        )
-
-
-with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
-    ...
-```
 
 Behaviour is pinned by [ekbatan-spec](https://github.com/ekbatan-io/ekbatan-spec), which is
 language-independent and shared with every port.

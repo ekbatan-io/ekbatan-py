@@ -8,8 +8,6 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from examples.wallet.actions import CreateWallet, CreateWalletParams, DepositParams
-from examples.wallet.model import Wallet, WalletId
 
 from ekbatan import Action, ExecutionConfig, RetryPolicy, current_clock, current_plan
 from ekbatan.errors import (
@@ -19,6 +17,8 @@ from ekbatan.errors import (
     StaleRecordError,
     ValidationError,
 )
+from fixtures.actions import CreateWallet, CreateWalletParams, DepositParams
+from fixtures.domain import Wallet, WalletId
 
 
 def a_wallet(executor):
@@ -145,13 +145,6 @@ def test_retries_can_be_switched_off_entirely(executor):
     assert action.attempts == 1
 
 
-def test_a_policy_cannot_ask_for_negative_time():
-    with pytest.raises(ValidationError, match="delay"):
-        RetryPolicy(delay=-1.0)
-    with pytest.raises(ValidationError, match="attempts"):
-        RetryPolicy(attempts=-1)
-
-
 # --------------------------------------------------------------------- failure that is not an error
 
 
@@ -272,34 +265,6 @@ def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
         executor.execute(CreateThenTopUp(), None)
 
     assert wallets.count() == 0
-
-
-def test_staging_the_same_row_twice_in_one_batch_is_refused(clock):
-    from ekbatan.action import ActionPlan
-
-    plan = ActionPlan(clock)
-    wallet = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
-    )
-    with pytest.raises(ValidationError, match="already staged"):
-        plan.add_all([wallet, wallet])
-
-
-def test_a_plan_reports_what_it_is_holding(clock):
-    from ekbatan.action import ActionPlan
-
-    plan = ActionPlan(clock)
-    assert not plan
-
-    wallet = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
-    )
-    plan.add(wallet)
-
-    assert plan
-    assert len(plan.additions(Wallet)) == 1
-    assert plan.updates(Wallet) == []
-    assert list(plan.changes()) == [Wallet]
 
 
 # -------------------------------------------------------------------------------- tracing

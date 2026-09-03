@@ -14,7 +14,7 @@ from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
 
 from .actions import Notify, NotifyParams
-from .model import WalletClosed, WalletId, WalletMoneyDeposited
+from .domain import WalletClosed, WalletId, WalletMoneyDeposited
 
 
 class RecordingHandler:

@@ -5,14 +5,14 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from examples.wallet.model import Notification, NotificationId, Wallet, WalletId, WalletState
-from examples.wallet.schema import NOTIFICATIONS, WALLETS
 
 from ekbatan.clock import FixedClock
 from ekbatan.errors import EntityNotFoundError, StaleRecordError
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsSharding, ShardIdentifier
+from fixtures.domain import Notification, NotificationId, Wallet, WalletId, WalletState
+from fixtures.schema import NOTIFICATIONS, WALLETS
 
 
 @pytest.fixture

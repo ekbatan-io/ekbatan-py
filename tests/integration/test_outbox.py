@@ -10,7 +10,10 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from examples.wallet.actions import (
+from sqlalchemy import event
+
+from ekbatan.errors import ValidationError
+from fixtures.actions import (
     CloseWallet,
     CreateWallet,
     CreateWalletParams,
@@ -23,10 +26,7 @@ from examples.wallet.actions import (
     TransferParams,
     WalletIdParams,
 )
-from examples.wallet.model import WalletId, WalletState
-from sqlalchemy import event
-
-from ekbatan.errors import ValidationError
+from fixtures.domain import WalletId, WalletState
 
 
 def a_wallet(executor, balance="100.00", currency="EUR"):

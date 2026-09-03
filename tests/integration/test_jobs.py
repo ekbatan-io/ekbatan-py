@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from examples.wallet.actions import CreateWallet, CreateWalletParams
-from examples.wallet.jobs import CountWallets, PayStipend
-from examples.wallet.schema import SCHEDULED_TASKS
 from sqlalchemy import select
 
 from ekbatan.errors import ConnectivityError, ValidationError
-from ekbatan.jobs import Daily, DistributedJob, Every, FixedDelay, JobContext, JobRegistry
+from ekbatan.jobs import DistributedJob, Every, JobContext, JobRegistry
+from fixtures.actions import CreateWallet, CreateWalletParams
+from fixtures.jobs import CountWallets, PayStipend
+from fixtures.schema import SCHEDULED_TASKS
 
 
 def a_registry(registry, clock, jobs, instance: str) -> JobRegistry:
@@ -187,19 +187,6 @@ def test_a_read_only_job_writes_nothing(registry, executor, wallets, clock, wall
 
     assert counter.last_count == 1
     assert len(outbox()) == before, "a job that stages nothing writes nothing"
-
-
-def test_schedules_compute_the_next_slot():
-    noon = datetime(2026, 1, 1, 12, 0, 0)
-    assert Every(timedelta(hours=6)).next_after(noon) == datetime(2026, 1, 1, 18, 0, 0)
-    assert FixedDelay(timedelta(minutes=30)).next_after(noon) == datetime(2026, 1, 1, 12, 30)
-    assert Daily(time(3, 0)).next_after(noon) == datetime(2026, 1, 2, 3, 0)
-    assert Daily(time(18, 0)).next_after(noon) == datetime(2026, 1, 1, 18, 0)
-
-    with pytest.raises(ValidationError, match="positive"):
-        Every(timedelta(0))
-    with pytest.raises(ValidationError, match="positive"):
-        FixedDelay(timedelta(seconds=-1))
 
 
 def test_a_missed_run_skips_its_slots_rather_than_catching_up(

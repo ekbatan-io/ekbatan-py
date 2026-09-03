@@ -14,7 +14,7 @@ from uuid import UUID
 from ekbatan import Action, Repository
 from ekbatan.errors import ValidationError
 
-from .model import Notification, NotificationId, Wallet, WalletId
+from .domain import Notification, NotificationId, Wallet, WalletId
 
 
 @dataclass(frozen=True, kw_only=True)

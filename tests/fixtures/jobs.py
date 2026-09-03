@@ -9,7 +9,7 @@ from ekbatan import ActionExecutor, Repository
 from ekbatan.jobs import DistributedJob, Every, JobContext, Schedule
 
 from .actions import DepositMoney, DepositParams
-from .model import Wallet, WalletState
+from .domain import Wallet, WalletState
 
 
 class PayStipend(DistributedJob):

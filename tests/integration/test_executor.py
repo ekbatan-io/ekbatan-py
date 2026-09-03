@@ -5,14 +5,6 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from examples.wallet.actions import (
-    CreateWallet,
-    CreateWalletParams,
-    DepositMoney,
-    DepositParams,
-)
-from examples.wallet.model import NotificationId, Wallet, WalletId, WalletMoneyDeposited
-from examples.wallet.schema import EVENTS
 from sqlalchemy import func, select
 
 from ekbatan import (
@@ -20,12 +12,19 @@ from ekbatan import (
     ActionExecutor,
     ExecutionConfig,
     Repository,
-    RetryPolicy,
     ShardIdentifier,
 )
 from ekbatan.action.outbox import OutboxRecord
 from ekbatan.domain import ModelEvent
-from ekbatan.errors import CrossShardError, EkbatanError, StaleRecordError, ValidationError
+from ekbatan.errors import CrossShardError, StaleRecordError, ValidationError
+from fixtures.actions import (
+    CreateWallet,
+    CreateWalletParams,
+    DepositMoney,
+    DepositParams,
+)
+from fixtures.domain import NotificationId, Wallet, WalletId, WalletMoneyDeposited
+from fixtures.schema import EVENTS
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -100,13 +99,6 @@ def test_retries_can_be_switched_off(executor, wallets, outbox):
     assert action.attempts == 1
     assert wallets.get(wallet.id).balance == Decimal("0.0000")
     assert len(outbox()) == before
-
-
-def test_a_retry_policy_cannot_ask_for_negative_time():
-    with pytest.raises(ValidationError, match="delay"):
-        RetryPolicy(delay=-1.0)
-    with pytest.raises(ValidationError, match="attempts"):
-        RetryPolicy(attempts=-1)
 
 
 # ------------------------------------------------------------------------ sharding
@@ -259,7 +251,7 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
 
     class WritesAnUnknownThing(Action[None, None]):
         def perform(self, params: None) -> None:
-            from examples.wallet.model import Notification
+            from fixtures.domain import Notification
 
             self.plan.add(
                 Notification.create(
@@ -272,13 +264,6 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
 
     with pytest.raises(ValidationError, match="no repository was given for Notification"):
         executor.execute(WritesAnUnknownThing(), None)
-
-
-def test_a_plan_outside_a_unit_of_work_says_so():
-    from ekbatan import current_plan
-
-    with pytest.raises(EkbatanError, match="no unit of work here"):
-        current_plan()
 
 
 # ----------------------------------------------------------------------- extension

@@ -10,7 +10,8 @@ import contextlib
 from decimal import Decimal
 from uuid import uuid4
 
-from examples.wallet.actions import (
+from ekbatan import Action, count_statements
+from fixtures.actions import (
     CreateWallet,
     CreateWalletParams,
     DepositMoney,
@@ -18,9 +19,7 @@ from examples.wallet.actions import (
     TransferMoney,
     TransferParams,
 )
-from examples.wallet.model import Wallet, WalletId
-
-from ekbatan import Action, count_statements
+from fixtures.domain import Wallet, WalletId
 
 
 def a_wallet(executor, balance="100.00"):

@@ -191,6 +191,15 @@ class Persistable[ID, S: Enum]:
     def emits_events(self) -> bool:
         return False
 
+    @classmethod
+    def builder(cls) -> Builder[Self]:
+        """An empty builder for this type - what a constructor would be if it were fluent.
+
+        The counterpart to :meth:`copy`: that one starts from a row you have, this one from
+        nothing. Java's generated ``WalletBuilder.wallet()``, without the generation.
+        """
+        return Builder(cls)
+
     def copy(self) -> Builder[Self]:
         """A builder pre-loaded with every one of this row's values.
 

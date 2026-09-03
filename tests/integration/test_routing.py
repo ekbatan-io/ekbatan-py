@@ -11,13 +11,13 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from examples.wallet.model import Wallet, WalletId
-from examples.wallet.schema import WALLETS
 from sqlalchemy import func, select
 
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsSharding, NoSharding, ShardIdentifier
+from fixtures.domain import Wallet, WalletId
+from fixtures.schema import WALLETS
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)

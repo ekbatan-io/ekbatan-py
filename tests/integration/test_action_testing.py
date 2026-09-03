@@ -1,0 +1,46 @@
+"""`run_action` against a real database - to show it does not touch it.
+
+The rest of the module's behaviour is settled in the unit suite, which is the point of it. This
+one needs a database precisely so it can prove nothing was written to one.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from uuid import uuid4
+
+from ekbatan import Action, Repository, run_action
+from fixtures.actions import DepositParams
+from fixtures.domain import Wallet, WalletId
+from fixtures.schema import WALLETS
+
+
+def a_wallet(balance: str = "100.00") -> Wallet:
+    return Wallet.open(
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+    ).without_events()
+
+
+class Deposit(Action[DepositParams, Wallet]):
+    def __init__(self, wallet: Wallet) -> None:
+        self.wallet = wallet
+
+    def perform(self, params: DepositParams) -> Wallet:
+        return self.plan.update(self.wallet.deposit(params.amount))
+
+
+def test_nothing_reaches_a_database(registry, clock):
+    """The point of the whole module: the action runs, the plan fills, and the row is not
+    written anywhere."""
+
+    wallets = Repository(Wallet, WALLETS, registry, clock=clock)
+    stored = wallets.add(a_wallet("100.00"))
+
+    staged = run_action(
+        Deposit(stored),
+        DepositParams(wallet_id=stored.id, amount=Decimal("50.00"), recipient="ada@x"),
+    )
+
+    assert staged.result.balance == Decimal("150.0000")
+    assert wallets.get(stored.id).balance == Decimal("100.0000"), "the database is untouched"
+    assert wallets.get(stored.id).version == 1

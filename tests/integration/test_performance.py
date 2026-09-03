@@ -13,11 +13,11 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from examples.wallet.model import Wallet, WalletId
-from examples.wallet.schema import WALLETS
 from sqlalchemy import event, select
 
 from ekbatan.repository import Repository
+from fixtures.domain import Wallet, WalletId
+from fixtures.schema import WALLETS
 
 
 @pytest.fixture
@@ -268,7 +268,7 @@ def test_a_write_with_no_returning_still_costs_one_statement(wallets, sql):
 def test_a_unit_of_work_does_not_pay_to_read_its_own_writes_back(executor, wallets, sql):
     """The plan already holds what was staged and the events came off those, so the executor
     has no use for the written rows."""
-    from examples.wallet.actions import CreateWallet, CreateWalletParams
+    from fixtures.actions import CreateWallet, CreateWalletParams
 
     sql.clear()
     executor.execute(

@@ -23,14 +23,29 @@ jobs:
       - run: uv run mypy
 
   fast:
-    name: tests (sqlite)
+    name: tests (unit, then sqlite)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with: { enable-cache: true }
       - run: uv sync --all-extras
+      # No database at all, and first, so a broken invariant is reported in a second rather
+      # than after four containers have started.
+      - run: uv run pytest tests/unit
       - run: uv run pytest --dialects=sqlite
+
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras
+      # An example nobody runs is an example that rots.
+      - run: uv run pytest examples
+      - run: uv run python -m examples.wallet_service
 
   dialects:
     # The claim that this framework works is a claim about these three. SQLite is what keeps

@@ -1,0 +1,33 @@
+# wallet_service
+
+A wallet, end to end, in about two hundred lines. Runs on SQLite so you can try it now:
+
+```
+uv run python -m examples.wallet_service
+```
+
+It creates a wallet, deposits into it, lets an in-process handler react to the deposit by
+writing a notification, runs a scheduled job, and prints the outbox so you can see what a
+consumer would read.
+
+## What to look at, in order
+
+**`model.py`** - `Wallet.deposit`. Five lines, one of which says what happened. No transaction,
+no flush, no publish, no outbox. That is the whole argument for the framework.
+
+**`actions.py`** - `DepositMoney.perform`. Three lines: read, change, stage. The executor turns
+that into one transaction holding the row and its event.
+
+**`handlers.py`** - `NotifyOnDeposit`. Reacts to a committed event by starting another unit of
+work. It reads the recipient off the producing action's parameters rather than the event,
+because a delivery address has no business inside a money-deposited event.
+
+**`jobs.py`** - `PayStipend`. The same actions, on a schedule, one instance across a cluster.
+
+**`app.py`** - the wiring, all of it in one place, away from everything above.
+
+## What it does not show
+
+That state and its events commit together even when the process dies mid-write. That is the
+guarantee the whole design exists for, and no example can demonstrate it - only a test can, and
+the framework has them.

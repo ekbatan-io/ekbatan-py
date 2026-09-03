@@ -6,8 +6,7 @@ from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
-import pytest
-from examples.wallet.actions import (
+from fixtures.actions import (
     CloseWallet,
     CreateWallet,
     CreateWalletParams,
@@ -17,10 +16,8 @@ from examples.wallet.actions import (
     NotifyParams,
     WalletIdParams,
 )
-from examples.wallet.handlers import NotifyOnDeposit, failing, fatal, on_close, succeeding
-from examples.wallet.model import WalletId
-
-from ekbatan.events import backoff
+from fixtures.domain import WalletId
+from fixtures.handlers import NotifyOnDeposit, failing, fatal, on_close, succeeding
 
 
 def a_wallet(executor, balance="100.00"):
@@ -291,13 +288,3 @@ def test_a_renamed_handler_still_drains_its_old_queue(
 
     assert renamed.calls == 1, "rows queued under the old name still route home"
     assert notifications_in() == {"SUCCEEDED": 1}
-
-
-def test_the_retry_curve_doubles_and_then_flattens():
-    cap = timedelta(minutes=5)
-    delays = [backoff(n, cap).total_seconds() for n in range(1, 8)]
-    assert delays == [30, 60, 120, 240, 300, 300, 300]
-    with pytest.raises(ValueError, match="attempts"):
-        backoff(0, cap)
-    with pytest.raises(ValueError, match="cap"):
-        backoff(1, timedelta(0))

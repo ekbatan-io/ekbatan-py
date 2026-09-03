@@ -12,14 +12,17 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from examples.wallet.actions import (
+
+from ekbatan import Action, FixedClock, run_action
+from ekbatan.errors import EkbatanError, ValidationError
+from fixtures.actions import (
     CreateWallet,
     CreateWalletParams,
     DepositParams,
     Notify,
     NotifyParams,
 )
-from examples.wallet.model import (
+from fixtures.domain import (
     Notification,
     Wallet,
     WalletCreated,
@@ -27,9 +30,6 @@ from examples.wallet.model import (
     WalletMoneyDeposited,
     WalletMoneyWithdrawn,
 )
-
-from ekbatan import Action, FixedClock, Repository, run_action
-from ekbatan.errors import EkbatanError, ValidationError
 
 
 class Deposit(Action[DepositParams, Wallet]):
@@ -128,24 +128,6 @@ def test_a_refusal_is_an_ordinary_exception():
             Deposit(wallet),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"),
         )
-
-
-def test_nothing_reaches_a_database(registry, clock):
-    """The point of the whole module: the action runs, the plan fills, and the row is not
-    written anywhere."""
-    from examples.wallet.schema import WALLETS
-
-    wallets = Repository(Wallet, WALLETS, registry, clock=clock)
-    stored = wallets.add(a_wallet("100.00"))
-
-    staged = run_action(
-        Deposit(stored),
-        DepositParams(wallet_id=stored.id, amount=Decimal("50.00"), recipient="ada@x"),
-    )
-
-    assert staged.result.balance == Decimal("150.0000")
-    assert wallets.get(stored.id).balance == Decimal("100.0000"), "the database is untouched"
-    assert wallets.get(stored.id).version == 1
 
 
 def test_the_plan_behaves_as_it_does_in_production():

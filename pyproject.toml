@@ -50,13 +50,20 @@ packages = ["src/ekbatan"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-q"
+# importlib so unit/ and integration/ can hold modules of the same name - they often should,
+# being two halves of one subject - without an __init__.py in every directory.
+addopts = "-q --import-mode=importlib"
 markers = ["slow: needs a container"]
+consider_namespace_packages = true
 
 [tool.mypy]
 python_version = "3.13"
 strict = true
+# The library and the examples, strictly. An example is documentation, and documentation that
+# would not type-check is documentation that is wrong.
 files = ["src", "examples"]
+# An example's own test is a test, and is held to the same bar as the rest of them.
+exclude = "examples/.*/test_.*\\.py$"
 
 # OpenTelemetry is optional at runtime and absent from the dev environment on purpose: the
 # framework must work without it, and a type checker that demanded it would quietly make it
@@ -65,12 +72,8 @@ files = ["src", "examples"]
 module = "opentelemetry.*"
 ignore_missing_imports = true
 
-# Tests are checked, but not made to annotate every fixture and helper. Strictness in the
-# library is a promise to its users; strictness in a test file is a tax on writing tests.
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disallow_untyped_calls = false
+# Strictness in the library is a promise to its users; strictness in a test file is a tax on
+# writing tests, so the suites are linted rather than type-checked.
 
 [tool.ruff]
 line-length = 100

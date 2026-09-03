@@ -12,6 +12,9 @@ There are no dialect-specific test classes. Java needs one subclass per dialect 
 PgRepositoryTest, MysqlRepositoryTest, MariadbRepositoryTest - because that is how JUnit
 parametrises a whole class. Here one fixture is parametrised and every test in the suite runs
 on every dialect, so a test cannot be accidentally left out of one.
+
+`unit/` needs none of this and asks for none of it: nothing there takes a database fixture, so
+nothing there is parametrised, and the whole of it runs in about a second.
 """
 
 from __future__ import annotations
@@ -24,16 +27,16 @@ from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Only the tests' own directory. The examples are not on the path and are not importable from
+# here on purpose - see tests/test_structure.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from examples.wallet.schema import metadata
 
 from backends import Backend, requested_dialects, start
 from ekbatan.clock import FixedClock
 from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import ShardIdentifier
+from fixtures.schema import metadata
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -104,20 +107,18 @@ def sharded_registry(backend: Backend) -> Iterator[DatabaseRegistry]:
 
 @pytest.fixture
 def wallets(registry: DatabaseRegistry, clock: FixedClock) -> Any:
-    from examples.wallet.model import Wallet
-    from examples.wallet.schema import WALLETS
-
     from ekbatan.repository import Repository
+    from fixtures.domain import Wallet
+    from fixtures.schema import WALLETS
 
     return Repository(Wallet, WALLETS, registry, clock=clock)
 
 
 @pytest.fixture
 def notifications(registry: DatabaseRegistry, clock: FixedClock) -> Any:
-    from examples.wallet.model import Notification
-    from examples.wallet.schema import NOTIFICATIONS
-
     from ekbatan.repository import Repository
+    from fixtures.domain import Notification
+    from fixtures.schema import NOTIFICATIONS
 
     return Repository(Notification, NOTIFICATIONS, registry, clock=clock)
 
@@ -126,9 +127,8 @@ def notifications(registry: DatabaseRegistry, clock: FixedClock) -> Any:
 def executor(
     registry: DatabaseRegistry, clock: FixedClock, wallets: Any, notifications: Any
 ) -> Any:
-    from examples.wallet.schema import EVENTS
-
     from ekbatan.action import ActionExecutor
+    from fixtures.schema import EVENTS
 
     return ActionExecutor(
         namespace="example.wallet",
@@ -142,12 +142,11 @@ def executor(
 @pytest.fixture
 def sharded(sharded_registry: DatabaseRegistry, clock: FixedClock) -> Any:
     """An executor over two databases, routing by the shard encoded in each id."""
-    from examples.wallet.model import Wallet
-    from examples.wallet.schema import EVENTS, WALLETS
-
     from ekbatan.action import ActionExecutor
     from ekbatan.repository import Repository
     from ekbatan.sharding import EmbeddedBitsSharding
+    from fixtures.domain import Wallet
+    from fixtures.schema import EVENTS, WALLETS
 
     repo = Repository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock
@@ -165,8 +164,9 @@ def sharded(sharded_registry: DatabaseRegistry, clock: FixedClock) -> Any:
 @pytest.fixture
 def outbox(registry: DatabaseRegistry) -> Any:
     """Every outbox row on every shard, oldest first, as plain dicts."""
-    from examples.wallet.schema import EVENTS
     from sqlalchemy import select
+
+    from fixtures.schema import EVENTS
 
     def read() -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -184,9 +184,8 @@ def outbox(registry: DatabaseRegistry) -> Any:
 @pytest.fixture
 def pipeline(registry: DatabaseRegistry, clock: FixedClock) -> Any:
     """Fan-out and dispatch over a registry, wired to a fresh handler registry."""
-    from examples.wallet.schema import EVENT_NOTIFICATIONS, EVENTS
-
     from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
+    from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS
 
     def build(*handlers: Any, **dispatch_options: Any) -> Any:
         subscriptions = EventHandlerRegistry(handlers)
@@ -214,8 +213,9 @@ def notifications_in(registry: DatabaseRegistry) -> Any:
     """Count queue rows by state, across every shard."""
     from collections import Counter
 
-    from examples.wallet.schema import EVENT_NOTIFICATIONS
     from sqlalchemy import select
+
+    from fixtures.schema import EVENT_NOTIFICATIONS
 
     def count() -> Counter[str]:
         seen: Counter[str] = Counter()
