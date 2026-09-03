@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from ekbatan.domain import Builder, Entity, GenericState, Model, ModelEvent
+from ekbatan.domain import Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
 from fixtures.domain import Wallet, WalletId, WalletMoneyDeposited, WalletState
 
@@ -75,7 +75,7 @@ def test_a_builder_refuses_a_field_the_target_does_not_have():
 
 def test_a_builder_can_be_started_from_nothing():
     built = (
-        Builder(Wallet)
+        Wallet.builder()
         .id(uuid4())
         .state(WalletState.OPENED)
         .owner_id(uuid4())
@@ -192,7 +192,7 @@ def test_domain_methods_chain_and_their_events_accumulate():
 
 def test_copy_from_takes_every_field():
     wallet = a_wallet()
-    assert Builder(Wallet).copy_from(wallet).build() == wallet
+    assert Wallet.builder().copy_from(wallet).build() == wallet
 
 
 def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():

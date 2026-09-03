@@ -6,42 +6,31 @@ rather than a wrong answer: build() calls the real constructor, which will refus
 
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
+from typing import Self
 from uuid import UUID
 
-from ekbatan.domain import Builder, GenericState
+from ekbatan.domain import Builder, GenericState, ModelBuilder
 
 from .model import Alert, AlertId, Wallet, WalletId, WalletState
 
 
-class WalletBuilder(Builder[Wallet]):
-    """Builds a Wallet, with the field types a checker can see."""
+class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+    """Builds a Wallet, with the field types a checker can see.
+
+    id, state, version and the timestamps come from ModelBuilder, typed by the
+    parameters above, so only the fields Wallet added are declared here.
+    """
 
     builds = Wallet
 
-    def id(self, value: WalletId) -> WalletBuilder:
-        return self.set(id=value)
-
-    def state(self, value: WalletState) -> WalletBuilder:
-        return self.set(state=value)
-
-    def version(self, value: int) -> WalletBuilder:
-        return self.set(version=value)
-
-    def created_date(self, value: datetime | None) -> WalletBuilder:
-        return self.set(created_date=value)
-
-    def updated_date(self, value: datetime | None) -> WalletBuilder:
-        return self.set(updated_date=value)
-
-    def owner_id(self, value: UUID) -> WalletBuilder:
+    def owner_id(self, value: UUID) -> Self:
         return self.set(owner_id=value)
 
-    def currency(self, value: str) -> WalletBuilder:
+    def currency(self, value: str) -> Self:
         return self.set(currency=value)
 
-    def balance(self, value: Decimal) -> WalletBuilder:
+    def balance(self, value: Decimal) -> Self:
         return self.set(balance=value)
 
 
@@ -51,27 +40,22 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
     return made.copy_from(source) if source is not None else made
 
 
-class AlertBuilder(Builder[Alert]):
-    """Builds a Alert, with the field types a checker can see."""
+class AlertBuilder(Builder[Alert, AlertId, GenericState]):
+    """Builds an Alert, with the field types a checker can see.
+
+    id, state and version come from Builder, typed by the
+    parameters above, so only the fields Alert added are declared here.
+    """
 
     builds = Alert
 
-    def id(self, value: AlertId) -> AlertBuilder:
-        return self.set(id=value)
-
-    def state(self, value: GenericState) -> AlertBuilder:
-        return self.set(state=value)
-
-    def version(self, value: int) -> AlertBuilder:
-        return self.set(version=value)
-
-    def wallet_id(self, value: WalletId) -> AlertBuilder:
+    def wallet_id(self, value: WalletId) -> Self:
         return self.set(wallet_id=value)
 
-    def recipient(self, value: str) -> AlertBuilder:
+    def recipient(self, value: str) -> Self:
         return self.set(recipient=value)
 
-    def message(self, value: str) -> AlertBuilder:
+    def message(self, value: str) -> Self:
         return self.set(message=value)
 
 

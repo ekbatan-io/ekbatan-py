@@ -11,7 +11,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
-from ekbatan.domain import Builder, Entity, GenericState, Model, ModelEvent
+from ekbatan.domain import Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
 
@@ -67,7 +67,7 @@ class Wallet(Model[WalletId, WalletState]):
     @classmethod
     def open(cls, *, id: WalletId, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
         return (
-            Builder(cls)
+            cls.builder()
             .id(id)
             .state(WalletState.OPENED)
             .owner_id(owner_id)

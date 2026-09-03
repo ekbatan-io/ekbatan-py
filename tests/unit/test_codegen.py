@@ -8,6 +8,7 @@ generates.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from decimal import Decimal
@@ -34,29 +35,41 @@ def test_it_ignores_what_a_module_merely_imports():
         assert model.__module__ == MODULE
 
 
-def test_the_generated_source_declares_a_builder_per_model():
+def test_a_model_gets_a_ModelBuilder_and_an_entity_a_Builder():
+    """An entity has no timestamps and no events, so offering setters for them would be an
+    error waiting for someone to call it."""
     source = generate([MODULE])
-    assert "class WalletBuilder(Builder[Wallet]):" in source
-    assert "class NotificationBuilder(Builder[Notification]):" in source
+    assert "class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):" in source
+    assert (
+        "class NotificationBuilder(Builder[Notification, NotificationId, GenericState]):" in source
+    )
     assert "builds = Wallet" in source
+
+
+def test_only_the_fields_the_model_added_are_declared():
+    """id, state, version and the timestamps are typed on the base through its parameters -
+    exactly as Java's Model.Builder types them for every generated builder, which is why a
+    generated one there declares three methods rather than eight."""
+    source = generate([MODULE])
+    declared = set(re.findall(r"^    def (\w+)\(self, value", source, re.M))
+
+    assert {"owner_id", "currency", "balance"} <= declared
+    assert declared.isdisjoint(
+        {"id", "state", "version", "created_date", "updated_date", "events"}
+    ), f"these come from the base and should not be re-declared: {declared}"
 
 
 def test_the_setters_carry_the_field_s_real_type():
     source = generate([MODULE])
-    assert "def balance(self, value: Decimal) -> WalletBuilder:" in source
-    assert "def currency(self, value: str) -> WalletBuilder:" in source
-    assert "def id(self, value: WalletId) -> WalletBuilder:" in source, (
-        "a type variable resolved to the concrete id type, not left as ID"
-    )
-    assert "def state(self, value: WalletState) -> WalletBuilder:" in source
-    assert "def created_date(self, value: datetime | None) -> WalletBuilder:" in source, (
-        "an optional stays optional"
-    )
+    assert "def balance(self, value: Decimal) -> Self:" in source
+    assert "def currency(self, value: str) -> Self:" in source
 
 
-def test_events_are_left_to_the_base():
+def test_the_base_is_parameterised_so_id_and_state_are_typed_without_being_declared():
     source = generate([MODULE])
-    assert "def events(self" not in source, "with_event and events() are already typed there"
+    assert "[Wallet, WalletId, WalletState]" in source, (
+        "an id resolved to the concrete type, not left as a type variable"
+    )
 
 
 def test_it_emits_a_factory_named_after_the_model():

@@ -39,6 +39,7 @@ __all__ = [
     "Entity",
     "GenericState",
     "Model",
+    "ModelBuilder",
     "ModelEvent",
     "Persistable",
 ]
@@ -82,21 +83,32 @@ class ModelEvent:
         return type(self).__name__
 
 
-class Builder[T]:
+class Builder[T, ID = Any, S = Any]:
     """Accumulates field values, then builds one instance.
 
-    Reached through :meth:`Persistable.copy`, and fluent the whole way::
+    Parameterised by what it builds and by that model's id and state types, so ``id`` and
+    ``state`` are typed here rather than re-declared by every subclass. A generated builder
+    then only has to describe the fields its own model added::
 
-        wallet.copy().balance(new_balance).with_event(WalletMoneyDeposited(...)).build()
+        class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+            builds = Wallet
 
-    Every field of the target is a setter, resolved at call time from the dataclass itself.
-    Java needs an annotation processor to generate this per class; here one builder covers
-    every model and entity there will ever be.
+            def balance(self, value: Decimal) -> Self: ...
+
+    Reached through :meth:`Persistable.copy` or :meth:`Persistable.builder`, and fluent the
+    whole way::
+
+        wallet.copy().balance(new_balance).with_event(MoneyDeposited(...)).build()
+
+    Every field of the target is a setter, resolved at call time from the dataclass itself, so
+    one builder covers every model there will ever be. What that cannot do is tell a type
+    checker what a setter takes - see :mod:`ekbatan.codegen`, which generates exactly that and
+    nothing else.
     """
 
     __slots__ = ("_target", "_values")
 
-    #: Set by a generated subclass so it needs no constructor argument.
+    #: Set by a subclass so it needs no constructor argument.
     builds: ClassVar[type[Any] | None] = None
 
     def __init__(self, target: type[T] | None = None, values: dict[str, Any] | None = None) -> None:
@@ -109,12 +121,12 @@ class Builder[T]:
         self._target: type[T] = resolved
         self._values: dict[str, Any] = dict(values or {})
 
-    # -- the fields every persistable has, spelled out so a type checker sees them ----------
+    # -- what every persistable has -----------------------------------------------------------
 
-    def id(self, value: Any) -> Self:
+    def id(self, value: ID) -> Self:
         return self.set(id=value)
 
-    def state(self, value: Any) -> Self:
+    def state(self, value: S) -> Self:
         return self.set(state=value)
 
     def version(self, value: int) -> Self:
@@ -126,6 +138,60 @@ class Builder[T]:
 
     def increase_version(self) -> Self:
         return self.set(version=int(self._values.get("version", 0)) + 1)
+
+    def copy_from(self, other: Any) -> Self:
+        """Take every field from an existing instance - the framework's and your own.
+
+        This is what makes an inherited ``copy()`` possible. Java has no equivalent, because a
+        base class there cannot enumerate a subclass's fields; that is why every Java model
+        writes out its own ``copy()``, and why one of them eventually forgets a field.
+        """
+        for name in _field_names(type(other)):
+            self._values[name] = getattr(other, name)
+        return self
+
+    # -- everything else ----------------------------------------------------------------------
+
+    def set(self, **changes: Any) -> Self:
+        unknown = set(changes) - _field_names(self._target)
+        if unknown:
+            raise ValidationError(
+                f"{self._target.__name__} has no field(s) {sorted(unknown)}; "
+                f"it has {sorted(_field_names(self._target))}"
+            )
+        self._values.update(changes)
+        return self
+
+    def __getattr__(self, name: str) -> Callable[[Any], Builder[T, ID, S]]:
+        """Any field of the target, as a fluent setter."""
+        if name.startswith("_") or name not in _field_names(self._target):
+            raise AttributeError(
+                f"{self._target.__name__} has no field {name!r}; "
+                f"it has {sorted(_field_names(self._target))}"
+            )
+
+        def setter(value: Any) -> Builder[T, ID, S]:
+            self._values[name] = value
+            return self
+
+        return setter
+
+    def build(self) -> T:
+        return self._target(**self._values)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._target.__name__}, {sorted(self._values)})"
+
+
+class ModelBuilder[T, ID = Any, S = Any](Builder[T, ID, S]):
+    """A builder for a :class:`Model`: everything above, plus timestamps and events.
+
+    Separate from :class:`Builder` for the same reason ``Model`` is separate from ``Entity`` -
+    an entity has neither, and offering setters for fields it does not have would be an error
+    waiting for someone to call it.
+    """
+
+    __slots__ = ()
 
     def created_date(self, value: datetime | None) -> Self:
         return self.set(created_date=value)
@@ -139,49 +205,6 @@ class Builder[T]:
     def with_event(self, event: ModelEvent) -> Self:
         """Attach an event. The only way one enters the outbox."""
         return self.set(events=(*self._values.get("events", ()), event))
-
-    def copy_from(self, other: Any) -> Self:
-        """Take every field from an existing instance - the framework's and your own.
-
-        This is what makes an inherited ``copy()`` possible. Java has no equivalent, because a
-        base class there cannot enumerate a subclass's fields; that is why every Java model
-        writes out its own ``copy()``, and why one of them eventually forgets a field.
-        """
-        for name in _field_names(type(other)):
-            self._values[name] = getattr(other, name)
-        return self
-
-    # -- everything else ---------------------------------------------------------------------
-
-    def set(self, **changes: Any) -> Self:
-        unknown = set(changes) - _field_names(self._target)
-        if unknown:
-            raise ValidationError(
-                f"{self._target.__name__} has no field(s) {sorted(unknown)}; "
-                f"it has {sorted(_field_names(self._target))}"
-            )
-        self._values.update(changes)
-        return self
-
-    def __getattr__(self, name: str) -> Callable[[Any], Builder[T]]:
-        """Any field of the target, as a fluent setter."""
-        if name.startswith("_") or name not in _field_names(self._target):
-            raise AttributeError(
-                f"{self._target.__name__} has no field {name!r}; "
-                f"it has {sorted(_field_names(self._target))}"
-            )
-
-        def setter(value: Any) -> Builder[T]:
-            self._values[name] = value
-            return self
-
-        return setter
-
-    def build(self) -> T:
-        return self._target(**self._values)
-
-    def __repr__(self) -> str:
-        return f"Builder({self._target.__name__}, {sorted(self._values)})"
 
 
 def _field_names(target: type) -> frozenset[str]:
@@ -201,7 +224,7 @@ class Persistable[ID, S: Enum]:
         return False
 
     @classmethod
-    def builder(cls) -> Builder[Self]:
+    def builder(cls) -> Builder[Self, ID, S]:
         """An empty builder for this type - what a constructor would be if it were fluent.
 
         The counterpart to :meth:`copy`: that one starts from a row you have, this one from
@@ -209,7 +232,7 @@ class Persistable[ID, S: Enum]:
         """
         return Builder(cls)
 
-    def copy(self) -> Builder[Self]:
+    def copy(self) -> Builder[Self, ID, S]:
         """A builder pre-loaded with every one of this row's values.
 
         Inherited, not written per model: the fields come off the dataclass, so a model that
@@ -267,6 +290,14 @@ class Model[ID, S: Enum](Persistable[ID, S]):
     @property
     def emits_events(self) -> bool:
         return True
+
+    @classmethod
+    def builder(cls) -> ModelBuilder[Self, ID, S]:
+        return ModelBuilder(cls)
+
+    def copy(self) -> ModelBuilder[Self, ID, S]:
+        """A builder that can attach events, because a model can emit them."""
+        return ModelBuilder(type(self)).copy_from(self)
 
     def evolve(self, *, emit: ModelEvent | Iterable[ModelEvent] = (), **changes: Any) -> Self:
         """This model with some fields changed, and whatever it emitted in changing.

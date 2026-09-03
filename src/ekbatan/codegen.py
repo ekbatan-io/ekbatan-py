@@ -29,7 +29,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
-from .domain import Persistable
+from .domain import Model, Persistable
 from .repository import _concrete_types
 
 __all__ = ["generate", "models_in"]
@@ -75,7 +75,6 @@ def generate(module_names: Iterable[str], *, package: str | None = None) -> str:
     for model in models:
         bodies.append(_render(model, imports))
 
-    _need(imports, "ekbatan.domain", "Builder")
     for model in models:
         _need(imports, model.__module__, model.__name__)
 
@@ -101,9 +100,26 @@ def _render(model: type[Persistable[Any, Any]], imports: dict[str, set[str]]) ->
     builder = f"{name}Builder"
     factory = _snake(name)
 
+    base = "ModelBuilder" if issubclass(model, Model) else "Builder"
+    _need(imports, "ekbatan.domain", base)
+    resolved = _concrete_types(model)
+    id_type = _annotation(resolved.get("id", Any), imports)
+    state_type = _annotation(resolved.get("state", Any), imports)
+    _need(imports, "typing", "Self")
+
+    article = "an" if name[0].lower() in "aeiou" else "a"
+    inherited = (
+        "id, state, version and the timestamps"
+        if base == "ModelBuilder"
+        else "id, state and version"
+    )
     lines = [
-        f"class {builder}(Builder[{name}]):",
-        f'    """Builds a {name}, with the field types a checker can see."""',
+        f"class {builder}({base}[{name}, {id_type}, {state_type}]):",
+        f'    """Builds {article} {name}, with the field types a checker can see.',
+        "",
+        f"    {inherited} come from {base}, typed by the",
+        f"    parameters above, so only the fields {name} added are declared here.",
+        '    """',
         "",
         f"    builds = {name}",
         "",
@@ -111,7 +127,7 @@ def _render(model: type[Persistable[Any, Any]], imports: dict[str, set[str]]) ->
     for field, annotation in _fields(model):
         rendered = _annotation(annotation, imports)
         lines += [
-            f"    def {field}(self, value: {rendered}) -> {builder}:",
+            f"    def {field}(self, value: {rendered}) -> Self:",
             f"        return self.set({field}=value)",
             "",
         ]
@@ -125,11 +141,17 @@ def _render(model: type[Persistable[Any, Any]], imports: dict[str, set[str]]) ->
     return "\n".join(lines)
 
 
+#: Declared by Builder and ModelBuilder, and typed there through their ID and state
+#: parameters - so a generated builder never re-declares them, any more than Java's does.
+_ON_THE_BASE = frozenset({"id", "state", "version"} | {f.name for f in dataclasses.fields(Model)})
+
+
 def _fields(model: type[Persistable[Any, Any]]) -> Iterator[tuple[str, Any]]:
+    """The fields this model added, and only those."""
     resolved = _concrete_types(model)
     for field in dataclasses.fields(model):
-        if field.name == "events":
-            continue  # with_event and events() are on the base and already typed
+        if field.name in _ON_THE_BASE:
+            continue
         yield field.name, resolved.get(field.name, Any)
 
 

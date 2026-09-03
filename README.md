@@ -105,6 +105,22 @@ wallet(existing).balance("oops").build()
 #        expected "Decimal"
 ```
 
+A generated builder declares **only the fields its model added**:
+
+```python
+class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+    builds = Wallet
+
+    def owner_id(self, value: UUID) -> Self: ...
+    def currency(self, value: str) -> Self: ...
+    def balance(self, value: Decimal) -> Self: ...
+```
+
+`id`, `state`, `version` and the timestamps are typed on the base through those parameters -
+the same trick `Model.Builder<ID, B, M, STATE>` uses in Java, and the reason a generated
+builder there declares three methods rather than eight. An entity gets `Builder` instead of
+`ModelBuilder`, so it is not offered setters for timestamps and events it does not have.
+
 Everything else Java's `@AutoBuilder` emits - constructing, copying, incrementing a version -
 already needs no generation here, so none is done. The output is ordinary Python: commit it,
 read it, regenerate it when a model changes. A stale one is a type error rather than a wrong
