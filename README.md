@@ -78,6 +78,7 @@ PyMySQL. Migrations with yoyo, which runs plain per-dialect SQL files.
 | **distributed jobs** | one slot, one execution, across the cluster |
 | **schema and migrations** | the framework's tables as metadata, DDL per dialect, yoyo across every shard |
 | **statement accounting** | so the cost claims are checkable rather than asserted |
+| **test support** | `run_action` runs a unit of work against a bare plan, with no database |
 
 Only `event-streaming` is missing, and it is not planned: publishing runs inside Kafka Connect,
 in a JVM, whichever language wrote the row.
@@ -85,6 +86,22 @@ in a JVM, whichever language wrote the row.
 [DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one.
 
 ## Testing
+
+An action's business logic needs no database. `run_action` runs one against a bare plan and
+reports what it staged:
+
+```python
+staged = run_action(DepositMoney(wallet), DepositParams(amount=Decimal("50.00"), ...))
+
+assert staged.result.balance == Decimal("150.00")
+assert staged.emitted(WalletMoneyDeposited)[0].amount == Decimal("50.00")
+assert staged.updated(Wallet) == [staged.result]
+```
+
+It binds the plan through the same mechanism the executor uses, so `self.plan`, `self.clock`
+and `self.principal` behave exactly as they do in production. Nothing is written. Knowing that
+state and events land *together* is a test against a database, and no test-support machinery
+substitutes for it.
 
 ```
 uv run pytest                      # SQLite, about two seconds

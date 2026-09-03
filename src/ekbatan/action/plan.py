@@ -11,8 +11,9 @@ session, and the one most worth testing.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, cast
 
 from ..clock import Clock, to_storage
@@ -104,8 +105,13 @@ class ActionPlan:
 
     # ------------------------------------------------------------------ reading
 
-    def changes(self) -> dict[type, Changes]:
-        return self._by_type
+    def changes(self) -> Mapping[type, Changes]:
+        """A read-only view of what is staged, by model type.
+
+        A view rather than the map itself: a caller holding the real one can empty the plan, and
+        the executor would then commit a unit of work that had quietly become a no-op.
+        """
+        return MappingProxyType(self._by_type)
 
     def additions[P: Persistable[Any, Any]](self, model_type: type[P]) -> Sequence[P]:
         changes = self._by_type.get(model_type)

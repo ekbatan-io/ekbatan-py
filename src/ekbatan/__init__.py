@@ -67,6 +67,7 @@ from .sharding import (
     sharded_uuid,
     uuid_instant,
 )
+from .testing import StagedWork, run_action
 
 __version__ = "0.1.0.dev0"
 
@@ -124,6 +125,7 @@ __all__ = [
     "ShardingConfig",
     "ShardingStrategy",
     "SingleTableOutbox",
+    "StagedWork",
     "StaleRecordError",
     "StatementCount",
     "SystemClock",
@@ -142,6 +144,7 @@ __all__ = [
     "notifications_table",
     "outbox_table",
     "read_shard",
+    "run_action",
     "scheduled_tasks_table",
     "sharded_uuid",
     "unwrap",
