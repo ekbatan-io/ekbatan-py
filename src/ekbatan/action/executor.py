@@ -12,7 +12,7 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,14 +20,14 @@ from sqlalchemy import Table
 
 from .._tracing import span
 from ..clock import Clock, SystemClock, to_storage
-from ..domain import Model, Persistable
-from ..errors import CrossShardError, EkbatanError, StaleRecordError, ValidationError
+from ..errors import CrossShardError, StaleRecordError, ValidationError
 from ..persistence import DatabaseRegistry
 from ..repository import Repository
 from ..sharding import ShardIdentifier
 from .action import Action, _Binding
-from .outbox import EmittedEvent, EventPersister, OutboxRecord, SingleTableJsonEventPersister
-from .plan import ActionPlan
+from .outbox import EventPersister, SingleTableJsonEventPersister
+from .persister import ChangePersister
+from .plan import ActionPlan, PersistableChanges
 
 __all__ = ["ActionExecutor", "ExecutionConfiguration", "RetryConfig"]
 
@@ -122,7 +122,7 @@ class ActionExecutor:
     one more place for a name to be wrong.
     """
 
-    __slots__ = ("_by_model", "clock", "config", "namespace", "outbox", "registry")
+    __slots__ = ("changes", "clock", "config", "namespace", "outbox", "registry")
 
     def __init__(
         self,
@@ -140,18 +140,14 @@ class ActionExecutor:
         self.clock = clock or SystemClock()
         self.config = config
 
-        self._by_model: dict[type, Repository[Any, Any]] = {}
-        for repo in repositories:
-            self._by_model[repo.model_type] = repo
-        if not self._by_model:
-            raise ValidationError("at least one repository is required")
-
         if outbox is not None:
             self.outbox: EventPersister = outbox
         elif events is not None:
             self.outbox = SingleTableJsonEventPersister(events)
         else:
             raise ValidationError("pass either events=<Table> or outbox=<EventPersister>")
+
+        self.changes = ChangePersister(repositories, self.outbox)
 
     # ------------------------------------------------------------------ running
 
@@ -298,51 +294,35 @@ class ActionExecutor:
     def _commit_shard(
         self,
         shard: ShardIdentifier,
-        slices: Mapping[type, tuple[list[Any], list[Any]]],
+        staged: Mapping[type, PersistableChanges],
         action_name: str,
         action_id: uuid.UUID,
         params: Any,
         started: Any,
     ) -> None:
-        with self.registry.manager(shard).transaction():
-            events: list[EmittedEvent] = []
-            for model_type, (additions, updates) in slices.items():
-                repo = self._repository(model_type)
-                if issubclass(model_type, Model):
-                    events += _events_of(additions)
-                    events += _events_of(updates)
-                # The no-result variants deliberately. The plan already holds the values that
-                # were staged and the events came off those; nothing here reads a written row
-                # back, so asking the database to return every one of them would be paid on
-                # every unit of work for nothing.
-                if additions:
-                    repo.add_all_no_result(additions)
-                if updates:
-                    repo.update_all_no_result(updates)
-
-            self.outbox.persist(
-                _connection(self.registry, shard),
-                OutboxRecord(
-                    namespace=self.namespace,
-                    action_id=action_id,
-                    action_name=action_name,
-                    action_params=params,
-                    started_date=started,
-                    completion_date=to_storage(self.clock.now()),
-                    events=events,
-                    shard=shard,
-                ),
+        """One shard, one transaction. What goes in it is the persister's business."""
+        with self.registry.manager(shard).transaction() as conn:
+            self.changes.persist(
+                conn,
+                staged,
+                namespace=self.namespace,
+                action_name=action_name,
+                params=params,
+                started=started,
+                completed=to_storage(self.clock.now()),
+                shard=shard,
+                action_id=action_id,
             )
 
     def _group_by_shard(
         self, plan: ActionPlan
-    ) -> dict[ShardIdentifier, dict[type, tuple[list[Any], list[Any]]]]:
-        grouped: dict[ShardIdentifier, dict[type, tuple[list[Any], list[Any]]]] = {}
+    ) -> dict[ShardIdentifier, dict[type, PersistableChanges]]:
+        grouped: dict[ShardIdentifier, dict[type, PersistableChanges]] = {}
         for model_type, changes in plan.changes().items():
             if not changes:
                 continue
             repo = self._repository(model_type)
-            for staged, index in ((changes.additions, 0), (changes.updates, 1)):
+            for staged, adding in ((changes.additions, True), (changes.updates, False)):
                 for model in staged.values():
                     # The row, not its id. The repository routes its own writes by the row,
                     # because a strategy may read any field - so asking a different question
@@ -350,40 +330,15 @@ class ActionExecutor:
                     # two transactions, with nothing to say so. It is also the only question a
                     # strategy that does not encode the shard in the id can answer at all.
                     shard = repo.shard_of(model)
-                    slot = grouped.setdefault(shard, {}).setdefault(model_type, ([], []))
-                    slot[index].append(model)
+                    slice_ = grouped.setdefault(shard, {}).setdefault(
+                        model_type, PersistableChanges()
+                    )
+                    target = slice_.additions if adding else slice_.updates
+                    target[model.id] = model
         return grouped
 
     def _repository(self, model_type: type) -> Repository[Any, Any]:
-        try:
-            return self._by_model[model_type]
-        except KeyError:
-            raise ValidationError(
-                f"no repository was given for {model_type.__name__}, so the change staged for "
-                f"it cannot be written. Pass one to ActionExecutor(repositories=[...])."
-            ) from None
-
-
-def _events_of(models: Sequence[Persistable[Any, Any]]) -> list[EmittedEvent]:
-    return [
-        EmittedEvent(str(model.id), type(model).__name__, event)
-        for model in models
-        for event in getattr(model, "events", ())
-    ]
-
-
-def _connection(registry: DatabaseRegistry, shard: ShardIdentifier) -> Any:
-    """The connection of the transaction already open on this shard.
-
-    The outbox write has to land in it. A store handed its own connection would commit
-    separately, which is the dual write this framework exists to remove.
-    """
-    from ..persistence import _open
-
-    conn = _open().get(shard)
-    if conn is None:  # pragma: no cover - _commit_shard has already opened one
-        raise EkbatanError(f"no open transaction on shard {shard}")
-    return conn
+        return self.changes.repository_for(model_type)
 
 
 def _valid_namespace(namespace: str) -> str:

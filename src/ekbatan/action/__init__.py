@@ -3,6 +3,7 @@
 from .action import Action, current_clock, current_plan, current_principal
 from .executor import DEFAULT_RETRIES, ActionExecutor, ExecutionConfiguration, RetryConfig
 from .outbox import EventPersister, OutboxRecord, SingleTableJsonEventPersister
+from .persister import ChangePersister
 from .plan import ActionPlan, PersistableChanges
 
 __all__ = [
@@ -10,6 +11,7 @@ __all__ = [
     "Action",
     "ActionExecutor",
     "ActionPlan",
+    "ChangePersister",
     "EventPersister",
     "ExecutionConfiguration",
     "OutboxRecord",

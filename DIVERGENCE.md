@@ -200,7 +200,6 @@ differs, not because the name was chosen freely:
 | `AbstractRepository` | `Repository` | nothing is abstract; see above |
 | `Repository` (interface) | - | the narrow interface has no consumer here yet |
 | `ActionRegistry`, `RepositoryRegistry` | - | actions and repositories are passed as objects |
-| `ChangePersister` | - | the executor writes the shard slice itself; there is no second seam |
 | `EventEntity`, `EventEntityRepository` | - | rows are dicts through SQLAlchemy Core, not a mapped class |
 | `EventNotification`, `EventNotificationRepository` | - | the same |
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
