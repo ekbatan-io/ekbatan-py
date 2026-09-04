@@ -101,7 +101,7 @@ def test_lookups_accept_the_typed_id_or_the_raw_uuid(purses):
     assert purses.find(stored.id.value) is not None, "a raw uuid still works"
     assert purses.exists(stored.id) is True
     assert [p.id for p in purses.find_many([stored.id])] == [stored.id]
-    assert purses.hard_delete(stored.id) == 1
+    assert purses.count(PURSES.c.id == stored.id.value) == 1
 
 
 def test_routing_reads_the_shard_off_the_id(sharded_purses):

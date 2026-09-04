@@ -18,6 +18,7 @@ import pytest
 from sqlalchemy import select
 
 from ekbatan.clock import SystemClock, VirtualClock
+from ekbatan.errors import ValidationError
 
 from .actions import (
     CloseWallet,
@@ -28,7 +29,7 @@ from .actions import (
     WalletIdParams,
 )
 from .app import WalletService, build
-from .schema import EVENTS
+from .schema import EVENTS, WALLETS
 
 
 @pytest.fixture
@@ -179,7 +180,7 @@ def test_a_domain_query_still_hides_deleted_rows(service):
         OpenWallet(),
         OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
     )
-    service.wallets.delete(wallet)
+    service.wallets.update(wallet.delete())
 
     assert service.wallets.find_all_by_owner(owner) == []
 
@@ -240,3 +241,40 @@ def test_the_repository_needs_no_row_mapping(service):
 
     wallet = a_wallet(service, "3.00")
     assert service.wallets.get(wallet.id).balance == Decimal("3.0000")
+
+
+def test_an_empty_wallet_can_be_erased_for_real(service):
+    """Unlike `delete`, which keeps the row - see WalletRepository.erase."""
+    wallet = a_wallet(service, "0.00")
+
+    assert service.wallets.erase(wallet.id) is True
+    assert service.wallets.find(wallet.id) is None
+    with service.registry.default.connection(readonly=True) as conn:
+        remaining = conn.execute(
+            select(WALLETS.c.id).where(WALLETS.c.id == wallet.id.value)
+        ).first()
+    assert remaining is None, "soft delete leaves the row; this one does not"
+
+    assert service.wallets.erase(wallet.id) is False, "erasing what is gone is not an error"
+
+
+def test_a_wallet_with_money_in_it_is_not_erased(service):
+    wallet = a_wallet(service, "25.00")
+
+    with pytest.raises(ValidationError, match="still holds 25"):
+        service.wallets.erase(wallet.id)
+
+    assert service.wallets.get(wallet.id).balance == Decimal("25.0000"), "and nothing moved"
+
+
+def test_erasing_joins_a_transaction_the_caller_opened(service):
+    wallet = a_wallet(service, "0.00")
+
+    try:
+        with service.registry.default.transaction():
+            service.wallets.erase(wallet.id)
+            raise RuntimeError("changed my mind")
+    except RuntimeError:
+        pass
+
+    assert service.wallets.find(wallet.id) is not None, "the rollback took the erase with it"

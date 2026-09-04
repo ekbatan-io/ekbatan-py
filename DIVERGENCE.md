@@ -162,15 +162,27 @@ Here every built-in read goes through `readonly_db`, which is the primary by def
 built-in reads quietly bypassing the one named for reading. The name says what the caller is
 doing; the keyword says what they are willing to pay for it.
 
-## Deleting is on the repository, not only on the model
+## Deleting
 
-Java has no delete of any kind: a caller writes `repository.update(row.delete())`, where the
-model's own `delete()` returns a copy in the `DELETED` state.
+The same as Java, after some wandering: there is no delete of any kind on the repository in
+either port. `GenericState.DELETED` is the convention, every read filters it, and what deletion
+*means* belongs to the model:
 
-Both are here, and `repo.delete(row)` is the same update under a name that says what it is for.
-`hard_delete(id)` has no Java counterpart at all - it issues a real `DELETE`, and is deliberately
-the longer thing to type, taking an id rather than a row so it cannot be reached by autocompleting
-from something you happen to be holding.
+```python
+def delete(self) -> Wallet:
+    if self.state is WalletState.DELETED:
+        return self
+    return self.copy().with_event(WalletDeleted()).state(WalletState.DELETED).build()
+```
+
+then `repo.update(wallet.delete())`, or `plan.update(wallet.delete())` inside a unit of work.
+
+This port briefly had `Repository.delete()` and `Repository.hard_delete()`. Both are gone. The
+first wrote the DELETED state without emitting anything, so a wallet vanished from every read
+in the system and nothing downstream was told; the second issued a physical `DELETE`, bypassing
+the optimistic lock and leaving published events describing a row that no longer existed. An
+application that genuinely needs a physical delete writes it against its own rule - see
+`WalletRepository.erase` in the example, which refuses a wallet that still holds money.
 
 ## The scheduler is this framework's, not a dependency's
 

@@ -15,10 +15,11 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository, ShardIdentifier
 from ekbatan.clock import Clock
+from ekbatan.errors import ValidationError
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
 from .model import Alert, AlertId, Wallet, WalletId, WalletState
@@ -67,6 +68,33 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
                 conn.execute(select(WALLETS.c.id).where(self.id_matches(wallet_id))).first()
                 is not None
             )
+
+    def erase(self, wallet_id: WalletId) -> bool:
+        """Remove a wallet for real, and only if it holds nothing.
+
+        The inherited `delete` is a soft delete - it moves the row to DELETED and every read
+        stops seeing it, which is what an application almost always wants, because the row is
+        still the other side of every event already published about it.
+
+        This is the other kind, written out rather than inherited, because the rule it enforces
+        is this application's and the framework cannot know it: a wallet with money in it is
+        not something to erase, whatever the caller believes. An operator running a
+        data-deletion request gets an answer, not a silent no-op, so the balance is checked
+        first and the miss is distinguishable from the refusal.
+
+        `tx_db_else_db` rather than `db`, so this joins a transaction if the caller has one
+        open - erasing a wallet and writing the audit row of why usually belong together.
+        """
+        held = self.find(wallet_id)
+        if held is None:
+            return False
+        if held.balance != 0:
+            raise ValidationError(
+                f"wallet {wallet_id} still holds {held.balance} {held.currency}; move the "
+                f"balance off it before erasing, or use delete() to close it and keep the row"
+            )
+        with self.tx_db_else_db(key=wallet_id) as conn:
+            return conn.execute(delete(WALLETS).where(self.id_matches(wallet_id))).rowcount == 1
 
     def total_balance(self) -> Decimal:
         """The sum across every shard.

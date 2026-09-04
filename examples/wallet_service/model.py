@@ -64,6 +64,15 @@ class WalletClosed(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
+class WalletDeleted(ModelEvent):
+    """Deleting is a domain event like any other.
+
+    The row survives - every read stops seeing it, but it is still the other side of every
+    event already published about this wallet. What leaves is the wallet, not the history.
+    """
+
+
+@dataclass(frozen=True, kw_only=True)
 class Wallet(Model[WalletId, WalletState]):
     owner_id: UUID
     currency: str
@@ -131,6 +140,17 @@ class Wallet(Model[WalletId, WalletState]):
         if self.state is WalletState.CLOSED:
             return self
         return self.copy().with_event(WalletClosed()).state(WalletState.CLOSED).build()
+
+    def delete(self) -> Wallet:
+        """Soft delete: the row stays, every read stops seeing it.
+
+        Written here rather than inherited, because what deletion means belongs to the model.
+        The framework supplies only the convention - a state named DELETED - and the filter
+        that hides it from every read.
+        """
+        if self.state is WalletState.DELETED:
+            return self
+        return self.copy().with_event(WalletDeleted()).state(WalletState.DELETED).build()
 
 
 @dataclass(frozen=True, kw_only=True)

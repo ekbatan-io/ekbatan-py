@@ -122,9 +122,21 @@ def test_an_empty_batch_is_a_no_op(wallets):
     assert wallets.find_many([]) == []
 
 
+def test_deleting_is_a_domain_event(wallets):
+    """The framework has no delete of its own. The model says what deletion means for it, and
+    a deletion nobody downstream hears about is a row that silently stops existing."""
+    wallet = wallets.add(a_wallet())
+
+    gone = wallet.delete()
+
+    assert [type(e).__name__ for e in gone.events] == ["WalletDeleted"]
+    assert gone.state is WalletState.DELETED
+    assert gone.delete() is gone, "deleting a deleted row changes nothing and emits nothing"
+
+
 def test_a_deleted_row_is_invisible_to_every_read(wallets):
     kept, gone = wallets.add_all([a_wallet(), a_wallet()])
-    wallets.delete(gone)
+    wallets.update(gone.delete())
 
     assert wallets.find(gone.id) is None
     assert wallets.exists(gone.id) is False
@@ -141,7 +153,7 @@ def test_predicate_reads_apply_the_same_filter(wallets):
         )
         for c in ("EUR", "USD", "EUR")
     )
-    wallets.delete(gone)
+    wallets.update(gone.delete())
 
     assert len(wallets.find_where(WALLETS.c.currency == "EUR")) == 1
     assert wallets.count(WALLETS.c.currency == "EUR") == 1

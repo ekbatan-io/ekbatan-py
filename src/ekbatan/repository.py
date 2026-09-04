@@ -30,7 +30,6 @@ from sqlalchemy import (
     any_,
     bindparam,
     column,
-    delete,
     func,
     insert,
     literal,
@@ -610,26 +609,6 @@ class Repository[M: Persistable[Any, Any], K]:
         # same list back.
         by_id = {row._mapping[self.id_column.name]: row for row in written}
         return [self.from_row(by_id[self.to_row(m)[self.id_column.name]]) for m in stamped]
-
-    def delete(self, model: M) -> M:
-        """Soft delete: move the row to ``DELETED`` so every read stops seeing it."""
-        state_enum = self._types.get("state")
-        if not (isinstance(state_enum, type) and issubclass(state_enum, Enum)):
-            raise ValidationError(f"{self.model_type.__name__} has no state enum to mark deleted")
-        try:
-            deleted = state_enum[DELETED]
-        except KeyError:
-            raise ValidationError(
-                f"{state_enum.__name__} has no {DELETED} member, so this model cannot be "
-                f"soft-deleted; use hard_delete if that is what you meant"
-            ) from None
-        return self.update(model.evolve(state=deleted))
-
-    def hard_delete(self, key: K) -> int:
-        """Remove the row for real. Rare, and deliberately harder to reach than ``delete``."""
-        stmt = delete(self.table).where(self.id_column == _to_column(key))
-        with self.tx_db_else_db(key=key) as conn:
-            return int(conn.execute(stmt).rowcount)
 
     # --------------------------------------------------------------- internals
 
