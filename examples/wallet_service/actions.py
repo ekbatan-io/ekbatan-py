@@ -11,9 +11,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from ekbatan import Action, Repository
+from ekbatan import Action
 
 from .model import Alert, Wallet, WalletId
+from .repository import WalletRepository
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -56,7 +57,7 @@ class OpenWallet(Action[OpenWalletParams, Wallet]):
 
 
 class DepositMoney(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
+    def __init__(self, wallets: WalletRepository) -> None:
         self.wallets = wallets
 
     def perform(self, params: DepositParams) -> Wallet:
@@ -65,7 +66,7 @@ class DepositMoney(Action[DepositParams, Wallet]):
 
 
 class CloseWallet(Action[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
+    def __init__(self, wallets: WalletRepository) -> None:
         self.wallets = wallets
 
     def perform(self, params: WalletIdParams) -> Wallet:

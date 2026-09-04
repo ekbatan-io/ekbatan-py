@@ -7,17 +7,16 @@ from the code that expresses domain behaviour. Nothing above this file knows any
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from ekbatan import ActionExecutor, DatabaseRegistry, Repository, ShardingConfig
+from ekbatan import ActionExecutor, DatabaseRegistry, ShardingConfig
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
 from ekbatan.jobs import JobRegistry
 
 from .handlers import NotifyOnDeposit
 from .jobs import PayStipend
-from .model import Alert, Wallet
-from .schema import ALERTS, EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, WALLETS, metadata
+from .repository import AlertRepository, WalletRepository
+from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,8 +24,8 @@ class WalletService:
     """Everything wired together, and the only object the outside world needs."""
 
     registry: DatabaseRegistry
-    wallets: Repository[Wallet, Any]
-    alerts: Repository[Alert, Any]
+    wallets: WalletRepository
+    alerts: AlertRepository
     executor: ActionExecutor
     fanout: EventFanout
     dispatch: EventDispatch
@@ -55,8 +54,8 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
     for shard in registry.shards:
         metadata.create_all(registry.manager(shard).primary)
 
-    wallets: Repository[Wallet, Any] = Repository(Wallet, WALLETS, registry, clock=running)
-    alerts: Repository[Alert, Any] = Repository(Alert, ALERTS, registry, clock=running)
+    wallets = WalletRepository(registry, clock=running)
+    alerts = AlertRepository(registry, clock=running)
 
     executor = ActionExecutor(
         namespace="example.wallet_service",

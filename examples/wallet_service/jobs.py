@@ -13,11 +13,12 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from ekbatan import ActionExecutor, Repository
+from ekbatan import ActionExecutor
 from ekbatan.jobs import DistributedJob, Every, JobContext, Schedule
 
 from .actions import DepositMoney, DepositParams
-from .model import Wallet, WalletId, WalletState
+from .model import WalletState
+from .repository import WalletRepository
 
 
 class PayStipend(DistributedJob):
@@ -32,7 +33,7 @@ class PayStipend(DistributedJob):
     def __init__(
         self,
         executor: ActionExecutor,
-        wallets: Repository[Wallet, WalletId],
+        wallets: WalletRepository,
         amount: Decimal = Decimal("1.00"),
     ) -> None:
         self.executor = executor

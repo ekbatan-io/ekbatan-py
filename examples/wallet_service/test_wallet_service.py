@@ -151,3 +151,92 @@ def test_the_script_runs(tmp_path, capsys):
     assert "open a wallet" in printed
     assert "what a consumer reads from the outbox" in printed
     assert "sentinel" in printed
+
+
+# --------------------------------------------------------------- the repository's own queries
+
+
+def test_wallets_are_found_by_owner_across_shards(service):
+    owner = uuid4()
+    for _ in range(2):
+        service.executor.execute(
+            OpenWallet(),
+            OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
+        )
+    service.executor.execute(
+        OpenWallet(),
+        OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("1.00")),
+    )
+
+    assert len(service.wallets.find_all_by_owner(owner)) == 2
+
+
+def test_a_domain_query_still_hides_deleted_rows(service):
+    """The filter is applied once, in the framework, rather than remembered at each call site -
+    which is what stops a reporting query from disagreeing with the application's own screens."""
+    owner = uuid4()
+    wallet = service.executor.execute(
+        OpenWallet(),
+        OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
+    )
+    service.wallets.delete(wallet.next_version())
+
+    assert service.wallets.find_all_by_owner(owner) == []
+
+
+def test_open_wallets_running_low_can_be_listed(service):
+    rich = a_wallet(service, "500.00")
+    poor = a_wallet(service, "2.00")
+    closed = a_wallet(service, "1.00")
+    service.executor.execute(CloseWallet(service.wallets), WalletIdParams(wallet_id=closed.id))
+
+    found = {w.id for w in service.wallets.find_open_below(Decimal("10.00"))}
+
+    assert found == {poor.id}, "the closed one is not open, and the rich one is not low"
+    assert rich.id not in found
+
+
+def test_a_sum_across_shards_drops_to_sql(service):
+    """The one question the inherited reads cannot answer, so the repository writes it."""
+    assert service.wallets.total_balance() == Decimal("0"), "no rows is zero, not null"
+
+    a_wallet(service, "10.00")
+    a_wallet(service, "2.50")
+
+    assert service.wallets.total_balance() == Decimal("12.5000")
+
+
+def test_a_shard_can_be_asked_directly(service):
+    from ekbatan import ShardIdentifier
+
+    wallet = a_wallet(service)
+    here = ShardIdentifier(0, 0)
+
+    assert [w.id for w in service.wallets.find_on_shard(here)] == [wallet.id]
+    assert service.wallets.exists_on_shard(here, wallet.id) is True
+    assert service.wallets.exists_on_shard(ShardIdentifier(0, 0), wallet.id) is True
+
+
+def test_alerts_are_found_by_the_wallet_they_are_about(service):
+    wallet = a_wallet(service)
+    service.executor.execute(
+        DepositMoney(service.wallets),
+        DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
+    )
+    service.deliver_pending_events()
+
+    found = service.alerts.find_for_wallet(wallet.id)
+    assert len(found) == 1
+    assert found[0].recipient == "ada@example.com"
+
+
+def test_the_repository_needs_no_row_mapping(service):
+    """Java's counterpart writes from_record and to_record, listing every column twice. Here
+    the mapping is by field name, so neither is written unless the names differ."""
+    from .repository import WalletRepository
+
+    assert "from_row" not in vars(WalletRepository)
+    assert "to_row" not in vars(WalletRepository)
+
+    wallet = a_wallet(service, "3.00")
+    assert service.wallets.get(wallet.id).balance == Decimal("3.0000")
