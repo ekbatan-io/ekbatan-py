@@ -56,8 +56,8 @@ return self.evolve(balance=new_balance, emit=WalletMoneyDeposited(...))
 ```
 
 The difference from Java is that no builder is generated. Java needs an annotation processor to
-emit a CRTP builder per class; here one `Builder` resolves fields from the dataclass at call
-time, so a new model needs no build step and no generated file to keep in sync.
+emit a CRTP builder per class; here `EntityBuilder` and `ModelBuilder` resolve fields from the
+dataclass at call time, so a new model needs no build step and no generated file to keep in sync.
 
 ## `copyBase` is gone; `copy_from` replaces it
 
@@ -209,7 +209,7 @@ differs, not because the name was chosen freely:
 | `ShardGroupConfig` + `ShardMemberConfig` | `ShardConfig` | one flat shard list rather than a group/member nesting |
 | `Transaction`, `ConnectionProvider` | - | jOOQ and Hikari seams with no SQLAlchemy counterpart |
 | `ActionSpec`, `ActionAssert` | `run_action`, `StagedWork` | see above |
-| `Model.Builder` | `Builder`, `ModelBuilder` | `Persistable` needs one too, so it cannot nest inside `Model` |
+| `Entity.Builder`, `Model.Builder` | `EntityBuilder`, `ModelBuilder` | same two builders, unnested - a nested class is not a Python idiom, and `ModelBuilder` can then inherit rather than repeat |
 
 One place where matching Java costs something: `ExecutionConfiguration` sits next to
 `ShardingConfig`, `ShardConfig` and `DataSourceConfig`, because that is the inconsistency Java

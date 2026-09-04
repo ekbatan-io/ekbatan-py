@@ -31,7 +31,15 @@ from .action import (
 )
 from .clock import Clock, SystemClock, VirtualClock
 from .config import DataSourceConfig, ShardConfig, ShardingConfig
-from .domain import Builder, Entity, GenericState, Model, ModelEvent, Persistable
+from .domain import (
+    Entity,
+    EntityBuilder,
+    GenericState,
+    Model,
+    ModelBuilder,
+    ModelEvent,
+    Persistable,
+)
 from .errors import (
     ConnectivityError,
     CrossShardError,
@@ -84,7 +92,6 @@ __all__ = [
     "Action",
     "ActionExecutor",
     "ActionPlan",
-    "Builder",
     "Clock",
     "ConnectivityError",
     "CrossShardError",
@@ -95,6 +102,7 @@ __all__ = [
     "EkbatanError",
     "EmbeddedBitsShardingStrategy",
     "Entity",
+    "EntityBuilder",
     "EntityNotFoundError",
     "EntityRepository",
     "EventDispatch",
@@ -117,6 +125,7 @@ __all__ = [
     "LockAcquisitionError",
     "MariaDBKeyedLockProvider",
     "Model",
+    "ModelBuilder",
     "ModelEvent",
     "ModelRepository",
     "MySQLKeyedLockProvider",

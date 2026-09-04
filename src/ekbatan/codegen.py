@@ -100,7 +100,7 @@ def _render(model: type[Persistable[Any, Any]], imports: dict[str, set[str]]) ->
     builder = f"{name}Builder"
     factory = _snake(name)
 
-    base = "ModelBuilder" if issubclass(model, Model) else "Builder"
+    base = "ModelBuilder" if issubclass(model, Model) else "EntityBuilder"
     _need(imports, "ekbatan.domain", base)
     resolved = _concrete_types(model)
     id_type = _annotation(resolved.get("id", Any), imports)
@@ -141,7 +141,7 @@ def _render(model: type[Persistable[Any, Any]], imports: dict[str, set[str]]) ->
     return "\n".join(lines)
 
 
-#: Declared by Builder and ModelBuilder, and typed there through their ID and state
+#: Declared by EntityBuilder and ModelBuilder, and typed there through their ID and state
 #: parameters - so a generated builder never re-declares them, any more than Java's does.
 _ON_THE_BASE = frozenset({"id", "state", "version"} | {f.name for f in dataclasses.fields(Model)})
 

@@ -41,7 +41,8 @@ def test_a_model_gets_a_ModelBuilder_and_an_entity_a_Builder():
     source = generate([MODULE])
     assert "class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):" in source
     assert (
-        "class NotificationBuilder(Builder[Notification, NotificationId, GenericState]):" in source
+        "class NotificationBuilder(EntityBuilder[Notification, NotificationId, GenericState]):"
+        in source
     )
     assert "builds = Wallet" in source
 
@@ -126,10 +127,10 @@ def test_a_module_with_no_models_is_an_error_rather_than_an_empty_file():
 
 
 def test_a_builder_that_does_not_know_what_it_builds_says_so():
-    from ekbatan.domain import Builder
+    from ekbatan.domain import EntityBuilder
 
     with pytest.raises(ValidationError, match="does not know what it builds"):
-        Builder()
+        EntityBuilder()
 
 
 def test_the_command_line_writes_a_file(tmp_path: Path):

@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Self
 from uuid import UUID
 
-from ekbatan.domain import Builder, GenericState, ModelBuilder
+from ekbatan.domain import EntityBuilder, GenericState, ModelBuilder
 
 from .model import Alert, AlertId, Wallet, WalletId, WalletState
 
@@ -40,10 +40,10 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
     return made.copy_from(source) if source is not None else made
 
 
-class AlertBuilder(Builder[Alert, AlertId, GenericState]):
+class AlertBuilder(EntityBuilder[Alert, AlertId, GenericState]):
     """Builds an Alert, with the field types a checker can see.
 
-    id, state and version come from Builder, typed by the
+    id, state and version come from EntityBuilder, typed by the
     parameters above, so only the fields Alert added are declared here.
     """
 

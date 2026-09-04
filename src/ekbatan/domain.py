@@ -35,8 +35,8 @@ from .errors import ValidationError
 
 __all__ = [
     "DELETED",
-    "Builder",
     "Entity",
+    "EntityBuilder",
     "GenericState",
     "Model",
     "ModelBuilder",
@@ -83,7 +83,7 @@ class ModelEvent:
         return type(self).__name__
 
 
-class Builder[T, ID = Any, S = Any]:
+class EntityBuilder[T, ID = Any, S = Any]:
     """Accumulates field values, then builds one instance.
 
     Parameterised by what it builds and by that model's id and state types, so ``id`` and
@@ -162,7 +162,7 @@ class Builder[T, ID = Any, S = Any]:
         self._values.update(changes)
         return self
 
-    def __getattr__(self, name: str) -> Callable[[Any], Builder[T, ID, S]]:
+    def __getattr__(self, name: str) -> Callable[[Any], EntityBuilder[T, ID, S]]:
         """Any field of the target, as a fluent setter."""
         if name.startswith("_") or name not in _field_names(self._target):
             raise AttributeError(
@@ -170,7 +170,7 @@ class Builder[T, ID = Any, S = Any]:
                 f"it has {sorted(_field_names(self._target))}"
             )
 
-        def setter(value: Any) -> Builder[T, ID, S]:
+        def setter(value: Any) -> EntityBuilder[T, ID, S]:
             self._values[name] = value
             return self
 
@@ -183,10 +183,10 @@ class Builder[T, ID = Any, S = Any]:
         return f"{type(self).__name__}({self._target.__name__}, {sorted(self._values)})"
 
 
-class ModelBuilder[T, ID = Any, S = Any](Builder[T, ID, S]):
+class ModelBuilder[T, ID = Any, S = Any](EntityBuilder[T, ID, S]):
     """A builder for a :class:`Model`: everything above, plus timestamps and events.
 
-    Separate from :class:`Builder` for the same reason ``Model`` is separate from ``Entity`` -
+    Separate from :class:`EntityBuilder` for the same reason ``Model`` is separate from ``Entity`` -
     an entity has neither, and offering setters for fields it does not have would be an error
     waiting for someone to call it.
     """
@@ -224,22 +224,22 @@ class Persistable[ID, S: Enum]:
         return False
 
     @classmethod
-    def builder(cls) -> Builder[Self, ID, S]:
+    def builder(cls) -> EntityBuilder[Self, ID, S]:
         """An empty builder for this type - what a constructor would be if it were fluent.
 
         The counterpart to :meth:`copy`: that one starts from a row you have, this one from
         nothing. Java's generated ``WalletBuilder.wallet()``, without the generation.
         """
-        return Builder(cls)
+        return EntityBuilder(cls)
 
-    def copy(self) -> Builder[Self, ID, S]:
+    def copy(self) -> EntityBuilder[Self, ID, S]:
         """A builder pre-loaded with every one of this row's values.
 
         Inherited, not written per model: the fields come off the dataclass, so a model that
         gains one gains it here too. Override it only to make a copy that deliberately differs
         - dropping a cached field, resetting a counter.
         """
-        return Builder(type(self)).copy_from(self)
+        return EntityBuilder(type(self)).copy_from(self)
 
     def evolve(self, **changes: Any) -> Self:
         """This row with some fields changed.

@@ -118,7 +118,7 @@ class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
 
 `id`, `state`, `version` and the timestamps are typed on the base through those parameters -
 the same trick `Model.Builder<ID, B, M, STATE>` uses in Java, and the reason a generated
-builder there declares three methods rather than eight. An entity gets `Builder` instead of
+builder there declares three methods rather than eight. An entity gets `EntityBuilder` instead of
 `ModelBuilder`, so it is not offered setters for timestamps and events it does not have.
 
 Everything else Java's `@AutoBuilder` emits - constructing, copying, incrementing a version -
