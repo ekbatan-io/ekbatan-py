@@ -179,7 +179,7 @@ def test_a_domain_query_still_hides_deleted_rows(service):
         OpenWallet(),
         OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
     )
-    service.wallets.delete(wallet.next_version())
+    service.wallets.delete(wallet)
 
     assert service.wallets.find_all_by_owner(owner) == []
 

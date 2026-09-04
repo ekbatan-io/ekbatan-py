@@ -47,6 +47,19 @@ jobs:
       - run: uv run pytest examples
       - run: uv run python -m examples.wallet_service
 
+  tracing:
+    # The span names are a cross-language contract - an operator filtering a trace on
+    # `ekbatan.action.name` is filtering across both implementations. Only this job installs
+    # OpenTelemetry; every other one proves the framework runs without it.
+    name: tests (with a tracing stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras --group tracing
+      - run: uv run pytest --dialects=sqlite
+
   dialects:
     # The claim that this framework works is a claim about these three. SQLite is what keeps
     # the inner loop fast; it is not a supported dialect and proves nothing on its own.

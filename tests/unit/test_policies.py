@@ -24,8 +24,8 @@ from fixtures.domain import Wallet, WalletId
 def test_a_policy_cannot_ask_for_negative_time():
     with pytest.raises(ValidationError, match="delay"):
         RetryPolicy(delay=-1.0)
-    with pytest.raises(ValidationError, match="attempts"):
-        RetryPolicy(attempts=-1)
+    with pytest.raises(ValidationError, match="retries"):
+        RetryPolicy(retries=-1)
 
 
 def test_staging_the_same_row_twice_in_one_batch_is_refused(clock):
@@ -67,8 +67,8 @@ def test_the_retry_curve_doubles_and_then_flattens():
 def test_a_retry_policy_cannot_ask_for_negative_time():
     with pytest.raises(ValidationError, match="delay"):
         RetryPolicy(delay=-1.0)
-    with pytest.raises(ValidationError, match="attempts"):
-        RetryPolicy(attempts=-1)
+    with pytest.raises(ValidationError, match="retries"):
+        RetryPolicy(retries=-1)
 
 
 def test_a_plan_outside_a_unit_of_work_says_so():

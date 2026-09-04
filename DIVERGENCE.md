@@ -121,6 +121,11 @@ conformance scenario `time-and-types/timestamps_do_not_shift_with_the_session_zo
 stamped behaviour. Two lines that are the same every time and wrong occasionally do not belong
 in application code.
 
+A repository used on its own stamps the same way, so `repo.update(row)` and a staged update
+leave the same `updated_date`. The version is not stamped there and never was: like Java's, it
+moves inside the write, under `WHERE version = ?`, so a caller hands in the row as they read it
+and gets it back one version on.
+
 ## The per-invocation plan lives in a `ContextVar`
 
 Java uses a `ScopedValue`. A `ContextVar` is the direct analogue and is per-thread and
@@ -131,6 +136,41 @@ Both share the property that matters: work handed to a pool from inside a unit o
 inherit the plan. That is correct - another thread is another connection, and quietly sharing
 one would corrupt both - and it is the one thing about this that surprises people, so
 `current_plan()` says so in its error message rather than returning `None`.
+
+## Retries match an exception the way `except` does
+
+Java matches the thrown exception's exact class, and walks only `getCause()`. Here a policy
+matches subclasses, and the walk also follows `__context__` - the error that was being handled
+when this one was raised - unless it was deliberately suppressed.
+
+```python
+RetryPolicy(on=OperationalError)  # matches every driver subclass of it, as `except` would
+```
+
+Exact-class matching is the surprising rule in a language whose `except` is subclass-based, and
+a policy naming a base class that then caught nothing would be a very quiet way to lose every
+retry. The consequence is that this port retries strictly more than Java does for the same
+configuration; the default policy is one class with no subclasses, so the default is identical.
+
+## `readonly_db` means "a read", not "the replica"
+
+Java's `readonlyDb()` always hands back the read-replica context, and nothing built into its
+`AbstractRepository` calls it - every built-in read uses the primary.
+
+Here every built-in read goes through `readonly_db`, which is the primary by default and takes
+`replica=True` to accept a replica's lag. Same routing as Java, one accessor instead of the
+built-in reads quietly bypassing the one named for reading. The name says what the caller is
+doing; the keyword says what they are willing to pay for it.
+
+## Deleting is on the repository, not only on the model
+
+Java has no delete of any kind: a caller writes `repository.update(row.delete())`, where the
+model's own `delete()` returns a copy in the `DELETED` state.
+
+Both are here, and `repo.delete(row)` is the same update under a name that says what it is for.
+`hard_delete(id)` has no Java counterpart at all - it issues a real `DELETE`, and is deliberately
+the longer thing to type, taking an id rather than a row so it cannot be reached by autocompleting
+from something you happen to be holding.
 
 ## The scheduler is this framework's, not a dependency's
 

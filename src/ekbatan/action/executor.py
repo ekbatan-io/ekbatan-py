@@ -48,12 +48,15 @@ class RetryPolicy:
     """
 
     on: type[BaseException] | tuple[type[BaseException], ...] = StaleRecordError
-    attempts: int = 1
+    #: How many times to try *again*, so one run plus this many. Named for what it counts:
+    #: `attempts=1` reading as one attempt and running twice is the sort of thing nobody
+    #: catches in review and everybody hits in production.
+    retries: int = 1
     delay: float = 0.1
 
     def __post_init__(self) -> None:
-        if self.attempts < 0:
-            raise ValidationError(f"attempts cannot be negative, got {self.attempts}")
+        if self.retries < 0:
+            raise ValidationError(f"retries cannot be negative, got {self.retries}")
         if self.delay < 0:
             # Caught here rather than at the first retry, which is a different request, on a
             # different day, inside a sleep with nothing pointing back at this line.
@@ -165,7 +168,10 @@ class ActionExecutor:
         name = action.name
         retried = 0
 
-        with span("ekbatan.action.execute", action=name, principal=principal or "") as execution:
+        with span(
+            "ekbatan.action.execute",
+            {"ekbatan.action.name": name, "ekbatan.action.principal": principal or ""},
+        ) as execution:
             started_at = time.monotonic()
             LOG.info("executing %s [principal=%s]", name, principal or "")
             while True:
@@ -184,25 +190,31 @@ class ActionExecutor:
                     # work, and catching only Exception meant it was recorded as neither a
                     # success nor a failure: no log line, no span status, nothing.
                     match = policy.policy_for(error) if isinstance(error, Exception) else None
-                    if match is not None and retried < match[0].attempts:
+                    if match is not None and retried < match[0].retries:
                         retried += 1
                         chosen, cause = match
                         LOG.warning(
                             "retrying %s (%d/%d) after %s: %s",
                             name,
                             retried,
-                            chosen.attempts,
+                            chosen.retries,
                             type(cause).__name__,
                             cause,
                         )
-                        execution.event("retry", count=retried, error=type(cause).__name__)
+                        execution.set({"ekbatan.action.retry.count": retried})
+                        execution.event(
+                            "retry",
+                            {"retry.count": retried, "retry.exception": type(cause).__name__},
+                        )
                         time.sleep(chosen.delay)
                         continue
-                    execution.failed(error)
+                    execution.failed(error, outcome="ekbatan.action.outcome")
                     LOG.error("%s failed: %s: %s", name, type(error).__name__, error)
                     raise
                 else:
-                    execution.set(outcome="success", retries=retried)
+                    execution.set(
+                        {"ekbatan.action.outcome": "success", "ekbatan.action.retry.count": retried}
+                    )
                     LOG.info(
                         "%s completed in %.0fms [principal=%s]",
                         name,
@@ -221,7 +233,7 @@ class ActionExecutor:
         started: Any,
         policy: ExecutionConfig,
     ) -> None:
-        with span("ekbatan.action.persist", action=action_name) as persisting:
+        with span("ekbatan.action.persist") as persisting:
             self._flush(action_name, plan, params, started, policy, persisting)
 
     def _flush(
@@ -256,9 +268,11 @@ class ActionExecutor:
                 if committed:
                     # The documented consequence of opting in, and the only notice anyone gets.
                     persisting.set(
-                        partial_commit=True,
-                        committed_shards=str([str(x) for x in committed]),
-                        failed_shard=str(shard),
+                        {
+                            "ekbatan.shard.partial_commit_failure": True,
+                            "ekbatan.shard.committed_shards": str([str(x) for x in committed]),
+                            "ekbatan.shard.failed_shard": str(shard),
+                        }
                     )
                     LOG.critical(
                         "%s PARTIALLY COMMITTED: shards %s are committed and will not roll "
@@ -272,7 +286,7 @@ class ActionExecutor:
                 raise
 
         if len(by_shard) > 1:
-            persisting.set(cross_shard=True, shards=len(by_shard))
+            persisting.set({"ekbatan.shard.cross_shard": True})
             LOG.warning(
                 "%s spans %d shards %s; each committed on its own",
                 action_name,
@@ -329,7 +343,12 @@ class ActionExecutor:
             repo = self._repository(model_type)
             for staged, index in ((changes.additions, 0), (changes.updates, 1)):
                 for model in staged.values():
-                    shard = repo.shard_for(model.id)
+                    # The row, not its id. The repository routes its own writes by the row,
+                    # because a strategy may read any field - so asking a different question
+                    # here would put the state on one shard and the outbox row on another, in
+                    # two transactions, with nothing to say so. It is also the only question a
+                    # strategy that does not encode the shard in the id can answer at all.
+                    shard = repo.shard_of(model)
                     slot = grouped.setdefault(shard, {}).setdefault(model_type, ([], []))
                     slot[index].append(model)
         return grouped

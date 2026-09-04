@@ -10,7 +10,7 @@ The span names and attributes match the Java implementation's, so one trace can 
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
@@ -36,20 +36,27 @@ class Span:
     def __init__(self, underlying: Any = None) -> None:
         self._span = underlying
 
-    def set(self, **attributes: Any) -> None:
+    def set(self, attributes: Mapping[str, Any]) -> None:
+        """Attributes under the names they are written with.
+
+        Spelled out by the caller rather than assembled here, because the names are the
+        contract: an operator filtering on ``ekbatan.action.name`` is filtering across both
+        implementations, and a key this module invented would quietly not be there.
+        """
         if self._span is not None:
             for key, value in attributes.items():
-                self._span.set_attribute(f"ekbatan.{key}", value)
+                self._span.set_attribute(key, value)
 
-    def event(self, name: str, **attributes: Any) -> None:
+    def event(self, name: str, attributes: Mapping[str, Any]) -> None:
         if self._span is not None:
-            self._span.add_event(name, {k: v for k, v in attributes.items()})
+            self._span.add_event(name, dict(attributes))
 
-    def failed(self, error: BaseException) -> None:
+    def failed(self, error: BaseException, *, outcome: str | None = None) -> None:
         if self._span is not None:
             from opentelemetry.trace import Status, StatusCode
 
-            self._span.set_attribute("ekbatan.outcome", "error")
+            if outcome is not None:
+                self._span.set_attribute(outcome, "error")
             self._span.set_status(Status(StatusCode.ERROR, str(error)))
             self._span.record_exception(error)
 
@@ -58,12 +65,13 @@ _NOWHERE = Span()
 
 
 @contextmanager
-def span(name: str, **attributes: Any) -> Iterator[Span]:
+def span(name: str, attributes: Mapping[str, Any] | None = None) -> Iterator[Span]:
     """Open a span, or do nothing at all."""
     if _TRACER is None:
         yield _NOWHERE
         return
     with _TRACER.start_as_current_span(name) as underlying:
         wrapped = Span(underlying)
-        wrapped.set(**attributes)
+        if attributes:
+            wrapped.set(attributes)
         yield wrapped

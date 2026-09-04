@@ -95,20 +95,25 @@ class TransactionManager:
                 _ambient.reset(token)
 
     @contextmanager
-    def connection(self, *, readonly: bool = False) -> Iterator[Connection]:
+    def connection(self, *, readonly: bool = False, replica: bool = False) -> Iterator[Connection]:
         """A connection for one statement: the ambient transaction if there is one, else a
         short-lived connection of its own.
 
-        A read taken outside a transaction may use the replica. A read taken inside one may
-        not - it has to see the writes the transaction has already made, and a replica by
-        definition has not seen them.
+        ``readonly`` skips the write transaction, because a SELECT has nothing to commit.
+
+        ``replica`` additionally accepts a replica's lag, and is never the default: a write
+        followed by a read has to find the row, and a caller who has not said otherwise is
+        entitled to that. Ask for it where lag is genuinely acceptable.
+
+        A read taken inside a transaction ignores both and joins it - it has to see the writes
+        that transaction has already made, and a replica by definition has not seen them.
         """
         existing = _open().get(self.shard)
         if existing is not None:
             yield existing
             return
 
-        engine = self.replica if readonly else self.primary
+        engine = self.replica if (readonly and replica) else self.primary
         with engine.connect() as conn:
             if readonly:
                 yield conn

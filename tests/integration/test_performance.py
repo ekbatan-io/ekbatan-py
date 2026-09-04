@@ -52,7 +52,7 @@ def test_updating_many_rows_is_one_statement_not_one_each(wallets, sql):
     stored = wallets.add_all(some_wallets(50))
     sql.clear()
 
-    wallets.update_all([w.evolve(balance=Decimal("2.00")).next_version() for w in stored])
+    wallets.update_all([w.evolve(balance=Decimal("2.00")) for w in stored])
 
     assert len(kind(sql, "UPDATE")) == 1, (
         "an executemany UPDATE is N statements - SQLAlchemy has no updatemanyvalues - so the "
@@ -69,7 +69,7 @@ def test_a_batch_larger_than_the_limit_is_split_not_abandoned(registry, clock, s
     stored = repo.add_all(some_wallets(35))
     sql.clear()
 
-    repo.update_all([w.evolve(balance=Decimal("3.00")).next_version() for w in stored])
+    repo.update_all([w.evolve(balance=Decimal("3.00")) for w in stored])
 
     assert len(kind(sql, "UPDATE")) == 4, "35 rows at 10 per chunk"
     assert repo.count(WALLETS.c.balance == Decimal("3.00")) == 35, "and every one landed"
@@ -79,7 +79,7 @@ def test_one_row_does_not_build_a_derived_table(wallets, sql):
     stored = wallets.add(some_wallets(1)[0])
     sql.clear()
 
-    wallets.update(stored.evolve(balance=Decimal("9.00")).next_version())
+    wallets.update(stored.evolve(balance=Decimal("9.00")))
 
     statements = kind(sql, "UPDATE")
     assert len(statements) == 1
@@ -228,12 +228,12 @@ def test_a_reading_write_asks_for_returning_and_a_no_result_one_does_not(wallets
 
     stored = wallets.all()
     sql.clear()
-    wallets.update_all([w.evolve(balance=Decimal("2.00")).next_version() for w in stored])
+    wallets.update_all([w.evolve(balance=Decimal("2.00")) for w in stored])
     assert "RETURNING" in kind(sql, "UPDATE")[0][0].upper()
 
     stored = wallets.all()
     sql.clear()
-    wallets.update_all_no_result([w.evolve(balance=Decimal("3.00")).next_version() for w in stored])
+    wallets.update_all_no_result([w.evolve(balance=Decimal("3.00")) for w in stored])
     assert "RETURNING" not in kind(sql, "UPDATE")[0][0].upper()
 
 
@@ -250,7 +250,7 @@ def test_a_reading_write_hands_back_the_database_view_in_the_order_asked_for(wal
         "and the scale is the column's, which is the point of reading it back"
     )
 
-    updated = wallets.update_all([w.evolve(balance=Decimal("4.00")).next_version() for w in stored])
+    updated = wallets.update_all([w.evolve(balance=Decimal("4.00")) for w in stored])
     assert [w.id for w in updated] == [w.id for w in stored]
     assert all(w.version == 2 for w in updated)
 
@@ -261,7 +261,7 @@ def test_a_write_with_no_returning_still_costs_one_statement(wallets, sql):
 
     stored = wallets.all()
     sql.clear()
-    wallets.update_all_no_result([w.evolve(balance=Decimal("5.00")).next_version() for w in stored])
+    wallets.update_all_no_result([w.evolve(balance=Decimal("5.00")) for w in stored])
     assert len(kind(sql, "UPDATE")) == 1
 
 

@@ -40,6 +40,7 @@ from sqlalchemy import (
     values,
 )
 
+from ._tracing import span
 from .clock import Clock, SystemClock, to_storage
 from .domain import DELETED, Entity, Model, Persistable
 from .errors import (
@@ -102,6 +103,18 @@ class Repository[M: Persistable[Any, Any], K]:
         missing = [n for n in ("id", "version") if n not in self._columns]
         if missing:
             raise ValidationError(f"{table.name} has no column(s) named {missing}")
+        if self.state_column is None:
+            # A row without its state is not a row this framework can write. Unmapped, the
+            # column is dropped from every INSERT in silence, no read filters soft-deleted
+            # rows, and the first thing anyone hears about it is a constructor blowing up on
+            # a row read back later - by which time the rows are already wrong.
+            raise ValidationError(
+                f"{table.name} has no column named {state_column!r}; every row carries a "
+                f"lifecycle state and it has to be stored. Pass state_column= if the column "
+                f"is named something else."
+            )
+        _must_hold(self._columns["version"], int, "an integer", "the optimistic lock counts on it")
+        _must_hold(self.state_column, str, "text", "reads compare it against 'DELETED'")
         if issubclass(model_type, Model):
             # A model carries timestamps, so its table has to have somewhere to put them.
             # Checked here, at construction, because the alternative is a row written without
@@ -196,20 +209,36 @@ class Repository[M: Persistable[Any, Any], K]:
 
     @contextmanager
     def readonly_db(
-        self, *, key: K | None = None, shard: ShardIdentifier | None = None
+        self,
+        *,
+        key: K | None = None,
+        shard: ShardIdentifier | None = None,
+        replica: bool = False,
     ) -> Iterator[Connection]:
-        """A reader connection, which may be a replica.
+        """A connection for a read: no write transaction to commit, and the primary by default.
 
-        Inside an open transaction it hands back that transaction instead: a read there has to
-        see the writes it has already made, and a replica by definition has not.
+        What every built-in read uses. The primary rather than a replica because a replica
+        answers with what it has replicated so far - ``add()`` then ``find()`` would come back
+        empty for a reason the caller cannot see and cannot reproduce.
+
+        ``replica=True`` asks for the replica anyway, which is the right trade for a report or
+        a dashboard and the wrong one for anything that just wrote. Inside an open transaction
+        it is ignored: a read there has to see the writes that transaction has made, and a
+        replica by definition has not.
         """
-        with self._manager(key, None, shard).connection(readonly=True) as conn:
+        with self._manager(key, None, shard).connection(readonly=True, replica=replica) as conn:
             yield conn
 
-    def readonly_dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
-        """Every shard's reader, one at a time."""
+    def readonly_dbs(
+        self, *, replica: bool = False
+    ) -> Iterator[tuple[ShardIdentifier, Connection]]:
+        """Every shard's reader, one at a time, lazily.
+
+        Lazy so that a caller who stops at the first shard that answers has not queried the
+        rest - which is what makes :meth:`find_one_where` one query rather than one per shard.
+        """
         for shard in self.registry.shards:
-            with self.readonly_db(shard=shard) as conn:
+            with self.readonly_db(shard=shard, replica=replica) as conn:
                 yield shard, conn
 
     def tx_db(
@@ -356,8 +385,36 @@ class Repository[M: Persistable[Any, Any], K]:
     def find_one_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> M | None:
-        rows = self._read(select(self.table).where(*self._live(*criteria)).limit(1), shard)
-        return self.from_row(rows[0]) if rows else None
+        """The one row matching, or ``None``. For a predicate you believe is unique.
+
+        Stops at the first shard that answers, so a lookup by email across sixteen shards is
+        one query when it is lucky rather than sixteen every time.
+
+        A shard holding two matches is refused rather than resolved. Picking one would be
+        picking arbitrarily, and whoever wrote a predicate they thought was unique is exactly
+        the person who will not notice that it was not.
+        """
+        # Two, not one: a query for a single row can never report that there was a second.
+        stmt = select(self.table).where(*self._live(*criteria)).limit(2)
+        for conn in self._one_or_every(shard):
+            rows = list(conn.execute(stmt))
+            if len(rows) > 1:
+                raise ValidationError(
+                    f"find_one_where matched more than one {self.model_type.__name__}: the "
+                    f"predicate is not unique. Use find_where when several rows are expected."
+                )
+            if rows:
+                return self.from_row(rows[0])
+        return None
+
+    def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Connection]:
+        """The shard named, or every shard lazily, so a caller can stop at the first answer."""
+        if shard is not None:
+            with self.readonly_db(shard=shard) as conn:
+                yield conn
+        else:
+            for _, conn in self.readonly_dbs():
+                yield conn
 
     def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
         return self.find_where(shard=shard)
@@ -449,11 +506,12 @@ class Repository[M: Persistable[Any, Any], K]:
         """
         if not models:
             return
-        shard = self.shard_of_all(models)
-        now = to_storage(self.clock.now())
-        rows = [self.to_row(self._stamp_new(m, now)) for m in models]
-        with self.tx_db_else_db(shard=shard) as conn:
-            conn.execute(insert(self.table), rows)
+        with self._writing("BATCH_INSERT", len(models)):
+            shard = self.shard_of_all(models)
+            now = to_storage(self.clock.now())
+            rows = [self.to_row(self._stamp_new(m, now)) for m in models]
+            with self.tx_db_else_db(shard=shard) as conn:
+                conn.execute(insert(self.table), rows)
 
     def update(self, model: M) -> M:
         """Update one row under the optimistic lock, and hand back what the database holds."""
@@ -481,7 +539,32 @@ class Repository[M: Persistable[Any, Any], K]:
 
     def update_all_no_result(self, models: Sequence[M]) -> None:
         """Update without reading anything back."""
-        self._apply_updates(models, read_back=False)
+        if not models:
+            return
+        with self._writing("BATCH_UPDATE", len(models)):
+            self._apply_updates(models, read_back=False)
+
+    @contextmanager
+    def _writing(self, operation: str, size: int) -> Iterator[None]:
+        """A span around a batch write, named as the Java implementation names it.
+
+        These two calls are what a unit of work spends its time on, so a persist span with no
+        children under it tells an operator that the write was slow and nothing about which
+        table, or how many rows.
+        """
+        with span(
+            "ekbatan.repository",
+            {
+                "db.operation.name": operation,
+                "ekbatan.entity.type": self.model_type.__name__,
+                "ekbatan.batch.size": size,
+            },
+        ) as recording:
+            try:
+                yield
+            except BaseException as error:
+                recording.failed(error)
+                raise
 
     def _apply_updates(self, models: Sequence[M], *, read_back: bool) -> list[M] | None:
         if not models:
@@ -567,9 +650,16 @@ class Repository[M: Persistable[Any, Any], K]:
         return model.evolve(**changes) if changes else model
 
     def _stamp_updated(self, model: M, now: datetime) -> M:
-        if not isinstance(model, Model) or model.updated_date is not None:
-            return model
-        return model.evolve(updated_date=now)
+        """Move the version on, and mark when the row changed.
+
+        The repository owns the optimistic lock, so the repository moves the version: a
+        caller hands in the row as they read it and gets it back one version later. Asking
+        them to move it first would mean the obvious call - ``update(wallet.deposit(10))`` -
+        was the one that fails, and it would fail as a lost race, which it is not.
+        """
+        if not isinstance(model, Model):
+            return model.next_version()
+        return model.evolve(version=model.version + 1, updated_date=now)
 
     def _single_update(self, *, returning: bool = False) -> Any:
         """``UPDATE … SET … WHERE id = ? AND version = ?``, built once and reused."""
@@ -690,6 +780,27 @@ class Repository[M: Persistable[Any, Any], K]:
             for name in self._columns:
                 binds[f"b{i}_{name}"] = row[name]
         return binds
+
+
+def _must_hold(col: Any, wanted: type, described: str, why: str) -> None:
+    """Refuse a column that provably cannot hold what the framework puts in it.
+
+    Only what can be proven: a type that declines to name its Python equivalent - a custom
+    ``TypeDecorator``, a dialect type SQLAlchemy has no mapping for - is left alone. Refusing
+    what cannot be checked would turn a startup guard into a reason to stop using one.
+    """
+    try:
+        actual = col.type.python_type
+    except (NotImplementedError, AttributeError):
+        return
+    if isinstance(actual, type) and issubclass(actual, Enum):
+        actual = str
+    if actual is bool or not (isinstance(actual, type) and issubclass(actual, wanted)):
+        raise ValidationError(
+            f"column {col.name!r} on {col.table.name} is {col.type}, which holds "
+            f"{actual.__name__ if isinstance(actual, type) else actual}; it has to be "
+            f"{described}, because {why}."
+        )
 
 
 def _chunks[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:

@@ -58,9 +58,15 @@ def test_running_an_action_reports_what_it_staged():
     )
 
     assert staged.result.balance == Decimal("150.00")
-    assert staged.updated(Wallet) == [staged.result]
     assert staged.added(Wallet) == []
     assert staged, "something was staged"
+
+    [pending] = staged.updated(Wallet)
+    assert pending.balance == Decimal("150.00")
+    assert (pending.version, staged.result.version) == (1, 2), (
+        "staged at the version it was read at, because that is what the UPDATE guards on; "
+        "the action is handed the version the write will leave behind"
+    )
 
 
 def test_it_reports_what_was_emitted():

@@ -59,30 +59,44 @@ def test_a_missing_row_is_absent_or_an_error(wallets):
 
 def test_an_update_moves_the_version_by_one(wallets):
     w = wallets.add(a_wallet("0.00"))
-    w = wallets.update(w.deposit(Decimal("1.00")).next_version())
-    w = wallets.update(w.deposit(Decimal("2.00")).next_version())
+    w = wallets.update(w.deposit(Decimal("1.00")))
+    w = wallets.update(w.deposit(Decimal("2.00")))
 
     found = wallets.get(w.id)
     assert found.balance == Decimal("3.0000")
     assert found.version == 3
 
 
+def test_update_takes_the_row_as_it_was_read(wallets):
+    """The repository owns the optimistic lock, so the repository moves the version. Asking
+    the caller to move it first makes the obvious call the one that fails - and fail as a lost
+    race, which it is not."""
+    stored = wallets.add(a_wallet("100.00"))
+    assert stored.version == 1
+
+    returned = wallets.update(stored.deposit(Decimal("50.00")))
+
+    assert returned.version == 2, "handed back one version on, like the row now in the table"
+    assert wallets.get(stored.id).version == 2
+    assert wallets.get(stored.id).balance == Decimal("150.0000")
+
+
 def test_a_stale_update_is_refused(wallets):
     w = wallets.add(a_wallet("100.00"))
-    wallets.update(w.deposit(Decimal("10.00")).next_version())
+    wallets.update(w.deposit(Decimal("10.00")))
 
     with pytest.raises(StaleRecordError, match="concurrently modified"):
-        wallets.update(w.deposit(Decimal("99.00")).next_version())
+        wallets.update(w.deposit(Decimal("99.00")))
 
     assert wallets.get(w.id).balance == Decimal("110.0000"), "the first writer's value stands"
 
 
 def test_a_batch_update_is_all_or_nothing(wallets):
     stored = wallets.add_all([a_wallet("10.00") for _ in range(3)])
-    wallets.update(stored[1].deposit(Decimal("5.00")).next_version())  # someone else moved it
+    wallets.update(stored[1].deposit(Decimal("5.00")))  # someone else moved it
 
     with pytest.raises(StaleRecordError):
-        wallets.update_all([w.deposit(Decimal("1.00")).next_version() for w in stored])
+        wallets.update_all([w.deposit(Decimal("1.00")) for w in stored])
 
     balances = {w.id: w.balance for w in wallets.find_many([w.id for w in stored])}
     assert balances[stored[0].id] == Decimal("10.0000")
@@ -110,7 +124,7 @@ def test_an_empty_batch_is_a_no_op(wallets):
 
 def test_a_deleted_row_is_invisible_to_every_read(wallets):
     kept, gone = wallets.add_all([a_wallet(), a_wallet()])
-    wallets.delete(gone.next_version())
+    wallets.delete(gone)
 
     assert wallets.find(gone.id) is None
     assert wallets.exists(gone.id) is False
@@ -127,7 +141,7 @@ def test_predicate_reads_apply_the_same_filter(wallets):
         )
         for c in ("EUR", "USD", "EUR")
     )
-    wallets.delete(gone.next_version())
+    wallets.delete(gone)
 
     assert len(wallets.find_where(WALLETS.c.currency == "EUR")) == 1
     assert wallets.count(WALLETS.c.currency == "EUR") == 1
@@ -237,3 +251,82 @@ def test_the_declared_kinds_are_otherwise_the_same_repository(registry, clock):
     stored = declared.add(a_wallet())
     assert plain.get(stored.id) == declared.get(stored.id)
     assert declared.count() == plain.count() == 1
+
+
+# ------------------------------------------------- what a read is allowed to be served by
+
+
+def test_a_table_must_be_able_to_hold_the_row_it_is_given(registry):
+    """A column the model needs and the table has not is dropped from every INSERT in
+    silence. Caught here, not on the read that later cannot rebuild the row."""
+    from sqlalchemy import BigInteger, Column, DateTime, MetaData, String, Table, Uuid
+
+    from ekbatan.errors import ValidationError
+
+    md = MetaData()
+
+    def shaped(name, **overrides):
+        return Table(
+            name,
+            md,
+            Column("id", Uuid, primary_key=True),
+            Column("version", overrides.get("version", BigInteger), nullable=False),
+            *([] if overrides.get("drop_state") else [Column("state", String(24))]),
+            Column("created_date", DateTime, nullable=False),
+            Column("updated_date", DateTime, nullable=False),
+        )
+
+    with pytest.raises(ValidationError, match="no column named 'state'"):
+        Repository(Wallet, shaped("stateless", drop_state=True), registry)
+
+    with pytest.raises(ValidationError, match="optimistic lock"):
+        Repository(Wallet, shaped("wordy_version", version=String(32)), registry)
+
+
+def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
+    """A replica answers with what it has replicated so far. `add()` then `find()` has to
+    find the row, so no built-in read is allowed to be served by one."""
+    from ekbatan.persistence import TransactionManager
+    from ekbatan.sharding import ShardIdentifier
+    from fixtures.schema import metadata
+
+    written, lagging = "ekbatan_written", "ekbatan_lagging"
+    for name in (written, lagging):
+        backend.prepare(name, metadata)
+        backend.truncate(name, metadata)
+
+    from sqlalchemy import create_engine
+
+    shard = ShardIdentifier(0, 0)
+    manager = TransactionManager(
+        shard, create_engine(backend.url(written)), create_engine(backend.url(lagging))
+    )
+    with DatabaseRegistry({shard: manager}, shard) as reg:
+        wallets = Repository(Wallet, WALLETS, reg, clock=clock)
+        stored = wallets.add(a_wallet())
+
+        assert wallets.find(stored.id) is not None
+        assert wallets.get(stored.id).id == stored.id
+        assert wallets.count() == 1
+        assert wallets.exists(stored.id) is True
+        assert [w.id for w in wallets.find_many([stored.id])] == [stored.id]
+        assert wallets.find_one_where(WALLETS.c.currency == "EUR") is not None
+
+        with wallets.readonly_db(replica=True) as conn:
+            from sqlalchemy import func, select
+
+            assert conn.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 0, (
+                "the replica really is a different database, so the assertions above mean "
+                "what they say"
+            )
+
+
+def test_find_one_where_refuses_a_predicate_that_is_not_unique(wallets):
+    from ekbatan.errors import ValidationError
+
+    wallets.add_all([a_wallet("1.00"), a_wallet("2.00")])
+
+    assert wallets.find_one_where(WALLETS.c.balance == Decimal("1.00")).balance == Decimal("1.00")
+
+    with pytest.raises(ValidationError, match="not unique"):
+        wallets.find_one_where(WALLETS.c.currency == "EUR")

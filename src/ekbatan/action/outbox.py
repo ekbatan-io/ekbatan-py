@@ -21,6 +21,7 @@ from typing import Any, Protocol, runtime_checkable
 from sqlalchemy import Connection, Table, insert
 
 from .._json import canonical
+from .._tracing import span
 from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..sharding import ShardIdentifier
@@ -93,6 +94,20 @@ class SingleTableOutbox:
         self._types_by_name: dict[str, type] = {}
 
     def persist(self, conn: Connection, record: OutboxRecord) -> None:
+        with span(
+            "ekbatan.event.persist",
+            {
+                "ekbatan.action.name": record.action_name,
+                "ekbatan.event.count": len(record.events),
+            },
+        ) as recording:
+            try:
+                self._write(conn, record)
+            except BaseException as error:
+                recording.failed(error)
+                raise
+
+    def _write(self, conn: Connection, record: OutboxRecord) -> None:
         params = canonical(record.action_params)
         common = {
             "namespace": record.namespace,

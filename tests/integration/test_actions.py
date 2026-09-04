@@ -17,7 +17,7 @@ from ekbatan.errors import (
     StaleRecordError,
     ValidationError,
 )
-from fixtures.actions import CreateWallet, CreateWalletParams, DepositParams
+from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
 from fixtures.domain import Wallet, WalletId
 
 
@@ -84,8 +84,8 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
     slower ones. One policy for everything has to pick the wrong number for something."""
     config = ExecutionConfig(
         retries=(
-            RetryPolicy(on=StaleRecordError, attempts=1, delay=0),
-            RetryPolicy(on=LockError, attempts=3, delay=0),
+            RetryPolicy(on=StaleRecordError, retries=1, delay=0),
+            RetryPolicy(on=LockError, retries=3, delay=0),
         )
     )
 
@@ -106,8 +106,8 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
 def test_the_first_matching_policy_wins(executor):
     config = ExecutionConfig(
         retries=(
-            RetryPolicy(on=StaleRecordError, attempts=0, delay=0),
-            RetryPolicy(on=EkbatanError, attempts=5, delay=0),
+            RetryPolicy(on=StaleRecordError, retries=0, delay=0),
+            RetryPolicy(on=EkbatanError, retries=5, delay=0),
         )
     )
     action = FailsWith(StaleRecordError("moved"))
@@ -169,7 +169,7 @@ def test_such_a_failure_is_never_retried(executor):
         executor.execute(
             action,
             None,
-            config=ExecutionConfig(retries=(RetryPolicy(on=BaseException, attempts=3, delay=0),)),
+            config=ExecutionConfig(retries=(RetryPolicy(on=BaseException, retries=3, delay=0),)),
         )
     assert action.attempts == 1, "a cancellation is not a transient fault to sit through"
 
@@ -275,10 +275,67 @@ def test_the_framework_runs_without_a_tracing_stack(executor):
     into every project installing it has made a decision it had no standing to make."""
     from ekbatan._tracing import span, tracing_enabled
 
-    with span("probe", thing="value") as s:
-        s.set(other=1)
-        s.event("something", count=1)
-        s.failed(ValueError("boom"))
+    with span("probe", {"ekbatan.thing": "value"}) as s:
+        s.set({"ekbatan.other": 1})
+        s.event("something", {"count": 1})
+        s.failed(ValueError("boom"), outcome="ekbatan.action.outcome")
 
     assert executor.execute(ReadsTheClock(), None) is not None
     assert isinstance(tracing_enabled(), bool)
+
+
+def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets):
+    """An operator filtering a trace on `ekbatan.action.name` is filtering across both
+    implementations. A name invented here would quietly not be there."""
+    sdk = pytest.importorskip("opentelemetry.sdk.trace")
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+
+    collected = []
+
+    class Collect(SpanExporter):
+        def export(self, spans):
+            collected.extend(spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self):
+            pass
+
+    provider = sdk.TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(Collect()))
+    previous = trace.get_tracer_provider()
+    trace._TRACER_PROVIDER = provider  # set_tracer_provider refuses a second call
+    try:
+        import importlib
+
+        import ekbatan._tracing as tracing
+
+        importlib.reload(tracing)
+        wallet = wallets.add(
+            Wallet.open(
+                id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("100.00")
+            )
+        )
+        executor.execute(
+            DepositMoney(wallets),
+            DepositParams(
+                wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"
+            ),
+        )
+    finally:
+        trace._TRACER_PROVIDER = previous
+
+    emitted = {s.name: dict(s.attributes or {}) for s in collected}
+    assert {
+        "ekbatan.action.execute",
+        "ekbatan.action.perform",
+        "ekbatan.action.persist",
+        "ekbatan.repository",
+        "ekbatan.event.persist",
+    } <= set(emitted)
+    assert emitted["ekbatan.action.execute"]["ekbatan.action.name"] == "DepositMoney"
+    assert emitted["ekbatan.action.execute"]["ekbatan.action.outcome"] == "success"
+    assert emitted["ekbatan.repository"]["db.operation.name"] == "BATCH_UPDATE"
+    assert emitted["ekbatan.repository"]["ekbatan.entity.type"] == "Wallet"
+    assert emitted["ekbatan.repository"]["ekbatan.batch.size"] == 1
+    assert emitted["ekbatan.event.persist"]["ekbatan.event.count"] == 1

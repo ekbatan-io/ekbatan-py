@@ -36,6 +36,12 @@ dev = [
     "PyMySQL>=1.1",
 ]
 
+# Deliberately its own group rather than part of `dev` or an extra: `uv sync --all-extras`
+# must not install it, or the test that the framework runs without a tracing stack would
+# quietly stop testing anything. One CI job asks for this group and asserts the span names;
+# every other job proves the absence path.
+tracing = ["opentelemetry-sdk>=1.27"]
+
 [project.urls]
 Homepage = "https://ekbatan-io.github.io/ekbatan/"
 Source = "https://github.com/ekbatan-io/ekbatan-py"

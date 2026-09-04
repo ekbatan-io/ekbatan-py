@@ -74,8 +74,11 @@ class ActionPlan:
         changes = self._changes(type(model))
         self._refuse_if_staged(changes, model)
         stamped = self._stamp_updated(model)
+        # Staged at the version it was read at; the repository moves it when it writes, under
+        # `WHERE version = ?`. The caller gets the moved copy, so the rest of the unit of work
+        # reads forward instead of reasoning about what the database will do later.
         changes.updates[stamped.id] = stamped
-        return stamped
+        return stamped.next_version()
 
     def update_all[P: Persistable[Any, Any]](self, models: Iterable[P]) -> list[P]:
         return [self.update(m) for m in models]
@@ -146,7 +149,8 @@ class ActionPlan:
         return model.evolve(**changes) if changes else model
 
     def _stamp_updated[P: Persistable[Any, Any]](self, model: P) -> P:
-        """Move the version on, and mark when it changed. An entity has no timestamps."""
+        """Mark when the row changed. An entity has no timestamps, and neither has the version
+        moved yet - the repository does that as it writes, under the optimistic lock."""
         if not isinstance(model, Model):
-            return model.evolve(version=model.version + 1)
-        return model.evolve(version=model.version + 1, updated_date=to_storage(self._clock.now()))
+            return model
+        return model.evolve(updated_date=to_storage(self._clock.now()))
