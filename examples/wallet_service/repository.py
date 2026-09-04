@@ -17,7 +17,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
-from ekbatan import DatabaseRegistry, Repository, ShardIdentifier
+from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository, ShardIdentifier
 from ekbatan.clock import Clock
 from ekbatan.sharding import EmbeddedBitsSharding
 
@@ -25,8 +25,12 @@ from .model import Alert, AlertId, Wallet, WalletId, WalletState
 from .schema import ALERTS, WALLETS
 
 
-class WalletRepository(Repository[Wallet, WalletId]):
-    """Wallets, routed by the shard packed into each id."""
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    """Wallets, routed by the shard packed into each id.
+
+    A ModelRepository, because a wallet's changes are events. Saying so is what lets the
+    framework check that this table can hold the timestamps a model carries.
+    """
 
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Wallet, WALLETS, registry, sharding=EmbeddedBitsSharding(), clock=clock)
@@ -76,8 +80,12 @@ class WalletRepository(Repository[Wallet, WalletId]):
         )
 
 
-class AlertRepository(Repository[Alert, AlertId]):
-    """Alerts. Not sharded - they are looked up by wallet, not by their own id."""
+class AlertRepository(EntityRepository[Alert, AlertId]):
+    """Alerts. Not sharded - they are looked up by wallet, not by their own id.
+
+    An EntityRepository, because writing one is not news: no events, and no timestamps for the
+    table to hold.
+    """
 
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Alert, ALERTS, registry, clock=clock)

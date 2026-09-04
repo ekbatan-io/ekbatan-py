@@ -86,6 +86,22 @@ class WalletId(ShardedId["Wallet"]): ...
 entries in a set rather than one. `Id[Wallet]` still works and still satisfies a checker; the
 named subclass is what makes the interpreter agree.
 
+## `AbstractRepository` is just `Repository`, and is usable as it stands
+
+Java's hierarchy is four names: a narrow `Repository` interface, an `AbstractRepository`
+holding the implementation, and `ModelRepository` / `EntityRepository` on top.
+
+`ModelRepository` and `EntityRepository` are here, and do what they do there: declare which
+kind of thing the table holds, and refuse a model whose table cannot hold the timestamps a
+model carries.
+
+The other two collapse into one. `AbstractRepository` is abstract in Java because
+`fromRecord` and `toRecord` have to be supplied; here they default to mapping by field name, so
+the class works as it stands and calling it *Abstract* would be a lie -
+`Repository(Wallet, WALLETS, registry)` is a legitimate line. The narrow `Repository` interface
+existed to keep `ChangePersister` off the full surface; nothing here needs that yet, and a
+Protocol added before anything wants it is a name to maintain for nobody.
+
 ## Row mapping is by field name unless you say otherwise
 
 Java requires `toRecord` / `fromRecord` on every repository. Here they default to mapping

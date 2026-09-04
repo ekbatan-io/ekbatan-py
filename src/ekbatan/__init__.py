@@ -55,7 +55,7 @@ from .jobs import Daily, DistributedJob, Every, FixedDelay, JobContext, JobRegis
 from .locks import InProcessLock, KeyedLock, Lease, MariaDBLock, MySQLLock, PostgresLock
 from .migrations import emit_ddl, migrate, migrate_registry
 from .persistence import DatabaseRegistry, TransactionManager
-from .repository import Repository
+from .repository import EntityRepository, ModelRepository, Repository
 from .schema import notifications_table, outbox_table, scheduled_tasks_table
 from .sharding import (
     DEFAULT_SHARD,
@@ -89,6 +89,7 @@ __all__ = [
     "EmbeddedBitsSharding",
     "Entity",
     "EntityNotFoundError",
+    "EntityRepository",
     "EventDispatch",
     "EventEnvelope",
     "EventFanout",
@@ -110,6 +111,7 @@ __all__ = [
     "MariaDBLock",
     "Model",
     "ModelEvent",
+    "ModelRepository",
     "MySQLLock",
     "NoSharding",
     "NotificationState",

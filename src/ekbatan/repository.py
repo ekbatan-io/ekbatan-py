@@ -41,7 +41,7 @@ from sqlalchemy import (
 )
 
 from .clock import Clock, SystemClock, to_storage
-from .domain import DELETED, Model, Persistable
+from .domain import DELETED, Entity, Model, Persistable
 from .errors import (
     CrossShardError,
     EntityNotFoundError,
@@ -53,7 +53,7 @@ from .ids import TypedValue
 from .persistence import DatabaseRegistry, TransactionManager
 from .sharding import NoSharding, ShardIdentifier, ShardingStrategy
 
-__all__ = ["Repository"]
+__all__ = ["EntityRepository", "ModelRepository", "Repository"]
 
 #: The column carrying the version each row was read at, in a batch update's derived table.
 _PRIOR = "_prior_version"
@@ -102,6 +102,18 @@ class Repository[M: Persistable[Any, Any], K]:
         missing = [n for n in ("id", "version") if n not in self._columns]
         if missing:
             raise ValidationError(f"{table.name} has no column(s) named {missing}")
+        if issubclass(model_type, Model):
+            # A model carries timestamps, so its table has to have somewhere to put them.
+            # Checked here, at construction, because the alternative is a row written without
+            # them - or an insert that fails on the first write of the day, in production,
+            # far from the mapping that was wrong.
+            absent = [n for n in ("created_date", "updated_date") if n not in table.c]
+            if absent:
+                raise ValidationError(
+                    f"{model_type.__name__} is a Model, so {table.name} must have "
+                    f"{absent} - a model records when it changed. An Entity does not; if "
+                    f"this is one, subclass Entity rather than Model."
+                )
 
         # Which conversion each column needs is a property of the model, not of the row, so it
         # is decided once here rather than re-derived per field per row. Reading ten thousand
@@ -778,3 +790,37 @@ def _from_column(value: Any, hint: Any) -> Any:
     if isinstance(hint, type) and issubclass(hint, Enum) and not isinstance(value, Enum):
         return hint[str(value)]
     return value
+
+
+class ModelRepository[M: Model[Any, Any], K](Repository[M, K]):
+    """Rows of a :class:`~ekbatan.domain.Model` - state whose changes are events.
+
+    Everything is inherited; what this adds is the declaration. Saying which of the two you
+    meant lets the framework hold you to it, and a mismatch is caught where the repository is
+    built rather than at the first write.
+    """
+
+    def __init__(self, model_type: type[M], *args: Any, **kwargs: Any) -> None:
+        if not (isinstance(model_type, type) and issubclass(model_type, Model)):
+            raise ValidationError(
+                f"{model_type.__name__} is not a Model, so it has no events and no timestamps. "
+                f"Use EntityRepository, or make it a Model if its changes are worth telling "
+                f"the rest of the system about."
+            )
+        super().__init__(model_type, *args, **kwargs)
+
+
+class EntityRepository[M: Entity[Any, Any], K](Repository[M, K]):
+    """Rows of an :class:`~ekbatan.domain.Entity` - state whose changes are not events.
+
+    The counterpart to :class:`ModelRepository`, and the same bargain: declare which one it is
+    and be held to it.
+    """
+
+    def __init__(self, model_type: type[M], *args: Any, **kwargs: Any) -> None:
+        if not (isinstance(model_type, type) and issubclass(model_type, Entity)):
+            raise ValidationError(
+                f"{model_type.__name__} is not an Entity. Use ModelRepository if its changes "
+                f"belong in the event stream."
+            )
+        super().__init__(model_type, *args, **kwargs)

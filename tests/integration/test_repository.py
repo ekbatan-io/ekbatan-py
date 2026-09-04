@@ -177,3 +177,63 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
     assert wallets.count(shard=mexico) == 1
     assert wallets.find(there.id).currency == "MXN", "a lookup by id finds it wherever it lives"
     assert {w.id for w in wallets.find_many([here.id, there.id])} == {here.id, there.id}
+
+
+# ---------------------------------------------------------- saying which kind of thing it is
+
+
+def test_a_model_needs_a_table_that_can_hold_its_timestamps(registry):
+    """Caught where the repository is built, because the alternative is a row written without
+    them - or an insert that fails on the first write of the day, far from the wrong mapping."""
+    from sqlalchemy import BigInteger, Column, MetaData, String, Table, Uuid
+
+    from ekbatan.errors import ValidationError
+
+    md = MetaData()
+    timeless = Table(
+        "timeless",
+        md,
+        Column("id", Uuid, primary_key=True),
+        Column("version", BigInteger, nullable=False),
+        Column("state", String(24), nullable=False),
+    )
+
+    with pytest.raises(ValidationError, match="created_date"):
+        Repository(Wallet, timeless, registry)
+
+
+def test_an_entity_needs_no_timestamps(registry, clock):
+    from ekbatan import EntityRepository
+    from fixtures.domain import Notification
+    from fixtures.schema import NOTIFICATIONS
+
+    notes = EntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
+    stored = notes.add(
+        Notification.create(wallet_id=uuid4(), kind="X", recipient="ada@x", id=uuid4())
+    )
+    assert notes.get(stored.id) == stored
+
+
+def test_declaring_the_wrong_kind_is_refused(registry):
+    from ekbatan import EntityRepository, ModelRepository
+    from ekbatan.errors import ValidationError
+    from fixtures.domain import Notification
+    from fixtures.schema import NOTIFICATIONS
+
+    with pytest.raises(ValidationError, match="is not a Model"):
+        ModelRepository(Notification, NOTIFICATIONS, registry)
+
+    with pytest.raises(ValidationError, match="is not an Entity"):
+        EntityRepository(Wallet, WALLETS, registry)
+
+
+def test_the_declared_kinds_are_otherwise_the_same_repository(registry, clock):
+    """They add a declaration, not behaviour. Everything is inherited."""
+    from ekbatan import ModelRepository
+
+    plain = Repository(Wallet, WALLETS, registry, clock=clock)
+    declared = ModelRepository(Wallet, WALLETS, registry, clock=clock)
+
+    stored = declared.add(a_wallet())
+    assert plain.get(stored.id) == declared.get(stored.id)
+    assert declared.count() == plain.count() == 1
