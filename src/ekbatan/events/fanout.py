@@ -21,7 +21,7 @@ from sqlalchemy import Connection, Table, select, update
 from ..clock import Clock, SystemClock, to_storage
 from ..persistence import DatabaseRegistry
 from .handler import EventHandlerRegistry
-from .notification import NotificationState
+from .notification import EventNotificationState
 
 __all__ = ["EventFanout"]
 
@@ -110,7 +110,7 @@ class EventFanout:
                             "event_type": row.event_type,
                             "payload": row.payload,
                             "event_date": row.event_date,
-                            "state": NotificationState.PENDING.value,
+                            "state": EventNotificationState.PENDING.value,
                             "attempts": 0,
                             "next_retry_at": now,
                             "created_date": now,

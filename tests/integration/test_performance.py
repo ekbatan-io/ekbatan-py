@@ -139,10 +139,10 @@ def test_postgres_matches_a_list_of_ids_with_any_and_others_with_in(wallets):
 def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, clock):
     """A read narrowed by id goes to one database. Fanning out would work and would double the
     load for nothing."""
-    from ekbatan.sharding import EmbeddedBitsSharding, ShardIdentifier
+    from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 
     repo = Repository(
-        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     mexico = ShardIdentifier(1, 0)
     wallet = Wallet.open(

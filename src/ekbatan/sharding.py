@@ -22,8 +22,8 @@ from .errors import ValidationError
 
 __all__ = [
     "DEFAULT_SHARD",
-    "EmbeddedBitsSharding",
-    "NoSharding",
+    "EmbeddedBitsShardingStrategy",
+    "NoShardingStrategy",
     "ShardIdentifier",
     "ShardingStrategy",
     "read_shard",
@@ -139,7 +139,7 @@ class ShardingStrategy(Protocol):
         ...
 
 
-class NoSharding:
+class NoShardingStrategy:
     """Everything on one database. The default, and the right answer for most deployments."""
 
     __slots__ = ()
@@ -153,10 +153,10 @@ class NoSharding:
         return None
 
     def __repr__(self) -> str:
-        return "NoSharding()"
+        return "NoShardingStrategy()"
 
 
-class EmbeddedBitsSharding:
+class EmbeddedBitsShardingStrategy:
     """Read the shard out of the id's own bits.
 
     No lookup table and no extra column, which is what lets a caller holding an id get routing
@@ -185,7 +185,7 @@ class EmbeddedBitsSharding:
         return self.shard_for_id(getattr(persistable, "id", persistable))
 
     def __repr__(self) -> str:
-        return "EmbeddedBitsSharding()"
+        return "EmbeddedBitsShardingStrategy()"
 
 
 def resolve_shard(

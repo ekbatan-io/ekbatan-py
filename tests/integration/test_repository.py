@@ -6,17 +6,17 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from ekbatan.clock import FixedClock
+from ekbatan.clock import VirtualClock
 from ekbatan.errors import EntityNotFoundError, StaleRecordError
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import Repository
-from ekbatan.sharding import EmbeddedBitsSharding, ShardIdentifier
+from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import Notification, NotificationId, Wallet, WalletId, WalletState
 from fixtures.schema import NOTIFICATIONS, WALLETS
 
 
 @pytest.fixture
-def wallets(registry: DatabaseRegistry, clock: FixedClock) -> Repository[Wallet, UUID]:
+def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Repository[Wallet, UUID]:
     return Repository(Wallet, WALLETS, registry, clock=clock)
 
 
@@ -167,7 +167,7 @@ def test_an_entity_round_trips_without_events(registry, clock):
 
 def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
     wallets = Repository(
-        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     mexico = ShardIdentifier(1, 0)
     here = Wallet.open(

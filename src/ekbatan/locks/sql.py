@@ -21,18 +21,23 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine
 
-from ..errors import LockError
-from ._holder import ReentrantHolder, ReleaseReason
+from ..errors import LockAcquisitionError
+from ._holder import KeyedReentrantHolder, ReleaseReason
 from .base import Lease, check, lock_key_hash
 
-__all__ = ["MariaDBLock", "MySQLLock", "PostgresLock", "SqlKeyedLock"]
+__all__ = [
+    "MariaDBKeyedLockProvider",
+    "MySQLKeyedLockProvider",
+    "PostgresKeyedLockProvider",
+    "SqlKeyedLockProvider",
+]
 
 LOG = logging.getLogger("ekbatan.locks")
 
 SEGMENT = timedelta(seconds=5)
 
 
-class SqlKeyedLock(ABC):
+class SqlKeyedLockProvider(ABC):
     """Shared machinery: connection lifetime, segmented waiting, re-entry, the watchdog.
 
     A backend supplies two operations and nothing else.
@@ -40,7 +45,7 @@ class SqlKeyedLock(ABC):
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
-        self._holder = ReentrantHolder()
+        self._holder = KeyedReentrantHolder()
 
     # ------------------------------------------------------------ backend hooks
 
@@ -90,12 +95,12 @@ class SqlKeyedLock(ABC):
         conn = self._engine.connect()
         try:
             acquired = self._try_lock(conn, hashed, wait)
-        except LockError:
+        except LockAcquisitionError:
             _discard(conn)
             raise
         except Exception as exc:
             _discard(conn)
-            raise LockError(key, f"the lock backend failed: {exc}") from exc
+            raise LockAcquisitionError(key, f"the lock backend failed: {exc}") from exc
 
         if not acquired:
             _discard(conn)
@@ -125,7 +130,7 @@ def _discard(conn: Connection) -> None:
         LOG.debug("failed to close a lock connection", exc_info=True)
 
 
-class PostgresLock(SqlKeyedLock):
+class PostgresKeyedLockProvider(SqlKeyedLockProvider):
     """Postgres advisory locks.
 
     ``pg_try_advisory_lock`` for a single attempt, and ``pg_advisory_lock`` under a
@@ -162,7 +167,7 @@ class PostgresLock(SqlKeyedLock):
         conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
 
 
-class MySQLLock(SqlKeyedLock):
+class MySQLKeyedLockProvider(SqlKeyedLockProvider):
     """MySQL user-level locks via ``GET_LOCK``.
 
     **A sub-second wait rounds up.** MySQL accepts a fractional timeout and then rounds it to
@@ -184,7 +189,9 @@ class MySQLLock(SqlKeyedLock):
             # NULL is a server-side failure - out of memory, a killed session. It has to stay
             # distinguishable from a timeout, because a blocking acquire retries a timeout
             # forever and would spin on this instead of failing.
-            raise LockError(self._name(key), "GET_LOCK returned NULL (server-side failure)")
+            raise LockAcquisitionError(
+                self._name(key), "GET_LOCK returned NULL (server-side failure)"
+            )
         return bool(int(result))
 
     def _unlock(self, conn: Connection, key: int) -> None:
@@ -198,7 +205,7 @@ class MySQLLock(SqlKeyedLock):
         return f"{self._name_prefix}{key & 0xFFFFFFFFFFFFFFFF:x}"
 
 
-class MariaDBLock(MySQLLock):
+class MariaDBKeyedLockProvider(MySQLKeyedLockProvider):
     """MariaDB user-level locks.
 
     Same statements as MySQL, and separate because the two have diverged on the timeout

@@ -25,7 +25,7 @@ from typing import Protocol, runtime_checkable
 
 from ..errors import ValidationError
 
-__all__ = ["KeyedLock", "Lease", "lock_key_hash"]
+__all__ = ["KeyedLockProvider", "Lease", "lock_key_hash"]
 
 
 def lock_key_hash(key: str) -> int:
@@ -87,7 +87,7 @@ class Lease:
 
 
 @runtime_checkable
-class KeyedLock(Protocol):
+class KeyedLockProvider(Protocol):
     """Mutual exclusion on a string key."""
 
     def acquire(self, key: str, max_hold: timedelta) -> Lease:

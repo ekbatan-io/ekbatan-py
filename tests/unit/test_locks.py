@@ -1,7 +1,7 @@
 """Keyed locks, against the in-process backend.
 
 The SQL backends share every line of this behaviour - re-entry, the watchdog, segmented
-waiting - through SqlKeyedLock; what they add is two statements each, which the conformance
+waiting - through SqlKeyedLockProvider; what they add is two statements each, which the conformance
 suite exercises against real databases.
 """
 
@@ -14,7 +14,7 @@ from datetime import timedelta
 import pytest
 
 from ekbatan.errors import ValidationError
-from ekbatan.locks import InProcessLock, lock_key_hash
+from ekbatan.locks import InProcessKeyedLockProvider, lock_key_hash
 
 MS = timedelta(milliseconds=1)
 HOLD = timedelta(seconds=30)
@@ -23,7 +23,7 @@ NOW = timedelta(0)
 
 @pytest.fixture
 def locks():
-    lock = InProcessLock()
+    lock = InProcessKeyedLockProvider()
     yield lock
     lock.close()
 

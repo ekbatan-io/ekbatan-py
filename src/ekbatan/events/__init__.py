@@ -3,7 +3,7 @@
 from .dispatch import EventDispatch
 from .fanout import EventFanout
 from .handler import EventEnvelope, EventHandler, EventHandlerRegistry
-from .notification import NotificationState, backoff
+from .notification import EventNotificationState, backoff
 
 __all__ = [
     "EventDispatch",
@@ -11,6 +11,6 @@ __all__ = [
     "EventFanout",
     "EventHandler",
     "EventHandlerRegistry",
-    "NotificationState",
+    "EventNotificationState",
     "backoff",
 ]

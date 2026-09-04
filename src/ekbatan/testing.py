@@ -25,7 +25,7 @@ from typing import Any
 
 from .action.action import Action, _Binding
 from .action.plan import ActionPlan
-from .clock import Clock, FixedClock, SystemClock
+from .clock import Clock, SystemClock, VirtualClock
 from .domain import Model, ModelEvent, Persistable
 
 __all__ = ["StagedWork", "run_action"]
@@ -87,7 +87,7 @@ def run_action[P, R](
     ``clock`` defaults to a fixed one, because a test asserting on a timestamp against a moving
     clock is a test that passes on the machine it was written on.
     """
-    running = clock or FixedClock(SystemClock().now())
+    running = clock or VirtualClock(SystemClock().now())
     plan = ActionPlan(running)
     with _Binding(plan, principal, running):
         result = action.perform(params)

@@ -14,7 +14,7 @@ __all__ = [
     "CrossShardError",
     "EkbatanError",
     "EntityNotFoundError",
-    "LockError",
+    "LockAcquisitionError",
     "StaleRecordError",
     "UnsupportedError",
     "ValidationError",
@@ -75,7 +75,7 @@ class CrossShardError(EkbatanError):
         self.shards = shards
 
 
-class LockError(EkbatanError):
+class LockAcquisitionError(EkbatanError):
     """A keyed lock could not be obtained because its backend failed.
 
     Never raised for contention: a lock held elsewhere is an empty result, not an error. A

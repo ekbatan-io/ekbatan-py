@@ -26,10 +26,10 @@ from ..persistence import DatabaseRegistry
 from ..repository import Repository
 from ..sharding import ShardIdentifier
 from .action import Action, _Binding
-from .outbox import EmittedEvent, EventPersister, OutboxRecord, SingleTableOutbox
+from .outbox import EmittedEvent, EventPersister, OutboxRecord, SingleTableJsonEventPersister
 from .plan import ActionPlan
 
-__all__ = ["ActionExecutor", "ExecutionConfig", "RetryPolicy"]
+__all__ = ["ActionExecutor", "ExecutionConfiguration", "RetryConfig"]
 
 LOG = logging.getLogger("ekbatan.action")
 
@@ -38,7 +38,7 @@ _NAMESPACE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
-class RetryPolicy:
+class RetryConfig:
     """When to try again, for one class of failure.
 
     A configuration holds several of these, because the answers genuinely differ: a lost
@@ -68,20 +68,20 @@ class RetryPolicy:
 
 #: One quick retry on a lost version race, and nothing else. Enough to absorb ordinary
 #: contention; not enough to hide a real problem.
-DEFAULT_RETRIES: tuple[RetryPolicy, ...] = (RetryPolicy(),)
+DEFAULT_RETRIES: tuple[RetryConfig, ...] = (RetryConfig(),)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
-class ExecutionConfig:
+class ExecutionConfiguration:
     """Per-call policy."""
 
     #: Tried in order; the first whose `on` matches wins. Order is the only precedence rule,
     #: so a narrow policy goes before a broad one.
-    retries: tuple[RetryPolicy, ...] = DEFAULT_RETRIES
+    retries: tuple[RetryConfig, ...] = DEFAULT_RETRIES
     allow_cross_shard: bool = False
 
     @classmethod
-    def no_retry(cls, **kwargs: Any) -> ExecutionConfig:
+    def no_retry(cls, **kwargs: Any) -> ExecutionConfiguration:
         """A failure reaches the caller unchanged.
 
         For a unit of work whose side effects are not safe to repeat - and the caller is the
@@ -89,7 +89,7 @@ class ExecutionConfig:
         """
         return cls(retries=(), **kwargs)
 
-    def policy_for(self, error: BaseException) -> tuple[RetryPolicy, BaseException] | None:
+    def policy_for(self, error: BaseException) -> tuple[RetryConfig, BaseException] | None:
         """The policy for this failure, looking through what it was raised from.
 
         A driver wrapping a conflict, or a handler re-raising one, would otherwise be
@@ -111,7 +111,7 @@ class ExecutionConfig:
         return None
 
 
-DEFAULT = ExecutionConfig()
+DEFAULT = ExecutionConfiguration()
 
 
 class ActionExecutor:
@@ -133,7 +133,7 @@ class ActionExecutor:
         events: Table | None = None,
         outbox: EventPersister | None = None,
         clock: Clock | None = None,
-        config: ExecutionConfig = DEFAULT,
+        config: ExecutionConfiguration = DEFAULT,
     ) -> None:
         self.namespace = _valid_namespace(namespace)
         self.registry = registry
@@ -149,7 +149,7 @@ class ActionExecutor:
         if outbox is not None:
             self.outbox: EventPersister = outbox
         elif events is not None:
-            self.outbox = SingleTableOutbox(events)
+            self.outbox = SingleTableJsonEventPersister(events)
         else:
             raise ValidationError("pass either events=<Table> or outbox=<EventPersister>")
 
@@ -161,7 +161,7 @@ class ActionExecutor:
         params: P,
         *,
         principal: str | None = None,
-        config: ExecutionConfig | None = None,
+        config: ExecutionConfiguration | None = None,
     ) -> R:
         """Run one unit of work and commit what it staged."""
         policy = config or self.config
@@ -231,7 +231,7 @@ class ActionExecutor:
         plan: ActionPlan,
         params: Any,
         started: Any,
-        policy: ExecutionConfig,
+        policy: ExecutionConfiguration,
     ) -> None:
         with span("ekbatan.action.persist") as persisting:
             self._flush(action_name, plan, params, started, policy, persisting)
@@ -242,7 +242,7 @@ class ActionExecutor:
         plan: ActionPlan,
         params: Any,
         started: Any,
-        policy: ExecutionConfig,
+        policy: ExecutionConfiguration,
         persisting: Any,
     ) -> None:
         by_shard = self._group_by_shard(plan)
@@ -254,7 +254,8 @@ class ActionExecutor:
             raise CrossShardError(sorted(str(s) for s in by_shard))
 
         if not by_shard:
-            # Nothing was staged, and the invocation is still recorded. See SingleTableOutbox.
+            # Nothing was staged, and the invocation is still recorded. See the sentinel
+            # row in SingleTableJsonEventPersister.
             by_shard = {self.registry.default_shard: {}}
 
         action_id = uuid.uuid4()

@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Protocol, runtime_checkable
 
-__all__ = ["Clock", "FixedClock", "SystemClock", "to_storage"]
+__all__ = ["Clock", "SystemClock", "VirtualClock", "to_storage"]
 
 
 @runtime_checkable
@@ -33,7 +33,7 @@ class SystemClock:
         return "SystemClock()"
 
 
-class FixedClock:
+class VirtualClock:
     """A clock that does not move until told to.
 
     Not only for tests: a scenario asserting on an absolute timestamp against a running clock
@@ -55,7 +55,7 @@ class FixedClock:
         self._now = _as_utc(now)
 
     def __repr__(self) -> str:
-        return f"FixedClock({self._now.isoformat()})"
+        return f"VirtualClock({self._now.isoformat()})"
 
 
 def _as_utc(value: datetime) -> datetime:

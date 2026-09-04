@@ -52,7 +52,7 @@ from .errors import (
 )
 from .ids import TypedValue
 from .persistence import DatabaseRegistry, TransactionManager
-from .sharding import NoSharding, ShardIdentifier, ShardingStrategy
+from .sharding import NoShardingStrategy, ShardIdentifier, ShardingStrategy
 
 __all__ = ["EntityRepository", "ModelRepository", "Repository"]
 
@@ -66,7 +66,7 @@ class Repository[M: Persistable[Any, Any], K]:
     Subclass it, or instantiate it directly when the default field-to-column mapping is
     enough::
 
-        wallets = Repository(Wallet, WALLETS, registry, sharding=EmbeddedBitsSharding())
+        wallets = Repository(Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy())
     """
 
     def __init__(
@@ -83,7 +83,7 @@ class Repository[M: Persistable[Any, Any], K]:
         self.model_type = model_type
         self.table = table
         self.registry = registry
-        self.sharding = sharding or NoSharding()
+        self.sharding = sharding or NoShardingStrategy()
         self.clock = clock or SystemClock()
         self.batch_size = batch_size
         self._single_stmt: dict[bool, Any] = {}
@@ -175,7 +175,7 @@ class Repository[M: Persistable[Any, Any], K]:
         isn't one. Refusing here is what keeps a repository call from quietly becoming several
         independent commits - the caller can always split it themselves and mean it.
         """
-        if isinstance(self.sharding, NoSharding) or not models:
+        if isinstance(self.sharding, NoShardingStrategy) or not models:
             return self.registry.default_shard
         shards = {self.shard_of(m) for m in models}
         if len(shards) > 1:

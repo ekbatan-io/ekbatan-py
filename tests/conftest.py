@@ -32,7 +32,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from backends import Backend, requested_dialects, start
-from ekbatan.clock import FixedClock
+from ekbatan.clock import VirtualClock
 from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import ShardIdentifier
@@ -68,8 +68,8 @@ def backend(dialect: str, tmp_path_factory: Any) -> Iterator[Backend]:
 
 
 @pytest.fixture
-def clock() -> FixedClock:
-    return FixedClock(datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC))
+def clock() -> VirtualClock:
+    return VirtualClock(datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC))
 
 
 def _registry(backend: Backend, names: dict[ShardIdentifier, str]) -> DatabaseRegistry:
@@ -106,7 +106,7 @@ def sharded_registry(backend: Backend) -> Iterator[DatabaseRegistry]:
 
 
 @pytest.fixture
-def wallets(registry: DatabaseRegistry, clock: FixedClock) -> Any:
+def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
     from ekbatan.repository import Repository
     from fixtures.domain import Wallet
     from fixtures.schema import WALLETS
@@ -115,7 +115,7 @@ def wallets(registry: DatabaseRegistry, clock: FixedClock) -> Any:
 
 
 @pytest.fixture
-def notifications(registry: DatabaseRegistry, clock: FixedClock) -> Any:
+def notifications(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
     from ekbatan.repository import Repository
     from fixtures.domain import Notification
     from fixtures.schema import NOTIFICATIONS
@@ -125,7 +125,7 @@ def notifications(registry: DatabaseRegistry, clock: FixedClock) -> Any:
 
 @pytest.fixture
 def executor(
-    registry: DatabaseRegistry, clock: FixedClock, wallets: Any, notifications: Any
+    registry: DatabaseRegistry, clock: VirtualClock, wallets: Any, notifications: Any
 ) -> Any:
     from ekbatan.action import ActionExecutor
     from fixtures.schema import EVENTS
@@ -140,16 +140,16 @@ def executor(
 
 
 @pytest.fixture
-def sharded(sharded_registry: DatabaseRegistry, clock: FixedClock) -> Any:
+def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock) -> Any:
     """An executor over two databases, routing by the shard encoded in each id."""
     from ekbatan.action import ActionExecutor
     from ekbatan.repository import Repository
-    from ekbatan.sharding import EmbeddedBitsSharding
+    from ekbatan.sharding import EmbeddedBitsShardingStrategy
     from fixtures.domain import Wallet
     from fixtures.schema import EVENTS, WALLETS
 
     repo = Repository(
-        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     executor = ActionExecutor(
         namespace="example.wallet",
@@ -182,7 +182,7 @@ def outbox(registry: DatabaseRegistry) -> Any:
 
 
 @pytest.fixture
-def pipeline(registry: DatabaseRegistry, clock: FixedClock) -> Any:
+def pipeline(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
     """Fan-out and dispatch over a registry, wired to a fresh handler registry."""
     from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
     from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS

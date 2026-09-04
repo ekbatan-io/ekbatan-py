@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import timedelta
 from enum import Enum
 
-__all__ = ["NotificationState", "backoff"]
+__all__ = ["EventNotificationState", "backoff"]
 
 
-class NotificationState(Enum):
+class EventNotificationState(Enum):
     """Where one (event, handler) pair has got to.
 
     ``SUCCEEDED`` and ``EXPIRED`` are terminal: those rows leave the dispatch index and are

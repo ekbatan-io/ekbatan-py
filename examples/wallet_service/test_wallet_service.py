@@ -17,7 +17,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from ekbatan.clock import FixedClock, SystemClock
+from ekbatan.clock import SystemClock, VirtualClock
 
 from .actions import (
     CloseWallet,
@@ -33,7 +33,7 @@ from .schema import EVENTS
 
 @pytest.fixture
 def service(tmp_path: Path) -> Iterator[WalletService]:
-    built = build(f"sqlite:///{tmp_path / 'wallet.db'}", clock=FixedClock(SystemClock().now()))
+    built = build(f"sqlite:///{tmp_path / 'wallet.db'}", clock=VirtualClock(SystemClock().now()))
     try:
         yield built
     finally:

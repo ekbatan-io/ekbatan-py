@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from ekbatan import (
     Action,
     ActionExecutor,
-    ExecutionConfig,
+    ExecutionConfiguration,
     Repository,
     ShardIdentifier,
 )
@@ -93,7 +93,7 @@ def test_retries_can_be_switched_off(executor, wallets, outbox):
         executor.execute(
             action,
             DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x"),
-            config=ExecutionConfig.no_retry(),
+            config=ExecutionConfiguration.no_retry(),
         )
 
     assert action.attempts == 1
@@ -175,7 +175,9 @@ def test_a_unit_of_work_spanning_shards_is_refused_before_anything_is_written(
 def test_crossing_shards_can_be_opted_into(sharded, sharded_registry):
     executor, wallets = sharded
 
-    executor.execute(CreateOnBothShards(), None, config=ExecutionConfig(allow_cross_shard=True))
+    executor.execute(
+        CreateOnBothShards(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+    )
 
     assert wallets.count(shard=GLOBAL) == 1
     assert wallets.count(shard=MEXICO) == 1

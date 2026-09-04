@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from ekbatan import Action, FixedClock, run_action
+from ekbatan import Action, VirtualClock, run_action
 from ekbatan.errors import EkbatanError, ValidationError
 from fixtures.actions import (
     CreateWallet,
@@ -104,7 +104,7 @@ def test_an_entity_stages_without_emitting():
 
 
 def test_the_action_sees_the_clock_it_was_given():
-    clock = FixedClock(datetime(2026, 6, 1, 9, 0, tzinfo=UTC))
+    clock = VirtualClock(datetime(2026, 6, 1, 9, 0, tzinfo=UTC))
 
     class ReadsTheClock(Action[None, datetime]):
         def perform(self, params: None) -> datetime:

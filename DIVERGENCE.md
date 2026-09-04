@@ -144,7 +144,7 @@ matches subclasses, and the walk also follows `__context__` - the error that was
 when this one was raised - unless it was deliberately suppressed.
 
 ```python
-RetryPolicy(on=OperationalError)  # matches every driver subclass of it, as `except` would
+RetryConfig(on=OperationalError)  # matches every driver subclass of it, as `except` would
 ```
 
 Exact-class matching is the surprising rule in a language whose `except` is subclass-based, and
@@ -188,6 +188,33 @@ Java's `EventHandler` is an interface. Here it is a `Protocol`: anything with `n
 `event_type` and `handle` is a handler, so an existing class can subscribe without inheriting
 anything. `aliases` is optional and read with `getattr`, which is what makes a handler rename
 possible without every handler declaring an empty set.
+
+## Names that still differ, and why
+
+Everything that names the same concept now carries the same name, so a reader moving between the
+two ports recognises what they are looking at. What is left differs because the thing itself
+differs, not because the name was chosen freely:
+
+| Java | here | why |
+| --- | --- | --- |
+| `AbstractRepository` | `Repository` | nothing is abstract; see above |
+| `Repository` (interface) | - | the narrow interface has no consumer here yet |
+| `ActionRegistry`, `RepositoryRegistry` | - | actions and repositories are passed as objects |
+| `ChangePersister` | - | the executor writes the shard slice itself; there is no second seam |
+| `EventEntity`, `EventEntityRepository` | - | rows are dicts through SQLAlchemy Core, not a mapped class |
+| `EventNotification`, `EventNotificationRepository` | - | the same |
+| `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
+| `ShardedUUID`, `Backoff` | `sharded_uuid()`, `backoff()` | a class holding only static methods is a function here |
+| `EventFanoutJob`, `EventHandlingJob` | `EventFanout`, `EventDispatch` | these are not jobs here - you drain them, and schedule that however you like |
+| `ShardGroupConfig` + `ShardMemberConfig` | `ShardConfig` | one flat shard list rather than a group/member nesting |
+| `Transaction`, `ConnectionProvider` | - | jOOQ and Hikari seams with no SQLAlchemy counterpart |
+| `ActionSpec`, `ActionAssert` | `run_action`, `StagedWork` | see above |
+| `Model.Builder` | `Builder`, `ModelBuilder` | `Persistable` needs one too, so it cannot nest inside `Model` |
+
+One place where matching Java costs something: `ExecutionConfiguration` sits next to
+`ShardingConfig`, `ShardConfig` and `DataSourceConfig`, because that is the inconsistency Java
+has and the name is the thing worth matching. `RetryConfig` follows Java rather than the
+`RetryPolicy` it was called here.
 
 ## Not ported
 

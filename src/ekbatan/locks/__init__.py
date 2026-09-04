@@ -1,16 +1,21 @@
 """Keyed locks: mutual exclusion on a string, in one process or across a cluster."""
 
-from .base import KeyedLock, Lease, lock_key_hash
-from .inprocess import InProcessLock
-from .sql import MariaDBLock, MySQLLock, PostgresLock, SqlKeyedLock
+from .base import KeyedLockProvider, Lease, lock_key_hash
+from .inprocess import InProcessKeyedLockProvider
+from .sql import (
+    MariaDBKeyedLockProvider,
+    MySQLKeyedLockProvider,
+    PostgresKeyedLockProvider,
+    SqlKeyedLockProvider,
+)
 
 __all__ = [
-    "InProcessLock",
-    "KeyedLock",
+    "InProcessKeyedLockProvider",
+    "KeyedLockProvider",
     "Lease",
-    "MariaDBLock",
-    "MySQLLock",
-    "PostgresLock",
-    "SqlKeyedLock",
+    "MariaDBKeyedLockProvider",
+    "MySQLKeyedLockProvider",
+    "PostgresKeyedLockProvider",
+    "SqlKeyedLockProvider",
     "lock_key_hash",
 ]

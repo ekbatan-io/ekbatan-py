@@ -26,7 +26,7 @@ from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..sharding import ShardIdentifier
 
-__all__ = ["EmittedEvent", "EventPersister", "OutboxRecord", "SingleTableOutbox"]
+__all__ = ["EmittedEvent", "EventPersister", "OutboxRecord", "SingleTableJsonEventPersister"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +63,7 @@ class EventPersister(Protocol):
     def persist(self, conn: Connection, record: OutboxRecord) -> None: ...
 
 
-class SingleTableOutbox:
+class SingleTableJsonEventPersister:
     """One table, JSON payloads. The default."""
 
     __slots__ = ("_table", "_types_by_name")

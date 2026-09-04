@@ -17,7 +17,7 @@ from sqlalchemy import CHAR, BigInteger, Column, DateTime, MetaData, Numeric, St
 
 from ekbatan import Model, Repository
 from ekbatan.ids import Id, ShardedId
-from ekbatan.sharding import EmbeddedBitsSharding, ShardIdentifier
+from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -66,7 +66,9 @@ def purses(registry, clock):
 @pytest.fixture
 def sharded_purses(sharded_registry, clock):
     _prepare(sharded_registry)
-    return Repository(Purse, PURSES, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock)
+    return Repository(
+        Purse, PURSES, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+    )
 
 
 def a_purse(id: Id[Purse]) -> Purse:

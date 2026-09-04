@@ -11,13 +11,13 @@ import threading
 from datetime import timedelta
 from typing import Any
 
-from ._holder import ReentrantHolder, ReleaseReason
+from ._holder import KeyedReentrantHolder, ReleaseReason
 from .base import Lease, check
 
-__all__ = ["InProcessLock"]
+__all__ = ["InProcessKeyedLockProvider"]
 
 
-class InProcessLock:
+class InProcessKeyedLockProvider:
     """Mutual exclusion within one process, with the same contract as the distributed ones."""
 
     __slots__ = ("_gate", "_holder", "_locks", "_waiters")
@@ -26,7 +26,7 @@ class InProcessLock:
         self._gate = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
         self._waiters: dict[str, int] = {}
-        self._holder = ReentrantHolder()
+        self._holder = KeyedReentrantHolder()
 
     def acquire(self, key: str, max_hold: timedelta) -> Lease:
         check(key, max_hold)

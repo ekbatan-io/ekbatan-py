@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 
 from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository, ShardIdentifier
 from ekbatan.clock import Clock
-from ekbatan.sharding import EmbeddedBitsSharding
+from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
 from .model import Alert, AlertId, Wallet, WalletId, WalletState
 from .schema import ALERTS, WALLETS
@@ -33,7 +33,9 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
     """
 
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(Wallet, WALLETS, registry, sharding=EmbeddedBitsSharding(), clock=clock)
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+        )
 
     def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         """Every wallet an owner has, on whichever databases they live.

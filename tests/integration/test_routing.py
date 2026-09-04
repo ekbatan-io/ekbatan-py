@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.repository import Repository
-from ekbatan.sharding import EmbeddedBitsSharding, NoSharding, ShardIdentifier
+from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy, ShardIdentifier
 from fixtures.domain import Wallet, WalletId
 from fixtures.schema import EVENTS, WALLETS
 
@@ -26,7 +26,7 @@ MEXICO = ShardIdentifier(1, 0)
 @pytest.fixture
 def sharded_wallets(sharded_registry, clock):
     return Repository(
-        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
 
 
@@ -84,7 +84,7 @@ def test_a_strategy_that_cannot_route_from_an_id_says_so(sharded_registry, clock
 
 
 def test_without_sharding_everything_is_the_default_shard(registry, clock):
-    wallets = Repository(Wallet, WALLETS, registry, sharding=NoSharding(), clock=clock)
+    wallets = Repository(Wallet, WALLETS, registry, sharding=NoShardingStrategy(), clock=clock)
     assert wallets.shard_for(uuid4()) == registry.default_shard
     assert wallets.shard_of_all([a_wallet(GLOBAL), a_wallet(MEXICO)]) == registry.default_shard
 
@@ -169,7 +169,7 @@ def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
                 ).scalar_one_or_none()
 
     wallets = WalletRepository(
-        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     here, there = a_wallet(GLOBAL), a_wallet(MEXICO, "MXN")
     wallets.add(here)
@@ -299,7 +299,7 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
     from sqlalchemy import event
 
     repo = Repository(
-        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsSharding(), clock=clock
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     repo.add(a_wallet(GLOBAL, "SEK"))  # the only match, on the first shard visited
 

@@ -16,7 +16,7 @@ from typing import Any
 
 from .base import Lease
 
-__all__ = ["ReentrantHolder", "ReleaseReason"]
+__all__ = ["KeyedReentrantHolder", "ReleaseReason"]
 
 LOG = logging.getLogger("ekbatan.locks")
 
@@ -33,7 +33,7 @@ class _Holding:
 
     def __init__(
         self,
-        holder: ReentrantHolder,
+        holder: KeyedReentrantHolder,
         key: str,
         payload: Any,
         release_cb: Callable[[Any, ReleaseReason], None],
@@ -98,7 +98,7 @@ class _Holding:
             )
 
 
-class ReentrantHolder:
+class KeyedReentrantHolder:
     """Tracks who holds what, keyed by ``(thread, key)``.
 
     Per thread, not per call stack. Work handed to a pool from inside a held region is a

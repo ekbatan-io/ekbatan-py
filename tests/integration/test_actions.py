@@ -9,11 +9,11 @@ from uuid import uuid4
 
 import pytest
 
-from ekbatan import Action, ExecutionConfig, RetryPolicy, current_clock, current_plan
+from ekbatan import Action, ExecutionConfiguration, RetryConfig, current_clock, current_plan
 from ekbatan.errors import (
     ConnectivityError,
     EkbatanError,
-    LockError,
+    LockAcquisitionError,
     StaleRecordError,
     ValidationError,
 )
@@ -82,10 +82,10 @@ class FailsWith(Action[None, str]):
 def test_each_kind_of_failure_gets_its_own_policy(executor):
     """A lost version race deserves one quick retry; an unreachable lock service deserves a few
     slower ones. One policy for everything has to pick the wrong number for something."""
-    config = ExecutionConfig(
+    config = ExecutionConfiguration(
         retries=(
-            RetryPolicy(on=StaleRecordError, retries=1, delay=0),
-            RetryPolicy(on=LockError, retries=3, delay=0),
+            RetryConfig(on=StaleRecordError, retries=1, delay=0),
+            RetryConfig(on=LockAcquisitionError, retries=3, delay=0),
         )
     )
 
@@ -93,7 +93,7 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
     assert executor.execute(conflicted, None, config=config) == "done"
     assert conflicted.attempts == 2
 
-    locked = FailsWith(*[LockError("k", "backend down") for _ in range(3)])
+    locked = FailsWith(*[LockAcquisitionError("k", "backend down") for _ in range(3)])
     assert executor.execute(locked, None, config=config) == "done"
     assert locked.attempts == 4, "three retries, as its own policy allows"
 
@@ -104,10 +104,10 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
 
 
 def test_the_first_matching_policy_wins(executor):
-    config = ExecutionConfig(
+    config = ExecutionConfiguration(
         retries=(
-            RetryPolicy(on=StaleRecordError, retries=0, delay=0),
-            RetryPolicy(on=EkbatanError, retries=5, delay=0),
+            RetryConfig(on=StaleRecordError, retries=0, delay=0),
+            RetryConfig(on=EkbatanError, retries=5, delay=0),
         )
     )
     action = FailsWith(StaleRecordError("moved"))
@@ -141,7 +141,7 @@ def test_a_cycle_in_the_cause_chain_does_not_hang(executor):
 def test_retries_can_be_switched_off_entirely(executor):
     action = FailsWith(StaleRecordError("moved"))
     with pytest.raises(StaleRecordError):
-        executor.execute(action, None, config=ExecutionConfig.no_retry())
+        executor.execute(action, None, config=ExecutionConfiguration.no_retry())
     assert action.attempts == 1
 
 
@@ -169,7 +169,9 @@ def test_such_a_failure_is_never_retried(executor):
         executor.execute(
             action,
             None,
-            config=ExecutionConfig(retries=(RetryPolicy(on=BaseException, retries=3, delay=0),)),
+            config=ExecutionConfiguration(
+                retries=(RetryConfig(on=BaseException, retries=3, delay=0),)
+            ),
         )
     assert action.attempts == 1, "a cancellation is not a transient fault to sit through"
 

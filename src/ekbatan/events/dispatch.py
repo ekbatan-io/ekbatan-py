@@ -27,7 +27,7 @@ from ..domain import ModelEvent
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
 from .handler import EventEnvelope, EventHandler, EventHandlerRegistry
-from .notification import NotificationState, backoff
+from .notification import EventNotificationState, backoff
 
 __all__ = ["EventDispatch"]
 
@@ -40,7 +40,7 @@ DEFAULT_MAX_BACKOFF = timedelta(minutes=5)
 @dataclass(slots=True)
 class _Outcome:
     notification_id: Any
-    state: NotificationState
+    state: EventNotificationState
     attempts: int
     next_retry_at: datetime
 
@@ -102,7 +102,10 @@ class EventDispatch:
                     select(table)
                     .where(
                         table.c.state.in_(
-                            [NotificationState.PENDING.value, NotificationState.FAILED.value]
+                            [
+                                EventNotificationState.PENDING.value,
+                                EventNotificationState.FAILED.value,
+                            ]
                         ),
                         table.c.next_retry_at <= now,
                     )
@@ -144,7 +147,7 @@ class EventDispatch:
                 row.id,
                 row.event_type,
             )
-            return _Outcome(row.id, NotificationState.EXPIRED, row.attempts, now)
+            return _Outcome(row.id, EventNotificationState.EXPIRED, row.attempts, now)
 
         handler = self._handlers.by_name(row.handler_name)
         if handler is None:
@@ -156,7 +159,7 @@ class EventDispatch:
             )
             return _Outcome(
                 row.id,
-                NotificationState.PENDING,
+                EventNotificationState.PENDING,
                 row.attempts,
                 now + backoff(attempts, self._max_backoff),
             )
@@ -175,7 +178,7 @@ class EventDispatch:
                     type(error).__name__,
                     error,
                 )
-                return _Outcome(row.id, NotificationState.EXPIRED, attempts, after)
+                return _Outcome(row.id, EventNotificationState.EXPIRED, attempts, after)
             delay = backoff(attempts, self._max_backoff)
             LOG.warning(
                 "handler %r failed on attempt %d (%s: %s); retrying in %s",
@@ -185,9 +188,9 @@ class EventDispatch:
                 error,
                 delay,
             )
-            return _Outcome(row.id, NotificationState.FAILED, attempts, after + delay)
+            return _Outcome(row.id, EventNotificationState.FAILED, attempts, after + delay)
 
-        return _Outcome(row.id, NotificationState.SUCCEEDED, attempts, now)
+        return _Outcome(row.id, EventNotificationState.SUCCEEDED, attempts, now)
 
     def _expired(self, event_date: datetime, now: datetime) -> bool:
         return event_date + self._retention <= now

@@ -20,11 +20,11 @@ from ..clock import Clock, to_storage
 from ..domain import Model, Persistable
 from ..errors import ValidationError
 
-__all__ = ["ActionPlan", "Changes"]
+__all__ = ["ActionPlan", "PersistableChanges"]
 
 
 @dataclass(slots=True)
-class Changes:
+class PersistableChanges:
     """What is staged for one model type, keyed by id so a row staged twice stays one row."""
 
     additions: dict[Any, Persistable[Any, Any]] = field(default_factory=dict)
@@ -50,7 +50,7 @@ class ActionPlan:
 
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
-        self._by_type: dict[type, Changes] = {}
+        self._by_type: dict[type, PersistableChanges] = {}
 
     # ------------------------------------------------------------------ staging
 
@@ -83,7 +83,7 @@ class ActionPlan:
     def update_all[P: Persistable[Any, Any]](self, models: Iterable[P]) -> list[P]:
         return [self.update(m) for m in models]
 
-    def _refuse_if_staged(self, changes: Changes, model: Persistable[Any, Any]) -> None:
+    def _refuse_if_staged(self, changes: PersistableChanges, model: Persistable[Any, Any]) -> None:
         """One row, staged once.
 
         A unit of work is one write per row, so staging the same row twice cannot mean two
@@ -108,7 +108,7 @@ class ActionPlan:
 
     # ------------------------------------------------------------------ reading
 
-    def changes(self) -> Mapping[type, Changes]:
+    def changes(self) -> Mapping[type, PersistableChanges]:
         """A read-only view of what is staged, by model type.
 
         A view rather than the map itself: a caller holding the real one can empty the plan, and
@@ -133,8 +133,8 @@ class ActionPlan:
 
     # ---------------------------------------------------------------- internals
 
-    def _changes(self, model_type: type) -> Changes:
-        return self._by_type.setdefault(model_type, Changes())
+    def _changes(self, model_type: type) -> PersistableChanges:
+        return self._by_type.setdefault(model_type, PersistableChanges())
 
     def _stamp_new[P: Persistable[Any, Any]](self, model: P) -> P:
         """Fill in the timestamps a model has. An entity has none - it is state, not history."""
