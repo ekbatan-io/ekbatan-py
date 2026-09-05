@@ -242,7 +242,8 @@ synchronous, multi-dialect, and database-backed. Every candidate fails at least 
 | pgqueuer | 1.5k | Postgres only |
 | chancy, BeanQueue, dmi-scheduler | 286 / 28 / - | Postgres only |
 | pyncette | **12** | the only real match on paper - leases, and Postgres *and* MySQL. But asyncio-only, so every `DistributedJob.run` would become `async def` in application code; and one contributor, 112 downloads a month |
-| celery, dramatiq, arq, rq, huey, taskiq | large | need a broker - Redis, RabbitMQ, NATS - so not database-backed |
+| huey + SqlHuey | 5.5k | the one that is genuinely multi-dialect without a broker - SqlHuey stores the queue through peewee, so MySQL and Postgres both work. But each consumer's scheduler enqueues periodic tasks on its own, and `lock_task` is a mutex rather than a claim, so two consumers run every slot twice |
+| celery, dramatiq, arq, rq, taskiq | large | need a broker - Redis, RabbitMQ, NATS - so not database-backed |
 | hatchet | - | an SDK for a server you deploy, not a library |
 | dbos | - | Postgres only |
 | prefect, dagster, airflow, temporal | large | orchestration platforms; you would deploy Airflow to run a fan-out loop |
@@ -256,9 +257,22 @@ shared store, one job scheduled every second for eight seconds:
 
 | | runs | outcome |
 | --- | --- | --- |
+| huey + SqlHuey | 16 over 8 slots | every slot run by both instances |
+| huey + SqlHuey + `@huey.lock_task` | 16 over 8 slots | identical - the lock changes nothing |
 | sqlalchemy-celery-beat | 14 over 7 slots | every slot dispatched by both instances |
 | APScheduler 3.11 + SQLAlchemy job store | 14 over 8 slots | six slots run twice |
 | this `JobRegistry` | 8 over 8 slots | four each, no slot twice |
+
+huey's `lock_task` is worth its own line, because it looks like the answer and is not. It works
+exactly as documented - a second acquire while the first is held is refused - but it is released
+when the task returns, so two runs of one slot that do not overlap both proceed:
+
+    held concurrently        second acquire refused
+    acquire, release, again  second acquire succeeds
+
+That is the distinction the whole table turns on. A mutex answers "is someone running this right
+now"; a claim answers "has this slot already been taken". Only the second prevents duplicate
+execution, and duplicate runs of a fast task are sequential, so the mutex is never contended.
 
 For Celery Beat the probe intercepted `apply_entry` - the moment beat decides a slot is due -
 so no broker was involved and nothing else could account for the number.
