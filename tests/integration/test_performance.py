@@ -62,16 +62,17 @@ def test_updating_many_rows_is_one_statement_not_one_each(wallets, sql):
     assert {w.balance for w in wallets.all()} == {Decimal("2.0000")}
 
 
-def test_a_batch_larger_than_the_limit_is_split_not_abandoned(registry, clock, sql):
-    """Every server caps the bind parameters one statement may carry. Chunking is what keeps a
-    large batch from becoming a failure that only shows up on the biggest customer."""
-    repo = Repository(Wallet, WALLETS, registry, clock=clock, batch_size=10)
+def test_a_large_batch_is_still_one_statement(registry, clock, sql):
+    """The framework sends one statement, however many rows, and never splits a batch by
+    itself - splitting one that exceeds the server's bind-parameter ceiling is the caller's,
+    because only the caller knows what the pieces mean if one of them fails."""
+    repo = Repository(Wallet, WALLETS, registry, clock=clock)
     stored = repo.add_all(some_wallets(35))
     sql.clear()
 
     repo.update_all([w.evolve(balance=Decimal("3.00")) for w in stored])
 
-    assert len(kind(sql, "UPDATE")) == 4, "35 rows at 10 per chunk"
+    assert len(kind(sql, "UPDATE")) == 1, "35 rows, one UPDATE"
     assert repo.count(WALLETS.c.balance == Decimal("3.00")) == 35, "and every one landed"
 
 
@@ -110,13 +111,13 @@ def test_a_lookup_collapses_duplicate_ids(wallets, sql):
     assert statement.count("?") <= 4 or "ANY" in statement.upper()
 
 
-def test_a_lookup_of_many_ids_is_chunked(registry, clock, sql):
-    repo = Repository(Wallet, WALLETS, registry, clock=clock, batch_size=10)
+def test_a_lookup_of_many_ids_is_one_query_per_shard(registry, clock, sql):
+    repo = Repository(Wallet, WALLETS, registry, clock=clock)
     stored = repo.add_all(some_wallets(25))
     sql.clear()
 
     assert len(repo.find_many([w.id for w in stored])) == 25
-    assert len(kind(sql, "SELECT")) == 3, "25 ids at 10 per chunk"
+    assert len(kind(sql, "SELECT")) == 1, "25 ids, one SELECT - as findAllByIds does"
 
 
 def test_postgres_matches_a_list_of_ids_with_any_and_others_with_in(wallets):
@@ -205,7 +206,7 @@ def test_a_batch_statement_is_composed_once_per_size(wallets):
 
     assert again is first, (
         "a 500-row UNION ALL costs about 25ms to build, against 5ms for the VALUES form, so it "
-        "is composed once per chunk size and then only re-bound"
+        "is composed once per batch size and then only re-bound"
     )
     binds = wallets._union_binds(stored)
     assert len(binds) == len(stored) * (len(wallets._columns) + 1)

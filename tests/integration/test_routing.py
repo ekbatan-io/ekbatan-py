@@ -321,3 +321,60 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
     selects[GLOBAL] = 0
     assert repo.exists_where(WALLETS.c.currency == "SEK") is True
     assert selects == {GLOBAL: 1, MEXICO: 0}
+
+
+# ------------------------------------------- the repository opens no transaction of its own
+
+
+def _statements(engine):
+    from sqlalchemy import event
+
+    seen: list[str] = []
+    event.listen(
+        engine,
+        "before_cursor_execute",
+        lambda c, cur, s, p, ctx, many: seen.append(s.split()[0].upper()),
+    )
+    return seen
+
+
+def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
+    """Java's repository never opens one: inside a transaction it joins, outside one each
+    statement commits itself. Opening one here would decide what is atomic on the caller's
+    behalf, which is theirs to decide."""
+    engine = registry.default.primary
+    seen = _statements(engine)
+
+    wallet = Wallet.open(
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+    )
+    wallets.add(wallet)
+
+    assert seen == ["INSERT"], "one statement, no BEGIN of the framework's own"
+
+    from sqlalchemy import create_engine
+
+    with create_engine(str(engine.url)).connect() as fresh:
+        found = fresh.execute(select(WALLETS.c.id).where(WALLETS.c.id == wallet.id.value)).first()
+    assert found is not None, "and it committed - a separate connection sees it"
+
+
+def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
+    """Nothing is chunked. Splitting a batch past the server's bind-parameter ceiling is the
+    caller's, because only they know what the pieces mean if one of them fails."""
+    seen = _statements(registry.default.primary)
+
+    many = [
+        Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00"))
+        for _ in range(250)
+    ]
+    stored = wallets.add_all(many)
+    assert seen.count("INSERT") == 1, "250 rows, one INSERT, even reading them back"
+
+    seen.clear()
+    wallets.update_all([w.deposit(Decimal("1.00")) for w in stored])
+    assert seen.count("UPDATE") == 1, "250 rows, one UPDATE"
+
+    seen.clear()
+    assert len(wallets.find_many([w.id for w in stored])) == 250
+    assert seen.count("SELECT") == 1, "250 ids, one SELECT"

@@ -91,16 +91,24 @@ def test_a_stale_update_is_refused(wallets):
     assert wallets.get(w.id).balance == Decimal("110.0000"), "the first writer's value stands"
 
 
-def test_a_batch_update_is_all_or_nothing(wallets):
+def test_a_stale_batch_update_raises_and_keeps_what_it_matched(wallets):
+    """One statement, no transaction of the framework's own - so the rows that did match are
+    written and the call still raises. Java's
+    `should_throw_optimistic_lock_exception_when_updateAll_with_stale_versions` asserts exactly
+    this. Inside a unit of work the executor's transaction takes the whole thing back; outside
+    one there is nothing to take it back, which is the reason to run a batch inside one when
+    the pieces belong together.
+    """
     stored = wallets.add_all([a_wallet("10.00") for _ in range(3)])
     wallets.update(stored[1].deposit(Decimal("5.00")))  # someone else moved it
 
-    with pytest.raises(StaleRecordError):
+    with pytest.raises(StaleRecordError, match="but matched 2"):
         wallets.update_all([w.deposit(Decimal("1.00")) for w in stored])
 
     balances = {w.id: w.balance for w in wallets.find_many([w.id for w in stored])}
-    assert balances[stored[0].id] == Decimal("10.0000")
-    assert balances[stored[2].id] == Decimal("10.0000")
+    assert balances[stored[0].id] == Decimal("11.0000"), "matched, so written"
+    assert balances[stored[2].id] == Decimal("11.0000"), "matched, so written"
+    assert balances[stored[1].id] == Decimal("15.0000"), "the other writer's value stands"
 
 
 def test_a_batch_is_one_statement(wallets, registry):

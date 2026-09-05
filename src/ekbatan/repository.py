@@ -4,9 +4,10 @@ A repository is bound to one model and one table. It routes by shard, enforces t
 lock, hides soft-deleted rows from every read path, and maps between rows and models - by field
 name, so that the common case needs no mapping code at all.
 
-It has no opinion about transactions. If one is open on the shard it joins it; if not it opens
-a short one of its own. That is what lets the same call read naturally in a unit of work and in
-a script.
+It has no opinion about transactions, and opens none. If one is open on the shard it joins it;
+if not, each statement stands alone and commits itself. That is what lets the same call read
+naturally in a unit of work and in a script, and it is why deciding when something is atomic
+stays with the caller rather than being decided here.
 """
 
 from __future__ import annotations
@@ -58,6 +59,9 @@ __all__ = ["EntityRepository", "ModelRepository", "Repository"]
 #: The column carrying the version each row was read at, in a batch update's derived table.
 _PRIOR = "_prior_version"
 
+#: Large enough that SQLAlchemy never pages a RETURNING insert of its own accord.
+_NO_PAGING = 1_000_000
+
 
 class Repository[M: Persistable[Any, Any], K]:
     """Rows of one table, as models.
@@ -77,14 +81,12 @@ class Repository[M: Persistable[Any, Any], K]:
         sharding: ShardingStrategy | None = None,
         clock: Clock | None = None,
         state_column: str = "state",
-        batch_size: int = 500,
     ) -> None:
         self.model_type = model_type
         self.table = table
         self.registry = registry
         self.sharding = sharding or NoShardingStrategy()
         self.clock = clock or SystemClock()
-        self.batch_size = batch_size
         self._single_stmt: dict[bool, Any] = {}
         self._union_stmts: dict[tuple[int, bool], Any] = {}
 
@@ -185,22 +187,28 @@ class Repository[M: Persistable[Any, Any], K]:
     def db(
         self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
     ) -> Iterator[Connection]:
-        """A writer connection for one shard, in a transaction of its own.
+        """A writer connection for one shard, outside any transaction. Each statement commits.
 
         It does **not** join an open transaction. That is occasionally what you want - a write
         that must survive the surrounding rollback, an audit row - and almost always not, so
-        reach for :meth:`tx_db_else_db` unless you specifically mean to be outside. Opening a
-        second connection to a shard you are already writing to can also deadlock, which is the
-        other reason this is the deliberate choice rather than the default one.
+        reach for :meth:`tx_db_else_db` unless you specifically mean to be outside. Writing to
+        a row your own open transaction already holds will also block until one of them gives
+        up, which is the other reason this is the deliberate choice rather than the default.
         """
-        with self._manager(key, model, shard).primary.connect() as conn, conn.begin():
+        with (
+            self._manager(key, model, shard)
+            .primary.connect()
+            .execution_options(isolation_level="AUTOCOMMIT") as conn
+        ):
             yield conn
 
     def dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
-        """Every shard's writer, one at a time, each in its own transaction.
+        """Every shard's writer, one at a time, outside any transaction.
 
-        For work that is genuinely per-database - a backfill, a repair. Each shard commits on
-        its own, so a failure part way leaves the earlier ones committed.
+        For work that is genuinely per-database - a backfill, a repair. Nothing is opened and
+        each statement commits itself, so a failure part way leaves everything before it
+        written. Open a transaction per shard yourself if the work on one shard has to land
+        together.
         """
         for shard in self.registry.shards:
             with self.db(shard=shard) as conn:
@@ -256,11 +264,16 @@ class Repository[M: Persistable[Any, Any], K]:
     def tx_db_else_db(
         self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
     ) -> Iterator[Connection]:
-        """The transaction open on this shard, or a short-lived one if there is none.
+        """The transaction open on this shard, or no transaction at all if there is none.
 
         What every built-in read and write uses, and what a subclass writing its own query
         should use. It is why the same repository call reads naturally inside a unit of work
-        and in a script: inside one it joins, outside one it stands alone.
+        and in a script: inside one it joins, outside one each statement commits itself.
+
+        It never opens one. A framework that opened a transaction here would be deciding what
+        is atomic on the caller's behalf, and getting it wrong in both directions - wrapping a
+        single statement that needed nothing, and quietly making a multi-statement call atomic
+        so that nobody noticed it had become one.
         """
         with self._manager(key, model, shard).connection() as conn:
             yield conn
@@ -354,9 +367,8 @@ class Repository[M: Persistable[Any, Any], K]:
         found: list[M] = []
         for shard, shard_keys in by_shard.items():
             with self.readonly_db(shard=shard) as conn:
-                for chunk in _chunks(shard_keys, self.batch_size):
-                    stmt = select(self.table).where(*self._live(self._id_among(conn, chunk)))
-                    found += [self.from_row(r) for r in conn.execute(stmt)]
+                stmt = select(self.table).where(*self._live(self._id_among(conn, shard_keys)))
+                found += [self.from_row(r) for r in conn.execute(stmt)]
         return found
 
     def _id_among(self, conn: Any, keys: Sequence[Any]) -> Any:
@@ -366,8 +378,8 @@ class Repository[M: Persistable[Any, Any], K]:
         text changes with the length of the list and a server-side plan cache misses on every
         new length - a service looking up two ids, then three, then two, re-plans each time.
         ``ANY`` takes the whole list as a single array parameter: one statement text, one
-        cached plan, one bind. Only Postgres has it, so everything else keeps ``IN`` and the
-        chunking above keeps that from meeting a parameter limit.
+        cached plan, one bind. Only Postgres has it, so everything else keeps ``IN`` - where a
+        long enough list will meet the server's parameter limit, and the caller splits it.
         """
         if conn.dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import ARRAY
@@ -492,6 +504,12 @@ class Repository[M: Persistable[Any, Any], K]:
                 written = conn.execute(
                     insert(self.table).returning(self.table, sort_by_parameter_order=True),
                     rows,
+                    # SQLAlchemy otherwise splits a RETURNING insert into pages of a thousand
+                    # rows. That is a batching decision, and batching is the caller's - three
+                    # pages outside a transaction are three commits, so a failure on the third
+                    # would leave two thirds written from a split nobody asked for. One
+                    # statement, or the server's parameter ceiling, same as the other port.
+                    execution_options={"insertmanyvalues_page_size": _NO_PAGING},
                 )
                 return [self.from_row(r) for r in written]
             conn.execute(insert(self.table), rows)
@@ -520,18 +538,24 @@ class Repository[M: Persistable[Any, Any], K]:
         self.update_all_no_result([model])
 
     def update_all(self, models: Sequence[M]) -> list[M]:
-        """Update under the optimistic lock, all of them or none, and read the rows back.
+        """Update under the optimistic lock and read the rows back.
 
-        One statement per chunk. Not ``executemany``: SQLAlchemy rewrites a batched INSERT into
-        a single multi-row statement, but there is no equivalent for UPDATE - an executemany
-        there is N statements and N server-side plans, pipelined at best. So the batch becomes
-        one derived table joined against the target.
+        **One statement**, however many rows. Not ``executemany``: SQLAlchemy rewrites a
+        batched INSERT into a single multi-row statement, but there is no equivalent for
+        UPDATE - an executemany there is N statements and N server-side plans, pipelined at
+        best. So the batch becomes one derived table joined against the target.
 
-        If the affected count is short, someone else got there first and the whole batch is
-        refused: partial application is the worst outcome available, because the caller is told
-        it failed and half of it happened anyway. The count is trustworthy because every row's
-        version changes, so no row can be reported unaffected for having been written its own
-        values.
+        One statement is also all this framework will send. Splitting a batch that exceeds the
+        server's parameter ceiling - 65535 binds on Postgres, a packet size on MySQL - is the
+        caller's, because only the caller knows what the pieces mean if one of them fails.
+
+        If the affected count is short, someone else got there first and the call raises. Inside
+        a unit of work that rolls the whole thing back. Outside one there is no transaction to
+        roll back and the statement has already committed what it matched, so a caller batching
+        by hand takes that on: it is the same on both ports, and the reason to run a batch
+        inside a unit of work when the pieces belong together. The count is trustworthy because
+        every row's version changes, so no row can be reported unaffected for having been
+        written its own values.
         """
         written = self._apply_updates(models, read_back=True)
         return written if written is not None else []
@@ -586,15 +610,12 @@ class Repository[M: Persistable[Any, Any], K]:
                 else:
                     affected = result.rowcount
             else:
-                for chunk in _chunks(stamped, self.batch_size):
-                    rows, count = self._batch_update(conn, chunk, returning=returning)
-                    written += rows
-                    affected += count
+                written, affected = self._batch_update(conn, stamped, returning=returning)
 
             if affected != len(stamped):
-                # Raised inside the transaction, so it rolls back. Raised after it, the rows
-                # that did match would already be committed and the caller would be told the
-                # batch failed while half of it had happened.
+                # Inside a unit of work this rolls the whole thing back. Outside one the
+                # statement has already committed whatever it matched - there is no
+                # transaction here to undo it, by design.
                 raise StaleRecordError(
                     f"expected to update {len(stamped)} {self.model_type.__name__} row(s) "
                     f"but matched {affected}; one was concurrently modified or is gone",
@@ -671,7 +692,7 @@ class Repository[M: Persistable[Any, Any], K]:
     def _batch_update(
         self, conn: Any, models: Sequence[M], *, returning: bool = False
     ) -> tuple[list[Row[Any]], int]:
-        """One UPDATE for the whole chunk, joined against a derived table of the new values.
+        """One UPDATE for the whole batch, joined against a derived table of the new values.
 
         Two shapes, because the dialects genuinely differ. Postgres has a ``VALUES`` table
         constructor with named columns and its planner reads one scan node from it. MySQL's
@@ -688,8 +709,9 @@ class Repository[M: Persistable[Any, Any], K]:
             return self._run_update(conn, stmt, None, returning)
 
         # Building a 500-row UNION ALL costs about 25ms, against 5ms for the VALUES form, so
-        # this one is composed once per chunk size and then only re-bound. Chunks are almost
-        # always full, so the cache holds two entries: the full size, and the last remainder.
+        # one is composed per batch size and then only re-bound. A service that writes the
+        # same shapes repeatedly pays that cost once; the cache is capped so a caller passing
+        # a different length every time cannot grow it without bound.
         size = len(models)
         stmt = self._union_stmts.get((size, returning))
         if stmt is None:
@@ -780,14 +802,6 @@ def _must_hold(col: Any, wanted: type, described: str, why: str) -> None:
             f"{actual.__name__ if isinstance(actual, type) else actual}; it has to be "
             f"{described}, because {why}."
         )
-
-
-def _chunks[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
-    """A statement carries one bind parameter per column per row, and every server has a
-    ceiling on how many it will take - 65535 on Postgres, a packet size on MySQL. Chunking is
-    what keeps a large batch from becoming a failure that only appears in production."""
-    for start in range(0, len(items), size):
-        yield items[start : start + size]
 
 
 def _concrete_types(model_type: type) -> dict[str, Any]:

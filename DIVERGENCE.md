@@ -137,6 +137,29 @@ inherit the plan. That is correct - another thread is another connection, and qu
 one would corrupt both - and it is the one thing about this that surprises people, so
 `current_plan()` says so in its error message rather than returning `None`.
 
+## Transactions are the caller's, and batching with them
+
+Neither port's repository opens a transaction. Inside one it joins; outside one each statement
+commits itself - Java's `db()` is a jOOQ context over a DataSource with auto-commit left on, and
+here it is a connection in `AUTOCOMMIT`. SQLAlchemy will not do that by default: an `execute`
+outside a transaction quietly begins one, and closing without `commit` rolls it back, so a write
+would vanish. `AUTOCOMMIT` is how you ask for what the JDBC driver gives Java for free.
+
+One repository call is therefore **one statement**, however many rows, in both ports. Nothing is
+chunked. Splitting a batch that would exceed the server's bind-parameter ceiling - 65535 on
+Postgres, a packet size on MySQL - belongs to the caller, because only the caller knows what the
+pieces mean if one of them fails.
+
+This port did chunk, at five hundred rows, and opened a transaction to keep the pieces together.
+That made large batches work where Java's fail, at the cost of the framework deciding what was
+atomic on the caller's behalf. It now does neither.
+
+The consequence is worth stating plainly, and is the same on both ports: a batch update whose
+optimistic lock misses on one row raises, and the rows that did match are already written. Java's
+`should_throw_optimistic_lock_exception_when_updateAll_with_stale_versions` asserts exactly that.
+Inside a unit of work the executor's transaction takes the whole thing back; outside one there is
+nothing to take it back. Run a batch inside a unit of work when the pieces belong together.
+
 ## Retries match an exception the way `except` does
 
 Java matches the thrown exception's exact class, and walks only `getCause()`. Here a policy

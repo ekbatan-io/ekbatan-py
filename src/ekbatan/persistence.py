@@ -97,13 +97,19 @@ class TransactionManager:
     @contextmanager
     def connection(self, *, readonly: bool = False, replica: bool = False) -> Iterator[Connection]:
         """A connection for one statement: the ambient transaction if there is one, else a
-        short-lived connection of its own.
+        connection that commits each statement as it runs.
 
-        ``readonly`` skips the write transaction, because a SELECT has nothing to commit.
+        Outside a transaction this opens **none**. A statement stands on its own and commits
+        itself, which is what the Java implementation does - its ``db()`` is a context over a
+        DataSource with auto-commit left on, so nothing between ``inTransaction`` blocks is
+        ever inside one. Transaction management belongs to the caller in both ports.
 
-        ``replica`` additionally accepts a replica's lag, and is never the default: a write
-        followed by a read has to find the row, and a caller who has not said otherwise is
-        entitled to that. Ask for it where lag is genuinely acceptable.
+        SQLAlchemy will not do that by default: an ``execute`` outside a transaction quietly
+        begins one, and a connection closed without ``commit`` rolls it back, so a write would
+        vanish. ``AUTOCOMMIT`` is how you ask for the behaviour Java gets from the driver.
+
+        ``replica`` accepts a replica's lag, and is never the default: a write followed by a
+        read has to find the row. Ask for it where lag is genuinely acceptable.
 
         A read taken inside a transaction ignores both and joins it - it has to see the writes
         that transaction has already made, and a replica by definition has not seen them.
@@ -114,12 +120,8 @@ class TransactionManager:
             return
 
         engine = self.replica if (readonly and replica) else self.primary
-        with engine.connect() as conn:
-            if readonly:
-                yield conn
-            else:
-                with conn.begin():
-                    yield conn
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            yield conn
 
     def close(self) -> None:
         self.primary.dispose()
