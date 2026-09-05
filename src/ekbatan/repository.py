@@ -256,9 +256,7 @@ class Repository[M: Persistable[Any, Any], K]:
         For code that must behave differently depending on whether it is inside one. Most code
         should not care, and should call :meth:`tx_db_else_db`.
         """
-        from .persistence import _open
-
-        return _open().get(self._manager(key, model, shard).shard)
+        return self._manager(key, model, shard).current()
 
     @contextmanager
     def tx_db_else_db(
@@ -582,12 +580,8 @@ class Repository[M: Persistable[Any, Any], K]:
                 "ekbatan.entity.type": self.model_type.__name__,
                 "ekbatan.batch.size": size,
             },
-        ) as recording:
-            try:
-                yield
-            except BaseException as error:
-                recording.failed(error)
-                raise
+        ):
+            yield
 
     def _apply_updates(self, models: Sequence[M], *, read_back: bool) -> list[M] | None:
         if not models:

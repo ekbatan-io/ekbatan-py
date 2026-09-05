@@ -100,12 +100,8 @@ class SingleTableJsonEventPersister:
                 "ekbatan.action.name": record.action_name,
                 "ekbatan.event.count": len(record.events),
             },
-        ) as recording:
-            try:
-                self._write(conn, record)
-            except BaseException as error:
-                recording.failed(error)
-                raise
+        ):
+            self._write(conn, record)
 
     def _write(self, conn: Connection, record: OutboxRecord) -> None:
         params = canonical(record.action_params)

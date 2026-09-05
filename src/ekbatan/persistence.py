@@ -22,6 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, create_engine
 
+from ._tracing import span
 from .config import ShardConfig, ShardingConfig
 from .errors import ValidationError
 from .sharding import ShardIdentifier
@@ -116,18 +117,51 @@ class TransactionManager:
         Anything inside the block reaching for ``tx_db`` or ``tx_db_else_db`` on this shard
         finds this transaction and joins it, without being handed anything.
         """
-        existing = _open().get(self.shard)
+        existing = self.current()
         if existing is not None:
+            # No span: joining is not a transaction boundary, and one here would report a
+            # nested duration for something that neither began nor committed.
             yield Transaction(existing, self.shard, self.dialect)
             return
 
-        with self.primary.connect() as conn:
+        with (
+            span(
+                "ekbatan.transaction",
+                {
+                    "ekbatan.shard.group": self.shard.group,
+                    "ekbatan.shard.member": self.shard.member,
+                },
+            ),
+            self.primary.connect() as conn,
+        ):
             token = _ambient.set({**_open(), self.shard: conn})
             try:
                 with conn.begin():
+                    LOG.debug("transaction started [shard=%s]", self.shard)
                     yield Transaction(conn, self.shard, self.dialect)
+            except BaseException as error:
+                # BaseException: a cancellation still rolled the transaction back, and a log
+                # that omitted it would be worse than none. The span needs nothing here - an
+                # exception leaving the `with` is recorded by OpenTelemetry itself.
+                LOG.warning(
+                    "transaction rolled back [shard=%s]: %s",
+                    self.shard,
+                    type(error).__name__,
+                )
+                raise
+            else:
+                LOG.debug("transaction committed [shard=%s]", self.shard)
             finally:
                 _ambient.reset(token)
+
+    def current(self) -> Connection | None:
+        """The transaction open on this shard right now, or ``None``.
+
+        The counterpart to Java's ``currentTransactionDbContext``. Where the ambient
+        transaction is kept is this module's business, so asking is a method rather than a
+        reach into it from outside.
+        """
+        return _open().get(self.shard)
 
     @contextmanager
     def connection(self, *, readonly: bool = False, replica: bool = False) -> Iterator[Connection]:

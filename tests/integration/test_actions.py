@@ -341,3 +341,13 @@ def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets)
     assert emitted["ekbatan.repository"]["ekbatan.entity.type"] == "Wallet"
     assert emitted["ekbatan.repository"]["ekbatan.batch.size"] == 1
     assert emitted["ekbatan.event.persist"]["ekbatan.event.count"] == 1
+
+    tx = next(s for s in collected if s.name == "ekbatan.transaction")
+    assert tx.attributes["ekbatan.shard.group"] == 0
+    assert tx.attributes["ekbatan.shard.member"] == 0
+
+    for recorded in collected:
+        assert [e.name for e in recorded.events].count("exception") <= 1, (
+            "OpenTelemetry records an exception leaving a `with` itself; recording it again "
+            "puts the same traceback on the span twice"
+        )

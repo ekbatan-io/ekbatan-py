@@ -52,13 +52,16 @@ class Span:
             self._span.add_event(name, dict(attributes))
 
     def failed(self, error: BaseException, *, outcome: str | None = None) -> None:
-        if self._span is not None:
-            from opentelemetry.trace import Status, StatusCode
+        """Mark this span failed.
 
-            if outcome is not None:
-                self._span.set_attribute(outcome, "error")
-            self._span.set_status(Status(StatusCode.ERROR, str(error)))
-            self._span.record_exception(error)
+        Only the attribute. An exception that escapes the ``with`` is already recorded by
+        OpenTelemetry, which sets the status and adds the event itself - doing it here as well
+        put the same traceback on the span twice, which is how a trace ends up looking like two
+        failures. What it cannot know is the port's own outcome attribute, so that is all this
+        adds.
+        """
+        if self._span is not None and outcome is not None:
+            self._span.set_attribute(outcome, "error")
 
 
 _NOWHERE = Span()
