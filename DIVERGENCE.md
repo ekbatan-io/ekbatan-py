@@ -246,8 +246,16 @@ synchronous, multi-dialect, and database-backed. Every candidate fails at least 
 | hatchet | - | an SDK for a server you deploy, not a library |
 | dbos | - | Postgres only |
 | prefect, dagster, airflow, temporal | large | orchestration platforms; you would deploy Airflow to run a fan-out loop |
+| sqlalchemy-celery-beat | 82 | stores the *schedule* in Postgres/MySQL/SQLite, which is the right half - but it is Celery Beat, and Celery's docs say *"you have to ensure only a single scheduler is running for a schedule at a time, otherwise you'd end up with duplicate tasks"*. The only lock in the package guards a `last_run_at` write-back, not a slot |
+| django-celery-beat | 1.8k | the same, plus Django |
 | `db-scheduler` on PyPI | - | unrelated package: 0.1.4, no cluster, claim or heartbeat in it |
 | aistudio-scheduler-lock | - | the one ShedLock-alike; requires Django < 4.0 |
+
+One pattern runs through the whole table, and it is the useful thing to take from it: several
+Python libraries persist the *schedule* in a database. What none of them does is let two
+processes race for a slot and have exactly one win. Those are different problems, and only the
+second is why db-scheduler exists. A library that stores the schedule in Postgres and then tells
+you to run exactly one instance has solved the half that was never hard.
 
 pyncette is the interesting one and the reason this table exists rather than a sentence. It is
 genuinely the right shape - a distributed scheduler with pluggable Postgres and MySQL backends -
