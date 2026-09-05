@@ -270,6 +270,13 @@ when the task returns, so two runs of one slot that do not overlap both proceed:
     held concurrently        second acquire refused
     acquire, release, again  second acquire succeeds
 
+A `ttl` on that lock does not rescue it either, and this is worth writing down because the
+suggestion looks so reasonable: `lock_task(name, ttl=...)` raises `NotImplementedError: ttl is
+not supported by this storage` on every backend except Redis - including the SQL one, which is
+the whole reason huey was a candidate. And even on Redis the ttl is a safety net for a holder
+that crashed, not a claim on the slot: `TaskLock.__exit__` deletes the key unconditionally when
+the task returns.
+
 That is the distinction the whole table turns on. A mutex answers "is someone running this right
 now"; a claim answers "has this slot already been taken". Only the second prevents duplicate
 execution, and duplicate runs of a fast task are sequential, so the mutex is never contended.
