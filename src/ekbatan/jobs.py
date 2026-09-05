@@ -24,11 +24,11 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import Table, and_, insert, select, update
+from sqlalchemy import Table, and_, select, update
 
 from .clock import Clock, SystemClock, to_storage
 from .errors import ConnectivityError, ValidationError
-from .persistence import DatabaseRegistry
+from .persistence import DatabaseRegistry, insert_ignoring_duplicates
 
 __all__ = [
     "Daily",
@@ -213,26 +213,31 @@ class JobRegistry:
         now = to_storage(self._clock.now())
         try:
             with self._manager.transaction() as tx:
-                existing = {r.task_name for r in tx.execute(select(self._table.c.task_name))}
-                new = [
-                    {
-                        "task_name": name,
-                        "task_instance": "recurring",
-                        "task_data": None,
-                        "execution_time": now,
-                        "picked": False,
-                        "picked_by": None,
-                        "last_success": None,
-                        "last_failure": None,
-                        "consecutive_failures": 0,
-                        "last_heartbeat": None,
-                        "version": 1,
-                    }
-                    for name in self._jobs
-                    if name not in existing
-                ]
-                if new:
-                    tx.execute(insert(self._table), new)
+                # Insert-ignoring-duplicates rather than read-then-insert. Every instance in
+                # the cluster runs this at boot, usually within the same second of a rolling
+                # deploy: both would read an empty table, both would insert, and one would take
+                # a unique violation on a perfectly ordinary startup. The row already being
+                # there is the normal case, not an error.
+                insert_ignoring_duplicates(
+                    tx.connection,
+                    self._table,
+                    [
+                        {
+                            "task_name": name,
+                            "task_instance": "recurring",
+                            "task_data": None,
+                            "execution_time": now,
+                            "picked": False,
+                            "picked_by": None,
+                            "last_success": None,
+                            "last_failure": None,
+                            "consecutive_failures": 0,
+                            "last_heartbeat": None,
+                            "version": 1,
+                        }
+                        for name in self._jobs
+                    ],
+                )
         except Exception as exc:
             raise ConnectivityError(
                 f"the scheduler could not register its jobs: {exc}. Nothing would have run, "

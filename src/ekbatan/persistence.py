@@ -13,21 +13,26 @@ would corrupt both.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from sqlalchemy import Connection, Engine, create_engine
+from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
 from ._tracing import span
 from .config import ShardConfig, ShardingConfig
 from .errors import ValidationError
 from .sharding import ShardIdentifier
 
-__all__ = ["DatabaseRegistry", "Transaction", "TransactionManager"]
+__all__ = [
+    "DatabaseRegistry",
+    "Transaction",
+    "TransactionManager",
+    "insert_ignoring_duplicates",
+]
 
 LOG = logging.getLogger("ekbatan.persistence")
 
@@ -316,3 +321,26 @@ def _engine(config: object) -> Engine:
             "pool_pre_ping": config.pool_pre_ping,
         }
     return create_engine(config.url, **kwargs)
+
+
+def insert_ignoring_duplicates(
+    conn: Connection, table: Table, rows: Sequence[Mapping[str, object]]
+) -> None:
+    """Insert, letting the unique constraint drop the rows that are already there.
+
+    For a row several instances may each try to create: the constraint decides, not whichever
+    of them read the table first. A read-then-insert loses that race by construction - both
+    read nothing, both insert, and one of them takes a unique violation on a perfectly ordinary
+    startup.
+    """
+    name = conn.dialect.name
+    if name in ("postgresql", "sqlite"):
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        maker = pg_insert if name == "postgresql" else sqlite_insert
+        conn.execute(maker(table).on_conflict_do_nothing(), list(rows))
+    elif name in ("mysql", "mariadb"):
+        conn.execute(insert(table).prefix_with("IGNORE"), list(rows))
+    else:  # pragma: no cover - every supported dialect is covered above
+        conn.execute(insert(table), list(rows))

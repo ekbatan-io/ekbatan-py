@@ -16,10 +16,10 @@ import logging
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import Connection, Table, select, update
+from sqlalchemy import Table, select, update
 
 from ..clock import Clock, SystemClock, to_storage
-from ..persistence import DatabaseRegistry
+from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
 from .handler import EventHandlerRegistry
 from .notification import EventNotificationState
 
@@ -119,7 +119,7 @@ class EventFanout:
                     )
 
             if pending:
-                _insert_ignoring_duplicates(tx.connection, self._notifications, pending)
+                insert_ignoring_duplicates(tx.connection, self._notifications, pending)
 
             tx.execute(
                 update(self._events)
@@ -127,31 +127,6 @@ class EventFanout:
                 .values(delivered=True)
             )
             return len(rows)
-
-
-def _insert_ignoring_duplicates(
-    conn: Connection, table: Table, rows: list[dict[str, object]]
-) -> None:
-    """Insert, skipping rows the unique constraint already covers.
-
-    Fan-out is not transactional with dispatch and will pass over rows it has already seen -
-    after a crash, after a replica catching up. The constraint decides, not the reader.
-    """
-    name = conn.dialect.name
-    if name in ("postgresql", "sqlite"):
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
-        maker = pg_insert if name == "postgresql" else sqlite_insert
-        conn.execute(maker(table).on_conflict_do_nothing(), rows)
-    elif name in ("mysql", "mariadb"):
-        from sqlalchemy import insert
-
-        conn.execute(insert(table).prefix_with("IGNORE"), rows)
-    else:  # pragma: no cover - every supported dialect is covered above
-        from sqlalchemy import insert
-
-        conn.execute(insert(table), rows)
 
 
 DEFAULT_POLL = timedelta(seconds=1)

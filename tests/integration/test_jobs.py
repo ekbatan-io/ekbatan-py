@@ -7,7 +7,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ekbatan.errors import ConnectivityError, ValidationError
 from ekbatan.jobs import DistributedJob, Every, JobContext, JobRegistry
@@ -34,6 +34,40 @@ def wallet(executor):
         CreateWallet(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")),
     )
+
+
+def test_instances_starting_at_once_do_not_collide(registry, executor, wallets, clock, wallet):
+    """A rolling deploy starts every instance within the same second, and each of them
+    registers the same jobs. Read-then-insert loses that race by construction: both read an
+    empty table, both insert, and one takes a unique violation on an ordinary startup."""
+    import threading
+
+    schedulers = [
+        a_registry(registry, clock, [PayStipend(executor, wallets)], f"instance-{i}")
+        for i in range(4)
+    ]
+
+    failures: list[BaseException] = []
+    ready = threading.Barrier(len(schedulers))
+
+    def start(scheduler):
+        try:
+            ready.wait(timeout=5)  # every thread through the door together
+            scheduler.start()
+        except BaseException as exc:
+            failures.append(exc)
+
+    threads = [threading.Thread(target=start, args=(s,)) for s in schedulers]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert not failures, f"starting together raised {failures}"
+
+    with registry.default.connection(readonly=True) as conn:
+        rows = conn.execute(select(func.count()).select_from(SCHEDULED_TASKS)).scalar_one()
+    assert rows == 1, "one job, one row, however many instances registered it"
 
 
 def test_a_slot_runs_once_however_many_instances_are_up(registry, executor, wallets, clock, wallet):
