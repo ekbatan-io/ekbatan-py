@@ -16,7 +16,9 @@ import logging
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from types import MappingProxyType
+from typing import Any
 
 from sqlalchemy import Connection, Engine, create_engine
 
@@ -24,7 +26,7 @@ from .config import ShardConfig, ShardingConfig
 from .errors import ValidationError
 from .sharding import ShardIdentifier
 
-__all__ = ["DatabaseRegistry", "TransactionManager"]
+__all__ = ["DatabaseRegistry", "Transaction", "TransactionManager"]
 
 LOG = logging.getLogger("ekbatan.persistence")
 
@@ -41,6 +43,31 @@ _NONE: Mapping[ShardIdentifier, Connection] = MappingProxyType({})
 def _open() -> Mapping[ShardIdentifier, Connection]:
     """The transactions open on this thread or task."""
     return _ambient.get() or _NONE
+
+
+@dataclass(frozen=True, slots=True)
+class Transaction:
+    """One open transaction: what to run statements on, and the shard they will land on.
+
+    The counterpart to the ``DSLContext`` Java hands the block inside ``inTransaction``. Both
+    say the same thing - run your statements here and they land on this shard, inside this
+    transaction - and both carry the dialect, for the query that has to differ.
+
+    ``execute`` is forwarded, so a block reads the way jOOQ's does rather than reaching through
+    a connection attribute for every statement. :attr:`connection` is there for everything
+    else SQLAlchemy offers.
+    """
+
+    connection: Connection
+    shard: ShardIdentifier
+    dialect: str
+
+    def execute(self, statement: Any, parameters: Any = None, **kwargs: Any) -> Any:
+        """Run one statement on this transaction."""
+        return self.connection.execute(statement, parameters, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"Transaction(shard={self.shard}, {self.dialect})"
 
 
 class TransactionManager:
@@ -74,23 +101,31 @@ class TransactionManager:
         return not self._owns_replica
 
     @contextmanager
-    def transaction(self) -> Iterator[Connection]:
+    def transaction(self) -> Iterator[Transaction]:
         """Open a transaction on this shard, or join the one already open on it.
+
+        The counterpart to Java's ``inTransaction`` - a ``with`` block rather than a callback,
+        which is why there is one of these where Java needs four overloads for value-returning,
+        void, checked and unchecked blocks.
 
         Joining rather than nesting is deliberate: a repository call inside a unit of work must
         land in the same transaction as everything else the unit of work did, or the promise
-        that it all commits together is not one.
+        that it all commits together is not one. Java's opens a second transaction on a second
+        connection instead, which can block against the first one's locks.
+
+        Anything inside the block reaching for ``tx_db`` or ``tx_db_else_db`` on this shard
+        finds this transaction and joins it, without being handed anything.
         """
         existing = _open().get(self.shard)
         if existing is not None:
-            yield existing
+            yield Transaction(existing, self.shard, self.dialect)
             return
 
         with self.primary.connect() as conn:
             token = _ambient.set({**_open(), self.shard: conn})
             try:
                 with conn.begin():
-                    yield conn
+                    yield Transaction(conn, self.shard, self.dialect)
             finally:
                 _ambient.reset(token)
 

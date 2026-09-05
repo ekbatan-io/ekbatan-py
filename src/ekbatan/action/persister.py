@@ -20,12 +20,10 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection
-
 from ..domain import Model, Persistable
 from ..errors import ValidationError
+from ..persistence import Transaction
 from ..repository import Repository
-from ..sharding import ShardIdentifier
 from .outbox import EmittedEvent, EventPersister, OutboxRecord
 from .plan import PersistableChanges
 
@@ -66,7 +64,7 @@ class ChangePersister:
 
     def persist(
         self,
-        conn: Connection,
+        tx: Transaction,
         changes: Mapping[type, PersistableChanges],
         *,
         namespace: str,
@@ -74,10 +72,13 @@ class ChangePersister:
         params: Any,
         started: datetime,
         completed: datetime,
-        shard: ShardIdentifier,
         action_id: uuid.UUID,
     ) -> None:
-        """Write the rows, then the events, on ``conn``."""
+        """Write the rows, then the events, inside ``tx``.
+
+        The shard is not a separate argument: the transaction is already on one, and two ways
+        to say which would eventually disagree.
+        """
         events: list[EmittedEvent] = []
 
         for model_type, staged in changes.items():
@@ -98,11 +99,11 @@ class ChangePersister:
             "persisting %d addition(s) and %d update(s) on shard %s",
             sum(len(c.additions) for c in changes.values()),
             sum(len(c.updates) for c in changes.values()),
-            shard,
+            tx.shard,
         )
 
         self.outbox.persist(
-            conn,
+            tx.connection,
             OutboxRecord(
                 namespace=namespace,
                 action_id=action_id,
@@ -111,7 +112,7 @@ class ChangePersister:
                 started_date=started,
                 completion_date=completed,
                 events=events,
-                shard=shard,
+                shard=tx.shard,
             ),
         )
 

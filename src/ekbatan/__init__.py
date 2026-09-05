@@ -70,7 +70,7 @@ from .locks import (
     PostgresKeyedLockProvider,
 )
 from .migrations import emit_ddl, migrate, migrate_registry
-from .persistence import DatabaseRegistry, TransactionManager
+from .persistence import DatabaseRegistry, Transaction, TransactionManager
 from .repository import EntityRepository, ModelRepository, Repository
 from .schema import notifications_table, outbox_table, scheduled_tasks_table
 from .sharding import (
@@ -148,6 +148,7 @@ __all__ = [
     "StaleRecordError",
     "StatementCount",
     "SystemClock",
+    "Transaction",
     "TransactionManager",
     "TypedValue",
     "UnsupportedError",

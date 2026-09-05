@@ -120,9 +120,9 @@ class EventDispatch:
 
         # Written after the whole batch has been attempted, in one transaction. Every outcome
         # is recorded or none is - and no single delivery can take the others' results with it.
-        with manager.transaction() as conn:
+        with manager.transaction() as tx:
             for outcome in outcomes:
-                conn.execute(
+                tx.execute(
                     update(table)
                     .where(table.c.id == outcome.notification_id)
                     .values(

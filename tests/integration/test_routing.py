@@ -95,19 +95,21 @@ def test_without_sharding_everything_is_the_default_shard(registry, clock):
 def test_tx_db_else_db_joins_an_open_transaction(registry, wallets):
     manager = registry.default
     with manager.transaction() as outer:
+        assert outer.shard == manager.shard, "the block knows which shard it is on"
+        assert outer.dialect == manager.dialect
         with wallets.tx_db_else_db() as joined:
-            assert joined is outer
-        assert wallets.tx_db() is outer
+            assert joined is outer.connection
+        assert wallets.tx_db() is outer.connection
 
     assert wallets.tx_db() is None, "outside one, there is no transaction to join"
     with wallets.tx_db_else_db() as standalone:
-        assert standalone is not None, "and it opens a short one of its own"
+        assert standalone is not None, "and each statement on it commits itself"
 
 
 def test_db_deliberately_does_not_join(registry, wallets):
     manager = registry.default
     with manager.transaction() as outer, wallets.db() as separate:
-        assert separate is not outer, (
+        assert separate is not outer.connection, (
             "db() is the escape hatch; tx_db_else_db is the one repository code should use"
         )
 
@@ -378,3 +380,32 @@ def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
     seen.clear()
     assert len(wallets.find_many([w.id for w in stored])) == 250
     assert seen.count("SELECT") == 1, "250 ids, one SELECT"
+
+
+def test_the_block_is_told_which_shard_it_is_on(sharded_registry, clock):
+    """Java hands its block a DSLContext bound to one shard's connection. The counterpart here
+    is a Transaction, which says the same and can also be asked which shard that is."""
+    from ekbatan import Transaction
+
+    repo = Repository(
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+    )
+
+    for shard in sharded_registry.shards:
+        with sharded_registry.manager(shard).transaction() as tx:
+            assert isinstance(tx, Transaction)
+            assert tx.shard == shard
+            assert tx.dialect == sharded_registry.manager(shard).dialect
+
+            # a raw statement runs on it directly, the way jOOQ's context does
+            assert tx.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 0
+
+            # and a repository call joins it without being handed anything
+            repo.add(a_wallet(shard))
+            assert repo.tx_db(shard=shard) is tx.connection
+
+    counts = {
+        shard: conn.execute(select(func.count()).select_from(WALLETS)).scalar_one()
+        for shard, conn in repo.readonly_dbs()
+    }
+    assert counts == {GLOBAL: 1, MEXICO: 1}, "each landed on the shard its block was for"

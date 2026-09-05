@@ -70,12 +70,12 @@ class EventFanout:
             return 0
 
         manager = self._registry.manager(shard)  # type: ignore[arg-type]
-        with manager.transaction() as conn:
+        with manager.transaction() as tx:
             # Only types somebody subscribes to. An event nobody wants is left alone rather
             # than marked delivered, so registering a handler later still picks it up - and
             # so a sentinel row, which has no event type at all, is never selected.
             rows = list(
-                conn.execute(
+                tx.execute(
                     select(self._events)
                     .where(
                         self._events.c.delivered.is_(False),
@@ -119,9 +119,9 @@ class EventFanout:
                     )
 
             if pending:
-                _insert_ignoring_duplicates(conn, self._notifications, pending)
+                _insert_ignoring_duplicates(tx.connection, self._notifications, pending)
 
-            conn.execute(
+            tx.execute(
                 update(self._events)
                 .where(self._events.c.id.in_([r.id for r in rows]))
                 .values(delivered=True)

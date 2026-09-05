@@ -212,8 +212,8 @@ class JobRegistry:
         """
         now = to_storage(self._clock.now())
         try:
-            with self._manager.transaction() as conn:
-                existing = {r.task_name for r in conn.execute(select(self._table.c.task_name))}
+            with self._manager.transaction() as tx:
+                existing = {r.task_name for r in tx.execute(select(self._table.c.task_name))}
                 new = [
                     {
                         "task_name": name,
@@ -232,7 +232,7 @@ class JobRegistry:
                     if name not in existing
                 ]
                 if new:
-                    conn.execute(insert(self._table), new)
+                    tx.execute(insert(self._table), new)
         except Exception as exc:
             raise ConnectivityError(
                 f"the scheduler could not register its jobs: {exc}. Nothing would have run, "
@@ -261,8 +261,8 @@ class JobRegistry:
         dead_before = now - self._heartbeat * self._missed_limit
         table = self._table
 
-        with self._manager.transaction() as conn:
-            row = conn.execute(
+        with self._manager.transaction() as tx:
+            row = tx.execute(
                 select(table).where(table.c.task_name == name, table.c.task_instance == "recurring")
             ).first()
             if row is None or row.execution_time > now:
@@ -278,7 +278,7 @@ class JobRegistry:
                     row.last_heartbeat,
                 )
 
-            claimed = conn.execute(
+            claimed = tx.execute(
                 update(table)
                 .where(
                     and_(
@@ -331,8 +331,8 @@ class JobRegistry:
         while following <= now:
             following = job.schedule.next_after(following)
 
-        with self._manager.transaction() as conn:
-            conn.execute(
+        with self._manager.transaction() as tx:
+            tx.execute(
                 update(table)
                 .where(table.c.task_name == name, table.c.task_instance == "recurring")
                 .values(
@@ -354,8 +354,8 @@ class JobRegistry:
         and it cannot tell a busy process from a stopped one.
         """
         now = to_storage(self._clock.now())
-        with self._manager.transaction() as conn:
-            conn.execute(
+        with self._manager.transaction() as tx:
+            tx.execute(
                 update(self._table)
                 .where(
                     self._table.c.task_name == name,

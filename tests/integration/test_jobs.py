@@ -169,8 +169,8 @@ def test_two_jobs_with_one_name_are_refused(registry, executor, wallets, clock):
 def test_a_scheduler_that_cannot_register_fails_loudly(registry, executor, wallets, clock):
     from sqlalchemy import text
 
-    with registry.default.transaction() as conn:
-        conn.execute(text("DROP TABLE scheduled_tasks"))
+    with registry.default.transaction() as tx:
+        tx.execute(text("DROP TABLE scheduled_tasks"))
 
     scheduler = a_registry(registry, clock, [PayStipend(executor, wallets)], "only")
     with pytest.raises(ConnectivityError, match="could not register"):

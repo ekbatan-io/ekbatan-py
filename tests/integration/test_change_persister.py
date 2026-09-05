@@ -36,16 +36,15 @@ def a_wallet(balance: str = "100.00") -> Wallet:
 
 
 def write(persister, registry, shard, changes):
-    with registry.manager(shard).transaction() as conn:
+    with registry.manager(shard).transaction() as tx:
         persister.persist(
-            conn,
+            tx,
             changes,
             namespace="example.wallet",
             action_name="SomeAction",
             params={"k": "v"},
             started=NOW,
             completed=NOW,
-            shard=shard,
             action_id=uuid.uuid4(),
         )
 
@@ -75,16 +74,15 @@ def test_it_opens_no_transaction_of_its_own(persister, registry, wallets):
     """Handed a connection, it writes on it - so the caller's rollback takes everything."""
     wallet = a_wallet()
     try:
-        with registry.manager(registry.default_shard).transaction() as conn:
+        with registry.manager(registry.default_shard).transaction() as tx:
             persister.persist(
-                conn,
+                tx,
                 {Wallet: PersistableChanges(additions={wallet.id: wallet})},
                 namespace="example.wallet",
                 action_name="SomeAction",
                 params={},
                 started=NOW,
                 completed=NOW,
-                shard=registry.default_shard,
                 action_id=uuid.uuid4(),
             )
             raise RuntimeError("boom")

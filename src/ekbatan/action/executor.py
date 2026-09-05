@@ -301,16 +301,15 @@ class ActionExecutor:
         started: Any,
     ) -> None:
         """One shard, one transaction. What goes in it is the persister's business."""
-        with self.registry.manager(shard).transaction() as conn:
+        with self.registry.manager(shard).transaction() as tx:
             self.changes.persist(
-                conn,
+                tx,
                 staged,
                 namespace=self.namespace,
                 action_name=action_name,
                 params=params,
                 started=started,
                 completed=to_storage(self.clock.now()),
-                shard=shard,
                 action_id=action_id,
             )
 
