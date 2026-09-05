@@ -231,20 +231,35 @@ application that genuinely needs a physical delete writes it against its own rul
 ## The scheduler is this framework's, not a dependency's
 
 Java delegates distributed jobs to db-scheduler. Python has no equivalent, which was checked
-rather than assumed:
+against the ecosystem rather than assumed. What this needs is all four of: maintained,
+synchronous, multi-dialect, and database-backed. Every candidate fails at least one.
 
-| candidate | why not |
-| --- | --- |
-| APScheduler 3.11 | its own FAQ: *"How do I share a single job store among one or more worker processes? Short answer: You can't."* Two instances give duplicate execution - the opposite of what a distributed job is |
-| APScheduler 4.0 | proper distributed support, but six alphas and no stable release |
-| procrastinate, pgqueuer, chancy | Postgres only, hard `psycopg` dependency; this framework also speaks MySQL and MariaDB |
-| celery, dramatiq, arq, rq, huey | need a broker - Redis or RabbitMQ - so not database-backed at all |
-| `db-scheduler` on PyPI | an unrelated package: 0.1.4, one author, no cluster, claim or heartbeat anywhere in it |
+| candidate | stars | why not |
+| --- | --- | --- |
+| APScheduler 3.11 | 7.6k | its own FAQ: *"How do I share a single job store among one or more worker processes? Short answer: You can't."* Two instances give duplicate execution - the opposite of what a distributed job is |
+| APScheduler 4.0 | same | has a shared data store, but its tracking issue has been open since September 2020 and `4.0.0a6` still says "should not be used in production" |
+| procrastinate | 1.4k | Postgres only |
+| pgqueuer | 1.5k | Postgres only |
+| chancy, BeanQueue, dmi-scheduler | 286 / 28 / - | Postgres only |
+| pyncette | **12** | the only real match on paper - leases, and Postgres *and* MySQL. But asyncio-only, so every `DistributedJob.run` would become `async def` in application code; and one contributor, 112 downloads a month |
+| celery, dramatiq, arq, rq, huey, taskiq | large | need a broker - Redis, RabbitMQ, NATS - so not database-backed |
+| hatchet | - | an SDK for a server you deploy, not a library |
+| dbos | - | Postgres only |
+| prefect, dagster, airflow, temporal | large | orchestration platforms; you would deploy Airflow to run a fan-out loop |
+| `db-scheduler` on PyPI | - | unrelated package: 0.1.4, no cluster, claim or heartbeat in it |
+| aistudio-scheduler-lock | - | the one ShedLock-alike; requires Django < 4.0 |
+
+pyncette is the interesting one and the reason this table exists rather than a sentence. It is
+genuinely the right shape - a distributed scheduler with pluggable Postgres and MySQL backends -
+and it would still be the wrong dependency. What would be delegated is the atomic claim, the code
+that stops five servers each running the nightly report; a defect there is not a crash, it is the
+report going out twice. That is not a thing to take from a solo project with a hundred downloads a
+month, whatever its quality.
 
 So the claim-and-heartbeat loop is implemented here - about two hundred lines - against
 db-scheduler's own table layout, so a Java service and a Python service coordinate through one
 `scheduled_tasks` table rather than each running the nightly report. That last requirement rules
-out every library above on its own: none of them would use db-scheduler's schema.
+out every row above on its own: none of them would use db-scheduler's schema.
 
 Schedules are `Every`, `FixedDelay` and `Daily`. Cron is not built in: parsing it needs a
 dependency, and a `Schedule` is one method.
