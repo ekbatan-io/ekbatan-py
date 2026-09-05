@@ -409,3 +409,15 @@ def test_the_block_is_told_which_shard_it_is_on(sharded_registry, clock):
         for shard, conn in repo.readonly_dbs()
     }
     assert counts == {GLOBAL: 1, MEXICO: 1}, "each landed on the shard its block was for"
+
+
+def test_a_manager_filed_under_the_wrong_shard_is_refused(registry):
+    """Two answers to 'which shard is this?' - the key routing uses, and the one every
+    transaction stamps on its outbox row. Nothing downstream could tell them apart."""
+    from sqlalchemy import create_engine
+
+    from ekbatan import DatabaseRegistry, TransactionManager
+    from ekbatan.errors import ValidationError
+
+    with pytest.raises(ValidationError, match="registered under the wrong key"):
+        DatabaseRegistry({GLOBAL: TransactionManager(MEXICO, create_engine("sqlite://"))}, GLOBAL)

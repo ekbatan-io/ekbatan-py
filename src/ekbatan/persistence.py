@@ -181,6 +181,15 @@ class DatabaseRegistry:
             raise ValidationError("at least one database is required")
         if default_shard not in managers:
             raise ValidationError(f"default_shard {default_shard} names no registered database")
+        misfiled = [(key, m.shard) for key, m in managers.items() if key != m.shard]
+        if misfiled:
+            # Two answers to "which shard is this?" - the key routing uses, and the one the
+            # manager stamps on every transaction it opens. Nothing downstream can tell them
+            # apart: rows would be written to the database filed under one and the outbox row
+            # would name the other, and `shard` on that row is what tells a consumer which
+            # database an event came from.
+            listed = ", ".join(f"{key} holds a manager for {actual}" for key, actual in misfiled)
+            raise ValidationError(f"a shard is registered under the wrong key: {listed}")
         self._managers = dict(managers)
         self.default_shard = default_shard
         self.dialect = self._managers[default_shard].dialect
