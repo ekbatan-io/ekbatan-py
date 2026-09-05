@@ -251,6 +251,18 @@ synchronous, multi-dialect, and database-backed. Every candidate fails at least 
 | `db-scheduler` on PyPI | - | unrelated package: 0.1.4, no cluster, claim or heartbeat in it |
 | aistudio-scheduler-lock | - | the one ShedLock-alike; requires Django < 4.0 |
 
+The top two rows were measured rather than taken from their documentation. Two processes, one
+shared store, one job scheduled every second for eight seconds:
+
+| | runs | outcome |
+| --- | --- | --- |
+| sqlalchemy-celery-beat | 14 over 7 slots | every slot dispatched by both instances |
+| APScheduler 3.11 + SQLAlchemy job store | 14 over 8 slots | six slots run twice |
+| this `JobRegistry` | 8 over 8 slots | four each, no slot twice |
+
+For Celery Beat the probe intercepted `apply_entry` - the moment beat decides a slot is due -
+so no broker was involved and nothing else could account for the number.
+
 One pattern runs through the whole table, and it is the useful thing to take from it: several
 Python libraries persist the *schedule* in a database. What none of them does is let two
 processes race for a slot and have exactly one win. Those are different problems, and only the
