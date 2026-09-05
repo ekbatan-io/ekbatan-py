@@ -28,7 +28,7 @@ class NotifyOnDeposit:
 
     def handle(self, envelope: EventEnvelope[MoneyDeposited]) -> None:
         self.executor.execute(
-            RaiseAlert(),
+            RaiseAlert,
             RaiseAlertParams(
                 wallet_id=WalletId.of(envelope.model_id or ""),
                 # Off the producing action's parameters, not the event. The event says what

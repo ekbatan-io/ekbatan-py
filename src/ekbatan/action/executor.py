@@ -22,12 +22,13 @@ from .._tracing import span
 from ..clock import Clock, SystemClock, to_storage
 from ..errors import CrossShardError, StaleRecordError, ValidationError
 from ..persistence import DatabaseRegistry
-from ..repository import Repository
+from ..repository import Repository, RepositoryRegistry
 from ..sharding import ShardIdentifier
 from .action import Action, _Binding
 from .outbox import EventPersister, SingleTableJsonEventPersister
 from .persister import ChangePersister
 from .plan import ActionPlan, PersistableChanges
+from .registry import ActionRegistry
 
 __all__ = ["ActionExecutor", "ExecutionConfiguration", "RetryConfig"]
 
@@ -117,19 +118,26 @@ DEFAULT = ExecutionConfiguration()
 class ActionExecutor:
     """Runs units of work.
 
-    Actions are passed as instances, not looked up by name. An action is an object you built
-    with the things it needs; a registry between the caller and it would buy indirection and
-    one more place for a name to be wrong.
+    An action can be given as the instance to run, or - when one is registered for it - as its
+    type::
+
+        executor.execute(CloseWallet, WalletIdParams(wallet_id=id))
+        executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=id))
+
+    The first is what an :class:`~ekbatan.action.registry.ActionRegistry` is for: a caller
+    holding the executor runs an action without also holding what the action was built with.
+    The second needs no registry and is what a test usually wants.
     """
 
-    __slots__ = ("changes", "clock", "config", "namespace", "outbox", "registry")
+    __slots__ = ("actions", "changes", "clock", "config", "namespace", "outbox", "registry")
 
     def __init__(
         self,
         *,
         namespace: str,
         registry: DatabaseRegistry,
-        repositories: Iterable[Repository[Any, Any]],
+        repositories: RepositoryRegistry | Iterable[Repository[Any, Any]],
+        actions: ActionRegistry | Iterable[Action[Any, Any]] = (),
         events: Table | None = None,
         outbox: EventPersister | None = None,
         clock: Clock | None = None,
@@ -139,6 +147,7 @@ class ActionExecutor:
         self.registry = registry
         self.clock = clock or SystemClock()
         self.config = config
+        self.actions = actions if isinstance(actions, ActionRegistry) else ActionRegistry(actions)
 
         if outbox is not None:
             self.outbox: EventPersister = outbox
@@ -147,21 +156,35 @@ class ActionExecutor:
         else:
             raise ValidationError("pass either events=<Table> or outbox=<EventPersister>")
 
-        self.changes = ChangePersister(repositories, self.outbox)
+        self.changes = ChangePersister(
+            repositories
+            if isinstance(repositories, RepositoryRegistry)
+            else RepositoryRegistry(repositories),
+            self.outbox,
+        )
+
+    @property
+    def repositories(self) -> RepositoryRegistry:
+        """The registry the executor writes through."""
+        return self.changes.repositories
 
     # ------------------------------------------------------------------ running
 
     def execute[P, R](
         self,
-        action: Action[P, R],
+        action: Action[P, R] | type[Action[P, R]],
         params: P,
         *,
         principal: str | None = None,
         config: ExecutionConfiguration | None = None,
     ) -> R:
-        """Run one unit of work and commit what it staged."""
+        """Run one unit of work and commit what it staged.
+
+        Takes the action to run, or its type when one is registered - see the class docstring.
+        """
+        running = self.actions.get(action) if isinstance(action, type) else action
         policy = config or self.config
-        name = action.name
+        name = running.name
         retried = 0
 
         with span(
@@ -178,7 +201,7 @@ class ActionExecutor:
                 plan = ActionPlan(self.clock)
                 try:
                     with span("ekbatan.action.perform"), _Binding(plan, principal, self.clock):
-                        result = action.perform(params)
+                        result = running.perform(params)
                     self._commit(name, plan, params, started, policy)
                 except BaseException as error:
                     # BaseException, not Exception. Something that is not an ordinary error -

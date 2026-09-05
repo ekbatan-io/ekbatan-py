@@ -8,18 +8,39 @@ silent divergence is how a spec becomes fiction.
 Every entry below is a place where this port does something the Java implementation does not.
 None of them changes observable behaviour; each one changes what the application has to write.
 
-## Actions are objects, not registered classes
+## An action runs by type or by instance
 
-Java dispatches by class token, so it needs an `ActionRegistry` between the caller and the
-action. Python does not: an action is an object you built with the things it needs, and you
-call it.
+Java dispatches on a class token, so `ActionRegistry` is the only way to reach an action:
 
-```python
-executor.execute(deposit_money, DepositParams(...))     # here
-executor.execute(principal, DepositMoneyAction.class, params)   # there
+```java
+executor.execute(principal, DepositMoneyAction.class, params);
 ```
 
-One fewer registry, one fewer place for a name to be wrong, and nothing to keep in sync.
+Both registries are here, with the same builders, and the class form works the same way:
+
+```python
+executor.execute(DepositMoney, DepositParams(...))
+```
+
+What the registry buys is the same in both ports: the wiring lives in one place, and a caller
+holding the executor runs an action without also holding what the action was built with. The
+example's handler and its job both reach for `DepositMoney` and know nothing about the wallet
+repository it needs.
+
+The instance form stays, because it costs nothing and a test almost always wants the object it
+just built:
+
+```python
+run = DepositMoney(wallets)
+executor.execute(run, DepositParams(...))
+```
+
+Two differences inside the builders, both for the same reason. Neither `with_action` nor
+`with_model_repository` takes the type alongside the object - `type(action)` and
+`repo.model_type` already say it, and a second way to say the same thing is a second way for it
+to be wrong. And where Java's `repository(Class)` returns null for an unregistered type, this
+raises and names the type: the null is what surfaced as a NullPointerException inside the
+executor's shard grouping, which is `EKB-0076` on the Java side.
 
 ## Events carry no identity
 
@@ -234,7 +255,6 @@ differs, not because the name was chosen freely:
 | --- | --- | --- |
 | `AbstractRepository` | `Repository` | nothing is abstract; see above |
 | `Repository` (interface) | - | the narrow interface has no consumer here yet |
-| `ActionRegistry`, `RepositoryRegistry` | - | actions and repositories are passed as objects |
 | `EventEntity`, `EventEntityRepository` | - | rows are dicts through SQLAlchemy Core, not a mapped class |
 | `EventNotification`, `EventNotificationRepository` | - | the same |
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |

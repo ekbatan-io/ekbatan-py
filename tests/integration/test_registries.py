@@ -1,0 +1,144 @@
+"""The two registries: what maps to what, and what they refuse.
+
+Java needs these because it dispatches on class tokens. They earn their place here for a
+different reason: they are the only object that knows what an action was built with, so a
+caller holding the executor needs nothing else to run one.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from uuid import uuid4
+
+import pytest
+
+from ekbatan import (
+    ActionExecutor,
+    ActionRegistry,
+    Repository,
+    RepositoryRegistry,
+)
+from ekbatan.errors import ValidationError
+from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
+from fixtures.domain import Notification, Wallet
+from fixtures.schema import EVENTS
+
+# ------------------------------------------------------------------ repositories
+
+
+def test_the_builder_sorts_repositories_by_what_they_hold(wallets, notifications):
+    built = (
+        RepositoryRegistry.builder()
+        .with_model_repository(wallets)
+        .with_entity_repository(notifications)
+        .build()
+    )
+
+    assert built.repository(Wallet) is wallets
+    assert built.repository(Notification) is notifications
+    assert set(built.models) == {Wallet, Notification}
+    assert len(built) == 2
+
+
+def test_declaring_the_wrong_kind_is_refused(wallets, notifications):
+    """A Model registered as an Entity would write its rows and drop its events."""
+    with pytest.raises(ValidationError, match="Wallet is not an Entity"):
+        RepositoryRegistry.builder().with_entity_repository(wallets)
+
+    with pytest.raises(ValidationError, match="Notification is not a Model"):
+        RepositoryRegistry.builder().with_model_repository(notifications)
+
+
+def test_a_collection_is_sorted_without_being_declared(wallets, notifications):
+    built = RepositoryRegistry.builder().with_repositories([wallets, notifications]).build()
+
+    assert set(built.models) == {Wallet, Notification}
+    assert list(built) == [wallets, notifications]
+
+
+def test_two_repositories_for_one_model_are_refused(registry, clock, wallets):
+    """Keeping the last silently means half the application writes through a repository the
+    other half has never heard of - different clock, different sharding, same table."""
+    from fixtures.schema import WALLETS
+
+    other = Repository(Wallet, WALLETS, registry, clock=clock)
+
+    with pytest.raises(ValidationError, match="two repositories were given for Wallet"):
+        RepositoryRegistry([wallets, other])
+
+
+def test_asking_for_an_unregistered_model_names_it(wallets):
+    built = RepositoryRegistry([wallets])
+
+    with pytest.raises(ValidationError, match="no repository is registered for Notification"):
+        built.repository(Notification)
+
+    assert Wallet in built
+    assert Notification not in built
+
+
+# ------------------------------------------------------------------ actions
+
+
+def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
+    """The point of the registry: the caller names the action and knows nothing about what it
+    was built with."""
+    executor = ActionExecutor(
+        namespace="example.wallet",
+        registry=registry,
+        repositories=RepositoryRegistry([wallets, notifications]),
+        actions=ActionRegistry.builder()
+        .with_action(CreateWallet())
+        .with_action(DepositMoney(wallets))
+        .build(),
+        events=EVENTS,
+        clock=clock,
+    )
+
+    wallet = executor.execute(
+        CreateWallet,
+        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("10.00")),
+    )
+    deposited = executor.execute(
+        DepositMoney,
+        DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
+    )
+
+    assert deposited.balance == Decimal("15.00")
+    assert wallets.get(wallet.id).balance == Decimal("15.0000")
+
+
+def test_an_instance_still_works_with_no_registry(executor, wallets):
+    """The registry is not compulsory - a test usually wants the instance it just built."""
+    wallet = executor.execute(
+        CreateWallet(),
+        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+    )
+    assert wallets.get(wallet.id) is not None
+
+
+def test_running_an_unregistered_type_names_it(executor):
+    with pytest.raises(ValidationError, match="no instance of CreateWallet is registered"):
+        executor.execute(
+            CreateWallet,
+            CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+        )
+
+
+def test_registering_the_class_rather_than_an_instance_is_refused():
+    """The commonest way to get this wrong, and it would otherwise fail much later."""
+    with pytest.raises(ValidationError, match="CreateWallet is a class, not an instance"):
+        ActionRegistry([CreateWallet])  # type: ignore[list-item]
+
+
+def test_two_instances_of_one_action_are_refused(wallets):
+    with pytest.raises(ValidationError, match="two instances of DepositMoney"):
+        ActionRegistry([DepositMoney(wallets), DepositMoney(wallets)])
+
+
+def test_the_same_instance_twice_is_not_a_conflict(wallets):
+    once = DepositMoney(wallets)
+    built = ActionRegistry([once, once])
+
+    assert len(built) == 1
+    assert built.get(DepositMoney) is once

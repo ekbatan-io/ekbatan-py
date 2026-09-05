@@ -8,11 +8,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ekbatan import ActionExecutor, DatabaseRegistry, ShardingConfig
+from ekbatan import (
+    ActionExecutor,
+    ActionRegistry,
+    DatabaseRegistry,
+    RepositoryRegistry,
+    ShardingConfig,
+)
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
 from ekbatan.jobs import JobRegistry
 
+from .actions import CloseWallet, DepositMoney, OpenWallet, RaiseAlert
 from .handlers import NotifyOnDeposit
 from .jobs import PayStipend
 from .repository import AlertRepository, WalletRepository
@@ -57,10 +64,33 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
     wallets = WalletRepository(registry, clock=running)
     alerts = AlertRepository(registry, clock=running)
 
+    # Which repository writes which model. The builder is worth the two extra words here
+    # because it declares the kind: saying model of something that is not one is caught now
+    # rather than by a missing outbox row weeks later.
+    repositories = (
+        RepositoryRegistry.builder()
+        .with_model_repository(wallets)
+        .with_entity_repository(alerts)
+        .build()
+    )
+
+    # Each action, built once with what it needs. This is the only place that knows what that
+    # is - a caller runs `executor.execute(DepositMoney, params)` and depends on neither the
+    # repository nor the constructor.
+    actions = (
+        ActionRegistry.builder()
+        .with_action(OpenWallet())
+        .with_action(DepositMoney(wallets))
+        .with_action(CloseWallet(wallets))
+        .with_action(RaiseAlert())
+        .build()
+    )
+
     executor = ActionExecutor(
         namespace="example.wallet_service",
         registry=registry,
-        repositories=[wallets, alerts],
+        repositories=repositories,
+        actions=actions,
         events=EVENTS,
         clock=running,
     )

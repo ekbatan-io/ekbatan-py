@@ -20,6 +20,8 @@ from .action import (
     Action,
     ActionExecutor,
     ActionPlan,
+    ActionRegistry,
+    ActionRegistryBuilder,
     ChangePersister,
     EventPersister,
     ExecutionConfiguration,
@@ -71,7 +73,13 @@ from .locks import (
 )
 from .migrations import emit_ddl, migrate, migrate_registry
 from .persistence import DatabaseRegistry, Transaction, TransactionManager
-from .repository import EntityRepository, ModelRepository, Repository
+from .repository import (
+    EntityRepository,
+    ModelRepository,
+    Repository,
+    RepositoryRegistry,
+    RepositoryRegistryBuilder,
+)
 from .schema import notifications_table, outbox_table, scheduled_tasks_table
 from .sharding import (
     DEFAULT_SHARD,
@@ -93,6 +101,8 @@ __all__ = [
     "Action",
     "ActionExecutor",
     "ActionPlan",
+    "ActionRegistry",
+    "ActionRegistryBuilder",
     "ChangePersister",
     "Clock",
     "ConnectivityError",
@@ -136,6 +146,8 @@ __all__ = [
     "Persistable",
     "PostgresKeyedLockProvider",
     "Repository",
+    "RepositoryRegistry",
+    "RepositoryRegistryBuilder",
     "RetryConfig",
     "Schedule",
     "ShardConfig",

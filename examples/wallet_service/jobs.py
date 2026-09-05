@@ -48,7 +48,7 @@ class PayStipend(DistributedJob):
         for wallet in self.wallets.all():
             if wallet.state is WalletState.OPENED:
                 self.executor.execute(
-                    DepositMoney(self.wallets),
+                    DepositMoney,
                     DepositParams(
                         wallet_id=wallet.id,
                         amount=self.amount,

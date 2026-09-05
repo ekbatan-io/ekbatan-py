@@ -23,7 +23,7 @@ from typing import Any
 from ..domain import Model, Persistable
 from ..errors import ValidationError
 from ..persistence import Transaction
-from ..repository import Repository
+from ..repository import Repository, RepositoryRegistry
 from .outbox import EmittedEvent, EventPersister, OutboxRecord
 from .plan import PersistableChanges
 
@@ -35,32 +35,21 @@ LOG = logging.getLogger("ekbatan.action")
 class ChangePersister:
     """Flushes staged changes to storage, inside a transaction somebody else opened."""
 
-    __slots__ = ("_by_model", "outbox")
+    __slots__ = ("outbox", "repositories")
 
-    def __init__(
-        self, repositories: Iterable[Repository[Any, Any]], outbox: EventPersister
-    ) -> None:
-        self._by_model: dict[type, Repository[Any, Any]] = {
-            repo.model_type: repo for repo in repositories
-        }
-        if not self._by_model:
+    def __init__(self, repositories: RepositoryRegistry, outbox: EventPersister) -> None:
+        if not len(repositories):
             raise ValidationError("at least one repository is required")
+        self.repositories = repositories
         self.outbox = outbox
 
     def repository_for(self, model_type: type) -> Repository[Any, Any]:
         """The repository that writes this model, or a refusal naming it.
 
-        Checked wherever the lookup happens rather than only where the write does: the caller
-        needs the repository to route the row long before it needs it to write the row, and a
-        missing one found there is a null dereference with nothing in it about the type.
+        Reached through here as well as directly, because the executor needs a repository to
+        route a row long before it needs one to write it, and both should fail the same way.
         """
-        try:
-            return self._by_model[model_type]
-        except KeyError:
-            raise ValidationError(
-                f"no repository was given for {model_type.__name__}, so the change staged for "
-                f"it cannot be written. Pass one to ActionExecutor(repositories=[...])."
-            ) from None
+        return self.repositories.repository(model_type)
 
     def persist(
         self,

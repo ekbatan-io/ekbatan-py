@@ -36,14 +36,14 @@ def main() -> None:
 def run(service: WalletService) -> None:
     say("open a wallet")
     wallet = service.executor.execute(
-        OpenWallet(),
+        OpenWallet,
         OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("100.00")),
     )
     print(f"   {wallet.id}  balance {wallet.balance}  on shard {wallet.id.shard}")
 
     say("deposit into it")
     wallet = service.executor.execute(
-        DepositMoney(service.wallets),
+        DepositMoney,
         DepositParams(wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@example.com"),
     )
     print(f"   balance {wallet.balance}, version {wallet.version}")
@@ -61,8 +61,8 @@ def run(service: WalletService) -> None:
     print(f"   balance {service.wallets.get(wallet.id).balance}")
 
     say("close it")
-    service.executor.execute(CloseWallet(service.wallets), WalletIdParams(wallet_id=wallet.id))
-    service.executor.execute(CloseWallet(service.wallets), WalletIdParams(wallet_id=wallet.id))
+    service.executor.execute(CloseWallet, WalletIdParams(wallet_id=wallet.id))
+    service.executor.execute(CloseWallet, WalletIdParams(wallet_id=wallet.id))
     print("   closed twice; the second time changed nothing and emitted nothing")
 
     say("what a consumer reads from the outbox")

@@ -264,7 +264,7 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
                 )
             )
 
-    with pytest.raises(ValidationError, match="no repository was given for Notification"):
+    with pytest.raises(ValidationError, match="no repository is registered for Notification"):
         executor.execute(WritesAnUnknownThing(), None)
 
 

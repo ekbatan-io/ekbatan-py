@@ -5,12 +5,15 @@ from .executor import DEFAULT_RETRIES, ActionExecutor, ExecutionConfiguration, R
 from .outbox import EventPersister, OutboxRecord, SingleTableJsonEventPersister
 from .persister import ChangePersister
 from .plan import ActionPlan, PersistableChanges
+from .registry import ActionRegistry, ActionRegistryBuilder
 
 __all__ = [
     "DEFAULT_RETRIES",
     "Action",
     "ActionExecutor",
     "ActionPlan",
+    "ActionRegistry",
+    "ActionRegistryBuilder",
     "ChangePersister",
     "EventPersister",
     "ExecutionConfiguration",

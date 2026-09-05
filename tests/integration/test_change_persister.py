@@ -14,7 +14,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from ekbatan import ChangePersister
+from ekbatan import ChangePersister, RepositoryRegistry
 from ekbatan.action.outbox import SingleTableJsonEventPersister
 from ekbatan.action.plan import PersistableChanges
 from ekbatan.errors import ValidationError
@@ -26,7 +26,7 @@ NOW = datetime(2026, 1, 1, 10, 0, 0)
 
 @pytest.fixture
 def persister(wallets):
-    return ChangePersister([wallets], SingleTableJsonEventPersister(EVENTS))
+    return ChangePersister(RepositoryRegistry([wallets]), SingleTableJsonEventPersister(EVENTS))
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
@@ -95,7 +95,9 @@ def test_it_opens_no_transaction_of_its_own(persister, registry, wallets):
 
 
 def test_an_entity_is_written_and_emits_nothing(registry, notifications):
-    persister = ChangePersister([notifications], SingleTableJsonEventPersister(EVENTS))
+    persister = ChangePersister(
+        RepositoryRegistry([notifications]), SingleTableJsonEventPersister(EVENTS)
+    )
     note = Notification.create(wallet_id=uuid4(), kind="X", recipient="ada@x", id=uuid4())
 
     write(
@@ -114,7 +116,7 @@ def test_an_entity_is_written_and_emits_nothing(registry, notifications):
 def test_it_names_the_type_it_has_no_repository_for(persister, registry):
     note = Notification.create(wallet_id=uuid4(), kind="X", recipient="ada@x", id=uuid4())
 
-    with pytest.raises(ValidationError, match="no repository was given for Notification"):
+    with pytest.raises(ValidationError, match="no repository is registered for Notification"):
         write(
             persister,
             registry,
@@ -125,4 +127,4 @@ def test_it_names_the_type_it_has_no_repository_for(persister, registry):
 
 def test_it_refuses_to_be_built_with_no_repositories():
     with pytest.raises(ValidationError, match="at least one repository"):
-        ChangePersister([], SingleTableJsonEventPersister(EVENTS))
+        ChangePersister(RepositoryRegistry(), SingleTableJsonEventPersister(EVENTS))

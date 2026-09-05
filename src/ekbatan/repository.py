@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, Self
 
 from sqlalchemy import (
     ColumnElement,
@@ -54,7 +54,13 @@ from .ids import TypedValue
 from .persistence import DatabaseRegistry, TransactionManager
 from .sharding import NoShardingStrategy, ShardIdentifier, ShardingStrategy
 
-__all__ = ["EntityRepository", "ModelRepository", "Repository"]
+__all__ = [
+    "EntityRepository",
+    "ModelRepository",
+    "Repository",
+    "RepositoryRegistry",
+    "RepositoryRegistryBuilder",
+]
 
 #: The column carrying the version each row was read at, in a batch update's derived table.
 _PRIOR = "_prior_version"
@@ -922,3 +928,146 @@ class EntityRepository[M: Entity[Any, Any], K](Repository[M, K]):
                 f"belong in the event stream."
             )
         super().__init__(model_type, *args, **kwargs)
+
+
+class RepositoryRegistry:
+    """Which repository writes which model.
+
+    The executor consults it to turn a staged change into a write. Registration is per model
+    type, not per shard: one repository serves every shard it is configured for, through its
+    own sharding strategy.
+
+    Built from a collection when that is all you have, or through :meth:`builder` when you
+    want each registration to say what it is::
+
+        RepositoryRegistry([wallets, alerts])
+
+        (RepositoryRegistry.builder()
+            .with_model_repository(wallets)
+            .with_entity_repository(alerts)
+            .build())
+    """
+
+    __slots__ = ("_by_model",)
+
+    def __init__(self, repositories: Iterable[Repository[Any, Any]] = ()) -> None:
+        self._by_model: dict[type, Repository[Any, Any]] = {}
+        for repo in repositories:
+            self._add(repo)
+
+    @classmethod
+    def builder(cls) -> RepositoryRegistryBuilder:
+        """A builder, for registrations that declare what they are."""
+        return RepositoryRegistryBuilder()
+
+    def _add(self, repo: Repository[Any, Any]) -> None:
+        model_type = repo.model_type
+        existing = self._by_model.get(model_type)
+        if existing is not None and existing is not repo:
+            # Silently keeping the last one means half the application writes through a
+            # repository the other half does not know about - different clock, different
+            # sharding, and no way to tell from a stack trace which one ran.
+            raise ValidationError(
+                f"two repositories were given for {model_type.__name__}: "
+                f"{type(existing).__name__} and {type(repo).__name__}. One model, one "
+                f"repository - the executor has no way to choose."
+            )
+        self._by_model[model_type] = repo
+
+    def repository(self, model_type: type) -> Repository[Any, Any]:
+        """The repository that writes this model, or a refusal naming it.
+
+        Java's returns null here, which reaches the caller as a NullPointerException naming
+        whatever it dereferenced first. Raising with the type in the message is the whole
+        difference, and it is why this signature says ``Repository`` and not ``Repository |
+        None``.
+        """
+        try:
+            return self._by_model[model_type]
+        except KeyError:
+            raise ValidationError(
+                f"no repository is registered for {model_type.__name__}, so a change staged "
+                f"for it cannot be written. Register one on the RepositoryRegistry the "
+                f"executor was built with; it currently holds "
+                f"{sorted(m.__name__ for m in self._by_model) or 'nothing'}."
+            ) from None
+
+    @property
+    def models(self) -> tuple[type, ...]:
+        """Every model type registered, in registration order."""
+        return tuple(self._by_model)
+
+    def __contains__(self, model_type: object) -> bool:
+        return model_type in self._by_model
+
+    def __iter__(self) -> Iterator[Repository[Any, Any]]:
+        return iter(self._by_model.values())
+
+    def __len__(self) -> int:
+        return len(self._by_model)
+
+    def __repr__(self) -> str:
+        return f"RepositoryRegistry({[m.__name__ for m in self._by_model]})"
+
+
+class RepositoryRegistryBuilder:
+    """Collects repositories, then builds the registry. Obtain via
+    :meth:`RepositoryRegistry.builder`."""
+
+    __slots__ = ("_repositories",)
+
+    def __init__(self) -> None:
+        self._repositories: list[Repository[Any, Any]] = []
+
+    def with_model_repository(self, repository: Repository[Any, Any]) -> Self:
+        """Register a repository for a :class:`~ekbatan.domain.Model`.
+
+        The model type is not passed alongside it - it is already on the repository, and two
+        ways to say which model this writes would eventually disagree. What this adds over
+        :meth:`with_repositories` is the declaration: saying model here and being wrong is
+        caught now rather than by a missing outbox row later.
+        """
+        return self._checked(repository, Model, "Model", "with_entity_repository")
+
+    def with_entity_repository(self, repository: Repository[Any, Any]) -> Self:
+        """Register a repository for an :class:`~ekbatan.domain.Entity` - state whose changes
+        are not events."""
+        return self._checked(repository, Entity, "Entity", "with_model_repository")
+
+    def with_repositories(self, repositories: Iterable[Repository[Any, Any]]) -> Self:
+        """Register a collection, sorting each into model or entity by what it holds.
+
+        For a container that has already collected them, where nobody is in a position to
+        declare one from the other.
+        """
+        for repository in repositories:
+            model_type = repository.model_type
+            if not issubclass(model_type, Model | Entity):
+                raise ValidationError(
+                    f"{model_type.__name__} is neither a Model nor an Entity, so "
+                    f"{type(repository).__name__} cannot be registered. A persistable is one "
+                    f"or the other: a Model if its changes belong in the event stream."
+                )
+            self._repositories.append(repository)
+        return self
+
+    def _checked(
+        self,
+        repository: Repository[Any, Any],
+        expected: type,
+        named: str,
+        instead: str,
+    ) -> Self:
+        model_type = repository.model_type
+        if not issubclass(model_type, expected):
+            article = "an" if named == "Entity" else "a"
+            raise ValidationError(
+                f"{model_type.__name__} is not {article} {named}, so it cannot be registered "
+                f"that way - call {instead} instead."
+            )
+        self._repositories.append(repository)
+        return self
+
+    def build(self) -> RepositoryRegistry:
+        """The registry. Refuses two repositories for one model."""
+        return RepositoryRegistry(self._repositories)
