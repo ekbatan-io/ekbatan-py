@@ -230,10 +230,21 @@ application that genuinely needs a physical delete writes it against its own rul
 
 ## The scheduler is this framework's, not a dependency's
 
-Java delegates distributed jobs to db-scheduler. There is no Python library with the same
-shape, so the claim-and-heartbeat loop is implemented here - about two hundred lines - against
-db-scheduler's own table layout, so a Java service and a Python service can coordinate through
-one `scheduled_tasks` table rather than each running the nightly report.
+Java delegates distributed jobs to db-scheduler. Python has no equivalent, which was checked
+rather than assumed:
+
+| candidate | why not |
+| --- | --- |
+| APScheduler 3.11 | its own FAQ: *"How do I share a single job store among one or more worker processes? Short answer: You can't."* Two instances give duplicate execution - the opposite of what a distributed job is |
+| APScheduler 4.0 | proper distributed support, but six alphas and no stable release |
+| procrastinate, pgqueuer, chancy | Postgres only, hard `psycopg` dependency; this framework also speaks MySQL and MariaDB |
+| celery, dramatiq, arq, rq, huey | need a broker - Redis or RabbitMQ - so not database-backed at all |
+| `db-scheduler` on PyPI | an unrelated package: 0.1.4, one author, no cluster, claim or heartbeat anywhere in it |
+
+So the claim-and-heartbeat loop is implemented here - about two hundred lines - against
+db-scheduler's own table layout, so a Java service and a Python service coordinate through one
+`scheduled_tasks` table rather than each running the nightly report. That last requirement rules
+out every library above on its own: none of them would use db-scheduler's schema.
 
 Schedules are `Every`, `FixedDelay` and `Daily`. Cron is not built in: parsing it needs a
 dependency, and a `Schedule` is one method.
@@ -259,7 +270,6 @@ differs, not because the name was chosen freely:
 | `EventNotification`, `EventNotificationRepository` | - | the same |
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
 | `ShardedUUID`, `Backoff` | `sharded_uuid()`, `backoff()` | a class holding only static methods is a function here |
-| `EventFanoutJob`, `EventHandlingJob` | `EventFanout`, `EventDispatch` | these are not jobs here - you drain them, and schedule that however you like |
 | `ShardGroupConfig` + `ShardMemberConfig` | `ShardConfig` | one flat shard list rather than a group/member nesting |
 | `Transaction` (package-private) | - | the auto-commit dance SQLAlchemy already does; the public `Transaction` here is the counterpart to the `DSLContext` Java hands the block, not to this |
 | `ConnectionProvider` | - | `Engine` is pool, dialect and lifecycle in one |

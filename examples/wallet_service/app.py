@@ -16,7 +16,13 @@ from ekbatan import (
     ShardingConfig,
 )
 from ekbatan.clock import Clock, SystemClock
-from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
+from ekbatan.events import (
+    EventFanoutJob,
+    EventHandlerRegistry,
+    EventHandlingJob,
+    HandlingConfig,
+    LocalEventHandlerConfig,
+)
 from ekbatan.jobs import JobRegistry
 
 from .actions import CloseWallet, DepositMoney, OpenWallet, RaiseAlert
@@ -34,8 +40,8 @@ class WalletService:
     wallets: WalletRepository
     alerts: AlertRepository
     executor: ActionExecutor
-    fanout: EventFanout
-    dispatch: EventDispatch
+    fanout: EventFanoutJob
+    dispatch: EventHandlingJob
     jobs: JobRegistry
 
     def deliver_pending_events(self) -> None:
@@ -44,8 +50,8 @@ class WalletService:
         In a service this runs on a timer or as a distributed job. Called directly here so the
         example stays a single-threaded script you can read top to bottom.
         """
-        self.fanout.drain_until_idle()
-        self.dispatch.drain_until_idle()
+        self.fanout.fanout.drain_until_idle()
+        self.dispatch.dispatch.drain_until_idle()
 
     def close(self) -> None:
         self.registry.close()
@@ -96,22 +102,38 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
     )
 
     handlers = EventHandlerRegistry([NotifyOnDeposit(executor)])
+
+    # Turning committed events into deliveries is work a cluster must do once, not once per
+    # instance - so it is two distributed jobs, claimed through `scheduled_tasks` like any
+    # other. Handling is off by default; a deployment draining through Kafka would leave it so.
+    events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+    fanout = EventFanoutJob(
+        registry,
+        handlers,
+        events=EVENTS,
+        notifications=EVENT_NOTIFICATIONS,
+        config=events_config,
+        clock=running,
+    )
+    dispatch = EventHandlingJob(
+        registry,
+        handlers,
+        notifications=EVENT_NOTIFICATIONS,
+        config=events_config,
+        clock=running,
+    )
+
     return WalletService(
         registry=registry,
         wallets=wallets,
         alerts=alerts,
         executor=executor,
-        fanout=EventFanout(
-            registry,
-            handlers,
-            events=EVENTS,
-            notifications=EVENT_NOTIFICATIONS,
-            clock=running,
-        ),
-        dispatch=EventDispatch(
-            registry, handlers, notifications=EVENT_NOTIFICATIONS, clock=running
-        ),
+        fanout=fanout,
+        dispatch=dispatch,
         jobs=JobRegistry(
-            registry, [PayStipend(executor, wallets)], table=SCHEDULED_TASKS, clock=running
+            registry,
+            [fanout, dispatch, PayStipend(executor, wallets)],
+            table=SCHEDULED_TASKS,
+            clock=running,
         ),
     )

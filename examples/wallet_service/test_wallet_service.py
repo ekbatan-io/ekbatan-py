@@ -29,7 +29,7 @@ from .actions import (
     WalletIdParams,
 )
 from .app import WalletService, build
-from .schema import EVENTS, WALLETS
+from .schema import EVENTS, SCHEDULED_TASKS, WALLETS
 
 
 @pytest.fixture
@@ -117,9 +117,31 @@ def test_the_stipend_job_pays_every_open_wallet(service):
     wallet = a_wallet(service, "0.00")
     service.jobs.start()
 
-    assert service.jobs.run_due_once() == 1
+    # Three jobs share the table: fan-out, handling, and the stipend.
+    assert service.jobs.run_due_once() == 3
     assert service.wallets.get(wallet.id).balance == Decimal("1.0000")
-    assert service.jobs.run_due_once() == 0, "the next slot is a day away"
+    assert service.jobs.run_due_once() == 0, "every slot has been taken and rescheduled"
+
+
+def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
+    """Turning committed events into deliveries is work a cluster does once, not once per
+    instance - so it is claimed through `scheduled_tasks` like any other job."""
+    from ekbatan.events.jobs import FANOUT_JOB_NAME, HANDLING_JOB_NAME
+
+    service.jobs.start()
+    with service.registry.default.connection(readonly=True) as conn:
+        registered = {r[0] for r in conn.execute(select(SCHEDULED_TASKS.c.task_name))}
+
+    assert {FANOUT_JOB_NAME, HANDLING_JOB_NAME} <= registered
+
+    wallet = a_wallet(service, "10.00")
+    service.executor.execute(
+        DepositMoney,
+        DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
+    )
+
+    assert service.jobs.run_due_once() == 3, "and running them delivers the deposit"
+    assert service.alerts.find_for_wallet(wallet.id), "the handler ran, driven by the job"
 
 
 def test_a_rejected_deposit_leaves_nothing_behind(service):

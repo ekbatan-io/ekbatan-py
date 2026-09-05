@@ -41,7 +41,7 @@ class EventFanout:
         events: Table,
         notifications: Table,
         clock: Clock | None = None,
-        batch_size: int = 100,
+        batch_size: int = 200,
     ) -> None:
         self._registry = registry
         self._handlers = handlers
