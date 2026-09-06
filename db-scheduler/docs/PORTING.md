@@ -15,15 +15,15 @@ kagkarlsson/db-scheduler@e2c911b and are the checklist. 159 main classes, 246 te
 | 1 | Schedules | `Schedule`, `FixedDelay`, `Daily`, `CronSchedule`, `DisabledSchedule`, `Schedules`, the four parsers | **done** |
 | 2 | Task model | `TaskInstance`, `TaskInstanceId`, `Execution`, `ExecutionComplete`, `Priority`, `SchedulableInstance` | **done** |
 | 3 | Handlers | `CompletionHandler`, `FailureHandler`, `DeadExecutionHandler`, `MaxRetriesExceededListener` | **done** |
-| 4 | Tasks | `AbstractTask`, `OneTimeTask`, `RecurringTask`, `CustomTask`, `Tasks` | **done** - `RecurringTaskWithPersistentSchedule` and `TaskDescriptor` outstanding |
+| 4 | Tasks | `AbstractTask`, `OneTimeTask`, `RecurringTask`, `CustomTask`, `Tasks` | **done** |
 | 5 | Serializer | `Serializer`, `JsonSerializer` | **done** |
-| 6 | Repository | `TaskRepository`, `JdbcTaskRepository`, `JdbcCustomization` per dialect, the schema | **done on SQLite; the container run has never executed - see below** |
-| 7 | Resolution | `TaskResolver`, `Resolvable` | |
-| 8 | Client | `SchedulerClient`, `ScheduledExecution`, `ScheduledExecutionsFilter`, `TaskSummary` | |
-| 9 | Execution | `Executor`, `DueExecutionsBatch`, `FetchCandidates`, `LockAndFetchCandidates`, `ExecutePicked`, `PollingStrategyConfig` | |
-| 10 | Scheduler | `Scheduler`, `SchedulerBuilder`, `SchedulerState`, `Waiter`, `HeartbeatConfig`, `HeartbeatState`, `CurrentlyExecuting` | |
-| 11 | Events | `SchedulerListener`, `SchedulerListeners`, `ExecutionInterceptor`, `ExecutionChain`, `StatsRegistry` | |
-| 12 | Test helpers | `TestHelper`, `ManualScheduler` | |
+| 6 | Repository | `TaskRepository`, `JdbcTaskRepository`, `JdbcCustomization` per dialect, the schema | **done** |
+| 7 | Resolution | `TaskResolver`, `Resolvable` | **done** |
+| 8 | Client | `SchedulerClient`, `ScheduledExecution`, `ScheduledExecutionsFilter`, `TaskSummary` | **done** |
+| 9 | Execution | `Executor`, `DueExecutionsBatch`, `FetchCandidates`, `LockAndFetchCandidates`, `ExecutePicked`, `PollingStrategyConfig` | **done** |
+| 10 | Scheduler | `Scheduler`, `SchedulerBuilder`, `SchedulerState`, `Waiter`, `HeartbeatConfig`, `HeartbeatState`, `CurrentlyExecuting` | **done** |
+| 11 | Events | `SchedulerListener`, `SchedulerListeners`, `ExecutionInterceptor`, `ExecutionChain`, `StatsRegistry` | **done** |
+| 12 | Test helpers | `TestHelper`, `ManualScheduler` | **done** |
 
 ## Deliberate differences, and why
 
@@ -50,22 +50,32 @@ and, where a layer touches SQL, the compatibility suite against real servers in 
     .venv/bin/python -m pytest -m compatibility
 
 
-## Verification status, honestly
+## Verification status
 
-The SQLite suite is green: 120 passed, 2 skipped (lock-and-fetch, which SQLite cannot do and
-which the contract skips deliberately).
+All four dialects, whole suite, every commit:
 
-**The compatibility suite has never run.** Docker Desktop on this machine publishes ports that
-do not answer - an nginx container serves fine inside the container network and `curl
-localhost:<published>` returns nothing, so Testcontainers cannot reach anything it starts. That
-is an environment fault, not a code one, but it means every claim about Postgres, MySQL and
-MariaDB in this module is so far untested. The workflow in `.github/workflows/db-scheduler.yml`
-is where it first runs for real.
+| dialect | image | result |
+| --- | --- | --- |
+| SQLite | in-process | 503 passed, 3 skipped |
+| PostgreSQL | `postgres:17-alpine` | 504 passed, 2 skipped |
+| MySQL | `mysql:8.4` | 504 passed, 2 skipped |
+| MariaDB | `mariadb:11.4` | 503 passed, 3 skipped |
 
-What that leaves unproven, specifically:
+The skips are the lock-and-fetch contract on the dialects that cannot do
+`SELECT ... FOR UPDATE SKIP LOCKED`, and one test that asserts the *refusal* on those - so the
+counts differ by exactly the dialects' real capabilities.
 
-- `SELECT ... FOR UPDATE SKIP LOCKED` on Postgres, both the single-statement and generic forms
-- the same on MySQL 8
-- that `timestamp` round-trips as UTC on MySQL, which has no zoned type
-- that `LargeBinary` holds the serialized data on every dialect
-- that the concurrent-pick test still yields exactly one winner when the rows are really locked
+What the container runs prove that SQLite alone cannot:
+
+- `SELECT ... FOR UPDATE SKIP LOCKED` in both forms - PostgreSQL's single statement, MySQL 8's
+  transaction-scoped one
+- that timestamps round-trip as UTC on MySQL and MariaDB, which have no zoned type
+- that the schema is one MySQL will actually create - `varchar(100)` keys, `datetime(6)`
+- that two schedulers over one table run each of 30 executions exactly once, under real
+  concurrency rather than a simulation of it
+- that a row picked by an instance that then vanished is revived by another
+
+## Layers
+
+Complete. `docs/FILE-LEDGER.md` has the file-by-file record; `python scripts/ledger.py` counts
+it.
