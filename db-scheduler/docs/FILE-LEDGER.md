@@ -64,7 +64,7 @@ whole, makes completeness something you can count rather than something you hope
 | StreamUtils | 22 | - | todo |
 | StringUtils | 13 | - | todo |
 | SystemClock | 8 | `clock.py` | done |
-| TaskRepository | 66 | `jdbc/repository.py` | partial |
+| TaskRepository | 66 | `jdbc/repository.py` | done |
 | TaskResolver | 79 | `resolver.py` | done |
 | TaskSummary | 12 | `scheduled_execution.py` | done |
 | Waiter | 77 | - | todo |
@@ -87,14 +87,14 @@ whole, makes completeness something you can count rather than something you hope
 | TaskInstanceException | 24 | `exceptions.py` | done |
 | TaskInstanceNotFoundException | 8 | `exceptions.py` | done |
 | **`scheduler/jdbc`** | | | |
-| AndCondition | 7 | - | todo |
+| AndCondition | 7 | `jdbc/repository.py` | done - SQLAlchemy expressions compose without a condition interface |
 | AutodetectJdbcCustomization | 131 | `jdbc/customization.py` | done |
 | DefaultJdbcCustomization | 108 | `jdbc/customization.py` | done |
-| ExecutionUpdate | 172 | - | todo |
-| JdbcConfig | 3 | - | todo |
+| ExecutionUpdate | 172 | `jdbc/execution_update.py` | done |
+| JdbcConfig | 3 | `jdbc/repository.py` | done - SQLAlchemy's Table and Engine carry what this record held |
 | JdbcCustomization | 24 | `jdbc/customization.py` | done |
-| JdbcTaskRepository | 972 | `jdbc/repository.py` | partial - see PORTING.md |
-| JdbcTaskRepositoryContext | 27 | - | todo |
+| JdbcTaskRepository | 972 | `jdbc/repository.py` | done |
+| JdbcTaskRepositoryContext | 27 | `jdbc/repository.py` | done - the repository passes itself; no context object needed |
 | MariaDBJdbcCustomization | 27 | `jdbc/customization.py` | done |
 | MssqlJdbcCustomization | 48 | - | n/a - MSSQL is not a dialect this port claims |
 | MySQL8JdbcCustomization | 27 | `jdbc/customization.py` | done |
@@ -103,7 +103,7 @@ whole, makes completeness something you can count rather than something you hope
 | OracleJdbcCustomization | 27 | - | n/a - Oracle is not a dialect this port claims |
 | PostgreSqlJdbcCustomization | 77 | `jdbc/customization.py` | done |
 | Queries | 33 | - | todo |
-| QueryBuilder | 58 | - | todo |
+| QueryBuilder | 58 | `jdbc/repository.py` | done - `select()` is the query builder |
 | SqliteJdbcCustomization | 15 | `jdbc/customization.py` | done |
 | **`scheduler/logging`** | | | |
 | ConfigurableLogger | 57 | - | todo |
@@ -149,7 +149,7 @@ whole, makes completeness something you can count rather than something you hope
 | NextExecutionTime | 10 | `task/__init__.py` | done - a `Callable` alias; a one-method interface has no class to be |
 | OnStartup | 6 | `task/__init__.py` | done |
 | Priority | 6 | `task/__init__.py` | done |
-| RescheduleUpdate | 50 | - | todo |
+| RescheduleUpdate | 50 | `task/__init__.py` | done |
 | SchedulableInstance | 46 | `task/__init__.py` | done |
 | SchedulableTaskInstance | 22 | `task/__init__.py` | done |
 | ScheduledTaskInstance | 31 | `task/__init__.py` | done |
