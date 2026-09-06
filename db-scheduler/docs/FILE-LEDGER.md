@@ -174,8 +174,8 @@ whole, makes completeness something you can count rather than something you hope
 | Tasks | 311 | `task/helper.py` | partial - recurringWithPersistentSchedule missing |
 | **`scheduler/task/schedule`** | | | |
 | CompositeParser | 27 | `task/schedule/__init__.py` | done |
-| CronSchedule | 159 | `task/schedule/__init__.py` | partial - CronStyle not ported |
-| CronStyle | 9 | - | todo |
+| CronSchedule | 159 | `task/schedule/__init__.py` | done |
+| CronStyle | 9 | `task/schedule/__init__.py` | done |
 | Daily | 69 | `task/schedule/__init__.py` | done |
 | DailyParser | 32 | `task/schedule/__init__.py` | done |
 | DisabledSchedule | 25 | `task/schedule/__init__.py` | done |
@@ -183,7 +183,7 @@ whole, makes completeness something you can count rather than something you hope
 | FixedDelay | 68 | `task/schedule/__init__.py` | done |
 | FixedDelayParser | 16 | `task/schedule/__init__.py` | done |
 | Parser | 7 | `task/schedule/__init__.py` | done |
-| PersistentCronSchedule | 36 | - | todo |
+| PersistentCronSchedule | 36 | `task/schedule/__init__.py` | done |
 | RegexBasedParser | 34 | - | todo |
 | Schedule | 14 | `task/schedule/__init__.py` | done |
 | Schedules | 37 | `task/schedule/__init__.py` | done |

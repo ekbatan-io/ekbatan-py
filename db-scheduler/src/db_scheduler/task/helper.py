@@ -40,7 +40,7 @@ from .handlers import (
     OnFailureRetryLater,
     ReviveDeadExecution,
 )
-from .schedule import Schedule
+from .schedule import PersistentCronSchedule, Schedule
 
 __all__ = [
     "DEFAULT_RETRY_INTERVAL",
@@ -129,6 +129,13 @@ class PlainScheduleAndData(ScheduleAndData):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}{{schedule={self._schedule}, data={self._data}}}"
+
+
+# `PersistentCronSchedule` lives in `task.schedule` and is a `ScheduleAndData`, which lives
+# here. Java lets the two packages import each other; Python does not, so the relationship is
+# declared from this side, where both names are already in scope. `isinstance` answers the same
+# either way, which is all `scheduled_according_to_data()` asks.
+ScheduleAndData.register(PersistentCronSchedule)
 
 
 class OnStartupLike(Protocol):

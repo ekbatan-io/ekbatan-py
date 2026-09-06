@@ -31,7 +31,8 @@ Recorded as they are made, not at the end.
 
 | Java | here | why |
 | --- | --- | --- |
-| `cron-utils`, `CronStyle` | `croniter` | the equivalent single-purpose dependency. `CronStyle` (UNIX / QUARTZ / SPRING53) has no croniter counterpart; only the pattern dialect differs, and the port takes croniter's |
+| `cron-utils` | `croniter` | the equivalent single-purpose dependency. `CronStyle` **is** ported - croniter reads all five dialects given `second_at_beginning`, which is the only thing they disagree about that matters here. Quartz's numeric day-of-week (1=SUN) is croniter's 0=SUN, so a *numeric* dow in a QUARTZ pattern is off by one; names (`MON`) and `?` are right |
+| `ZoneId.systemDefault()` | `system_default_zone()` | Java resolves a named zone; Python's `astimezone()` gives a fixed offset, which breaks across a DST change. Resolved from `TZ`, then `/etc/localtime`, then the offset |
 | checked/unchecked exception pairs | one exception each | Python has no checked exceptions, so the pairs collapse |
 | `Serializable` / `JavaSerializer` | not ported | Java-native serialization has no counterpart and is a deserialization-gadget risk; the port's default is JSON |
 

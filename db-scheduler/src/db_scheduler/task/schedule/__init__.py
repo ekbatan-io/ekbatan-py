@@ -7,6 +7,9 @@ parsed by the other.
 
 from __future__ import annotations
 
+import enum
+import logging
+import os
 import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime, time, timedelta
@@ -19,6 +22,7 @@ __all__ = [
     "NEVER",
     "CompositeParser",
     "CronSchedule",
+    "CronStyle",
     "Daily",
     "DailyParser",
     "DisabledSchedule",
@@ -26,10 +30,79 @@ __all__ = [
     "FixedDelay",
     "FixedDelayParser",
     "Parser",
+    "PersistentCronSchedule",
     "Schedule",
     "Schedules",
     "UnrecognizableSchedule",
+    "system_default_zone",
 ]
+
+LOG = logging.getLogger("db_scheduler.task.schedule")
+
+def system_default_zone() -> datetime_tzinfo:
+    """What Java's `ZoneId.systemDefault()` resolves to, as closely as Python can.
+
+    `Daily()` and `CronSchedule()` take this when no zone is given, because that is what
+    db-scheduler does - and a schedule that resolved a different zone from the Java instance
+    sharing its table would fire at a different hour.
+
+    Wanted here is a *named* zone, not the current offset: `datetime.astimezone()` would hand
+    back `UTC+01:00`, which is right until the clocks go back and then silently an hour out. So:
+    `TZ` if it names one, otherwise whatever `/etc/localtime` points at, and only then the
+    fixed offset - which on a container, where both these are absent and the clock is UTC, is
+    UTC anyway.
+    """
+    named = os.environ.get("TZ")
+    if named:
+        try:
+            return ZoneInfo(named)
+        except (ZoneInfoNotFoundError, ValueError):
+            LOG.warning("TZ names a zone this platform does not have: %s", named)
+
+    try:
+        link = os.readlink("/etc/localtime")
+    except OSError:
+        pass
+    else:
+        _, _, name = link.partition("zoneinfo/")
+        if name:
+            try:
+                return ZoneInfo(name)
+            except (ZoneInfoNotFoundError, ValueError):  # pragma: no cover - platform-specific
+                LOG.warning("/etc/localtime points at a zone this platform cannot load: %s", name)
+
+    offset = datetime.now().astimezone().tzinfo  # pragma: no cover - platform-specific
+    return offset if offset is not None else UTC  # pragma: no cover - astimezone always sets one
+
+
+class _SystemDefaultZone(datetime_tzinfo):
+    """Stands for "no zone was given", which is not the same as "None was given".
+
+    Java says this with two constructor overloads: one defaults to the system zone, the other
+    rejects null. Python has one signature, so it needs a default that is distinguishable from
+    `None` - and it has to be a `tzinfo` so the parameter can still be typed as one.
+    """
+
+    def utcoffset(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+    def tzname(self, dt: datetime | None) -> str | None:
+        return None
+
+    def dst(self, dt: datetime | None) -> timedelta | None:
+        return None
+
+
+_SYSTEM_ZONE = _SystemDefaultZone()
+
+
+def _resolve_zone(zone: datetime_tzinfo) -> datetime_tzinfo:
+    if isinstance(zone, _SystemDefaultZone):
+        return system_default_zone()
+    if zone is None:
+        raise ValueError("zone cannot be None")
+    return zone
+
 
 #: Where a schedule that will never fire again is parked. Part of the cross-language contract:
 #: a row written by one port carries this value and is read by the other.
@@ -131,9 +204,8 @@ class Daily(Schedule):
 
     __slots__ = ("times", "zone")
 
-    def __init__(self, *times: time, zone: datetime_tzinfo = UTC) -> None:
-        if zone is None:
-            raise ValueError("zone cannot be None")
+    def __init__(self, *times: time, zone: datetime_tzinfo = _SYSTEM_ZONE) -> None:
+        zone = _resolve_zone(zone)
         if not times:
             raise ValueError("times cannot be empty")
         self.times = tuple(sorted(times))
@@ -164,66 +236,164 @@ class Daily(Schedule):
         return f"Daily(times={shown}, zone={self.zone})"
 
 
+class CronStyle(enum.Enum):
+    """Which cron dialect a pattern is written in.
+
+    Not decoration: the styles disagree about how many fields there are and what the first one
+    means. SPRING53 - db-scheduler's default - puts **seconds first**, so `0 0 12 * * ?` is
+    noon every day. Read as a UNIX-plus-trailing-seconds pattern, the same string is the 12th of
+    the month. One pattern, two schedules, no error either way.
+    """
+
+    CRON4J = "CRON4J"
+    QUARTZ = "QUARTZ"
+    UNIX = "UNIX"
+    SPRING = "SPRING"
+    SPRING53 = "SPRING53"
+
+    @property
+    def seconds_first(self) -> bool:
+        """Whether the leading field is seconds. Five-field styles have no seconds at all."""
+        return self in (CronStyle.QUARTZ, CronStyle.SPRING, CronStyle.SPRING53)
+
+
 class CronSchedule(Schedule):
-    """A cron pattern, in a named zone. `-` means disabled."""
+    """A cron pattern, in a named zone. `-` means disabled.
+
+    croniter stands in for cron-utils. It reads all five dialects db-scheduler names, given the
+    one flag that says where the seconds live - including Quartz's `?` and its optional seventh
+    year field, both of which `croniter.is_valid` rejects even though `croniter` itself parses
+    them, which is why validation here is a parse rather than a check.
+    """
 
     DISABLED = "-"
 
-    __slots__ = ("_iterator_factory", "pattern", "zone")
+    __slots__ = ("cron_style", "pattern", "zone")
 
-    def __init__(self, pattern: str, zone: datetime_tzinfo = UTC) -> None:
-        if zone is None:
-            raise ValueError("zone cannot be None")
+    def __init__(
+        self,
+        pattern: str,
+        zone: datetime_tzinfo = _SYSTEM_ZONE,
+        cron_style: CronStyle | None = CronStyle.SPRING53,
+    ) -> None:
+        self.zone = _resolve_zone(zone)
+        # Java: `cronStyle != null ? cronStyle : SPRING53`. A serializer that omits the field
+        # hands back null, and the default has to survive that.
+        self.cron_style = cron_style if cron_style is not None else CronStyle.SPRING53
         self.pattern = pattern
-        self.zone = zone
-        if pattern != self.DISABLED:
-            from croniter import CroniterBadCronError, croniter
+        self._validate()
 
-            if not croniter.is_valid(pattern):
-                raise ValueError(f"invalid cron pattern: {pattern!r}")
-            try:
-                croniter(pattern)
-            except CroniterBadCronError as exc:  # pragma: no cover - is_valid covers it
-                raise ValueError(f"invalid cron pattern: {pattern!r}") from exc
+    def _validate(self) -> None:
+        """Parse the pattern now, so a bad one fails where the task that owns it is still named.
+
+        A disabled schedule is not parsed at all - `-` is not a pattern. Java says the same
+        thing by installing a `DisabledScheduleExecutionTime` that throws from every method:
+        constructing is fine, asking it anything is not.
+        """
+        from croniter import CroniterBadCronError, croniter
+
+        if self.is_disabled:
+            return
+        try:
+            croniter(self.pattern, second_at_beginning=self.cron_style.seconds_first)
+        except (CroniterBadCronError, ValueError) as exc:
+            raise ValueError(f"invalid cron pattern: {self.pattern!r}") from exc
 
     def next_execution_time(self, completion: ExecutionComplete) -> datetime:
-        self._refuse_if_disabled()
-        from croniter import croniter
+        """The next time after this one finished, read in this schedule's own zone.
 
+        The zone is applied to the *completion* time, not just to the result, so that
+        `0 05 13,20 * * ?` in New York means one o'clock in New York however the row was
+        written.
+        """
+        from croniter import CroniterBadDateError, croniter
+
+        if self.is_disabled:
+            raise self._unsupported()
         last = completion.time_done.astimezone(self.zone)
-        following: datetime = croniter(self.pattern, last).get_next(datetime)
-        if following is None:  # pragma: no cover - croniter always yields for a valid pattern
+        iterator = croniter(
+            self.pattern, last, second_at_beginning=self.cron_style.seconds_first
+        )
+        try:
+            following: datetime = iterator.get_next(datetime)
+        except CroniterBadDateError:
+            # `0 0 0 29 2 MON#1` - the 29th of February that is also the first Monday. No such
+            # date exists, and db-scheduler parks it at NEVER rather than letting one
+            # unsatisfiable pattern take the poll loop down.
+            LOG.error(
+                "Cron-pattern did not return any further execution-times. This behavior is "
+                'currently not supported by the scheduler. Setting next execution-time to '
+                'far-future, aka "NEVER" (%s)',
+                NEVER,
+            )
             return NEVER
         return following.astimezone(UTC)
 
     @property
     def is_deterministic(self) -> bool:
-        self._refuse_if_disabled()
-        return False
+        return True
 
     @property
     def is_disabled(self) -> bool:
         return self.pattern == self.DISABLED
 
-    def _refuse_if_disabled(self) -> None:
-        if self.is_disabled:
-            raise NotImplementedError(
-                "a disabled CronSchedule does not support any operation other than "
-                "is_disabled. This appears to be a bug."
-            )
+    def _unsupported(self) -> NotImplementedError:
+        return NotImplementedError(
+            "Schedule is marked as disabled. Method should never be called"
+        )
 
     def __eq__(self, other: object) -> bool:
         return (
             isinstance(other, CronSchedule)
             and other.pattern == self.pattern
             and other.zone == self.zone
+            and other.cron_style is self.cron_style
         )
 
     def __hash__(self) -> int:
-        return hash(("CronSchedule", self.pattern, str(self.zone)))
+        return hash(("CronSchedule", self.pattern, str(self.zone), self.cron_style))
 
     def __repr__(self) -> str:
-        return f"CronSchedule(pattern={self.pattern!r}, zone={self.zone})"
+        return (
+            f"CronSchedule pattern={self.pattern}, "
+            f"cronStyle={self.cron_style.name}, zone={self.zone}"
+        )
+
+
+class PersistentCronSchedule:
+    """A cron pattern that lives in the row rather than in the code.
+
+    Handed to a task as its data, it makes the schedule editable with an UPDATE: no deploy, no
+    restart, and each instance in the cluster picks up the new pattern the next time it reads
+    the row.
+
+    The zone is kept as its *name*, not as a `tzinfo`, because this is a value that gets
+    serialized - `"Europe/London"` survives the round trip and still means London after the
+    clocks change, where a stored offset would not.
+
+    It is a `ScheduleAndData`, registered as one in `task/helper.py`: the two live in different
+    packages that would otherwise import each other, which is a knot Java does not have to
+    untie.
+    """
+
+    __slots__ = ("cron_pattern", "data", "zone_id")
+
+    def __init__(
+        self,
+        cron_pattern: str,
+        zone: datetime_tzinfo = _SYSTEM_ZONE,
+        data: object = None,
+    ) -> None:
+        self.cron_pattern = cron_pattern
+        self.zone_id = str(_resolve_zone(zone))
+        self.data = data
+
+    @property
+    def schedule(self) -> Schedule:
+        return CronSchedule(self.cron_pattern, ZoneInfo(self.zone_id))
+
+    def __repr__(self) -> str:
+        return f"PersistentCronSchedule pattern={self.cron_pattern}"
 
 
 class DisabledSchedule(Schedule):
@@ -364,7 +534,7 @@ class Schedules:
     _PARSER = CompositeParser.of(FixedDelayParser(), DailyParser(), DisabledScheduleParser())
 
     @staticmethod
-    def daily(*times: time, zone: datetime_tzinfo = UTC) -> Daily:
+    def daily(*times: time, zone: datetime_tzinfo = _SYSTEM_ZONE) -> Daily:
         return Daily(*times, zone=zone)
 
     @staticmethod
@@ -372,12 +542,24 @@ class Schedules:
         return FixedDelay.of(delay)
 
     @staticmethod
-    def cron(pattern: str, zone: datetime_tzinfo = UTC) -> CronSchedule:
-        return CronSchedule(pattern, zone=zone)
+    def cron(
+        pattern: str,
+        zone: datetime_tzinfo = _SYSTEM_ZONE,
+        cron_style: CronStyle | None = CronStyle.SPRING53,
+    ) -> CronSchedule:
+        return CronSchedule(pattern, zone, cron_style)
+
+    #: Nested here as it is in Java, where it is `Schedules.UnrecognizableSchedule`. The
+    #: module-level name is the same object, so either import works.
+    UnrecognizableSchedule = UnrecognizableSchedule
 
     @classmethod
-    def parse(cls, text: str) -> Schedule:
-        """Parse, or raise showing what would have worked."""
+    def parse_schedule(cls, text: str) -> Schedule:
+        """Parse, or raise showing what would have worked.
+
+        Currently `DAILY|hh:mm,...(|TIME_ZONE)`, `FIXED_DELAY|xxxs` and `-`, exactly as Java
+        documents on `parseSchedule`.
+        """
         found = cls._PARSER.parse(text)
         if found is None:
             raise UnrecognizableSchedule(text, cls._PARSER.examples())

@@ -17,7 +17,6 @@ import pytest
 from db_scheduler.task import ExecutionComplete
 from db_scheduler.task.schedule import (
     NEVER,
-    CronSchedule,
     Daily,
     DisabledSchedule,
     FixedDelay,
@@ -123,42 +122,8 @@ class TestDaily:
 # ------------------------------------------------------------------ Cron
 
 
-class TestCronSchedule:
-    def test_every_minute(self) -> None:
-        done = datetime(2026, 1, 1, 12, 0, 30, tzinfo=UTC)
-        assert CronSchedule("* * * * *", zone=UTC).next_execution_time(complete(done)) == datetime(
-            2026, 1, 1, 12, 1, tzinfo=UTC
-        )
-
-    def test_a_zone_moves_the_answer(self) -> None:
-        done = datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
-        # 08:00 in Rome in January is 07:00 UTC
-        assert CronSchedule("0 8 * * *", zone=ROME).next_execution_time(complete(done)) == datetime(
-            2026, 1, 1, 7, 0, tzinfo=UTC
-        )
-
-    def test_the_dash_pattern_means_disabled(self) -> None:
-        disabled = CronSchedule("-")
-        assert disabled.is_disabled is True
-
-    def test_a_disabled_cron_refuses_to_be_asked_for_a_time(self) -> None:
-        """Loudly, rather than returning a plausible time - a disabled task that quietly kept
-        running would be the worse failure."""
-        with pytest.raises(NotImplementedError, match="does not support"):
-            CronSchedule("-").next_execution_time(complete(datetime.now(UTC)))
-
-    def test_an_unparsable_pattern_is_refused_at_construction(self) -> None:
-        with pytest.raises(ValueError):
-            CronSchedule("not a cron")
-
-    def test_it_is_not_deterministic(self) -> None:
-        """db-scheduler treats cron as non-deterministic: the pattern can be edited between
-        runs, so a persisted next-time cannot be assumed still correct."""
-        assert CronSchedule("* * * * *").is_deterministic is False
-
-    def test_equality(self) -> None:
-        assert CronSchedule("0 8 * * *", zone=UTC) == CronSchedule("0 8 * * *", zone=UTC)
-        assert CronSchedule("0 8 * * *", zone=UTC) != CronSchedule("0 9 * * *", zone=UTC)
+# `CronSchedule` has a Java test file of its own - `CronTest.java` - and so has a Python one:
+# `test_cron.py`. Only its place in the parsing and schedule contract is checked from here.
 
 
 # ------------------------------------------------------------------ Disabled
@@ -193,10 +158,10 @@ class TestScheduleParsing:
         ],
     )
     def test_recognised(self, text: str, expected: object) -> None:
-        assert Schedules.parse(text) == expected
+        assert Schedules.parse_schedule(text) == expected
 
     def test_the_dash_parses_to_a_disabled_schedule(self) -> None:
-        assert Schedules.parse("-").is_disabled is True
+        assert Schedules.parse_schedule("-").is_disabled is True
 
     @pytest.mark.parametrize(
         "text",
@@ -221,12 +186,12 @@ class TestScheduleParsing:
     )
     def test_unrecognised(self, text: str) -> None:
         with pytest.raises(UnrecognizableSchedule) as raised:
-            Schedules.parse(text)
+            Schedules.parse_schedule(text)
         assert "Parsable examples" in str(raised.value), "the error shows what would have worked"
 
     def test_an_unknown_zone_is_refused(self) -> None:
         with pytest.raises(UnrecognizableSchedule):
-            Schedules.parse("DAILY|12:00|Nowhere/Nothing")
+            Schedules.parse_schedule("DAILY|12:00|Nowhere/Nothing")
 
 
 # ------------------------------------------------------------------ the contract
