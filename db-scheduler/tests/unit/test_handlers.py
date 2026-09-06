@@ -12,7 +12,12 @@ from typing import Any
 
 import pytest
 
-from db_scheduler.task import Execution, ExecutionComplete, TaskInstance
+from db_scheduler.task import (
+    Execution,
+    ExecutionComplete,
+    SchedulableInstance,
+    TaskInstance,
+)
 from db_scheduler.task.handlers import (
     CancelDeadExecution,
     CompletionHandler,
@@ -22,6 +27,7 @@ from db_scheduler.task.handlers import (
     MaxRetriesBuilder,
     MaxRetriesFailureHandler,
     OnCompleteRemove,
+    OnCompleteReplace,
     OnCompleteReschedule,
     OnFailureReschedule,
     OnFailureRescheduleUsingTaskDataSchedule,
@@ -59,6 +65,15 @@ class FakeExecutionOperations:
         self.rescheduled_with_data = new_data
 
     def remove_and_schedule_new(self, schedulable: Any) -> None:
+        # Strict on purpose. The real `ExecutionOperations` calls
+        # `ScheduledTaskInstance.fix_execution_time(schedulable, clock)`, which needs a
+        # `SchedulableInstance`. A fake that shrugged and recorded whatever it was given is
+        # exactly why `OnCompleteReplace` shipped handing over a bare `TaskInstance`.
+        if not isinstance(schedulable, SchedulableInstance):
+            raise TypeError(
+                f"remove_and_schedule_new needs a SchedulableInstance, got "
+                f"{type(schedulable).__name__}"
+            )
         self.replaced_with = schedulable
 
 
@@ -357,3 +372,71 @@ class TestOnMaxRetriesLogWarn:
         handler.on_failure(failure(an_execution(consecutive_failures=1)), operations)
 
         assert operations.removed is True
+
+
+# ------------------------------------------------------------------ handing off
+
+
+class TestOnCompleteReplace:
+    """One row becomes the next step, in a single statement, so a crash in between cannot lose
+    the work.
+
+    It must hand over a `SchedulableInstance` - what `ExecutionOperations` actually requires.
+    It used to pass a bare `TaskInstance`, which raised `AttributeError` on every use; the fake
+    above accepted it, so nothing failed until the feature was run end to end.
+    """
+
+    def _replaced(self, handler: Any) -> Any:
+        execution = an_execution()
+        operations = FakeExecutionOperations(execution)
+        handler.complete(success(execution), operations)
+        return operations.replaced_with
+
+    def test_it_hands_over_a_schedulable_instance(self) -> None:
+        replaced = self._replaced(OnCompleteReplace[Any, Any]("next-task"))
+
+        assert isinstance(replaced, SchedulableInstance)
+
+    def test_the_next_step_keeps_the_same_instance_id(self) -> None:
+        """A hand-off is the same unit of work continuing, so it stays identifiable."""
+        replaced = self._replaced(OnCompleteReplace[Any, Any]("next-task"))
+
+        assert replaced.task_instance.task_name == "next-task"
+        assert replaced.task_instance.id == "an-id"
+
+    def test_data_can_be_handed_to_the_next_step(self) -> None:
+        replaced = self._replaced(OnCompleteReplace[Any, Any]("next-task", {"n": 1}))
+
+        assert replaced.task_instance.data == {"n": 1}
+
+    def test_its_time_comes_from_the_clock_it_is_given(self) -> None:
+        """A function of "now", not an instant captured when the handler was built - so a
+        substituted clock decides when the next step runs."""
+        replaced = self._replaced(OnCompleteReplace[Any, Any]("next-task"))
+
+        assert replaced.next_execution_time(NOW) == NOW
+
+    def test_it_accepts_a_task_to_describe_the_next_step(self) -> None:
+        from db_scheduler.task.helper import Tasks
+
+        next_task = Tasks.one_time("next-task").execute(lambda i, c: None)
+
+        replaced = self._replaced(OnCompleteReplace[Any, Any](next_task, {"n": 2}))
+
+        assert replaced.task_instance.task_name == "next-task"
+        assert replaced.task_instance.data == {"n": 2}
+
+    def test_it_accepts_a_function_when_the_next_step_depends_on_this_one(self) -> None:
+        from db_scheduler.task import SchedulableTaskInstance
+
+        def decide(current: TaskInstance[Any]) -> Any:
+            return SchedulableTaskInstance(
+                TaskInstance[Any]("next-task", f"after-{current.id}"), NOW
+            )
+
+        replaced = self._replaced(OnCompleteReplace[Any, Any](decide))
+
+        assert replaced.task_instance.id == "after-an-id"
+
+    def test_repr_names_the_next_task(self) -> None:
+        assert "next-task" in repr(OnCompleteReplace[Any, Any]("next-task"))

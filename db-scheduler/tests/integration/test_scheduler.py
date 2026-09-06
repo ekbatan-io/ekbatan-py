@@ -19,17 +19,20 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from sqlalchemy import create_engine
+
 from db_scheduler.builder import SchedulerBuilder, create
 from db_scheduler.clock import SettableClock, SystemClock
 from db_scheduler.event import AbstractSchedulerListener, SchedulerEventType
 from db_scheduler.exceptions import SerializationException
 from db_scheduler.executor import PollingStrategyConfig
 from db_scheduler.logging import LogLevel
+from db_scheduler.scheduled_execution import ScheduledExecutionsFilter
 from db_scheduler.scheduler import Scheduler
 from db_scheduler.scheduler_name import Fixed
 from db_scheduler.task import TaskInstance, TaskInstanceId
-from db_scheduler.task.handlers import CancelDeadExecution
-from db_scheduler.task.helper import Tasks
+from db_scheduler.task.handlers import CancelDeadExecution, OnCompleteReplace, max_retries
+from db_scheduler.task.helper import PlainScheduleAndData, Tasks
 from db_scheduler.task.schedule import FixedDelay
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -772,3 +775,160 @@ class TestALiveExecutionIsNeverStolen:
 
         with scheduler:
             assert ran.wait(PATIENCE), "an abandoned execution was never revived"
+
+
+class TestConnectionPoolSizing:
+    """A pool with no headroom past the workers is a correctness problem, not a slow one.
+
+    Measured with three workers each holding a connection: at capacity 3 *every* execution was
+    stolen by another instance and run twice; at capacity 4, none were. The heartbeat is how a
+    running execution proves it is alive, and it needs a connection to do it.
+    """
+
+    def _warnings_building_with(self, engine: Any, threads: int, caplog: Any) -> str:
+        with caplog.at_level(logging.WARNING, logger="db_scheduler.builder"):
+            create(engine).threads(threads).build()
+        logged: str = caplog.text
+        return logged
+
+    def test_it_warns_when_the_pool_cannot_outnumber_the_workers(
+        self, engine_url: str, table: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        engine = create_engine(engine_url, pool_size=3, max_overflow=0)
+        try:
+            text = self._warnings_building_with(engine, 3, caplog)
+        finally:
+            engine.dispose()
+
+        assert "heartbeat cannot write" in text
+        assert "at least 6 connections" in text, "the fix is spelled out with numbers"
+
+    def test_it_is_quiet_when_there_is_headroom(
+        self, engine_url: str, table: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        engine = create_engine(engine_url, pool_size=3, max_overflow=1)
+        try:
+            assert "heartbeat" not in self._warnings_building_with(engine, 3, caplog)
+        finally:
+            engine.dispose()
+
+    def test_it_catches_the_default_pool_with_too_many_threads(
+        self, engine_url: str, table: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SQLAlchemy's default pool holds 15. `threads(20)` is a perfectly reasonable-looking
+        setting that would silently run executions twice."""
+        engine = create_engine(engine_url)
+        try:
+            assert "heartbeat cannot write" in self._warnings_building_with(engine, 20, caplog)
+        finally:
+            engine.dispose()
+
+    def test_a_pool_with_no_ceiling_is_not_second_guessed(
+        self, engine_url: str, table: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """`NullPool` opens a connection per checkout, so there is nothing to compare against."""
+        from sqlalchemy.pool import NullPool
+
+        engine = create_engine(engine_url, poolclass=NullPool)
+        try:
+            assert "heartbeat" not in self._warnings_building_with(engine, 50, caplog)
+        finally:
+            engine.dispose()
+
+
+class TestFeaturesEndToEnd:
+    """Features that were only ever exercised against fakes. Each one goes through a real table
+    here: serialize, write, poll, resolve, deserialize, run, reschedule."""
+
+    def test_a_recurring_task_carries_state_to_its_next_run(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        """`execute_stateful` returns the data the *next* execution should carry - it has to
+        survive a serialize/write/read/deserialize round trip to work at all."""
+        seen: list[Any] = []
+        progressed = threading.Semaphore(0)
+
+        def count(instance: TaskInstance[Any], context: Any) -> Any:
+            seen.append(instance.data)
+            progressed.release()
+            return {"n": (instance.data or {"n": 0})["n"] + 1}
+
+        task = Tasks.recurring(
+            "counter", FixedDelay.of(timedelta(milliseconds=50))
+        ).execute_stateful(count)
+        scheduler = builder.add_start_tasks(task).build()
+
+        with scheduler:
+            for _ in range(3):
+                assert progressed.acquire(timeout=PATIENCE)
+
+        assert seen[:3] == [None, {"n": 1}, {"n": 2}], f"state did not carry: {seen[:3]}"
+
+    def test_a_task_whose_schedule_lives_in_its_own_row(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        """`RecurringTaskWithPersistentSchedule`: the cron is in `task_data`, so changing when
+        a task runs is an UPDATE rather than a deploy. The schedule itself has to round-trip
+        through the database."""
+        ran = threading.Semaphore(0)
+        task = Tasks.recurring_with_persistent_schedule("persistent").execute(
+            lambda instance, context: ran.release()
+        )
+        scheduler = builder.add_tasks(task).build()
+        data = PlainScheduleAndData(FixedDelay.of(timedelta(milliseconds=50)))
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(
+                task.instance("the-one", data), SystemClock().now()
+            )
+            assert ran.acquire(timeout=PATIENCE), "it never ran"
+            assert ran.acquire(timeout=PATIENCE), "it did not reschedule itself"
+
+        [found] = scheduler.get_scheduled_executions(
+            ScheduledExecutionsFilter.all().with_picked(False)
+        )
+        assert isinstance(found.data, PlainScheduleAndData), (
+            f"the schedule did not survive the round trip: {type(found.data).__name__}"
+        )
+
+    def test_a_task_gives_up_after_its_retry_limit(self, builder: SchedulerBuilder) -> None:
+        attempts = threading.Semaphore(0)
+
+        def explode(instance: Any, context: Any) -> None:
+            attempts.release()
+            raise RuntimeError("boom")
+
+        task = (
+            Tasks.one_time("give-up")
+            .on_failure(max_retries(2).retry_every(timedelta(milliseconds=50)).then_remove())
+            .execute(explode)
+        )
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            for _ in range(3):  # the original plus two retries
+                assert attempts.acquire(timeout=PATIENCE)
+            wait_until(
+                lambda: scheduler.get_scheduled_executions(
+                    ScheduledExecutionsFilter.all()
+                )
+                == [],
+                what="the row being removed after the retry limit",
+            )
+
+    def test_a_task_can_hand_off_to_another(self, builder: SchedulerBuilder) -> None:
+        """`OnCompleteReplace`: one row becomes the next step, in a single statement, so a crash
+        between them cannot lose the work."""
+        second_ran = threading.Event()
+        second = Tasks.one_time("step-two").execute(
+            lambda instance, context: second_ran.set()
+        )
+        first = Tasks.custom("step-one").execute(
+            lambda instance, context: OnCompleteReplace("step-two", {"from": instance.id})
+        )
+        scheduler = builder.add_tasks([first, second]).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(first.instance("an-id"), SystemClock().now())
+            assert second_ran.wait(PATIENCE), "the second step never ran"

@@ -54,6 +54,7 @@ class FakeExecutionOperations:
         self.removed = False
         self.rescheduled_to: datetime | None = None
         self.rescheduled_with_data: Any = None
+        self.replaced_with: Any = None
 
     def stop(self) -> None:
         self.removed = True
@@ -68,7 +69,16 @@ class FakeExecutionOperations:
         self.rescheduled_with_data = new_data
 
     def remove_and_schedule_new(self, schedulable: Any) -> None:
-        raise AssertionError("not expected")
+        # Strict, for the reason given in test_handlers.py: a lenient fake is how a handler
+        # that hands over the wrong type reaches production.
+        from db_scheduler.task import SchedulableInstance
+
+        if not isinstance(schedulable, SchedulableInstance):
+            raise TypeError(
+                f"remove_and_schedule_new needs a SchedulableInstance, got "
+                f"{type(schedulable).__name__}"
+            )
+        self.replaced_with = schedulable
 
 
 class FakeSchedulerClient:
@@ -362,6 +372,36 @@ class TestRecurringTaskWithPersistentSchedule:
     def test_its_default_priority_matches_a_recurring_task(self) -> None:
         task = Tasks.recurring_with_persistent_schedule("t").execute(lambda i, c: None)
         assert task.default_priority == Priority.HIGH
+
+    def test_it_defaults_to_the_shipped_schedule_type(self) -> None:
+        """Java requires the data class; Python can supply the obvious one. Without it the
+        repository has nothing to deserialize into, hands back a plain dict, and the task can
+        never reschedule itself."""
+        task = Tasks.recurring_with_persistent_schedule("t").execute(lambda i, c: None)
+
+        assert task.data_class is PlainScheduleAndData
+
+    def test_a_custom_schedule_type_is_kept(self) -> None:
+        class MySchedule(PlainScheduleAndData):
+            pass
+
+        task = Tasks.recurring_with_persistent_schedule("t", MySchedule).execute(
+            lambda i, c: None
+        )
+
+        assert task.data_class is MySchedule
+
+    def test_data_that_lost_its_type_says_what_to_do(self) -> None:
+        """What a row read back without a data class looks like: a plain dict. The old code
+        asserted - which explains nothing and vanishes under `python -O`."""
+        task = Tasks.recurring_with_persistent_schedule("t").execute(lambda i, c: None)
+        # A row read back without a data class deserializes to a plain dict, not a schedule.
+        lost_its_type = task.instance("i", {"schedule": "...", "data": None})
+
+        handler = task.execute(lost_its_type, a_context())
+
+        with pytest.raises(ValueError, match="must be a ScheduleAndData"):
+            handler.complete(a_completion(), FakeExecutionOperations())
 
     def test_data_that_is_not_a_schedule_is_refused(self) -> None:
         task = Tasks.recurring_with_persistent_schedule("t").execute(lambda i, c: None)

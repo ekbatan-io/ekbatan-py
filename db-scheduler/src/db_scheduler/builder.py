@@ -74,6 +74,44 @@ def _must_not_be_negative(name: str, value: timedelta) -> timedelta:
     return value
 
 
+#: The scheduler's own threads - poll, heartbeat, dead-execution detection - each need a
+#: connection when they run, on top of whatever the workers are using.
+LOOP_THREADS = 3
+
+
+def warn_if_the_connection_pool_is_too_small(engine: Engine, executor_threads: int) -> None:
+    """A pool with no headroom past the workers is a correctness problem, not a slow one.
+
+    The heartbeat is how a running execution proves it is alive. If every connection is held by
+    a task body, the heartbeat cannot write, the row's timestamp stops moving, and another
+    instance declares the execution dead and runs it again - two instances doing the same work,
+    which is the one thing this library exists to prevent.
+
+    Measured, with three workers each holding a connection: at capacity 3 *every* execution was
+    stolen; at capacity 4, none. The boundary is that sharp, so it is worth saying out loud at
+    startup rather than leaving to be discovered in production.
+    """
+    pool = getattr(engine, "pool", None)
+    size = getattr(pool, "size", None)
+    overflow = getattr(pool, "_max_overflow", None)
+    if not callable(size) or not isinstance(overflow, int):
+        return  # NullPool, StaticPool and friends: no fixed ceiling to compare against
+    if overflow < 0:
+        return  # negative max_overflow means unlimited
+    capacity = size() + overflow
+    if capacity <= 0 or capacity > executor_threads:
+        return
+    LOG.warning(
+        "The connection pool holds at most %d connection(s) but the scheduler runs %d worker "
+        "thread(s). If task bodies hold connections, the heartbeat cannot write and running "
+        "executions will be declared dead and run a second time by another instance. Give the "
+        "engine at least %d connections (pool_size + max_overflow), or reduce threads().",
+        capacity,
+        executor_threads,
+        executor_threads + LOOP_THREADS,
+    )
+
+
 class SchedulerBuilder:
     """Fluent, and every setter returns self, as Java's does."""
 
@@ -273,6 +311,8 @@ class SchedulerBuilder:
 
         scheduler_task_repository = repository()
         client_task_repository = repository()
+
+        warn_if_the_connection_pool_is_too_small(self.engine, self.executor_threads)
 
         executor_service = self._executor_service or DaemonThreadPool(
             max_workers=self.executor_threads, thread_name_prefix=f"{THREAD_PREFIX}-worker-"

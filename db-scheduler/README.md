@@ -96,6 +96,17 @@ is the same rule SQLAlchemy has for engines, for the same reason. A pool that fi
 forked child refuses work with an explanatory error rather than silently accepting executions
 nobody will ever run.
 
+## Sizing the connection pool
+
+Give the engine **more connections than the scheduler has worker threads**. The heartbeat is how
+a running execution proves it is alive; if every connection is held by a task body, it cannot
+write, and another instance declares the execution dead and runs it again.
+
+Measured with three workers each holding a connection: at capacity 3 *every* execution was
+stolen and run twice; at capacity 4, none were. `threads(n)` warns at startup if the pool cannot
+outnumber it — including with SQLAlchemy's default pool of 15, where `threads(20)` looks
+perfectly reasonable and is not.
+
 ## Limits worth knowing
 
 `task_data` is a `blob` on MySQL and MariaDB, as it is in every db-scheduler DDL file — so
@@ -140,11 +151,11 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 700 passed, 6 skipped |
-| PostgreSQL 17 | 702 passed, 4 skipped |
-| MySQL 8.4 (LTS) | 702 passed, 4 skipped |
-| MySQL 26.7 (current) | 702 passed, 4 skipped |
-| MariaDB 11.4 | 700 passed, 6 skipped |
+| SQLite | 732 passed, 6 skipped |
+| PostgreSQL 17 | 734 passed, 4 skipped |
+| MySQL 8.4 (LTS) | 734 passed, 4 skipped |
+| MySQL 26.7 (current) | 734 passed, 4 skipped |
+| MariaDB 11.4 | 732 passed, 6 skipped |
 
 Every integration test runs twice per dialect, once for each timestamp shape - zone-less UTC
 columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is

@@ -22,7 +22,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from ..clock import Clock
 from . import (
@@ -866,12 +866,36 @@ class _DoNotScheduleOnStartup[T = Any](ScheduleOnStartup[T]):
         """Nothing, deliberately."""
 
 
+def _as_schedule_and_data(data: Any, task_instance: Any) -> ScheduleAndData:
+    """The data has to *be* the schedule, and after a round trip through the table it has to
+    still be one.
+
+    The usual cause of it not being one: the task was declared without a data class, so the
+    repository had nothing to deserialize into and handed back a plain dict. Java cannot reach
+    this state - `recurringWithPersistentSchedule` requires the class - so the message says what
+    Python lets you leave out.
+    """
+    if not isinstance(data, ScheduleAndData):
+        raise ValueError(
+            f"task '{task_instance.task_name}' instance '{task_instance.id}' has a persistent "
+            f"schedule, so its data must be a ScheduleAndData, but it is a "
+            f"{type(data).__name__}. Declare the data class on the task - "
+            f"Tasks.recurring_with_persistent_schedule(name, YourScheduleAndData) - so the "
+            f"row can be read back as one."
+        )
+    return data
+
+
 class RecurringTaskWithPersistentScheduleBuilder[T = Any]:
     __slots__ = ("_data_class", "_default_priority", "_name", "_on_dead_execution", "_on_failure")
 
     def __init__(self, name: str, data_class: type[T] | None = None) -> None:
         self._name = name
-        self._data_class = data_class
+        # Java requires the class; Python can supply the obvious default so that using the
+        # shipped `PlainScheduleAndData` needs no ceremony. Anything else must still say so.
+        self._data_class: type[T] | None = (
+            data_class if data_class is not None else cast("type[T]", PlainScheduleAndData)
+        )
         self._on_failure: FailureHandler[T] = OnFailureRescheduleUsingTaskDataSchedule[T]()
         self._on_dead_execution: DeadExecutionHandler[T] = ReviveDeadExecution[T]()
         self._default_priority = RecurringTaskWithPersistentSchedule.DEFAULT_PRIORITY
@@ -906,8 +930,10 @@ class RecurringTaskWithPersistentScheduleBuilder[T = Any]:
             data = task_instance.data
 
             def on_complete(completion: ExecutionComplete, operations: Any) -> None:
-                assert isinstance(data, ScheduleAndData)
-                operations.reschedule(completion, data.schedule.next_execution_time(completion))
+                carried = _as_schedule_and_data(data, task_instance)
+                operations.reschedule(
+                    completion, carried.schedule.next_execution_time(completion)
+                )
 
             return _CompletionHandlerFromCallable[T](on_complete)
 
@@ -922,9 +948,9 @@ class RecurringTaskWithPersistentScheduleBuilder[T = Any]:
             next_data = execution_handler(task_instance, execution_context)
 
             def on_complete(completion: ExecutionComplete, operations: Any) -> None:
-                assert isinstance(next_data, ScheduleAndData)
+                carried = _as_schedule_and_data(next_data, task_instance)
                 operations.reschedule(
-                    completion, next_data.schedule.next_execution_time(completion), next_data
+                    completion, carried.schedule.next_execution_time(completion), next_data
                 )
 
             return _CompletionHandlerFromCallable[T](on_complete)

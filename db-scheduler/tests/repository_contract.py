@@ -292,6 +292,52 @@ class RepositoryContract:
         assert recovered.consecutive_failures == 0
         assert recovered.last_failure is None
 
+    def test_replace_takes_an_already_scheduled_instance(self, repository: Any) -> None:
+        """The shape a completion handler hands over. `ExecutionOperations` fixes the execution
+        time first - so that a batch shares one reading of the clock - and passes the fixed
+        instance on. `replace` only accepted the *unfixed* shape, so the hand-off between tasks
+        raised `AttributeError` every time it was used."""
+        from db_scheduler.task import ScheduledTaskInstance
+
+        repository.create_if_not_exists(scheduled(an_instance()))
+        [execution] = repository.get_due(NOW, limit=10)
+        successor = ScheduledTaskInstance(
+            an_instance(task="other", id="next"), NOW + timedelta(hours=1)
+        )
+
+        when = repository.replace(execution, successor)
+
+        assert when == NOW + timedelta(hours=1)
+        [found] = repository.get_scheduled_executions()
+        assert (found.task_name, found.id) == ("other", "next")
+
+    def test_replace_still_takes_a_schedulable_instance(self, repository: Any) -> None:
+        """Java keeps both overloads; so does this."""
+        repository.create_if_not_exists(scheduled(an_instance()))
+        [execution] = repository.get_due(NOW, limit=10)
+
+        when = repository.replace(
+            execution, scheduled(an_instance(task="other", id="next"), NOW + timedelta(hours=2))
+        )
+
+        assert when == NOW + timedelta(hours=2)
+        [found] = repository.get_scheduled_executions()
+        assert (found.task_name, found.id) == ("other", "next")
+
+    def test_replace_carries_the_new_data(self, repository: Any) -> None:
+        from db_scheduler.task import ScheduledTaskInstance
+
+        repository.create_if_not_exists(scheduled(an_instance()))
+        [execution] = repository.get_due(NOW, limit=10)
+
+        repository.replace(
+            execution,
+            ScheduledTaskInstance(an_instance(task="other", id="next", data={"n": 7}), NOW),
+        )
+
+        [found] = repository.get_scheduled_executions()
+        assert found.task_instance.data == {"n": 7}
+
     # ------------------------------------------------------------------ removing
 
     def test_removing_deletes_the_row(self, repository: Any) -> None:

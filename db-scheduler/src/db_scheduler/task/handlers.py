@@ -145,24 +145,64 @@ class OnCompleteReschedule[T]:
 
 
 class OnCompleteReplace[T, N]:
-    """Delete this row and schedule a different task in its place - a hand-off between steps."""
+    """Delete this row and schedule a different task in its place - a hand-off between steps.
 
-    __slots__ = ("_new_data", "new_task_name")
+    One statement, not a delete and an insert, so a crash in between cannot lose the work: the
+    row names the old task or the new one, never neither.
 
-    def __init__(self, new_task_name: str, new_data: N | None = None) -> None:
-        self.new_task_name = new_task_name
-        self._new_data = new_data
+    What the next step is can be said three ways, as in Java: a task name, something that
+    describes a task (a `Task` or a `TaskDescriptor`), or a function from the current instance
+    to a `SchedulableInstance` when the next step depends on what this one found.
+    """
+
+    __slots__ = ("_new_instance_creator", "new_task_name")
+
+    def __init__(
+        self,
+        new_task: str | Any,
+        new_data: N | None = None,
+    ) -> None:
+        from . import SchedulableInstance, SchedulableTaskInstance, TaskInstance
+
+        if isinstance(new_task, str):
+            name = new_task
+
+            def from_name(current: TaskInstance[T]) -> SchedulableInstance[N]:
+                # A function of "now" rather than a captured instant, so the execution time
+                # comes from the scheduler's clock when the hand-off actually happens. Java
+                # calls `Instant.now()` here, which a substituted clock cannot influence.
+                return SchedulableTaskInstance[N](
+                    TaskInstance[N](name, current.id, new_data),
+                    lambda current_time: current_time,
+                )
+
+            self.new_task_name = name
+            self._new_instance_creator: Callable[
+                [TaskInstance[T]], SchedulableInstance[N]
+            ] = from_name
+        elif callable(new_task) and not hasattr(new_task, "task_name"):
+            self.new_task_name = "<hidden>"  # Java's placeholder: only the creator knows
+            self._new_instance_creator = new_task
+        else:
+            described = new_task
+
+            def from_description(current: TaskInstance[T]) -> SchedulableInstance[N]:
+                return SchedulableTaskInstance[N](
+                    TaskInstance[N](described.task_name, current.id, new_data),
+                    lambda current_time: current_time,
+                )
+
+            self.new_task_name = described.task_name
+            self._new_instance_creator = from_description
 
     def complete(self, completion: ExecutionComplete, operations: ExecutionOperationsLike) -> None:
-        from . import TaskInstance
-
         current = completion.execution.task_instance
-        following = TaskInstance[Any](self.new_task_name, current.id, self._new_data)
-        LOG.debug("Replacing %s with task %s", current, self.new_task_name)
+        following = self._new_instance_creator(current)
+        LOG.debug("Removing instance %s and scheduling instance %s", current, following)
         operations.remove_and_schedule_new(following)
 
     def __repr__(self) -> str:
-        return f"OnCompleteReplace(new_task_name={self.new_task_name!r})"
+        return f"OnCompleteReplace with task '{self.new_task_name}'"
 
 
 # ------------------------------------------------------------------ failure

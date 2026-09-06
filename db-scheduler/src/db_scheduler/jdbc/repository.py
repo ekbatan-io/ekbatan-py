@@ -714,9 +714,16 @@ class JdbcTaskRepository:
             )
 
     def replace(self, to_be_replaced: Execution, new_instance: Any) -> datetime:
-        """Remove one execution and schedule another, in one transaction."""
+        """Remove one execution and schedule another, in one transaction.
+
+        Takes either shape, as Java's two overloads do: a `ScheduledTaskInstance` whose time is
+        already decided - which is what a completion handler hands over - or a
+        `SchedulableInstance` that still has to be asked.
+        """
         table = self.table
-        execution_time: datetime = new_instance.next_execution_time(self.clock.now())
+        scheduled = self._fix_execution_time(new_instance)
+        new_instance = scheduled.task_instance
+        execution_time: datetime = scheduled.execution_time
         with self.engine.begin() as conn:
             removed = conn.execute(
                 delete(table).where(
@@ -731,9 +738,7 @@ class JdbcTaskRepository:
                     to_be_replaced.task_name,
                     to_be_replaced.id,
                 )
-            conn.execute(
-                insert(table), [self._row_for(new_instance.task_instance, execution_time)]
-            )
+            conn.execute(insert(table), [self._row_for(new_instance, execution_time)])
         return execution_time
 
     # ------------------------------------------------------------------ mapping
