@@ -12,18 +12,25 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Self
+from typing import Any, Protocol, Self
 
 __all__ = [
     "Execution",
     "ExecutionComplete",
+    "ExecutionContext",
+    "HasTaskName",
     "NextExecutionTime",
+    "OnStartup",
     "Priority",
     "Result",
     "SchedulableInstance",
     "SchedulableTaskInstance",
+    "SimpleTaskName",
+    "StateReturningExecutionHandler",
+    "TaskDescriptor",
     "TaskInstance",
     "TaskInstanceId",
+    "VoidExecutionHandler",
 ]
 
 #: db-scheduler's `NextExecutionTime`: given the current time, when should this run?
@@ -184,7 +191,7 @@ class SchedulableInstance[T = Any](ABC):
     __slots__ = ()
 
     @staticmethod
-    def of[U](
+    def of[U = Any](
         task_instance: TaskInstance[U], execution_time: datetime | NextExecutionTime
     ) -> SchedulableInstance[U]:
         return SchedulableTaskInstance[U](task_instance, execution_time)
@@ -396,3 +403,139 @@ def _utc(moment: datetime) -> datetime:
 
 
 _ = field  # re-exported for submodules that build dataclasses on this model
+
+
+# ------------------------------------------------------------------ what a running task sees
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionContext:
+    """What a running task is told about its own execution.
+
+    `scheduler_client` is here so a handler can schedule *other* work - the point db-scheduler
+    makes in its own javadoc is that it cannot be used to change the current execution, which is
+    the executor's business.
+    """
+
+    execution: Execution
+    scheduler_state: Any = None
+    scheduler_client: Any = None
+    currently_executing: Any = None
+
+
+# ------------------------------------------------------------------ naming
+
+
+class HasTaskName(ABC):
+    """Anything that knows which task it belongs to."""
+
+    __slots__ = ()
+
+    @property
+    @abstractmethod
+    def task_name(self) -> str: ...
+
+    @staticmethod
+    def of(name: str) -> HasTaskName:
+        return SimpleTaskName(name)
+
+
+class SimpleTaskName(HasTaskName):
+    """A name and nothing else. What `HasTaskName.of` hands back."""
+
+    __slots__ = ("_name",)
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def task_name(self) -> str:
+        return self._name
+
+    def __repr__(self) -> str:
+        return f"SimpleTaskName({self._name!r})"
+
+
+class TaskDescriptor[T = Any](HasTaskName):
+    """A task's name and the type of its data, without the task itself.
+
+    It lets a caller schedule work for a task that lives in another service or another module -
+    the scheduler only needs the name to write the row, and the data class to read it back.
+    """
+
+    __slots__ = ()
+
+    @staticmethod
+    def of[U = Any](name: str, data_class: type[U] | None = None) -> TaskDescriptor[U]:
+        return SimpleTaskDescriptor[U](name, data_class)
+
+    @property
+    @abstractmethod
+    def data_class(self) -> type[T] | None: ...
+
+    def instance(self, id: str) -> TaskInstance.Builder[T]:
+        return TaskInstance.Builder[T](self.task_name, id)
+
+    def instance_id(self, id: str) -> TaskInstanceId:
+        return TaskInstanceId.of(self.task_name, id)
+
+
+class SimpleTaskDescriptor[T = Any](TaskDescriptor[T]):
+    __slots__ = ("_data_class", "_name")
+
+    def __init__(self, name: str, data_class: type[T] | None = None) -> None:
+        self._name = name
+        self._data_class = data_class
+
+    @property
+    def task_name(self) -> str:
+        return self._name
+
+    @property
+    def data_class(self) -> type[T] | None:
+        return self._data_class
+
+    def __repr__(self) -> str:
+        return f"SimpleTaskDescriptor({self._name!r}, {self._data_class})"
+
+
+class OnStartup(Protocol):
+    """A task that puts itself in the table when the scheduler starts."""
+
+    def on_startup(self, scheduler: Any, clock: Any) -> None: ...
+
+
+#: What a task body does with no return value - db-scheduler's `VoidExecutionHandler`. The
+#: completion handler is then the task kind's own (remove, or reschedule).
+type VoidExecutionHandler[T] = Callable[[TaskInstance[T], ExecutionContext], None]
+
+#: A recurring body that returns the data the *next* execution should carry - db-scheduler's
+#: `StateReturningExecutionHandler`. This is how a recurring task keeps state between runs
+#: without a table of its own.
+type StateReturningExecutionHandler[T] = Callable[[TaskInstance[T], ExecutionContext], T]
+
+
+def __getattr__(name: str) -> Any:
+    """`Task`, `AbstractTask` and the task kinds, under their Java import path.
+
+    In Java these live in this package alongside `FailureHandler`. Here the handlers are a
+    module of their own, so a task class defined here would import a module that imports this
+    one. Resolving the name on demand gives `from db_scheduler.task import AbstractTask` without
+    the cycle; `db_scheduler.task.helper` remains where they are defined.
+    """
+    forwarded = {
+        "AbstractTask": "helper",
+        "CustomTask": "helper",
+        "ExecutionHandler": "handlers",
+        "OneTimeTask": "helper",
+        "RecurringTask": "helper",
+        "RecurringTaskWithPersistentSchedule": "helper",
+        "Task": "helper",
+        "Tasks": "helper",
+    }
+    module = forwarded.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    return getattr(importlib.import_module(f".{module}", __name__), name)

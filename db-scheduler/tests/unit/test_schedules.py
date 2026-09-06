@@ -65,8 +65,10 @@ class TestFixedDelay:
         with pytest.raises(ValueError, match="greater than 0"):
             FixedDelay.of_seconds(bad)
 
-    def test_it_is_deterministic(self) -> None:
-        assert FixedDelay.of_seconds(1).is_deterministic is True
+    def test_it_is_not_deterministic(self) -> None:
+        """The next time is relative to when the last run finished, not to the clock - so two
+        instances asking at the same moment can get different answers."""
+        assert FixedDelay.of_seconds(1).is_deterministic is False
 
     def test_equality_and_hashing(self) -> None:
         assert FixedDelay.of_seconds(10) == FixedDelay.of_seconds(10)

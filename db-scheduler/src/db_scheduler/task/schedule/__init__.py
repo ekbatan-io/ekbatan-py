@@ -182,7 +182,14 @@ class FixedDelay(Schedule):
 
     @property
     def is_deterministic(self) -> bool:
-        return True
+        """No: the next time depends on when the last run *finished*, not on the clock.
+
+        This is what schedule-on-startup keys off. A deterministic schedule that answers
+        differently means somebody edited it, so the row moves; a fixed delay always answers
+        differently, so its row only ever moves *earlier* - otherwise a service restarting more
+        often than its delay would push the execution away on every boot and never run it.
+        """
+        return False
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, FixedDelay) and other.duration == self.duration

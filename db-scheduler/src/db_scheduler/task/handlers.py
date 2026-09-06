@@ -17,13 +17,14 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
-from . import ExecutionComplete, Result
+from . import ExecutionComplete, ExecutionContext, Result, TaskInstance
 from .schedule import Schedule
 
 __all__ = [
     "CancelDeadExecution",
     "CompletionHandler",
     "DeadExecutionHandler",
+    "ExecutionHandler",
     "ExecutionOperationsLike",
     "ExponentialBackoffFailureHandler",
     "FailureHandler",
@@ -45,6 +46,13 @@ LOG = logging.getLogger("db_scheduler.task")
 
 #: db-scheduler's own default. Each retry waits half again as long as the last.
 DEFAULT_MULTIPLIER = 1.5
+
+
+#: A task body, in db-scheduler's terms: given the instance and its context, say what should
+#: happen to the row afterwards. Java's `ExecutionHandler` is a one-method interface, which in
+#: Python is simply a callable - so the name survives as an alias. It lives here rather than in
+#: `task` because it names `CompletionHandler`, which is defined below.
+type ExecutionHandler[T] = Callable[[TaskInstance[T], ExecutionContext], CompletionHandler[T]]
 
 
 @runtime_checkable
@@ -120,6 +128,11 @@ class OnCompleteReschedule[T]:
         # deliberately has to be able to clear the data.
         self._set_new_data = "new_data" in kwargs or new_data is not None
         self._new_data = new_data
+
+    @property
+    def new_data(self) -> T | None:
+        """What the next execution will carry, or None when the data is left as it is."""
+        return self._new_data
 
     def complete(self, completion: ExecutionComplete, operations: ExecutionOperationsLike) -> None:
         next_time = self.schedule.next_execution_time(completion)

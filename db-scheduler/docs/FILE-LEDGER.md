@@ -138,40 +138,40 @@ whole, makes completeness something you can count rather than something you hope
 | DeadExecutionHandler | 27 | `task/handlers.py` | done |
 | Execution | 97 | `task/__init__.py` | done |
 | ExecutionComplete | 65 | `task/__init__.py` | done |
-| ExecutionContext | 32 | - | todo |
+| ExecutionContext | 32 | `task/__init__.py` | done |
 | ExecutionFailed | 22 | - | todo |
-| ExecutionHandler | 4 | - | todo |
+| ExecutionHandler | 4 | `task/handlers.py` | done |
 | ExecutionOperations | 65 | - | todo |
 | FailureHandler | 187 | `task/handlers.py` | done |
-| HasTaskName | 17 | - | todo |
+| HasTaskName | 17 | `task/__init__.py` | done |
 | MaxRetriesExceededListener | 17 | `task/handlers.py` | done |
 | NewValue | 3 | - | todo |
 | NextExecutionTime | 10 | `task/__init__.py` | done - a `Callable` alias; a one-method interface has no class to be |
-| OnStartup | 6 | - | todo |
+| OnStartup | 6 | `task/__init__.py` | done |
 | Priority | 6 | `task/__init__.py` | done |
 | RescheduleUpdate | 50 | - | todo |
 | SchedulableInstance | 46 | `task/__init__.py` | done |
 | SchedulableTaskInstance | 22 | `task/__init__.py` | done |
 | ScheduledTaskInstance | 31 | - | todo |
-| StateReturningExecutionHandler | 4 | - | todo |
-| Task | 23 | - | todo |
-| TaskDescriptor | 33 | - | todo |
+| StateReturningExecutionHandler | 4 | `task/__init__.py` | done |
+| Task | 23 | `task/helper.py` | done |
+| TaskDescriptor | 33 | `task/__init__.py` | done |
 | TaskInstance | 97 | `task/__init__.py` | done |
 | TaskInstanceId | 37 | `task/__init__.py` | done |
 | TaskWithDataDescriptor | 21 | - | todo |
 | TaskWithoutDataDescriptor | 19 | - | todo |
-| VoidExecutionHandler | 4 | - | todo |
+| VoidExecutionHandler | 4 | `task/__init__.py` | done |
 | **`scheduler/task/helper`** | | | |
 | CustomTask | 65 | `task/helper.py` | done |
 | OneTimeTask | 54 | `task/helper.py` | done |
 | PlainScheduleAndData | 46 | `task/helper.py` | done |
 | RecurringTask | 102 | `task/helper.py` | done |
-| RecurringTaskWithPersistentSchedule | 54 | - | todo |
+| RecurringTaskWithPersistentSchedule | 54 | `task/helper.py` | done |
 | ScheduleAndData | 10 | `task/helper.py` | done |
-| ScheduleOnStartup | 7 | - | todo |
-| ScheduleOnceOnStartup | 34 | - | todo |
-| ScheduleRecurringOnStartup | 121 | - | todo |
-| Tasks | 311 | `task/helper.py` | partial - recurringWithPersistentSchedule missing |
+| ScheduleOnStartup | 7 | `task/helper.py` | done |
+| ScheduleOnceOnStartup | 34 | `task/helper.py` | done |
+| ScheduleRecurringOnStartup | 121 | `task/helper.py` | done |
+| Tasks | 311 | `task/helper.py` | done |
 | **`scheduler/task/schedule`** | | | |
 | CompositeParser | 27 | `task/schedule/__init__.py` | done |
 | CronSchedule | 159 | `task/schedule/__init__.py` | done |
