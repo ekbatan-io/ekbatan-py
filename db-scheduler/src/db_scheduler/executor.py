@@ -65,11 +65,16 @@ class Waiter:
         self._skip_next_wait = False
 
     def do_wait(self) -> None:
-        seconds = self.duration.total_seconds()
-        if seconds <= 0:
+        if self.duration.total_seconds() <= 0:
             return
         wait_until = self._clock.now() + self.duration
-        while self._clock.now() < wait_until:
+        while True:
+            # The time still owed, recomputed each round. Java re-waits the *whole* interval
+            # after a spurious wakeup, which can silently double a poll period; asking for what
+            # is left cannot.
+            remaining = (wait_until - self._clock.now()).total_seconds()
+            if remaining <= 0:
+                return
             with self._condition:
                 if self._skip_next_wait:
                     LOG.debug(
@@ -80,7 +85,7 @@ class Waiter:
                 self._woken = False
                 LOG.debug("Waiter start wait.")
                 self._is_waiting = True
-                self._condition.wait(seconds)
+                self._condition.wait(remaining)
                 self._is_waiting = False
                 if self._woken:
                     LOG.debug(

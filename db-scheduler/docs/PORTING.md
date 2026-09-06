@@ -36,6 +36,8 @@ Recorded as they are made, not at the end.
 | checked/unchecked exception pairs | one exception each | Python has no checked exceptions, so the pairs collapse |
 | `ReviveDeadExecution` reads `Instant.now()` | reads `completion.time_done` | same instant on a real clock, and the *right* one on a substituted one. Java's version revives to real time even under its own `ManualScheduler`, so the revived row lands outside the test's timeline |
 | `Executors.newFixedThreadPool` | `DaemonThreadPool` | Python joins every non-daemon thread at interpreter exit and has no `Thread.interrupt()`, so the standard pool lets one stuck handler hang the process for ever. Daemon workers abandon it instead - which is the failure the dead-execution handler already exists for |
+| `Thread.interrupt()` to end a wait | a sticky flag re-read before waiting | Java's interrupt flag stays on the thread, so a shutdown signalled while the loop was working cannot be missed. Python's `Condition.notify()` is lost if nobody is waiting, so the loop re-reads the shutdown flag - itself sticky - before it sleeps at all |
+| `lock.wait(millis)` after a spurious wakeup | waits the *remaining* time | Java re-waits the whole interval, which can silently double a poll period |
 | `ExecutorService.shutdownNow()` | cancel queued work only | nothing in Python can interrupt a running thread. `stop()` waits `shutdown_max_wait`, then names what did not finish and leaves it |
 | `Serializable` / `JavaSerializer` | not ported | Java-native serialization has no counterpart and is a deserialization-gadget risk; the port's default is JSON |
 

@@ -101,6 +101,16 @@ class RunUntilShutdown:
                     self._scheduler_listeners.on_scheduler_event(
                         SchedulerEventType.UNEXPECTED_ERROR
                     )
+
+            # Asked again *before* waiting, not only at the top of the loop. Java does not need
+            # this: `Thread.interrupt()` sets a flag that sticks to the thread, so a shutdown
+            # signalled while the body was running is still there when the next wait begins.
+            # Python's `Condition.notify()` has no such memory - it reaches whoever is waiting
+            # at that instant and is otherwise lost. `Waiter` keeps its own note to cover that,
+            # and this check makes the loop correct even if the note were never left: the
+            # shutdown flag is itself sticky, so reading it cannot miss anything.
+            if self._scheduler_state.is_shutting_down:
+                return
             self._wait_between_runs.do_wait()
 
     def __call__(self) -> None:

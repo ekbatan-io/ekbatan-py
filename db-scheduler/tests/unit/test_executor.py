@@ -92,6 +92,29 @@ class TestWaiter:
 
         assert time.monotonic() - started >= 0.15, "the second wait should really wait"
 
+    def test_a_spurious_wakeup_does_not_restart_the_interval(self) -> None:
+        """`Condition.wait` may return without anyone notifying. Asking for the *whole* interval
+        again each time - which is what Java does - can silently double a poll period."""
+        waiter = Waiter(timedelta(seconds=1))
+
+        def nudge() -> None:
+            time.sleep(0.2)
+            with waiter._condition:
+                waiter._condition.notify()  # not a wake(): the woken flag stays unset
+
+        threading.Thread(target=nudge, daemon=True).start()
+        began = time.monotonic()
+        waiter.do_wait()
+
+        assert time.monotonic() - began < 1.6, "the spurious wakeup restarted the whole wait"
+
+    def test_it_still_waits_the_full_interval_when_undisturbed(self) -> None:
+        began = time.monotonic()
+
+        Waiter(timedelta(milliseconds=400)).do_wait()
+
+        assert time.monotonic() - began >= 0.35
+
     def test_wake_or_skip_prefers_waking_when_it_can(self) -> None:
         waiter = Waiter(timedelta(seconds=30))
         finished = threading.Event()
