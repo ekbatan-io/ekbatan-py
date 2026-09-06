@@ -19,7 +19,6 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -27,6 +26,7 @@ from typing import Any
 from .clock import Clock, SystemClock
 from .event import CandidateEventType, SchedulerEventType, SchedulerListeners
 from .logging import ConfigurableLogger, LogLevel
+from .pool import WorkerPool
 from .state import CurrentlyExecuting, HeartbeatConfig, SchedulerState
 from .task import Execution, ExecutionComplete, ExecutionContext
 from .util import describe
@@ -278,7 +278,7 @@ class Executor:
         "currently_processing",
     )
 
-    def __init__(self, executor_service: ThreadPoolExecutor, clock: Clock) -> None:
+    def __init__(self, executor_service: WorkerPool, clock: Clock) -> None:
         self._executor_service = executor_service
         self._clock = clock
         self.currently_processing: dict[uuid.UUID, CurrentlyExecuting] = {}

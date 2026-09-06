@@ -35,6 +35,8 @@ Recorded as they are made, not at the end.
 | `ZoneId.systemDefault()` | `system_default_zone()` | Java resolves a named zone; Python's `astimezone()` gives a fixed offset, which breaks across a DST change. Resolved from `TZ`, then `/etc/localtime`, then the offset |
 | checked/unchecked exception pairs | one exception each | Python has no checked exceptions, so the pairs collapse |
 | `ReviveDeadExecution` reads `Instant.now()` | reads `completion.time_done` | same instant on a real clock, and the *right* one on a substituted one. Java's version revives to real time even under its own `ManualScheduler`, so the revived row lands outside the test's timeline |
+| `Executors.newFixedThreadPool` | `DaemonThreadPool` | Python joins every non-daemon thread at interpreter exit and has no `Thread.interrupt()`, so the standard pool lets one stuck handler hang the process for ever. Daemon workers abandon it instead - which is the failure the dead-execution handler already exists for |
+| `ExecutorService.shutdownNow()` | cancel queued work only | nothing in Python can interrupt a running thread. `stop()` waits `shutdown_max_wait`, then names what did not finish and leaves it |
 | `Serializable` / `JavaSerializer` | not ported | Java-native serialization has no counterpart and is a deserialization-gadget risk; the port's default is JSON |
 
 ## Verification

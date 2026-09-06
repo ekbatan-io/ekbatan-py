@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from typing import Any, Self
 
@@ -26,6 +25,7 @@ from .executor import PollingStrategyConfig, Waiter
 from .jdbc import JdbcCustomization, JdbcTaskRepository, autodetect
 from .jdbc.schema import DEFAULT_TABLE_NAME
 from .logging import LogLevel
+from .pool import DaemonThreadPool, WorkerPool
 from .resolver import TaskResolver
 from .scheduler import THREAD_PREFIX, ImmediateCheckForDueExecutions, Scheduler
 from .scheduler_name import Hostname, SchedulerName
@@ -71,7 +71,7 @@ class SchedulerBuilder:
         self._serializer: Serializer | None = None
         self._table_name = DEFAULT_TABLE_NAME
         self._enable_immediate_execution = False
-        self._executor_service: ThreadPoolExecutor | None = None
+        self._executor_service: WorkerPool | None = None
         self._delete_unresolved_after = DEFAULT_DELETION_OF_UNRESOLVED_TASKS_DURATION
         self._jdbc_customization: JdbcCustomization | None = None
         self._shutdown_max_wait = SHUTDOWN_MAX_WAIT
@@ -122,7 +122,10 @@ class SchedulerBuilder:
         self.executor_threads = number_of_threads
         return self
 
-    def executor_service(self, executor_service: ThreadPoolExecutor) -> Self:
+    def executor_service(self, executor_service: WorkerPool) -> Self:
+        """Substitute the pool. A `ThreadPoolExecutor` works, but its threads are non-daemon and
+        the interpreter joins them at exit - so a handler that never returns will keep the
+        process alive. The default pool is deliberately not that."""
         self._executor_service = executor_service
         return self
 
@@ -241,8 +244,8 @@ class SchedulerBuilder:
         scheduler_task_repository = repository()
         client_task_repository = repository()
 
-        executor_service = self._executor_service or ThreadPoolExecutor(
-            max_workers=self.executor_threads, thread_name_prefix=f"{THREAD_PREFIX}-"
+        executor_service = self._executor_service or DaemonThreadPool(
+            max_workers=self.executor_threads, thread_name_prefix=f"{THREAD_PREFIX}-worker-"
         )
 
         if self._stats_registry is not None:

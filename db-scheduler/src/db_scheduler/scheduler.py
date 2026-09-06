@@ -21,7 +21,6 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -41,6 +40,7 @@ from .executor import (
 )
 from .logging import ConfigurableLogger, LogLevel
 from .poll import FetchCandidates, LockAndFetchCandidates
+from .pool import WorkerPool
 from .scheduled_execution import (
     ScheduledExecution,
     ScheduledExecutionsFilter,
@@ -175,7 +175,7 @@ class Scheduler(SchedulerClient):
         client_task_repository: Any,
         task_resolver: Any,
         threadpool_size: int,
-        executor_service: ThreadPoolExecutor,
+        executor_service: WorkerPool,
         scheduler_name: Any,
         execute_due_waiter: Waiter,
         heartbeat_interval: timedelta,

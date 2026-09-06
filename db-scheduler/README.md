@@ -66,6 +66,19 @@ scheduler.schedule_if_not_exists(send_email.instance("an-id"), now)
 scheduler.run_any_due_executions()      # runs on this thread, and has finished when it returns
 ```
 
+## Shutting down
+
+`stop()` is bounded. It stops polling, waits up to `shutdown_max_wait` for running executions,
+then warns and names anything still going. It never blocks past that, and it never keeps the
+process alive: the worker threads are daemon threads, because Python has no counterpart to
+Java's `Thread.interrupt()` and the interpreter joins every non-daemon thread at exit — so one
+handler that ignores shutdown would otherwise hang the process for ever.
+
+An execution abandoned that way is not lost. It is the same state as the machine losing power:
+the row stays picked, its heartbeat stops, and the next instance to run dead-execution detection
+revives it. Handlers that want to finish cleanly should check
+`context.scheduler_state.is_shutting_down`.
+
 ## Self-contained
 
 Its own `pyproject.toml`, its own dependencies, its own tests. It does not import from `ekbatan`
@@ -98,11 +111,11 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 629 passed, 6 skipped |
-| PostgreSQL 17 | 631 passed, 4 skipped |
-| MySQL 8.4 (LTS) | 631 passed, 4 skipped |
-| MySQL 26.7 (current) | 631 passed, 4 skipped |
-| MariaDB 11.4 | 629 passed, 6 skipped |
+| SQLite | 647 passed, 6 skipped |
+| PostgreSQL 17 | 649 passed, 4 skipped |
+| MySQL 8.4 (LTS) | 649 passed, 4 skipped |
+| MySQL 26.7 (current) | 649 passed, 4 skipped |
+| MariaDB 11.4 | 647 passed, 6 skipped |
 
 Every integration test runs twice per dialect, once for each timestamp shape - zone-less UTC
 columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is

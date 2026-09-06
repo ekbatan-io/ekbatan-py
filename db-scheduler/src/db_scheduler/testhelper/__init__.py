@@ -54,7 +54,7 @@ class DirectExecutorService:
         fn(*args, **kwargs)
         return None
 
-    def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
         """Nothing to shut down."""
 
     def __repr__(self) -> str:
