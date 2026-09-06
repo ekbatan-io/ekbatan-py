@@ -105,7 +105,8 @@ def warn_if_the_connection_pool_is_too_small(engine: Engine, executor_threads: i
         "The connection pool holds at most %d connection(s) but the scheduler runs %d worker "
         "thread(s). If task bodies hold connections, the heartbeat cannot write and running "
         "executions will be declared dead and run a second time by another instance. Give the "
-        "engine at least %d connections (pool_size + max_overflow), or reduce threads().",
+        "engine at least %d connections (pool_size + max_overflow), reduce threads(), or give "
+        "the scheduler an engine of its own so task bodies cannot compete with its heartbeat.",
         capacity,
         executor_threads,
         executor_threads + LOOP_THREADS,

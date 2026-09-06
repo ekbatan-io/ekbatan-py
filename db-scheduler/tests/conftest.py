@@ -44,6 +44,21 @@ IMAGES = {
 }
 
 
+def pytest_configure(config: Any) -> None:
+    config.addinivalue_line(
+        "markers",
+        "skipif_sqlite: skip on SQLite, whose single-writer locking makes pool behaviour a "
+        "test of SQLite rather than of the scheduler",
+    )
+
+
+def pytest_collection_modifyitems(config: Any, items: Any) -> None:
+    skip = pytest.mark.skip(reason="pool behaviour on SQLite tests SQLite, not the scheduler")
+    for item in items:
+        if "skipif_sqlite" in item.keywords and "sqlite" in item.name:
+            item.add_marker(skip)
+
+
 def pytest_addoption(parser: Any) -> None:
     parser.addoption(
         "--dialects",

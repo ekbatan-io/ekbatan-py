@@ -96,16 +96,35 @@ is the same rule SQLAlchemy has for engines, for the same reason. A pool that fi
 forked child refuses work with an explanatory error rather than silently accepting executions
 nobody will ever run.
 
-## Sizing the connection pool
+## Connections
 
-Give the engine **more connections than the scheduler has worker threads**. The heartbeat is how
-a running execution proves it is alive; if every connection is held by a task body, it cannot
-write, and another instance declares the execution dead and runs it again.
+This library does not pool anything. It takes an `Engine` and asks it for connections, the same
+way db-scheduler takes a `DataSource` and asks that — HikariCP is a *test* dependency in
+db-scheduler's own build. How connections are pooled, sized and shared is yours to decide.
 
-Measured with three workers each holding a connection: at capacity 3 *every* execution was
-stolen and run twice; at capacity 4, none were. `threads(n)` warns at startup if the pool cannot
-outnumber it — including with SQLAlchemy's default pool of 15, where `threads(20)` looks
-perfectly reasonable and is not.
+That matters for one specific reason. The heartbeat is how a running execution proves it is
+alive. If task bodies hold every connection in the pool, the heartbeat cannot write, the row's
+timestamp stops moving, and another instance declares the execution dead and **runs it again**.
+
+Measured with three workers each holding a connection:
+
+| | executions run twice |
+| --- | --- |
+| scheduler shares the application's exhausted pool | **3 of 3** |
+| scheduler has an engine of its own | 0 of 3 |
+
+So the recommendation, in order of preference:
+
+```python
+# Best: the scheduler gets its own connections, and task bodies cannot starve it.
+scheduler = create(create_engine(url, pool_size=13)).threads(10).build()
+# ... while the application keeps using its own engine for everything else.
+```
+
+Failing that, size one shared pool above `threads(n)` — the scheduler's poll, heartbeat and
+dead-execution threads each need a connection too, so `threads + 3` is the floor. `build()`
+warns at startup when the pool cannot outnumber the workers, including with SQLAlchemy's default
+pool of 15, where `threads(20)` looks perfectly reasonable and is not.
 
 ## Limits worth knowing
 
@@ -151,11 +170,11 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 732 passed, 6 skipped |
-| PostgreSQL 17 | 734 passed, 4 skipped |
-| MySQL 8.4 (LTS) | 734 passed, 4 skipped |
-| MySQL 26.7 (current) | 734 passed, 4 skipped |
-| MariaDB 11.4 | 732 passed, 6 skipped |
+| SQLite | 732 passed, 10 skipped |
+| PostgreSQL 17 | 738 passed, 4 skipped |
+| MySQL 8.4 (LTS) | 738 passed, 4 skipped |
+| MySQL 26.7 (current) | 738 passed, 4 skipped |
+| MariaDB 11.4 | 736 passed, 6 skipped |
 
 Every integration test runs twice per dialect, once for each timestamp shape - zone-less UTC
 columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is

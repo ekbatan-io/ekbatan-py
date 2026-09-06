@@ -932,3 +932,88 @@ class TestFeaturesEndToEnd:
         with scheduler:
             scheduler.schedule_if_not_exists(first.instance("an-id"), SystemClock().now())
             assert second_ran.wait(PATIENCE), "the second step never ran"
+
+
+@pytest.mark.skipif_sqlite
+class TestGivingTheSchedulerItsOwnConnections:
+    """The remedy for connection starvation, and it is the shape db-scheduler already has.
+
+    db-scheduler takes a `DataSource` and never pools anything itself - HikariCP is a *test*
+    dependency in its own build. Pooling belongs to the client. The Python equivalent of a
+    `DataSource` is an `Engine`, so the same remedy is available: give the scheduler an engine
+    of its own and task bodies can no longer starve its heartbeat.
+
+    Measured here: the application's pool is drained to nothing by task bodies. Sharing it,
+    every execution is stolen and run twice. On a separate engine, none are.
+    """
+
+    WORKERS = 3
+
+    def _run(self, engine_url: str, *, share: bool) -> int:
+        """Returns how many executions were run more than once."""
+        runs: dict[str, int] = {}
+        lock = threading.Lock()
+        started, release = threading.Semaphore(0), threading.Event()
+
+        app_pool = create_engine(engine_url, pool_size=self.WORKERS, max_overflow=0, pool_timeout=2)
+        scheduler_engine = (
+            app_pool if share else create_engine(engine_url, pool_size=self.WORKERS + 3)
+        )
+        hunter_engine = create_engine(engine_url, pool_size=5, max_overflow=5)
+
+        def body(instance: TaskInstance[Any], context: Any) -> None:
+            with lock:
+                runs[instance.id] = runs.get(instance.id, 0) + 1
+            with app_pool.connect():  # a task body doing its own work, holding a connection
+                started.release()
+                release.wait(PATIENCE)
+
+        def a_scheduler(engine: Any, name: str) -> Scheduler:
+            return (
+                create(engine)
+                .add_tasks(Tasks.one_time("hog").execute(body))
+                .threads(self.WORKERS)
+                .polling_interval(timedelta(milliseconds=50))
+                .heartbeat_interval(timedelta(milliseconds=200))
+                .missed_heartbeats_limit(4)
+                .scheduler_name(Fixed(name))
+                .shutdown_max_wait(timedelta(seconds=3))
+                .build()
+            )
+
+        worker, hunter = a_scheduler(scheduler_engine, "worker"), a_scheduler(
+            hunter_engine, "hunter"
+        )
+        worker.schedule_batch(
+            [TaskInstance[Any]("hog", f"{n}") for n in range(self.WORKERS)], SystemClock().now()
+        )
+        try:
+            worker.start()
+            hunter.start()
+            for _ in range(self.WORKERS):
+                assert started.acquire(timeout=PATIENCE), "the workers never all started"
+            # Far past the 800ms dead-threshold, with the hunter looking the whole time.
+            time.sleep(3.0)
+        finally:
+            release.set()
+            time.sleep(0.5)
+            worker.stop()
+            hunter.stop()
+            app_pool.dispose()
+            hunter_engine.dispose()
+            if not share:
+                scheduler_engine.dispose()
+
+        return sum(1 for count in runs.values() if count > 1)
+
+    def test_sharing_an_exhausted_pool_loses_the_heartbeat(
+        self, engine_url: str, table: Any
+    ) -> None:
+        """Stated as a test so the hazard cannot quietly stop being true. The heartbeat needs a
+        connection to say an execution is alive; without one, another instance takes it over."""
+        assert self._run(engine_url, share=True) == self.WORKERS
+
+    def test_a_dedicated_engine_prevents_it_entirely(
+        self, engine_url: str, table: Any
+    ) -> None:
+        assert self._run(engine_url, share=False) == 0
