@@ -44,20 +44,20 @@ whole, makes completeness something you can count rather than something you hope
 | ExecutionTimeAndId | 37 | `scheduled_execution.py` | done |
 | Executor | 83 | `executor.py` | done |
 | ExecutorUtils | 48 | - | n/a - ThreadPoolExecutor.shutdown does this; the thread-name prefix is a factory argument |
-| FetchCandidates | 134 | - | todo |
+| FetchCandidates | 134 | `poll.py` | done |
 | HeartbeatConfig | 13 | `state.py` | done |
 | HeartbeatState | 59 | `state.py` | done |
-| ImmediateCheckForDueExecutions | 34 | - | todo |
-| LockAndFetchCandidates | 96 | - | todo |
+| ImmediateCheckForDueExecutions | 34 | `scheduler.py` | done |
+| LockAndFetchCandidates | 96 | `poll.py` | done |
 | PollStrategy | 2 | `executor.py` | done |
 | PollingStrategyConfig | 42 | `executor.py` | done |
 | Resolvable | 19 | `resolver.py` | done |
-| RunAndLogErrors | 23 | - | todo |
-| RunUntilShutdown | 45 | - | todo |
+| RunAndLogErrors | 23 | `scheduler.py` | done |
+| RunUntilShutdown | 45 | `scheduler.py` | done |
 | ScheduledExecution | 71 | `scheduled_execution.py` | done |
 | ScheduledExecutionsFilter | 55 | `scheduled_execution.py` | done |
-| Scheduler | 404 | - | todo |
-| SchedulerBuilder | 306 | - | todo |
+| Scheduler | 404 | `scheduler.py` | done |
+| SchedulerBuilder | 306 | `builder.py` | done |
 | SchedulerClient | 365 | `client.py` | done |
 | SchedulerName | 41 | `scheduler_name.py` | done |
 | SchedulerState | 39 | `state.py` | done |

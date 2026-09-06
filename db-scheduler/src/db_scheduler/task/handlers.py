@@ -17,6 +17,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
+from ..clock import Clock, SystemClock
 from . import ExecutionComplete, ExecutionContext, Result, TaskInstance
 from .schedule import Schedule
 
@@ -90,11 +91,7 @@ class DeadExecutionHandler[T](Protocol):
     """What to do about a run whose instance stopped answering."""
 
     def dead_execution(
-        self,
-        completion: ExecutionComplete,
-        operations: ExecutionOperationsLike,
-        *,
-        now: datetime,
+        self, completion: ExecutionComplete, operations: ExecutionOperationsLike
     ) -> None: ...
 
 
@@ -442,17 +439,21 @@ class ReviveDeadExecution[T]:
     The default, and the right one for work that is safe to repeat - which is what a
     distributed job is required to be. An instance that died holding a row would otherwise
     leave it picked forever.
+
+    Java reads `Instant.now()` inside the method. The clock is a constructor argument here
+    instead, so a test can decide what "now" is without patching the standard library - the
+    signature the scheduler calls is unchanged.
     """
 
-    __slots__ = ()
+    __slots__ = ("_clock",)
+
+    def __init__(self, clock: Clock | None = None) -> None:
+        self._clock = clock or SystemClock()
 
     def dead_execution(
-        self,
-        completion: ExecutionComplete,
-        operations: ExecutionOperationsLike,
-        *,
-        now: datetime,
+        self, completion: ExecutionComplete, operations: ExecutionOperationsLike
     ) -> None:
+        now = self._clock.now()
         LOG.info("Reviving dead execution: %s to %s", completion.execution, now.isoformat())
         operations.reschedule(completion, now)
 
@@ -466,11 +467,7 @@ class CancelDeadExecution[T]:
     __slots__ = ()
 
     def dead_execution(
-        self,
-        completion: ExecutionComplete,
-        operations: ExecutionOperationsLike,
-        *,
-        now: datetime,
+        self, completion: ExecutionComplete, operations: ExecutionOperationsLike
     ) -> None:
         LOG.warning("Cancelling dead execution: %s", completion.execution)
         operations.stop()

@@ -1,0 +1,459 @@
+"""The `Scheduler`, end to end: a real table, real threads, real work.
+
+These are the tests that say the library does its job. Everything else checks a piece; these
+check that a task scheduled on one side comes out the other, that a machine dying does not
+strand its work, and that two schedulers over one table run each execution once.
+"""
+
+from __future__ import annotations
+
+import sys
+import threading
+import time
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from db_scheduler.builder import SchedulerBuilder, create
+from db_scheduler.clock import SettableClock, SystemClock
+from db_scheduler.event import AbstractSchedulerListener, SchedulerEventType
+from db_scheduler.executor import PollingStrategyConfig
+from db_scheduler.logging import LogLevel
+from db_scheduler.scheduler import Scheduler
+from db_scheduler.scheduler_name import Fixed
+from db_scheduler.task import TaskInstance, TaskInstanceId
+from db_scheduler.task.handlers import CancelDeadExecution
+from db_scheduler.task.helper import Tasks
+from db_scheduler.task.schedule import FixedDelay
+
+NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+#: Real threads need a real bound. Long enough not to flake on a loaded machine, short enough
+#: that a genuine hang fails the run rather than stalling it.
+PATIENCE = 10.0
+
+
+def wait_until(predicate: Any, patience: float = PATIENCE, what: str = "condition") -> None:
+    deadline = time.monotonic() + patience
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"{what} never became true within {patience}s")
+
+
+class Recording(AbstractSchedulerListener):
+    def __init__(self) -> None:
+        self.events: list[SchedulerEventType] = []
+        self.dead: list[Any] = []
+
+    def on_scheduler_event(self, event_type: SchedulerEventType) -> None:
+        self.events.append(event_type)
+
+    def on_execution_dead(self, execution: Any) -> None:
+        self.dead.append(execution)
+
+
+@pytest.fixture
+def builder(engine: Any, table: Any) -> SchedulerBuilder:
+    """A scheduler over the same table the repository fixture created.
+
+    Polling fast on purpose: these tests are about what happens across a poll, and ten seconds
+    of the production default would only make them slow.
+    """
+    return (
+        create(engine)
+        .table_name(table.name)
+        .threads(2)
+        .polling_interval(timedelta(milliseconds=50))
+        .heartbeat_interval(timedelta(seconds=1))
+        .scheduler_name(Fixed("test-scheduler"))
+        .shutdown_max_wait(timedelta(seconds=5))
+        .failure_logging(LogLevel.DEBUG, False)
+    )
+
+
+class TestRunningWork:
+    def test_a_scheduled_task_runs(self, builder: SchedulerBuilder) -> None:
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert ran.wait(PATIENCE), "the task should have run"
+
+    def test_its_row_is_gone_afterwards(self, builder: SchedulerBuilder) -> None:
+        """A one-time task is done when it is done, and the row is what would run it again."""
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert ran.wait(PATIENCE)
+            wait_until(
+                lambda: scheduler.get_scheduled_executions() == [],
+                what="the row being removed",
+            )
+
+    def test_the_data_reaches_the_task(self, builder: SchedulerBuilder) -> None:
+        seen: list[Any] = []
+        done = threading.Event()
+
+        def note(instance: TaskInstance[Any], context: Any) -> None:
+            seen.append(instance.data)
+            done.set()
+
+        task = Tasks.one_time("a-task", dict).execute(note)
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(
+                task.instance("an-id", {"customer": 42}), SystemClock().now()
+            )
+            assert done.wait(PATIENCE)
+
+        assert seen == [{"customer": 42}]
+
+    def test_a_failing_task_is_rescheduled_rather_than_lost(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        attempted = threading.Event()
+
+        def explode(instance: Any, context: Any) -> None:
+            attempted.set()
+            raise RuntimeError("boom")
+
+        task = (
+            Tasks.one_time("a-task")
+            .on_failure_retry_later(timedelta(hours=1))
+            .execute(explode)
+        )
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert attempted.wait(PATIENCE)
+            wait_until(
+                lambda: bool(scheduler.get_scheduled_executions()),
+                what="the row being rescheduled rather than removed",
+            )
+
+        [found] = scheduler.get_scheduled_executions()
+        assert found.consecutive_failures == 1
+        assert found.execution_time > SystemClock().now()
+
+    def test_a_recurring_task_schedules_itself_at_startup(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        """Which is what makes it safe to deploy the same code to twenty machines."""
+        ran = threading.Event()
+        task = Tasks.recurring("a-task", FixedDelay.of(timedelta(hours=1))).execute(
+            lambda instance, context: ran.set()
+        )
+        scheduler = builder.add_start_tasks(task).build()
+
+        with scheduler:
+            assert ran.wait(PATIENCE)
+            wait_until(
+                lambda: bool(scheduler.get_scheduled_executions()),
+                what="the recurring row being rescheduled",
+            )
+
+        [found] = scheduler.get_scheduled_executions()
+        assert found.task_instance.id == "recurring"
+
+    def test_many_tasks_all_run(self, builder: SchedulerBuilder) -> None:
+        done = threading.Semaphore(0)
+        task = Tasks.one_time("a-task").execute(lambda instance, context: done.release())
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.schedule_batch(
+                [task.instance(f"{n}") for n in range(20)], SystemClock().now()
+            )
+            for _ in range(20):
+                assert done.acquire(timeout=PATIENCE), "every one of them should have run"
+
+
+class TestImmediateExecution:
+    def test_work_scheduled_for_now_does_not_wait_out_the_poll(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        """The difference between "instant" and "up to ten seconds" for a request handler that
+        schedules a job and expects it to start."""
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        scheduler = (
+            builder.add_tasks(task)
+            .polling_interval(timedelta(seconds=30))
+            .enable_immediate_execution()
+            .build()
+        )
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert ran.wait(PATIENCE), "should not have waited 30s for the next poll"
+
+
+class TestDeadExecutions:
+    def test_an_abandoned_execution_is_revived(self, builder: SchedulerBuilder) -> None:
+        """The machine that picked it died. Nothing will ever complete that row, and without
+        this it stays picked for ever."""
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        listener = Recording()
+        scheduler = (
+            builder.add_tasks(task)
+            .heartbeat_interval(timedelta(milliseconds=100))
+            .missed_heartbeats_limit(4)
+            .add_scheduler_listener(listener)
+            .build()
+        )
+        repository = scheduler.scheduler_task_repository
+
+        # A row picked by an instance that then vanished: picked, with a heartbeat from long ago.
+        scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+        [execution] = repository.get_due(SystemClock().now(), limit=10)
+        repository.pick(execution, SystemClock().now() - timedelta(hours=1))
+
+        with scheduler:
+            assert ran.wait(PATIENCE), "another instance should have taken it over"
+
+        assert listener.dead, "and it should have been reported as dead"
+
+    def test_a_task_can_refuse_to_be_revived(self, builder: SchedulerBuilder) -> None:
+        """For work that is not safe to repeat - a payment, say - `CancelDeadExecution` drops
+        the row instead of running it a second time."""
+        task = (
+            Tasks.one_time("a-task")
+            .on_dead_execution(CancelDeadExecution())
+            .execute(lambda instance, context: None)
+        )
+        scheduler = (
+            builder.add_tasks(task)
+            .heartbeat_interval(timedelta(milliseconds=100))
+            .missed_heartbeats_limit(4)
+            .build()
+        )
+        repository = scheduler.scheduler_task_repository
+
+        scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+        [execution] = repository.get_due(SystemClock().now(), limit=10)
+        repository.pick(execution, SystemClock().now() - timedelta(hours=1))
+
+        with scheduler:
+            wait_until(
+                lambda: scheduler.get_scheduled_executions(
+                    __import__(
+                        "db_scheduler.scheduled_execution", fromlist=["x"]
+                    ).ScheduledExecutionsFilter.all()
+                )
+                == [],
+                what="the row being cancelled rather than rerun",
+            )
+
+    def test_unresolvable_rows_are_deleted_after_the_grace_period(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        """Fourteen days by default. A name unresolvable during a deploy comes back; one
+        unresolvable for a fortnight is dead code whose rows will never run."""
+        task = Tasks.one_time("a-task").execute(lambda instance, context: None)
+        scheduler = (
+            builder.add_tasks(task).delete_unresolved_after(timedelta(seconds=0)).build()
+        )
+        repository = scheduler.scheduler_task_repository
+        scheduler.schedule_if_not_exists(TaskInstance[Any]("gone-task", "an-id"), NOW)
+
+        repository.get_due(SystemClock().now(), limit=10)  # notices the unresolvable name
+        assert repository.task_resolver.is_unresolved("gone-task")
+
+        scheduler.detect_dead_executions()
+
+        assert repository.get_execution("gone-task", "an-id") is None
+
+
+class TestHeartbeats:
+    def test_a_running_execution_is_kept_alive(self, builder: SchedulerBuilder) -> None:
+        """Otherwise a task that runs longer than the dead-threshold would be taken over while
+        it is still working, and run twice."""
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow(instance: Any, context: Any) -> None:
+            started.set()
+            release.wait(PATIENCE)
+
+        task = Tasks.one_time("a-task").execute(slow)
+        scheduler = (
+            builder.add_tasks(task).heartbeat_interval(timedelta(milliseconds=100)).build()
+        )
+        repository = scheduler.scheduler_task_repository
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert started.wait(PATIENCE)
+
+            first = repository.get_execution("a-task", "an-id")
+            assert first is not None
+            wait_until(
+                lambda: (repository.get_execution("a-task", "an-id") or first).last_heartbeat
+                > first.last_heartbeat,
+                what="the heartbeat moving",
+            )
+            release.set()
+
+    def test_currently_executing_is_visible(self, builder: SchedulerBuilder) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow(instance: Any, context: Any) -> None:
+            started.set()
+            release.wait(PATIENCE)
+
+        task = Tasks.one_time("a-task").execute(slow)
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert started.wait(PATIENCE)
+
+            [running] = scheduler.currently_executing
+            assert running.task_instance.id == "an-id"
+            assert running.duration >= timedelta()
+            release.set()
+
+
+class TestPauseAndResume:
+    def test_a_paused_scheduler_runs_nothing(self, builder: SchedulerBuilder) -> None:
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        scheduler = builder.add_tasks(task).build()
+
+        with scheduler:
+            scheduler.pause()
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+
+            assert not ran.wait(0.5), "nothing should run while paused"
+
+            scheduler.resume()
+            assert ran.wait(PATIENCE), "and it should run once resumed"
+
+
+class TestTwoSchedulers:
+    def test_each_execution_runs_exactly_once(self, builder: SchedulerBuilder, engine: Any, table: Any) -> None:
+        """The point of the whole library. Two instances over one table, and no row runs twice."""
+        ran: list[str] = []
+        lock = threading.Lock()
+        done = threading.Semaphore(0)
+
+        def note(instance: TaskInstance[Any], context: Any) -> None:
+            with lock:
+                ran.append(instance.id)
+            done.release()
+
+        def a_scheduler(name: str) -> Scheduler:
+            task = Tasks.one_time("a-task").execute(note)
+            return (
+                create(engine)
+                .table_name(table.name)
+                .threads(4)
+                .polling_interval(timedelta(milliseconds=20))
+                .heartbeat_interval(timedelta(seconds=5))
+                .scheduler_name(Fixed(name))
+                .shutdown_max_wait(timedelta(seconds=5))
+                .add_tasks(task)
+                .build()
+            )
+
+        one, two = a_scheduler("one"), a_scheduler("two")
+        one.schedule_batch(
+            [TaskInstance[Any]("a-task", f"{n}") for n in range(30)], SystemClock().now()
+        )
+
+        with one, two:
+            for _ in range(30):
+                assert done.acquire(timeout=PATIENCE), "every row should have run"
+            # Give any duplicate a chance to show up before asserting there is none.
+            time.sleep(0.5)
+
+        assert sorted(ran) == sorted(f"{n}" for n in range(30))
+        assert len(ran) == len(set(ran)), f"an execution ran twice: {ran}"
+
+
+class TestLockAndFetch:
+    def test_it_runs_work_where_the_dialect_supports_it(
+        self, builder: SchedulerBuilder, repository: Any
+    ) -> None:
+        if not repository.customization.supports_lock_and_fetch:
+            pytest.skip(f"{repository.customization.name} cannot lock-and-fetch")
+
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        scheduler = builder.add_tasks(task).poll_using_lock_and_fetch(0.5, 1.0).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert ran.wait(PATIENCE)
+
+    def test_it_is_refused_where_the_dialect_cannot(
+        self, builder: SchedulerBuilder, repository: Any
+    ) -> None:
+        """Refused rather than emulated: an emulation would be a claim that does not hold."""
+        if repository.customization.supports_lock_and_fetch:
+            pytest.skip(f"{repository.customization.name} can lock-and-fetch")
+
+        task = Tasks.one_time("a-task").execute(lambda instance, context: None)
+
+        with pytest.raises(Exception, match=r"(?i)lock.and.fetch|skip locked"):
+            builder.add_tasks(task).poll_using_lock_and_fetch(0.5, 1.0).build()
+
+
+class TestLifecycle:
+    def test_stopping_twice_is_harmless(self, builder: SchedulerBuilder) -> None:
+        scheduler = builder.build()
+        scheduler.start()
+
+        scheduler.stop()
+        scheduler.stop()
+
+    def test_the_state_reads_back(self, builder: SchedulerBuilder) -> None:
+        scheduler = builder.build()
+
+        assert scheduler.scheduler_state.is_started is False
+        scheduler.start()
+        assert scheduler.scheduler_state.is_started is True
+        scheduler.stop()
+        assert scheduler.scheduler_state.is_shutting_down is True
+
+    def test_a_scheduler_is_also_a_client(self, builder: SchedulerBuilder) -> None:
+        """So a worker can schedule follow-up work without a second object."""
+        task = Tasks.one_time("a-task").execute(lambda instance, context: None)
+        scheduler = builder.add_tasks(task).build()
+
+        scheduler.schedule_if_not_exists(task.instance("an-id"), NOW)
+
+        assert scheduler.get_scheduled_execution(TaskInstanceId("a-task", "an-id")) is not None
+
+
+class TestBuilderValidation:
+    def test_the_heartbeat_limit_has_a_floor(self, builder: SchedulerBuilder) -> None:
+        """Below four, one slow write can have a running execution declared dead - and then two
+        instances are running the same work."""
+        with pytest.raises(ValueError, match="at least 4"):
+            builder.missed_heartbeats_limit(3)
+
+    def test_the_polling_strategy_defaults_to_fetch(self, builder: SchedulerBuilder) -> None:
+        assert builder.polling_strategy_config.type is PollingStrategyConfig.Type.FETCH
+
+    def test_a_clock_can_be_substituted(self, builder: SchedulerBuilder) -> None:
+        clock = SettableClock(NOW)
+
+        scheduler = builder.clock(clock).build()
+
+        assert scheduler.clock is clock
