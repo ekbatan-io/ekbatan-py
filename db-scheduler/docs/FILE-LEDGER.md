@@ -41,7 +41,7 @@ whole, makes completeness something you can count rather than something you hope
 | DueExecutionsBatch | 51 | - | todo |
 | ExceptionUtils | 12 | - | todo |
 | ExecutePicked | 148 | - | todo |
-| ExecutionTimeAndId | 37 | - | todo |
+| ExecutionTimeAndId | 37 | `scheduled_execution.py` | done |
 | Executor | 83 | - | todo |
 | ExecutorUtils | 48 | - | todo |
 | FetchCandidates | 134 | - | todo |
@@ -54,8 +54,8 @@ whole, makes completeness something you can count rather than something you hope
 | Resolvable | 19 | `resolver.py` | done |
 | RunAndLogErrors | 23 | - | todo |
 | RunUntilShutdown | 45 | - | todo |
-| ScheduledExecution | 71 | - | todo |
-| ScheduledExecutionsFilter | 55 | - | todo |
+| ScheduledExecution | 71 | `scheduled_execution.py` | done |
+| ScheduledExecutionsFilter | 55 | `scheduled_execution.py` | done |
 | Scheduler | 404 | - | todo |
 | SchedulerBuilder | 306 | - | todo |
 | SchedulerClient | 365 | - | todo |
@@ -66,7 +66,7 @@ whole, makes completeness something you can count rather than something you hope
 | SystemClock | 8 | `clock.py` | done |
 | TaskRepository | 66 | `jdbc/repository.py` | partial |
 | TaskResolver | 79 | `resolver.py` | done |
-| TaskSummary | 12 | - | todo |
+| TaskSummary | 12 | `scheduled_execution.py` | done |
 | Waiter | 77 | - | todo |
 | **`scheduler/concurrent`** | | | |
 | LoggingRunnable | 15 | - | todo |
@@ -152,7 +152,7 @@ whole, makes completeness something you can count rather than something you hope
 | RescheduleUpdate | 50 | - | todo |
 | SchedulableInstance | 46 | `task/__init__.py` | done |
 | SchedulableTaskInstance | 22 | `task/__init__.py` | done |
-| ScheduledTaskInstance | 31 | - | todo |
+| ScheduledTaskInstance | 31 | `task/__init__.py` | done |
 | StateReturningExecutionHandler | 4 | `task/__init__.py` | done |
 | Task | 23 | `task/helper.py` | done |
 | TaskDescriptor | 33 | `task/__init__.py` | done |

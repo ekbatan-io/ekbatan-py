@@ -25,6 +25,7 @@ __all__ = [
     "Result",
     "SchedulableInstance",
     "SchedulableTaskInstance",
+    "ScheduledTaskInstance",
     "SimpleTaskName",
     "StateReturningExecutionHandler",
     "TaskDescriptor",
@@ -272,6 +273,59 @@ class SchedulableTaskInstance[T = Any](SchedulableInstance[T]):
 
     def __repr__(self) -> str:
         return f"SchedulableTaskInstance({self._task_instance!r})"
+
+
+class ScheduledTaskInstance:
+    """An instance whose execution time has been decided.
+
+    The difference from `SchedulableInstance` is the whole reason it exists: that one holds a
+    *function* of now, this one holds an instant. Everything written to the table goes through
+    here, so that a batch of a thousand rows shares one reading of the clock instead of taking
+    a thousand slightly different ones.
+    """
+
+    __slots__ = ("execution_time", "task_instance")
+
+    def __init__(self, task_instance: TaskInstance[Any], execution_time: datetime) -> None:
+        self.task_instance = task_instance
+        self.execution_time = execution_time
+
+    @classmethod
+    def fix_execution_time(
+        cls, schedulable_instance: SchedulableInstance[Any], clock: Any
+    ) -> ScheduledTaskInstance:
+        return cls(
+            schedulable_instance.task_instance,
+            schedulable_instance.next_execution_time(clock.now()),
+        )
+
+    @property
+    def task_name(self) -> str:
+        return self.task_instance.task_name
+
+    @property
+    def id(self) -> str:
+        return self.task_instance.id
+
+    def to_id(self) -> TaskInstanceId:
+        return self.task_instance.to_id()
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ScheduledTaskInstance):
+            return NotImplemented
+        return (
+            self.task_instance == other.task_instance
+            and self.execution_time == other.execution_time
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.task_instance, self.execution_time))
+
+    def __repr__(self) -> str:
+        return (
+            f"ScheduledTaskInstance(task={self.task_name}, id={self.id}, "
+            f"execution_time={self.execution_time.isoformat()})"
+        )
 
 
 @dataclass(slots=True)
