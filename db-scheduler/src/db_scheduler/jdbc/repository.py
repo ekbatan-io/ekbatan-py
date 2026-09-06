@@ -73,7 +73,11 @@ class JdbcTaskRepository:
         self.scheduler_name = scheduler_name[:PICKED_BY_MAX]
         self.clock = clock or SystemClock()
         self.order_by_priority = order_by_priority
-        self.customization = customization or autodetect(engine.dialect.name)
+        self.customization = customization or autodetect(
+            engine.dialect.name,
+            getattr(engine.dialect, "server_version_info", None),
+            persist_timestamp_in_utc,
+        )
 
         if table is not None:
             self.table = table
@@ -471,8 +475,12 @@ class JdbcTaskRepository:
             else (table.c.execution_time.asc(),)
         )
         candidates = (
-            select(table.c.task_name, table.c.task_instance)
-            .where(table.c.picked == False, table.c.execution_time <= self._bind(now))  # noqa: E712
+            self._excluding_unresolved(
+                select(table.c.task_name, table.c.task_instance).where(
+                    table.c.picked == False,  # noqa: E712
+                    table.c.execution_time <= self._bind(now),
+                )
+            )
             .order_by(*order)
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -492,8 +500,10 @@ class JdbcTaskRepository:
             .returning(table)
         )
         with self.engine.begin() as conn:
-            # Unresolved rows are included here on purpose: they have just been picked by the
-            # same statement, and something has to unpick them.
+            # Unresolved rows are included here on purpose. The exclusion above only knows the
+            # names seen *before*, so a name unresolvable for the first time is picked by this
+            # statement - and leaving it picked would strand the row until the dead-execution
+            # detector got to it.
             all_candidates = self._to_executions(
                 conn.execute(statement), include_unresolved=True
             )

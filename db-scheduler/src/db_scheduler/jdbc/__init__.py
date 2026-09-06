@@ -11,23 +11,35 @@ the package is about the same thing: everything that knows what the database loo
 from __future__ import annotations
 
 from .customization import (
+    AutodetectJdbcCustomization,
     DefaultJdbcCustomization,
     JdbcCustomization,
     MariaDBJdbcCustomization,
+    MssqlJdbcCustomization,
+    MySQL8JdbcCustomization,
+    MySQLBaseJdbcCustomization,
     MySQLJdbcCustomization,
+    OracleJdbcCustomization,
     PostgreSqlJdbcCustomization,
     SqliteJdbcCustomization,
     autodetect,
 )
+from .execution_update import ExecutionUpdate
 from .repository import JdbcTaskRepository
 from .schema import scheduled_tasks_table
 
 __all__ = [
+    "AutodetectJdbcCustomization",
     "DefaultJdbcCustomization",
+    "ExecutionUpdate",
     "JdbcCustomization",
     "JdbcTaskRepository",
     "MariaDBJdbcCustomization",
+    "MssqlJdbcCustomization",
+    "MySQL8JdbcCustomization",
+    "MySQLBaseJdbcCustomization",
     "MySQLJdbcCustomization",
+    "OracleJdbcCustomization",
     "PostgreSqlJdbcCustomization",
     "SqliteJdbcCustomization",
     "autodetect",

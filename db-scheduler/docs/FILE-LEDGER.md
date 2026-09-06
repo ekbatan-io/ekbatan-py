@@ -96,13 +96,13 @@ whole, makes completeness something you can count rather than something you hope
 | JdbcTaskRepository | 972 | `jdbc/repository.py` | done |
 | JdbcTaskRepositoryContext | 27 | `jdbc/repository.py` | done - the repository passes itself; no context object needed |
 | MariaDBJdbcCustomization | 27 | `jdbc/customization.py` | done |
-| MssqlJdbcCustomization | 48 | - | n/a - MSSQL is not a dialect this port claims |
+| MssqlJdbcCustomization | 48 | `jdbc/customization.py` | done - untested; no container for it here |
 | MySQL8JdbcCustomization | 27 | `jdbc/customization.py` | done |
-| MySQLBaseJdbcCustomization | 39 | - | todo |
-| MySQLJdbcCustomization | 10 | - | todo |
-| OracleJdbcCustomization | 27 | - | n/a - Oracle is not a dialect this port claims |
+| MySQLBaseJdbcCustomization | 39 | `jdbc/customization.py` | done |
+| MySQLJdbcCustomization | 10 | `jdbc/customization.py` | done |
+| OracleJdbcCustomization | 27 | `jdbc/customization.py` | done - untested; no container for it here |
 | PostgreSqlJdbcCustomization | 77 | `jdbc/customization.py` | done |
-| Queries | 33 | - | todo |
+| Queries | 33 | - | n/a - SQLAlchemy builds the SQL; the dialect differences it encodes are properties on the customization |
 | QueryBuilder | 58 | `jdbc/repository.py` | done - `select()` is the query builder |
 | SqliteJdbcCustomization | 15 | `jdbc/customization.py` | done |
 | **`scheduler/logging`** | | | |
@@ -116,20 +116,20 @@ whole, makes completeness something you can count rather than something you hope
 | Serializer | 6 | `serializer/__init__.py` | done |
 | SerializerWithFallbackDeserializers | 27 | - | n/a - only needed to migrate off JavaSerializer |
 | **`scheduler/serializer/gson`** | | | |
-| DurationAdapter | 16 | - | todo |
-| InstantAdapter | 18 | - | todo |
-| LocalTimeAdapter | 20 | - | todo |
-| RuntimeTypeAdapterFactory | 138 | - | todo |
-| ZoneIdAdapter | 16 | - | todo |
+| DurationAdapter | 16 | `serializer/__init__.py` | done - milliseconds, as Gson writes them |
+| InstantAdapter | 18 | `serializer/__init__.py` | done - ISO-8601 |
+| LocalTimeAdapter | 20 | `serializer/__init__.py` | done - ISO, not Java's localized short form, which is not a wire format |
+| RuntimeTypeAdapterFactory | 138 | `serializer/__init__.py` | done - as above |
+| ZoneIdAdapter | 16 | `serializer/__init__.py` | done - the zone id string |
 | **`scheduler/serializer/jackson`** | | | |
 | InstantDeserializer | 19 | - | todo |
 | InstantSerializer | 22 | - | todo |
-| ScheduleMixin | 19 | - | todo |
+| ScheduleMixin | 19 | `serializer/__init__.py` | done - the tagged shape, written by hand |
 | **`scheduler/serializer/jackson3`** | | | |
 | InstantDeserializer | 12 | - | todo |
 | InstantSerializer | 15 | - | todo |
 | **`scheduler/stats`** | | | |
-| MicrometerStatsRegistry | 98 | - | todo |
+| MicrometerStatsRegistry | 98 | - | n/a - Micrometer is Java; the Python equivalent is the user's choice of client |
 | StatsRegistry | 40 | `stats/__init__.py` | done |
 | StatsRegistryAdapter | 49 | `stats/adapter.py` | done |
 | **`scheduler/task`** | | | |
@@ -145,7 +145,7 @@ whole, makes completeness something you can count rather than something you hope
 | FailureHandler | 187 | `task/handlers.py` | done |
 | HasTaskName | 17 | `task/__init__.py` | done |
 | MaxRetriesExceededListener | 17 | `task/handlers.py` | done |
-| NewValue | 3 | - | todo |
+| NewValue | 3 | `task/__init__.py` | done |
 | NextExecutionTime | 10 | `task/__init__.py` | done - a `Callable` alias; a one-method interface has no class to be |
 | OnStartup | 6 | `task/__init__.py` | done |
 | Priority | 6 | `task/__init__.py` | done |
