@@ -200,7 +200,8 @@ class FakeRepository:
 
     def replace(self, to_be_replaced: Execution, new_instance: Any) -> datetime:
         self.replaced.append(new_instance)
-        return new_instance.execution_time
+        moment: datetime = new_instance.execution_time
+        return moment
 
 
 class RecordingListeners(SchedulerListeners):
