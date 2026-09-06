@@ -41,12 +41,21 @@ jobs:
     # db-scheduler proves its repository against every database it claims to support, with one
     # CompatibilityTest per dialect. This is that, and it is where the claim actually rests -
     # SQLite keeps the inner loop fast and proves nothing about MySQL's locking.
-    name: compatibility (${{ matrix.dialect }})
+    #
+    # MySQL runs twice on purpose. 8.4 is the LTS most deployments are on; 26.x is the current
+    # release, and it is where a change in behaviour would show up first. They exercise
+    # different branches of the version check in AutodetectJdbcCustomization, so a regression in
+    # either would otherwise be invisible.
+    name: compatibility (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        dialect: [postgres, mysql, mariadb]
+        include:
+          - { name: postgres 17, dialect: postgres, image: "postgres:17-alpine" }
+          - { name: mysql 8.4 LTS, dialect: mysql, image: "mysql:8.4" }
+          - { name: mysql 26.7, dialect: mysql, image: "mysql:26.7" }
+          - { name: mariadb 11.4, dialect: mariadb, image: "mariadb:11.4" }
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -55,6 +64,6 @@ jobs:
       - run: uv run pytest tests/integration --dialects=${{ matrix.dialect }}
         env:
           # Pinned, so a base-image change is a commit rather than a surprise.
-          DB_SCHEDULER_POSTGRES_IMAGE: postgres:17-alpine
-          DB_SCHEDULER_MYSQL_IMAGE: mysql:8.4
-          DB_SCHEDULER_MARIADB_IMAGE: mariadb:11.4
+          DB_SCHEDULER_POSTGRES_IMAGE: ${{ matrix.image }}
+          DB_SCHEDULER_MYSQL_IMAGE: ${{ matrix.image }}
+          DB_SCHEDULER_MARIADB_IMAGE: ${{ matrix.image }}

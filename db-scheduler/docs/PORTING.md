@@ -56,10 +56,16 @@ All four dialects, whole suite, every commit:
 
 | dialect | image | result |
 | --- | --- | --- |
-| SQLite | in-process | 503 passed, 3 skipped |
-| PostgreSQL | `postgres:17-alpine` | 504 passed, 2 skipped |
-| MySQL | `mysql:8.4` | 504 passed, 2 skipped |
-| MariaDB | `mariadb:11.4` | 503 passed, 3 skipped |
+| SQLite | in-process | 504 passed, 3 skipped |
+| PostgreSQL | `postgres:17-alpine` | 505 passed, 2 skipped |
+| MySQL LTS | `mysql:8.4` | 505 passed, 2 skipped |
+| MySQL current | `mysql:26.7` | 505 passed, 2 skipped |
+| MariaDB | `mariadb:11.4` | 504 passed, 3 skipped |
+
+MySQL runs twice on purpose. 8.4 is the LTS most deployments are on; 26.7 is the current release
+- MySQL left semantic versioning after 9.4, so the major number jumped to a calendar year. The
+two take different branches of the version check in `AutodetectJdbcCustomization`, and only the
+26.x lane would catch a check written as `major == 8`.
 
 The skips are the lock-and-fetch contract on the dialects that cannot do
 `SELECT ... FOR UPDATE SKIP LOCKED`, and one test that asserts the *refusal* on those - so the

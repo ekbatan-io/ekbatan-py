@@ -98,10 +98,11 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 503 passed, 3 skipped |
-| PostgreSQL 17 | 504 passed, 2 skipped |
-| MySQL 8.4 | 504 passed, 2 skipped |
-| MariaDB 11.4 | 503 passed, 3 skipped |
+| SQLite | 504 passed, 3 skipped |
+| PostgreSQL 17 | 505 passed, 2 skipped |
+| MySQL 8.4 (LTS) | 505 passed, 2 skipped |
+| MySQL 26.7 (current) | 505 passed, 2 skipped |
+| MariaDB 11.4 | 504 passed, 3 skipped |
 
 The skips are lock-and-fetch on the dialects that have no `SELECT ... FOR UPDATE SKIP LOCKED`,
 plus the test asserting the refusal on those — so the counts differ by exactly the dialects'

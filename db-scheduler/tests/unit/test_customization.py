@@ -136,6 +136,14 @@ class TestAutodetect:
         assert autodetect("mysql", (5, 7, 40)).name == "MySQL < v8"
         assert autodetect("mysql", (8, 4, 0)).name == "MySQL => v8"
 
+    def test_mysqls_calendar_versions_are_on_the_modern_side(self) -> None:
+        """MySQL left semantic versioning after 9: the release after 9.4 is 26.7. A check
+        written as `major == 8` rather than `major >= 8` would have silently dropped
+        lock-and-fetch on every current release."""
+        assert autodetect("mysql", (9, 4, 0)).name == "MySQL => v8"
+        assert autodetect("mysql", (26, 7, 0)).name == "MySQL => v8"
+        assert autodetect("mysql", (26, 7, 0)).supports_generic_lock_and_fetch is True
+
     def test_an_unknown_mysql_version_is_assumed_to_be_modern(self) -> None:
         """8 has been current since 2018; assuming 5 would silently disable lock-and-fetch."""
         assert autodetect("mysql", None).name == "MySQL => v8"
