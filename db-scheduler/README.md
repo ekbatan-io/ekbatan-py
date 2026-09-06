@@ -98,11 +98,15 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 504 passed, 3 skipped |
-| PostgreSQL 17 | 505 passed, 2 skipped |
-| MySQL 8.4 (LTS) | 505 passed, 2 skipped |
-| MySQL 26.7 (current) | 505 passed, 2 skipped |
-| MariaDB 11.4 | 504 passed, 3 skipped |
+| SQLite | 629 passed, 6 skipped |
+| PostgreSQL 17 | 631 passed, 4 skipped |
+| MySQL 8.4 (LTS) | 631 passed, 4 skipped |
+| MySQL 26.7 (current) | 631 passed, 4 skipped |
+| MariaDB 11.4 | 629 passed, 6 skipped |
+
+Every integration test runs twice per dialect, once for each timestamp shape - zone-less UTC
+columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is
+an hour's silent drift rather than an error, so both are exercised rather than assumed.
 
 The skips are lock-and-fetch on the dialects that have no `SELECT ... FOR UPDATE SKIP LOCKED`,
 plus the test asserting the refusal on those — so the counts differ by exactly the dialects'

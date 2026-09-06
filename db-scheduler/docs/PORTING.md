@@ -56,11 +56,16 @@ All four dialects, whole suite, every commit:
 
 | dialect | image | result |
 | --- | --- | --- |
-| SQLite | in-process | 504 passed, 3 skipped |
-| PostgreSQL | `postgres:17-alpine` | 505 passed, 2 skipped |
-| MySQL LTS | `mysql:8.4` | 505 passed, 2 skipped |
-| MySQL current | `mysql:26.7` | 505 passed, 2 skipped |
-| MariaDB | `mariadb:11.4` | 504 passed, 3 skipped |
+| SQLite | in-process | 629 passed, 6 skipped |
+| PostgreSQL | `postgres:17-alpine` | 631 passed, 4 skipped |
+| MySQL LTS | `mysql:8.4` | 631 passed, 4 skipped |
+| MySQL current | `mysql:26.7` | 631 passed, 4 skipped |
+| MariaDB | `mariadb:11.4` | 629 passed, 6 skipped |
+
+Every integration test runs twice per dialect, once for each timestamp shape:
+`persist_timestamp_in_utc=True` (zone-less columns holding UTC) and `False` (zoned columns,
+which is db-scheduler's own default and therefore the shape of a table a Java instance created).
+Reading a table in the wrong shape is an hour's silent drift, not an error.
 
 MySQL runs twice on purpose. 8.4 is the LTS most deployments are on; 26.7 is the current release
 - MySQL left semantic versioning after 9.4, so the major number jumped to a calendar year. The

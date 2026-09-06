@@ -7,6 +7,7 @@ strand its work, and that two schedulers over one table run each execution once.
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 import time
@@ -457,3 +458,95 @@ class TestBuilderValidation:
         scheduler = builder.clock(clock).build()
 
         assert scheduler.clock is clock
+
+
+class TestShutdownIsBounded:
+    """Shutdown must terminate. Python cannot interrupt a running thread, so a handler that
+    ignores `is_shutting_down` runs to completion - and the only safe design is to wait a
+    bounded time and then *report* it, never to block for ever."""
+
+    def test_a_hanging_task_does_not_block_stop_for_ever(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        started, never = threading.Event(), threading.Event()
+
+        def hangs(instance: Any, context: Any) -> None:
+            started.set()
+            never.wait(60)
+
+        task = Tasks.one_time("a-task").execute(hangs)
+        scheduler = (
+            builder.add_tasks(task).threads(1).shutdown_max_wait(timedelta(seconds=1)).build()
+        )
+        try:
+            scheduler.start()
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert started.wait(PATIENCE)
+
+            stopped = threading.Event()
+
+            def stop_it() -> None:
+                scheduler.stop()
+                stopped.set()
+
+            threading.Thread(target=stop_it, daemon=True).start()
+
+            assert stopped.wait(PATIENCE), "stop() ignored its own shutdown_max_wait"
+        finally:
+            never.set()
+
+    def test_and_names_what_did_not_finish(
+        self, builder: SchedulerBuilder, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An execution still running at the deadline is one whose handler never checks for
+        shutdown. An operator needs to know which."""
+        started, never = threading.Event(), threading.Event()
+
+        def hangs(instance: Any, context: Any) -> None:
+            started.set()
+            never.wait(60)
+
+        task = Tasks.one_time("a-task").execute(hangs)
+        scheduler = (
+            builder.add_tasks(task).threads(1).shutdown_max_wait(timedelta(seconds=1)).build()
+        )
+        try:
+            scheduler.start()
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert started.wait(PATIENCE)
+
+            with caplog.at_level(logging.WARNING, logger="db_scheduler.executor"):
+                scheduler.stop()
+
+            assert "some tasks did not complete" in caplog.text
+            assert "an-id" in caplog.text
+        finally:
+            never.set()
+
+    def test_stopping_mid_poll_does_not_wait_out_the_poll_interval(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        """A wake-up delivered while the loop is running rather than sleeping has nobody to
+        wake; without the skip-flag it is lost and the loop sleeps the whole interval."""
+        running = threading.Event()
+
+        def slow(instance: Any, context: Any) -> None:
+            running.set()
+            time.sleep(0.3)
+
+        task = Tasks.one_time("a-task").execute(slow)
+        scheduler = (
+            builder.add_tasks(task)
+            .polling_interval(timedelta(seconds=30))
+            .enable_immediate_execution()
+            .shutdown_max_wait(timedelta(seconds=5))
+            .build()
+        )
+        scheduler.start()
+        scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+        assert running.wait(PATIENCE)
+
+        started = time.monotonic()
+        scheduler.stop()
+
+        assert time.monotonic() - started < 5, "stop() waited out the 30s poll interval"

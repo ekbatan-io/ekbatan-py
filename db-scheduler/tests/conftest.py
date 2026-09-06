@@ -141,10 +141,24 @@ def engine(engine_url: str) -> Iterator[Engine]:
     built.dispose()
 
 
+#: Both timestamp shapes db-scheduler supports. `False` - zoned columns where the dialect has
+#: them - is db-scheduler's *default*, so it is the shape of a table a Java instance created;
+#: `True` is what it recommends and what this port defaults to. Both have to work, because
+#: reading a table in the wrong shape is an hour's silent drift, not an error.
+TIMESTAMP_SHAPES = (True, False)
+
+
+@pytest.fixture(params=TIMESTAMP_SHAPES, ids=["utc", "zoned"])
+def persist_timestamp_in_utc(request: Any) -> bool:
+    return bool(request.param)
+
+
 @pytest.fixture
-def table(engine: Engine) -> Iterator[Any]:
+def table(engine: Engine, persist_timestamp_in_utc: bool) -> Iterator[Any]:
     metadata = MetaData()
-    created = scheduled_tasks_table(metadata)
+    created = scheduled_tasks_table(
+        metadata, persist_timestamp_in_utc=persist_timestamp_in_utc
+    )
     metadata.drop_all(engine)
     metadata.create_all(engine)
     yield created
@@ -173,7 +187,11 @@ def task_resolver(clock: SettableClock) -> TaskResolver:
 
 @pytest.fixture
 def repository(
-    engine: Engine, table: Any, clock: SettableClock, task_resolver: TaskResolver
+    engine: Engine,
+    table: Any,
+    clock: SettableClock,
+    task_resolver: TaskResolver,
+    persist_timestamp_in_utc: bool,
 ) -> JdbcTaskRepository:
     return JdbcTaskRepository(
         engine,
@@ -181,12 +199,17 @@ def repository(
         table=table,
         clock=clock,
         task_resolver=task_resolver,
+        persist_timestamp_in_utc=persist_timestamp_in_utc,
     )
 
 
 @pytest.fixture
 def repository_by_priority(
-    engine: Engine, table: Any, clock: SettableClock, task_resolver: TaskResolver
+    engine: Engine,
+    table: Any,
+    clock: SettableClock,
+    task_resolver: TaskResolver,
+    persist_timestamp_in_utc: bool,
 ) -> JdbcTaskRepository:
     return JdbcTaskRepository(
         engine,
@@ -195,4 +218,5 @@ def repository_by_priority(
         clock=clock,
         order_by_priority=True,
         task_resolver=task_resolver,
+        persist_timestamp_in_utc=persist_timestamp_in_utc,
     )

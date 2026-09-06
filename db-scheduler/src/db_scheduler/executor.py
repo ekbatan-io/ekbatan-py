@@ -16,6 +16,7 @@ from __future__ import annotations
 import enum
 import logging
 import threading
+import time
 import uuid
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -40,6 +41,9 @@ __all__ = [
 ]
 
 LOG = logging.getLogger("db_scheduler.executor")
+
+#: How often shutdown checks whether the running executions have finished.
+SHUTDOWN_POLL_INTERVAL = 0.05
 
 
 class Waiter:
@@ -296,7 +300,15 @@ class Executor:
                     self._currently_in_queue_or_processing -= 1
                 after_done()
 
-        self._executor_service.submit(wrapped)
+        try:
+            self._executor_service.submit(wrapped)
+        except RuntimeError:
+            # The pool is already shut down, so `wrapped` will never run to decrement the
+            # count. Left as it was, the in-flight number would stay high for ever and
+            # lock-and-fetch would compute "no room to run anything" on every later poll.
+            with self._lock:
+                self._currently_in_queue_or_processing -= 1
+            raise
 
     @property
     def currently_executing(self) -> list[CurrentlyExecuting]:
@@ -323,15 +335,23 @@ class Executor:
             )
 
     def stop(self, shutdown_max_wait: timedelta) -> None:
-        """Let running executions finish, then say what did not.
+        """Let running executions finish, within a bound, then say what did not.
 
-        Naming the stragglers is the point of the warning: an execution still running at the end
-        of the grace period is one whose handler does not check `is_shutting_down`, and an
-        operator needs to know which.
+        The bound is the point. Python cannot interrupt a running thread - there is no
+        counterpart to Java's `shutdownNow()` - so waiting for a handler that ignores
+        `is_shutting_down` is waiting for ever. This stops accepting work, drops what is queued
+        but not yet started, waits up to `shutdown_max_wait` for the rest, and then *reports*
+        the stragglers rather than blocking on them. An execution still running at that point is
+        one whose handler never checks for shutdown, and an operator needs to know which.
         """
-        LOG.info("Letting running executions finish. Will wait up to 2x%s.", shutdown_max_wait)
+        LOG.info("Letting running executions finish. Will wait up to %s.", shutdown_max_wait)
         start_shutdown = self._clock.now()
-        self._executor_service.shutdown(wait=True, cancel_futures=False)
+        self._executor_service.shutdown(wait=False, cancel_futures=True)
+
+        deadline = time.monotonic() + max(shutdown_max_wait.total_seconds(), 0.0)
+        while self.currently_processing and time.monotonic() < deadline:
+            time.sleep(SHUTDOWN_POLL_INTERVAL)
+
         still_running = [one.execution for one in self.currently_executing]
         if not still_running:
             LOG.info("Scheduler stopped.")

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
@@ -330,11 +331,23 @@ class Scheduler(SchedulerClient):
         LOG.info("Shutting down Scheduler.")
 
         self._stopped.set()
-        # Wake the loops so they notice the shutdown rather than sleeping out their interval.
-        self._execute_due_waiter.wake()
+        # `wake_or_skip_next_wait`, not `wake`: if the due-loop is mid-poll rather than asleep
+        # there is nobody to wake, and a plain wake is lost - the loop would then sleep out a
+        # whole poll interval before noticing the shutdown.
+        self._execute_due_waiter.wake_or_skip_next_wait()
+
+        # One deadline for all three threads, not one each: three threads times a thirty-minute
+        # default is an hour and a half of shutdown.
+        max_wait = shutdown_max_wait or self._shutdown_max_wait
+        deadline = time.monotonic() + max(max_wait.total_seconds(), 0.0)
         for thread in self._threads:
-            thread.join(timeout=(shutdown_max_wait or self._shutdown_max_wait).total_seconds())
-        self.executor.stop(shutdown_max_wait or self._shutdown_max_wait)
+            thread.join(timeout=max(deadline - time.monotonic(), 0.0))
+        still_running = [thread.name for thread in self._threads if thread.is_alive()]
+        if still_running:
+            LOG.warning(
+                "Scheduler threads did not stop within %s: %s", max_wait, ", ".join(still_running)
+            )
+        self.executor.stop(max_wait)
 
     def pause(self) -> None:
         self.scheduler_state.set_paused(True)
