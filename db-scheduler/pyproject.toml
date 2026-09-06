@@ -1,5 +1,5 @@
 [project]
-name = "ekbatan-db-scheduler"
+name = "ekbatan-py-db-scheduler"
 version = "0.1.0"
 description = "A port of kagkarlsson/db-scheduler: persistent, cluster-friendly scheduling on the database you already have."
 readme = "README.md"

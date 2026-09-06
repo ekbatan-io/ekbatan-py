@@ -3,7 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/ekbatan.iml" filepath="$PROJECT_DIR$/.idea/ekbatan.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/ekbatan-db-scheduler.iml" filepath="$PROJECT_DIR$/.idea/ekbatan-db-scheduler.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/ekbatan-py-db-scheduler.iml" filepath="$PROJECT_DIR$/.idea/ekbatan-py-db-scheduler.iml" />
     </modules>
   </component>
 </project>
