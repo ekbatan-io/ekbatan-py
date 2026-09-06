@@ -13,7 +13,7 @@ from datetime import UTC, datetime, time, timedelta
 from datetime import tzinfo as datetime_tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .. import ExecutionComplete  # noqa: TID252 - the model this package is about
+from .. import ExecutionComplete
 
 __all__ = [
     "NEVER",
