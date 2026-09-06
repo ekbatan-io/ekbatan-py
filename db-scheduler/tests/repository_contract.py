@@ -18,8 +18,7 @@ from typing import Any
 
 import pytest
 
-from db_scheduler.task import TaskInstance
-from db_scheduler.task.helper import SchedulableInstance
+from db_scheduler.task import SchedulableInstance, SchedulableTaskInstance, TaskInstance
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
@@ -28,10 +27,8 @@ def an_instance(task: str = "a-task", id: str = "an-id", data: Any = None) -> Ta
     return TaskInstance[Any](task, id, data)
 
 
-def scheduled(
-    instance: TaskInstance[Any], at: datetime = NOW
-) -> SchedulableInstance[Any]:
-    return SchedulableInstance(instance, at)
+def scheduled(instance: TaskInstance[Any], at: datetime = NOW) -> SchedulableInstance[Any]:
+    return SchedulableTaskInstance(instance, at)
 
 
 class RepositoryContract:

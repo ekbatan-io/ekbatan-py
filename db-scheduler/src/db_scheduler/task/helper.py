@@ -15,13 +15,21 @@ concrete classes rather than abstract ones.
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 from ..clock import Clock
-from . import Execution, Priority, TaskInstance, TaskInstanceId
+from . import (
+    Execution,
+    Priority,
+    SchedulableInstance,
+    SchedulableTaskInstance,
+    TaskInstance,
+    TaskInstanceId,
+)
 from .handlers import (
     CompletionHandler,
     DeadExecutionHandler,
@@ -40,8 +48,11 @@ __all__ = [
     "CustomTask",
     "ExecutionContext",
     "OneTimeTask",
+    "PlainScheduleAndData",
     "RecurringTask",
     "SchedulableInstance",
+    "SchedulableTaskInstance",
+    "ScheduleAndData",
     "Task",
     "Tasks",
 ]
@@ -64,45 +75,60 @@ class ExecutionContext:
         return getattr(self, "_scheduler_state", None)
 
 
-class SchedulableInstance[T = Any]:
-    """An instance, plus when it should first run.
+class ScheduleAndData(ABC):
+    """Data that carries its own schedule.
 
-    The time is a function of "now" rather than a fixed instant, because a task registered at
-    boot must not carry a time computed when the object was built - which, for a container that
-    constructs eagerly, could be minutes earlier.
+    This is what makes a schedule persistent: the cron lives in the row rather than in the code,
+    so changing when a task runs is an UPDATE, not a deploy. `RecurringTaskWithPersistentSchedule`
+    and `TaskInstance.Builder.scheduled_according_to_data` both look for this.
+
+    Nominal, not structural - an abstract base rather than a Protocol - because Java's check is
+    `instanceof`, and a class that merely happens to have a `schedule` attribute is not making
+    the same promise.
     """
 
-    __slots__ = ("_next", "task_instance")
-
-    def __init__(
-        self, task_instance: TaskInstance[T], next_time: datetime | Callable[[datetime], datetime]
-    ) -> None:
-        self.task_instance = task_instance
-        self._next: Callable[[datetime], datetime] = (
-            next_time if callable(next_time) else (lambda _now, fixed=next_time: fixed)  # type: ignore[misc]
-        )
-
-    @classmethod
-    def of(
-        cls,
-        task_instance: TaskInstance[T],
-        next_time: datetime | Callable[[datetime], datetime],
-    ) -> SchedulableInstance[T]:
-        return cls(task_instance, next_time)
-
-    def next_execution_time(self, now: datetime) -> datetime:
-        return self._next(now)
+    __slots__ = ()
 
     @property
-    def task_name(self) -> str:
-        return self.task_instance.task_name
+    @abstractmethod
+    def schedule(self) -> Schedule: ...
 
     @property
-    def id(self) -> str:
-        return self.task_instance.id
+    @abstractmethod
+    def data(self) -> Any: ...
+
+    @staticmethod
+    def of(schedule: Schedule, data: Any = None) -> PlainScheduleAndData:
+        return PlainScheduleAndData(schedule, data)
+
+
+class PlainScheduleAndData(ScheduleAndData):
+    """The obvious implementation: a schedule, and optionally something alongside it."""
+
+    __slots__ = ("_data", "_schedule")
+
+    def __init__(self, schedule: Schedule, data: Any = None) -> None:
+        self._schedule = schedule
+        self._data = data
+
+    @property
+    def schedule(self) -> Schedule:
+        return self._schedule
+
+    @property
+    def data(self) -> Any:
+        return self._data
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, PlainScheduleAndData):
+            return NotImplemented
+        return self._schedule == other._schedule and self._data == other._data
+
+    def __hash__(self) -> int:
+        return hash((self._schedule, self._data))
 
     def __repr__(self) -> str:
-        return f"SchedulableInstance({self.task_instance!r})"
+        return f"{type(self).__name__}{{schedule={self._schedule}, data={self._data}}}"
 
 
 class OnStartupLike(Protocol):
@@ -142,17 +168,16 @@ class AbstractTask[T]:
     # -- making instances -------------------------------------------------------------
 
     def instance(self, id: str, data: T | None = None) -> TaskInstance[T]:
-        return TaskInstance[T](self.name, id, data, priority=self.default_priority)
+        builder = self.instance_builder(id)
+        return (builder if data is None else builder.data(data)).build()
 
-    def instance_builder(self, id: str) -> _TaskInstanceBuilder[T]:
-        return _TaskInstanceBuilder[T](self.name, id, self.default_priority)
+    def instance_builder(self, id: str) -> TaskInstance.Builder[T]:
+        return TaskInstance.Builder[T](self.name, id).priority(self.default_priority)
 
     def instance_id(self, id: str) -> TaskInstanceId:
         return TaskInstanceId.of(self.name, id)
 
-    def schedulable_instance(
-        self, id: str, data: T | None = None
-    ) -> SchedulableInstance[T]:
+    def schedulable_instance(self, id: str, data: T | None = None) -> SchedulableInstance[T]:
         raise NotImplementedError
 
     # -- running ----------------------------------------------------------------------
@@ -178,27 +203,6 @@ class AbstractTask[T]:
 Task = AbstractTask
 
 
-class _TaskInstanceBuilder[T]:
-    __slots__ = ("_data", "_id", "_priority", "_task_name")
-
-    def __init__(self, task_name: str, id: str, priority: int) -> None:
-        self._task_name = task_name
-        self._id = id
-        self._priority = priority
-        self._data: T | None = None
-
-    def data(self, data: T) -> _TaskInstanceBuilder[T]:
-        self._data = data
-        return self
-
-    def priority(self, priority: int) -> _TaskInstanceBuilder[T]:
-        self._priority = priority
-        return self
-
-    def build(self) -> TaskInstance[T]:
-        return TaskInstance[T](self._task_name, self._id, self._data, priority=self._priority)
-
-
 class OneTimeTask[T](AbstractTask[T]):
     """Runs once and removes itself."""
 
@@ -222,10 +226,8 @@ class OneTimeTask[T](AbstractTask[T]):
         )
         self._body = body
 
-    def schedulable_instance(
-        self, id: str, data: T | None = None
-    ) -> SchedulableInstance[T]:
-        return SchedulableInstance(self.instance(id, data), lambda now: now)
+    def schedulable_instance(self, id: str, data: T | None = None) -> SchedulableInstance[T]:
+        return SchedulableTaskInstance(self.instance(id, data), lambda now: now)
 
     def execute_task(
         self, instance: TaskInstance[T], context: ExecutionContext
@@ -274,11 +276,13 @@ class RecurringTask[T](AbstractTask[T]):
         instance = self.instance(self.INSTANCE, self._initial_data)
         client.schedule_if_not_exists(instance, self.schedule.initial_execution_time(clock.now()))
 
-    def schedulable_instance(
-        self, id: str, data: T | None = None
-    ) -> SchedulableInstance[T]:
-        return SchedulableInstance(
-            self.instance(id, data), lambda now: self.schedule.initial_execution_time(now)
+    def schedulable_instance(self, id: str, data: T | None = None) -> SchedulableInstance[T]:
+        # `TaskInstance`, not `self.instance(...)`: Java builds this one without the task's
+        # default priority, so a recurring instance scheduled this way is MEDIUM even though the
+        # task is HIGH. Reproduced rather than corrected - priority is persisted, and a Java and
+        # a Python instance scheduling the same task must write the same row.
+        return SchedulableTaskInstance(
+            TaskInstance[T](self.name, id, data), self.schedule.initial_execution_time
         )
 
     def execute_task(
@@ -313,10 +317,8 @@ class CustomTask[T](AbstractTask[T]):
         self._body = body
         self._default_execution_time = default_execution_time or (lambda now: now)
 
-    def schedulable_instance(
-        self, id: str, data: T | None = None
-    ) -> SchedulableInstance[T]:
-        return SchedulableInstance(self.instance(id, data), self._default_execution_time)
+    def schedulable_instance(self, id: str, data: T | None = None) -> SchedulableInstance[T]:
+        return SchedulableTaskInstance(self.instance(id, data), self._default_execution_time)
 
     def execute_task(
         self, instance: TaskInstance[T], context: ExecutionContext
@@ -352,9 +354,7 @@ class _OneTimeTaskBuilder[T]:
         self._priority = priority
         return self
 
-    def execute(
-        self, body: Callable[[TaskInstance[T], ExecutionContext], None]
-    ) -> OneTimeTask[T]:
+    def execute(self, body: Callable[[TaskInstance[T], ExecutionContext], None]) -> OneTimeTask[T]:
         return OneTimeTask[T](self._name, body, self._failure, self._dead, self._priority)
 
 

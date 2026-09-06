@@ -8,6 +8,7 @@ by one port has to be legible to the other.
 from __future__ import annotations
 
 import enum
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -16,11 +17,22 @@ from typing import Any, Self
 __all__ = [
     "Execution",
     "ExecutionComplete",
+    "NextExecutionTime",
     "Priority",
     "Result",
+    "SchedulableInstance",
+    "SchedulableTaskInstance",
     "TaskInstance",
     "TaskInstanceId",
 ]
+
+#: db-scheduler's `NextExecutionTime`: given the current time, when should this run?
+#:
+#: Java declares it as a one-method interface so a lambda can satisfy it. In Python a callable
+#: already is that, so the name survives as an alias rather than as a class - there is nothing
+#: for the class to add. `NextExecutionTime.from(...)` was an adapter for the same reason and
+#: has no counterpart either.
+type NextExecutionTime = Callable[[datetime], datetime]
 
 
 class Priority:
@@ -63,7 +75,7 @@ class TaskInstance[T]:
         data: T | None = None,
         *,
         priority: int = Priority.MEDIUM,
-        data_supplier: Callable[[], T] | None = None,
+        data_supplier: Callable[[], T | None] | None = None,
     ) -> None:
         if data is not None and data_supplier is not None:
             raise ValueError("pass data or data_supplier, not both")
@@ -99,6 +111,160 @@ class TaskInstance[T]:
 
     def __repr__(self) -> str:
         return f"TaskInstance(task={self.task_name}, id={self.id}, priority={self.priority})"
+
+    class Builder[U = Any]:
+        """Builds one instance, and can schedule it in the same breath.
+
+        `scheduled_to` and `scheduled_according_to_data` are why this exists rather than a
+        constructor call: they hand back a `SchedulableInstance`, which is an instance plus a
+        time, and is what the client's `schedule(...)` actually wants.
+        """
+
+        __slots__ = ("_data_supplier", "_id", "_priority", "_task_name")
+
+        def __init__(self, task_name: str, id: str) -> None:
+            self._task_name = task_name
+            self._id = id
+            self._data_supplier: Callable[[], U | None] = lambda: None
+            self._priority = Priority.MEDIUM
+
+        def data_supplier(self, data_supplier: Callable[[], U]) -> Self:
+            self._data_supplier = data_supplier
+            return self
+
+        def data(self, data: U) -> Self:
+            self._data_supplier = lambda: data
+            return self
+
+        def priority(self, priority: int) -> Self:
+            self._priority = priority
+            return self
+
+        def build(self) -> TaskInstance[U]:
+            return TaskInstance[U](
+                self._task_name,
+                self._id,
+                data_supplier=self._data_supplier,
+                priority=self._priority,
+            )
+
+        def scheduled_to(self, execution_time: datetime) -> SchedulableInstance[U]:
+            return SchedulableTaskInstance[U](self.build(), execution_time)
+
+        def scheduled_according_to_data(self) -> SchedulableInstance[U]:
+            """Schedule it by the schedule stored in its own data.
+
+            The point of a persistent schedule: the row carries the cron, so changing when a
+            task runs is a write, not a deploy. Which is also why this can fail - the data has
+            to actually carry one.
+            """
+            from .helper import ScheduleAndData
+
+            data = self._data_supplier()
+            if not isinstance(data, ScheduleAndData):
+                raise ValueError(
+                    "To be able to use method 'scheduled_according_to_data()', the data class "
+                    "must implement the ScheduleAndData interface and contain a Schedule"
+                )
+            schedule = data.schedule
+            return SchedulableTaskInstance[U](self.build(), schedule.initial_execution_time)
+
+
+class SchedulableInstance[T = Any](ABC):
+    """An instance, plus when it should first run.
+
+    The time is a function of "now" and not a fixed instant, because a task registered at boot
+    must not carry a time computed when the object was built - which, for a container that
+    constructs eagerly, could be minutes earlier.
+
+    An interface in Java, with `SchedulableTaskInstance` as the only implementation shipped; the
+    split is kept because callers are typed against this one and tests substitute their own.
+    """
+
+    __slots__ = ()
+
+    @staticmethod
+    def of[U](
+        task_instance: TaskInstance[U], execution_time: datetime | NextExecutionTime
+    ) -> SchedulableInstance[U]:
+        return SchedulableTaskInstance[U](task_instance, execution_time)
+
+    @property
+    @abstractmethod
+    def task_instance(self) -> TaskInstance[T]: ...
+
+    @abstractmethod
+    def next_execution_time(self, current_time: datetime) -> datetime: ...
+
+    @property
+    def task_name(self) -> str:
+        return self.task_instance.task_name
+
+    @property
+    def id(self) -> str:
+        return self.task_instance.id
+
+    class Builder[U = Any]:
+        """Builds an instance and schedules it, without a `build()` in between.
+
+        Java's `SchedulableInstance.Builder` has no `build()` either - `scheduledTo` is the only
+        exit, because an instance with no time is not what this builder is for.
+        """
+
+        __slots__ = ("_data_supplier", "_id", "_priority", "_task_name")
+
+        def __init__(self, task_name: str, id: str) -> None:
+            self._task_name = task_name
+            self._id = id
+            self._data_supplier: Callable[[], U | None] = lambda: None
+            self._priority = Priority.MEDIUM
+
+        def data_supplier(self, data_supplier: Callable[[], U]) -> Self:
+            self._data_supplier = data_supplier
+            return self
+
+        def data(self, data: U) -> Self:
+            self._data_supplier = lambda: data
+            return self
+
+        def priority(self, priority: int) -> Self:
+            self._priority = priority
+            return self
+
+        def scheduled_to(self, execution_time: datetime) -> SchedulableInstance[U]:
+            instance = TaskInstance[U](
+                self._task_name,
+                self._id,
+                data_supplier=self._data_supplier,
+                priority=self._priority,
+            )
+            return SchedulableTaskInstance[U](instance, execution_time)
+
+
+class SchedulableTaskInstance[T = Any](SchedulableInstance[T]):
+    """The one implementation: an instance and a time, either fixed or computed."""
+
+    __slots__ = ("_execution_time", "_task_instance")
+
+    def __init__(
+        self, task_instance: TaskInstance[T], execution_time: datetime | NextExecutionTime
+    ) -> None:
+        self._task_instance = task_instance
+        self._execution_time: NextExecutionTime = (
+            execution_time
+            if callable(execution_time)
+            else (lambda _ignored, fixed=execution_time: fixed)  # type: ignore[misc]
+        )
+
+    @property
+    def task_instance(self) -> TaskInstance[T]:
+        return self._task_instance
+
+    def next_execution_time(self, current_time: datetime) -> datetime:
+        return self._execution_time(current_time)
+
+    def __repr__(self) -> str:
+        return f"SchedulableTaskInstance({self._task_instance!r})"
 
 
 @dataclass(slots=True)
