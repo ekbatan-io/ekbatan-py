@@ -39,6 +39,8 @@ Recorded as they are made, not at the end.
 | `Thread.interrupt()` to end a wait | a sticky flag re-read before waiting | Java's interrupt flag stays on the thread, so a shutdown signalled while the loop was working cannot be missed. Python's `Condition.notify()` is lost if nobody is waiting, so the loop re-reads the shutdown flag - itself sticky - before it sleeps at all |
 | `lock.wait(millis)` after a spurious wakeup | waits the *remaining* time | Java re-waits the whole interval, which can silently double a poll period |
 | `ExecutorService.shutdownNow()` | cancel queued work only | nothing in Python can interrupt a running thread. `stop()` waits `shutdown_max_wait`, then names what did not finish and leaves it |
+| `priority` written only when priority ordering is on | always written | Java leaves the column NULL when priority is disabled, and `ORDER BY priority DESC` then sorts NULLs *first* on Postgres (ahead of HIGH) and *last* on MySQL. Writing a real value means enabling priority later on an existing table behaves the same everywhere |
+| no validation of the intervals | `polling_interval` and `heartbeat_interval` must be > 0 | at zero the loops spin: measured ~10,000 polls/second and ~900,000 heartbeat rounds/second. A value that can only hammer the database is refused |
 | `Serializable` / `JavaSerializer` | not ported | Java-native serialization has no counterpart and is a deserialization-gadget risk; the port's default is JSON |
 
 ## Verification

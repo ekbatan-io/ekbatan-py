@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from db_scheduler.builder import SchedulerBuilder, create
 from db_scheduler.clock import SettableClock, SystemClock
 from db_scheduler.event import AbstractSchedulerListener, SchedulerEventType
+from db_scheduler.exceptions import SerializationException
 from db_scheduler.executor import PollingStrategyConfig
 from db_scheduler.logging import LogLevel
 from db_scheduler.scheduler import Scheduler
@@ -550,3 +551,224 @@ class TestShutdownIsBounded:
         scheduler.stop()
 
         assert time.monotonic() - started < 5, "stop() waited out the 30s poll interval"
+
+
+class TestConfigurationIsValidated:
+    """Both loops wait for their interval and then run. At zero the wait returns instantly and
+    the loop becomes a spin - measured at ~10,000 polls per second, each one a database query,
+    and ~900,000 heartbeat rounds per second. One typo would hammer the database and burn a
+    core, and the library would get the blame. db-scheduler does not check these; refusing a
+    value that can only ever do harm costs nothing."""
+
+    @pytest.mark.parametrize("bad", [timedelta(), timedelta(seconds=-1)])
+    def test_a_poll_interval_of_zero_or_less_is_refused(
+        self, builder: SchedulerBuilder, bad: timedelta
+    ) -> None:
+        with pytest.raises(ValueError, match="polling_interval must be greater than zero"):
+            builder.polling_interval(bad)
+
+    @pytest.mark.parametrize("bad", [timedelta(), timedelta(seconds=-1)])
+    def test_a_heartbeat_interval_of_zero_or_less_is_refused(
+        self, builder: SchedulerBuilder, bad: timedelta
+    ) -> None:
+        with pytest.raises(ValueError, match="heartbeat_interval must be greater than zero"):
+            builder.heartbeat_interval(bad)
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_a_thread_count_of_zero_or_less_is_refused(
+        self, builder: SchedulerBuilder, bad: int
+    ) -> None:
+        with pytest.raises(ValueError, match="threads must be greater than zero"):
+            builder.threads(bad)
+
+    def test_a_negative_shutdown_wait_is_refused(self, builder: SchedulerBuilder) -> None:
+        with pytest.raises(ValueError, match="shutdown_max_wait cannot be negative"):
+            builder.shutdown_max_wait(timedelta(seconds=-1))
+
+    def test_but_a_zero_shutdown_wait_is_allowed(self, builder: SchedulerBuilder) -> None:
+        """"Do not wait for running executions" is a legitimate choice."""
+        assert builder.shutdown_max_wait(timedelta()) is builder
+
+    def test_a_negative_unresolved_deletion_window_is_refused(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        with pytest.raises(ValueError, match="delete_unresolved_after cannot be negative"):
+            builder.delete_unresolved_after(timedelta(seconds=-1))
+
+    def test_but_zero_is_allowed(self, builder: SchedulerBuilder) -> None:
+        """It means "delete as soon as the name is seen to be unresolvable"."""
+        assert builder.delete_unresolved_after(timedelta()) is builder
+
+    def test_a_valid_configuration_still_polls_at_its_interval(
+        self, builder: SchedulerBuilder
+    ) -> None:
+        """The guard must not have broken normal operation."""
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        scheduler = builder.add_tasks(task).polling_interval(timedelta(milliseconds=50)).build()
+
+        with scheduler:
+            scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
+            assert ran.wait(PATIENCE)
+
+
+class TestDataIntegrity:
+    """What the table will and will not accept, so a limit is discovered here rather than in
+    production."""
+
+    def test_a_task_name_over_the_column_width_is_never_silently_truncated(
+        self, repository: Any
+    ) -> None:
+        """Refused or stored whole - never cut short. A truncated name would let two different
+        tasks collide on one primary key, which is silent, permanent corruption.
+
+        The dialects disagree about *which*: Postgres and MySQL reject the write, while SQLite
+        does not enforce `varchar` lengths at all and keeps the whole thing. Both are safe; only
+        truncation would not be. Worth knowing when developing on SQLite, because a name the
+        laptop accepts is one production will reject.
+        """
+        from db_scheduler.task import ScheduledTaskInstance
+
+        too_long = "n" * 101
+        repository.task_resolver.add_task(
+            Tasks.one_time(too_long).execute(lambda instance, context: None)
+        )
+
+        try:
+            repository.create_if_not_exists(
+                ScheduledTaskInstance(TaskInstance[Any](too_long, "an-id"), NOW)
+            )
+        except Exception:
+            return  # refused outright, which is the safe answer
+
+        found = repository.get_execution(too_long, "an-id")
+        assert found is not None, "written but not readable back"
+        assert found.task_name == too_long, "the name was silently truncated"
+
+    def test_unicode_survives_a_round_trip(self, repository: Any) -> None:
+        from db_scheduler.task import ScheduledTaskInstance
+
+        name, data = "unicode-任务-задача", {"é": "üñî"}
+        repository.task_resolver.add_task(
+            Tasks.one_time(name).execute(lambda instance, context: None)
+        )
+
+        repository.create_if_not_exists(
+            ScheduledTaskInstance(TaskInstance[Any](name, "an-id", data), NOW)
+        )
+
+        found = repository.get_execution(name, "an-id")
+        assert found is not None
+        assert found.task_name == name
+        assert found.task_instance.data == data
+
+    def test_task_data_that_cannot_be_deserialized_does_not_break_the_poll(
+        self, repository: Any, table: Any, engine: Any
+    ) -> None:
+        """A single corrupt row must not stop the scheduler scheduling everything else. The
+        cost is deferred to whoever actually reads the data."""
+        from db_scheduler.task import ScheduledTaskInstance
+
+        repository.create_if_not_exists(
+            ScheduledTaskInstance(TaskInstance[Any]("a-task", "healthy"), NOW)
+        )
+        with engine.begin() as conn:
+            conn.execute(
+                table.insert().values(
+                    task_name="a-task",
+                    task_instance="corrupt",
+                    task_data=b"\xff\xfe not json",
+                    execution_time=repository._bind(NOW),
+                    picked=False,
+                    version=1,
+                )
+            )
+
+        due = repository.get_due(NOW, limit=10)
+
+        assert "healthy" in [e.id for e in due], "the poll survived the corrupt row"
+        [corrupt] = [e for e in due if e.id == "corrupt"]
+        with pytest.raises(SerializationException):
+            _ = corrupt.task_instance.data
+
+
+class TestALiveExecutionIsNeverStolen:
+    """The worst bug this library could have: two instances running the same job at once.
+
+    Only the heartbeat stands between "one run" and "two". This runs a task for ten times the
+    dead-threshold while a *second* scheduler hunts for dead executions the entire time.
+    """
+
+    def test_a_long_running_execution_is_not_taken_over_while_it_lives(
+        self, engine: Any, table: Any
+    ) -> None:
+        runs: list[str] = []
+        lock = threading.Lock()
+        started, release = threading.Event(), threading.Event()
+
+        heartbeat = timedelta(milliseconds=100)
+        limit = 4  # dead after 400ms of silence
+        task_seconds = 3.0  # more than seven times that
+
+        def slow(instance: Any, context: Any) -> None:
+            with lock:
+                runs.append(instance.id)
+            started.set()
+            release.wait(task_seconds)
+
+        def a_scheduler(name: str) -> Scheduler:
+            task = Tasks.one_time("slow").execute(slow)
+            return (
+                create(engine)
+                .table_name(table.name)
+                .add_tasks(task)
+                .threads(2)
+                .polling_interval(timedelta(milliseconds=30))
+                .heartbeat_interval(heartbeat)
+                .missed_heartbeats_limit(limit)
+                .scheduler_name(Fixed(name))
+                .shutdown_max_wait(timedelta(seconds=3))
+                .build()
+            )
+
+        one, two = a_scheduler("one"), a_scheduler("two")
+        one.schedule_if_not_exists(TaskInstance[Any]("slow", "the-one"), SystemClock().now())
+
+        try:
+            one.start()
+            two.start()
+            assert started.wait(PATIENCE), "it never started"
+            # Long past the dead-threshold, with both schedulers hunting the whole time.
+            time.sleep(task_seconds)
+        finally:
+            release.set()
+            time.sleep(0.5)
+            one.stop()
+            two.stop()
+
+        assert runs == ["the-one"], f"a live execution was taken over and run again: {runs}"
+
+    def test_but_one_that_stopped_heartbeating_is(self, engine: Any, table: Any) -> None:
+        """The other half of the same guarantee - otherwise the heartbeat would just be a way
+        of never recovering anything."""
+        ran = threading.Event()
+        task = Tasks.one_time("a-task").execute(lambda instance, context: ran.set())
+        scheduler = (
+            create(engine)
+            .table_name(table.name)
+            .add_tasks(task)
+            .threads(1)
+            .polling_interval(timedelta(milliseconds=30))
+            .heartbeat_interval(timedelta(milliseconds=100))
+            .missed_heartbeats_limit(4)
+            .scheduler_name(Fixed("survivor"))
+            .shutdown_max_wait(timedelta(seconds=3))
+            .build()
+        )
+        repository = scheduler.scheduler_task_repository
+        scheduler.schedule_if_not_exists(task.instance("abandoned"), SystemClock().now())
+        [execution] = repository.get_due(SystemClock().now(), limit=10)
+        repository.pick(execution, SystemClock().now() - timedelta(hours=1))
+
+        with scheduler:
+            assert ran.wait(PATIENCE), "an abandoned execution was never revived"

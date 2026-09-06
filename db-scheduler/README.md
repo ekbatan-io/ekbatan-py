@@ -96,6 +96,18 @@ is the same rule SQLAlchemy has for engines, for the same reason. A pool that fi
 forked child refuses work with an explanatory error rather than silently accepting executions
 nobody will ever run.
 
+## Limits worth knowing
+
+`task_data` is a `blob` on MySQL and MariaDB, as it is in every db-scheduler DDL file — so
+payloads over ~64KB are **rejected** there while Postgres accepts them. The failure is loud
+(`DataError`), never a silent truncation, but it is a way for something that works on a Postgres
+laptop to fail on a MySQL production database. Keep task data small and point at the payload
+rather than carrying it.
+
+Task names and instance ids are `varchar(100)`. Postgres and MySQL reject anything longer;
+SQLite does not enforce `varchar` lengths at all and stores the whole thing. Nothing truncates
+silently on any of them.
+
 ## Self-contained
 
 Its own `pyproject.toml`, its own dependencies, its own tests. It does not import from `ekbatan`
@@ -128,11 +140,11 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 668 passed, 6 skipped |
-| PostgreSQL 17 | 670 passed, 4 skipped |
-| MySQL 8.4 (LTS) | 670 passed, 4 skipped |
-| MySQL 26.7 (current) | 670 passed, 4 skipped |
-| MariaDB 11.4 | 668 passed, 6 skipped |
+| SQLite | 700 passed, 6 skipped |
+| PostgreSQL 17 | 702 passed, 4 skipped |
+| MySQL 8.4 (LTS) | 702 passed, 4 skipped |
+| MySQL 26.7 (current) | 702 passed, 4 skipped |
+| MariaDB 11.4 | 700 passed, 6 skipped |
 
 Every integration test runs twice per dialect, once for each timestamp shape - zone-less UTC
 columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is

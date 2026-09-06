@@ -55,6 +55,25 @@ LOG_STACK_TRACE_ON_FAILURE = True
 MINIMUM_MISSED_HEARTBEATS_LIMIT = 4
 
 
+def _must_be_positive(name: str, value: timedelta) -> timedelta:
+    """An interval of zero is never what anybody meant, and it is not harmless.
+
+    Both loops wait for their interval and then run. At zero the wait returns instantly, so the
+    loop becomes a spin: measured at ~10,000 polls per second (each one a database query) and
+    ~900,000 heartbeat rounds per second (a whole core). db-scheduler does not check this;
+    refusing a value that can only ever hammer the database costs nothing.
+    """
+    if value.total_seconds() <= 0:
+        raise ValueError(f"{name} must be greater than zero, was: {value}")
+    return value
+
+
+def _must_not_be_negative(name: str, value: timedelta) -> timedelta:
+    if value.total_seconds() < 0:
+        raise ValueError(f"{name} cannot be negative, was: {value}")
+    return value
+
+
 class SchedulerBuilder:
     """Fluent, and every setter returns self, as Java's does."""
 
@@ -105,11 +124,11 @@ class SchedulerBuilder:
     # ------------------------------------------------------------------ timing
 
     def polling_interval(self, polling_interval: timedelta) -> Self:
-        self._polling_interval = polling_interval
+        self._polling_interval = _must_be_positive("polling_interval", polling_interval)
         return self
 
     def heartbeat_interval(self, duration: timedelta) -> Self:
-        self._heartbeat_interval = duration
+        self._heartbeat_interval = _must_be_positive("heartbeat_interval", duration)
         return self
 
     def missed_heartbeats_limit(self, number_of_missed_heartbeats_before_dead: int) -> Self:
@@ -119,6 +138,10 @@ class SchedulerBuilder:
         return self
 
     def threads(self, number_of_threads: int) -> Self:
+        if number_of_threads <= 0:
+            raise ValueError(
+                f"threads must be greater than zero, was: {number_of_threads}"
+            )
         self.executor_threads = number_of_threads
         return self
 
@@ -130,11 +153,18 @@ class SchedulerBuilder:
         return self
 
     def shutdown_max_wait(self, shutdown_max_wait: timedelta) -> Self:
-        self._shutdown_max_wait = shutdown_max_wait
+        # Zero is allowed: "do not wait for running executions" is a legitimate choice.
+        self._shutdown_max_wait = _must_not_be_negative(
+            "shutdown_max_wait", shutdown_max_wait
+        )
         return self
 
     def delete_unresolved_after(self, delete_after: timedelta) -> Self:
-        self._delete_unresolved_after = delete_after
+        # Zero is allowed: it means "delete as soon as the name is seen to be unresolvable",
+        # which is what a test wants and what someone certain of their deployment may choose.
+        self._delete_unresolved_after = _must_not_be_negative(
+            "delete_unresolved_after", delete_after
+        )
         return self
 
     # ------------------------------------------------------------------ behaviour
