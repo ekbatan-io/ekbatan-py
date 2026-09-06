@@ -25,7 +25,10 @@ from sqlalchemy import Engine, MetaData, create_engine
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from db_scheduler.clock import SettableClock
+from db_scheduler.event import SchedulerListeners
 from db_scheduler.jdbc import JdbcTaskRepository, scheduled_tasks_table
+from db_scheduler.resolver import TaskResolver
+from db_scheduler.task.helper import Tasks
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
@@ -153,16 +156,37 @@ def clock() -> SettableClock:
     return SettableClock(NOW)
 
 
+#: The task names the repository contract writes rows for. A repository resolves every row it
+#: reads back to a task, and drops the ones it cannot - so a test that schedules a task the
+#: resolver has never heard of gets nothing back, exactly as a real scheduler would.
+CONTRACT_TASK_NAMES = ("a-task", "other", "a", "b", "n" * 100)
+
+
 @pytest.fixture
-def repository(engine: Engine, table: Any, clock: SettableClock) -> JdbcTaskRepository:
+def task_resolver(clock: SettableClock) -> TaskResolver:
+    return TaskResolver(
+        SchedulerListeners(),
+        clock,
+        [Tasks.one_time(name).execute(lambda i, c: None) for name in CONTRACT_TASK_NAMES],
+    )
+
+
+@pytest.fixture
+def repository(
+    engine: Engine, table: Any, clock: SettableClock, task_resolver: TaskResolver
+) -> JdbcTaskRepository:
     return JdbcTaskRepository(
-        engine, scheduler_name="test-scheduler", table=table, clock=clock
+        engine,
+        scheduler_name="test-scheduler",
+        table=table,
+        clock=clock,
+        task_resolver=task_resolver,
     )
 
 
 @pytest.fixture
 def repository_by_priority(
-    engine: Engine, table: Any, clock: SettableClock
+    engine: Engine, table: Any, clock: SettableClock, task_resolver: TaskResolver
 ) -> JdbcTaskRepository:
     return JdbcTaskRepository(
         engine,
@@ -170,4 +194,5 @@ def repository_by_priority(
         table=table,
         clock=clock,
         order_by_priority=True,
+        task_resolver=task_resolver,
     )

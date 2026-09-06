@@ -12,21 +12,30 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Engine, Table, and_, delete, func, insert, select, update
+from sqlalchemy import Engine, Table, and_, case, delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from ..clock import Clock, SystemClock
-from ..exceptions import DbSchedulerException, TaskInstanceException
+from ..event import SchedulerListeners
+from ..exceptions import DbSchedulerException, ExecutionException, TaskInstanceException
+from ..resolver import Resolvable, TaskResolver
+from ..scheduled_execution import ScheduledExecutionsFilter, TaskSummary
 from ..serializer import Serializer
-from ..task import Execution, Priority, TaskInstance
+from ..task import (
+    Execution,
+    Priority,
+    RescheduleUpdate,
+    ScheduledTaskInstance,
+    TaskInstance,
+)
 from .customization import JdbcCustomization, autodetect
+from .execution_update import ExecutionUpdate
 from .schema import scheduled_tasks_table
 
-__all__ = ["JdbcTaskRepository", "TaskSummary"]
+__all__ = ["JdbcTaskRepository"]
 
 LOG = logging.getLogger("db_scheduler.jdbc")
 
@@ -38,14 +47,6 @@ _UNCHANGED: Any = object()
 #: The column is text, but a hostname plus a uuid is not worth more than that and the two ports
 #: should write the same thing.
 PICKED_BY_MAX = 50
-
-
-@dataclass(frozen=True, slots=True)
-class TaskSummary:
-    """How many executions each task has, for an overview screen."""
-
-    task_name: str
-    count: int
 
 
 class JdbcTaskRepository:
@@ -63,6 +64,7 @@ class JdbcTaskRepository:
         customization: JdbcCustomization | None = None,
         order_by_priority: bool = False,
         persist_timestamp_in_utc: bool = True,
+        task_resolver: TaskResolver | None = None,
     ) -> None:
         from sqlalchemy import MetaData
 
@@ -87,46 +89,85 @@ class JdbcTaskRepository:
         from ..serializer import JsonSerializer
 
         self.serializer = serializer or JsonSerializer()
+        # A repository with no resolver is the standalone-client case db-scheduler supports:
+        # nothing is known about any task, every name is unresolved, and data comes back as the
+        # raw bytes rather than as a guess at a type.
+        self.task_resolver = task_resolver or TaskResolver(SchedulerListeners(), self.clock)
 
     def _bind(self, moment: datetime | None) -> datetime | None:
         """One place that knows which timestamp shape this table uses."""
         return _to_column(moment, self.persist_timestamp_in_utc)
 
+    def _excluding_unresolved(self, statement: Any) -> Any:
+        """`task_name not in (...)`, for the names this instance has no task for.
+
+        Without it the poll fetches the same unrunnable rows on every cycle, finds them
+        unresolvable, and does it again - which on a table with one abandoned task name is a
+        scheduler that never gets to the work it *can* do.
+        """
+        unresolved = [one.task_name for one in self.task_resolver.unresolved]
+        if not unresolved:
+            return statement
+        return statement.where(self.table.c.task_name.not_in(unresolved))
+
     # ------------------------------------------------------------------ creating
 
-    def create_if_not_exists(self, schedulable: Any) -> bool:
+    def _fix_execution_time(self, instance: Any) -> ScheduledTaskInstance:
+        """Accept either shape: a time already decided, or a function of now to decide it."""
+        if isinstance(instance, ScheduledTaskInstance):
+            return instance
+        return ScheduledTaskInstance.fix_execution_time(instance, self.clock)
+
+    def create_if_not_exists(self, instance: Any) -> bool:
         """Insert, unless the row is already there.
 
-        Declined rather than raised: every instance in the cluster registers its recurring
-        tasks at boot, usually within the same second of a rolling deploy, so the row already
-        existing is the normal case.
+        Declined rather than raised: every instance in the cluster registers its recurring tasks
+        at boot, usually within the same second of a rolling deploy, so the row already existing
+        is the normal case.
+
+        A failed insert is checked rather than assumed. If the row *is* there, another thread
+        won the race and this returns False; if it is not, the insert failed for some other
+        reason and that is an error, not a quiet no-op.
         """
-        instance = schedulable.task_instance
-        execution_time = schedulable.next_execution_time(self.clock.now())
+        scheduled = self._fix_execution_time(instance)
+        task_instance = scheduled.task_instance
+        existing = self.get_execution(task_instance.task_name, task_instance.id)
+        if existing is not None:
+            LOG.debug(
+                "Execution not created, it already exists. Due: %s", existing.execution_time
+            )
+            return False
         try:
             with self.engine.begin() as conn:
-                conn.execute(insert(self.table), [self._row_for(instance, execution_time)])
-        except IntegrityError:
+                conn.execute(
+                    insert(self.table),
+                    [self._row_for(task_instance, scheduled.execution_time)],
+                )
+        except IntegrityError as exc:
             LOG.debug(
-                "Execution not created, it already exists. task=%s id=%s",
-                instance.task_name,
-                instance.id,
+                "Exception when inserting execution. Assuming it to be a constraint violation.",
+                exc_info=True,
             )
+            if self.get_execution(task_instance.task_name, task_instance.id) is None:
+                raise TaskInstanceException(
+                    "Failed to add new execution.",
+                    task_instance.task_name,
+                    task_instance.id,
+                ) from exc
+            LOG.debug("Execution not created, another thread created it.")
             return False
         return True
 
-    def create_batch(self, schedulables: Sequence[Any]) -> None:
+    def create_batch(self, instances: Sequence[Any]) -> None:
         """Insert several. One statement, and all or nothing.
 
         db-scheduler raises `FailedToScheduleBatchException` if any of them collides, rather
         than silently writing a subset - a caller scheduling a batch means the batch.
         """
-        if not schedulables:
+        if not instances:
             return
-        now = self.clock.now()
-        rows = [
-            self._row_for(s.task_instance, s.next_execution_time(now)) for s in schedulables
-        ]
+        scheduled = [self._fix_execution_time(one) for one in instances]
+        rows = [self._row_for(one.task_instance, one.execution_time) for one in scheduled]
         try:
             with self.engine.begin() as conn:
                 conn.execute(insert(self.table), rows)
@@ -162,50 +203,154 @@ class JdbcTaskRepository:
             if self.order_by_priority
             else (table.c.execution_time.asc(),)
         )
-        statement = (
+        statement = self._excluding_unresolved(
             select(table)
             .where(table.c.picked == False, table.c.execution_time <= self._bind(now))  # noqa: E712
-            .order_by(*order)
-            .limit(limit)
-        )
+        ).order_by(*order).limit(limit)
         with self.engine.connect() as conn:
-            return [self._to_execution(row) for row in conn.execute(statement)]
+            return self._to_executions(conn.execute(statement))
 
     def get_execution(self, task_name: str, task_instance: str) -> Execution | None:
         statement = select(self.table).where(
             self.table.c.task_name == task_name, self.table.c.task_instance == task_instance
         )
         with self.engine.connect() as conn:
-            row = conn.execute(statement).first()
-        return self._to_execution(row) if row is not None else None
+            rows = list(conn.execute(statement))
+        if len(rows) > 1:
+            raise TaskInstanceException(
+                "Found more than one matching execution for task name/id combination.",
+                task_name,
+                task_instance,
+            )
+        if not rows:
+            return None
+        # A lookup by name is asked for one specific row, so it comes back whether or not this
+        # instance could run it, and without teaching the poll's exclusion filter anything.
+        return self._to_execution(
+            rows[0], include_unresolved=True, add_unresolved_to_exclusion_filter=False
+        )
 
     def get_scheduled_executions(
         self,
-        *,
+        filter: ScheduledExecutionsFilter | None = None,
         task_name: str | None = None,
+        *,
         picked: bool | None = None,
         limit: int | None = None,
     ) -> list[Execution]:
+        """List scheduled executions, filtered and paged.
+
+        The cursor is a *pair* - execution time and instance id - because execution times are
+        not unique. Paging on time alone across two rows due at the same instant either skips
+        one or returns it twice.
+
+        `picked` and `limit` are accepted directly as a convenience; a `ScheduledExecutionsFilter`
+        says the same thing and more.
+        """
+        if filter is None:
+            filter = ScheduledExecutionsFilter.all()
+            if picked is not None:
+                filter = filter.with_picked(picked)
+            if limit is not None:
+                filter = filter.limit(limit)
+
         table = self.table
-        statement = select(table).order_by(table.c.execution_time.asc())
+        statement = select(table)
+        if filter.picked_value is not None:
+            statement = statement.where(table.c.picked == filter.picked_value)
+
+        after = filter.after_execution
+        if after is not None:
+            bound = self._bind(after.execution_time)
+            statement = statement.where(
+                (table.c.execution_time >= bound)
+                & (
+                    or_(
+                        table.c.execution_time > bound,
+                        table.c.task_instance > after.task_instance_id,
+                    )
+                )
+            )
+        before = filter.before_execution
+        if before is not None:
+            bound = self._bind(before.execution_time)
+            statement = statement.where(
+                (table.c.execution_time <= bound)
+                & (
+                    or_(
+                        table.c.execution_time < bound,
+                        table.c.task_instance < before.task_instance_id,
+                    )
+                )
+            )
         if task_name is not None:
             statement = statement.where(table.c.task_name == task_name)
-        if picked is not None:
-            statement = statement.where(table.c.picked == picked)
-        if limit is not None:
-            statement = statement.limit(limit)
-        with self.engine.connect() as conn:
-            return [self._to_execution(row) for row in conn.execute(statement)]
+        if not filter.include_unresolved:
+            statement = self._excluding_unresolved(statement)
 
-    def get_scheduled_executions_summary(self) -> list[TaskSummary]:
-        table = self.table
+        # Backwards only when paging backwards *and* not forwards: a range query reads forwards
+        # like any other, and flipping it would hand the caller the page in reverse.
+        backwards = before is not None and after is None
         statement = (
-            select(table.c.task_name, func.count().label("n"))
+            statement.order_by(table.c.execution_time.desc(), table.c.task_instance.desc())
+            if backwards
+            else statement.order_by(table.c.execution_time.asc(), table.c.task_instance.asc())
+        )
+        if filter.limit_value is not None:
+            statement = statement.limit(filter.limit_value)
+
+        with self.engine.connect() as conn:
+            return self._to_executions(
+                conn.execute(statement),
+                include_unresolved=filter.include_unresolved,
+                add_unresolved_to_exclusion_filter=False,
+            )
+
+    def get_scheduled_executions_summary_by_task(self) -> list[TaskSummary]:
+        """One row per task name: how many, how they are doing, and since when.
+
+        `running` is picked; `failing` and `scheduled` are both *not* picked, split on whether
+        they have failures behind them. A picked row is neither - it is running right now, and
+        counting it as scheduled would double-count it.
+        """
+        table = self.table
+        failures = func.coalesce(table.c.consecutive_failures, 0)
+        statement = (
+            select(
+                table.c.task_name,
+                func.count().label("instance_count"),
+                func.sum(case((table.c.picked == True, 1), else_=0)).label(  # noqa: E712
+                    "running_count"
+                ),
+                func.sum(
+                    case(((table.c.picked == False) & (failures > 0), 1), else_=0)  # noqa: E712
+                ).label("failing_count"),
+                func.sum(
+                    case(((table.c.picked == False) & (failures == 0), 1), else_=0)  # noqa: E712
+                ).label("scheduled_count"),
+                func.min(table.c.execution_time).label("earliest_execution_time"),
+                func.max(table.c.last_success).label("latest_last_success"),
+                func.max(table.c.last_failure).label("latest_last_failure"),
+                func.max(table.c.consecutive_failures).label("max_consecutive_failures"),
+            )
             .group_by(table.c.task_name)
             .order_by(table.c.task_name)
         )
         with self.engine.connect() as conn:
-            return [TaskSummary(row.task_name, row.n) for row in conn.execute(statement)]
+            return [
+                TaskSummary(
+                    task_name=row.task_name,
+                    instance_count=int(row.instance_count),
+                    running_count=int(row.running_count or 0),
+                    failing_count=int(row.failing_count or 0),
+                    scheduled_count=int(row.scheduled_count or 0),
+                    earliest_execution_time=_aware(row.earliest_execution_time),
+                    latest_last_success=_aware(row.latest_last_success),
+                    latest_last_failure=_aware(row.latest_last_failure),
+                    max_consecutive_failures=int(row.max_consecutive_failures or 0),
+                )
+                for row in conn.execute(statement)
+            ]
 
     def get_dead_executions(self, older_than: datetime) -> list[Execution]:
         """Picked, but the instance holding it stopped saying so.
@@ -213,25 +358,30 @@ class JdbcTaskRepository:
         Only picked rows: an unpicked row nobody is holding is not dead, it is simply waiting.
         """
         table = self.table
-        statement = (
+        statement = self._excluding_unresolved(
             select(table)
             .where(table.c.picked == True, table.c.last_heartbeat <= self._bind(older_than))  # noqa: E712
-            .order_by(table.c.last_heartbeat.asc())
-        )
+        ).order_by(table.c.last_heartbeat.asc())
         with self.engine.connect() as conn:
-            return [self._to_execution(row) for row in conn.execute(statement)]
+            return self._to_executions(conn.execute(statement))
 
     def get_executions_failing_longer_than(
         self, interval: timedelta, *, now: datetime | None = None
     ) -> list[Execution]:
         table = self.table
         boundary = self._bind((now or self.clock.now()) - interval)
-        statement = select(table).where(
-            table.c.consecutive_failures > 0,
-            (table.c.last_success.is_(None)) | (table.c.last_success < boundary),
+        statement = self._excluding_unresolved(
+            select(table).where(
+                table.c.consecutive_failures > 0,
+                (table.c.last_success.is_(None)) | (table.c.last_success < boundary),
+            )
         )
         with self.engine.connect() as conn:
-            return [self._to_execution(row) for row in conn.execute(statement)]
+            # A monitoring query: it neither returns unrunnable rows nor teaches the poll's
+            # exclusion filter about them.
+            return self._to_executions(
+                conn.execute(statement), add_unresolved_to_exclusion_filter=False
+            )
 
     # ------------------------------------------------------------------ claiming
 
@@ -307,7 +457,13 @@ class JdbcTaskRepository:
         return self._lock_and_fetch_generic(now, limit)
 
     def _lock_and_fetch_single_statement(self, now: datetime, limit: int) -> list[Execution]:
-        """Postgres: pick the ids with `FOR UPDATE SKIP LOCKED`, update them, return the rows."""
+        """Postgres: pick the ids with `FOR UPDATE SKIP LOCKED`, update them, return the rows.
+
+        The statement cannot exclude unresolved names - it is one statement, and the exclusion
+        list is a Python-side set - so anything unrunnable is picked first and *unpicked*
+        immediately. Leaving it picked would strand the row until the dead-execution detector
+        got to it.
+        """
         table = self.table
         order = (
             (table.c.priority.desc(), table.c.execution_time.asc())
@@ -336,10 +492,28 @@ class JdbcTaskRepository:
             .returning(table)
         )
         with self.engine.begin() as conn:
-            return [self._to_execution(row) for row in conn.execute(statement)]
+            # Unresolved rows are included here on purpose: they have just been picked by the
+            # same statement, and something has to unpick them.
+            all_candidates = self._to_executions(
+                conn.execute(statement), include_unresolved=True
+            )
+
+        unresolved = [
+            one for one in all_candidates if self.task_resolver.is_unresolved(one.task_name)
+        ]
+        if unresolved:
+            self.unpick_picked_batch(unresolved)
+        return [
+            one for one in all_candidates if not self.task_resolver.is_unresolved(one.task_name)
+        ]
 
     def _lock_and_fetch_generic(self, now: datetime, limit: int) -> list[Execution]:
-        """MySQL 8: lock the rows in a transaction, update them, read them back in the same one."""
+        """MySQL 8: lock the rows in a transaction, update them, read them back in the same one.
+
+        No `version` in the update's WHERE clause, deliberately: the rows are locked for the
+        length of the transaction, so nothing else can have moved them, and the version guard
+        would only add a way for the statement to miss.
+        """
         table = self.table
         order = (
             (table.c.priority.desc(), table.c.execution_time.asc())
@@ -347,34 +521,49 @@ class JdbcTaskRepository:
             else (table.c.execution_time.asc(),)
         )
         with self.engine.begin() as conn:
-            locked = list(
-                conn.execute(
-                    select(table)
-                    .where(table.c.picked == False, table.c.execution_time <= self._bind(now))  # noqa: E712
-                    .order_by(*order)
-                    .limit(limit)
-                    .with_for_update(skip_locked=True)
-                )
-            )
-            picked: list[Execution] = []
-            for row in locked:
-                conn.execute(
+            statement = self._excluding_unresolved(
+                select(table)
+                .where(table.c.picked == False, table.c.execution_time <= self._bind(now))  # noqa: E712
+            ).order_by(*order).limit(limit).with_for_update(skip_locked=True)
+            candidates = self._to_executions(conn.execute(statement))
+            if not candidates:
+                return []
+
+            picked_by = self.scheduler_name
+            last_heartbeat = self.clock.now()
+            locked: list[Execution] = []
+            no_lock: list[Execution] = []
+            for candidate in candidates:
+                updated = conn.execute(
                     update(table)
                     .where(
-                        table.c.task_name == row.task_name,
-                        table.c.task_instance == row.task_instance,
-                        table.c.version == row.version,
+                        table.c.task_name == candidate.task_name,
+                        table.c.task_instance == candidate.id,
                     )
                     .values(
                         picked=True,
-                        picked_by=self.scheduler_name,
-                        last_heartbeat=self._bind(now),
+                        picked_by=picked_by,
+                        last_heartbeat=self._bind(last_heartbeat),
                         version=table.c.version + 1,
                     )
+                ).rowcount
+                (locked if updated > 0 else no_lock).append(candidate)
+
+            if no_lock:
+                LOG.error(
+                    "Did not update same amount of executions that were locked in the "
+                    "transaction. This might mean some assumption is wrong here, or that "
+                    "transaction is not working. Needs to be investigated. Updated: %d, "
+                    "expected: %d",
+                    len(locked),
+                    len(candidates),
                 )
-                execution = self._to_execution(row)
-                picked.append(execution.update_to_picked(self.scheduler_name, now))
-            return picked
+                LOG.warning(
+                    "Returning picked executions for processing. Did not manage to pick "
+                    "executions: %s",
+                    ",".join(str(one.task_instance) for one in no_lock),
+                )
+            return [one.update_to_picked(picked_by, last_heartbeat) for one in locked]
 
     @property
     def supports_lock_and_fetch(self) -> bool:
@@ -393,42 +582,54 @@ class JdbcTaskRepository:
     def reschedule(
         self,
         execution: Execution,
-        next_execution_time: datetime,
+        next_execution_time: datetime | RescheduleUpdate,
         *,
         last_success: datetime | None = None,
         last_failure: datetime | None = None,
         consecutive_failures: int | None = None,
         new_data: Any = _UNCHANGED,
     ) -> bool:
-        """Move an execution to its next time and release the claim."""
-        table = self.table
-        values: dict[str, Any] = {
-            "picked": False,
-            "picked_by": None,
-            "last_heartbeat": None,
-            "execution_time": self._bind(next_execution_time),
-            "version": table.c.version + 1,
-        }
-        if last_success is not None:
-            values["last_success"] = self._bind(last_success)
-        if last_failure is not None:
-            values["last_failure"] = self._bind(last_failure)
-        if consecutive_failures is not None:
-            values["consecutive_failures"] = consecutive_failures
-        if new_data is not _UNCHANGED:
-            values["task_data"] = self.serializer.serialize(new_data)
+        """Move an execution to its next time and release the claim.
 
-        statement = (
-            update(table)
-            .where(
-                table.c.task_name == execution.task_name,
-                table.c.task_instance == execution.id,
-                table.c.version == execution.version,
+        Takes either a `RescheduleUpdate` - which can say "clear this column" as distinct from
+        "leave it alone" - or the individual values, which is what the completion handlers do.
+        """
+        if isinstance(next_execution_time, RescheduleUpdate):
+            reschedule_update = next_execution_time
+        else:
+            builder = RescheduleUpdate.to_execution_time(next_execution_time)
+            if last_success is not None:
+                builder = builder.last_success(last_success)
+            if last_failure is not None:
+                builder = builder.last_failure(last_failure)
+            if consecutive_failures is not None:
+                builder = builder.consecutive_failures(consecutive_failures)
+            if new_data is not _UNCHANGED:
+                builder = builder.data(new_data)
+            reschedule_update = builder.build()
+
+        update_statement = ExecutionUpdate.for_execution(execution)
+        update_statement.picked(False)
+        update_statement.picked_by(None)
+        update_statement.last_heartbeat(None)
+        update_statement.execution_time(reschedule_update.execution_time)
+
+        if reschedule_update.last_success is not None:
+            update_statement.last_success(reschedule_update.last_success.value)
+        if reschedule_update.last_failure is not None:
+            update_statement.last_failure(reschedule_update.last_failure.value)
+        if reschedule_update.consecutive_failures is not None:
+            update_statement.consecutive_failures(
+                reschedule_update.consecutive_failures.value
             )
-            .values(**values)
-        )
+        if reschedule_update.data is not None:
+            update_statement.task_data(
+                self.serializer.serialize(reschedule_update.data.value)
+            )
+
         with self.engine.begin() as conn:
-            return conn.execute(statement).rowcount == 1
+            update_statement.update_single(conn, self.table, self._bind)
+        return True
 
     def update_heartbeat(self, execution: Execution, heartbeat: datetime) -> bool:
         """Say this instance is still working on it.
@@ -488,11 +689,9 @@ class JdbcTaskRepository:
         with self.engine.begin() as conn:
             removed = conn.execute(statement).rowcount
         if removed != 1:
-            raise TaskInstanceException(
-                "expected exactly one execution to be removed, but the row had moved - it was "
-                "rescheduled or removed by somebody else",
-                execution.task_name,
-                execution.id,
+            raise ExecutionException(
+                f"Expected one execution to be removed, but removed {removed}. Indicates a bug.",
+                execution,
             )
 
     def remove_executions(self, task_name: str) -> int:
@@ -529,14 +728,47 @@ class JdbcTaskRepository:
 
     # ------------------------------------------------------------------ mapping
 
-    def _to_execution(self, row: Any) -> Execution:
+    def _to_execution(
+        self,
+        row: Any,
+        *,
+        include_unresolved: bool = False,
+        add_unresolved_to_exclusion_filter: bool = True,
+    ) -> Execution | None:
+        """One row, as an `Execution` - or nothing, when its task is unknown.
+
+        Resolving the name is what decides how `task_data` is read. A known task names a data
+        class, so the bytes are deserialized into it; an unknown one - a standalone client, or a
+        task this instance does not deploy - gets the raw bytes back rather than a guess.
+        """
+        execution_time = _aware(row.execution_time)
+        assert execution_time is not None, "execution_time is NOT NULL in the schema"
+        task = self.task_resolver.resolve(
+            Resolvable.of(row.task_name, execution_time), add_unresolved_to_exclusion_filter
+        )
+        if task is None and not include_unresolved:
+            if add_unresolved_to_exclusion_filter:
+                LOG.warning(
+                    "Failed to find implementation for task with name '%s'. Execution will be "
+                    "excluded from due. The scheduler normally delete unresolved tasks after "
+                    "14d. To handle manually, either delete the execution from the database, "
+                    "or add an implementation for it. ",
+                    row.task_name,
+                )
+            return None
+
         raw = row.task_data
-        # Deserialize on demand: a poll that fetches a hundred due rows and runs three of them
-        # should pay for three, not a hundred. Java holds the same thing behind a Supplier.
+        # Deserialized once, on demand: a poll that fetches a hundred due rows and runs three of
+        # them should pay for three, not a hundred - and a handler that reads `data` twice
+        # should still pay once. Java wraps the same supplier in a memoizer.
+        unread: list[Any] = []
+
         def data() -> Any:
-            # No data class yet: `TaskResolver` is what knows a task's, and until the repository
-            # is given one this reads back plain JSON - dicts, lists and scalars.
-            return self.serializer.deserialize(None, raw)
+            if not unread:
+                unread.append(
+                    raw if task is None else self.serializer.deserialize(task.data_class, raw)
+                )
+            return unread[0]
 
         instance = TaskInstance[Any](
             row.task_name,
@@ -544,8 +776,6 @@ class JdbcTaskRepository:
             priority=row.priority if row.priority is not None else Priority.MEDIUM,
             data_supplier=data,
         )
-        execution_time = _aware(row.execution_time)
-        assert execution_time is not None, "execution_time is NOT NULL in the schema"
         return Execution(
             execution_time=execution_time,
             task_instance=instance,
@@ -557,6 +787,24 @@ class JdbcTaskRepository:
             last_heartbeat=_aware(row.last_heartbeat),
             version=row.version,
         )
+
+    def _to_executions(
+        self,
+        rows: Any,
+        *,
+        include_unresolved: bool = False,
+        add_unresolved_to_exclusion_filter: bool = True,
+    ) -> list[Execution]:
+        """Map a result set, dropping the rows whose task could not be resolved."""
+        mapped = (
+            self._to_execution(
+                row,
+                include_unresolved=include_unresolved,
+                add_unresolved_to_exclusion_filter=add_unresolved_to_exclusion_filter,
+            )
+            for row in rows
+        )
+        return [execution for execution in mapped if execution is not None]
 
 
 def _tuple_in(table: Table, candidates: Any) -> Any:

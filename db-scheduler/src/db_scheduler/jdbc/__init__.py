@@ -19,7 +19,7 @@ from .customization import (
     SqliteJdbcCustomization,
     autodetect,
 )
-from .repository import JdbcTaskRepository, TaskSummary
+from .repository import JdbcTaskRepository
 from .schema import scheduled_tasks_table
 
 __all__ = [
@@ -30,7 +30,6 @@ __all__ = [
     "MySQLJdbcCustomization",
     "PostgreSqlJdbcCustomization",
     "SqliteJdbcCustomization",
-    "TaskSummary",
     "autodetect",
     "scheduled_tasks_table",
 ]

@@ -7,7 +7,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from repository_contract import LockAndFetchContract, RepositoryContract
+from repository_contract import (
+    LockAndFetchContract,
+    PagingContract,
+    RepositoryContract,
+    ResolverContract,
+)
 
 
 class TestRepository(RepositoryContract):
@@ -16,3 +21,11 @@ class TestRepository(RepositoryContract):
 
 class TestLockAndFetch(LockAndFetchContract):
     """Where the dialect can claim in the statement that selects."""
+
+
+class TestResolution(ResolverContract):
+    """What happens to a row whose task this instance does not have."""
+
+
+class TestPaging(PagingContract):
+    """Listing with a cursor, on every dialect - the ordering is the database's, not ours."""

@@ -19,9 +19,11 @@ __all__ = [
     "ExecutionComplete",
     "ExecutionContext",
     "HasTaskName",
+    "NewValue",
     "NextExecutionTime",
     "OnStartup",
     "Priority",
+    "RescheduleUpdate",
     "Result",
     "SchedulableInstance",
     "SchedulableTaskInstance",
@@ -593,3 +595,84 @@ def __getattr__(name: str) -> Any:
     import importlib
 
     return getattr(importlib.import_module(f".{module}", __name__), name)
+
+
+# ------------------------------------------------------------------ describing an update
+
+
+@dataclass(frozen=True, slots=True)
+class NewValue[T = Any]:
+    """A value that was *given*, wrapping the difference between "leave it" and "set it to null".
+
+    Both are legitimate instructions - clearing `last_failure` is not the same as not touching
+    it - and a bare `None` cannot say which one is meant. Java calls this `NewValue` too, for
+    the same reason.
+    """
+
+    value: T | None = None
+
+    @staticmethod
+    def of[U](value: U | None) -> NewValue[U]:
+        return NewValue[U](value)
+
+
+@dataclass(frozen=True, slots=True)
+class RescheduleUpdate:
+    """Everything a reschedule may change, with "unset" distinguishable from "set to null"."""
+
+    execution_time: datetime
+    data: NewValue[Any] | None = None
+    last_success: NewValue[datetime] | None = None
+    last_failure: NewValue[datetime] | None = None
+    consecutive_failures: NewValue[int] | None = None
+
+    @staticmethod
+    def to_execution_time(execution_time: datetime) -> RescheduleUpdate.Builder:
+        return RescheduleUpdate.Builder(execution_time)
+
+    class Builder:
+        __slots__ = (
+            "_consecutive_failures",
+            "_data",
+            "_execution_time",
+            "_last_failure",
+            "_last_success",
+        )
+
+        def __init__(self, execution_time: datetime) -> None:
+            self._execution_time = execution_time
+            self._data: NewValue[Any] | None = None
+            self._last_success: NewValue[datetime] | None = None
+            self._last_failure: NewValue[datetime] | None = None
+            self._consecutive_failures: NewValue[int] | None = None
+
+        def data(self, data: Any) -> Self:
+            self._data = NewValue[Any](data)
+            return self
+
+        def last_success(self, last_success: datetime | None) -> Self:
+            self._last_success = NewValue[datetime](last_success)
+            return self
+
+        def last_failure(self, last_failure: datetime | None) -> Self:
+            self._last_failure = NewValue[datetime](last_failure)
+            return self
+
+        def consecutive_failures(self, count: int) -> Self:
+            self._consecutive_failures = NewValue[int](count)
+            return self
+
+        def reset_failures(self) -> Self:
+            """Back to not-failing: zero the count and clear the last failure."""
+            self._consecutive_failures = NewValue[int](0)
+            self._last_failure = NewValue[datetime](None)
+            return self
+
+        def build(self) -> RescheduleUpdate:
+            return RescheduleUpdate(
+                self._execution_time,
+                self._data,
+                self._last_success,
+                self._last_failure,
+                self._consecutive_failures,
+            )

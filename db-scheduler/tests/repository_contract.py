@@ -18,7 +18,14 @@ from typing import Any
 
 import pytest
 
-from db_scheduler.task import SchedulableInstance, SchedulableTaskInstance, TaskInstance
+from db_scheduler.exceptions import ExecutionException
+from db_scheduler.scheduled_execution import ExecutionTimeAndId, ScheduledExecutionsFilter
+from db_scheduler.task import (
+    RescheduleUpdate,
+    SchedulableInstance,
+    SchedulableTaskInstance,
+    TaskInstance,
+)
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
@@ -252,13 +259,38 @@ class RepositoryContract:
         assert found is not None
         assert found.task_instance.data == {"n": 2}
 
-    def test_rescheduling_a_stale_execution_is_declined(self, repository: Any) -> None:
+    def test_rescheduling_a_stale_execution_raises(self, repository: Any) -> None:
+        """Loudly, not quietly: every caller of `reschedule` has already established the
+        version it holds, so a miss here is a bug at this layer rather than a race to absorb."""
         repository.create_if_not_exists(scheduled(an_instance()))
         [execution] = repository.get_due(NOW, limit=10)
         repository.pick(execution, NOW)
 
         # `execution` still carries the version from before the pick
-        assert repository.reschedule(execution, NOW + timedelta(hours=1)) is False
+        with pytest.raises(ExecutionException, match="Indicates a bug"):
+            repository.reschedule(execution, NOW + timedelta(hours=1))
+
+    def test_a_reschedule_update_can_clear_a_column(self, repository: Any) -> None:
+        """"Leave it alone" and "set it to null" are different instructions, and a bare None
+        cannot say which is meant - which is the whole reason `RescheduleUpdate` exists."""
+        repository.create_if_not_exists(scheduled(an_instance()))
+        [execution] = repository.get_due(NOW, limit=10)
+        repository.reschedule(
+            execution, NOW + timedelta(hours=1), last_failure=NOW, consecutive_failures=3
+        )
+        [failing] = repository.get_scheduled_executions()
+        assert failing.consecutive_failures == 3
+
+        repository.reschedule(
+            failing,
+            RescheduleUpdate.to_execution_time(NOW + timedelta(hours=2))
+            .reset_failures()
+            .build(),
+        )
+
+        [recovered] = repository.get_scheduled_executions()
+        assert recovered.consecutive_failures == 0
+        assert recovered.last_failure is None
 
     # ------------------------------------------------------------------ removing
 
@@ -275,7 +307,7 @@ class RepositoryContract:
         [execution] = repository.get_due(NOW, limit=10)
         repository.pick(execution, NOW)
 
-        with pytest.raises(Exception, match=r"(?i)version|remove|moved"):
+        with pytest.raises(ExecutionException, match="Indicates a bug"):
             repository.remove(execution)
 
     def test_removing_every_execution_of_a_task(self, repository: Any) -> None:
@@ -385,9 +417,40 @@ class RepositoryContract:
             repository.create_if_not_exists(scheduled(an_instance(task="a", id=f"{n}")))
         repository.create_if_not_exists(scheduled(an_instance(task="b", id="x")))
 
-        summary = {s.task_name: s.count for s in repository.get_scheduled_executions_summary()}
+        by_name = {
+            one.task_name: one for one in repository.get_scheduled_executions_summary_by_task()
+        }
 
-        assert summary == {"a": 3, "b": 1}
+        assert [one.instance_count for one in by_name.values()] == [3, 1]
+        assert by_name["a"].scheduled_count == 3
+        assert by_name["a"].running_count == 0
+        assert by_name["a"].failing_count == 0
+        assert by_name["a"].earliest_execution_time == NOW
+        assert by_name["a"].max_consecutive_failures == 0
+
+    def test_the_summary_splits_running_from_scheduled_from_failing(
+        self, repository: Any
+    ) -> None:
+        """A picked row is running, and counting it as scheduled too would double-count it."""
+        for n in range(3):
+            repository.create_if_not_exists(scheduled(an_instance(task="a", id=f"{n}")))
+        [running, failing, _] = repository.get_due(NOW, limit=10)
+        repository.pick(running, NOW)
+        repository.reschedule(
+            failing,
+            NOW + timedelta(hours=1),
+            last_failure=NOW,
+            consecutive_failures=2,
+        )
+
+        [summary] = repository.get_scheduled_executions_summary_by_task()
+
+        assert summary.instance_count == 3
+        assert summary.running_count == 1
+        assert summary.failing_count == 1
+        assert summary.scheduled_count == 1
+        assert summary.max_consecutive_failures == 2
+        assert summary.latest_last_failure == NOW
 
 
 class LockAndFetchContract:
@@ -424,3 +487,148 @@ class LockAndFetchContract:
             pytest.skip("this dialect supports it")
         with pytest.raises(Exception, match=r"(?i)lock.and.fetch|skip locked"):
             repository.verify_supports_lock_and_fetch()
+
+
+class ResolverContract:
+    """What the repository does with a row whose task it has never heard of.
+
+    Not an error: a rolling deploy makes it the normal case for a minute, and a task another
+    service owns makes it permanent. What matters is that such a row is skipped rather than run,
+    and that its name goes into an exclusion filter so the next poll stops fetching it.
+    """
+
+    def test_a_row_for_an_unknown_task_is_not_returned_as_due(
+        self, repository: Any
+    ) -> None:
+        repository.create_if_not_exists(scheduled(an_instance(task="not-deployed-here")))
+
+        assert repository.get_due(NOW, limit=10) == []
+
+    def test_and_its_name_is_remembered(self, repository: Any) -> None:
+        repository.create_if_not_exists(scheduled(an_instance(task="not-deployed-here")))
+        repository.get_due(NOW, limit=10)
+
+        assert repository.task_resolver.is_unresolved("not-deployed-here")
+
+    def test_so_the_next_poll_excludes_it_in_sql(self, repository: Any) -> None:
+        """Not just skipped in Python - excluded by the query, so one abandoned task name
+        cannot fill every page of the poll and starve the work that can run."""
+        repository.create_if_not_exists(scheduled(an_instance(task="not-deployed-here")))
+        repository.create_if_not_exists(scheduled(an_instance(id="runnable")))
+        repository.get_due(NOW, limit=10)
+
+        # With the unknown name excluded, a limit of one now reaches the runnable row.
+        assert [e.id for e in repository.get_due(NOW, limit=1)] == ["runnable"]
+
+    def test_a_lookup_by_name_still_finds_it(self, repository: Any) -> None:
+        """`get_execution` is asked for one specific row, so it hands it back whether or not
+        this instance could run it - an operator looking for it needs to see it."""
+        repository.create_if_not_exists(scheduled(an_instance(task="not-deployed-here")))
+
+        assert repository.get_execution("not-deployed-here", "an-id") is not None
+
+    def test_and_a_listing_includes_it_when_asked(self, repository: Any) -> None:
+        repository.create_if_not_exists(scheduled(an_instance(task="not-deployed-here")))
+
+        included = repository.get_scheduled_executions(ScheduledExecutionsFilter.all())
+        excluded = repository.get_scheduled_executions(
+            ScheduledExecutionsFilter.only_resolved()
+        )
+
+        assert [e.task_name for e in included] == ["not-deployed-here"]
+        assert excluded == []
+
+    def test_its_data_comes_back_as_raw_bytes(self, repository: Any) -> None:
+        """There is no task to name a type, so the bytes are handed over rather than guessed at."""
+        repository.create_if_not_exists(
+            scheduled(an_instance(task="not-deployed-here", data={"n": 1}))
+        )
+
+        [found] = repository.get_scheduled_executions(ScheduledExecutionsFilter.all())
+
+        assert found.task_instance.data == b'{"n":1}'
+
+    def test_a_known_task_gets_its_data_deserialized(self, repository: Any) -> None:
+        repository.create_if_not_exists(scheduled(an_instance(data={"n": 1})))
+
+        [found] = repository.get_due(NOW, limit=10)
+
+        assert found.task_instance.data == {"n": 1}
+
+    def test_the_data_is_deserialized_once(self, repository: Any) -> None:
+        """A handler that reads `data` twice should pay for it once."""
+        repository.create_if_not_exists(scheduled(an_instance(data={"n": 1})))
+        [found] = repository.get_due(NOW, limit=10)
+
+        assert found.task_instance.data is found.task_instance.data
+
+
+class PagingContract:
+    """Listing scheduled executions with a cursor.
+
+    The cursor is a pair - time and id - because execution times are not unique. Paging on time
+    alone across two rows due at the same instant either skips one or repeats it, which these
+    assert by scheduling every row at exactly the same instant.
+    """
+
+    def _three_at_the_same_instant(self, repository: Any) -> None:
+        for id in ("a", "b", "c"):
+            repository.create_if_not_exists(scheduled(an_instance(id=id), NOW))
+
+    def test_a_page_at_a_time_forwards(self, repository: Any) -> None:
+        self._three_at_the_same_instant(repository)
+
+        first = repository.get_scheduled_executions(
+            ScheduledExecutionsFilter.all().limit(2)
+        )
+        assert [e.id for e in first] == ["a", "b"]
+
+        second = repository.get_scheduled_executions(
+            ScheduledExecutionsFilter.all()
+            .limit(2)
+            .after(ExecutionTimeAndId(first[-1].execution_time, first[-1].id))
+        )
+        assert [e.id for e in second] == ["c"]
+
+    def test_a_page_at_a_time_backwards(self, repository: Any) -> None:
+        self._three_at_the_same_instant(repository)
+
+        page = repository.get_scheduled_executions(
+            ScheduledExecutionsFilter.all().limit(2).before(ExecutionTimeAndId(NOW, "c"))
+        )
+
+        assert [e.id for e in page] == ["b", "a"], "newest first when paging backwards"
+
+    def test_a_range_reads_forwards(self, repository: Any) -> None:
+        self._three_at_the_same_instant(repository)
+
+        page = repository.get_scheduled_executions(
+            ScheduledExecutionsFilter.all()
+            .after(ExecutionTimeAndId(NOW, "a"))
+            .before(ExecutionTimeAndId(NOW, "c"))
+        )
+
+        assert [e.id for e in page] == ["b"]
+
+    def test_by_picked(self, repository: Any) -> None:
+        self._three_at_the_same_instant(repository)
+        [first, *_] = repository.get_due(NOW, limit=10)
+        repository.pick(first, NOW)
+
+        picked = repository.get_scheduled_executions(
+            ScheduledExecutionsFilter.all().with_picked(True)
+        )
+        unpicked = repository.get_scheduled_executions(
+            ScheduledExecutionsFilter.all().with_picked(False)
+        )
+
+        assert [e.id for e in picked] == ["a"]
+        assert [e.id for e in unpicked] == ["b", "c"]
+
+    def test_by_task_name(self, repository: Any) -> None:
+        repository.create_if_not_exists(scheduled(an_instance(task="a", id="1")))
+        repository.create_if_not_exists(scheduled(an_instance(task="b", id="2")))
+
+        page = repository.get_scheduled_executions(ScheduledExecutionsFilter.all(), "a")
+
+        assert [e.id for e in page] == ["1"]
