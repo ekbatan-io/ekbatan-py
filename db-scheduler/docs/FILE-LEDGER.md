@@ -38,19 +38,19 @@ whole, makes completeness something you can count rather than something you hope
 | ClientEvent | 37 | - | todo |
 | Clock | 5 | `clock.py` | done |
 | CurrentlyExecuting | 33 | `state.py` | done |
-| DueExecutionsBatch | 51 | - | todo |
-| ExceptionUtils | 12 | - | todo |
-| ExecutePicked | 148 | - | todo |
+| DueExecutionsBatch | 51 | `executor.py` | done |
+| ExceptionUtils | 12 | `util.py` | done |
+| ExecutePicked | 148 | `executor.py` | done |
 | ExecutionTimeAndId | 37 | `scheduled_execution.py` | done |
-| Executor | 83 | - | todo |
-| ExecutorUtils | 48 | - | todo |
+| Executor | 83 | `executor.py` | done |
+| ExecutorUtils | 48 | - | n/a - ThreadPoolExecutor.shutdown does this; the thread-name prefix is a factory argument |
 | FetchCandidates | 134 | - | todo |
 | HeartbeatConfig | 13 | `state.py` | done |
 | HeartbeatState | 59 | `state.py` | done |
 | ImmediateCheckForDueExecutions | 34 | - | todo |
 | LockAndFetchCandidates | 96 | - | todo |
-| PollStrategy | 2 | - | todo |
-| PollingStrategyConfig | 42 | - | todo |
+| PollStrategy | 2 | `executor.py` | done |
+| PollingStrategyConfig | 42 | `executor.py` | done |
 | Resolvable | 19 | `resolver.py` | done |
 | RunAndLogErrors | 23 | - | todo |
 | RunUntilShutdown | 45 | - | todo |
@@ -61,15 +61,15 @@ whole, makes completeness something you can count rather than something you hope
 | SchedulerClient | 365 | `client.py` | done |
 | SchedulerName | 41 | `scheduler_name.py` | done |
 | SchedulerState | 39 | `state.py` | done |
-| StreamUtils | 22 | - | todo |
-| StringUtils | 13 | - | todo |
+| StreamUtils | 22 | `util.py` | done |
+| StringUtils | 13 | `util.py` | done |
 | SystemClock | 8 | `clock.py` | done |
 | TaskRepository | 66 | `jdbc/repository.py` | done |
 | TaskResolver | 79 | `resolver.py` | done |
 | TaskSummary | 12 | `scheduled_execution.py` | done |
-| Waiter | 77 | - | todo |
+| Waiter | 77 | `executor.py` | done |
 | **`scheduler/concurrent`** | | | |
-| LoggingRunnable | 15 | - | todo |
+| LoggingRunnable | 15 | - | n/a - Python threads log their own uncaught exceptions |
 | **`scheduler/event`** | | | |
 | AbstractSchedulerListener | 22 | `event/__init__.py` | done |
 | ExecutionChain | 27 | `event/__init__.py` | done |
@@ -106,8 +106,8 @@ whole, makes completeness something you can count rather than something you hope
 | QueryBuilder | 58 | `jdbc/repository.py` | done - `select()` is the query builder |
 | SqliteJdbcCustomization | 15 | `jdbc/customization.py` | done |
 | **`scheduler/logging`** | | | |
-| ConfigurableLogger | 57 | - | todo |
-| LogLevel | 9 | - | todo |
+| ConfigurableLogger | 57 | `logging.py` | done |
+| LogLevel | 9 | `logging.py` | done |
 | **`scheduler/serializer`** | | | |
 | GsonSerializer | 52 | - | n/a - a Gson-specific binding; JSON is the port's default |
 | Jackson3Serializer | 55 | - | n/a - as above |
