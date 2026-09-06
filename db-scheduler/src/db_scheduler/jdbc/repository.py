@@ -62,10 +62,12 @@ class JdbcTaskRepository:
         clock: Clock | None = None,
         customization: JdbcCustomization | None = None,
         order_by_priority: bool = False,
+        persist_timestamp_in_utc: bool = True,
     ) -> None:
         from sqlalchemy import MetaData
 
         self.engine = engine
+        self.persist_timestamp_in_utc = persist_timestamp_in_utc
         self.scheduler_name = scheduler_name[:PICKED_BY_MAX]
         self.clock = clock or SystemClock()
         self.order_by_priority = order_by_priority
@@ -74,13 +76,21 @@ class JdbcTaskRepository:
         if table is not None:
             self.table = table
         elif table_name is not None:
-            self.table = scheduled_tasks_table(MetaData(), table_name)
+            self.table = scheduled_tasks_table(
+                MetaData(), table_name, persist_timestamp_in_utc=persist_timestamp_in_utc
+            )
         else:
-            self.table = scheduled_tasks_table(MetaData())
+            self.table = scheduled_tasks_table(
+                MetaData(), persist_timestamp_in_utc=persist_timestamp_in_utc
+            )
 
         from ..serializer import JsonSerializer
 
         self.serializer = serializer or JsonSerializer()
+
+    def _bind(self, moment: datetime | None) -> datetime | None:
+        """One place that knows which timestamp shape this table uses."""
+        return _to_column(moment, self.persist_timestamp_in_utc)
 
     # ------------------------------------------------------------------ creating
 
@@ -131,7 +141,7 @@ class JdbcTaskRepository:
             "task_name": instance.task_name,
             "task_instance": instance.id,
             "task_data": self.serializer.serialize(instance.data),
-            "execution_time": _naive(execution_time),
+            "execution_time": self._bind(execution_time),
             "picked": False,
             "picked_by": None,
             "last_success": None,
@@ -154,7 +164,7 @@ class JdbcTaskRepository:
         )
         statement = (
             select(table)
-            .where(table.c.picked == False, table.c.execution_time <= _naive(now))  # noqa: E712
+            .where(table.c.picked == False, table.c.execution_time <= self._bind(now))  # noqa: E712
             .order_by(*order)
             .limit(limit)
         )
@@ -205,7 +215,7 @@ class JdbcTaskRepository:
         table = self.table
         statement = (
             select(table)
-            .where(table.c.picked == True, table.c.last_heartbeat <= _naive(older_than))  # noqa: E712
+            .where(table.c.picked == True, table.c.last_heartbeat <= self._bind(older_than))  # noqa: E712
             .order_by(table.c.last_heartbeat.asc())
         )
         with self.engine.connect() as conn:
@@ -215,7 +225,7 @@ class JdbcTaskRepository:
         self, interval: timedelta, *, now: datetime | None = None
     ) -> list[Execution]:
         table = self.table
-        boundary = _naive((now or self.clock.now()) - interval)
+        boundary = self._bind((now or self.clock.now()) - interval)
         statement = select(table).where(
             table.c.consecutive_failures > 0,
             (table.c.last_success.is_(None)) | (table.c.last_success < boundary),
@@ -245,7 +255,7 @@ class JdbcTaskRepository:
             .values(
                 picked=True,
                 picked_by=self.scheduler_name,
-                last_heartbeat=_naive(time_picked),
+                last_heartbeat=self._bind(time_picked),
                 version=table.c.version + 1,
             )
         )
@@ -306,7 +316,7 @@ class JdbcTaskRepository:
         )
         candidates = (
             select(table.c.task_name, table.c.task_instance)
-            .where(table.c.picked == False, table.c.execution_time <= _naive(now))  # noqa: E712
+            .where(table.c.picked == False, table.c.execution_time <= self._bind(now))  # noqa: E712
             .order_by(*order)
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -320,7 +330,7 @@ class JdbcTaskRepository:
             .values(
                 picked=True,
                 picked_by=self.scheduler_name,
-                last_heartbeat=_naive(now),
+                last_heartbeat=self._bind(now),
                 version=table.c.version + 1,
             )
             .returning(table)
@@ -340,7 +350,7 @@ class JdbcTaskRepository:
             locked = list(
                 conn.execute(
                     select(table)
-                    .where(table.c.picked == False, table.c.execution_time <= _naive(now))  # noqa: E712
+                    .where(table.c.picked == False, table.c.execution_time <= self._bind(now))  # noqa: E712
                     .order_by(*order)
                     .limit(limit)
                     .with_for_update(skip_locked=True)
@@ -358,7 +368,7 @@ class JdbcTaskRepository:
                     .values(
                         picked=True,
                         picked_by=self.scheduler_name,
-                        last_heartbeat=_naive(now),
+                        last_heartbeat=self._bind(now),
                         version=table.c.version + 1,
                     )
                 )
@@ -396,13 +406,13 @@ class JdbcTaskRepository:
             "picked": False,
             "picked_by": None,
             "last_heartbeat": None,
-            "execution_time": _naive(next_execution_time),
+            "execution_time": self._bind(next_execution_time),
             "version": table.c.version + 1,
         }
         if last_success is not None:
-            values["last_success"] = _naive(last_success)
+            values["last_success"] = self._bind(last_success)
         if last_failure is not None:
-            values["last_failure"] = _naive(last_failure)
+            values["last_failure"] = self._bind(last_failure)
         if consecutive_failures is not None:
             values["consecutive_failures"] = consecutive_failures
         if new_data is not _UNCHANGED:
@@ -434,7 +444,7 @@ class JdbcTaskRepository:
                 table.c.task_instance == execution.id,
                 table.c.version == execution.version,
             )
-            .values(last_heartbeat=_naive(heartbeat))
+            .values(last_heartbeat=self._bind(heartbeat))
         )
         with self.engine.begin() as conn:
             updated = conn.execute(statement).rowcount
@@ -556,11 +566,12 @@ def _tuple_in(table: Table, candidates: Any) -> Any:
     )
 
 
-def _naive(moment: datetime | None) -> datetime | None:
-    """UTC, without the zone, which is what the column holds.
+def _to_column(moment: datetime | None, persist_in_utc: bool) -> datetime | None:
+    """The value to bind, in the shape the column expects.
 
-    Storing the offset would mean two instances in different zones writing different-looking
-    values for the same instant, and MySQL has no zoned timestamp to store it in anyway.
+    Zone-less UTC when the column is zone-less, an aware UTC value when it is not. Getting this
+    the wrong way round is the whole hazard: a naive value bound to a `timestamptz` is read as
+    the session's local time, which is right only where that is UTC.
     """
     if moment is None:
         return None
@@ -569,11 +580,12 @@ def _naive(moment: datetime | None) -> datetime | None:
             f"{moment!r} has no timezone. Instants written here are compared across machines, "
             f"so a naive datetime is ambiguous."
         )
-    return moment.astimezone(UTC).replace(tzinfo=None)
+    as_utc = moment.astimezone(UTC)
+    return as_utc.replace(tzinfo=None) if persist_in_utc else as_utc
 
 
 def _aware(moment: datetime | None) -> datetime | None:
-    """The other direction: what the column holds is UTC, so say so."""
+    """The other direction. A zone-less column holds UTC, so say so; a zoned one already knows."""
     if moment is None:
         return None
     return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)

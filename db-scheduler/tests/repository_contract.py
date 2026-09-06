@@ -76,6 +76,42 @@ class RepositoryContract:
         assert found is not None
         assert found.task_instance.data is None
 
+    def test_sub_second_precision_survives(self, repository: Any) -> None:
+        """MySQL's default DATETIME keeps whole seconds and drops the rest without saying so.
+
+        Two executions scheduled 300ms apart would land on the same instant, and which ran
+        first would come down to the storage engine. db-scheduler uses datetime(6) for exactly
+        this reason; the first version of this port used a plain DateTime and MySQL refused the
+        table for an unrelated reason, which is the only thing that stopped it shipping.
+        """
+        precise = NOW.replace(microsecond=123456)
+        repository.create_if_not_exists(scheduled(an_instance(), precise))
+
+        found = repository.get_execution("a-task", "an-id")
+        assert found is not None
+        assert found.execution_time == precise
+        assert found.execution_time.microsecond == 123456
+
+    def test_two_executions_a_few_hundred_millis_apart_keep_their_order(
+        self, repository: Any
+    ) -> None:
+        earlier = NOW.replace(microsecond=100_000)
+        later = NOW.replace(microsecond=400_000)
+        repository.create_if_not_exists(scheduled(an_instance(id="later"), later))
+        repository.create_if_not_exists(scheduled(an_instance(id="earlier"), earlier))
+
+        assert [e.id for e in repository.get_due(NOW + timedelta(seconds=1), limit=10)] == [
+            "earlier",
+            "later",
+        ]
+
+    def test_a_task_name_at_the_full_column_width_is_accepted(self, repository: Any) -> None:
+        """100 characters, which is db-scheduler's own limit on MySQL and therefore the
+        effective cross-port limit."""
+        long_name = "n" * 100
+        assert repository.create_if_not_exists(scheduled(an_instance(task=long_name))) is True
+        assert repository.get_execution(long_name, "an-id") is not None
+
     # ------------------------------------------------------------------ due
 
     def test_only_executions_that_are_due_are_returned(self, repository: Any) -> None:
