@@ -1,0 +1,60 @@
+name: db-scheduler
+
+on:
+  push:
+    branches: [main]
+    paths: ["db-scheduler/**", ".github/workflows/db-scheduler.yml"]
+  pull_request:
+    paths: ["db-scheduler/**", ".github/workflows/db-scheduler.yml"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: db-scheduler
+
+jobs:
+  static:
+    name: types and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras
+      - run: uv run ruff check .
+      - run: uv run mypy
+
+  fast:
+    name: tests (sqlite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras
+      - run: uv run pytest
+
+  compatibility:
+    # db-scheduler proves its repository against every database it claims to support, with one
+    # CompatibilityTest per dialect. This is that, and it is where the claim actually rests -
+    # SQLite keeps the inner loop fast and proves nothing about MySQL's locking.
+    name: compatibility (${{ matrix.dialect }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dialect: [postgres, mysql, mariadb]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras
+      - run: uv run pytest tests/integration --dialects=${{ matrix.dialect }}
+        env:
+          # Pinned, so a base-image change is a commit rather than a surprise.
+          DB_SCHEDULER_POSTGRES_IMAGE: postgres:17-alpine
+          DB_SCHEDULER_MYSQL_IMAGE: mysql:8.4
+          DB_SCHEDULER_MARIADB_IMAGE: mariadb:11.4
