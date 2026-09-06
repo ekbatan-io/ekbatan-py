@@ -58,7 +58,7 @@ whole, makes completeness something you can count rather than something you hope
 | ScheduledExecutionsFilter | 55 | `scheduled_execution.py` | done |
 | Scheduler | 404 | - | todo |
 | SchedulerBuilder | 306 | - | todo |
-| SchedulerClient | 365 | - | todo |
+| SchedulerClient | 365 | `client.py` | done |
 | SchedulerName | 41 | `scheduler_name.py` | done |
 | SchedulerState | 39 | `state.py` | done |
 | StreamUtils | 22 | - | todo |
