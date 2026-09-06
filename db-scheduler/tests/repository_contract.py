@@ -678,3 +678,51 @@ class PagingContract:
         page = repository.get_scheduled_executions(ScheduledExecutionsFilter.all(), "a")
 
         assert [e.id for e in page] == ["1"]
+
+
+class BatchAndPagingContract:
+    """Two invariants that only a real database can settle."""
+
+    def test_duplicate_ids_inside_one_batch_write_nothing(self, repository: Any) -> None:
+        """A batch is all or nothing. Writing the first of two identical ids and refusing the
+        second would leave the caller with no way to know what landed."""
+        from db_scheduler.exceptions import DbSchedulerException
+
+        with pytest.raises(DbSchedulerException):
+            repository.create_batch(
+                [scheduled(an_instance(id="same")), scheduled(an_instance(id="same"))]
+            )
+
+        assert repository.get_scheduled_executions() == []
+
+    def test_paging_sees_every_row_exactly_once(self, repository: Any) -> None:
+        """All twenty-five share one execution time, so the cursor's *id* half is the only
+        thing keeping the pages apart. Time alone would skip or repeat rows."""
+        for n in range(25):
+            repository.create_if_not_exists(scheduled(an_instance(id=f"i{n:02}"), NOW))
+
+        seen: list[str] = []
+        cursor: ExecutionTimeAndId | None = None
+        for _ in range(20):
+            page_filter = ScheduledExecutionsFilter.all().limit(7)
+            if cursor is not None:
+                page_filter = page_filter.after(cursor)
+            page = repository.get_scheduled_executions(page_filter)
+            if not page:
+                break
+            seen.extend(execution.id for execution in page)
+            cursor = ExecutionTimeAndId(page[-1].execution_time, page[-1].id)
+
+        assert len(seen) == len(set(seen)), f"a row appeared on two pages: {seen}"
+        assert set(seen) == {f"i{n:02}" for n in range(25)}, "a row was skipped between pages"
+
+    def test_rich_data_survives_the_round_trip(self, repository: Any) -> None:
+        """Nested structures, nulls and non-ASCII all go through the serializer, a binary
+        column and back."""
+        payload = {"nested": {"list": [1, 2, None]}, "text": "üñî-任务", "flag": True}
+        repository.create_if_not_exists(scheduled(an_instance(id="rich", data=payload), NOW))
+
+        found = repository.get_execution("a-task", "rich")
+
+        assert found is not None
+        assert found.task_instance.data == payload

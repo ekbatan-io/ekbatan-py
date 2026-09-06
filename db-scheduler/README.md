@@ -126,6 +126,18 @@ dead-execution threads each need a connection too, so `threads + 3` is the floor
 warns at startup when the pool cannot outnumber the workers, including with SQLAlchemy's default
 pool of 15, where `threads(20)` looks perfectly reasonable and is not.
 
+## Clocks
+
+Dead-execution detection compares a heartbeat written by *another* instance against this one's
+clock, so the fleet's clocks must agree to within the dead-threshold —
+`heartbeat_interval * missed_heartbeats_limit`. Beyond that, an instance whose clock runs fast
+declares a healthy execution dead and runs it again.
+
+The default threshold is **thirty minutes** (5 min × 6), which no plausible NTP drift comes
+near. It only becomes reachable if you tune the heartbeat down for faster recovery — so if you
+do, keep the threshold comfortably above the worst skew you expect. db-scheduler makes the same
+assumption; it is inherent to using wall-clock timestamps for liveness.
+
 ## Limits worth knowing
 
 `task_data` is a `blob` on MySQL and MariaDB, as it is in every db-scheduler DDL file — so
@@ -170,11 +182,11 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 732 passed, 10 skipped |
-| PostgreSQL 17 | 738 passed, 4 skipped |
-| MySQL 8.4 (LTS) | 738 passed, 4 skipped |
-| MySQL 26.7 (current) | 738 passed, 4 skipped |
-| MariaDB 11.4 | 736 passed, 6 skipped |
+| SQLite | 750 passed, 14 skipped |
+| PostgreSQL 17 | 760 passed, 4 skipped |
+| MySQL 8.4 (LTS) | 760 passed, 4 skipped |
+| MySQL 26.7 (current) | 760 passed, 4 skipped |
+| MariaDB 11.4 | 758 passed, 6 skipped |
 
 Every integration test runs twice per dialect, once for each timestamp shape - zone-less UTC
 columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is

@@ -7,7 +7,7 @@ asserted in microseconds, and a dead execution produced without killing anything
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ from db_scheduler.scheduled_execution import ScheduledExecutionsFilter
 from db_scheduler.task import TaskInstance
 from db_scheduler.task.handlers import CancelDeadExecution
 from db_scheduler.task.helper import Tasks
-from db_scheduler.task.schedule import FixedDelay
+from db_scheduler.task.schedule import Daily, DisabledSchedule, FixedDelay
 from db_scheduler.testhelper import ManualSchedulerBuilder, create_manual_scheduler
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -223,3 +223,70 @@ class TestBuilder:
         scheduler.schedule_if_not_exists(TaskInstance[Any]("a-task", "an-id"), NOW)
 
         assert len(scheduler.get_scheduled_executions(ScheduledExecutionsFilter.all())) == 1
+
+
+class TestARedeployThatChangesTheSchedule:
+    """A recurring task's schedule lives in the code but its next execution lives in the table,
+    and a deploy can change one without the other. Reconciling them is what
+    `ScheduleRecurringOnStartup` does, and until now it had only ever been tested against fakes.
+
+    Each "deploy" below is a fresh scheduler over the same table, which is what a restart is.
+    """
+
+    def _deploy(self, engine: Any, table: Any, schedule: Any) -> datetime | None:
+        task = Tasks.recurring("nightly", schedule).execute(lambda instance, context: None)
+        scheduler = (
+            create_manual_scheduler(engine)
+            .table_name(table.name)
+            .clock(SettableClock(NOW))
+            .add_start_tasks(task)
+            .start()
+        )
+        rows = scheduler.get_scheduled_executions(ScheduledExecutionsFilter.all())
+        return rows[0].execution_time.astimezone(UTC) if rows else None
+
+    def test_an_unchanged_schedule_leaves_the_row_alone(self, engine: Any, table: Any) -> None:
+        first = self._deploy(engine, table, Daily(time(8, 0), zone=UTC))
+
+        assert self._deploy(engine, table, Daily(time(8, 0), zone=UTC)) == first
+
+    def test_a_changed_deterministic_schedule_moves_the_row(
+        self, engine: Any, table: Any
+    ) -> None:
+        """Cron and daily are deterministic: a different answer means somebody edited the code,
+        so the row follows."""
+        self._deploy(engine, table, Daily(time(8, 0), zone=UTC))
+
+        moved = self._deploy(engine, table, Daily(time(9, 0), zone=UTC))
+
+        assert moved == datetime(2026, 1, 2, 9, 0, tzinfo=UTC)
+
+    def test_a_non_deterministic_schedule_never_pushes_the_row_later(
+        self, engine: Any, table: Any
+    ) -> None:
+        """The rule that stops a frequently-restarting service from never running anything: a
+        fixed delay recomputed at every boot would walk the execution into the future forever.
+        """
+        before = self._deploy(engine, table, Daily(time(9, 0), zone=UTC))
+
+        after = self._deploy(engine, table, FixedDelay.of(timedelta(days=7)))
+
+        assert after == before, "a fixed delay pushed the execution further away"
+
+    def test_but_it_does_move_the_row_earlier(self, engine: Any, table: Any) -> None:
+        """Shortening the delay should take effect, or the change would be ignored."""
+        before = self._deploy(engine, table, Daily(time(9, 0), zone=UTC))
+
+        after = self._deploy(engine, table, FixedDelay.of(timedelta(seconds=30)))
+
+        assert after is not None and before is not None and after < before
+        assert after == NOW + timedelta(seconds=30)
+
+    def test_disabling_the_schedule_removes_the_row(self, engine: Any, table: Any) -> None:
+        """So a task can be switched off in configuration without deleting it by hand."""
+        self._deploy(engine, table, Daily(time(8, 0), zone=UTC))
+
+        assert self._deploy(engine, table, DisabledSchedule()) is None
+
+    def test_and_a_disabled_schedule_creates_nothing(self, engine: Any, table: Any) -> None:
+        assert self._deploy(engine, table, DisabledSchedule()) is None

@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sqlalchemy import create_engine
 
 from db_scheduler.builder import SchedulerBuilder, create
-from db_scheduler.clock import SettableClock, SystemClock
+from db_scheduler.clock import Clock, SettableClock, SystemClock
 from db_scheduler.event import AbstractSchedulerListener, SchedulerEventType
 from db_scheduler.exceptions import SerializationException
 from db_scheduler.executor import PollingStrategyConfig
@@ -1017,3 +1017,76 @@ class TestGivingTheSchedulerItsOwnConnections:
         self, engine_url: str, table: Any
     ) -> None:
         assert self._run(engine_url, share=False) == 0
+
+
+@pytest.mark.skipif_sqlite
+class TestClockSkewBetweenInstances:
+    """Dead-execution detection compares a heartbeat written with *another* instance's clock
+    against this one's. So the whole mechanism assumes the fleet's clocks agree to within the
+    dead-threshold - `heartbeat_interval * missed_heartbeats_limit`.
+
+    That is inherited: db-scheduler does the same arithmetic. With its defaults the threshold is
+    thirty minutes, which no plausible NTP drift comes near. It only becomes reachable if the
+    heartbeat is tuned down for fast recovery, which is exactly when somebody needs to know.
+
+    Both directions are pinned so the assumption cannot quietly stop being true.
+    """
+
+    HEARTBEAT = timedelta(milliseconds=200)
+    LIMIT = 4  # dead after 800ms of silence
+
+    def _runs_with_hunter_skewed_by(self, engine_url: str, skew: timedelta) -> int:
+        runs: list[str] = []
+        lock = threading.Lock()
+        started, release = threading.Event(), threading.Event()
+
+        class SkewedClock(Clock):
+            def now(self) -> datetime:
+                return datetime.now(UTC) + skew
+
+        def body(instance: TaskInstance[Any], context: Any) -> None:
+            with lock:
+                runs.append(instance.id)
+            started.set()
+            release.wait(PATIENCE)
+
+        def a_scheduler(name: str, clock: Clock) -> Scheduler:
+            return (
+                create(create_engine(engine_url, pool_size=8, max_overflow=4))
+                .add_tasks(Tasks.one_time("t").execute(body))
+                .threads(2)
+                .polling_interval(timedelta(milliseconds=50))
+                .heartbeat_interval(self.HEARTBEAT)
+                .missed_heartbeats_limit(self.LIMIT)
+                .clock(clock)
+                .scheduler_name(Fixed(name))
+                .shutdown_max_wait(timedelta(seconds=3))
+                .build()
+            )
+
+        worker = a_scheduler("worker", SystemClock())
+        hunter = a_scheduler("hunter", SkewedClock())
+        worker.schedule_if_not_exists(TaskInstance[Any]("t", "the-one"), SystemClock().now())
+        try:
+            worker.start()
+            hunter.start()
+            assert started.wait(PATIENCE), "it never started"
+            time.sleep(3.0)
+        finally:
+            release.set()
+            time.sleep(0.5)
+            worker.stop()
+            hunter.stop()
+        return len(runs)
+
+    def test_synchronised_clocks_never_take_live_work(
+        self, engine_url: str, table: Any
+    ) -> None:
+        assert self._runs_with_hunter_skewed_by(engine_url, timedelta()) == 1
+
+    def test_skew_beyond_the_dead_threshold_does(self, engine_url: str, table: Any) -> None:
+        """Not a defect to fix but a limit to know: keep the dead-threshold comfortably above
+        the worst clock skew across the fleet. The default - thirty minutes - already is."""
+        skew = self.HEARTBEAT * self.LIMIT * 3
+
+        assert self._runs_with_hunter_skewed_by(engine_url, skew) == 2
