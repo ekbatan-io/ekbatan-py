@@ -18,10 +18,10 @@ whole, makes completeness something you can count rather than something you hope
 | --- | --- | --- | --- |
 | **`jdbc`** | | | |
 | BatchPreparedStatementSetter | 6 | - | n/a - as above |
-| ConnectionSupplier | 8 | - | n/a - SQLAlchemy's Engine is the connection supplier |
-| DataSourceConnectionSupplier | 24 | - | n/a - as above |
+| ConnectionSupplier | 8 | - | n/a - internal to db-scheduler's `jdbc` package, not reachable from its builder. SQLAlchemy's Engine is the whole seam, as the DataSource is there |
+| DataSourceConnectionSupplier | 24 | - | n/a - `engine.connect()` |
 | DoInTransaction | 5 | - | n/a - `with engine.begin()` is this |
-| ExternallyManagedConnection | 20 | - | n/a - as above |
+| ExternallyManagedConnection | 20 | - | n/a - its only caller is `JdbcRunner.inTransaction`, meaning "reuse this open connection, do not commit or close it". `with engine.begin() as conn` already is that. It is *not* a seam for joining a caller's transaction - db-scheduler's own javadoc disclaims that - so porting it would not buy transactional scheduling |
 | IntegrityConstraintViolation | 7 | - | n/a - SQLAlchemy raises IntegrityError |
 | JdbcRunner | 244 | - | n/a - SQLAlchemy is the JDBC layer |
 | Mappers | 42 | - | n/a - as above |
