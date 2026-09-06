@@ -37,7 +37,7 @@ whole, makes completeness something you can count rather than something you hope
 | **`scheduler`** | | | |
 | ClientEvent | 37 | - | todo |
 | Clock | 5 | `clock.py` | done |
-| CurrentlyExecuting | 33 | - | todo |
+| CurrentlyExecuting | 33 | `state.py` | done |
 | DueExecutionsBatch | 51 | - | todo |
 | ExceptionUtils | 12 | - | todo |
 | ExecutePicked | 148 | - | todo |
@@ -45,8 +45,8 @@ whole, makes completeness something you can count rather than something you hope
 | Executor | 83 | - | todo |
 | ExecutorUtils | 48 | - | todo |
 | FetchCandidates | 134 | - | todo |
-| HeartbeatConfig | 13 | - | todo |
-| HeartbeatState | 59 | - | todo |
+| HeartbeatConfig | 13 | `state.py` | done |
+| HeartbeatState | 59 | `state.py` | done |
 | ImmediateCheckForDueExecutions | 34 | - | todo |
 | LockAndFetchCandidates | 96 | - | todo |
 | PollStrategy | 2 | - | todo |
@@ -60,7 +60,7 @@ whole, makes completeness something you can count rather than something you hope
 | SchedulerBuilder | 306 | - | todo |
 | SchedulerClient | 365 | - | todo |
 | SchedulerName | 41 | `scheduler_name.py` | done |
-| SchedulerState | 39 | - | todo |
+| SchedulerState | 39 | `state.py` | done |
 | StreamUtils | 22 | - | todo |
 | StringUtils | 13 | - | todo |
 | SystemClock | 8 | `clock.py` | done |
@@ -141,7 +141,7 @@ whole, makes completeness something you can count rather than something you hope
 | ExecutionContext | 32 | `task/__init__.py` | done |
 | ExecutionFailed | 22 | - | todo |
 | ExecutionHandler | 4 | `task/handlers.py` | done |
-| ExecutionOperations | 65 | - | todo |
+| ExecutionOperations | 65 | `task/operations.py` | done |
 | FailureHandler | 187 | `task/handlers.py` | done |
 | HasTaskName | 17 | `task/__init__.py` | done |
 | MaxRetriesExceededListener | 17 | `task/handlers.py` | done |
