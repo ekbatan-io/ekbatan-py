@@ -534,7 +534,9 @@ class JdbcTaskRepository:
         # Deserialize on demand: a poll that fetches a hundred due rows and runs three of them
         # should pay for three, not a hundred. Java holds the same thing behind a Supplier.
         def data() -> Any:
-            return self.serializer.deserialize(raw)
+            # No data class yet: `TaskResolver` is what knows a task's, and until the repository
+            # is given one this reads back plain JSON - dicts, lists and scalars.
+            return self.serializer.deserialize(None, raw)
 
         instance = TaskInstance[Any](
             row.task_name,

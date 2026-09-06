@@ -226,7 +226,14 @@ class Daily(Schedule):
         return True
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, Daily) and other.times == self.times and other.zone == self.zone
+        # Zones are compared by id, as `ZoneId.equals` does. `timezone.utc` and
+        # `ZoneInfo("UTC")` are different objects for the same zone, and a schedule that came
+        # back from JSON must still equal the one that went in.
+        return (
+            isinstance(other, Daily)
+            and other.times == self.times
+            and str(other.zone) == str(self.zone)
+        )
 
     def __hash__(self) -> int:
         return hash(("Daily", self.times, str(self.zone)))
@@ -346,7 +353,7 @@ class CronSchedule(Schedule):
         return (
             isinstance(other, CronSchedule)
             and other.pattern == self.pattern
-            and other.zone == self.zone
+            and str(other.zone) == str(self.zone)
             and other.cron_style is self.cron_style
         )
 

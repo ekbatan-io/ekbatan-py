@@ -29,11 +29,14 @@ __all__ = [
     "FailureHandler",
     "MaxRetriesBuilder",
     "MaxRetriesExceededListener",
+    "MaxRetriesFailureHandler",
     "OnCompleteRemove",
     "OnCompleteReplace",
     "OnCompleteReschedule",
     "OnFailureReschedule",
+    "OnFailureRescheduleUsingTaskDataSchedule",
     "OnFailureRetryLater",
+    "OnMaxRetriesLogWarn",
     "ReviveDeadExecution",
     "max_retries",
 ]
@@ -297,7 +300,7 @@ class MaxRetriesBuilder[T]:
         """After the cap, hand over to ``handler``."""
         terminal = handler.on_failure if hasattr(handler, "on_failure") else handler
         return _MaxRetriesHandler[T](
-            self._max_retries, self._require_retry(), terminal, listener or _log_max_retries
+            self._max_retries, self._require_retry(), terminal, listener or OnMaxRetriesLogWarn()
         )
 
     def _require_retry(self) -> FailureHandler[T]:
@@ -316,12 +319,105 @@ def max_retries[T](count: int) -> MaxRetriesBuilder[T]:
     return MaxRetriesBuilder[T](count)
 
 
-def _log_max_retries(completion: ExecutionComplete) -> None:
-    LOG.warning(
-        "Execution has failed %d times. Cancelling execution. %s",
-        completion.execution.consecutive_failures + 1,
-        completion.execution,
-    )
+class OnMaxRetriesLogWarn:
+    """The default listener: it warns, and changes nothing.
+
+    A listener runs *after* the terminal step has already been taken. To decide the terminal
+    step itself, pass a handler to `MaxRetriesBuilder.then(...)` instead.
+    """
+
+    __slots__ = ()
+
+    def __call__(self, completion: ExecutionComplete) -> None:
+        LOG.warning(
+            "Execution has failed max retries for task instance %s. Removing.",
+            completion.execution.task_instance,
+        )
+
+    def __repr__(self) -> str:
+        return "OnMaxRetriesLogWarn()"
+
+
+class MaxRetriesFailureHandler[T]:
+    """Retry up to a cap, then stop.
+
+    Deprecated in db-scheduler in favour of the `max_retries(...)` builder, and ported anyway:
+    it is public API there, and code written against it should go on working. The difference
+    from the builder is that the terminal step is fixed - `stop()`, which removes the row - and
+    the callback only gets to observe it.
+    """
+
+    __slots__ = ("_failure_handler", "_max_retries_exceeded_handler", "max_retries")
+
+    def __init__(
+        self,
+        max_retries: int,
+        failure_handler: FailureHandler[T],
+        max_retries_exceeded_handler: Callable[
+            [ExecutionComplete, ExecutionOperationsLike], None
+        ]
+        | None = None,
+        ) -> None:
+        self.max_retries = max_retries
+        self._failure_handler = failure_handler
+        self._max_retries_exceeded_handler = max_retries_exceeded_handler or _do_nothing
+
+    def on_failure(
+        self, completion: ExecutionComplete, operations: ExecutionOperationsLike
+    ) -> None:
+        consecutive_failures = completion.execution.consecutive_failures
+        total_number_of_failures = consecutive_failures + 1
+        if total_number_of_failures > self.max_retries:
+            LOG.error(
+                "Execution has failed %d times for task instance %s. Cancelling execution.",
+                total_number_of_failures,
+                completion.execution.task_instance,
+            )
+            operations.stop()
+            self._max_retries_exceeded_handler(completion, operations)
+        else:
+            self._failure_handler.on_failure(completion, operations)
+
+    def __repr__(self) -> str:
+        return f"MaxRetriesFailureHandler(max_retries={self.max_retries})"
+
+
+def _do_nothing(
+    completion: ExecutionComplete, operations: ExecutionOperationsLike
+) -> None:
+    """Java's default is `(complete, ops) -> {}`, and so is this."""
+
+
+class OnFailureRescheduleUsingTaskDataSchedule[T]:
+    """Put a failed run back on the schedule its own data carries.
+
+    The failure counterpart of a persistent schedule: the cron lives in the row, so the retry
+    has to read it from there rather than from a schedule captured when the task was declared.
+    """
+
+    __slots__ = ()
+
+    def on_failure(
+        self, completion: ExecutionComplete, operations: ExecutionOperationsLike
+    ) -> None:
+        from .helper import ScheduleAndData
+
+        data = completion.execution.task_instance.data
+        if not isinstance(data, ScheduleAndData):
+            raise ValueError(
+                "OnFailureRescheduleUsingTaskDataSchedule requires the task data to be a "
+                f"ScheduleAndData carrying a Schedule, but it was {type(data).__name__}"
+            )
+        next_execution_time = data.schedule.next_execution_time(completion)
+        LOG.debug(
+            "Execution failed. Rescheduling task %s to %s",
+            completion.execution.task_instance,
+            next_execution_time,
+        )
+        operations.reschedule(completion, next_execution_time)
+
+    def __repr__(self) -> str:
+        return "OnFailureRescheduleUsingTaskDataSchedule()"
 
 
 # ------------------------------------------------------------------ dead executions

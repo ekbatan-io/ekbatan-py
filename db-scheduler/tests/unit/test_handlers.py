@@ -20,13 +20,17 @@ from db_scheduler.task.handlers import (
     ExponentialBackoffFailureHandler,
     FailureHandler,
     MaxRetriesBuilder,
+    MaxRetriesFailureHandler,
     OnCompleteRemove,
     OnCompleteReschedule,
     OnFailureReschedule,
+    OnFailureRescheduleUsingTaskDataSchedule,
     OnFailureRetryLater,
+    OnMaxRetriesLogWarn,
     ReviveDeadExecution,
     max_retries,
 )
+from db_scheduler.task.helper import PlainScheduleAndData
 from db_scheduler.task.schedule import Daily, FixedDelay
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -255,3 +259,101 @@ class TestDeadExecutionHandlers:
         assert isinstance(ReviveDeadExecution[Any](), DeadExecutionHandler)
         assert isinstance(OnFailureRetryLater[Any](timedelta(seconds=1)), FailureHandler)
         assert isinstance(MaxRetriesBuilder, type)
+
+
+
+# ------------------------------------------------------------------ max retries, the old way
+
+
+class TestMaxRetriesFailureHandler:
+    """The pre-builder API. Deprecated in Java, ported for the same reason it is kept there:
+    code already written against it should go on working."""
+
+    def test_it_delegates_while_under_the_cap(self) -> None:
+        operations = FakeExecutionOperations(an_execution(consecutive_failures=1))
+        handler = MaxRetriesFailureHandler[Any](3, OnFailureRetryLater[Any](timedelta(minutes=1)))
+
+        handler.on_failure(failure(an_execution(consecutive_failures=1)), operations)
+
+        assert operations.rescheduled_to == NOW + timedelta(minutes=1)
+        assert operations.removed is False
+
+    def test_it_stops_once_the_cap_is_passed(self) -> None:
+        """`stop()`, which in db-scheduler is `remove()` - the row goes."""
+        operations = FakeExecutionOperations(an_execution(consecutive_failures=3))
+        handler = MaxRetriesFailureHandler[Any](3, OnFailureRetryLater[Any](timedelta(minutes=1)))
+
+        handler.on_failure(failure(an_execution(consecutive_failures=3)), operations)
+
+        assert operations.removed is True
+        assert operations.rescheduled_to is None
+
+    def test_the_exceeded_handler_runs_after_the_stop(self) -> None:
+        seen: list[str] = []
+        operations = FakeExecutionOperations(an_execution(consecutive_failures=1))
+        handler = MaxRetriesFailureHandler[Any](
+            1,
+            OnFailureRetryLater[Any](timedelta(minutes=1)),
+            lambda complete, ops: seen.append("exceeded"),
+        )
+
+        handler.on_failure(failure(an_execution(consecutive_failures=1)), operations)
+
+        assert seen == ["exceeded"]
+        assert operations.removed is True
+
+    def test_the_exceeded_handler_defaults_to_doing_nothing(self) -> None:
+        operations = FakeExecutionOperations(an_execution(consecutive_failures=9))
+        handler = MaxRetriesFailureHandler[Any](1, OnFailureRetryLater[Any](timedelta(minutes=1)))
+
+        handler.on_failure(failure(an_execution(consecutive_failures=9)), operations)
+
+        assert operations.removed is True
+
+
+class TestOnFailureRescheduleUsingTaskDataSchedule:
+    """A failed run of a persistent-schedule task goes back on its own schedule - the one in its
+    data, not one baked into the handler."""
+
+    def test_it_reads_the_schedule_off_the_instance_data(self) -> None:
+        data = PlainScheduleAndData(FixedDelay.of_seconds(30))
+        execution = Execution(NOW, TaskInstance[Any]("a-task", "an-id", data))
+        operations = FakeExecutionOperations(execution)
+
+        OnFailureRescheduleUsingTaskDataSchedule[Any]().on_failure(
+            failure(execution), operations
+        )
+
+        assert operations.rescheduled_to == NOW + timedelta(seconds=30)
+
+    def test_it_says_so_when_the_data_carries_no_schedule(self) -> None:
+        execution = Execution(NOW, TaskInstance[Any]("a-task", "an-id", {"n": 1}))
+
+        with pytest.raises(ValueError, match="ScheduleAndData"):
+            OnFailureRescheduleUsingTaskDataSchedule[Any]().on_failure(
+                failure(execution), FakeExecutionOperations(execution)
+            )
+
+
+class TestOnMaxRetriesLogWarn:
+    """The default listener: it warns, and changes nothing."""
+
+    def test_it_is_what_then_remove_uses_when_none_is_given(self) -> None:
+        operations = FakeExecutionOperations(an_execution(consecutive_failures=1))
+        handler: FailureHandler[Any] = (
+            max_retries(1).retry_every(timedelta(minutes=1)).then_remove()
+        )
+
+        handler.on_failure(failure(an_execution(consecutive_failures=1)), operations)
+
+        assert operations.removed is True
+
+    def test_it_can_be_passed_explicitly(self) -> None:
+        operations = FakeExecutionOperations(an_execution(consecutive_failures=1))
+        handler: FailureHandler[Any] = (
+            max_retries(1).retry_every(timedelta(minutes=1)).then_remove(OnMaxRetriesLogWarn())
+        )
+
+        handler.on_failure(failure(an_execution(consecutive_failures=1)), operations)
+
+        assert operations.removed is True
