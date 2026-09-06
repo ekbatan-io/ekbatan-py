@@ -31,6 +31,7 @@ __all__ = [
     "FixedDelayParser",
     "Parser",
     "PersistentCronSchedule",
+    "RegexBasedParser",
     "Schedule",
     "Schedules",
     "UnrecognizableSchedule",
@@ -474,24 +475,54 @@ class Parser(ABC):
     def examples(self) -> list[str]: ...
 
 
-class FixedDelayParser(Parser):
-    PATTERN = re.compile(r"^FIXED_DELAY\|(\d+)s$")
+class RegexBasedParser(Parser):
+    """A parser that is one pattern plus what to build from a match.
+
+    The examples are not decoration either: `Schedules.parse_schedule` puts them in the
+    exception, so somebody who typed `DAILY|8:00` is shown `DAILY|12:00` rather than told the
+    string was unrecognised.
+    """
+
+    __slots__ = ("_examples", "_pattern")
+
+    def __init__(self, pattern: re.Pattern[str], examples: list[str]) -> None:
+        if pattern is None:
+            raise ValueError("pattern cannot be None")
+        self._pattern = pattern
+        self._examples = list(examples)
 
     def parse(self, text: str) -> Schedule | None:
-        found = self.PATTERN.match(text)
-        return FixedDelay.of_seconds(int(found.group(1))) if found else None
+        if text is None:
+            return None
+        found = self._pattern.fullmatch(text)
+        return self.matched_schedule(found) if found else None
 
     def examples(self) -> list[str]:
-        return ["FIXED_DELAY|10s"]
+        return list(self._examples)
+
+    @abstractmethod
+    def matched_schedule(self, result: re.Match[str]) -> Schedule | None: ...
 
 
-class DailyParser(Parser):
-    PATTERN = re.compile(r"^DAILY\|((\d{2}:\d{2})(,\d{2}:\d{2})*)(\|(.+))?$")
+class FixedDelayParser(RegexBasedParser):
+    PATTERN = re.compile(r"FIXED_DELAY\|(\d+)s")
 
-    def parse(self, text: str) -> Schedule | None:
-        found = self.PATTERN.match(text)
-        if not found:
-            return None
+    def __init__(self) -> None:
+        super().__init__(self.PATTERN, ["FIXED_DELAY|10s"])
+
+    def matched_schedule(self, result: re.Match[str]) -> Schedule | None:
+        return FixedDelay.of_seconds(int(result.group(1)))
+
+
+class DailyParser(RegexBasedParser):
+    PATTERN = re.compile(r"DAILY\|((\d{2}:\d{2})(,\d{2}:\d{2})*)(\|(.+))?")
+
+    def __init__(self) -> None:
+        super().__init__(
+            self.PATTERN, ["DAILY|12:00", "DAILY|12:00,13:30", "DAILY|12:00|Europe/Rome"]
+        )
+
+    def matched_schedule(self, found: re.Match[str]) -> Schedule | None:
         times = [time.fromisoformat(part) for part in found.group(1).split(",")]
         zone_name = found.group(5)
         if zone_name is None:
@@ -504,9 +535,6 @@ class DailyParser(Parser):
             # nightly report at the wrong hour.
             return None
         return Daily(*times, zone=zone)
-
-    def examples(self) -> list[str]:
-        return ["DAILY|12:00", "DAILY|12:00,13:30", "DAILY|12:00|Europe/Rome"]
 
 
 class DisabledScheduleParser(Parser):

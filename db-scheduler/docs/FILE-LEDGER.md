@@ -18,11 +18,11 @@ whole, makes completeness something you can count rather than something you hope
 | --- | --- | --- | --- |
 | **`jdbc`** | | | |
 | BatchPreparedStatementSetter | 6 | - | n/a - as above |
-| ConnectionSupplier | 8 | - | todo |
-| DataSourceConnectionSupplier | 24 | - | todo |
-| DoInTransaction | 5 | - | todo |
-| ExternallyManagedConnection | 20 | - | todo |
-| IntegrityConstraintViolation | 7 | - | todo |
+| ConnectionSupplier | 8 | - | n/a - SQLAlchemy's Engine is the connection supplier |
+| DataSourceConnectionSupplier | 24 | - | n/a - as above |
+| DoInTransaction | 5 | - | n/a - `with engine.begin()` is this |
+| ExternallyManagedConnection | 20 | - | n/a - as above |
+| IntegrityConstraintViolation | 7 | - | n/a - SQLAlchemy raises IntegrityError |
 | JdbcRunner | 244 | - | n/a - SQLAlchemy is the JDBC layer |
 | Mappers | 42 | - | n/a - as above |
 | PreparedStatementExecutor | 20 | - | n/a - as above |
@@ -30,12 +30,12 @@ whole, makes completeness something you can count rather than something you hope
 | ResultSetMapper | 6 | - | n/a - as above |
 | RowMapper | 6 | - | n/a - as above |
 | SQLRuntimeException | 16 | - | n/a - SQLAlchemy raises its own |
-| ThreadLocalTransactionContextProvider | 16 | - | todo |
-| TransactionContext | 11 | - | todo |
-| TransactionContextProvider | 6 | - | todo |
-| TransactionManager | 87 | - | todo |
+| ThreadLocalTransactionContextProvider | 16 | - | n/a - as above |
+| TransactionContext | 11 | - | n/a - as above |
+| TransactionContextProvider | 6 | - | n/a - as above |
+| TransactionManager | 87 | - | n/a - SQLAlchemy owns transactions |
 | **`scheduler`** | | | |
-| ClientEvent | 37 | - | todo |
+| ClientEvent | 37 | `client.py` | done - unused in db-scheduler too, but public |
 | Clock | 5 | `clock.py` | done |
 | CurrentlyExecuting | 33 | `state.py` | done |
 | DueExecutionsBatch | 51 | `executor.py` | done |
@@ -122,12 +122,12 @@ whole, makes completeness something you can count rather than something you hope
 | RuntimeTypeAdapterFactory | 138 | `serializer/__init__.py` | done - as above |
 | ZoneIdAdapter | 16 | `serializer/__init__.py` | done - the zone id string |
 | **`scheduler/serializer/jackson`** | | | |
-| InstantDeserializer | 19 | - | todo |
-| InstantSerializer | 22 | - | todo |
+| InstantDeserializer | 19 | `serializer/__init__.py` | done - ISO-8601, in the JSON codec |
+| InstantSerializer | 22 | `serializer/__init__.py` | done - as above |
 | ScheduleMixin | 19 | `serializer/__init__.py` | done - the tagged shape, written by hand |
 | **`scheduler/serializer/jackson3`** | | | |
-| InstantDeserializer | 12 | - | todo |
-| InstantSerializer | 15 | - | todo |
+| InstantDeserializer | 12 | `serializer/__init__.py` | done - ISO-8601, in the JSON codec |
+| InstantSerializer | 15 | `serializer/__init__.py` | done - as above |
 | **`scheduler/stats`** | | | |
 | MicrometerStatsRegistry | 98 | - | n/a - Micrometer is Java; the Python equivalent is the user's choice of client |
 | StatsRegistry | 40 | `stats/__init__.py` | done |
@@ -139,7 +139,7 @@ whole, makes completeness something you can count rather than something you hope
 | Execution | 97 | `task/__init__.py` | done |
 | ExecutionComplete | 65 | `task/__init__.py` | done |
 | ExecutionContext | 32 | `task/__init__.py` | done |
-| ExecutionFailed | 22 | - | todo |
+| ExecutionFailed | 22 | `task/__init__.py` | done - unused in db-scheduler too, but public |
 | ExecutionHandler | 4 | `task/handlers.py` | done |
 | ExecutionOperations | 65 | `task/operations.py` | done |
 | FailureHandler | 187 | `task/handlers.py` | done |
@@ -158,8 +158,8 @@ whole, makes completeness something you can count rather than something you hope
 | TaskDescriptor | 33 | `task/__init__.py` | done |
 | TaskInstance | 97 | `task/__init__.py` | done |
 | TaskInstanceId | 37 | `task/__init__.py` | done |
-| TaskWithDataDescriptor | 21 | - | todo |
-| TaskWithoutDataDescriptor | 19 | - | todo |
+| TaskWithDataDescriptor | 21 | `task/__init__.py` | done - deprecated, superseded by TaskDescriptor |
+| TaskWithoutDataDescriptor | 19 | `task/__init__.py` | done - as above |
 | VoidExecutionHandler | 4 | `task/__init__.py` | done |
 | **`scheduler/task/helper`** | | | |
 | CustomTask | 65 | `task/helper.py` | done |
@@ -184,10 +184,10 @@ whole, makes completeness something you can count rather than something you hope
 | FixedDelayParser | 16 | `task/schedule/__init__.py` | done |
 | Parser | 7 | `task/schedule/__init__.py` | done |
 | PersistentCronSchedule | 36 | `task/schedule/__init__.py` | done |
-| RegexBasedParser | 34 | - | todo |
+| RegexBasedParser | 34 | `task/schedule/__init__.py` | done |
 | Schedule | 14 | `task/schedule/__init__.py` | done |
 | Schedules | 37 | `task/schedule/__init__.py` | done |
 | **`scheduler/testhelper`** | | | |
-| ManualScheduler | 80 | - | todo |
+| ManualScheduler | 80 | `testhelper/__init__.py` | done |
 | SettableClock | 22 | `clock.py` | done |
-| TestHelper | 181 | - | todo |
+| TestHelper | 181 | `testhelper/__init__.py` | done |

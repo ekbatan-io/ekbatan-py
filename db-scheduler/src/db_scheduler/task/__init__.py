@@ -18,6 +18,7 @@ __all__ = [
     "Execution",
     "ExecutionComplete",
     "ExecutionContext",
+    "ExecutionFailed",
     "HasTaskName",
     "NewValue",
     "NextExecutionTime",
@@ -33,6 +34,8 @@ __all__ = [
     "TaskDescriptor",
     "TaskInstance",
     "TaskInstanceId",
+    "TaskWithDataDescriptor",
+    "TaskWithoutDataDescriptor",
     "VoidExecutionHandler",
 ]
 
@@ -676,3 +679,62 @@ class RescheduleUpdate:
                 self._last_failure,
                 self._consecutive_failures,
             )
+
+
+# ------------------------------------------------------------------ superseded, kept anyway
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionFailed:
+    """A failed run, as its own value.
+
+    Nothing in db-scheduler references it - `ExecutionComplete` with `Result.FAILED` is what
+    actually travels - and it is ported for the same reason it still exists there: it is public,
+    so somebody's code may name it.
+    """
+
+    execution: Execution
+    time_done: datetime
+    cause: BaseException | None = None
+
+
+class TaskWithDataDescriptor[T = Any](TaskDescriptor[T]):
+    """Deprecated in Java in favour of `TaskDescriptor.of(name, data_class)`, and unused even
+    there. Ported so code written against it keeps working."""
+
+    __slots__ = ("_data_class", "_task_name")
+
+    def __init__(self, task_name: str, data_class: type[T]) -> None:
+        self._task_name = task_name
+        self._data_class = data_class
+
+    @property
+    def task_name(self) -> str:
+        return self._task_name
+
+    @property
+    def data_class(self) -> type[T] | None:
+        return self._data_class
+
+    def __repr__(self) -> str:
+        return f"TaskWithDataDescriptor({self._task_name!r}, {self._data_class})"
+
+
+class TaskWithoutDataDescriptor(TaskDescriptor[None]):
+    """The no-data half of the same deprecated pair."""
+
+    __slots__ = ("_task_name",)
+
+    def __init__(self, task_name: str) -> None:
+        self._task_name = task_name
+
+    @property
+    def task_name(self) -> str:
+        return self._task_name
+
+    @property
+    def data_class(self) -> type[None] | None:
+        return type(None)
+
+    def __repr__(self) -> str:
+        return f"TaskWithoutDataDescriptor({self._task_name!r})"

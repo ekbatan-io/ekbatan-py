@@ -14,6 +14,7 @@ from __future__ import annotations
 import enum
 import logging
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Self
 
@@ -40,6 +41,8 @@ from .task import (
 
 __all__ = [
     "DEFAULT_BATCH_SIZE",
+    "ClientEvent",
+    "ClientEventContext",
     "ScheduleOptions",
     "SchedulerClient",
     "SchedulerClientName",
@@ -414,3 +417,38 @@ class StandardSchedulerClient(SchedulerClient):
 
     def __repr__(self) -> str:
         return f"StandardSchedulerClient({self.task_repository!r})"
+
+
+@dataclass(frozen=True, slots=True)
+class ClientEventContext:
+    """What a client did, to which instance, and for when."""
+
+    event_type: ClientEvent.EventType
+    task_instance_id: TaskInstanceId
+    execution_time: datetime
+
+
+class ClientEvent:
+    """A scheduling event, as its own value.
+
+    Nothing in db-scheduler publishes one - `SchedulerListener.onExecutionScheduled` is what
+    actually fires - and it is ported for the same reason it still exists there: it is public
+    API, so somebody's code may name it.
+    """
+
+    __slots__ = ("_context",)
+
+    class EventType(enum.Enum):
+        SCHEDULE = "SCHEDULE"
+        RESCHEDULE = "RESCHEDULE"
+        CANCEL = "CANCEL"
+
+    def __init__(self, context: ClientEventContext) -> None:
+        self._context = context
+
+    @property
+    def context(self) -> ClientEventContext:
+        return self._context
+
+    def __repr__(self) -> str:
+        return f"ClientEvent({self._context})"

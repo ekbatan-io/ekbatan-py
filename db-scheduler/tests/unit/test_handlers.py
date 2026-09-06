@@ -12,7 +12,6 @@ from typing import Any
 
 import pytest
 
-from db_scheduler.clock import SettableClock
 from db_scheduler.task import Execution, ExecutionComplete, TaskInstance
 from db_scheduler.task.handlers import (
     CancelDeadExecution,
@@ -241,7 +240,7 @@ class TestDeadExecutionHandlers:
         execution = an_execution()
         ops = FakeExecutionOperations(execution)
 
-        ReviveDeadExecution[Any](SettableClock(NOW)).dead_execution(failure(execution), ops)
+        ReviveDeadExecution[Any]().dead_execution(failure(execution), ops)
 
         assert ops.rescheduled_to == NOW
         assert ops.removed is False

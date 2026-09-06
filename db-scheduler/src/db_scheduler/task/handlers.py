@@ -17,7 +17,6 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
-from ..clock import Clock, SystemClock
 from . import ExecutionComplete, ExecutionContext, Result, TaskInstance
 from .schedule import Schedule
 
@@ -440,20 +439,19 @@ class ReviveDeadExecution[T]:
     distributed job is required to be. An instance that died holding a row would otherwise
     leave it picked forever.
 
-    Java reads `Instant.now()` inside the method. The clock is a constructor argument here
-    instead, so a test can decide what "now" is without patching the standard library - the
-    signature the scheduler calls is unchanged.
+    "Now" is read from the completion rather than from the system clock. Java calls
+    `Instant.now()` here, which means a scheduler running on a substituted clock revives its
+    executions to the *real* time - so under a `ManualScheduler` the revived row lands outside
+    the test's timeline and never runs. The completion's `time_done` is the scheduler's own
+    `clock.now()`, so this is the same instant on a real clock and the right one on any other.
     """
 
-    __slots__ = ("_clock",)
-
-    def __init__(self, clock: Clock | None = None) -> None:
-        self._clock = clock or SystemClock()
+    __slots__ = ()
 
     def dead_execution(
         self, completion: ExecutionComplete, operations: ExecutionOperationsLike
     ) -> None:
-        now = self._clock.now()
+        now = completion.time_done
         LOG.info("Reviving dead execution: %s to %s", completion.execution, now.isoformat())
         operations.reschedule(completion, now)
 

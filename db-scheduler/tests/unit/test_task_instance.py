@@ -12,10 +12,15 @@ from typing import Any
 import pytest
 
 from db_scheduler.task import (
+    Execution,
+    ExecutionFailed,
     Priority,
     SchedulableTaskInstance,
+    TaskDescriptor,
     TaskInstance,
     TaskInstanceId,
+    TaskWithDataDescriptor,
+    TaskWithoutDataDescriptor,
 )
 from db_scheduler.task.helper import PlainScheduleAndData, ScheduleAndData
 from db_scheduler.task.schedule import Daily, FixedDelay
@@ -138,3 +143,41 @@ class TestSchedulableTaskInstance:
     def test_it_forwards_the_name_and_id(self) -> None:
         made = SchedulableTaskInstance(TaskInstance[Any]("t", "i"), NOW)
         assert (made.task_name, made.id) == ("t", "i")
+
+
+class TestTheDeprecatedDescriptors:
+    """Superseded by `TaskDescriptor.of(...)`, and unused even in db-scheduler - ported so that
+    code written against them keeps working."""
+
+    def test_with_data(self) -> None:
+        descriptor = TaskWithDataDescriptor("a-task", dict)
+
+        assert descriptor.task_name == "a-task"
+        assert descriptor.data_class is dict
+        assert descriptor.instance_id("an-id") == TaskInstanceId("a-task", "an-id")
+
+    def test_without_data(self) -> None:
+        descriptor = TaskWithoutDataDescriptor("a-task")
+
+        assert descriptor.task_name == "a-task"
+        assert descriptor.data_class is type(None)
+        assert descriptor.instance("an-id").build().id == "an-id"
+
+    def test_they_are_task_descriptors(self) -> None:
+        assert isinstance(TaskWithoutDataDescriptor("t"), TaskDescriptor)
+        assert isinstance(TaskWithDataDescriptor("t", dict), TaskDescriptor)
+
+
+class TestExecutionFailed:
+    def test_it_holds_a_failure(self) -> None:
+        cause = RuntimeError("boom")
+        execution = Execution(NOW, TaskInstance[Any]("t", "i"))
+
+        failed = ExecutionFailed(execution, NOW, cause)
+
+        assert failed.execution is execution
+        assert failed.time_done == NOW
+        assert failed.cause is cause
+
+    def test_the_cause_is_optional(self) -> None:
+        assert ExecutionFailed(Execution(NOW, TaskInstance[Any]("t", "i")), NOW).cause is None

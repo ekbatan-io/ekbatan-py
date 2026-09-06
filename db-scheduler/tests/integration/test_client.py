@@ -17,6 +17,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from db_scheduler.client import (
+    ClientEvent,
+    ClientEventContext,
     ScheduleOptions,
     SchedulerClientName,
     StandardSchedulerClient,
@@ -405,3 +407,26 @@ class TestSchedulerClientName:
     def test_it_names_itself(self) -> None:
         """A client picks nothing, so a row picked by one is immediately identifiable as a bug."""
         assert SchedulerClientName().name == "SchedulerClient"
+
+
+class TestClientEvent:
+    """Nothing publishes one - the listener callbacks are what fire - but it is public API in
+    db-scheduler, so it is here."""
+
+    def test_it_carries_what_happened(self) -> None:
+        context = ClientEventContext(
+            ClientEvent.EventType.SCHEDULE, TaskInstanceId("a-task", "an-id"), NOW
+        )
+
+        event = ClientEvent(context)
+
+        assert event.context.event_type is ClientEvent.EventType.SCHEDULE
+        assert event.context.task_instance_id == TaskInstanceId("a-task", "an-id")
+        assert event.context.execution_time == NOW
+
+    def test_the_three_kinds(self) -> None:
+        assert [one.name for one in ClientEvent.EventType] == [
+            "SCHEDULE",
+            "RESCHEDULE",
+            "CANCEL",
+        ]
