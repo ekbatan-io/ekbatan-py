@@ -77,15 +77,15 @@ whole, makes completeness something you can count rather than something you hope
 | SchedulerListener | 49 | - | todo |
 | SchedulerListeners | 95 | - | todo |
 | **`scheduler/exceptions`** | | | |
-| DataClassMismatchException | 14 | - | todo |
-| DbSchedulerException | 11 | - | todo |
-| ExecutionException | 22 | - | todo |
-| FailedToScheduleBatchException | 11 | - | todo |
-| MissingRawDataException | 10 | - | todo |
-| SerializationException | 8 | - | todo |
-| TaskInstanceCurrentlyExecutingException | 11 | - | todo |
-| TaskInstanceException | 24 | - | todo |
-| TaskInstanceNotFoundException | 8 | - | todo |
+| DataClassMismatchException | 14 | `exceptions.py` | done |
+| DbSchedulerException | 11 | `exceptions.py` | done |
+| ExecutionException | 22 | `exceptions.py` | done |
+| FailedToScheduleBatchException | 11 | `exceptions.py` | done |
+| MissingRawDataException | 10 | `exceptions.py` | done |
+| SerializationException | 8 | `exceptions.py` | done |
+| TaskInstanceCurrentlyExecutingException | 11 | `exceptions.py` | done |
+| TaskInstanceException | 24 | `exceptions.py` | done |
+| TaskInstanceNotFoundException | 8 | `exceptions.py` | done |
 | **`scheduler/jdbc`** | | | |
 | AndCondition | 7 | - | todo |
 | AutodetectJdbcCustomization | 131 | `jdbc/customization.py` | done |
