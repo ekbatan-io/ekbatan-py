@@ -58,11 +58,11 @@ All four dialects, whole suite, every commit:
 
 | dialect | image | result |
 | --- | --- | --- |
-| SQLite | in-process | 629 passed, 6 skipped |
-| PostgreSQL | `postgres:17-alpine` | 631 passed, 4 skipped |
-| MySQL LTS | `mysql:8.4` | 631 passed, 4 skipped |
-| MySQL current | `mysql:26.7` | 631 passed, 4 skipped |
-| MariaDB | `mariadb:11.4` | 629 passed, 6 skipped |
+| SQLite | in-process | 653 passed, 6 skipped |
+| PostgreSQL | `postgres:17-alpine` | 655 passed, 4 skipped |
+| MySQL LTS | `mysql:8.4` | 655 passed, 4 skipped |
+| MySQL current | `mysql:26.7` | 655 passed, 4 skipped |
+| MariaDB | `mariadb:11.4` | 653 passed, 6 skipped |
 
 Every integration test runs twice per dialect, once for each timestamp shape:
 `persist_timestamp_in_utc=True` (zone-less columns holding UTC) and `False` (zoned columns,

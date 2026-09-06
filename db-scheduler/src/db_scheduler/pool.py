@@ -20,14 +20,39 @@ only then left behind - with a warning naming what did not finish.
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import threading
+import time
+import weakref
 from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 
 __all__ = ["DaemonThreadPool", "WorkerPool"]
 
 LOG = logging.getLogger("db_scheduler.pool")
+
+#: Every live pool, so a `fork()` can mark them all. Weak, so it never keeps one alive.
+_LIVE_POOLS: weakref.WeakSet[DaemonThreadPool] = weakref.WeakSet()
+
+
+def _mark_pools_forked() -> None:
+    """Threads do not survive `fork()`: the child gets the queue and none of the workers.
+
+    Left alone, a pool in a forked child accepts work and silently never runs it - the worst
+    failure available. It is marked broken instead, so submitting raises and says what to do.
+
+    Recreating the threads in the child would be worse, not better: the child would also have
+    inherited the parent's database connections, which cannot be shared across a fork, and the
+    scheduler would then poll on a corrupted connection. A `Scheduler` must be built *after* the
+    fork - which is the same rule SQLAlchemy has for engines, for the same reason.
+    """
+    for pool in _LIVE_POOLS:
+        pool.mark_forked()
+
+
+if hasattr(os, "register_at_fork"):  # not on Windows, which has no fork
+    os.register_at_fork(after_in_child=_mark_pools_forked)
 
 
 @runtime_checkable
@@ -55,7 +80,17 @@ _STOP = _Stop()
 class DaemonThreadPool:
     """A fixed pool of daemon workers pulling from one queue."""
 
-    __slots__ = ("_is_shutdown", "_lock", "_max_workers", "_queue", "_threads")
+    # `__weakref__` so a pool can go in `_LIVE_POOLS`; a slotted class is not weak-referenceable
+    # without it.
+    __slots__ = (
+        "__weakref__",
+        "_forked",
+        "_is_shutdown",
+        "_lock",
+        "_max_workers",
+        "_queue",
+        "_threads",
+    )
 
     def __init__(self, max_workers: int, thread_name_prefix: str = "db-scheduler-") -> None:
         if max_workers <= 0:
@@ -64,6 +99,7 @@ class DaemonThreadPool:
         self._queue: queue.Queue[Callable[[], None] | _Stop] = queue.Queue()
         self._lock = threading.Lock()
         self._is_shutdown = False
+        self._forked = False
         self._threads = [
             threading.Thread(
                 target=self._work, name=f"{thread_name_prefix}{n}", daemon=True
@@ -72,6 +108,7 @@ class DaemonThreadPool:
         ]
         for thread in self._threads:
             thread.start()
+        _LIVE_POOLS.add(self)
 
     def _work(self) -> None:
         while True:
@@ -87,33 +124,73 @@ class DaemonThreadPool:
                 LOG.error("Unhandled exception in worker thread. Continuing.", exc_info=True)
 
     def submit(self, fn: Callable[[], None]) -> None:
+        if self._forked:
+            raise RuntimeError(
+                "this worker pool was created before a fork() and has no worker threads in "
+                "this process - anything submitted here would never run. Build the Scheduler "
+                "after forking (the same rule SQLAlchemy has for engines, and for the same "
+                "reason: the database connections did not survive either)."
+            )
         with self._lock:
             if self._is_shutdown:
                 raise RuntimeError("cannot schedule new futures after shutdown")
             self._queue.put(fn)
 
-    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+    def shutdown(
+        self,
+        wait: bool = True,
+        *,
+        cancel_futures: bool = False,
+        timeout: float | None = None,
+    ) -> None:
+        """Stop accepting work and tell the workers to finish.
+
+        The draining and the stop-signals happen together, under the lock, and the signals are
+        queued *every* time. Both matter: `cancel_futures` empties the queue, so a second
+        shutdown that drained first would throw away the signals the first one queued and strand
+        every worker for ever - and a `wait=True` caller would then block for ever waiting for
+        threads that had been told nothing. Queueing extra signals is harmless; losing them is
+        not.
+
+        `timeout` bounds the join. `ThreadPoolExecutor` has no such argument and blocks for as
+        long as it takes, which for a class whose entire purpose is that shutdown terminates is
+        the wrong default to inherit blindly.
+        """
         with self._lock:
-            already = self._is_shutdown
             self._is_shutdown = True
-        if cancel_futures:
-            # Drop what is queued but not started. The closest Python has to Java's
-            # `shutdownNow()`, which also interrupts the running ones.
-            while True:
-                try:
-                    self._queue.get_nowait()
-                except queue.Empty:
-                    break
-        if not already:
+            if cancel_futures:
+                # Drop what is queued but not started. The closest Python has to Java's
+                # `shutdownNow()`, which also interrupts the running ones. A job already handed
+                # to a worker still runs - `ThreadPoolExecutor` cannot cancel those either.
+                while True:
+                    try:
+                        self._queue.get_nowait()
+                    except queue.Empty:
+                        break
             for _ in self._threads:
                 self._queue.put(_STOP)
-        if wait:
+
+        # Nothing to join in a forked child: the thread objects were copied but the threads
+        # themselves were not, and joining one would block for ever on a lock nobody holds.
+        if wait and not self._forked:
+            deadline = None if timeout is None else time.monotonic() + timeout
             for thread in self._threads:
-                thread.join()
+                thread.join(
+                    None if deadline is None else max(deadline - time.monotonic(), 0.0)
+                )
 
     @property
     def is_shutdown(self) -> bool:
         return self._is_shutdown
+
+    def mark_forked(self) -> None:
+        """Called in a child process after `fork()`. Not for general use."""
+        self._forked = True
+
+    @property
+    def is_forked(self) -> bool:
+        """True in a process that inherited this pool through `fork()`."""
+        return self._forked
 
     @property
     def alive_workers(self) -> int:

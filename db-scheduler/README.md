@@ -79,6 +79,18 @@ the row stays picked, its heartbeat stops, and the next instance to run dead-exe
 revives it. Handlers that want to finish cleanly should check
 `context.scheduler_state.is_shutting_down`.
 
+## Threads, and forking
+
+Everything here runs on threads. The library never creates a process: three loop threads (poll,
+heartbeat, dead-execution detection) plus a worker pool of `threads(n)`.
+
+Build the `Scheduler` **after** any `fork()` — under gunicorn `--preload`, uwsgi, or a manual
+fork. Threads do not survive a fork, so a scheduler built beforehand has no workers in the
+child, and the database connections it inherited cannot be shared across the fork either. This
+is the same rule SQLAlchemy has for engines, for the same reason. A pool that finds itself in a
+forked child refuses work with an explanatory error rather than silently accepting executions
+nobody will ever run.
+
 ## Self-contained
 
 Its own `pyproject.toml`, its own dependencies, its own tests. It does not import from `ekbatan`
@@ -111,11 +123,11 @@ JDBC plumbing SQLAlchemy already is, and the Gson/Jackson bindings the JSON seri
 
 | dialect | result |
 | --- | --- |
-| SQLite | 647 passed, 6 skipped |
-| PostgreSQL 17 | 649 passed, 4 skipped |
-| MySQL 8.4 (LTS) | 649 passed, 4 skipped |
-| MySQL 26.7 (current) | 649 passed, 4 skipped |
-| MariaDB 11.4 | 647 passed, 6 skipped |
+| SQLite | 653 passed, 6 skipped |
+| PostgreSQL 17 | 655 passed, 4 skipped |
+| MySQL 8.4 (LTS) | 655 passed, 4 skipped |
+| MySQL 26.7 (current) | 655 passed, 4 skipped |
+| MariaDB 11.4 | 653 passed, 6 skipped |
 
 Every integration test runs twice per dialect, once for each timestamp shape - zone-less UTC
 columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is

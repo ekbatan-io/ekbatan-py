@@ -7,8 +7,10 @@ consequence; these check the pool behaves like a pool.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
+from typing import Any
 
 import pytest
 
@@ -174,6 +176,66 @@ class TestShutdown:
 
         assert pool.alive_workers == 0
 
+    def test_a_second_shutdown_with_cancel_futures_does_not_strand_the_workers(self) -> None:
+        """`cancel_futures` empties the queue - including the stop-signals a previous shutdown
+        put there. Draining them left every worker waiting for a signal that no longer existed,
+        and a `wait=True` caller blocked on them for ever."""
+        pool = a_pool(3)
+
+        pool.shutdown(wait=False)
+        pool.shutdown(wait=False, cancel_futures=True)
+
+        deadline = time.monotonic() + PATIENCE
+        while pool.alive_workers and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert pool.alive_workers == 0, "workers were stranded by the second shutdown"
+
+    def test_two_threads_shutting_down_at_once_do_not_strand_the_workers(self) -> None:
+        """The same bug as a race rather than a sequence."""
+        for _ in range(20):
+            pool = a_pool(4)
+            together = threading.Barrier(2, timeout=PATIENCE)
+
+            def stop(
+                pool: DaemonThreadPool = pool, together: threading.Barrier = together
+            ) -> None:
+                together.wait()
+                pool.shutdown(wait=False, cancel_futures=True)
+
+            threads = [threading.Thread(target=stop, daemon=True) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(PATIENCE)
+
+            deadline = time.monotonic() + PATIENCE
+            while pool.alive_workers and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert pool.alive_workers == 0, "workers stranded by a concurrent shutdown"
+
+    def test_the_join_can_be_bounded(self) -> None:
+        """`ThreadPoolExecutor.shutdown` has no timeout and blocks for as long as it takes,
+        which for a class whose whole purpose is that shutdown terminates is the wrong default
+        to inherit."""
+        pool = a_pool(1)
+        started, never = threading.Event(), threading.Event()
+
+        def hangs() -> None:
+            started.set()
+            never.wait(60)
+
+        try:
+            pool.submit(hangs)
+            assert started.wait(PATIENCE)
+
+            began = time.monotonic()
+            pool.shutdown(wait=True, timeout=0.3)
+
+            assert time.monotonic() - began < 3.0
+            assert pool.alive_workers == 1, "the stuck worker is left behind, not waited on"
+        finally:
+            never.set()
+
     def test_shutdown_does_not_block_on_a_hanging_job_unless_asked(self) -> None:
         """`wait=False` must return; the caller decides how long to give it."""
         pool = a_pool(1)
@@ -217,3 +279,67 @@ class TestTheProtocol:
         pool = a_pool(2)
         assert "workers=2" in repr(pool)
         pool.shutdown()
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="no fork on this platform")
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+class TestFork:
+    """Threads do not survive `fork()`: the child inherits the queue and none of the workers.
+
+    Silently accepting work nobody will ever run is the worst failure available, so a forked
+    pool refuses instead. Recreating the threads would be worse than refusing - the child also
+    inherited database connections that cannot be shared across a fork, so a scheduler running
+    there would poll on a corrupted connection.
+    """
+
+    def _in_child(self, body: Any) -> int:
+        pid = os.fork()
+        if pid == 0:  # pragma: no cover - runs in the forked child
+            code = 1
+            try:
+                code = 0 if body() else 1
+            finally:
+                os._exit(code)
+        _, status = os.waitpid(pid, 0)
+        return os.waitstatus_to_exitcode(status)
+
+    def test_a_forked_pool_refuses_work_rather_than_losing_it(self) -> None:
+        pool = a_pool(2)
+
+        def child() -> bool:
+            if not pool.is_forked:
+                return False
+            try:
+                pool.submit(lambda: None)
+            except RuntimeError as exc:
+                return "after forking" in str(exc)
+            return False
+
+        assert self._in_child(child) == 0, "the forked pool accepted work it could never run"
+        pool.shutdown()
+
+    def test_shutting_down_a_forked_pool_does_not_block(self) -> None:
+        """The thread objects were copied but the threads were not; joining one would wait for
+        ever on a lock nobody in this process holds."""
+        pool = a_pool(2)
+
+        def child() -> bool:
+            began = time.monotonic()
+            pool.shutdown(wait=True)
+            return time.monotonic() - began < 5.0
+
+        assert self._in_child(child) == 0, "shutdown blocked in the forked child"
+        pool.shutdown()
+
+    def test_a_pool_created_after_the_fork_works_normally(self) -> None:
+        """Which is the supported pattern, and the one the error message points at."""
+
+        def child() -> bool:
+            fresh = DaemonThreadPool(2, thread_name_prefix="child-worker-")
+            done = threading.Event()
+            fresh.submit(done.set)
+            ran = done.wait(PATIENCE)
+            fresh.shutdown(wait=False)
+            return ran
+
+        assert self._in_child(child) == 0
