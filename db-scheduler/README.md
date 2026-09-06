@@ -22,13 +22,19 @@ The reasoning, and the full comparison, is in `../DIVERGENCE.md`.
 ```python
 from datetime import timedelta
 
-from sqlalchemy import create_engine
+from sqlalchemy import MetaData, create_engine
 
 from db_scheduler.builder import create
+from db_scheduler.jdbc import scheduled_tasks_table
 from db_scheduler.task.helper import Tasks
 from db_scheduler.task.schedule import Schedules
 
 engine = create_engine("postgresql+psycopg://localhost/app")
+
+# Once, at deploy time - or run db-scheduler's own DDL, which produces the same table.
+metadata = MetaData()
+scheduled_tasks_table(metadata)
+metadata.create_all(engine)
 
 send_email = Tasks.one_time("send-email", dict).execute(
     lambda instance, context: mailer.send(instance.data["to"])
