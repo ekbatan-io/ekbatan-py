@@ -16,7 +16,7 @@ from fixtures.actions import (
     NotifyParams,
     WalletIdParams,
 )
-from fixtures.domain import WalletId
+from fixtures.domain import WalletCreated, WalletId, WalletMoneyDeposited
 from fixtures.handlers import NotifyOnDeposit, failing, fatal, on_close, succeeding
 
 
@@ -290,3 +290,186 @@ def test_a_renamed_handler_still_drains_its_old_queue(
 
     assert renamed.calls == 1, "rows queued under the old name still route home"
     assert notifications_in() == {"SUCCEEDED": 1}
+
+
+# -- a batch is more than one row -------------------------------------------------------------
+#
+# Java devotes three cases to this. Everything above works on one notification at a time, and
+# the interesting failures only appear when several share a batch.
+
+
+def test_several_events_past_retention_expire_together(
+    executor, wallets, pipeline, notifications_in, clock
+):
+    """Java's `preflight_expiration_handles_multiple_events_in_one_batch`.
+
+    The pre-flight check runs per row, so a batch that is entirely too old must expire entirely
+    - not the first row, and not one per poll.
+    """
+    email = succeeding("email")
+    fanout, dispatch = pipeline(email, retention=timedelta(seconds=7))
+
+    wallet = a_wallet(executor)
+    for _ in range(4):
+        deposit(executor, wallets, wallet)
+    fanout.drain_once()
+    assert notifications_in() == {"PENDING": 4}
+
+    clock.advance(timedelta(seconds=60))
+    dispatch.drain_once()
+
+    assert notifications_in() == {"EXPIRED": 4}, "all four, in one round"
+    assert email.calls == 0
+
+
+def test_several_failing_handlers_expire_together_after_their_window(
+    executor, wallets, pipeline, notifications_in, clock
+):
+    """Java's `post_failure_expiration_handles_multiple_events_in_one_batch`.
+
+    The expire-or-retry decision is made per row against the clock *after* the invocation, so a
+    batch whose window closed while its handlers ran expires as a batch.
+    """
+    never = failing("never")
+    fanout, dispatch = pipeline(
+        never, max_backoff=timedelta(milliseconds=1), retention=timedelta(seconds=10)
+    )
+
+    wallet = a_wallet(executor)
+    for _ in range(3):
+        deposit(executor, wallets, wallet)
+    fanout.drain_once()
+
+    dispatch.drain_once()
+    assert notifications_in() == {"FAILED": 3}
+
+    clock.advance(timedelta(seconds=60))
+    dispatch.drain_once()
+
+    assert notifications_in() == {"EXPIRED": 3}
+    assert never.calls == 3, "the second round expired them without invoking anything again"
+
+
+def test_a_handler_slower_than_the_window_expires_rather_than_retrying_into_the_past(
+    executor, wallets, pipeline, notifications_in, clock
+):
+    """Java's `slow_failing_handler_expires_using_post_invocation_time`.
+
+    The decision is taken against the clock *after* the handler returned, not before it ran. A
+    handler that fails after outliving the retention window has no future to be retried in, and
+    scheduling one against the pre-invocation clock would put `next_retry_at` in the past - so
+    the row would be re-fetched immediately, every poll, until the window closed on its own.
+    """
+    slow = failing("slow")
+    # Every call moves the clock past the retention window before returning.
+    original = slow._on_call
+
+    def burn_the_window() -> None:
+        # The clock moves first: the original raises, so anything after it never runs.
+        clock.advance(timedelta(seconds=30))
+        if original is not None:
+            original()
+
+    slow._on_call = burn_the_window
+
+    fanout, dispatch = pipeline(
+        slow, max_backoff=timedelta(milliseconds=5), retention=timedelta(seconds=10)
+    )
+
+    wallet = a_wallet(executor)
+    deposit(executor, wallets, wallet)
+    fanout.drain_once()
+
+    dispatch.drain_once()
+
+    assert slow.calls == 1
+    assert notifications_in() == {"EXPIRED": 1}, (
+        "judged against the clock after the handler ran, so there was no future to retry in"
+    )
+
+
+def test_an_event_nobody_wanted_is_picked_up_once_someone_does(
+    executor, wallets, pipeline, notifications_in, outbox
+):
+    """The second half of Java's `zero_subscribers...leaves_events_available_for_later_fanout`.
+
+    An event with no subscriber is left undelivered rather than marked done, so registering a
+    handler in a later deploy still drains what was already written.
+    """
+    nobody_fanout, _ = pipeline()
+    wallet = a_wallet(executor)
+    deposit(executor, wallets, wallet)
+
+    nobody_fanout.drain_once()
+    assert [r["delivered"] for r in outbox() if r["event_type"]] == [False, False], (
+        "nothing subscribed, so nothing was consumed"
+    )
+    assert notifications_in() == {}
+
+    email = succeeding("email")
+    later_fanout, dispatch = pipeline(email)
+    later_fanout.drain_once()
+    dispatch.drain_once()
+
+    assert email.calls == 1, "the event was still there when a handler turned up"
+    assert notifications_in() == {"SUCCEEDED": 1}
+
+
+def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
+    executor, wallets, pipeline, notifications_in, outbox
+):
+    """Java's `widget_handler_chains_into_note_action_and_note_handler_writes_audit_entry`.
+
+    The existing chaining test stops one level short: `Notify` writes an entity, and an entity
+    emits nothing, so nothing downstream can subscribe. This goes the distance Java's does - a
+    handler starts an action, that action's model emits its own event, and a *second* handler
+    is dispatched from it. Which is the shape every saga has, and the one where a pipeline that
+    only half works still looks fine.
+    """
+
+    class OpenASecondWalletOnDeposit:
+        name = "second-wallet-opener"
+        event_type = WalletMoneyDeposited
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def handle(self, envelope) -> None:
+            self.calls += 1
+            executor.execute(
+                CreateWallet(),
+                CreateWalletParams(
+                    owner_id=uuid4(), currency="USD", initial_balance=Decimal("0.00")
+                ),
+            )
+
+    opener = OpenASecondWalletOnDeposit()
+    auditor = succeeding("wallet-open-auditor", WalletCreated)
+    fanout, dispatch = pipeline(opener, auditor)
+
+    wallet = a_wallet(executor)
+    deposit(executor, wallets, wallet, "12.50")
+
+    # Round one: the deposit reaches the opener, which opens a second wallet.
+    fanout.drain_once()
+    dispatch.drain_once()
+
+    assert opener.calls == 1
+    assert wallets.count() == 2, "the chained action really wrote a row"
+    first_pass = auditor.calls
+
+    # Round two: the wallet the *handler* created emits its own event, which is fanned out and
+    # dispatched like any other. Nothing about it is special to the pipeline.
+    fanout.drain_once()
+    dispatch.drain_once()
+
+    assert auditor.calls > first_pass, "the second level was dispatched too"
+    opened = [e for e in auditor.received if e.event.currency == "USD"]
+    assert len(opened) == 1, "and it is the wallet the handler opened, not the original"
+    assert opened[0].action_name == "CreateWallet"
+    assert opened[0].model_type == "Wallet"
+
+    assert len({r["action_id"] for r in outbox()}) == 3, (
+        "three units of work: the first wallet, the deposit, and the handler's own"
+    )
+    assert notifications_in().get("FAILED", 0) == 0

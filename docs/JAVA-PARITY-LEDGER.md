@@ -431,7 +431,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventHandlerRegistryBuilderTest.java | 164 | `tests/integration/test_events.py` | todo |
+| EventHandlerRegistryBuilderTest.java | 164 | `tests/integration/test_events.py` | done |
 
 #### `events/localeventhandler/config`
 
@@ -577,7 +577,7 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| BaseLocalEventHandlerIntegrationTest.java | 604 | `tests/integration/test_events.py`, `test_event_jobs.py` | todo |
+| BaseLocalEventHandlerIntegrationTest.java | 604 | `tests/integration/test_events.py`, `test_event_jobs.py` | done - `tests/integration/test_events.py` |
 
 #### `test/local_event_handler/audit/models`
 
