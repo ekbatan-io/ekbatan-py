@@ -1,0 +1,67 @@
+# Decisions taken during the parity port
+
+`DIVERGENCE.md` says where this port differs from the Java one and why. It does not say **who
+decided**, or **when**, or **how sure I am** - so a judgement call I made last week reads exactly
+like a design decision taken deliberately months ago. The `ordered_uuid` episode is the proof: it
+was written up in `DIVERGENCE.md`, argued convincingly, and wrong. It was caught by being asked
+about, not by being written down.
+
+This file is the other list: every change to Python **behaviour** made during the port, sorted by
+how much scrutiny it deserves rather than by subject. Renames and test-only changes are at the
+bottom.
+
+## Already reverted
+
+| what | commit | how it went |
+| --- | --- | --- |
+| `ordered_uuid()` as the outbox primary key, so `(event_date, id)` would be a total order | added in `EKB-0108`, reverted in `EKB-0111` | I treated "rows of one action tie on `event_date`" as a defect and reached for a framework change. It is not a defect - `event_date` is the ordering key a consumer uses, and rows of one action are genuinely simultaneous. Four of the six "failures" that motivated it were the *test clock* being frozen. Java uses `UUID.randomUUID()` here and its v7 is only ever the sharding-bit-carrying `ShardedUUID` |
+
+## Went further than Java - the ones most worth arguing about
+
+These change behaviour Java does not have. Each is defensible and each is mine.
+
+| what | commit | the case for it | the case against |
+| --- | --- | --- | --- |
+| A write with no `RETURNING` rebuilds its rows through the read mappers instead of handing back the caller's objects | `EKB-0115`, `EKB-0116` | On MySQL, `update()` returned a model still carrying the event it had just persisted; feeding that into another update writes the deposit to the outbox twice. Proven by running | Java takes the plain branch (`return List.copyOf(domainObjects)`) and is safe only because its types make the raw-id half impossible and `nextVersion()` drops events. So this is a real fix for a real Python-only bug - but it is behaviour Java does not have, and it costs a `to_row`/`from_row` round trip per row |
+| `ModelEvent.payload()` excludes `model_id` and `model_name` | `EKB-0109` | They have columns of their own, which is where a consumer reads them. `ActionEvent` - the wire contract - calls the payload "raw JSON" | Java's payload *does* contain them, because they are public fields and Jackson serialises everything public. A consumer written against a Java producer and deserialising the payload with `@JsonCreator` will find them null. Verified that `TestModelEvent` accepts them "for protocol compatibility" |
+| A JDBC url gets its own error message | `EKB-0113` | It is the likeliest mistake anyone moving between the ports makes, and unqualified it reads as a missing driver | Invented here; Java has no equivalent. Harmless, but it is a message nobody asked for |
+| Every shard must speak the same dialect | pre-existing, confirmed `EKB-0113` | The framework picks its SQL, lock provider and upsert form from one dialect | Java does not check this. If a mixed layout is ever legitimate, this refuses it |
+
+## Ported an invariant Java already had - lower risk
+
+Each of these exists in the Java, was missing here, and is now present with a test that fails
+without it.
+
+| what | commit |
+| --- | --- |
+| `Model` / `Entity` / `TypedValue` reject null id, null state, null/absent version, `version < 1`, null events | `EKB-0108` |
+| A model's events tuple is copied, so a "frozen" model cannot change underneath it | `EKB-0108` |
+| A connection whose rollback failed is invalidated rather than returned to the pool | `EKB-0113` |
+| A failed *commit* takes the rollback path, and is evicted if that fails too | `EKB-0113` |
+| The partial-commit alarm fires whatever killed the shard, not only an `Exception` | `EKB-0118` |
+| `NoShardingStrategy.uses_shard_aware_id` is `False`, with the repository special-casing it | `EKB-0112` |
+| `CrossShardError` carries Java's two named shards rather than a list | `EKB-0112` |
+| A single-database registry needs no explicit default shard | `EKB-0112` |
+| `update_no_result` distinguishes a non-unique key from a lost race, so it is not retried | `EKB-0115` |
+| The executor names `registry`, `repositories` and the action when they are missing | `EKB-0119` |
+| The cross-shard warning is written before the commits, not after | `EKB-0118` |
+
+## Renames, for parity
+
+`copy_from` → `copy_base`, `emits_events` → `is_model`, `RetryConfig.retries` → `max_retries`,
+`ExecutionConfiguration.retries` → `retry_configs` (`EKB-0108`, `EKB-0118`). The last one also
+removed a collision: two fields called `retries` meaning different things.
+
+## Test harness - changed what is being tested
+
+| what | commit | why it matters |
+| --- | --- | --- |
+| MySQL and MariaDB containers start at all | `EKB-0108` | testcontainers 4.15 rejects the `mysql+` prefix the code passed, so **no MySQL or MariaDB test had been running** |
+| MariaDB is addressed as `mariadb+pymysql`, not `mysql+pymysql` | `EKB-0108` | SQLAlchemy picks DDL, `SKIP LOCKED` support and version reporting off the scheme, and the framework picks its lock provider off `engine.dialect.name`. "The MariaDB suite" was exercising MySQL paths |
+| MariaDB waits for the second "ready for connections" | `EKB-0108` | The first is the temporary server the entrypoint runs to initialise the data directory. Confirmed by reading the container logs: 11.4 logs it twice |
+| Tests select outbox rows by `action_name` / `action_id` / row id rather than by position | `EKB-0111` | They were asserting an order neither port promises, and passing only because Postgres and SQLite happen to return insertion order |
+
+## Noticed in the Java, not acted on
+
+See the table at the top of `JAVA-PARITY-LEDGER.md`: `EmbeddedBitsShardingStrategy` decodes shard
+bits from a `ShardedId` with no version guard, while the `Id` branch beside it has one.
