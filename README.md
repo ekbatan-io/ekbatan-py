@@ -76,7 +76,7 @@ PyMySQL. Migrations with yoyo, which runs plain per-dialect SQL files.
 | **keyed locks** | in-process, Postgres advisory, MySQL and MariaDB `GET_LOCK`; reentrant, watchdogged |
 | **the local event handler** | fan-out and dispatch, at-least-once, capped backoff, retention |
 | **distributed jobs** | one slot, one execution, across the cluster |
-| **schema and migrations** | the framework's tables as metadata, DDL per dialect, yoyo across every shard |
+| **schema and migrations** | the framework's tables as metadata, DDL per dialect, Alembic across every shard |
 | **statement accounting** | so the cost claims are checkable rather than asserted |
 | **test support** | `run_action` runs a unit of work against a bare plan, with no database |
 | **typed builders** | `python -m ekbatan.codegen` - the one thing Python cannot infer |

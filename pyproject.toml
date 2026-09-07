@@ -21,7 +21,7 @@ dependencies = ["SQLAlchemy>=2.0.30", "ekbatan-py-db-scheduler"]
 postgres = ["psycopg[binary]>=3.2"]
 mysql = ["PyMySQL>=1.1"]
 mariadb = ["PyMySQL>=1.1"]
-migrations = ["yoyo-migrations>=9.0"]
+migrations = ["alembic>=1.14"]
 codegen = ["sqlacodegen>=4.0"]
 
 [tool.uv.sources]
@@ -40,6 +40,7 @@ dev = [
     "testcontainers[postgres,mysql]>=4.15",
     "psycopg[binary]>=3.2",
     "PyMySQL>=1.1",
+    "redis>=6",
 ]
 
 # Deliberately its own group rather than part of `dev` or an extra: `uv sync --all-extras`
