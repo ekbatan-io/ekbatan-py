@@ -48,6 +48,17 @@ and 9,493 lines, including the two largest behavioural tests in the repository.
 
 Of the repository's 1154 `.java` files, that leaves the 149 below.
 
+## Noticed in the Java while porting
+
+Not defects in this port, and not acted on here - recorded so they are not lost.
+
+| where | what | impact |
+| --- | --- | --- |
+| `EmbeddedBitsShardingStrategy.resolveShardIdentifier(persistable)` | the `ShardedId` branch decodes shard bits with no `version() != 7` guard, while the `Id` branch beside it has one. `ShardedUUID.from(uuid)` is public and documented as wrapping an arbitrary uuid "without re-checking that the shard bits are valid", so a pre-sharding version 4 id decodes to a well-formed, meaningless coordinate - verified by running: `ShardIdentifier(81, 21)`, `(202, 36)`, no exception | latent. `effectiveShard` falls back to the default for an unregistered coordinate, so it only bites when the garbage lands on a registered shard - about 8 in 16,384 per id on an eight-shard layout. Silent and self-consistent when it does: the row is written to the wrong database and read back from it |
+
+This port refuses the same input - `ShardedId.shard` raises, and the strategy returns `None`,
+which means "use the default".
+
 ## Main sources
 
 #### `core/action`
