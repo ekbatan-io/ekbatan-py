@@ -471,3 +471,60 @@ def test_one_database_needs_no_election_and_two_do(registry):
 
     with pytest.raises(ValidationError, match="default_shard is required"):
         DatabaseRegistry({GLOBAL: only, MEXICO: only})
+
+
+# -- an id naming a shard this deployment does not have -----------------------------------------
+#
+# Eleven of Java's BaseShardedRepositoryTest cases are about this. Shard layouts differ between
+# environments and grow over time, so an id minted elsewhere has to route somewhere rather than
+# fail - and where it routes has to be decided before anything else looks at the shard.
+
+UNREGISTERED = ShardIdentifier(9, 3)
+
+
+def test_a_row_whose_id_names_an_unregistered_shard_is_written_to_the_default(sharded_wallets):
+    """Java's `should_add_unregistered_shard_to_default_shard`."""
+    stranger = a_wallet(UNREGISTERED)
+
+    stored = sharded_wallets.add(stranger)
+
+    assert sharded_wallets.find(stored.id) is not None, "and it reads back from there"
+    assert sharded_wallets.exists(stored.id)
+
+
+def test_reads_across_shards_see_the_row_that_fell_back(sharded_wallets, sharded_registry):
+    """Java's `should_findAll_includes_unregistered_shard_data` and
+    `should_count_includes_unregistered_shard_data`."""
+    here = sharded_wallets.add(a_wallet(GLOBAL))
+    stranger = sharded_wallets.add(a_wallet(UNREGISTERED))
+
+    assert {w.id for w in sharded_wallets.all()} == {here.id, stranger.id}
+    assert sharded_wallets.count() == 2
+    assert {w.id for w in sharded_wallets.find_many([here.id, stranger.id])} == {
+        here.id,
+        stranger.id,
+    }
+
+
+def test_a_batch_mixing_a_registered_shard_with_an_unregistered_one_is_refused(sharded_wallets):
+    """Java's `should_reject_batch_mixing_registered_and_unregistered_shards`.
+
+    The unregistered id falls back to the default, which is a *different* database from the
+    registered shard the other row names - so the batch spans two, and there is no transaction
+    that spans two.
+    """
+    with pytest.raises(CrossShardError):
+        sharded_wallets.add_all([a_wallet(MEXICO), a_wallet(UNREGISTERED)])
+
+
+def test_a_batch_mixing_the_default_shard_with_an_unregistered_one_is_allowed(sharded_wallets):
+    """Java's `should_allow_batch_mixing_default_and_unregistered_shards`.
+
+    The pair that pins the ordering: the fallback is applied first, so both rows resolve to the
+    default and the batch is one database after all. Checked the other way round - cross-shard
+    first, fallback second - this would be refused.
+    """
+    here, stranger = sharded_wallets.add_all([a_wallet(GLOBAL), a_wallet(UNREGISTERED)])
+
+    assert sharded_wallets.find(here.id) is not None
+    assert sharded_wallets.find(stranger.id) is not None

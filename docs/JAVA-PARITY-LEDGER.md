@@ -170,18 +170,18 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| AbstractRepository.java | 939 | `repository.py` | todo |
-| EntityRepository.java | 63 | `repository.py` | todo |
-| ModelRepository.java | 83 | `repository.py` | todo |
-| Repository.java | 93 | `repository.py` | todo |
-| RepositoryRegistry.java | 124 | `repository.py` | todo |
+| AbstractRepository.java | 939 | `repository.py` | done - `Repository`, concrete rather than abstract |
+| EntityRepository.java | 63 | `repository.py` | done |
+| ModelRepository.java | 83 | `repository.py` | done |
+| Repository.java | 93 | `repository.py` | n/a - the narrow interface has no second implementation here |
+| RepositoryRegistry.java | 124 | `repository.py` | done - refuses a duplicate registration, and raises rather than returning null |
 
 #### `core/repository/exception`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EntityNotFoundException.java | 19 | `errors.py` | todo |
-| StaleRecordException.java | 46 | `errors.py` | todo |
+| EntityNotFoundException.java | 19 | `errors.py` | done - `EntityNotFoundError` |
+| StaleRecordException.java | 46 | `errors.py` | done - `StaleRecordError` |
 
 #### `core/shard`
 
@@ -391,7 +391,7 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| RepositoryRegistryTest.java | 157 | `tests/integration/test_registries.py` | todo |
+| RepositoryRegistryTest.java | 157 | `tests/integration/test_registries.py` | done |
 
 #### `core/shard`
 
@@ -501,8 +501,8 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| BaseRepositoryTest.java | 1251 | `tests/integration/test_repository.py` | todo |
-| BaseShardedRepositoryTest.java | 676 | `tests/integration/test_routing.py` | todo |
+| BaseRepositoryTest.java | 1251 | `tests/integration/test_repository.py` | done - `tests/integration/test_repository.py` |
+| BaseShardedRepositoryTest.java | 676 | `tests/integration/test_routing.py` | done - `tests/integration/test_routing.py` |
 | DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
 | DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
 | DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |

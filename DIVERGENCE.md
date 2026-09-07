@@ -412,6 +412,25 @@ suite runs a second after you write a test, with no daemon, and then runs agains
 before anything is believed (`--dialects=all`). A framework whose tests need Docker to run at
 all is a framework whose tests stop being run.
 
+## A write without RETURNING rebuilds what it wrote
+
+MySQL has no `INSERT ... RETURNING` and no `UPDATE ... RETURNING`, so there is nothing to read
+back. Java takes the obvious branch - `if (dialect.equals(SQLDialect.MYSQL)) { execute(); return
+List.copyOf(domainObjects); }` for inserts, `return domainObject.nextVersion()` for updates - and
+hands the caller their own objects.
+
+This port cannot. Java's types make a raw `UUID` unpassable where an `Id<Wallet>` belongs, and
+`nextVersion()` goes through a builder that drops the event list; here neither is true, so the
+same branch returned a model still carrying the events it had just persisted - which the next
+update would write a second time - and a raw uuid where every other database returned a wrapped
+one. Both paths now rebuild through the same readers a query uses, so one call has one shape on
+four databases.
+
+What is still dialect-dependent, in both ports, is *scale*: a `Decimal("2.50")` written to a
+`NUMERIC(19,4)` column comes back as `2.5000` where RETURNING exists and as `2.50` where it does
+not. Java's `should_preserve_converted_values_when_updateAll_batches_multiple_rows` sidesteps this
+by re-reading rather than asserting on the return value, and the test here does the same.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus
