@@ -350,3 +350,142 @@ def test_find_one_where_refuses_a_predicate_that_is_not_unique(wallets):
 
     with pytest.raises(ValidationError, match="not unique"):
         wallets.find_one_where(WALLETS.c.currency == "EUR")
+
+
+# -- what a write hands back, on every dialect --------------------------------------------------
+
+
+def test_an_updated_row_comes_back_without_the_events_that_changed_it(wallets):
+    """The counterpart of `test_a_row_read_back_carries_no_events`, for the update path.
+
+    MySQL has no `UPDATE ... RETURNING`, so there is nothing to read back and the obvious
+    shortcut is to hand the caller their own object. That object still carries the event the
+    change emitted, and the next update writes it a second time - one deposit, two rows in the
+    stream. Java takes the same branch (`if MYSQL: ... return domainObject.nextVersion()`) and
+    is protected from this only by `nextVersion()` going through a builder.
+    """
+    stored = wallets.add(a_wallet())
+    changed = stored.deposit(Decimal("5.00"))
+    assert changed.events, "the model handed to the repository had an event attached"
+
+    written = wallets.update(changed)
+
+    assert written.events == (), "what comes back is the database's view of the row"
+    assert written.balance == Decimal("105.0000")
+    assert written.version == changed.version + 1
+
+
+def test_a_write_hands_back_the_same_shape_on_every_dialect(wallets, registry):
+    """A raw uuid passed where a typed id belongs comes back typed, whether or not the
+    database can RETURNING. Java cannot be handed one at all; here it has to be normalised."""
+    engine = registry.default.primary
+    with engine.connect():
+        pass
+
+    stored = wallets.add(a_wallet())
+    updated = wallets.update(stored.deposit(Decimal("1.00")))
+
+    assert isinstance(stored.id, WalletId)
+    assert isinstance(updated.id, WalletId)
+    assert type(stored) is type(updated) is Wallet
+
+
+def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(wallets, monkeypatch):
+    """Java raises IllegalStateException rather than StaleRecordException here.
+
+    The distinction is load-bearing: the executor retries a stale record, and an update keyed
+    on `id = ? AND version = ?` that matches twice means the primary key is not unique. Retrying
+    that only burns the attempt. Reached with a stubbed result because a real database will not
+    produce it - which is the point of the check.
+    """
+    from sqlalchemy import Connection
+
+    from ekbatan.errors import EkbatanError, StaleRecordError
+
+    class TwoRowsMatched:
+        rowcount = 2
+
+    stored = wallets.add(a_wallet())
+    monkeypatch.setattr(Connection, "execute", lambda self, *a, **k: TwoRowsMatched())
+
+    with pytest.raises(EkbatanError) as raised:
+        wallets.update_no_result(stored.deposit(Decimal("1.00")))
+
+    assert not isinstance(raised.value, StaleRecordError), "retrying would not help"
+    assert "is not unique" in str(raised.value)
+
+
+# -- what a batched write has to get right ------------------------------------------------------
+#
+# Java's BaseRepositoryTest devotes four cases to this, and each of them is a shape that only
+# breaks in a batch: a derived VALUES table has to carry a type for every column, and the row
+# it joins on has to be the row it updates.
+
+
+def test_all_null_column_in_a_batch(registry, clock):
+    """Java's `should_updateAll_when_a_nullable_column_is_null_in_every_row`.
+
+    A derived VALUES table whose column is NULL in every row has no inferable type.
+    """
+    from ekbatan import EntityRepository
+    from fixtures.schema import NOTIFICATIONS
+
+    notes = EntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
+    stored = notes.add_all(
+        [
+            Notification.create(
+                id=NotificationId.random(),
+                wallet_id=WalletId.random(),
+                kind="K",
+                recipient=f"a{n}@x",
+                message=None,
+            )
+            for n in range(3)
+        ]
+    )
+    assert all(s.message is None for s in stored)
+
+    back = notes.update_all([s.evolve(kind="CHANGED") for s in stored])
+    assert [b.kind for b in back] == ["CHANGED"] * 3
+    assert all(b.message is None for b in back)
+
+
+def test_converted_values_survive_a_batch(wallets, clock):
+    """Java's `should_preserve_converted_values_when_updateAll_batches_multiple_rows`.
+
+    Asserted by re-reading, as Java's does. What a batch update *returns* differs by dialect -
+    there is no `UPDATE ... RETURNING` on MySQL, so the values come back at the scale they were
+    handed in rather than the scale the column stores. What is stored is the same everywhere,
+    and that is the part that is a promise.
+    """
+    made = wallets.add_all(
+        [
+            Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency=c, balance=Decimal(b))
+            for c, b in [("EUR", "1.25"), ("USD", "2.50"), ("MXN", "3.75")]
+        ]
+    )
+    wallets.update_all([w.evolve(balance=w.balance * 2) for w in made])
+
+    back = wallets.find_many([w.id for w in made])
+
+    assert len(back) == 3
+    assert sorted(str(w.balance) for w in back) == ["2.5000", "5.0000", "7.5000"]
+    assert all(isinstance(w.id, WalletId) for w in back)
+    assert sorted(w.currency for w in back) == ["EUR", "MXN", "USD"]
+    assert all(w.version == 2 for w in back)
+
+
+def test_batch_and_single_update_store_identical_timestamps(wallets, clock):
+    """Java's `should_updateAll_and_update_store_identical_timestamps`."""
+    a, b = wallets.add_all(
+        [
+            Wallet.open(
+                id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1")
+            )
+            for _ in range(2)
+        ]
+    )
+    one = wallets.update(a.evolve(balance=Decimal("2")))
+    many = wallets.update_all([b.evolve(balance=Decimal("2"))])
+
+    assert one.updated_date == many[0].updated_date, "one clock read per call, same instant"

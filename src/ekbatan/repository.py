@@ -45,6 +45,7 @@ from .clock import Clock, SystemClock, to_storage
 from .domain import DELETED, Entity, Model, Persistable
 from .errors import (
     CrossShardError,
+    EkbatanError,
     EntityNotFoundError,
     StaleRecordError,
     UnsupportedError,
@@ -626,7 +627,16 @@ class Repository[M: Persistable[Any, Any], K]:
             else:
                 written, affected = self._batch_update(conn, stamped, returning=returning)
 
-            if affected != len(stamped):
+            if affected > len(stamped):
+                # Not a lost race, and so deliberately not a StaleRecordError: the executor
+                # retries those, and retrying this would only burn the attempt. An update
+                # keyed on `id = ? AND version = ?` cannot match twice unless the primary key
+                # is not unique. Java raises IllegalStateException here for the same reason.
+                raise EkbatanError(
+                    f"updating {len(stamped)} {self.model_type.__name__} row(s) matched "
+                    f"{affected}; `id` is not unique in {self.table.name}"
+                )
+            if affected < len(stamped):
                 # Inside a unit of work this rolls the whole thing back. Outside one the
                 # statement has already committed whatever it matched - there is no
                 # transaction here to undo it, by design.
@@ -639,7 +649,13 @@ class Repository[M: Persistable[Any, Any], K]:
         if not read_back:
             return None
         if not returning:
-            return stamped
+            # Rebuilt through the same readers a query would use, not handed back as it came
+            # in. Without this, MySQL - which has no `UPDATE ... RETURNING` - returns the very
+            # object the caller passed, still carrying the events it was about to have
+            # persisted, and the next update writes them a second time. Every other dialect
+            # returns a row, and a row has no events. `add_all` takes the same care for the
+            # same reason.
+            return [self.from_row(self.to_row(m)) for m in stamped]
         # RETURNING makes no promise about order, and a caller handing in a list expects the
         # same list back.
         by_id = {row._mapping[self.id_column.name]: row for row in written}
