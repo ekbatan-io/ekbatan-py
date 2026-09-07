@@ -163,12 +163,13 @@ def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock) -> Any:
 
 @pytest.fixture
 def outbox(registry: DatabaseRegistry) -> Any:
-    """Every outbox row on every shard, oldest first, as plain dicts.
+    """Every outbox row on every shard, as plain dicts, ordered as Java orders them.
 
-    By ``(event_date, id)``, not ``event_date`` alone: every row of one invocation carries
-    that invocation's completion instant, so the id is what separates them - which is why
-    it is a monotonic uuid7. Ordering by the date alone returned rows in primary-key order
-    on MySQL and insertion order on Postgres, and the difference read as four failing tests.
+    By ``event_date`` and nothing else, which is what `EventEntityRepository` does. That is a
+    total order across invocations under a real clock and no order at all *within* one - every
+    row of an invocation carries its completion instant. Tests here run on a frozen clock, so
+    even the across-invocation part ties: select the row you mean by `action_name` or
+    `action_id` rather than by position, exactly as Java's own persister test does.
     """
     from sqlalchemy import select
 
@@ -180,7 +181,7 @@ def outbox(registry: DatabaseRegistry) -> Any:
             with registry.manager(shard).connection(readonly=True) as conn:
                 rows += [
                     dict(r._mapping) | {"shard": shard}
-                    for r in conn.execute(select(EVENTS).order_by(EVENTS.c.event_date, EVENTS.c.id))
+                    for r in conn.execute(select(EVENTS).order_by(EVENTS.c.event_date))
                 ]
         return rows
 

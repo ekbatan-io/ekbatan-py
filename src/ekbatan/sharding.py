@@ -12,7 +12,6 @@ because the query succeeds and simply returns nothing.
 from __future__ import annotations
 
 import os
-import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -27,7 +26,6 @@ __all__ = [
     "NoShardingStrategy",
     "ShardIdentifier",
     "ShardingStrategy",
-    "ordered_uuid",
     "read_shard",
     "resolve_shard",
     "sharded_uuid",
@@ -90,48 +88,6 @@ def sharded_uuid(shard: ShardIdentifier, *, at_ms: int | None = None) -> uuid.UU
     lsb = (0b10 << 62) | (shard.bits << _RANDOM_BITS) | ((noise >> 12) & ((1 << _RANDOM_BITS) - 1))
 
     return uuid.UUID(int=(msb << 64) | lsb)
-
-
-#: The last id :func:`ordered_uuid` handed out, so the next one can be made to follow it.
-_LAST_ORDERED = 0
-_ORDERED_LOCK = threading.Lock()
-
-
-def ordered_uuid() -> uuid.UUID:
-    """A version 7 UUID carrying no shard, strictly increasing within this process.
-
-    For rows the framework keys itself - an outbox row, a notification - where nothing routes
-    by the id but the order it was minted in still matters. Every row of one unit of work
-    shares its ``event_date``, so ``(event_date, id)`` is what puts a withdrawal before the
-    deposit it paid for, and that ordering only works if the ids are ordered.
-
-    "Strictly increasing" is the part :func:`sharded_uuid` does not promise. Its timestamp has
-    millisecond resolution and its low bits are random, so two ids minted in the same
-    millisecond sort arbitrarily - and a unit of work writes all of its rows inside one. Here
-    the previous value is remembered and stepped past when the clock has not moved, which is
-    RFC 9562's own advice for this case.
-
-    Python 3.14 ships ``uuid.uuid7()``, which does the same thing. This exists because the
-    framework supports 3.13 as well, and an ordering guarantee that depends on the interpreter
-    version is not a guarantee.
-    """
-    global _LAST_ORDERED
-    timestamp = int(time.time() * 1000)
-    noise = int.from_bytes(os.urandom(10), "big")
-    msb = ((timestamp & 0xFFFF_FFFF_FFFF) << 16) | 0x7000 | (noise & 0xFFF)
-    # Masked to rand_b's 62 bits. `noise` is 80 bits wide, so shifting off the 12 already spent
-    # on rand_a leaves 68 - which run over the variant field and on into the timestamp, giving
-    # an id that is not a version 7 UUID at all.
-    lsb = (0b10 << 62) | ((noise >> 12) & ((1 << 62) - 1))
-    candidate = (msb << 64) | lsb
-
-    with _ORDERED_LOCK:
-        # Stepping past the last value leaves the version and variant nibbles alone: a carry
-        # would have to cross all 62 random bits of rand_b to reach them.
-        if candidate <= _LAST_ORDERED:
-            candidate = _LAST_ORDERED + 1
-        _LAST_ORDERED = candidate
-    return uuid.UUID(int=candidate)
 
 
 def uuid_instant(value: uuid.UUID) -> datetime | None:

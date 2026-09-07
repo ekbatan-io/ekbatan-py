@@ -24,7 +24,7 @@ from .._json import canonical
 from .._tracing import span
 from ..domain import ModelEvent
 from ..errors import ValidationError
-from ..sharding import ShardIdentifier, ordered_uuid
+from ..sharding import ShardIdentifier
 
 __all__ = ["EventPersister", "OutboxRecord", "SingleTableJsonEventPersister"]
 
@@ -95,19 +95,14 @@ class SingleTableJsonEventPersister:
             self._write(conn, record)
 
     def _write(self, conn: Connection, record: OutboxRecord) -> None:
-        """One row per event, keyed by a time-ordered id.
+        """One row per event.
 
-        The id is a version 7 UUID, and that is load-bearing rather than tidy. Every row of one
-        invocation shares an ``event_date`` - it is the invocation's completion instant - so
-        that column alone cannot order them, and a consumer reading a transfer back would be
-        free to see the deposit before the withdrawal. Ordering by ``(event_date, id)`` settles
-        it, because ``uuid7`` is monotonic within a process; ordering by a version 4 id settles
-        nothing. It also stops the primary key scattering writes across the index, which is the
-        argument :mod:`ekbatan.sharding` already makes for every other id in the framework.
-
-        Java mints ``UUID.randomUUID()`` here, so a Java-written batch is unordered within an
-        invocation on any database that does not happen to return rows in insertion order. The
-        column type is identical either way, so the two remain readable to each other.
+        The rows of one invocation all carry that invocation's completion instant in
+        ``event_date``, so nothing here distinguishes their order and the key is random - Java's
+        ``UUID.randomUUID()``, and the same choice for the same reason. Ordering *within* an
+        invocation is not something the outbox promises in either port: there is no ordinal
+        column to promise it with, and a table both ports write to cannot be given the guarantee
+        by only one of them. A consumer that needs the order needs it added to the schema.
         """
         params = canonical(record.action_params)
         common = {
@@ -128,7 +123,7 @@ class SingleTableJsonEventPersister:
             rows = [
                 {
                     **common,
-                    "id": ordered_uuid(),
+                    "id": uuid.uuid4(),
                     "model_id": None,
                     "model_type": None,
                     "event_type": None,
@@ -139,7 +134,7 @@ class SingleTableJsonEventPersister:
             rows = [
                 {
                     **common,
-                    "id": ordered_uuid(),
+                    "id": uuid.uuid4(),
                     "model_id": event.model_id,
                     "model_type": event.model_name,
                     "event_type": self._event_type(event),

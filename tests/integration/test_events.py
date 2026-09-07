@@ -267,8 +267,10 @@ def test_a_handler_may_start_another_unit_of_work(
     assert written[0].recipient == "ada@example.com"
     assert written[0].message == "deposited 12.50, balance 112.5000"
 
-    names = [r["action_name"] for r in outbox()]
-    assert names == ["CreateWallet", "DepositMoney", "Notify"]
+    # As a set: the rows come back ordered by `event_date`, and the frozen test clock stamps
+    # every invocation with the same one. What is being asserted is that all three ran and each
+    # was its own unit of work, which the action ids below say.
+    assert {r["action_name"] for r in outbox()} == {"CreateWallet", "DepositMoney", "Notify"}
     assert len({r["action_id"] for r in outbox()}) == 3, "the chained work is its own unit"
 
 

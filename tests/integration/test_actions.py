@@ -232,7 +232,7 @@ def test_the_error_says_what_to_do_instead(executor, wallets):
 
 def test_composing_first_then_staging_once_works(executor, wallets, outbox):
     wallet = a_wallet(executor)
-    before = len(outbox())
+    before = {r["id"] for r in outbox()}
 
     result = executor.execute(
         ComposesThenStages(wallets),
@@ -244,7 +244,9 @@ def test_composing_first_then_staging_once_works(executor, wallets, outbox):
     assert stored.version == 2, "one write, one version"
     assert stored == result, "and what the action returned is what the database holds"
 
-    events = [r["event_type"] for r in outbox()[before:] if r["event_type"]]
+    # By id, not by slicing the tail: rows come back ordered by `event_date`, which the frozen
+    # test clock makes identical across invocations.
+    events = [r["event_type"] for r in outbox() if r["id"] not in before and r["event_type"]]
     assert events == ["WalletMoneyDeposited", "WalletMoneyDeposited"], (
         "both events ride along, because both changes happened"
     )

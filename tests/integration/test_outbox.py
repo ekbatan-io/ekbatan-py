@@ -52,7 +52,7 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
 
     rows = outbox()
     assert len(rows) == 2
-    deposited = rows[-1]
+    (deposited,) = [r for r in rows if r["action_name"] == "DepositMoney"]
     assert deposited["namespace"] == "example.wallet"
     assert deposited["action_name"] == "DepositMoney"
     assert deposited["model_id"] == str(wallet.id)
@@ -113,7 +113,23 @@ def test_events_of_one_unit_of_work_share_an_action_id(executor, wallets, outbox
     assert wallets.get(destination.id).balance == Decimal("25.0000")
 
 
-def test_outbox_rows_follow_the_order_events_were_attached(executor, wallets, outbox):
+def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_order(
+    executor, wallets, outbox
+):
+    """Both halves of what the outbox actually says about a multi-event invocation.
+
+    The context is a guarantee: same action id, same names, same timestamps, one row each.
+    The *order* is not, in either port. Every row carries the invocation's completion instant
+    in `event_date`, `eventlog.events` has no ordinal column, and both `EventEntityRepository`
+    and this port's reads order by that column alone - so within one invocation the tie falls
+    to the storage engine. Postgres and SQLite happen to return insertion order; MySQL returns
+    primary-key order, and the key is random in both ports.
+
+    So this asserts set-wise, which is what Java's `BaseSingleTableJsonEventPersisterTest` does
+    for the same reason - `allSatisfy` and `distinct()`, never `get(0)` against `get(1)`. A
+    consumer that needs a withdrawal to precede the deposit it paid for needs an ordinal column
+    added to the schema, in both ports at once.
+    """
     source = a_wallet(executor, "100.00")
     destination = a_wallet(executor, "0.00")
     executor.execute(
@@ -124,10 +140,13 @@ def test_outbox_rows_follow_the_order_events_were_attached(executor, wallets, ou
     )
 
     transfer = [r for r in outbox() if r["action_name"] == "TransferMoney"]
-    assert [r["event_type"] for r in transfer] == [
-        "WalletMoneyWithdrawn",
-        "WalletMoneyDeposited",
-    ], "a balance rebuilt from the stream must never go negative in the middle"
+
+    assert {r["event_type"] for r in transfer} == {"WalletMoneyWithdrawn", "WalletMoneyDeposited"}
+    assert len({r["action_id"] for r in transfer}) == 1, "one invocation, one action id"
+    assert len({r["id"] for r in transfer}) == 2, "one row per event"
+    assert {r["event_date"] for r in transfer} == {transfer[0]["event_date"]}, (
+        "and one instant between them, which is why the date cannot order them"
+    )
 
 
 def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, outbox, notifications):
@@ -153,7 +172,7 @@ def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, out
 def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outbox):
     wallet = a_wallet(executor, "0.00")
     closed = executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=wallet.id))
-    before = len(outbox())
+    before = {r["id"] for r in outbox()}
 
     executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=wallet.id))
 
@@ -161,7 +180,9 @@ def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outb
     assert again.state is WalletState.CLOSED
     assert again.version == closed.version, "closing a closed wallet moves nothing"
 
-    rows = outbox()[before:]
+    # By id rather than by slicing the tail: the rows come back ordered by `event_date`, which
+    # a frozen clock makes identical for every invocation in the test.
+    rows = [r for r in outbox() if r["id"] not in before]
     assert [r["event_type"] for r in rows] == [None], "recorded, but nothing happened"
 
 
@@ -203,7 +224,9 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
     deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDeposited"]
     assert len(deposits) == 2
     assert len({r["action_id"] for r in deposits}) == 2, "two invocations are two units of work"
-    assert [r["payload"]["amount"] for r in deposits] == ["1.00", "2.00"]
+    # By value, not by position: the clock is frozen for these tests, so both invocations stamp
+    # the same event_date and even the across-invocation order is a tie.
+    assert {r["payload"]["amount"] for r in deposits} == {"1.00", "2.00"}
 
 
 def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, clock):

@@ -337,7 +337,6 @@ differs, not because the name was chosen freely:
 | `EventNotification`, `EventNotificationRepository` | - | the same |
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
 | `ShardedUUID`, `Backoff` | `sharded_uuid()`, `backoff()` | a class holding only static methods is a function here |
-| - | `ordered_uuid()` | see below - the outbox needs an id that sorts, and Java's `UUID.randomUUID()` does not |
 | `ShardGroupConfig` + `ShardMemberConfig` | `ShardConfig` | one flat shard list rather than a group/member nesting |
 | `Transaction` (package-private) | - | the auto-commit dance SQLAlchemy already does; the public `Transaction` here is the counterpart to the `DSLContext` Java hands the block, not to this |
 | `ConnectionProvider` | - | `Engine` is pool, dialect and lifecycle in one |
@@ -350,28 +349,6 @@ One place where matching Java costs something: `ExecutionConfiguration` sits nex
 `ShardingConfig`, `ShardConfig` and `DataSourceConfig`, because that is the inconsistency Java
 has and the name is the thing worth matching. `RetryConfig` follows Java rather than the
 `RetryPolicy` it was called here.
-
-## The outbox keys its rows with an id that sorts
-
-Java mints `UUID.randomUUID()` for an `eventlog.events` row. This port mints `ordered_uuid()` -
-a version 7 UUID, strictly increasing within the process. Same column, same type; a Java reader
-and a Python reader cannot tell them apart.
-
-What it buys is an order. Every row of one unit of work carries that unit's completion instant
-in `event_date`, so ordering by that column alone is a complete tie *within* an action, and the
-tie is then broken by whatever the storage engine feels like: Postgres and SQLite happen to
-return insertion order, MySQL returns primary-key order. With a random key that means a
-consumer rebuilding a balance from the stream can see the deposit before the withdrawal that
-paid for it. `(event_date, id)` settles it, and only if the ids are ordered.
-
-Java has the same gap and has not noticed, because `BaseSingleTableJsonEventPersisterTest`
-asserts set-wise - `allSatisfy`, `distinct()`, never `get(0)` against `get(1)` - and
-`EventEntityRepository` orders by `EVENT_DATE` alone. The proper fix on both sides is an
-ordinal column in `eventlog.events`; that is a schema change and is not this port's to make
-alone.
-
-`uuid.uuid7()` would have done, and is 3.14-only. This package supports 3.13, and an ordering
-guarantee that depends on the interpreter version is not a guarantee.
 
 ## A row checks its own invariants, because Python has no constructor to hide them in
 
