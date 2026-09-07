@@ -433,6 +433,19 @@ What is still dialect-dependent, in both ports, is *scale*: a `Decimal("2.50")` 
 not. Java's `should_preserve_converted_values_when_updateAll_batches_multiple_rows` sidesteps this
 by re-reading rather than asserting on the return value, and the test here does the same.
 
+## `plan.add` hands back the stamped row, not the argument
+
+Java's `ActionPlanTest.add_returns_the_entity` asserts `isSameAs` - the very object you passed.
+Here it is the stamped copy, because the framework fills in `created_date` and `updated_date`
+and a caller holding the unstamped original is holding something that does not describe the row
+about to be written. `plan.update` matches Java exactly: the version has already moved, so the
+rest of the unit of work reads forward.
+
+`addAll(null)` differs for the same sort of reason. Java tolerates a null collection and returns
+empty; here it is a `TypeError`. `None` where an iterable belongs is a mistake at the call site,
+and returning empty lets it through to become "this unit of work staged nothing" - which commits
+a sentinel row and looks like success.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus

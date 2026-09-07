@@ -148,3 +148,54 @@ def test_the_single_database_shortcut_needs_nothing_else():
     assert config.default_shard == GLOBAL
     assert config.dialect == "sqlite"
     assert len(config.shards) == 1
+
+
+# -- the namespace, which is written into every row this executor ever produces ------------------
+#
+# Java's ActionExecutorNamespaceValidationTest, case for case.
+
+
+@pytest.mark.parametrize(
+    "namespace", ["com.example", "a", "my_service.wallet", "_leading", "a.b.c.d", "x1.y2"]
+)
+def test_a_namespace_shaped_like_a_package_is_accepted(namespace):
+    from ekbatan.action.executor import _valid_namespace
+
+    assert _valid_namespace(namespace) == namespace
+
+
+@pytest.mark.parametrize("namespace", ["my-service", "wallet-api.core"])
+def test_a_hyphenated_namespace_is_rejected_and_says_what_to_write(namespace):
+    """A hyphen is not legal in a protobuf package or an Avro namespace, and this value is used
+    as one. The message names the value and shows the shape that works."""
+    from ekbatan.action.executor import _valid_namespace
+
+    with pytest.raises(ValidationError) as raised:
+        _valid_namespace(namespace)
+    assert namespace in str(raised.value)
+    assert "my_service" in str(raised.value), "an error that does not say what to write instead"
+
+
+@pytest.mark.parametrize("namespace", ["1abc", "a..b", "a.", ".a", "a b", "a/b", "a.b-c"])
+def test_anything_else_that_is_not_an_identifier_is_rejected(namespace):
+    from ekbatan.action.executor import _valid_namespace
+
+    with pytest.raises(ValidationError):
+        _valid_namespace(namespace)
+
+
+def test_a_valid_prefix_does_not_smuggle_in_an_invalid_remainder():
+    """The regex is anchored at both ends. Unanchored, `valid.prefix-then-rubbish` matches on
+    its first two segments and the rest rides along into every row."""
+    from ekbatan.action.executor import _valid_namespace
+
+    with pytest.raises(ValidationError):
+        _valid_namespace("valid.prefix-then-rubbish")
+
+
+@pytest.mark.parametrize("namespace", ["", "   ", "\t"])
+def test_a_blank_namespace_still_says_it_is_required(namespace):
+    from ekbatan.action.executor import _valid_namespace
+
+    with pytest.raises(ValidationError, match="namespace is required"):
+        _valid_namespace(namespace)

@@ -15,6 +15,7 @@ import pytest
 
 from ekbatan import RetryConfig, current_plan
 from ekbatan.action import ActionPlan
+from ekbatan.clock import to_storage
 from ekbatan.errors import EkbatanError, ValidationError
 from ekbatan.events import backoff
 from fixtures.domain import Wallet, WalletId
@@ -80,3 +81,53 @@ def test_a_plan_outside_a_unit_of_work_says_so():
 # way the Java `DistributedJob` returns db-scheduler's - so `Every`, `FixedDelay` and `Daily`
 # left with the hand-rolled scheduler, and their behaviour is tested where they now live
 # (`db-scheduler/tests/unit/test_schedules.py`, far more thoroughly than here).
+
+
+def test_staging_hands_back_the_row_as_it_will_be_written(clock):
+    """Where this differs from Java, and why.
+
+    Java's `ActionPlanTest.add_returns_the_entity` asserts `isSameAs` - the very object you
+    passed. Here `add` hands back the stamped copy, because the framework fills in
+    `created_date` and `updated_date` and a caller holding the unstamped original is holding
+    something that does not match the row about to be written. `update` matches Java exactly:
+    the version has already moved, so the rest of the unit of work reads forward.
+    """
+    from ekbatan.action.plan import ActionPlan
+    from fixtures.domain import Wallet, WalletId
+
+    plan = ActionPlan(clock)
+    fresh = Wallet.open(
+        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1")
+    )
+    assert fresh.created_date is None
+
+    staged = plan.add(fresh)
+
+    assert staged is not fresh
+    assert staged.created_date == to_storage(clock.now())
+    assert staged.updated_date == staged.created_date
+    assert plan.additions(Wallet) == [staged], "and that is what gets written"
+
+    changed = plan.update(
+        Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1"))
+    )
+    assert changed.version == 2, "Java's `update_returns_next_version`"
+
+
+def test_staging_nothing_is_not_the_same_as_staging_none(clock):
+    """Java's `addAll_with_null_returns_empty` tolerates a null collection and returns empty.
+
+    Here that is a `TypeError`, and deliberately: `None` where an iterable belongs is a bug at
+    the call site, and returning empty would let it through to become "the unit of work staged
+    nothing" - which commits a sentinel row and looks like success.
+    """
+    from ekbatan.action.plan import ActionPlan
+
+    plan = ActionPlan(clock)
+
+    assert plan.add_all([]) == []
+    assert plan.update_all([]) == []
+    assert not plan
+
+    with pytest.raises(TypeError):
+        plan.add_all(None)

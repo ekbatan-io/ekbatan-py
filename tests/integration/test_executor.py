@@ -334,3 +334,31 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
     assert any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
         "the one notice anyone gets was not written"
     )
+
+
+def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
+    sharded, caplog, monkeypatch
+):
+    """Java's `failure_before_any_shard_commits_is_not_flagged_as_partial`.
+
+    The alarm is only worth having if it is quiet when nothing is wrong. A first shard that
+    fails rolled itself back and left nothing behind - an ordinary failure, not a partial
+    commit - and crying wolf here would teach everyone to ignore the one case that matters.
+    """
+    import logging
+
+    executor, _ = sharded
+
+    def first_shard_dies(self, shard, *args, **kwargs):
+        raise RuntimeError("the very first shard failed")
+
+    monkeypatch.setattr(type(executor), "_commit_shard", first_shard_dies)
+
+    with caplog.at_level(logging.CRITICAL), pytest.raises(RuntimeError):
+        executor.execute(
+            CreateOnBothShards(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+        )
+
+    assert not any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
+        "nothing was committed, so there is nothing partial about it"
+    )

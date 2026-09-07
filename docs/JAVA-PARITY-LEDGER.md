@@ -303,14 +303,14 @@ which means "use the default".
 | ActionExecutorNamespaceValidationTest.java | 119 | `tests/integration/test_registries.py` | done |
 | ActionExecutorTest.java | 519 | `tests/integration/test_actions.py` | done |
 | ActionExecutorTracingTest.java | 714 | `tests/integration/test_actions.py` | done |
-| ActionPlanTest.java | 223 | `tests/integration/test_actions.py` | done |
+| ActionPlanTest.java | 223 | `tests/integration/test_actions.py` | done - `add` hands back the stamped row rather than the argument; see DIVERGENCE |
 | ActionRegistryBuilderTest.java | 61 | `tests/integration/test_registries.py` | done |
 | ActionRegistryTest.java | 112 | `tests/integration/test_registries.py` | done |
 | ActionSpecTest.java | 633 | `tests/unit/test_action_testing.py` | todo |
 | CreateAction.java | 17 | `tests/fixtures/actions.py` | todo |
 | CreateBothAction.java | 18 | `tests/fixtures/actions.py` | todo |
 | DeleteAction.java | 19 | `tests/fixtures/actions.py` | todo |
-| ExecutionConfigurationTest.java | 85 | `tests/integration/test_actions.py` | done - the map-override cases are n/a; policies are an ordered tuple here |
+| ExecutionConfigurationTest.java | 85 | `tests/integration/test_actions.py` | done - the four map-shaped cases are n/a; policies are an ordered tuple here |
 | FailingAction.java | 16 | `tests/fixtures/actions.py` | todo |
 | RenameAction.java | 19 | `tests/fixtures/actions.py` | todo |
 | RetryConfigTest.java | 55 | `tests/unit/test_policies.py` | done |
@@ -323,7 +323,7 @@ which means "use the default".
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | ChangePersisterTest.java | 435 | `tests/integration/test_change_persister.py` | done |
-| PersistableChangesTest.java | 182 | `tests/integration/test_change_persister.py` | done |
+| PersistableChangesTest.java | 182 | `tests/integration/test_change_persister.py` | done - the unmodifiable-map cases are n/a; reads return copies |
 
 #### `core/action/persister/event/single_table_json`
 
