@@ -391,6 +391,9 @@ mysql = [
 postgres = [
     { name = "psycopg", extra = ["binary"] },
 ]
+redis = [
+    { name = "redis" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -414,10 +417,11 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pymysql", marker = "extra == 'mariadb'", specifier = ">=1.1" },
     { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1" },
+    { name = "redis", marker = "extra == 'redis'", specifier = ">=6" },
     { name = "sqlacodegen", marker = "extra == 'codegen'", specifier = ">=4.0" },
     { name = "sqlalchemy", specifier = ">=2.0.30" },
 ]
-provides-extras = ["postgres", "mysql", "mariadb", "migrations", "codegen"]
+provides-extras = ["postgres", "mysql", "mariadb", "migrations", "codegen", "redis"]
 
 [package.metadata.requires-dev]
 dev = [

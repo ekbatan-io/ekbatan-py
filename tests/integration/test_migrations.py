@@ -20,7 +20,7 @@ pytest.importorskip("alembic")
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
 
-ENV = '''
+ENV = """
 from alembic import context
 from sqlalchemy import create_engine
 
@@ -29,7 +29,7 @@ with engine.connect() as connection:
     context.configure(connection=connection, target_metadata=None)
     with context.begin_transaction():
         context.run_migrations()
-'''
+"""
 
 REVISION = '''
 """{message}"""

@@ -482,6 +482,40 @@ row is left `PENDING` with its attempt count untouched and its retry rescheduled
 removed by a bad deploy comes back, and its queue should still be there when it does. The row
 still expires on the same retention window either way.
 
+## Migrations run on Alembic, with the guard Alembic does not have
+
+Java uses Flyway. Here it is Alembic - SQLAlchemy's own migration tool, by the same author -
+driven as a library: a `Config` built in memory rather than an `alembic.ini`, so an application
+migrates itself with no external binary and no second copy of its connection settings.
+
+Two things sit on top, both because Alembic does not have them and a sharded deployment needs
+them. `migrate(config, location)` drives one `Config` per shard, sequentially and fail-fast,
+naming the shard that failed and the ones already done. And `ekbatan_revision_checksums` records
+a hash of every applied revision, verified before each upgrade.
+
+That second one is not a refinement. Alembic's `alembic_version` holds a single row - the current
+head - with no per-migration history and no record of what a revision contained, so editing an
+applied revision is accepted in silence. Measured, not assumed: the upgrade ran again without
+complaint while the database kept the old columns and the file described new ones. Flyway refuses
+that; so does this.
+
+## The Redis lock is `SET NX PX` on redis-py, not Redisson
+
+Java uses Redisson's `RLock`. There is no Redisson for Python, and the mechanism underneath it is
+`SET NX PX` plus a Lua compare-and-delete, which is what this does directly - verified against a
+real Redis: mutual exclusion under 32 contending threads, a TTL that expires on its own, and a
+release that refuses to delete a key it does not own.
+
+`redis-py` because it is the only serious candidate that is synchronous (this framework is, and
+`coredis` is async-only), ships `py.typed`, and is actively released - 8.1.0 on 2026-07-30 against
+`valkey`'s 2025-08-11.
+
+Re-entrancy works out the same way for opposite reasons. Java layers its own
+`KeyedReentrantHolder` over Redisson to *correct* it: Redisson is reentrant already, but its
+last-call-wins `leaseTime` would let an inner re-entry shorten the outer holder's TTL. Here the
+same holder *provides* the behaviour, because nothing underneath does. Both make the outermost
+`max_hold` the one that governs.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus

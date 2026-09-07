@@ -232,3 +232,30 @@ def notifications_in(registry: DatabaseRegistry) -> Any:
         return seen
 
     return count
+
+
+@pytest.fixture(scope="session")
+def redis_client() -> Iterator[Any]:
+    """One Redis container for the whole session, or a skip.
+
+    Its own container rather than a dialect in `--dialects`: the Redis lock is not a database
+    backend and does not vary by one. A run with `--dialects=sqlite` still exercises it, which
+    is what keeps it from rotting.
+    """
+    redis = pytest.importorskip("redis")
+    from tests.backends import docker_is_available
+
+    if not docker_is_available():
+        pytest.skip("the Redis lock needs a container and Docker is not reachable")
+
+    from testcontainers.community.redis import RedisContainer
+
+    with RedisContainer("redis:7-alpine") as container:
+        client = redis.Redis(
+            host=container.get_container_host_ip(),
+            port=int(container.get_exposed_port(6379)),
+            decode_responses=True,
+        )
+        client.ping()
+        yield client
+        client.close()

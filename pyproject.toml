@@ -23,6 +23,8 @@ mysql = ["PyMySQL>=1.1"]
 mariadb = ["PyMySQL>=1.1"]
 migrations = ["alembic>=1.14"]
 codegen = ["sqlacodegen>=4.0"]
+# The Redis-backed keyed lock, which Java ships as its own `ekbatan-keyed-lock-redis` module.
+redis = ["redis>=6"]
 
 [tool.uv.sources]
 # The db-scheduler port lives in this repository, as `ekbatan-distributed-jobs` depends on the

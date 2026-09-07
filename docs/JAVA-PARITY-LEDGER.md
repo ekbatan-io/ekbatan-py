@@ -266,14 +266,14 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| FlywayMigrator.java | 371 | `migrations.py` | todo |
+| FlywayMigrator.java | 371 | `migrations.py` | done - `migrations.py` drives Alembic per shard; see DIVERGENCE |
 | NativeImageFlywayResourceProvider.java | 92 | - | n/a - GraalVM native-image resource provider |
 
 #### `keyedlock/redis`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| RedisKeyedLockProvider.java | 202 | - | todo |
+| RedisKeyedLockProvider.java | 202 | `locks/redis.py` | done - `locks/redis.py`, on redis-py |
 
 #### `testsupport/action`
 
@@ -448,13 +448,13 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| FlywayMigratorTest.java | 145 | `tests/integration/test_migrations.py` | todo |
+| FlywayMigratorTest.java | 145 | `tests/integration/test_migrations.py` | done - the four native-image cases are n/a |
 
 #### `keyedlock/redis`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| RedisKeyedLockProviderLeaseTest.java | 41 | - | todo |
+| RedisKeyedLockProviderLeaseTest.java | 41 | `tests/integration/test_redis_locks.py` | done |
 
 #### `testsupport/time`
 
@@ -540,7 +540,7 @@ proves the three real servers.
 | MariaDBKeyedLockProviderIntegrationTest.java | 502 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | MySQLKeyedLockProviderIntegrationTest.java | 500 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | PostgresKeyedLockProviderIntegrationTest.java | 470 | `tests/integration/test_locks.py` | todo |
-| RedisKeyedLockProviderIntegrationTest.java | 622 | - | todo |
+| RedisKeyedLockProviderIntegrationTest.java | 622 | - | done - `tests/integration/test_redis_locks.py`; the three Redisson `CompletionException` cases are n/a |
 | WalletDepositLockingIntegrationTest.java | 165 | `tests/integration/test_locks.py` | todo |
 
 #### `test/keyed_lock_provider/wallet/action`
