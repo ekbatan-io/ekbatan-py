@@ -118,9 +118,9 @@ def test_the_stipend_job_pays_every_open_wallet(service):
     service.jobs.start()
 
     # Three jobs share the table: fan-out, handling, and the stipend.
-    assert service.jobs.run_due_once() == 3
+    service.jobs.scheduler.run_any_due_executions()
     assert service.wallets.get(wallet.id).balance == Decimal("1.0000")
-    assert service.jobs.run_due_once() == 0, "every slot has been taken and rescheduled"
+    service.jobs.scheduler.run_any_due_executions()  # every slot rescheduled; nothing due
 
 
 def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
@@ -140,7 +140,7 @@ def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
     )
 
-    assert service.jobs.run_due_once() == 3, "and running them delivers the deposit"
+    service.jobs.scheduler.run_any_due_executions()  # and running them delivers the deposit
     assert service.alerts.find_for_wallet(wallet.id), "the handler ran, driven by the job"
 
 

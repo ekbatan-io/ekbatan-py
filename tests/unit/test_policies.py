@@ -7,7 +7,7 @@ would be a waste of a container.
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -17,7 +17,6 @@ from ekbatan import RetryConfig, current_plan
 from ekbatan.action import ActionPlan
 from ekbatan.errors import EkbatanError, ValidationError
 from ekbatan.events import backoff
-from ekbatan.jobs import Daily, Every, FixedDelay
 from fixtures.domain import Wallet, WalletId
 
 
@@ -77,14 +76,7 @@ def test_a_plan_outside_a_unit_of_work_says_so():
         current_plan()
 
 
-def test_schedules_compute_the_next_slot():
-    noon = datetime(2026, 1, 1, 12, 0, 0)
-    assert Every(timedelta(hours=6)).next_after(noon) == datetime(2026, 1, 1, 18, 0, 0)
-    assert FixedDelay(timedelta(minutes=30)).next_after(noon) == datetime(2026, 1, 1, 12, 30)
-    assert Daily(time(3, 0)).next_after(noon) == datetime(2026, 1, 2, 3, 0)
-    assert Daily(time(18, 0)).next_after(noon) == datetime(2026, 1, 1, 18, 0)
-
-    with pytest.raises(ValidationError, match="positive"):
-        Every(timedelta(0))
-    with pytest.raises(ValidationError, match="positive"):
-        FixedDelay(timedelta(seconds=-1))
+# Schedules are no longer Ekbatan's. A `DistributedJob` returns a db-scheduler `Schedule`, the
+# way the Java `DistributedJob` returns db-scheduler's - so `Every`, `FixedDelay` and `Daily`
+# left with the hand-rolled scheduler, and their behaviour is tested where they now live
+# (`db-scheduler/tests/unit/test_schedules.py`, far more thoroughly than here).

@@ -1,7 +1,8 @@
 """The two event jobs, as jobs.
 
 Fan-out turns committed events into per-handler notifications; handling delivers them. Both are
-:class:`~ekbatan.jobs.DistributedJob`, so a cluster runs each of them once per slot rather than
+:class:`~ekbatan.distributedjobs.DistributedJob`, so a cluster runs each of them once per slot
+rather than
 once per instance - registered in ``scheduled_tasks``, claimed atomically, heartbeated, and
 reclaimed if the instance holding one stops answering.
 
@@ -19,11 +20,13 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Self
 
+from db_scheduler.task import ExecutionContext
+from db_scheduler.task.schedule import DisabledSchedule, FixedDelay, Schedule
 from sqlalchemy import Table
 
 from ..clock import Clock, SystemClock
+from ..distributedjobs import DistributedJob
 from ..errors import ValidationError
-from ..jobs import DistributedJob, FixedDelay, JobContext, Schedule
 from ..persistence import DatabaseRegistry
 from .config import LocalEventHandlerConfig
 from .dispatch import DEFAULT_MAX_BACKOFF, DEFAULT_RETENTION, EventDispatch
@@ -85,15 +88,18 @@ class EventFanoutJob(DistributedJob):
     def builder(cls) -> EventFanoutJobBuilder:
         return EventFanoutJobBuilder()
 
-    @property
     def name(self) -> str:
         return self._name
 
-    @property
     def schedule(self) -> Schedule:
         """A fixed delay after each round, so an idle cluster polls at a steady rate rather
-        than drifting with how long the last round took."""
-        return FixedDelay(self._poll_delay)
+        than drifting with how long the last round took.
+
+        Switched off, it returns a `DisabledSchedule`: db-scheduler then writes no row at all,
+        which is how a job is registered but never run. Java says the same thing the same way -
+        there is no separate `enabled` flag, because the schedule already expresses it.
+        """
+        return FixedDelay(self._poll_delay) if self._enabled else DisabledSchedule()
 
     @property
     def enabled(self) -> bool:
@@ -104,7 +110,7 @@ class EventFanoutJob(DistributedJob):
         """The drainer, for a caller that wants one round without the schedule around it."""
         return self._fanout
 
-    def run(self, context: JobContext) -> None:
+    def execute(self, ctx: ExecutionContext) -> None:
         self._fanout.drain_until_idle()
 
 
@@ -147,13 +153,12 @@ class EventHandlingJob(DistributedJob):
     def builder(cls) -> EventHandlingJobBuilder:
         return EventHandlingJobBuilder()
 
-    @property
     def name(self) -> str:
         return self._name
 
-    @property
     def schedule(self) -> Schedule:
-        return FixedDelay(self._poll_delay)
+        """As :meth:`EventFanoutJob.schedule`: a fixed delay, or disabled when switched off."""
+        return FixedDelay(self._poll_delay) if self._enabled else DisabledSchedule()
 
     @property
     def enabled(self) -> bool:
@@ -164,7 +169,7 @@ class EventHandlingJob(DistributedJob):
         """The drainer, for a caller that wants one round without the schedule around it."""
         return self._dispatch
 
-    def run(self, context: JobContext) -> None:
+    def execute(self, ctx: ExecutionContext) -> None:
         self._dispatch.drain_until_idle()
 
 

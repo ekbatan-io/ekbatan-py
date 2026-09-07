@@ -57,7 +57,7 @@ def run(service: WalletService) -> None:
 
     say("run the daily stipend, as one instance of a cluster would")
     service.jobs.start()
-    service.jobs.run_due_once()
+    service.jobs.scheduler.run_any_due_executions()
     print(f"   balance {service.wallets.get(wallet.id).balance}")
 
     say("close it")

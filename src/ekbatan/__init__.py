@@ -34,6 +34,15 @@ from .action import (
 )
 from .clock import Clock, SystemClock, VirtualClock
 from .config import DataSourceConfig, ShardConfig, ShardingConfig
+from .distributedjobs import (
+    DistributedJob,
+    ExecutionContext,
+    JobRegistry,
+    JobRegistryBuilder,
+    JobsConfig,
+    Schedule,
+    job_registry,
+)
 from .domain import (
     Entity,
     EntityBuilder,
@@ -66,7 +75,6 @@ from .events import (
     LocalEventHandlerConfig,
 )
 from .ids import Id, ShardedId, TypedValue, unwrap
-from .jobs import Daily, DistributedJob, Every, FixedDelay, JobContext, JobRegistry, Schedule
 from .locks import (
     InProcessKeyedLockProvider,
     KeyedLockProvider,
@@ -111,7 +119,6 @@ __all__ = [
     "Clock",
     "ConnectivityError",
     "CrossShardError",
-    "Daily",
     "DataSourceConfig",
     "DatabaseRegistry",
     "DistributedJob",
@@ -130,15 +137,15 @@ __all__ = [
     "EventHandlingJob",
     "EventNotificationState",
     "EventPersister",
-    "Every",
     "ExecutionConfiguration",
-    "FixedDelay",
+    "ExecutionContext",
     "GenericState",
     "HandlingConfig",
     "Id",
     "InProcessKeyedLockProvider",
-    "JobContext",
     "JobRegistry",
+    "JobRegistryBuilder",
+    "JobsConfig",
     "KeyedLockProvider",
     "Lease",
     "LocalEventHandlerConfig",
@@ -180,6 +187,7 @@ __all__ = [
     "current_plan",
     "current_principal",
     "emit_ddl",
+    "job_registry",
     "migrate",
     "migrate_registry",
     "notifications_table",

@@ -13,8 +13,11 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
+from db_scheduler.task import ExecutionContext
+from db_scheduler.task.schedule import FixedDelay, Schedule
+
 from ekbatan import ActionExecutor
-from ekbatan.jobs import DistributedJob, Every, JobContext, Schedule
+from ekbatan.distributedjobs import DistributedJob
 
 from .actions import DepositMoney, DepositParams
 from .model import WalletState
@@ -28,8 +31,6 @@ class PayStipend(DistributedJob):
     request would, so the audit trail is identical and a consumer downstream cannot tell.
     """
 
-    name = "wallet-stipend"
-
     def __init__(
         self,
         executor: ActionExecutor,
@@ -40,11 +41,15 @@ class PayStipend(DistributedJob):
         self.wallets = wallets
         self.amount = amount
 
-    @property
-    def schedule(self) -> Schedule:
-        return Every(timedelta(days=1))
+    def name(self) -> str:
+        """The primary key of this job's row, and how every instance recognises it as the same
+        job. Stable across restarts, or each boot writes a fresh row and nothing ever recurs."""
+        return "wallet-stipend"
 
-    def run(self, context: JobContext) -> None:
+    def schedule(self) -> Schedule:
+        return FixedDelay.of(timedelta(days=1))
+
+    def execute(self, ctx: ExecutionContext) -> None:
         for wallet in self.wallets.all():
             if wallet.state is WalletState.OPENED:
                 self.executor.execute(

@@ -91,6 +91,10 @@ def test_an_example_depends_on_nothing_but_the_framework():
         "collections",
         "tempfile",
         "__future__",
+        # db-scheduler is part of the framework's surface, not a third-party import an example
+        # sneaked in: a `DistributedJob` returns a db-scheduler `Schedule`, exactly as the Java
+        # `DistributedJob` returns one. A user writing a job imports it in either language.
+        "db_scheduler",
     }
     for path in EXAMPLES.rglob("*.py"):
         package = path.relative_to(EXAMPLES).parts[0]

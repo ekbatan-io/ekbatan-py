@@ -20,13 +20,11 @@ import uuid
 from sqlalchemy import (
     CHAR,
     JSON,
-    BigInteger,
     Boolean,
     Column,
     DateTime,
     Index,
     Integer,
-    LargeBinary,
     MetaData,
     String,
     Table,
@@ -174,30 +172,22 @@ def notifications_table(
 def scheduled_tasks_table(
     metadata: MetaData, *, name: str = "scheduled_tasks", schema: str | None = None
 ) -> Table:
-    """``scheduled_tasks``: one row per job slot, and the row every instance races for.
+    """``scheduled_tasks``: db-scheduler's table, defined by db-scheduler.
 
-    The shape is db-scheduler's, deliberately - a Java service and a Python service can then
-    coordinate through one table instead of each running the nightly report.
+    This used to be a second, hand-written definition of the same table, and the two had already
+    drifted: it declared ``varchar(255)`` keys where db-scheduler uses 100, and it had no
+    ``priority`` column at all - which db-scheduler writes on every insert. A row could not have
+    been written into it.
 
-    ``version`` is what makes the claim atomic: an instance updates the row it read, and the
-    one whose update matches a row wins the slot. Everything else here is bookkeeping for
-    whoever has to work out later why a job stopped running.
+    So it delegates. One definition, in the module that owns the table, and a Java service and a
+    Python service still coordinate through one shape.
+
+    ``schema`` is applied afterwards because db-scheduler's builder does not take one: Ekbatan
+    supports schema-qualified tables and db-scheduler has no need to.
     """
-    return Table(
-        name,
-        metadata,
-        Column("task_name", String(255), primary_key=True),
-        Column("task_instance", String(255), primary_key=True),
-        Column("task_data", LargeBinary),
-        Column("execution_time", timestamp_column(), nullable=False),
-        Column("picked", Boolean, nullable=False),
-        Column("picked_by", String(255)),
-        Column("last_success", timestamp_column()),
-        Column("last_failure", timestamp_column()),
-        Column("consecutive_failures", Integer),
-        Column("last_heartbeat", timestamp_column()),
-        Column("version", BigInteger, nullable=False),
-        Index(f"ix_{name}_execution_time", "execution_time"),
-        Index(f"ix_{name}_last_heartbeat", "last_heartbeat"),
-        schema=schema,
-    )
+    from db_scheduler.jdbc import scheduled_tasks_table as db_scheduler_table
+
+    table = db_scheduler_table(metadata, name)
+    if schema is not None:
+        table.schema = schema
+    return table

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from db_scheduler.clock import SettableClock
+
 from ekbatan import (
     ActionExecutor,
     ActionRegistry,
@@ -16,6 +18,7 @@ from ekbatan import (
     ShardingConfig,
 )
 from ekbatan.clock import Clock, SystemClock
+from ekbatan.distributedjobs import ManualJobRegistry, job_registry
 from ekbatan.events import (
     EventFanoutJob,
     EventHandlerRegistry,
@@ -23,13 +26,12 @@ from ekbatan.events import (
     HandlingConfig,
     LocalEventHandlerConfig,
 )
-from ekbatan.jobs import JobRegistry
 
 from .actions import CloseWallet, DepositMoney, OpenWallet, RaiseAlert
 from .handlers import NotifyOnDeposit
 from .jobs import PayStipend
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
+from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +44,7 @@ class WalletService:
     executor: ActionExecutor
     fanout: EventFanoutJob
     dispatch: EventHandlingJob
-    jobs: JobRegistry
+    jobs: ManualJobRegistry
 
     def deliver_pending_events(self) -> None:
         """Turn committed events into work, then do it.
@@ -130,10 +132,18 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
         executor=executor,
         fanout=fanout,
         dispatch=dispatch,
-        jobs=JobRegistry(
-            registry,
-            [fanout, dispatch, PayStipend(executor, wallets)],
-            table=SCHEDULED_TASKS,
-            clock=running,
+        # The jobs run on db-scheduler, against the same `scheduled_tasks` table the Java
+        # implementation uses - so a Java instance and a Python instance coordinate through one
+        # row per job rather than each running the stipend.
+        #
+        # A real deployment would give this a *dedicated* engine, separate from the one serving
+        # requests: db-scheduler polls continuously, and a task body holding the last connection
+        # would starve the heartbeat and get its own execution declared dead. One engine here
+        # keeps the example a single readable script.
+        jobs=(
+            job_registry()
+            .engine(registry.default.primary)
+            .with_jobs([fanout, dispatch, PayStipend(executor, wallets)])
+            .build_manual(SettableClock(running.now()))
         ),
     )

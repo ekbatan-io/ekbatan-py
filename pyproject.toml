@@ -15,7 +15,7 @@ classifiers = [
     "Topic :: Database",
     "Typing :: Typed",
 ]
-dependencies = ["SQLAlchemy>=2.0.30"]
+dependencies = ["SQLAlchemy>=2.0.30", "ekbatan-py-db-scheduler"]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2"]
@@ -23,6 +23,12 @@ mysql = ["PyMySQL>=1.1"]
 mariadb = ["PyMySQL>=1.1"]
 migrations = ["yoyo-migrations>=9.0"]
 codegen = ["sqlacodegen>=4.0"]
+
+[tool.uv.sources]
+# The db-scheduler port lives in this repository, as `ekbatan-distributed-jobs` depends on the
+# db-scheduler artifact on the Java side. It stays a separate distribution with its own build
+# and its own tests; this only says where to find it.
+ekbatan-py-db-scheduler = { path = "db-scheduler", editable = true }
 
 [dependency-groups]
 dev = [
