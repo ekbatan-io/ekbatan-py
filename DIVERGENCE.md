@@ -351,6 +351,8 @@ differs, not because the name was chosen freely:
 | `ShardingStrategy.resolveShardIdentifier(persistable)` | `.shard_for(persistable)` | as above |
 | `ShardedUUID` (wrapper class) | `sharded_uuid()`, `read_shard()`, `uuid_instant()` | the class holds one `UUID` and three derivations of it; here they are three functions on a `UUID` |
 | `LockKeyHash.hashUtf8(key)` | `lock_key_hash(key)` | a class of static methods is a function here - the value it computes is identical, and pinned by test |
+| `ExecutionConfiguration.retryConfigs` (a `Map<Class, RetryConfig>`) | `.retry_configs` (an ordered tuple) | the class Java keys the map by lives on each config here as `on`, which can name several at once - `except (A, B)` is one clause, and a map key cannot be |
+| `Retry` (class) | folded into the executor's loop | it has one caller and no state beyond what that caller already holds |
 
 One place where matching Java costs something: `ExecutionConfiguration` sits next to
 `ShardingConfig`, `ShardConfig` and `DataSourceConfig`, because that is the inconsistency Java

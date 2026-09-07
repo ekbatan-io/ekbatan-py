@@ -49,15 +49,15 @@ class RetryConfig:
     """
 
     on: type[BaseException] | tuple[type[BaseException], ...] = StaleRecordError
-    #: How many times to try *again*, so one run plus this many. Named for what it counts:
-    #: `attempts=1` reading as one attempt and running twice is the sort of thing nobody
-    #: catches in review and everybody hits in production.
-    retries: int = 1
+    #: How many times to try *again*, so one run plus this many - Java's `maxRetries`. Named
+    #: for what it counts: `attempts=1` reading as one attempt and running twice is the sort of
+    #: thing nobody catches in review and everybody hits in production.
+    max_retries: int = 1
     delay: float = 0.1
 
     def __post_init__(self) -> None:
-        if self.retries < 0:
-            raise ValidationError(f"retries cannot be negative, got {self.retries}")
+        if self.max_retries < 0:
+            raise ValidationError(f"max_retries cannot be negative, got {self.max_retries}")
         if self.delay < 0:
             # Caught here rather than at the first retry, which is a different request, on a
             # different day, inside a sleep with nothing pointing back at this line.
@@ -76,9 +76,11 @@ DEFAULT_RETRIES: tuple[RetryConfig, ...] = (RetryConfig(),)
 class ExecutionConfiguration:
     """Per-call policy."""
 
+    #: Java's `retryConfigs`, as an ordered tuple rather than a map keyed by exception class -
+    #: the class it would be keyed by lives on each config as `on`, which can name several.
     #: Tried in order; the first whose `on` matches wins. Order is the only precedence rule,
     #: so a narrow policy goes before a broad one.
-    retries: tuple[RetryConfig, ...] = DEFAULT_RETRIES
+    retry_configs: tuple[RetryConfig, ...] = DEFAULT_RETRIES
     allow_cross_shard: bool = False
 
     @classmethod
@@ -88,7 +90,7 @@ class ExecutionConfiguration:
         For a unit of work whose side effects are not safe to repeat - and the caller is the
         only one who knows that.
         """
-        return cls(retries=(), **kwargs)
+        return cls(retry_configs=(), **kwargs)
 
     def policy_for(self, error: BaseException) -> tuple[RetryConfig, BaseException] | None:
         """The policy for this failure, looking through what it was raised from.
@@ -102,7 +104,7 @@ class ExecutionConfiguration:
         current: BaseException | None = error
         while current is not None and id(current) not in seen:
             seen.add(id(current))
-            for policy in self.retries:
+            for policy in self.retry_configs:
                 if policy.matches(current):
                     return policy, current
             following = current.__cause__
@@ -209,14 +211,14 @@ class ActionExecutor:
                     # work, and catching only Exception meant it was recorded as neither a
                     # success nor a failure: no log line, no span status, nothing.
                     match = policy.policy_for(error) if isinstance(error, Exception) else None
-                    if match is not None and retried < match[0].retries:
+                    if match is not None and retried < match[0].max_retries:
                         retried += 1
                         chosen, cause = match
                         LOG.warning(
                             "retrying %s (%d/%d) after %s: %s",
                             name,
                             retried,
-                            chosen.retries,
+                            chosen.max_retries,
                             type(cause).__name__,
                             cause,
                         )
@@ -278,6 +280,18 @@ class ActionExecutor:
             # row in SingleTableJsonEventPersister.
             by_shard = {self.registry.default_shard: {}}
 
+        if len(by_shard) > 1:
+            # Before the loop, not after it: an action that spans shards and then fails partway
+            # is exactly when someone needs to know it spanned shards, and a warning written
+            # after the last commit is never written at all in that case.
+            persisting.set({"ekbatan.shard.cross_shard": True})
+            LOG.warning(
+                "%s spans %d shards %s; each committed on its own",
+                action_name,
+                len(by_shard),
+                [str(s) for s in by_shard],
+            )
+
         action_id = uuid.uuid4()
         committed: list[ShardIdentifier] = []
 
@@ -285,7 +299,11 @@ class ActionExecutor:
             try:
                 self._commit_shard(shard, slices, action_name, action_id, params, started)
                 committed.append(shard)
-            except Exception as error:
+            except BaseException as error:
+                # BaseException, and Java's comment on the same line says why: "Caught as
+                # Exception, an Error on shard B produced partially-committed data in silence."
+                # A KeyboardInterrupt between two commits - a pod going away mid-action - is
+                # the realistic one here, and it must not decide whether the alarm is raised.
                 if committed:
                     # The documented consequence of opting in, and the only notice anyone gets.
                     persisting.set(
@@ -305,15 +323,6 @@ class ActionExecutor:
                         error,
                     )
                 raise
-
-        if len(by_shard) > 1:
-            persisting.set({"ekbatan.shard.cross_shard": True})
-            LOG.warning(
-                "%s spans %d shards %s; each committed on its own",
-                action_name,
-                len(by_shard),
-                [str(s) for s in by_shard],
-            )
 
     def _commit_shard(
         self,

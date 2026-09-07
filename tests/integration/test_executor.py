@@ -298,3 +298,39 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
     assert [e.event_type for e in written[1].events] == ["WalletMoneyDeposited"]
     assert outbox() == [], "nothing reached the default table"
     assert wallets.get(wallet.id).balance == Decimal("5.0000"), "the state change still committed"
+
+
+def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_exception(
+    sharded, sharded_registry, caplog, monkeypatch
+):
+    """Java's comment on this catch block is the whole reason it is a `Throwable`:
+
+        Caught as Exception, an Error on shard B produced partially-committed data in silence.
+
+    A cross-shard action that commits shard A and fails on shard B does not roll back. The
+    CRITICAL log and its span attributes are the only notice anyone gets, so what killed the
+    second shard must not decide whether the notice is written. `KeyboardInterrupt` between two
+    commits is the realistic one - a deploy restarting a pod mid-action.
+    """
+    import logging
+
+    executor, _ = sharded
+    calls = {"n": 0}
+    real = type(executor)._commit_shard
+
+    def second_shard_dies(self, shard, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise KeyboardInterrupt("the pod is going away")
+        return real(self, shard, *args, **kwargs)
+
+    monkeypatch.setattr(type(executor), "_commit_shard", second_shard_dies)
+
+    with caplog.at_level(logging.CRITICAL), pytest.raises(KeyboardInterrupt):
+        executor.execute(
+            CreateOnBothShards(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+        )
+
+    assert any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
+        "the one notice anyone gets was not written"
+    )

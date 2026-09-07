@@ -83,9 +83,9 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
     """A lost version race deserves one quick retry; an unreachable lock service deserves a few
     slower ones. One policy for everything has to pick the wrong number for something."""
     config = ExecutionConfiguration(
-        retries=(
-            RetryConfig(on=StaleRecordError, retries=1, delay=0),
-            RetryConfig(on=LockAcquisitionError, retries=3, delay=0),
+        retry_configs=(
+            RetryConfig(on=StaleRecordError, max_retries=1, delay=0),
+            RetryConfig(on=LockAcquisitionError, max_retries=3, delay=0),
         )
     )
 
@@ -105,9 +105,9 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
 
 def test_the_first_matching_policy_wins(executor):
     config = ExecutionConfiguration(
-        retries=(
-            RetryConfig(on=StaleRecordError, retries=0, delay=0),
-            RetryConfig(on=EkbatanError, retries=5, delay=0),
+        retry_configs=(
+            RetryConfig(on=StaleRecordError, max_retries=0, delay=0),
+            RetryConfig(on=EkbatanError, max_retries=5, delay=0),
         )
     )
     action = FailsWith(StaleRecordError("moved"))
@@ -170,7 +170,7 @@ def test_such_a_failure_is_never_retried(executor):
             action,
             None,
             config=ExecutionConfiguration(
-                retries=(RetryConfig(on=BaseException, retries=3, delay=0),)
+                retry_configs=(RetryConfig(on=BaseException, max_retries=3, delay=0),)
             ),
         )
     assert action.attempts == 1, "a cancellation is not a transient fault to sit through"

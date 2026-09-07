@@ -65,34 +65,34 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Action.java | 104 | `action/action.py` | todo |
-| ActionExecutor.java | 516 | `action/executor.py` | todo |
-| ActionPlan.java | 140 | `action/plan.py` | todo |
-| ActionRegistry.java | 91 | `action/registry.py` | todo |
-| ExecutionConfiguration.java | 107 | `action/action.py` | todo |
-| Retry.java | 89 | `action/executor.py` | todo |
-| RetryConfig.java | 37 | `action/action.py` | todo |
+| Action.java | 104 | `action/action.py` | done - the plan, principal and clock are properties reading the executor's context |
+| ActionExecutor.java | 516 | `action/executor.py` | done |
+| ActionPlan.java | 140 | `action/plan.py` | done |
+| ActionRegistry.java | 91 | `action/registry.py` | done |
+| ExecutionConfiguration.java | 107 | `action/action.py` | done - `executor.py`; retry policies are an ordered tuple, not a map keyed by class |
+| Retry.java | 89 | `action/executor.py` | done - folded into the executor's loop, as there is one caller |
+| RetryConfig.java | 37 | `action/action.py` | done |
 
 #### `core/action/persister`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| ChangePersister.java | 148 | `action/persister.py` | todo |
-| PersistableChanges.java | 89 | `action/plan.py` | todo |
+| ChangePersister.java | 148 | `action/persister.py` | done |
+| PersistableChanges.java | 89 | `action/plan.py` | done |
 
 #### `core/action/persister/event`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventPersister.java | 49 | `action/outbox.py` | todo |
+| EventPersister.java | 49 | `action/outbox.py` | done |
 
 #### `core/action/persister/event/single_table_json`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventEntity.java | 308 | `action/outbox.py` | todo |
-| EventEntityRepository.java | 238 | `action/outbox.py` | todo |
-| SingleTableJsonEventPersister.java | 167 | `action/outbox.py` | todo |
+| EventEntity.java | 308 | `action/outbox.py` | done - rows are dicts through SQLAlchemy Core, not a mapped class |
+| EventEntityRepository.java | 238 | `action/outbox.py` | n/a - package-private jOOQ field typing plus insert/read helpers; SQLAlchemy Core writes the row and `schema.py` declares the column types once |
+| SingleTableJsonEventPersister.java | 167 | `action/outbox.py` | done |
 
 #### `core/concurrent`
 
@@ -253,7 +253,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventEntityRepository.java | 208 | `events/fanout.py` | todo |
+| EventEntityRepository.java | 208 | `events/fanout.py` | n/a - package-private jOOQ field typing plus insert/read helpers; SQLAlchemy Core writes the row and `schema.py` declares the column types once |
 | EventNotificationRepository.java | 376 | `events/notification.py` | todo |
 
 #### `events/streaming/actionevent/json`
