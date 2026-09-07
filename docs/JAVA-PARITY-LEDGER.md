@@ -279,8 +279,8 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| ActionAssert.java | 439 | `testing.py` | todo |
-| ActionSpec.java | 116 | `testing.py` | todo |
+| ActionAssert.java | 439 | `testing.py` | done - `StagedWork`; data accessors rather than 24 assertion methods |
+| ActionSpec.java | 116 | `testing.py` | done - `run_action`; `assertThrows` is `pytest.raises` |
 
 #### `testsupport/testcontainers`
 
@@ -292,7 +292,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| VirtualClock.java | 142 | `clock.py` | todo |
+| VirtualClock.java | 142 | `clock.py` | done - three modes, as Java has; `VirtualClock(instant)` additionally starts frozen |
 
 ## Tests
 
@@ -306,7 +306,7 @@ which means "use the default".
 | ActionPlanTest.java | 223 | `tests/integration/test_actions.py` | done - `add` hands back the stamped row rather than the argument; see DIVERGENCE |
 | ActionRegistryBuilderTest.java | 61 | `tests/integration/test_registries.py` | done |
 | ActionRegistryTest.java | 112 | `tests/integration/test_registries.py` | done |
-| ActionSpecTest.java | 633 | `tests/unit/test_action_testing.py` | todo |
+| ActionSpecTest.java | 633 | `tests/unit/test_action_testing.py` | done - the cases testing the assertion DSL itself are n/a; `assert` needs no test |
 | CreateAction.java | 17 | `tests/fixtures/actions.py` | todo |
 | CreateBothAction.java | 18 | `tests/fixtures/actions.py` | todo |
 | DeleteAction.java | 19 | `tests/fixtures/actions.py` | todo |
@@ -460,7 +460,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| VirtualClockTest.java | 174 | `tests/unit/test_clock.py` | todo |
+| VirtualClockTest.java | 174 | `tests/unit/test_clock.py` | done - `getZone`/`withZone` are n/a; the protocol here asks only for `now()` |
 
 ## Integration tests
 

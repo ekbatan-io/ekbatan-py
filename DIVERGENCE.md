@@ -446,6 +446,24 @@ empty; here it is a `TypeError`. `None` where an iterable belongs is a mistake a
 and returning empty lets it through to become "this unit of work staged nothing" - which commits
 a sentinel row and looks like success.
 
+## The test-support API is data, not an assertion DSL
+
+Java ships `ActionSpec` and `ActionAssert` - 24 fluent assertion methods, and 38 tests of those
+methods. `run_action` returns a `StagedWork` instead: `result`, `added(Type)`, `updated(Type)`,
+`additions`, `updates`, `staged`, `events`, `emitted(Type)`.
+
+The reason is pytest. `assertAdded(Wallet.class, 2)` exists because a bare `assert` in Java
+reports "expected true, got false"; `assert len(staged.added(Wallet)) == 2` already prints both
+sides and the list. A DSL here would be a layer between the reader and what actually happened,
+and it would need its own 38 tests.
+
+`assertThrows` has no counterpart either - it is `pytest.raises`, which does more.
+
+`VirtualClock` is the opposite case: it is ported in full, three modes and all, because those
+are behaviour rather than assertion sugar. One addition - `VirtualClock(instant)` starts frozen
+at that instant, where Java's constructor takes a real clock and starts running. `VirtualClock()`
+still means what Java's does.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus

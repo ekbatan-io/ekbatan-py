@@ -53,6 +53,24 @@ class StagedWork[R]:
         return list(self.plan.updates(model_type))
 
     @property
+    def additions(self) -> list[Persistable[Any, Any]]:
+        """Every row staged for insert, across every type.
+
+        Java's `assertTotalAdditions(n)`; here it is `len(staged.additions) == n`. Worth having
+        as well as :meth:`added`, because a unit of work touching two types is exactly where a
+        per-type count stops telling you whether anything extra was staged.
+        """
+        return [
+            row for changes in self.plan.changes().values() for row in changes.additions.values()
+        ]
+
+    @property
+    def updates(self) -> list[Persistable[Any, Any]]:
+        """Every row staged for update, across every type. Java's `assertTotalUpdates(n)`."""
+        staged = self.plan.changes().values()
+        return [row for changes in staged for row in changes.updates.values()]
+
+    @property
     def staged(self) -> list[Persistable[Any, Any]]:
         """Everything staged, inserts before updates within each type."""
         return [row for changes in self.plan.changes().values() for row in changes.all]

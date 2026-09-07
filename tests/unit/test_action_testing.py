@@ -24,6 +24,7 @@ from fixtures.actions import (
 )
 from fixtures.domain import (
     Notification,
+    NotificationId,
     Wallet,
     WalletCreated,
     WalletId,
@@ -170,3 +171,40 @@ def test_the_plan_cannot_be_emptied_from_outside():
     with pytest.raises(AttributeError):
         staged.plan.changes().clear()  # type: ignore[attr-defined]
     assert staged.plan, "still holding what it was given"
+
+
+def test_a_unit_of_work_touching_two_types_is_countable_across_both():
+    """Java's `assertTotalAdditions_counts_across_types` and `createBoth_full_verification`.
+
+    A per-type count stops telling you whether anything *extra* was staged the moment a unit of
+    work touches two types, which is when it matters most.
+    """
+    staged = run_action(CreatesBoth(), None)
+
+    assert len(staged.additions) == 2, "one of each, and nothing else"
+    assert staged.updates == []
+    assert len(staged.added(Wallet)) == 1
+    assert len(staged.added(Notification)) == 1
+    assert [type(e).__name__ for e in staged.events] == ["WalletCreated"], (
+        "the entity stages without emitting; only the model has events"
+    )
+
+
+class CreatesBoth(Action[None, Wallet]):
+    """A model and an entity in one unit of work."""
+
+    def perform(self, params: None) -> Wallet:
+        wallet = self.plan.add(
+            Wallet.open(
+                id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+            )
+        )
+        self.plan.add(
+            Notification.create(
+                id=NotificationId.random(),
+                wallet_id=wallet.id,
+                kind="WALLET_CREATED",
+                recipient="ada@example.com",
+            )
+        )
+        return wallet
