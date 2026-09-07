@@ -130,6 +130,12 @@ def _discard(conn: Connection) -> None:
         LOG.debug("failed to close a lock connection", exc_info=True)
 
 
+def _is_lock_timeout(error: Exception) -> bool:
+    """Postgres's 55P03, however the driver chose to report it."""
+    original = getattr(error, "orig", None)
+    return getattr(original, "sqlstate", None) == "55P03" or "lock timeout" in str(error).lower()
+
+
 class PostgresKeyedLockProvider(SqlKeyedLockProvider):
     """Postgres advisory locks.
 
@@ -150,16 +156,24 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
         conn.exec_driver_sql(f"SET lock_timeout = {millis}")
         try:
             conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
-            return True
         except Exception as exc:
-            if "lock timeout" in str(exc).lower() or (
-                getattr(exc, "orig", None) is not None
-                and (getattr(getattr(exc, "orig", None), "sqlstate", None) == "55P03")
-            ):
-                return False
-            raise
-        finally:
-            conn.exec_driver_sql("SET lock_timeout = 0")
+            if not _is_lock_timeout(exc):
+                raise
+            # Postgres aborts the transaction when `lock_timeout` fires and then refuses every
+            # later statement on this connection until it is rolled back. The reset below used
+            # to sit in a `finally`, so it ran here too and raised `InFailedSqlTransaction` -
+            # which surfaced as "the lock backend failed", reporting a busy lock as a broken
+            # one. That is exactly the confusion `try_acquire` returning None exists to prevent.
+            #
+            # Keeping the reset off this path is the fix. The rollback is not load-bearing -
+            # the caller discards this connection and the pool resets it - but it leaves the
+            # connection clean here rather than depending on that.
+            conn.rollback()
+            return False
+        # Only on the way out of a healthy transaction. The timeout path above discards this
+        # connection rather than returning it, so there is nothing to tidy there.
+        conn.exec_driver_sql("SET lock_timeout = 0")
+        return True
 
     def _unlock(self, conn: Connection, key: int) -> None:
         from sqlalchemy import text
@@ -170,10 +184,30 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
 class MySQLKeyedLockProvider(SqlKeyedLockProvider):
     """MySQL user-level locks via ``GET_LOCK``.
 
-    **A sub-second wait rounds up.** MySQL accepts a fractional timeout and then rounds it to
-    the next whole second internally, so a 50ms wait takes about a second. The wait is still
-    bounded and the call still returns - a port must not paper over this by polling in a loop,
-    which trades a documented imprecision for load on the database.
+    **A sub-second wait is not a wait on MySQL.** ``GET_LOCK`` takes a ``DOUBLE``, and the two
+    servers have diverged on what they do with the fraction. Measured against the containers
+    this suite runs, holding the lock and timing a second session:
+
+    ==============  ==================  ==============
+    timeout asked   MySQL 8.4.11        MariaDB 11.4
+    ==============  ==================  ==============
+    0.25s           0.00s               0.26s
+    0.5s            0.00s               0.51s
+    1s              1.01s               1.01s
+    1.5s            2.01s               1.51s
+    ==============  ==================  ==============
+
+    So MySQL truncates a sub-second timeout to zero and rounds a fractional one above a second
+    up; MariaDB honours the fraction. A ``try_acquire`` with a 500ms wait therefore returns
+    almost immediately on MySQL - it is a poll, not a wait.
+
+    The value is passed through as-is anyway, as the Java implementation passes it. Rounding it
+    up here would make a 50ms wait take a second, which is a surprise in the other direction,
+    and polling in a loop would trade a bounded imprecision for load on the database. What is
+    worth having is that this is written down and tested rather than discovered.
+
+    (Java's own comment says MySQL "rounds up to the next whole second" for these. That holds
+    above one second and not below it - a 500ms wait does not become 1s, it becomes none.)
     """
 
     _name_prefix = "ekbatan:"

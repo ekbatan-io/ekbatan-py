@@ -54,6 +54,7 @@ Not defects in this port, and not acted on here - recorded so they are not lost.
 
 | where | what | impact |
 | --- | --- | --- |
+| `MySQLKeyedLockProvider`'s javadoc | says a sub-second `maxWait` "rounds up to the next whole second internally (verified)". Measured against MySQL 8.4.11, holding the lock and timing a second session: 0.25s and 0.5s both return in **0.00s**, while 1.5s waits 2.01s. So it rounds up above a second and truncates to zero below one - a 500ms wait is a poll, not a wait. MariaDB 11.4 honours the fraction exactly (0.26s, 0.51s, 1.51s) | documentation, not behaviour: both ports pass the value through unchanged, so they agree. What differs is what the comment leads a reader to expect |
 | `EmbeddedBitsShardingStrategy.resolveShardIdentifier(persistable)` | the `ShardedId` branch decodes shard bits with no `version() != 7` guard, while the `Id` branch beside it has one. `ShardedUUID.from(uuid)` is public and documented as wrapping an arbitrary uuid "without re-checking that the shard bits are valid", so a pre-sharding version 4 id decodes to a well-formed, meaningless coordinate - verified by running: `ShardIdentifier(81, 21)`, `(202, 36)`, no exception | latent. `effectiveShard` falls back to the default for an unregistered coordinate, so it only bites when the garbage lands on a registered shard - about 8 in 16,384 per id on an eight-shard layout. Silent and self-consistent when it does: the row is written to the wrong database and read back from it |
 
 This port refuses the same input - `ShardedId.shard` raises, and the strategy returns `None`,
@@ -335,10 +336,10 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| KeyedReentrantHolderTest.java | 94 | `tests/unit/test_locks.py` | todo |
-| MariaDBKeyedLockProviderTest.java | 559 | `tests/integration/test_locks.py` | todo |
-| MySQLKeyedLockProviderTest.java | 550 | `tests/integration/test_locks.py` | todo |
-| PostgresKeyedLockProviderTest.java | 543 | `tests/integration/test_locks.py` | todo |
+| KeyedReentrantHolderTest.java | 94 | `tests/unit/test_locks.py` | done |
+| MariaDBKeyedLockProviderTest.java | 559 | `tests/integration/test_locks.py` | n/a - as above |
+| MySQLKeyedLockProviderTest.java | 550 | `tests/integration/test_locks.py` | n/a - the same suite; Python parametrises rather than subclassing |
+| PostgresKeyedLockProviderTest.java | 543 | `tests/integration/test_locks.py` | done - `tests/unit/test_locks.py` plus the integration suite; the Mockito cases are n/a |
 
 #### `core/config`
 
@@ -539,7 +540,7 @@ proves the three real servers.
 | --- | --- | --- | --- |
 | MariaDBKeyedLockProviderIntegrationTest.java | 502 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | MySQLKeyedLockProviderIntegrationTest.java | 500 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
-| PostgresKeyedLockProviderIntegrationTest.java | 470 | `tests/integration/test_locks.py` | todo |
+| PostgresKeyedLockProviderIntegrationTest.java | 470 | `tests/integration/test_locks.py` | done - `tests/integration/test_locks.py`, parametrised over the three servers |
 | RedisKeyedLockProviderIntegrationTest.java | 622 | - | done - `tests/integration/test_redis_locks.py`; the three Redisson `CompletionException` cases are n/a |
 | WalletDepositLockingIntegrationTest.java | 165 | `tests/integration/test_locks.py` | todo |
 

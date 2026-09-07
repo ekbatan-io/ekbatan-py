@@ -516,6 +516,22 @@ last-call-wins `leaseTime` would let an inner re-entry shorten the outer holder'
 same holder *provides* the behaviour, because nothing underneath does. Both make the outermost
 `max_hold` the one that governs.
 
+## A timed-out Postgres advisory lock rolls back before it resets
+
+Not a divergence so much as a bug this port had and Java does not, fixed and recorded because the
+shape is worth remembering. `pg_advisory_lock` under a `lock_timeout` raises `55P03` **and aborts
+the transaction**, so every later statement on that connection is refused until a rollback. The
+`SET lock_timeout = 0` reset sat in a `finally`, ran on that aborted transaction, and raised
+`InFailedSqlTransaction` - which `_attempt` turned into `LockAcquisitionError`.
+
+The effect was that a `try_acquire` which simply timed out **raised instead of returning None**,
+which is the precise confusion the empty-result contract exists to prevent: a caller cannot tell
+a busy lock from a broken one if both arrive the same way. Java has no equivalent because jOOQ's
+`lock_timeout` handling never runs a statement on the aborted transaction.
+
+Found by the first run of the integration suite against a real Postgres; no unit test could have,
+because the in-process provider has no transaction to abort.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus
