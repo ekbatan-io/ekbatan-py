@@ -423,3 +423,51 @@ def test_a_manager_filed_under_the_wrong_shard_is_refused(registry):
 
     with pytest.raises(ValidationError, match="registered under the wrong key"):
         DatabaseRegistry({GLOBAL: TransactionManager(MEXICO, create_engine("sqlite://"))}, GLOBAL)
+
+
+# -- the two shard-strategy details that had drifted from Java ---------------------------------
+
+
+def test_no_sharding_says_it_resolves_nothing_from_an_id_and_still_reads_by_id(registry, clock):
+    """Java's `NoShardingStrategy.usesShardAwareId()` returns false, and its repository guard
+    opens with `instanceof NoShardingStrategy` so that reads by id keep working anyway.
+
+    The flag means "is a shard encoded in the id", not "may I read by id". A single-database
+    deployment encodes nothing and needs to: there is one shard and every row is on it.
+    """
+    strategy = NoShardingStrategy()
+    assert strategy.uses_shard_aware_id is False
+    assert strategy.shard_for_id(uuid4()) is None
+    assert strategy.shard_for(a_wallet(MEXICO)) is None
+
+    wallets = Repository(Wallet, WALLETS, registry, sharding=strategy, clock=clock)
+    stored = wallets.add(a_wallet(GLOBAL))
+
+    assert wallets.get(stored.id).id == stored.id, "reads by id are not refused"
+
+
+def test_a_cross_shard_refusal_names_the_two_shards_that_disagreed(sharded_registry, clock):
+    """Java's `CrossShardException` carries `activeShard` and `requestedShard` as fields, so a
+    caller can branch on them rather than parse the message."""
+    wallets = Repository(
+        Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+    )
+
+    with pytest.raises(CrossShardError) as raised:
+        wallets.add_all([a_wallet(GLOBAL), a_wallet(MEXICO)])
+
+    assert {raised.value.active_shard, raised.value.requested_shard} == {GLOBAL, MEXICO}
+    assert "allow_cross_shard=True" in str(raised.value), "and says what to do instead"
+
+
+def test_one_database_needs_no_election_and_two_do(registry):
+    """Java's builder makes `withDefaultDatabase` optional for a single database and mandatory
+    beyond that. Saying which of one is the default is a line that can only be written
+    correctly; saying which of two is a decision only the operator can make."""
+    from ekbatan.persistence import DatabaseRegistry
+
+    only = registry.manager(registry.default_shard)
+    assert DatabaseRegistry({only.shard: only}).default_shard == only.shard
+
+    with pytest.raises(ValidationError, match="default_shard is required"):
+        DatabaseRegistry({GLOBAL: only, MEXICO: only})

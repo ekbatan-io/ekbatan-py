@@ -214,10 +214,20 @@ class DatabaseRegistry:
     def __init__(
         self,
         managers: Mapping[ShardIdentifier, TransactionManager],
-        default_shard: ShardIdentifier,
+        default_shard: ShardIdentifier | None = None,
     ) -> None:
         if not managers:
             raise ValidationError("at least one database is required")
+        if default_shard is None:
+            # One database needs no election, and saying which of one is the default is a line
+            # that can only be written correctly. Java's builder does the same, and refuses the
+            # same way once there is more than one to choose between.
+            if len(managers) > 1:
+                raise ValidationError(
+                    f"default_shard is required when more than one database is registered; "
+                    f"registered: {sorted(str(s) for s in managers)}"
+                )
+            default_shard = next(iter(managers))
         if default_shard not in managers:
             raise ValidationError(f"default_shard {default_shard} names no registered database")
         misfiled = [(key, m.shard) for key, m in managers.items() if key != m.shard]

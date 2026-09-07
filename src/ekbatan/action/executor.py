@@ -270,7 +270,8 @@ class ActionExecutor:
             # Refused before anything is written. Committing per shard by default would turn
             # the central promise into a lie the first time an action reached two databases by
             # accident - and it would do it silently.
-            raise CrossShardError(sorted(str(s) for s in by_shard))
+            first, second, *_ = sorted(by_shard)
+            raise CrossShardError(first, second)
 
         if not by_shard:
             # Nothing was staged, and the invocation is still recorded. See the sentinel

@@ -64,15 +64,21 @@ class CrossShardError(EkbatanError):
     There is no two-phase commit here and the framework does not pretend otherwise. Committing
     per shard by default would turn the central promise - all or nothing - into a lie the first
     time an action reached two databases by accident.
+
+    The two shards are Java's two: ``activeShard``, the one the work started on, and
+    ``requestedShard``, the one it then reached for. More than two may be involved; naming the
+    pair that first disagreed is what points at the line to look at.
     """
 
-    def __init__(self, shards: object) -> None:
+    def __init__(self, active_shard: object, requested_shard: object) -> None:
         super().__init__(
-            f"this unit of work spans shards {shards}; there is no cross-shard transaction. "
-            f"Pass allow_cross_shard=True to commit each shard independently, understanding "
-            f"that a later shard failing leaves earlier ones committed."
+            f"this unit of work started on shard {active_shard} and then reached shard "
+            f"{requested_shard}; there is no cross-shard transaction. Pass "
+            f"allow_cross_shard=True to commit each shard independently, understanding that a "
+            f"later shard failing leaves earlier ones committed."
         )
-        self.shards = shards
+        self.active_shard = active_shard
+        self.requested_shard = requested_shard
 
 
 class LockAcquisitionError(EkbatanError):

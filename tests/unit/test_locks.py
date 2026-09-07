@@ -174,3 +174,55 @@ def test_the_key_hash_matches_the_other_ports():
     # services in two languages contending for one key actually contend.
     assert lock_key_hash("wallet:w1") == 0x3633E13B37734F8D
     assert lock_key_hash("a") != lock_key_hash("b")
+
+
+# -- the lock id is a cross-language contract --------------------------------------------------
+
+
+#: Produced by running Java's `io.ekbatan.core.internal.LockKeyHash.hashUtf8` on this machine,
+#: not by reasoning about it. A Java service and a Python service contending for `wallet:abc`
+#: have to arrive at the same `pg_advisory_lock` argument or each quietly holds its own idea of
+#: the lock and neither excludes the other - a failure that looks like nothing at all until two
+#: writers run at once.
+JAVA_LOCK_IDS = {
+    "wallet:abc": -9133792321015084474,
+    "": -2039914840885289964,
+    "a": -3848465438864589366,
+    "wallet:00000000-0000-0000-0000-000000000001": -2991874751685414135,
+    "tenant/42:invoice": 6736202581112334014,
+    "éà中文": 1179023550167011916,
+    "x" * 500: -4356058416807128726,
+}
+
+
+@pytest.mark.parametrize(("key", "expected"), sorted(JAVA_LOCK_IDS.items()))
+def test_a_lock_key_hashes_to_the_same_id_java_gives_it(key, expected):
+    from ekbatan.locks.base import lock_key_hash
+
+    assert lock_key_hash(key) == expected
+
+
+def test_the_lock_id_is_signed_and_fits_a_bigint():
+    """SHA-256's first eight bytes read as a *signed* big-endian long, which is what
+    `ByteBuffer.getLong()` returns. Read unsigned, half of all keys would land outside the
+    range Postgres's `pg_advisory_lock(bigint)` accepts, and none of them would match Java."""
+    from ekbatan.locks.base import lock_key_hash
+
+    ids = [lock_key_hash(f"key-{n}") for n in range(2000)]
+
+    assert all(-(2**63) <= i < 2**63 for i in ids)
+    assert any(i < 0 for i in ids), "unsigned would never produce one"
+
+
+def test_the_hash_is_sha256_truncated_as_the_nist_vectors_say():
+    """Java's `LockKeyHashTest` pins the same two, which is what makes this a shared algorithm
+    rather than two implementations that happen to agree on the keys someone tried."""
+    from ekbatan.locks.base import lock_key_hash
+
+    def as_signed(value: int) -> int:
+        return value - 2**64 if value >= 2**63 else value
+
+    # SHA-256("")    = e3b0c44298fc1c14 9afbf4c8996fb924 ...
+    # SHA-256("abc") = ba7816bf8f01cfea 414140de5dae2223 ...
+    assert lock_key_hash("") == as_signed(0xE3B0C44298FC1C14)
+    assert lock_key_hash("abc") == as_signed(0xBA7816BF8F01CFEA)

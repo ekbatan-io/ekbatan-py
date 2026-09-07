@@ -123,10 +123,10 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| CollectionUtils.java | 18 | - | todo |
-| LockKeyHash.java | 48 | `locks/sql.py` | todo |
-| MapUtils.java | 18 | - | todo |
-| Validate.java | 149 | `errors.py` | todo |
+| CollectionUtils.java | 18 | - | n/a - `if not collection` is the whole of it |
+| LockKeyHash.java | 48 | `locks/base.py` | done - `locks/base.py`; the value is pinned against Java's own output |
+| MapUtils.java | 18 | - | n/a - as above |
+| Validate.java | 149 | `errors.py` | done - `errors.py` plus each type's own `__post_init__` |
 
 #### `core/nativeimage`
 
@@ -187,14 +187,14 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| CrossShardException.java | 34 | `errors.py` | todo |
-| DatabaseRegistry.java | 236 | `persistence.py` | todo |
-| EmbeddedBitsShardingStrategy.java | 54 | `sharding.py` | todo |
-| NoShardingStrategy.java | 32 | `sharding.py` | todo |
-| ShardAwareId.java | 18 | `ids.py` | todo |
-| ShardIdentifier.java | 77 | `sharding.py` | todo |
-| ShardedUUID.java | 114 | `ids.py` | todo |
-| ShardingStrategy.java | 45 | `sharding.py` | todo |
+| CrossShardException.java | 34 | `errors.py` | done - `CrossShardError`, with Java's two named shards |
+| DatabaseRegistry.java | 236 | `persistence.py` | done - `persistence.py`; jOOQ `DSLContext` maps have no counterpart |
+| EmbeddedBitsShardingStrategy.java | 54 | `sharding.py` | done |
+| NoShardingStrategy.java | 32 | `sharding.py` | done |
+| ShardAwareId.java | 18 | `ids.py` | done - `Id.shard`; an interface naming a shape Python reads off the object |
+| ShardIdentifier.java | 77 | `sharding.py` | done |
+| ShardedUUID.java | 114 | `ids.py` | done - `sharded_uuid()`, `read_shard()`, `uuid_instant()` |
+| ShardingStrategy.java | 45 | `sharding.py` | done |
 
 #### `distributedjobs`
 
@@ -353,9 +353,9 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| CollectionUtilsTest.java | 27 | - | todo |
-| LockKeyHashTest.java | 62 | `tests/unit/test_locks.py` | todo |
-| MapUtilsTest.java | 24 | - | todo |
+| CollectionUtilsTest.java | 27 | - | n/a - tests a helper that is not ported |
+| LockKeyHashTest.java | 62 | `tests/unit/test_locks.py` | done |
+| MapUtilsTest.java | 24 | - | n/a - as above |
 | ValidateTest.java | 164 | `tests/unit/test_errors.py` | todo |
 
 #### `core/persistence`
@@ -399,7 +399,7 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 | --- | --- | --- | --- |
 | DatabaseRegistryFromConfigTest.java | 210 | `tests/integration/test_routing.py` | todo |
 | DatabaseRegistrySecondaryPoolTest.java | 176 | `tests/integration/test_routing.py` | todo |
-| ShardIdentifierTest.java | 62 | `tests/unit/test_ids.py` | todo |
+| ShardIdentifierTest.java | 62 | `tests/unit/test_ids.py` | done |
 
 #### `distributedjobs`
 

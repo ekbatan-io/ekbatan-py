@@ -209,3 +209,45 @@ def test_comparing_ids_delegates_to_the_uuid():
     assert high > low
     assert not low < low
     assert sorted([high, low]) == [low, high]
+
+
+# -- the shard coordinate, and the bits it has to fit into -------------------------------------
+#
+# Java's ShardIdentifierTest, case for case.
+
+
+def test_the_coordinate_accepts_its_whole_range_and_nothing_outside_it():
+    from ekbatan.sharding import MAX_GROUP, MAX_MEMBER, MIN_GROUP, MIN_MEMBER
+
+    assert (MIN_GROUP, MAX_GROUP, MIN_MEMBER, MAX_MEMBER) == (0, 255, 0, 63), (
+        "8 bits of group and 6 of member, which is what a sharded uuid reserves"
+    )
+
+    lowest = ShardIdentifier(MIN_GROUP, MIN_MEMBER)
+    highest = ShardIdentifier(MAX_GROUP, MAX_MEMBER)
+    assert (lowest.group, lowest.member) == (0, 0)
+    assert (highest.group, highest.member) == (255, 63)
+
+    for group, member, word in [
+        (-1, 0, "group"),
+        (256, 0, "group"),
+        (0, -1, "member"),
+        (0, 64, "member"),
+    ]:
+        with pytest.raises(ValidationError, match=word):
+            ShardIdentifier(group, member)
+
+
+def test_the_widest_coordinate_survives_a_round_trip_through_a_sharded_uuid():
+    """The bounds case that would break first if the bit layout were ever mis-shifted: every
+    shard bit set, decoded back out of the id."""
+    from ekbatan.sharding import MAX_GROUP, MAX_MEMBER, read_shard, sharded_uuid
+
+    widest = ShardIdentifier(MAX_GROUP, MAX_MEMBER)
+
+    assert read_shard(sharded_uuid(widest)) == widest
+    assert all(
+        read_shard(sharded_uuid(ShardIdentifier(g, m))) == ShardIdentifier(g, m)
+        for g in (0, 1, 127, 255)
+        for m in (0, 1, 62, 63)
+    )

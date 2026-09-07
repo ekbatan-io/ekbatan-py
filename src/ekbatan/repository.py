@@ -190,7 +190,8 @@ class Repository[M: Persistable[Any, Any], K]:
             return self.registry.default_shard
         shards = {self.shard_of(m) for m in models}
         if len(shards) > 1:
-            raise CrossShardError(sorted(str(s) for s in shards))
+            first, second, *_ = sorted(shards)
+            raise CrossShardError(first, second)
         return shards.pop()
 
     @contextmanager
@@ -324,6 +325,11 @@ class Repository[M: Persistable[Any, Any], K]:
         return self.registry.manager(self.registry.default_shard)
 
     def _require_id_based(self) -> None:
+        # A single-database deployment resolves nothing from the id and needs to resolve
+        # nothing: every row is on the one shard. Java's `rejectNonIdBasedStrategy` opens with
+        # the same check, for the same reason.
+        if isinstance(self.sharding, NoShardingStrategy):
+            return
         if not self.sharding.uses_shard_aware_id:
             raise UnsupportedError(
                 f"{type(self.sharding).__name__} cannot resolve a shard from an id alone, so "

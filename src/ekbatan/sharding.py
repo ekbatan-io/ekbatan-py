@@ -22,6 +22,10 @@ from .errors import ValidationError
 
 __all__ = [
     "DEFAULT_SHARD",
+    "MAX_GROUP",
+    "MAX_MEMBER",
+    "MIN_GROUP",
+    "MIN_MEMBER",
     "EmbeddedBitsShardingStrategy",
     "NoShardingStrategy",
     "ShardIdentifier",
@@ -37,7 +41,12 @@ MEMBER_BITS = 6
 _SHARD_BITS = GROUP_BITS + MEMBER_BITS
 _RANDOM_BITS = 62 - _SHARD_BITS  # 48
 
+#: The coordinate range, which is the range the bits in a sharded uuid can hold. Named as Java
+#: names them, because `ShardIdentifierTest` builds its bounds cases out of the four constants
+#: and a port that only exports two makes the same test unwritable.
+MIN_GROUP = 0
 MAX_GROUP = (1 << GROUP_BITS) - 1
+MIN_MEMBER = 0
 MAX_MEMBER = (1 << MEMBER_BITS) - 1
 
 
@@ -49,10 +58,10 @@ class ShardIdentifier:
     member: int
 
     def __post_init__(self) -> None:
-        if not 0 <= self.group <= MAX_GROUP:
-            raise ValidationError(f"group must be 0..{MAX_GROUP}, got {self.group}")
-        if not 0 <= self.member <= MAX_MEMBER:
-            raise ValidationError(f"member must be 0..{MAX_MEMBER}, got {self.member}")
+        if not MIN_GROUP <= self.group <= MAX_GROUP:
+            raise ValidationError(f"group must be {MIN_GROUP}..{MAX_GROUP}, got {self.group}")
+        if not MIN_MEMBER <= self.member <= MAX_MEMBER:
+            raise ValidationError(f"member must be {MIN_MEMBER}..{MAX_MEMBER}, got {self.member}")
 
     @classmethod
     def of(cls, group: int, member: int) -> ShardIdentifier:
@@ -140,11 +149,18 @@ class ShardingStrategy(Protocol):
 
 
 class NoShardingStrategy:
-    """Everything on one database. The default, and the right answer for most deployments."""
+    """Everything on one database. The default, and the right answer for most deployments.
+
+    ``uses_shard_aware_id`` is ``False``, as it is in Java, and it means what it says: there is
+    no shard encoded in an id here, because there are no shards. It does *not* mean that reads
+    by id are refused - a single-database deployment answers ``find(id)`` perfectly well, and
+    the repository special-cases this strategy for exactly that. Java's guard is the same two
+    lines, an ``instanceof NoShardingStrategy`` before the flag is consulted.
+    """
 
     __slots__ = ()
 
-    uses_shard_aware_id = True
+    uses_shard_aware_id = False
 
     def shard_for_id(self, key: object) -> ShardIdentifier | None:
         return None
