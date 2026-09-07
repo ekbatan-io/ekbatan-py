@@ -146,6 +146,13 @@ class ActionExecutor:
         config: ExecutionConfiguration = DEFAULT,
     ) -> None:
         self.namespace = _valid_namespace(namespace)
+        # Named here, as Java names them in its builder. `registry=None` was accepted and the
+        # executor built fine; the first unit of work then failed somewhere inside routing,
+        # naming a shard lookup rather than the argument that was never passed.
+        if registry is None:
+            raise ValidationError("registry is required")
+        if repositories is None:
+            raise ValidationError("repositories is required")
         self.registry = registry
         self.clock = clock or SystemClock()
         self.config = config
@@ -184,6 +191,11 @@ class ActionExecutor:
 
         Takes the action to run, or its type when one is registered - see the class docstring.
         """
+        if action is None:
+            raise ValidationError(
+                "an action is required; pass the action itself or a type registered with the "
+                "executor"
+            )
         running = self.actions.get(action) if isinstance(action, type) else action
         policy = config or self.config
         name = running.name

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -136,6 +137,105 @@ def test_a_cycle_in_the_cause_chain_does_not_hang(executor):
 
     with pytest.raises(ValidationError):
         executor.execute(FailsWith(first), None)
+
+
+def test_max_retries_counts_retries_and_not_attempts(executor):
+    """Java's `execute_retries_exact_number_of_times`, and the reason for the field's name.
+
+    `max_retries=3` means one run plus three more. Read as "attempts" it would run three times,
+    and the difference is the sort of off-by-one nobody catches in review because both readings
+    look right on the page.
+    """
+    for allowed in range(4):
+        config = ExecutionConfiguration(
+            retry_configs=(RetryConfig(on=StaleRecordError, max_retries=allowed, delay=0),)
+        )
+        action = FailsWith(*[StaleRecordError("moved") for _ in range(allowed)])
+
+        assert executor.execute(action, None, config=config) == "done"
+        assert action.attempts == allowed + 1, f"{allowed} retries is {allowed + 1} runs"
+
+
+def test_when_the_retries_run_out_the_original_failure_is_what_escapes(executor):
+    """Java's `execute_throws_after_max_attempts_exhausted`. The caller sees what went wrong,
+    not a wrapper saying that retrying did not help."""
+    config = ExecutionConfiguration(
+        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=2, delay=0),)
+    )
+    action = FailsWith(*[StaleRecordError(f"attempt {n}") for n in range(5)])
+
+    with pytest.raises(StaleRecordError, match="attempt 2"):
+        executor.execute(action, None, config=config)
+
+    assert action.attempts == 3, "one run and two retries"
+
+
+def test_a_policy_matches_a_subclass_where_javas_matches_only_the_exact_class(executor):
+    """A deliberate difference, pinned here so it stays deliberate.
+
+    Java looks the thrown class up in a `Map<Class, RetryConfig>`, so registering `EkbatanError`
+    does nothing for a `StaleRecordError` - its own test is called
+    `execute_does_not_retry_configured_superclass_when_only_subclass_is_thrown`. Here `on` is
+    matched with `isinstance`, so a policy covers a family the way an `except` clause does.
+    Registering a broad class therefore retries more here than it would there.
+    """
+    config = ExecutionConfiguration(
+        retry_configs=(RetryConfig(on=EkbatanError, max_retries=1, delay=0),)
+    )
+    action = FailsWith(StaleRecordError("a subclass of EkbatanError"))
+
+    assert executor.execute(action, None, config=config) == "done"
+    assert action.attempts == 2, "the subclass matched its superclass's policy"
+
+
+def test_a_cause_deliberately_suppressed_is_not_looked_through(executor):
+    """`raise ... from None` says the earlier failure is not part of this one's story.
+
+    Java's nearest case is `execute_does_not_retry_configured_exception_when_only_suppressed`,
+    which is about `addSuppressed` - a mechanism Python has no equivalent of. What Python has
+    instead is the implicit context an exception raised inside an `except` block carries, and
+    `from None` is how you say it should not count.
+    """
+    hidden = _raised_from_none()
+    action = FailsWith(hidden)
+
+    with pytest.raises(ConnectivityError):
+        executor.execute(action, None)
+    assert action.attempts == 1, "nothing looked past the suppression"
+
+
+def test_an_implicit_context_is_looked_through(executor):
+    """The other half: raised while handling a retryable failure, without `from None`.
+
+    Python sets `__context__` automatically there, and its own traceback prints both - so the
+    retryable failure is genuinely part of this one's story and is treated as such.
+    """
+    action = FailsWith(_raised_while_handling())
+
+    assert executor.execute(action, None) == "done"
+    assert action.attempts == 2
+
+
+def _raised_from_none() -> BaseException:
+    try:
+        try:
+            raise StaleRecordError("moved")
+        except StaleRecordError:
+            raise ConnectivityError("the driver gave up") from None
+    except ConnectivityError as caught:
+        return caught
+
+
+def _raised_while_handling() -> BaseException:
+    try:
+        try:
+            raise StaleRecordError("moved")
+        except StaleRecordError:
+            # No `from`, deliberately: the implicit `__context__` Python sets here is exactly
+            # what this pair of tests is about.
+            raise ConnectivityError("the driver gave up")  # noqa: B904
+    except ConnectivityError as caught:
+        return caught
 
 
 def test_retries_can_be_switched_off_entirely(executor):
@@ -286,6 +386,91 @@ def test_the_framework_runs_without_a_tracing_stack(executor):
 
     assert executor.execute(ReadsTheClock(), None) is not None
     assert isinstance(tracing_enabled(), bool)
+
+
+# -- the shape of a trace, not only its names ---------------------------------------------------
+
+
+@contextlib.contextmanager
+def collecting_spans():
+    """Every span emitted inside the block, in the order they finished."""
+    sdk = pytest.importorskip("opentelemetry.sdk.trace")
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+
+    collected: list = []
+
+    class Collect(SpanExporter):
+        def export(self, spans):
+            collected.extend(spans)
+            return SpanExportResult.SUCCESS
+
+        def shutdown(self):
+            pass
+
+    provider = sdk.TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(Collect()))
+    previous = trace.get_tracer_provider()
+    trace._TRACER_PROVIDER = provider  # set_tracer_provider refuses a second call
+    try:
+        import importlib
+
+        import ekbatan._tracing as tracing
+
+        importlib.reload(tracing)
+        yield collected
+    finally:
+        trace._TRACER_PROVIDER = previous
+
+
+def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallets):
+    """Java's `all_spans_share_same_trace_id`, `perform_span_is_child_of_execute_span` and
+    `persist_span_is_child_of_execute_span`.
+
+    Names alone do not make a trace usable. An operator opening one wants the perform and the
+    persist to sit under the execute, so the shape of the failure is readable at a glance.
+    """
+    with collecting_spans() as collected:
+        wallet = wallets.add(
+            Wallet.open(
+                id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("100.00")
+            )
+        )
+        executor.execute(
+            DepositMoney(wallets),
+            DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@x"),
+        )
+
+    by_name = {s.name: s for s in collected}
+    execute = by_name["ekbatan.action.execute"]
+
+    assert len({s.context.trace_id for s in collected if s.name.startswith("ekbatan.action")}) == 1
+    for child in ("ekbatan.action.perform", "ekbatan.action.persist"):
+        assert by_name[child].parent.span_id == execute.context.span_id, (
+            f"{child} has to sit under the execute span"
+        )
+
+
+def test_the_retry_count_is_on_the_action_span_whether_or_not_it_retried(executor):
+    """Java's `retry_records_events_and_count_on_action_span` and `no_retry_records_zero_count`.
+
+    Zero is written as well as one, so a dashboard can average the field rather than treating
+    its absence as a zero it cannot distinguish from a missing span.
+    """
+    config = ExecutionConfiguration(
+        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=2, delay=0),)
+    )
+
+    with collecting_spans() as collected:
+        executor.execute(FailsWith(), None, config=config)
+    quiet = next(s for s in collected if s.name == "ekbatan.action.execute")
+    assert quiet.attributes["ekbatan.action.retry.count"] == 0
+
+    with collecting_spans() as collected:
+        executor.execute(FailsWith(StaleRecordError("moved")), None, config=config)
+    retried = next(s for s in collected if s.name == "ekbatan.action.execute")
+    assert retried.attributes["ekbatan.action.retry.count"] == 1
+    assert [e.name for e in retried.events].count("retry") == 1
 
 
 def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets):

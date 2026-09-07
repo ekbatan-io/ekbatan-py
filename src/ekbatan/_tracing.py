@@ -17,7 +17,7 @@ from typing import Any
 __all__ = ["Span", "span", "tracing_enabled"]
 
 try:  # pragma: no cover - depends on what is installed
-    from opentelemetry import trace as _otel
+    import opentelemetry.trace as _otel
 
     _TRACER: Any = _otel.get_tracer("ekbatan", "0.1.0")
 except ImportError:  # pragma: no cover

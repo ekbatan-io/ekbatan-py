@@ -142,3 +142,35 @@ def test_the_same_instance_twice_is_not_a_conflict(wallets):
 
     assert len(built) == 1
     assert built.get(DepositMoney) is once
+
+
+# -- what the executor refuses to be built or run without ---------------------------------------
+
+
+def test_the_executor_names_the_argument_it_was_not_given(registry, wallets):
+    """Java validates each of these in its builder, by name.
+
+    `registry=None` was the one that mattered: it built without complaint and the first unit of
+    work failed inside shard routing, naming a lookup rather than the argument nobody passed.
+    """
+    from ekbatan import ActionExecutor
+    from ekbatan.errors import ValidationError
+    from fixtures.schema import EVENTS
+
+    with pytest.raises(ValidationError, match="registry is required"):
+        ActionExecutor(namespace="x.y", registry=None, repositories=[wallets], events=EVENTS)
+
+    with pytest.raises(ValidationError, match="repositories is required"):
+        ActionExecutor(namespace="x.y", registry=registry, repositories=None, events=EVENTS)
+
+    with pytest.raises(ValidationError, match=r"either events=.* or outbox="):
+        ActionExecutor(namespace="x.y", registry=registry, repositories=[wallets])
+
+
+def test_running_nothing_says_so(executor):
+    """Java's `execute_rejects_null_action_class`. Left alone this arrived as
+    `'NoneType' object has no attribute 'name'`, from inside the executor."""
+    from ekbatan.errors import ValidationError
+
+    with pytest.raises(ValidationError, match="an action is required"):
+        executor.execute(None, None)
