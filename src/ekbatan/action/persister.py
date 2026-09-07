@@ -20,11 +20,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
-from ..domain import Model, Persistable
+from ..domain import Model, ModelEvent, Persistable
 from ..errors import ValidationError
 from ..persistence import Transaction
 from ..repository import Repository, RepositoryRegistry
-from .outbox import EmittedEvent, EventPersister, OutboxRecord
+from .outbox import EventPersister, OutboxRecord
 from .plan import PersistableChanges
 
 __all__ = ["ChangePersister"]
@@ -68,7 +68,7 @@ class ChangePersister:
         The shard is not a separate argument: the transaction is already on one, and two ways
         to say which would eventually disagree.
         """
-        events: list[EmittedEvent] = []
+        events: list[ModelEvent] = []
 
         for model_type, staged in changes.items():
             repo = self.repository_for(model_type)
@@ -106,12 +106,13 @@ class ChangePersister:
         )
 
 
-def _events_of(models: Iterable[Persistable[Any, Any]]) -> list[EmittedEvent]:
-    return [
-        EmittedEvent(str(model.id), type(model).__name__, event)
-        for model in models
-        for event in _attached(model)
-    ]
+def _events_of(models: Iterable[Persistable[Any, Any]]) -> list[ModelEvent]:
+    """Every attached event, told which model it came off.
+
+    Java's events are told in their constructor; these are told here, which is the only reason
+    an application never has to pass an id it already had in its hand.
+    """
+    return [event.about(model) for model in models for event in _attached(model)]
 
 
 def _attached(model: Persistable[Any, Any]) -> Sequence[Any]:

@@ -26,33 +26,7 @@ from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..sharding import ShardIdentifier, ordered_uuid
 
-__all__ = ["EmittedEvent", "EventPersister", "OutboxRecord", "SingleTableJsonEventPersister"]
-
-
-@dataclass(frozen=True, slots=True)
-class EmittedEvent:
-    """One event, with the model it is about.
-
-    Java carries these two on ``ModelEvent`` itself, where its constructor validates them.
-    Here they are supplied at persist time - an event says what happened and the model it was
-    attached to already knows which model it is - so the same check belongs here.
-    """
-
-    model_id: str
-    model_type: str
-    event: ModelEvent
-
-    def __post_init__(self) -> None:
-        """Both name the source aggregate, and a blank one names nothing.
-
-        These are the columns a downstream consumer correlates on. Written blank the row still
-        inserts, and the correlation is lost at the far end, weeks later, with no way back to
-        the model that emitted it.
-        """
-        if not self.model_id or not self.model_id.strip():
-            raise ValidationError("model_id cannot be null or blank")
-        if not self.model_type or not self.model_type.strip():
-            raise ValidationError("model_type cannot be null or blank")
+__all__ = ["EventPersister", "OutboxRecord", "SingleTableJsonEventPersister"]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -65,7 +39,7 @@ class OutboxRecord:
     action_params: Any
     started_date: datetime
     completion_date: datetime
-    events: Sequence[EmittedEvent]
+    events: Sequence[ModelEvent]
     shard: ShardIdentifier
 
 
@@ -166,12 +140,12 @@ class SingleTableJsonEventPersister:
                 {
                     **common,
                     "id": ordered_uuid(),
-                    "model_id": emitted.model_id,
-                    "model_type": emitted.model_type,
-                    "event_type": self._event_type(emitted.event),
-                    "payload": canonical(emitted.event.payload()),
+                    "model_id": event.model_id,
+                    "model_type": event.model_name,
+                    "event_type": self._event_type(event),
+                    "payload": canonical(event.payload()),
                 }
-                for emitted in record.events
+                for event in record.events
             ]
 
         conn.execute(insert(self._table), rows)

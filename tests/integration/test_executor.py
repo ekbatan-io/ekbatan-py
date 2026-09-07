@@ -295,6 +295,6 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
     )
 
     assert [r.action_name for r in written] == ["CreateWallet", "DepositMoney"]
-    assert [e.event.event_type for e in written[1].events] == ["WalletMoneyDeposited"]
+    assert [e.event_type for e in written[1].events] == ["WalletMoneyDeposited"]
     assert outbox() == [], "nothing reached the default table"
     assert wallets.get(wallet.id).balance == Decimal("5.0000"), "the state change still committed"

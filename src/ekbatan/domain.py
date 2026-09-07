@@ -71,16 +71,57 @@ class ModelEvent:
     Not ``WalletMoneyDeposited(wallet_id, amount, new_balance)``. The id is already known, and
     a parameter that can only ever be passed one correct value is a parameter that will one day
     be passed a different one.
+
+    The two fields are Java's - its ``ModelEvent`` declares ``modelId`` and ``modelName``, and
+    every event constructor there takes them. The difference is only who fills them in: the
+    framework does, from the model the event was attached to, in :meth:`about`.
     """
 
+    #: Set by the framework at persist time; the ``model_id`` column a consumer correlates on.
+    model_id: str = field(default="", compare=False)
+
+    #: Likewise, and the ``model_type`` column. Java's ``modelName``, and the same value - the
+    #: model class's bare name.
+    model_name: str = field(default="", compare=False)
+
+    def about(self, model: Any) -> Self:
+        """This event, told which model it was attached to.
+
+        Java's ``ModelEvent`` constructor does this, so it cannot be skipped; here the persister
+        calls it, so an application never writes the id it already had in its hand.
+        """
+        model_id = str(getattr(model, "id", ""))
+        model_name = type(model).__name__
+        if not model_id.strip():
+            raise ValidationError(
+                f"{type(self).__name__} was attached to a {model_name} with no id; the "
+                f"model_id column is what a consumer correlates the event back on"
+            )
+        return dataclasses.replace(self, model_id=model_id, model_name=model_name)
+
     def payload(self) -> dict[str, Any]:
-        """The event as it is stored. Override to control the wire shape."""
-        return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
+        """The event as it is stored. Override to control the wire shape.
+
+        Without the two identity fields: they have columns of their own, and a consumer reads
+        them from there. Java leaves them in the payload as well, because they are public
+        fields of its base class and Jackson serialises them - a duplicate rather than a
+        contract. ``ActionEvent``, which is the contract, calls the payload "raw JSON" the
+        consumer deserialises into whatever it likes, and reads ``modelId`` from the column.
+        """
+        return {
+            f.name: getattr(self, f.name)
+            for f in dataclasses.fields(self)
+            if f.name not in _EVENT_IDENTITY
+        }
 
     @property
     def event_type(self) -> str:
         """The name a consumer routes and deserialises on."""
         return type(self).__name__
+
+
+#: On :class:`ModelEvent` for the columns, not for the payload.
+_EVENT_IDENTITY = frozenset({"model_id", "model_name"})
 
 
 class EntityBuilder[T, ID = Any, S = Any]:

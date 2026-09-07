@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from ekbatan.domain import Entity, GenericState, Model, ModelEvent
+from ekbatan.domain import Entity, GenericState, Model
 from ekbatan.errors import ValidationError
 from fixtures.domain import (
     Notification,
@@ -158,10 +158,43 @@ def test_events_stay_out_of_equality():
     )
 
 
-def test_an_event_carries_no_identity():
-    assert set(ModelEvent.__dataclass_fields__) == set(), (
-        "which model an event is about is known by the model it is attached to"
-    )
+def test_an_event_is_told_which_model_it_is_about_rather_than_asked():
+    """Java's `ModelEvent` takes `modelId` and `modelName` in its constructor; these are the
+    same two fields, filled in by the framework instead of by the application."""
+    event = WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110"))
+
+    assert (event.model_id, event.model_name) == ("", ""), "unset until it is attached"
+
+    wallet = a_wallet()
+    told = event.about(wallet)
+
+    assert told.model_id == str(wallet.id)
+    assert told.model_name == "Wallet"
+    assert told.amount == event.amount, "and nothing else about it changed"
+    assert event.model_id == "", "the original is untouched - these are frozen"
+
+
+def test_the_identity_fields_stay_out_of_the_payload_and_out_of_equality():
+    """They have columns of their own, which is where a consumer reads them.
+
+    Java leaves them in the payload too, because they are public fields of its base class and
+    Jackson serialises them. `ActionEvent` - the contract - calls the payload raw JSON for the
+    consumer to deserialise as it likes, and reads `modelId` from the column.
+    """
+    event = WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110"))
+    told = event.about(a_wallet())
+
+    assert set(told.payload()) == {"amount", "new_balance"}
+    assert told == event, "being told what it is about is not a different event"
+
+
+def test_an_event_attached_to_a_model_with_no_usable_id_is_refused():
+    @dataclass(frozen=True, kw_only=True)
+    class Anonymous:
+        id: str = ""
+
+    with pytest.raises(ValidationError, match="model_id column"):
+        WalletMoneyDeposited(amount=Decimal("1"), new_balance=Decimal("1")).about(Anonymous())
 
 
 def test_with_event_can_be_called_as_many_times_as_the_change_needs():

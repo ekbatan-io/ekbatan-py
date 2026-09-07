@@ -60,6 +60,17 @@ WalletMoneyDeposited(amount=amount, new_balance=new_balance)
 A parameter that can only ever be passed one correct value is a parameter that will one day be
 passed a different one. The stored row is identical.
 
+The two fields themselves are Java's, with Java's names: `ModelEvent` declares `model_id` and
+`model_name`, and `event.about(model)` is what fills them in. Only the moment differs - Java's
+constructor, this port's persister. There is no extra type in between; an earlier version of
+this port had an `EmittedEvent` pairing an event with its model, and it is gone.
+
+One place they do not appear is `payload()`. They have columns of their own, which is where a
+consumer reads them; Java leaves them in the payload as well, because they are public fields of
+its base class and Jackson serialises everything public. `ActionEvent` - which is the wire
+contract - describes the payload as "raw JSON" for the consumer to deserialise as it likes, and
+reads `modelId` from the column.
+
 ## The builder is not generated
 
 Both forms are here. `copy()` returns a builder with the same surface Java's has - `with_event`,
@@ -80,16 +91,16 @@ The difference from Java is that no builder is generated. Java needs an annotati
 emit a CRTP builder per class; here `EntityBuilder` and `ModelBuilder` resolve fields from the
 dataclass at call time, so a new model needs no build step and no generated file to keep in sync.
 
-## `copyBase` is gone; `copy_from` replaces it
+## `copy_base` takes every field, not only the framework's
 
-Java's `Model.Builder` has `copyBase`, which takes the framework's fields and leaves the
-subclass's for you to set on the next lines. It exists to support hand-writing a `copy()`,
-which is the boilerplate a Python base class does not need - so the builder has `copy_from`
-instead, which takes every field, and the inherited `copy()` uses it.
+The name is Java's. What it copies is not: Java's `copyBase` hands over the six fields the base
+class knows about and leaves the subclass's for the next lines, because a Java base class
+cannot enumerate a subclass's fields. That is why every Java model writes its own `copy()`, and
+why one of them eventually forgets a field.
 
-Nothing was calling `copyBase`'s equivalent here, and two near-identical names on one builder
-is a paper cut for every reader. If you want a `copy()` that deliberately differs, override it
-and start from `copy_from`.
+Here the fields come off the dataclass, so `copy_base` takes all of them and `copy()` is
+inherited. A model that gains a field gains it in both places at once. Override `copy()` only
+to make a copy that deliberately differs - dropping a cache, resetting a counter.
 
 ## Identifiers get a named type, not a generic parameter
 
@@ -326,16 +337,69 @@ differs, not because the name was chosen freely:
 | `EventNotification`, `EventNotificationRepository` | - | the same |
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
 | `ShardedUUID`, `Backoff` | `sharded_uuid()`, `backoff()` | a class holding only static methods is a function here |
+| - | `ordered_uuid()` | see below - the outbox needs an id that sorts, and Java's `UUID.randomUUID()` does not |
 | `ShardGroupConfig` + `ShardMemberConfig` | `ShardConfig` | one flat shard list rather than a group/member nesting |
 | `Transaction` (package-private) | - | the auto-commit dance SQLAlchemy already does; the public `Transaction` here is the counterpart to the `DSLContext` Java hands the block, not to this |
 | `ConnectionProvider` | - | `Engine` is pool, dialect and lifecycle in one |
 | `ActionSpec`, `ActionAssert` | `run_action`, `StagedWork` | see above |
 | `Entity.Builder`, `Model.Builder` | `EntityBuilder`, `ModelBuilder` | same two builders, unnested - a nested class is not a Python idiom, and `ModelBuilder` can then inherit rather than repeat |
+| `resolveShardIdentifier()` | `.shard` | a property, because it reads a field of the id rather than doing work |
+| `ModelId.stringValue()` | `str(id)` | what `__str__` is for; `Id.toString()` in Java returns the same string |
 
 One place where matching Java costs something: `ExecutionConfiguration` sits next to
 `ShardingConfig`, `ShardConfig` and `DataSourceConfig`, because that is the inconsistency Java
 has and the name is the thing worth matching. `RetryConfig` follows Java rather than the
 `RetryPolicy` it was called here.
+
+## The outbox keys its rows with an id that sorts
+
+Java mints `UUID.randomUUID()` for an `eventlog.events` row. This port mints `ordered_uuid()` -
+a version 7 UUID, strictly increasing within the process. Same column, same type; a Java reader
+and a Python reader cannot tell them apart.
+
+What it buys is an order. Every row of one unit of work carries that unit's completion instant
+in `event_date`, so ordering by that column alone is a complete tie *within* an action, and the
+tie is then broken by whatever the storage engine feels like: Postgres and SQLite happen to
+return insertion order, MySQL returns primary-key order. With a random key that means a
+consumer rebuilding a balance from the stream can see the deposit before the withdrawal that
+paid for it. `(event_date, id)` settles it, and only if the ids are ordered.
+
+Java has the same gap and has not noticed, because `BaseSingleTableJsonEventPersisterTest`
+asserts set-wise - `allSatisfy`, `distinct()`, never `get(0)` against `get(1)` - and
+`EventEntityRepository` orders by `EVENT_DATE` alone. The proper fix on both sides is an
+ordinal column in `eventlog.events`; that is a schema change and is not this port's to make
+alone.
+
+`uuid.uuid7()` would have done, and is 3.14-only. This package supports 3.13, and an ordering
+guarantee that depends on the interpreter version is not a guarantee.
+
+## A row checks its own invariants, because Python has no constructor to hide them in
+
+Java's `Model` and `Entity` constructors validate: `id`, `state` and `version` non-null,
+`version >= 1`, `events` non-null and copied. `ModelTest` and `EntityTest` pin each one by
+message. Those checks are here too, in `__post_init__`, for the same reason - without them the
+mistake surfaces as an `IntegrityError` from inside a batched insert, naming a column and a
+driver, several frames from the line that made it.
+
+Two things follow from Python that do not follow from Java. A subclass defining its own
+`__post_init__` must call `super().__post_init__()`, where Java's constructor chaining is
+automatic. And the events tuple is genuinely copied: `events` is annotated as a tuple, nothing
+stops a list being passed, and a frozen model holding the caller's list is not frozen - append
+to it afterwards and the model gains an event it was never built with, which the persister then
+writes, in a transaction that had already decided what it was writing. Java says
+`List.copyOf(...)` for exactly this and gets immutability out of it as well.
+
+## Equality compares the whole row
+
+Java's `Model.equals` compares `id`, `state`, `version`, `createdDate` and `updatedDate`, and
+its `hashCode` is the id's alone - so two wallets with the same id and version but different
+balances are equal in Java and not here, where a frozen dataclass compares every field. Events
+are excluded in both, which is the part that matters: two readers of one row are looking at the
+same wallet whether or not one of them is mid-change.
+
+In practice the version moves whenever the content does, so the two agree on every row a
+repository produces. Where they differ, this port is the stricter of the two, and a test
+asserting `loaded == expected` means here what it looks like it means.
 
 ## Not ported
 
