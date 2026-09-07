@@ -98,11 +98,11 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| DataSourceConfig.java | 238 | `config.py` | todo |
-| PropertyKeyNormalizer.java | 49 | `config.py` | todo |
-| ShardGroupConfig.java | 100 | `config.py` | todo |
-| ShardMemberConfig.java | 183 | `config.py` | todo |
-| ShardingConfig.java | 91 | `config.py` | todo |
+| DataSourceConfig.java | 238 | `config.py` | done - credentials live in the url, as SQLAlchemy carries them |
+| PropertyKeyNormalizer.java | 49 | `config.py` | n/a - nothing binds configuration from a property file here |
+| ShardGroupConfig.java | 100 | `config.py` | done - folded into `ShardConfig`; one flat shard list, no group nesting |
+| ShardMemberConfig.java | 183 | `config.py` | done - `ShardConfig`; the named `configs` map is deliberately not ported |
+| ShardingConfig.java | 91 | `config.py` | done |
 
 #### `core/domain`
 
@@ -138,9 +138,9 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| ConnectionProvider.java | 128 | `persistence.py` | todo |
-| Transaction.java | 98 | `persistence.py` | todo |
-| TransactionManager.java | 267 | `persistence.py` | todo |
+| ConnectionProvider.java | 128 | `persistence.py` | n/a - a SQLAlchemy `Engine` is pool, dialect and lifecycle in one |
+| Transaction.java | 98 | `persistence.py` | done - `persistence.py`; package-private in Java, and the autocommit dance is SQLAlchemy's |
+| TransactionManager.java | 267 | `persistence.py` | done |
 
 #### `core/persistence/jooq/converter`
 
@@ -333,11 +333,11 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| DataSourceConfigDialectTest.java | 69 | `tests/unit/test_config.py` | todo |
-| DataSourceConfigValidationTest.java | 106 | `tests/unit/test_config.py` | todo |
-| PropertyKeyNormalizerTest.java | 72 | `tests/unit/test_config.py` | todo |
-| ShardingConfigJacksonBindingTest.java | 170 | `tests/unit/test_config.py` | todo |
-| ShardingConfigYamlTest.java | 236 | `tests/unit/test_config.py` | todo |
+| DataSourceConfigDialectTest.java | 69 | `tests/unit/test_config.py` | done |
+| DataSourceConfigValidationTest.java | 106 | `tests/unit/test_config.py` | done |
+| PropertyKeyNormalizerTest.java | 72 | `tests/unit/test_config.py` | n/a - tests a normaliser that is not ported |
+| ShardingConfigJacksonBindingTest.java | 170 | `tests/unit/test_config.py` | n/a - Jackson binding |
+| ShardingConfigYamlTest.java | 236 | `tests/unit/test_config.py` | n/a - YAML binding, as above |
 
 #### `core/domain`
 
@@ -362,7 +362,7 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| TransactionManagerTest.java | 280 | `tests/integration/test_persistence.py` | todo |
+| TransactionManagerTest.java | 280 | `tests/integration/test_persistence.py` | done - the seven autocommit cases are SQLAlchemy's to own |
 
 #### `core/persistence/jooq/converter`
 
@@ -413,7 +413,7 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | JobsConfigDurationValidationTest.java | 94 | `tests/unit/test_jobs_config.py` | todo |
-| JobsConfigJacksonBindingTest.java | 142 | `tests/unit/test_jobs_config.py` | todo |
+| JobsConfigJacksonBindingTest.java | 142 | `tests/unit/test_jobs_config.py` | n/a - Jackson binding |
 
 #### `events/localeventhandler`
 
@@ -425,7 +425,7 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| LocalEventHandlerConfigJacksonBindingTest.java | 116 | `tests/unit/test_config.py` | todo |
+| LocalEventHandlerConfigJacksonBindingTest.java | 116 | `tests/unit/test_config.py` | n/a - Jackson binding |
 
 #### `events/streaming/actionevent/json`
 
