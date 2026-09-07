@@ -223,3 +223,77 @@ def test_a_disabled_handling_job_holds_its_row_and_does_nothing(
     with registry.default.connection(readonly=True) as conn:
         pending = conn.execute(select(EVENT_NOTIFICATIONS.c.state)).scalars().all()
     assert pending == ["PENDING"], "fan-out still ran; only delivery is switched off"
+
+
+def test_the_metrics_are_the_ones_the_java_implementation_emits(
+    registry, executor, handlers, recorder, clock
+):
+    """The instrument names are a cross-language contract, exactly as the span names are.
+
+    A dashboard reading `ekbatan.events.handled{outcome="expired_postfailure"}` is reading
+    across both ports, and a name invented here would quietly show only half the fleet.
+    """
+    sdk = pytest.importorskip("opentelemetry.sdk.metrics")
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+    executor.execute(
+        CreateWallet(),
+        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+    )
+
+    # `metrics._METER_PROVIDER` does not exist - the global lives in `_internal`, unlike
+    # tracing's. `set_meter_provider` would work once and then refuse, which is no good in a
+    # suite, so the module attribute is set directly and restored afterwards.
+    import opentelemetry.metrics._internal as metrics_internal
+
+    reader = InMemoryMetricReader()
+    previous = metrics_internal._METER_PROVIDER
+    metrics_internal._METER_PROVIDER = sdk.MeterProvider(metric_readers=[reader])
+    try:
+        import importlib
+
+        import ekbatan._metrics
+        import ekbatan.events.dispatch
+        import ekbatan.events.fanout
+
+        # The instruments are module-level, so they were built against whatever meter existed
+        # at import. Reloading rebuilds them against this test's reader.
+        importlib.reload(ekbatan._metrics)
+        fanout_module = importlib.reload(ekbatan.events.fanout)
+        dispatch_module = importlib.reload(ekbatan.events.dispatch)
+
+        fanned = fanout_module.EventFanout(
+            registry,
+            handlers,
+            events=EVENTS,
+            notifications=EVENT_NOTIFICATIONS,
+            clock=clock,
+        ).drain_once()
+        handled = dispatch_module.EventDispatch(
+            registry, handlers, notifications=EVENT_NOTIFICATIONS, clock=clock
+        ).drain_once()
+
+        # Collected before the provider is swapped back; a reader detached from its provider
+        # has nothing to report.
+        collected = reader.get_metrics_data()
+    finally:
+        metrics_internal._METER_PROVIDER = previous
+        for module in ("ekbatan._metrics", "ekbatan.events.fanout", "ekbatan.events.dispatch"):
+            importlib.reload(importlib.import_module(module))
+
+    emitted = {
+        metric.name
+        for resource in (collected.resource_metrics if collected else [])
+        for scope in resource.scope_metrics
+        for metric in scope.metrics
+    }
+
+    assert fanned == 1 and handled == 1, "one event, fanned out and delivered"
+    assert recorder.calls == 1, "and the handler actually ran"
+    assert {
+        "ekbatan.events.fanned_out",
+        "ekbatan.events.notifications_created",
+        "ekbatan.events.handled",
+        "ekbatan.events.handler.duration",
+        "ekbatan.events.delivery.lag",
+    } <= emitted, f"missing instruments; got {sorted(emitted)}"

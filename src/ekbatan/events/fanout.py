@@ -18,10 +18,23 @@ from datetime import timedelta
 
 from sqlalchemy import Table, select, update
 
+from .._metrics import counter
 from ..clock import Clock, SystemClock, to_storage
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
 from .handler import EventHandlerRegistry
 from .notification import EventNotificationState
+
+#: Java's two, name for name.
+EVENTS_FANNED_OUT = counter(
+    "ekbatan.events.fanned_out",
+    "Source events transitioned from undelivered to delivered by the fan-out job",
+    "{event}",
+)
+NOTIFICATIONS_CREATED = counter(
+    "ekbatan.events.notifications_created",
+    "Notification rows materialized by the fan-out job (one per event x subscribed handler)",
+    "{notification}",
+)
 
 __all__ = ["EventFanout"]
 
@@ -126,7 +139,12 @@ class EventFanout:
                 .where(self._events.c.id.in_([r.id for r in rows]))
                 .values(delivered=True)
             )
-            return len(rows)
+
+        # After the transaction commits, not inside it. A count recorded for work that then
+        # rolled back is a dashboard disagreeing with the database.
+        EVENTS_FANNED_OUT.add(len(rows))
+        NOTIFICATIONS_CREATED.add(len(pending))
+        return len(rows)
 
 
 DEFAULT_POLL = timedelta(seconds=1)

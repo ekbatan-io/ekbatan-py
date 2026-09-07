@@ -15,6 +15,7 @@ nothing in the logs says so.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -22,12 +23,35 @@ from typing import Any
 from sqlalchemy import Table, select, update
 
 from .._json import decode
+from .._metrics import counter, histogram
 from ..clock import Clock, SystemClock, to_storage
 from ..domain import ModelEvent
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
 from .handler import EventEnvelope, EventHandler, EventHandlerRegistry
 from .notification import EventNotificationState, backoff
+
+#: Java's three, name for name. `handled` is tagged with the outcome a row reached; `duration`
+#: reports only `succeeded`/`failed`, because at the moment a handler returns the only fact known
+#: is whether it threw - whether a failure becomes a retry or an expiry is decided afterwards.
+HANDLED = counter(
+    "ekbatan.events.handled",
+    "Notification rows processed by the event-handling job, tagged by outcome",
+    "{notification}",
+)
+HANDLER_DURATION = histogram(
+    "ekbatan.events.handler.duration",
+    "Wall-clock duration of a single event-handler invocation",
+    "s",
+)
+#: Recorded on success only, so it measures time-to-delivery rather than time-spent-failing.
+#: This is what reveals a growing backlog; a counter cannot, because a shard falling behind
+#: still reports a healthy success count.
+DELIVERY_LAG = histogram(
+    "ekbatan.events.delivery.lag",
+    "Age of the source event when its handler succeeded",
+    "s",
+)
 
 __all__ = ["EventDispatch"]
 
@@ -142,11 +166,17 @@ class EventDispatch:
             # Checked before invoking, not after. Handing a handler an event already known to
             # be too old risks a side effect nobody wanted - a stale email, a reversed charge -
             # for work that will be discarded either way.
-            LOG.info(
-                "notification %s expired before delivery: %s is past its retention window",
+            # ERROR, not INFO. Expiry is the only outcome that discards an event, and a
+            # handler that could never succeed produces a wall of warnings while retrying and
+            # then nothing at all at the moment its event is thrown away.
+            LOG.error(
+                "notification %s for handler %r was discarded: %s was already past its "
+                "retention window when it was claimed",
                 row.id,
+                row.handler_name,
                 row.event_type,
             )
+            HANDLED.add(1, {"outcome": "expired_preflight", "handler": row.handler_name})
             return _Outcome(row.id, EventNotificationState.EXPIRED, row.attempts, now)
 
         handler = self._handlers.by_name(row.handler_name)
@@ -164,9 +194,14 @@ class EventDispatch:
                 now + backoff(attempts, self._max_backoff),
             )
 
+        started = time.monotonic()
         try:
             handler.handle(self._envelope(handler, row, attempts))
         except BaseException as error:
+            HANDLER_DURATION.record(
+                time.monotonic() - started,
+                {"handler": row.handler_name, "outcome": "failed"},
+            )
             # BaseException on purpose. The failure class an ordinary `except Exception`
             # misses is exactly the one that would otherwise escape and discard this batch's
             # siblings, whose successes would then never be recorded.
@@ -178,6 +213,13 @@ class EventDispatch:
                     type(error).__name__,
                     error,
                 )
+                LOG.error(
+                    "notification %s for handler %r was discarded: it exhausted the retention "
+                    "window after repeated handler failures",
+                    row.id,
+                    row.handler_name,
+                )
+                HANDLED.add(1, {"outcome": "expired_postfailure", "handler": row.handler_name})
                 return _Outcome(row.id, EventNotificationState.EXPIRED, attempts, after)
             delay = backoff(attempts, self._max_backoff)
             LOG.warning(
@@ -188,8 +230,17 @@ class EventDispatch:
                 error,
                 delay,
             )
+            HANDLED.add(1, {"outcome": "failed_retry", "handler": row.handler_name})
             return _Outcome(row.id, EventNotificationState.FAILED, attempts, after + delay)
 
+        HANDLER_DURATION.record(
+            time.monotonic() - started, {"handler": row.handler_name, "outcome": "succeeded"}
+        )
+        HANDLED.add(1, {"outcome": "succeeded", "handler": row.handler_name})
+        DELIVERY_LAG.record(
+            (to_storage(self._clock.now()) - row.event_date).total_seconds(),
+            {"handler": row.handler_name},
+        )
         return _Outcome(row.id, EventNotificationState.SUCCEEDED, attempts, now)
 
     def _expired(self, event_date: datetime, now: datetime) -> bool:

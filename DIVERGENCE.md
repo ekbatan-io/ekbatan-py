@@ -464,6 +464,24 @@ are behaviour rather than assertion sugar. One addition - `VirtualClock(instant)
 at that instant, where Java's constructor takes a real clock and starts running. `VirtualClock()`
 still means what Java's does.
 
+## Dispatch delivers one notification at a time
+
+Java invokes a batch's handlers in parallel on virtual threads and then commits the outcomes in
+one batch `UPDATE` per bucket - one for the successes, one for the pre-flight expiries, one for
+the post-failure expiries, and one per distinct `attempts` value among the retries. Here the
+batch is delivered in order and each outcome is a row in one transaction.
+
+Both are safe: an outcome is recorded for every row or for none, and a delivery that dies takes
+nobody else's result with it. What differs is throughput on a large backlog with slow handlers,
+and statement count - a hundred rows is a hundred `UPDATE`s here and about four there. Neither
+has bitten yet, and the fix if it does is a thread pool plus bucketed updates, not a redesign.
+
+One behaviour does differ. Java treats "no handler is registered under this name" as a delivery
+failure, increments `attempts`, and lets the row expire through the retention window. Here the
+row is left `PENDING` with its attempt count untouched and its retry rescheduled: a handler
+removed by a bad deploy comes back, and its queue should still be there when it does. The row
+still expires on the same retention window either way.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus

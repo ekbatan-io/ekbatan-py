@@ -224,37 +224,37 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventEnvelope.java | 227 | `events/handler.py` | todo |
-| EventHandler.java | 62 | `events/handler.py` | todo |
-| EventHandlerRegistry.java | 159 | `events/handler.py` | todo |
+| EventEnvelope.java | 227 | `events/handler.py` | done |
+| EventHandler.java | 62 | `events/handler.py` | done - a Protocol; `aliases` included |
+| EventHandlerRegistry.java | 159 | `events/handler.py` | done |
 
 #### `events/localeventhandler/config`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| LocalEventHandlerConfig.java | 211 | `events/config.py` | todo |
+| LocalEventHandlerConfig.java | 211 | `events/config.py` | done - `events/config.py` |
 
 #### `events/localeventhandler/job`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Backoff.java | 49 | `events/dispatch.py` | todo |
-| EventFanoutJob.java | 282 | `events/jobs.py`, `events/fanout.py` | todo |
-| EventHandlingJob.java | 596 | `events/jobs.py`, `events/dispatch.py` | todo |
+| Backoff.java | 49 | `events/dispatch.py` | done - `notification.py`; 30s base, doubling, capped, same clamp |
+| EventFanoutJob.java | 282 | `events/jobs.py`, `events/fanout.py` | done |
+| EventHandlingJob.java | 596 | `events/jobs.py`, `events/dispatch.py` | done - sequential rather than virtual-thread parallel; see DIVERGENCE |
 
 #### `events/localeventhandler/model`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventNotification.java | 366 | `events/notification.py` | todo |
-| EventNotificationState.java | 30 | `events/notification.py` | todo |
+| EventNotification.java | 366 | `events/notification.py` | done - a row read through SQLAlchemy Core, not a mapped class |
+| EventNotificationState.java | 30 | `events/notification.py` | done |
 
 #### `events/localeventhandler/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | EventEntityRepository.java | 208 | `events/fanout.py` | n/a - package-private jOOQ field typing plus insert/read helpers; SQLAlchemy Core writes the row and `schema.py` declares the column types once |
-| EventNotificationRepository.java | 376 | `events/notification.py` | todo |
+| EventNotificationRepository.java | 376 | `events/notification.py` | done - the queries live in `dispatch.py` and `fanout.py` |
 
 #### `events/streaming/actionevent/json`
 
