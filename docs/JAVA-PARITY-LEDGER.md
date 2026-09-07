@@ -7,8 +7,8 @@ thought to look for, which is how the db-scheduler port shipped a schema MySQL r
 and a task hand-off that had never worked. Reading each file whole, and porting it whole, makes
 completeness something you can count rather than something you hope for.
 
-**153 files, 23714 lines**: 88 main sources (13186 lines),
-61 tests (10528 lines), 4 resources.
+**247 files, 33,208 lines**: 88 main sources (13,186), 61 unit tests (10,528),
+94 integration tests (9,493), 4 resources.
 
 The tests are in the ledger deliberately. db-scheduler's ledger counted main sources only, and
 the tests are where a contract is actually pinned - `ModelTest` is 513 lines of what a model may
@@ -37,8 +37,14 @@ Excluded by decision, not by oversight:
 | `ekbatan-native` | 4 | GraalVM native-image configuration. CPython has no counterpart |
 | `ekbatan-events/streaming/debezium-smt` | 7 | a Kafka Connect single-message transform - a Java artifact that runs inside Kafka Connect, not inside the application |
 | `ekbatan-examples` | 755 main, 65 test | the same wallet application repeated across DI framework x build tool x database. `examples/wallet_service` is the Python counterpart |
-| `ekbatan-integration-tests` | 40 main, 54 test | the Debezium/Kafka pipeline harness, which tests the SMT above |
+| `ekbatan-integration-tests/event-pipeline` | 34 | the Debezium/Kafka harness, which tests the SMT above |
+| `ekbatan-integration-tests/di` | 6 | Spring / Quarkus / Micronaut wiring, as above |
 | generated Avro/Protobuf Java | 4 | build output, not source |
+
+The rest of `ekbatan-integration-tests` is **in scope** and is listed below. An earlier version
+of this table excluded the module wholesale as "the Kafka harness", which was wrong: it also
+holds the per-database repository, persister, lock-provider and event-handler suites - 94 files
+and 9,493 lines, including the two largest behavioural tests in the repository.
 
 Of the repository's 1154 `.java` files, that leaves the 149 below.
 
@@ -102,16 +108,16 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Entity.java | 193 | `domain.py` | todo |
-| GenericState.java | 18 | `domain.py` | todo |
-| Id.java | 77 | `ids.py` | todo |
-| Identifiable.java | 16 | `domain.py` | todo |
-| Model.java | 290 | `domain.py` | todo |
-| ModelEvent.java | 42 | `domain.py` | todo |
-| ModelId.java | 26 | `ids.py` | todo |
-| Persistable.java | 35 | `domain.py` | todo |
-| ShardedId.java | 98 | `ids.py` | todo |
-| TypedValue.java | 50 | `domain.py` | todo |
+| Entity.java | 193 | `domain.py` | done |
+| GenericState.java | 18 | `domain.py` | done |
+| Id.java | 77 | `ids.py` | done |
+| Identifiable.java | 16 | `domain.py` | done - `Persistable.id`; a marker interface naming a shape Python reads off the object |
+| Model.java | 290 | `domain.py` | done |
+| ModelEvent.java | 42 | `domain.py` | done |
+| ModelId.java | 26 | `ids.py` | done - `str(id)` is `stringValue()` |
+| Persistable.java | 35 | `domain.py` | done |
+| ShardedId.java | 98 | `ids.py` | done |
+| TypedValue.java | 50 | `domain.py` | done |
 
 #### `core/internal`
 
@@ -337,11 +343,11 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EntityTest.java | 280 | `tests/unit/test_domain.py` | todo |
-| IdTest.java | 159 | `tests/unit/test_ids.py` | todo |
-| ModelEventTest.java | 89 | `tests/unit/test_domain.py` | todo |
-| ModelTest.java | 513 | `tests/unit/test_domain.py` | todo |
-| TypedValueTest.java | 112 | `tests/unit/test_domain.py` | todo |
+| EntityTest.java | 280 | `tests/unit/test_domain.py` | done |
+| IdTest.java | 159 | `tests/unit/test_ids.py` | done |
+| ModelEventTest.java | 89 | `tests/unit/test_domain.py` | done |
+| ModelTest.java | 513 | `tests/unit/test_domain.py` | done |
+| TypedValueTest.java | 112 | `tests/unit/test_domain.py` | done |
 
 #### `core/internal`
 
@@ -444,6 +450,316 @@ Of the repository's 1154 `.java` files, that leaves the 149 below.
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | VirtualClockTest.java | 174 | `tests/unit/test_clock.py` | todo |
+
+## Integration tests
+
+Java runs the behavioural suites against every supported database by subclassing one base
+class per dialect - `BaseRepositoryTest` (1251 lines) has `Pg`, `Mysql` and `Mariadb` subclasses
+that do nothing but supply a container. Python gets the same coverage from one test run under
+`--dialects=all` (see `tests/backends.py`), so the base classes are the work and the per-dialect
+subclasses are marked n/a with that reason.
+
+**The default is `--dialects=sqlite`.** A green run proves SQLite and nothing else; `all` is what
+proves the three real servers.
+
+#### `core/action/persister/event/single_table_json`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| BaseSingleTableJsonEventPersisterTest.java | 419 | `tests/integration/test_outbox.py` | todo |
+| MariadbSingleTableJsonEventPersisterTest.java | 51 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| MysqlSingleTableJsonEventPersisterTest.java | 51 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| PgSingleTableJsonEventPersisterTest.java | 48 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `core/test/event`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| TestActionParams.java | 3 | `tests/fixtures/` | todo |
+| TestModelEvent.java | 68 | `tests/fixtures/` | todo |
+| TestStatusChangedEvent.java | 29 | `tests/fixtures/` | todo |
+
+#### `core/test/model`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| Aliases.java | 50 | `tests/fixtures/` | todo |
+| Dummy.java | 105 | `tests/fixtures/` | todo |
+| DummyState.java | 7 | `tests/fixtures/` | todo |
+| SomeTest.java | 11 | `tests/fixtures/` | todo |
+
+#### `core/test/model/events`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| DummyCreatedEvent.java | 21 | `tests/fixtures/` | todo |
+| DummyDeletedEvent.java | 12 | `tests/fixtures/` | todo |
+| DummyMoneyDepositedEvent.java | 17 | `tests/fixtures/` | todo |
+| DummyMoneyWithdrawnEvent.java | 17 | `tests/fixtures/` | todo |
+
+#### `core/test/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| BaseRepositoryTest.java | 1251 | `tests/integration/test_repository.py` | todo |
+| BaseShardedRepositoryTest.java | 676 | `tests/integration/test_routing.py` | todo |
+| DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
+| DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
+| DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
+| MariadbRepositoryTest.java | 56 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| MariadbShardedRepositoryTest.java | 80 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| MysqlRepositoryTest.java | 56 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| MysqlShardedRepositoryTest.java | 79 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| PgRepositoryTest.java | 117 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| PgShardedRepositoryTest.java | 80 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| ShardedDummyRepository.java | 53 | `tests/fixtures/schema.py` | todo |
+| ShardedDummyRepository.java | 53 | `tests/fixtures/schema.py` | todo |
+| ShardedDummyRepository.java | 53 | `tests/fixtures/schema.py` | todo |
+
+#### `test/distributed_jobs_pg`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| JobRegistryIntegrationTest.java | 262 | `tests/integration/test_jobs.py` | todo |
+
+#### `test/keyed_lock_provider`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| MariaDBKeyedLockProviderIntegrationTest.java | 502 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| MySQLKeyedLockProviderIntegrationTest.java | 500 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+| PostgresKeyedLockProviderIntegrationTest.java | 470 | `tests/integration/test_locks.py` | todo |
+| RedisKeyedLockProviderIntegrationTest.java | 622 | - | todo |
+| WalletDepositLockingIntegrationTest.java | 165 | `tests/integration/test_locks.py` | todo |
+
+#### `test/keyed_lock_provider/wallet/action`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WalletCloseAction.java | 27 | `tests/fixtures/` | todo |
+| WalletCreateAction.java | 31 | `tests/fixtures/` | todo |
+| WalletDepositAction.java | 40 | `tests/fixtures/` | todo |
+
+#### `test/keyed_lock_provider/wallet/models`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| Wallet.java | 80 | `tests/fixtures/` | todo |
+| WalletState.java | 6 | `tests/fixtures/` | todo |
+
+#### `test/keyed_lock_provider/wallet/models/events`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WalletClosedEvent.java | 13 | `tests/fixtures/` | todo |
+| WalletCreatedEvent.java | 21 | `tests/fixtures/` | todo |
+| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/` | todo |
+
+#### `test/keyed_lock_provider/wallet/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WalletRepository.java | 47 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| BaseLocalEventHandlerIntegrationTest.java | 604 | `tests/integration/test_events.py`, `test_event_jobs.py` | todo |
+
+#### `test/local_event_handler/audit/models`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| AuditEntry.java | 44 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/note/action`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| NoteCreateAction.java | 25 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/note/handler`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| NoteCreatedAuditEntryHandler.java | 42 | `tests/fixtures/` | todo |
+| NoteCreatedAuditHandler.java | 35 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/note/models`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| Note.java | 41 | `tests/fixtures/` | todo |
+| NoteState.java | 6 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/note/models/events`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| NoteCreatedEvent.java | 30 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/widget/action`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WidgetCreateAction.java | 25 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/widget/handler`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| AlwaysFailingWidgetCreatedHandler.java | 31 | `tests/fixtures/` | todo |
+| ErrorThrowingWidgetCreatedHandler.java | 40 | `tests/fixtures/` | todo |
+| FlakyWidgetCreatedHandler.java | 38 | `tests/fixtures/` | todo |
+| SlowAlwaysFailingHandler.java | 45 | `tests/fixtures/` | todo |
+| WidgetCreatedAutoNoteHandler.java | 48 | `tests/fixtures/` | todo |
+| WidgetCreatedEmailHandler.java | 35 | `tests/fixtures/` | todo |
+| WidgetCreatedIndexerHandler.java | 35 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/widget/models`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| Widget.java | 41 | `tests/fixtures/` | todo |
+| WidgetState.java | 6 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler/widget/models/events`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WidgetCreatedEvent.java | 30 | `tests/fixtures/` | todo |
+
+#### `test/local_event_handler_mariadb`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| MariadbLocalEventHandlerIntegrationTest.java | 96 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_mariadb/audit/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| AuditEntryRepository.java | 45 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_mariadb/note/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| NoteRepository.java | 46 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_mariadb/widget/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WidgetRepository.java | 46 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_mysql`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| MysqlLocalEventHandlerIntegrationTest.java | 96 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_mysql/audit/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| AuditEntryRepository.java | 45 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_mysql/note/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| NoteRepository.java | 46 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_mysql/widget/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WidgetRepository.java | 46 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_pg`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| PgLocalEventHandlerIntegrationTest.java | 122 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_pg/audit/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| AuditEntryRepository.java | 45 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_pg/note/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| NoteRepository.java | 46 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/local_event_handler_pg/widget/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WidgetRepository.java | 46 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
+
+#### `test/postgres_sharded/wallet/action`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| ShardedWalletIntegrationTest.java | 383 | `tests/integration/test_routing.py` | todo |
+| WalletCreateAction.java | 43 | `tests/fixtures/` | todo |
+| WalletCreateMultiShardAction.java | 43 | `tests/fixtures/` | todo |
+| WalletCreateThenFailMultiShardAction.java | 57 | `tests/fixtures/` | todo |
+
+#### `test/postgres_sharded/wallet/models`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| Wallet.java | 78 | `tests/fixtures/` | todo |
+| WalletState.java | 7 | `tests/fixtures/` | todo |
+
+#### `test/postgres_sharded/wallet/models/events`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WalletCreatedEvent.java | 21 | `tests/fixtures/` | todo |
+| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/` | todo |
+
+#### `test/postgres_sharded/wallet/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WalletRepository.java | 49 | `tests/fixtures/` | todo |
+
+#### `test/postgres_simple/wallet/action`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| SimpleWalletIntegrationTest.java | 174 | `tests/integration/test_actions.py` | todo |
+| WalletCloseAction.java | 27 | `tests/fixtures/` | todo |
+| WalletCreateAction.java | 31 | `tests/fixtures/` | todo |
+| WalletDepositAction.java | 28 | `tests/fixtures/` | todo |
+
+#### `test/postgres_simple/wallet/models`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| Wallet.java | 80 | `tests/fixtures/` | todo |
+| WalletState.java | 6 | `tests/fixtures/` | todo |
+
+#### `test/postgres_simple/wallet/models/events`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WalletClosedEvent.java | 13 | `tests/fixtures/` | todo |
+| WalletCreatedEvent.java | 21 | `tests/fixtures/` | todo |
+| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/` | todo |
+
+#### `test/postgres_simple/wallet/repository`
+
+| Java file | lines | Python | status |
+| --- | --- | --- | --- |
+| WalletRepository.java | 47 | `tests/fixtures/` | todo |
 
 ## Resources
 
