@@ -215,7 +215,7 @@ def test_the_no_result_writes_write(wallets):
 
 def test_the_dialect_is_reachable_for_the_query_that_has_to_differ(wallets, registry):
     assert wallets.dialect() == registry.dialect
-    assert wallets.dialect(shard=registry.default_shard) == "sqlite"
+    assert wallets.dialect(shard=registry.default_shard) == registry.dialect
 
 
 # ------------------------------------------------- the executor asks the same question
@@ -356,7 +356,9 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
 
     from sqlalchemy import create_engine
 
-    with create_engine(str(engine.url)).connect() as fresh:
+    # `str(url)` masks the password as `***`, which connects only to a server that has
+    # none - the reason this read passed on SQLite and failed on all three real servers.
+    with create_engine(engine.url.render_as_string(hide_password=False)).connect() as fresh:
         found = fresh.execute(select(WALLETS.c.id).where(WALLETS.c.id == wallet.id.value)).first()
     assert found is not None, "and it committed - a separate connection sees it"
 

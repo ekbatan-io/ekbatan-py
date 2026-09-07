@@ -89,7 +89,7 @@ class Wallet(Model[WalletId, WalletState]):
         """
         from .builders import WalletBuilder
 
-        return WalletBuilder().copy_from(self)
+        return WalletBuilder().copy_base(self)
 
     @classmethod
     def open(

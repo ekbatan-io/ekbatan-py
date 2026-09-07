@@ -139,12 +139,13 @@ class EntityBuilder[T, ID = Any, S = Any]:
     def increase_version(self) -> Self:
         return self.set(version=int(self._values.get("version", 0)) + 1)
 
-    def copy_from(self, other: Any) -> Self:
+    def copy_base(self, other: Any) -> Self:
         """Take every field from an existing instance - the framework's and your own.
 
-        This is what makes an inherited ``copy()`` possible. Java has no equivalent, because a
-        base class there cannot enumerate a subclass's fields; that is why every Java model
-        writes out its own ``copy()``, and why one of them eventually forgets a field.
+        Java's ``copyBase`` copies the six fields the base class knows about, and each model
+        then writes its own ``copy()`` to hand over the rest. Here the fields come off the
+        dataclass, so this one copies all of them and ``copy()`` can be inherited - which is
+        also why a model that gains a field does not have to remember to copy it.
         """
         for name in _field_names(type(other)):
             self._values[name] = getattr(other, name)
@@ -219,8 +220,34 @@ class Persistable[ID, S: Enum]:
     state: S
     version: int = 1
 
+    def __post_init__(self) -> None:
+        """Refuse a row that could not be written, where it was built.
+
+        Java checks all four in ``Model`` / ``Entity``'s constructor, and the reason survives
+        the translation: without them the mistake surfaces as an ``IntegrityError`` from
+        inside a batched insert, naming a column and a driver, several frames from the line
+        that made it. ``version`` matters most - it is the optimistic-locking primitive, and a
+        row inserted at 0 quietly starts one behind whatever reads it back.
+
+        A subclass that defines its own ``__post_init__`` must call ``super().__post_init__()``
+        or it loses these; Java's constructor chaining does that for you and Python's does not.
+        """
+        if self.id is None:
+            raise ValidationError("id cannot be null")
+        if self.state is None:
+            raise ValidationError("state cannot be null")
+        if self.version is None:
+            raise ValidationError("version cannot be null")
+        if self.version < 1:
+            raise ValidationError(f"version must be greater than or equal to 1, not {self.version}")
+
     @property
-    def emits_events(self) -> bool:
+    def is_model(self) -> bool:
+        """Whether this row's changes are events. ``True`` for a :class:`Model` only.
+
+        The persister branches on it to decide whether to look for events at all, which is why
+        it is a property of the row rather than an ``isinstance`` check at every call site.
+        """
         return False
 
     @classmethod
@@ -239,7 +266,7 @@ class Persistable[ID, S: Enum]:
         gains one gains it here too. Override it only to make a copy that deliberately differs
         - dropping a cached field, resetting a counter.
         """
-        return EntityBuilder(type(self)).copy_from(self)
+        return EntityBuilder(type(self)).copy_base(self)
 
     def evolve(self, **changes: Any) -> Self:
         """This row with some fields changed.
@@ -287,8 +314,24 @@ class Model[ID, S: Enum](Persistable[ID, S]):
     updated_date: datetime | None = None
     events: tuple[ModelEvent, ...] = field(default=(), compare=False, repr=False)
 
+    def __post_init__(self) -> None:
+        """Everything a row is checked for, and a copy of the events.
+
+        The copy is not housekeeping. ``events`` is annotated as a tuple but nothing stops a
+        list being passed, and a frozen model holding the caller's list is not frozen: append
+        to that list afterwards and the model gains an event it was never built with - which
+        the persister then writes, in a transaction that had already decided what it was
+        writing. Java's constructor says ``List.copyOf(...)`` for exactly this, and gets an
+        unmodifiable list out of it as well.
+        """
+        super().__post_init__()
+        if self.events is None:
+            raise ValidationError("events cannot be null")
+        if not isinstance(self.events, tuple):
+            object.__setattr__(self, "events", tuple(self.events))
+
     @property
-    def emits_events(self) -> bool:
+    def is_model(self) -> bool:
         return True
 
     @classmethod
@@ -297,7 +340,7 @@ class Model[ID, S: Enum](Persistable[ID, S]):
 
     def copy(self) -> ModelBuilder[Self, ID, S]:
         """A builder that can attach events, because a model can emit them."""
-        return ModelBuilder(type(self)).copy_from(self)
+        return ModelBuilder(type(self)).copy_base(self)
 
     def evolve(self, *, emit: ModelEvent | Iterable[ModelEvent] = (), **changes: Any) -> Self:
         """This model with some fields changed, and whatever it emitted in changing.

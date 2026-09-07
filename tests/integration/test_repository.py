@@ -182,7 +182,7 @@ def test_an_entity_round_trips_without_events(registry, clock):
     found = notes.get(stored.id)
     assert found == stored
     assert found.message is None, "an unset nullable column comes back null, not empty"
-    assert not found.emits_events
+    assert not found.is_model
 
 
 def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):

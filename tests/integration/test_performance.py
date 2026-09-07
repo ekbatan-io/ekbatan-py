@@ -215,11 +215,28 @@ def test_a_batch_statement_is_composed_once_per_size(wallets):
 # --------------------------------------------------- reading the written rows back, or not
 
 
-def test_a_reading_write_asks_for_returning_and_a_no_result_one_does_not(wallets, sql):
+def test_a_reading_write_asks_for_returning_and_a_no_result_one_does_not(wallets, sql, registry):
     """The pair exists so the caller can decide. Making both behave the same would remove the
-    choice and leave two names for one thing."""
+    choice and leave two names for one thing.
+
+    MySQL has no ``RETURNING`` at all, so there the reading variants rebuild what they wrote
+    rather than asking for it back - the same values, one statement either way. Java takes the
+    same branch (``if MYSQL: insert.execute(); return List.copyOf(...)``). What has to hold on
+    every database is the half that is a promise: the no-result variants never put the rows on
+    the wire.
+    """
+    engine = registry.default.primary
+    # After a connection, not before: SQLAlchemy's MySQL dialect only learns whether it is
+    # talking to MariaDB - and so whether RETURNING exists - in `initialize()`, on first
+    # connect. Read cold, both flags are the conservative class default and MariaDB looks like
+    # MySQL. MariaDB has had INSERT ... RETURNING since 10.5.
+    with engine.connect():
+        pass
+    reads_back = engine.dialect.insert_returning
+    updates_back = engine.dialect.update_returning
+
     wallets.add_all(some_wallets(3))
-    assert "RETURNING" in kind(sql, "INSERT")[0][0].upper()
+    assert ("RETURNING" in kind(sql, "INSERT")[0][0].upper()) is reads_back
 
     sql.clear()
     wallets.add_all_no_result(some_wallets(3))
@@ -230,7 +247,7 @@ def test_a_reading_write_asks_for_returning_and_a_no_result_one_does_not(wallets
     stored = wallets.all()
     sql.clear()
     wallets.update_all([w.evolve(balance=Decimal("2.00")) for w in stored])
-    assert "RETURNING" in kind(sql, "UPDATE")[0][0].upper()
+    assert ("RETURNING" in kind(sql, "UPDATE")[0][0].upper()) is updates_back
 
     stored = wallets.all()
     sql.clear()

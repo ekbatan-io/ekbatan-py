@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -147,3 +147,129 @@ def test_a_named_id_still_matches_its_base_class():
         "a row read back is rebuilt as whatever its field declares, so the family has to agree"
     )
     assert isinstance(PurseId(raw), Id)
+
+
+# -- what Java's IdTest and TypedValueTest pin -------------------------------------------------
+
+
+def test_an_id_can_be_parsed_from_its_string_form():
+    """Java's `Id.of(Class, String)`, which is how an id comes back off the wire."""
+    original = PurseId.generate(MEXICO)
+
+    assert PurseId.of(str(original)) == original
+    assert PurseId.of(original.value) == original
+
+    with pytest.raises(ValidationError, match="is not a uuid"):
+        PurseId.of("not-a-uuid")
+
+
+def test_an_id_prints_as_its_uuid_and_nothing_else():
+    """Java's `Id.toString()` overrides TypedValue's to return the bare uuid.
+
+    The persister writes `str(model.id)` into the outbox's `model_id` column, so anything
+    fancier here would change what a downstream consumer correlates on.
+    """
+    wallet_id = PurseId.random()
+
+    assert str(wallet_id) == str(wallet_id.value)
+    assert f"{wallet_id}" == str(wallet_id.value)
+
+
+def test_a_typed_value_prints_bare_and_reprs_with_its_type():
+    """Where Python and Java put the type name differ, deliberately.
+
+    Java's `TypedValue.toString()` is `AccountNumber{ABC123}` - one string carrying both. Python
+    has two, so `str()` is the value for building strings with and `repr()` carries the type for
+    reading in a traceback. Anything else would put `AccountNumber{...}` inside f-strings.
+    """
+
+    class AccountNumber(TypedValue[str]):
+        pass
+
+    number = AccountNumber("ABC123")
+
+    assert str(number) == "ABC123"
+    assert repr(number) == "AccountNumber('ABC123')"
+
+
+def test_equal_ids_hash_together_and_unequal_ones_do_not():
+    shared = uuid4()
+
+    assert hash(PurseId(shared)) == hash(PurseId(shared))
+    assert PurseId(shared) != PurseId(uuid4())
+    assert len({PurseId(shared), PurseId(shared)}) == 1
+
+
+def test_comparing_ids_delegates_to_the_uuid():
+    """Java's `compareTo`, which is what orders a batched write."""
+    low = PurseId(UUID("00000000-0000-0000-0000-000000000001"))
+    high = PurseId(UUID("00000000-0000-0000-0000-000000000002"))
+
+    assert low < high
+    assert high > low
+    assert not low < low
+    assert sorted([high, low]) == [low, high]
+
+
+# -- the ids the framework mints for its own rows ----------------------------------------------
+
+
+def test_an_ordered_uuid_is_a_version_7_uuid_that_never_repeats_or_goes_back():
+    """What makes `(event_date, id)` a total order on the outbox.
+
+    Every row of one unit of work carries that unit's completion instant, so the id is the only
+    thing separating them. A `sharded_uuid` will not do: its timestamp is milliseconds and its
+    low bits are random, and a unit of work writes all its rows inside one millisecond.
+    """
+    import uuid as uuid_mod
+    from itertools import pairwise
+
+    from ekbatan.sharding import ordered_uuid
+
+    minted = [ordered_uuid() for _ in range(20000)]
+
+    assert {u.version for u in minted} == {7}
+    assert {u.variant for u in minted} == {uuid_mod.RFC_4122}
+    assert all(a < b for a, b in pairwise(minted)), "strictly increasing, with no ties"
+    assert len(set(minted)) == len(minted)
+
+
+def test_a_sharded_uuid_deliberately_makes_no_such_promise():
+    """The contrast, so the reason `ordered_uuid` exists stays visible.
+
+    Two sharded ids minted in one millisecond differ only in random bits, so their order is
+    whatever the random bits happened to be. That is fine for a wallet id and not fine for a
+    row whose position in a stream is the point.
+    """
+    from ekbatan.sharding import sharded_uuid
+
+    same_ms = [sharded_uuid(MEXICO, at_ms=1_700_000_000_000) for _ in range(200)]
+
+    assert sorted(same_ms) != same_ms or len(set(same_ms)) < 200, (
+        "if this ever holds by luck, it is luck - the ordering is not promised"
+    )
+
+
+def test_ordered_uuids_stay_ordered_across_threads():
+    """One process, several workers, one stream. The lock is what makes that true."""
+    import threading
+
+    from ekbatan.sharding import ordered_uuid
+
+    minted: list = []
+    guard = threading.Lock()
+    start = threading.Barrier(8)
+
+    def mint() -> None:
+        start.wait()
+        mine = [ordered_uuid() for _ in range(2000)]
+        with guard:
+            minted.extend(mine)
+
+    threads = [threading.Thread(target=mint) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(set(minted)) == 16000, "no two workers ever got the same id"

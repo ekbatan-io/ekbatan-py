@@ -13,13 +13,13 @@ forever.
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import timedelta
 
 from sqlalchemy import Table, select, update
 
 from ..clock import Clock, SystemClock, to_storage
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
+from ..sharding import ordered_uuid
 from .handler import EventHandlerRegistry
 from .notification import EventNotificationState
 
@@ -94,7 +94,7 @@ class EventFanout:
                 for handler in self._handlers.subscribers(row.event_type):
                     pending.append(
                         {
-                            "id": uuid.uuid4(),
+                            "id": ordered_uuid(),
                             "event_id": row.id,
                             "handler_name": handler.name,
                             # The event's context, copied across, so dispatch never reads the

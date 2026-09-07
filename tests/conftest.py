@@ -163,7 +163,13 @@ def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock) -> Any:
 
 @pytest.fixture
 def outbox(registry: DatabaseRegistry) -> Any:
-    """Every outbox row on every shard, oldest first, as plain dicts."""
+    """Every outbox row on every shard, oldest first, as plain dicts.
+
+    By ``(event_date, id)``, not ``event_date`` alone: every row of one invocation carries
+    that invocation's completion instant, so the id is what separates them - which is why
+    it is a monotonic uuid7. Ordering by the date alone returned rows in primary-key order
+    on MySQL and insertion order on Postgres, and the difference read as four failing tests.
+    """
     from sqlalchemy import select
 
     from fixtures.schema import EVENTS
@@ -174,7 +180,7 @@ def outbox(registry: DatabaseRegistry) -> Any:
             with registry.manager(shard).connection(readonly=True) as conn:
                 rows += [
                     dict(r._mapping) | {"shard": shard}
-                    for r in conn.execute(select(EVENTS).order_by(EVENTS.c.event_date))
+                    for r in conn.execute(select(EVENTS).order_by(EVENTS.c.event_date, EVENTS.c.id))
                 ]
         return rows
 

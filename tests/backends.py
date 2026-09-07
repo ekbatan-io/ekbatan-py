@@ -115,7 +115,19 @@ class ServerBackend(Backend):
         self._container = container
         self._driver = driver
         self._created: set[str] = set()
-        self._base = container.get_connection_url()
+        self._base = self._scheme(container.get_connection_url())
+
+    def _scheme(self, url: str) -> str:
+        """The URL the container hands out, said in SQLAlchemy's terms.
+
+        ``MySqlContainer`` builds its own scheme as ``mysql+<driver>`` and there is no MariaDB
+        container class to ask instead, so a MariaDB container announces itself as MySQL. That
+        is not cosmetic: SQLAlchemy picks the server's version-reporting, its DDL, and its
+        `SKIP LOCKED` support off the scheme, and the framework picks its lock provider off
+        ``engine.dialect.name``. Left alone, "the MariaDB suite" tests the MySQL paths.
+        """
+        _, _, rest = url.partition("://")
+        return f"{self.dialect if self.dialect != 'postgres' else 'postgresql'}+{self._driver}://{rest}"
 
     def url(self, name: str) -> str:
         if name not in self._created:
@@ -170,15 +182,22 @@ def start(dialect: str, tmp_root: Path) -> Backend:
 
     from testcontainers.community.mysql import MySqlContainer
 
+    # `dialect=` here is the *driver* only. testcontainers prefixes `mysql+` itself and, since
+    # 4.15, refuses a value that already carries the prefix - which is how the MySQL and MariaDB
+    # backends came to raise at container start rather than run. `ServerBackend._scheme` puts
+    # the right scheme back on afterwards, which is also what makes MariaDB be MariaDB.
+    # `username="root"`, because this backend creates a logical database per fixture and
+    # testcontainers' default `test` user is granted rights on the `test` schema only -
+    # `CREATE DATABASE` comes back as "Access denied for user 'test'@'%'".
     if dialect == "mysql":
-        container = MySqlContainer(IMAGES["mysql"], dialect="mysql+pymysql")
+        container = MySqlContainer(IMAGES["mysql"], dialect="pymysql", username="root")
     else:
-        # No dedicated MariaDB module; the MySQL one drives it given the right image, dialect
-        # and readiness line - MariaDB logs "ready for connections" once, MySQL twice.
-        container = MySqlContainer(
-            IMAGES["mariadb"],
-            dialect="mariadb+pymysql",
-            wait_strategy_check_string=r".*ready for connections.*",
-        )
+        # No dedicated MariaDB module; the MySQL one drives it given the right image. The
+        # default readiness line is the right one: both servers announce "ready for
+        # connections" twice - once from the temporary server the entrypoint runs to
+        # initialise the data directory, then again from the real one. Waiting for the first
+        # connects to a server that is about to shut down, which arrives as
+        # "Lost connection to MySQL server during query" some tests later.
+        container = MySqlContainer(IMAGES["mariadb"], dialect="pymysql", username="root")
     container.start()
     return MysqlFamilyBackend(dialect, container, "pymysql")

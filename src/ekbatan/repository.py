@@ -16,7 +16,7 @@ import dataclasses
 import types
 import typing
 import uuid
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -148,9 +148,13 @@ class Repository[M: Persistable[Any, Any], K]:
         """The model as column values. Override when names or shapes differ."""
         return {name: write(getattr(model, name)) for name, write in self._to_col.items()}
 
-    def from_row(self, row: Row[Any]) -> M:
-        """A row as a model. Override alongside :meth:`to_row`."""
-        mapping = row._mapping
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> M:
+        """A row as a model. Override alongside :meth:`to_row`.
+
+        Takes column values by name, from a result row or from a plain mapping - the latter is
+        how an insert with no ``RETURNING`` rebuilds what it just wrote.
+        """
+        mapping = row._mapping if isinstance(row, Row) else row
         try:
             # The common case is a full row, and asking "is this column present?" once per
             # column per row is forty thousand questions to read five thousand rows, all with
@@ -492,9 +496,13 @@ class Repository[M: Persistable[Any, Any], K]:
         choice is the caller's, because only the caller knows whether anything is going to look
         at the rows.
 
-        Where there is no ``RETURNING`` - MySQL and MariaDB - the staged values come back
-        instead, so the two paths differ only in whether a server-side default or trigger is
-        visible.
+        Where there is no ``RETURNING`` - MySQL - the staged values come back instead, rebuilt
+        through the same readers a query would use, so the two paths differ only in whether a
+        server-side default or trigger is visible. Java takes the same branch
+        (``if MYSQL: insert.execute(); return List.copyOf(domainObjects)``) and does not need
+        the rebuild, because there a typed id is the only thing that compiles. Here a raw
+        ``uuid4()`` passed where a ``NotificationId`` belongs would otherwise come back raw on
+        MySQL and wrapped on every other database - the same call, two shapes.
         """
         if not models:
             return []
@@ -517,7 +525,7 @@ class Repository[M: Persistable[Any, Any], K]:
                 )
                 return [self.from_row(r) for r in written]
             conn.execute(insert(self.table), rows)
-        return stamped
+        return [self.from_row(r) for r in rows]
 
     def add_all_no_result(self, models: Sequence[M]) -> None:
         """Insert without reading anything back.

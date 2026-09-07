@@ -37,7 +37,7 @@ class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
 def wallet(source: Wallet | None = None) -> WalletBuilder:
     """A fresh WalletBuilder, optionally pre-loaded from an existing Wallet."""
     made = WalletBuilder()
-    return made.copy_from(source) if source is not None else made
+    return made.copy_base(source) if source is not None else made
 
 
 class AlertBuilder(EntityBuilder[Alert, AlertId, GenericState]):
@@ -62,4 +62,4 @@ class AlertBuilder(EntityBuilder[Alert, AlertId, GenericState]):
 def alert(source: Alert | None = None) -> AlertBuilder:
     """A fresh AlertBuilder, optionally pre-loaded from an existing Alert."""
     made = AlertBuilder()
-    return made.copy_from(source) if source is not None else made
+    return made.copy_base(source) if source is not None else made

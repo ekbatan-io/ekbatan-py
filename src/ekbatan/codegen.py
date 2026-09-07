@@ -136,7 +136,7 @@ def _render(model: type[Persistable[Any, Any]], imports: dict[str, set[str]]) ->
         f"def {factory}(source: {name} | None = None) -> {builder}:",
         f'    """A fresh {builder}, optionally pre-loaded from an existing {name}."""',
         f"    made = {builder}()",
-        "    return made.copy_from(source) if source is not None else made",
+        "    return made.copy_base(source) if source is not None else made",
     ]
     return "\n".join(lines)
 

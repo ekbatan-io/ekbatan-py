@@ -24,18 +24,35 @@ from .._json import canonical
 from .._tracing import span
 from ..domain import ModelEvent
 from ..errors import ValidationError
-from ..sharding import ShardIdentifier
+from ..sharding import ShardIdentifier, ordered_uuid
 
 __all__ = ["EmittedEvent", "EventPersister", "OutboxRecord", "SingleTableJsonEventPersister"]
 
 
 @dataclass(frozen=True, slots=True)
 class EmittedEvent:
-    """One event, with the model it is about."""
+    """One event, with the model it is about.
+
+    Java carries these two on ``ModelEvent`` itself, where its constructor validates them.
+    Here they are supplied at persist time - an event says what happened and the model it was
+    attached to already knows which model it is - so the same check belongs here.
+    """
 
     model_id: str
     model_type: str
     event: ModelEvent
+
+    def __post_init__(self) -> None:
+        """Both name the source aggregate, and a blank one names nothing.
+
+        These are the columns a downstream consumer correlates on. Written blank the row still
+        inserts, and the correlation is lost at the far end, weeks later, with no way back to
+        the model that emitted it.
+        """
+        if not self.model_id or not self.model_id.strip():
+            raise ValidationError("model_id cannot be null or blank")
+        if not self.model_type or not self.model_type.strip():
+            raise ValidationError("model_type cannot be null or blank")
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -104,6 +121,20 @@ class SingleTableJsonEventPersister:
             self._write(conn, record)
 
     def _write(self, conn: Connection, record: OutboxRecord) -> None:
+        """One row per event, keyed by a time-ordered id.
+
+        The id is a version 7 UUID, and that is load-bearing rather than tidy. Every row of one
+        invocation shares an ``event_date`` - it is the invocation's completion instant - so
+        that column alone cannot order them, and a consumer reading a transfer back would be
+        free to see the deposit before the withdrawal. Ordering by ``(event_date, id)`` settles
+        it, because ``uuid7`` is monotonic within a process; ordering by a version 4 id settles
+        nothing. It also stops the primary key scattering writes across the index, which is the
+        argument :mod:`ekbatan.sharding` already makes for every other id in the framework.
+
+        Java mints ``UUID.randomUUID()`` here, so a Java-written batch is unordered within an
+        invocation on any database that does not happen to return rows in insertion order. The
+        column type is identical either way, so the two remain readable to each other.
+        """
         params = canonical(record.action_params)
         common = {
             "namespace": record.namespace,
@@ -123,7 +154,7 @@ class SingleTableJsonEventPersister:
             rows = [
                 {
                     **common,
-                    "id": uuid.uuid4(),
+                    "id": ordered_uuid(),
                     "model_id": None,
                     "model_type": None,
                     "event_type": None,
@@ -134,7 +165,7 @@ class SingleTableJsonEventPersister:
             rows = [
                 {
                     **common,
-                    "id": uuid.uuid4(),
+                    "id": ordered_uuid(),
                     "model_id": emitted.model_id,
                     "model_type": emitted.model_type,
                     "event_type": self._event_type(emitted.event),

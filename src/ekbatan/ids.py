@@ -60,6 +60,17 @@ class TypedValue[T]:
 
     value: T
 
+    def __post_init__(self) -> None:
+        """There is no such thing as a typed value wrapping nothing.
+
+        Java's constructor says so too. An absent one is ``WalletNumber | None`` at the call
+        site, which a checker can see; ``WalletNumber(None)`` is a wrapper that compares equal
+        to every other empty wrapper of its type and hashes with them, and reaches the
+        database as a null in a column that usually forbids it.
+        """
+        if self.value is None:
+            raise ValidationError(f"{type(self).__name__} value cannot be null")
+
     def __eq__(self, other: object) -> bool:
         """Equal when the values match and the types are in the same family.
 
