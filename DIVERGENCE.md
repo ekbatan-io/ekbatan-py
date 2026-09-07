@@ -385,6 +385,33 @@ In practice the version moves whenever the content does, so the two agree on eve
 repository produces. Where they differ, this port is the stricter of the two, and a test
 asserting `loaded == expected` means here what it looks like it means.
 
+## A shard member carries one datasource pair, not a named map
+
+Java's `ShardMemberConfig` holds a `configs` map with two reserved keys, `primaryConfig` and
+`secondaryConfig`, plus any number of user-named entries reached through `configFor(name)`. Its
+three DI modules use that to give the job scheduler a pool of its own -
+`member.configFor("jobsConfig")` - so the scheduler's polling does not compete with the
+application for connections.
+
+Here a shard has a `primary` and an optional `replica`, and nothing else. The map exists in
+Java because a DI container binds YAML into it and there is nowhere to hand an object; this
+port hands the object: `job_registry().engine(create_engine(...))` gives the scheduler its own
+pool directly, which is the same remedy with one less layer. Nothing binds configuration from a
+property file here, which is also why `PropertyKeyNormalizer` has no counterpart.
+
+Reopen it if configuration ever does come from a file: the named map is the right shape for
+that, and this is the wrong shape for it.
+
+## SQLite is a dialect here and is not one in Java
+
+`DataSourceConfig` accepts `sqlite://`. Java accepts PostgreSQL, MySQL and MariaDB and refuses
+everything else, including H2.
+
+It is not a supported production dialect here either - what it buys is that the behavioural
+suite runs a second after you write a test, with no daemon, and then runs against the real three
+before anything is believed (`--dialects=all`). A framework whose tests need Docker to run at
+all is a framework whose tests stop being run.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus

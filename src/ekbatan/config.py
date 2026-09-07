@@ -51,7 +51,29 @@ class DataSourceConfig:
 
     @property
     def dialect(self) -> str:
-        scheme = self.url.split(":", 1)[0].split("+", 1)[0].strip().lower()
+        """Which database this URL names, or a refusal that says which kind of mistake it is.
+
+        The two are separated as Java separates them: a URL nothing can be read out of is a
+        typo, and a URL naming Oracle is a decision about what this framework supports. They
+        want different fixes, and one message covering both sends the reader looking in the
+        wrong place.
+        """
+        head, separator, _ = self.url.partition("://")
+        if not separator:
+            raise ValidationError(
+                f"cannot tell which database {self.url!r} names; a url looks like "
+                f"'postgresql+psycopg://user:pass@host/db'"
+            )
+        scheme = head.split("+", 1)[0].strip().lower()
+        if scheme.startswith("jdbc:"):
+            # The likeliest mistake anyone moving between the two ports makes, and left alone
+            # it reports as "unsupported database 'jdbc:postgresql'", which sends the reader to
+            # look for a driver rather than at the string.
+            raise ValidationError(
+                f"{self.url!r} is a JDBC url, which is the Java port's form. Here a url looks "
+                f"like 'postgresql+psycopg://user:pass@host/db' - the credentials live in the "
+                f"url rather than in separate username and password settings."
+            )
         try:
             return _DIALECTS[scheme]
         except KeyError:

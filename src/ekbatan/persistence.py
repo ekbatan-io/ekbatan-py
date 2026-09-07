@@ -140,22 +140,45 @@ class TransactionManager:
             self.primary.connect() as conn,
         ):
             token = _ambient.set({**_open(), self.shard: conn})
+            # Begin, commit and roll back by hand rather than through `with conn.begin()`. The
+            # context manager rolls back for us, but it has nowhere to say that the rollback
+            # *itself* failed - and SQLAlchemy then returns that connection to the pool and
+            # hands it to the next caller, still carrying whatever the rollback did not undo.
+            # Java refuses to do that: a failed rollback marks the transaction dirty and the
+            # connection is evicted rather than released.
+            tx = conn.begin()
             try:
-                with conn.begin():
-                    LOG.debug("transaction started [shard=%s]", self.shard)
-                    yield Transaction(conn, self.shard, self.dialect)
+                LOG.debug("transaction started [shard=%s]", self.shard)
+                yield Transaction(conn, self.shard, self.dialect)
+                # Inside the try, as Java's is: a commit that fails is a transaction that has
+                # to be rolled back like any other, and if that rollback fails too the
+                # connection is in the same unknown state.
+                tx.commit()
+                LOG.debug("transaction committed [shard=%s]", self.shard)
             except BaseException as error:
                 # BaseException: a cancellation still rolled the transaction back, and a log
                 # that omitted it would be worse than none. The span needs nothing here - an
                 # exception leaving the `with` is recorded by OpenTelemetry itself.
+                try:
+                    tx.rollback()
+                except BaseException:
+                    # Unknown state: either the rollback never reached the server, or it did
+                    # and failed. Invalidating closes the physical connection, which makes the
+                    # server discard anything still open on it - and stops the pool offering
+                    # it to somebody else.
+                    LOG.warning(
+                        "rollback failed [shard=%s]; discarding the connection rather than "
+                        "returning it to the pool",
+                        self.shard,
+                        exc_info=True,
+                    )
+                    conn.invalidate()
                 LOG.warning(
                     "transaction rolled back [shard=%s]: %s",
                     self.shard,
                     type(error).__name__,
                 )
                 raise
-            else:
-                LOG.debug("transaction committed [shard=%s]", self.shard)
             finally:
                 _ambient.reset(token)
 
