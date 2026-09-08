@@ -478,7 +478,7 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| BaseSingleTableJsonEventPersisterTest.java | 419 | `tests/integration/test_outbox.py` | todo |
+| BaseSingleTableJsonEventPersisterTest.java | 419 | `tests/integration/test_event_persister.py` | done |
 | MariadbSingleTableJsonEventPersisterTest.java | 51 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | MysqlSingleTableJsonEventPersisterTest.java | 51 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | PgSingleTableJsonEventPersisterTest.java | 48 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |

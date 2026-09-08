@@ -7,6 +7,7 @@ exactly what an implementation loses first.
 from __future__ import annotations
 
 import contextlib
+from dataclasses import dataclass
 from decimal import Decimal
 from uuid import uuid4
 
@@ -62,8 +63,12 @@ def test_two_models_still_cost_one_transaction(executor, wallets, registry):
 
 
 def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
-    class CreateMany(Action[int, list[Wallet]]):
-        def perform(self, params: int) -> list[Wallet]:
+    @dataclass(frozen=True, kw_only=True)
+    class HowMany:
+        count: int
+
+    class CreateMany(Action[HowMany, list[Wallet]]):
+        def perform(self, params: HowMany) -> list[Wallet]:
             return self.plan.add_all(
                 Wallet.open(
                     id=WalletId.random(),
@@ -71,11 +76,11 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
                     currency="EUR",
                     balance=Decimal("1.00"),
                 )
-                for _ in range(params)
+                for _ in range(params.count)
             )
 
     with count_statements(registry) as cost:
-        executor.execute(CreateMany(), 25)
+        executor.execute(CreateMany(), HowMany(count=25))
 
     assert cost.transactions == 1
     assert cost.writes["wallets"] == 1, "twenty-five rows is one statement, not twenty-five"

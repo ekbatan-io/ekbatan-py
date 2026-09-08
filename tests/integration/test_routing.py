@@ -7,6 +7,7 @@ are; the built-in reads and writes go through exactly the same four.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -246,21 +247,30 @@ def _executor_over(registry, repo, clock):
     )
 
 
+@dataclass(frozen=True, kw_only=True)
+class OpenWalletParams:
+    """A params object rather than a bare `str`, because the outbox stores these as a JSON
+    object and a scalar there is a row no typed consumer can read. Java refuses the scalar for
+    the same reason."""
+
+    currency: str
+
+
 def _open_wallet(currency):
     from ekbatan.action import Action
 
-    class OpenWallet(Action[str, Wallet]):
+    class OpenWallet(Action[OpenWalletParams, Wallet]):
         def perform(self, params):
             return self.plan.add(
                 Wallet.open(
                     id=WalletId.random(),
                     owner_id=uuid4(),
-                    currency=params,
+                    currency=params.currency,
                     balance=Decimal("1.00"),
                 )
             )
 
-    return OpenWallet(), currency
+    return OpenWallet(), OpenWalletParams(currency=currency)
 
 
 def test_a_strategy_that_cannot_route_by_id_alone_still_runs(sharded_registry, clock, outbox):

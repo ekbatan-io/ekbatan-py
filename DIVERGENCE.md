@@ -546,6 +546,22 @@ a timeout nobody set. And a failed `pg_advisory_unlock` invalidates too: the unl
 happen, so that session still holds the lock, and handing the connection back to the pool would
 hand the lock with it.
 
+## An action with no parameters passes `None`; one with parameters passes an object
+
+`action_params` is a JSON object column, and both ports refuse to write a scalar or a list into
+it: `Action[DepositParams, Wallet]`, never `Action[str, Wallet]`. Java's message says the same -
+"use a record/class params object". A bare `"MXN"` in that column is a row no typed consumer can
+read, and `ActionEvent.action_params` is a mapping in both ports.
+
+Where they differ is `None`. Java refuses it too, because an action there always takes a params
+object, so a null reaching the check means somebody made a mistake. Here
+`executor.execute(SomeAction(), None)` is simply how a parameterless action is invoked, so `None`
+is normalised to `{}` rather than refused.
+
+The rule that makes both coherent: `None` means "no parameters" and has an unambiguous
+empty-object form; `"MXN"` means "one unnamed parameter" and does not - storing it would mean
+inventing a key that no reader on either side knows to look for.
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus

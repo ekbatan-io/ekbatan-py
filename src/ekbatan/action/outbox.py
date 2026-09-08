@@ -13,7 +13,7 @@ included, is unchanged.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
@@ -104,7 +104,12 @@ class SingleTableJsonEventPersister:
         column to promise it with, and a table both ports write to cannot be given the guarantee
         by only one of them. A consumer that needs the order needs it added to the schema.
         """
-        params = canonical(record.action_params)
+        params = _as_json_object(
+            canonical(record.action_params),
+            "action_params must be a JSON object; give the action a params dataclass rather "
+            "than a bare scalar or list - `Action[DepositParams, Wallet]`, not "
+            "`Action[str, Wallet]`. An action with no parameters takes None",
+        )
         common = {
             "namespace": record.namespace,
             "action_id": record.action_id,
@@ -138,7 +143,11 @@ class SingleTableJsonEventPersister:
                     "model_id": event.model_id,
                     "model_type": event.model_name,
                     "event_type": self._event_type(event),
-                    "payload": canonical(event.payload()),
+                    "payload": _as_json_object(
+                        canonical(event.payload()),
+                        f"{type(event).__name__}.payload() must give a JSON object; check for "
+                        f"an override returning a scalar or a list",
+                    ),
                 }
                 for event in record.events
             ]
@@ -163,3 +172,25 @@ class SingleTableJsonEventPersister:
                 f"cannot tell them apart."
             )
         return name
+
+
+def _as_json_object(value: Any, complaint: str) -> Mapping[str, Any]:
+    """Refuse anything the column can hold but a consumer cannot read.
+
+    A JSON column accepts a bare scalar or a list quite happily - `"deposit"` and `[1, 2]` are
+    both valid JSON - so nothing fails at write time. What fails is the consumer:
+    `ActionEvent.action_params` is typed as a mapping in both ports, and a reader doing
+    `params["amount"]` gets a `TypeError` from a row written days earlier by someone else.
+
+    `None` is normalised rather than refused, which is the one place this parts company with
+    Java. There an action always takes a params object, so a null reaching the check is a
+    mistake; here `execute(SomeAction(), None)` is simply how a parameterless action is invoked.
+    The rule that makes both coherent: `None` means "no parameters" and has an unambiguous
+    empty-object form, while `"MXN"` means "one unnamed parameter" and does not - storing it
+    would mean inventing a key that no reader on either side knows to look for.
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValidationError(f"{complaint}; got {type(value).__name__}")
+    return value
