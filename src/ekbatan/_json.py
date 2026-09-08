@@ -89,9 +89,18 @@ def decode[T](target: type[T], data: Mapping[str, Any]) -> T:
 
     hints = typing.get_type_hints(target)
     fields = {f.name for f in dataclasses.fields(target)}  # type: ignore[arg-type]
+    # `modelId` and `modelName` are in the payload under Java's spelling, because Java's local
+    # event handler deserialises the payload straight into its event class and refuses one
+    # without them. Read back under this port's names, so a payload written by either side
+    # rebuilds a complete event here.
+    named = {_IDENTITY.get(name, name): value for name, value in data.items()}
     return target(
-        **{name: _revive(value, hints.get(name)) for name, value in data.items() if name in fields}
+        **{name: _revive(value, hints.get(name)) for name, value in named.items() if name in fields}
     )
+
+
+#: The two payload keys whose spelling is Java's rather than this port's.
+_IDENTITY = {"modelId": "model_id", "modelName": "model_name"}
 
 
 def _revive(value: Any, hint: Any) -> Any:

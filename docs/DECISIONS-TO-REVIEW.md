@@ -16,6 +16,11 @@ bottom.
 | --- | --- | --- |
 | `ordered_uuid()` as the outbox primary key, so `(event_date, id)` would be a total order | added in `EKB-0108`, reverted in `EKB-0111` | I treated "rows of one action tie on `event_date`" as a defect and reached for a framework change. It is not a defect - `event_date` is the ordering key a consumer uses, and rows of one action are genuinely simultaneous. Four of the six "failures" that motivated it were the *test clock* being frozen. Java uses `UUID.randomUUID()` here and its v7 is only ever the sharding-bit-carrying `ShardedUUID` |
 
+## Reversed after review
+
+The list below is the point of this file: it exists so a decision I took can be checked rather
+than assumed. One has been reversed so far - see the struck row under "Went further than Java".
+
 ## Went further than Java - the ones most worth arguing about
 
 These change behaviour Java does not have. Each is defensible and each is mine.

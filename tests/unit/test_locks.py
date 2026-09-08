@@ -317,9 +317,7 @@ def test_the_success_line_is_written_only_after_the_release_worked(caplog):
     released: list[str] = []
 
     with caplog.at_level(logging.WARNING):
-        holder.register(
-            "k", "payload", timedelta(milliseconds=50), lambda p, r: released.append(p)
-        )
+        holder.register("k", "payload", timedelta(milliseconds=50), lambda p, r: released.append(p))
         time.sleep(0.4)
 
     assert released == ["payload"]

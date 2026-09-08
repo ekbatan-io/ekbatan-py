@@ -102,16 +102,29 @@ class ModelEvent:
     def payload(self) -> dict[str, Any]:
         """The event as it is stored. Override to control the wire shape.
 
-        Without the two identity fields: they have columns of their own, and a consumer reads
-        them from there. Java leaves them in the payload as well, because they are public
-        fields of its base class and Jackson serialises them - a duplicate rather than a
-        contract. ``ActionEvent``, which is the contract, calls the payload "raw JSON" the
-        consumer deserialises into whatever it likes, and reads ``modelId`` from the column.
+        The two identity fields are in it, under Java's names - ``modelId`` and ``modelName``,
+        not ``model_id`` and ``model_name``. They are also columns of their own, so this is a
+        duplication; it is deliberate, and it is the difference between the two ports being able
+        to read each other's rows and not.
+
+        Java's local event handler deserialises this payload straight into the handler's event
+        class (``objectMapper.treeToValue(notification.payload, handler.eventType())``), and
+        every event class there carries a ``@JsonCreator`` taking ``@JsonProperty("modelId")``
+        which it hands to ``ModelEvent``'s constructor - where ``Validate.notBlank`` refuses a
+        null. A payload written without them therefore does not deserialise on the Java side at
+        all: the delivery fails, retries, and expires.
+
+        A CDC consumer reading `ActionEvent` never needs them here, because that type has its
+        own `modelId` and `modelType` fields read from the columns. The local handler does.
         """
         return {
-            f.name: getattr(self, f.name)
-            for f in dataclasses.fields(self)
-            if f.name not in _EVENT_IDENTITY
+            **{
+                f.name: getattr(self, f.name)
+                for f in dataclasses.fields(self)
+                if f.name not in _EVENT_IDENTITY
+            },
+            "modelId": self.model_id,
+            "modelName": self.model_name,
         }
 
     @property
@@ -120,7 +133,8 @@ class ModelEvent:
         return type(self).__name__
 
 
-#: On :class:`ModelEvent` for the columns, not for the payload.
+#: Written into the payload under Java's spelling rather than Python's, so the two ports read
+#: each other. Excluded under their own names to avoid carrying both.
 _EVENT_IDENTITY = frozenset({"model_id", "model_name"})
 
 

@@ -61,7 +61,16 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
     assert deposited["delivered"] is False
     # The scale is the column's, not the caller's: the wallet came back from a
     # DECIMAL(19,4), so its balance carries four places and the sum does too.
-    assert deposited["payload"] == {"amount": "50.00", "new_balance": "150.0000"}
+    #
+    # `modelId` and `modelName` are in the payload as well as in their own columns, under Java's
+    # spelling. Java's local event handler deserialises this payload into the handler's event
+    # class, and every event class there refuses one without them.
+    assert deposited["payload"] == {
+        "amount": "50.00",
+        "new_balance": "150.0000",
+        "modelId": str(wallet.id),
+        "modelName": "Wallet",
+    }
 
 
 def test_a_failed_unit_of_work_writes_neither(executor, wallets, outbox):

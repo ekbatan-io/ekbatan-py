@@ -261,7 +261,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| ActionEvent.java | 301 | `_json.py` | todo |
+| ActionEvent.java | 301 | `streaming.py` | done - `streaming.py`; keyword-only, so the builder that removes Java's transposition hazard is unneeded |
 
 #### `flyway`
 
@@ -443,7 +443,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| ActionEventTest.java | 188 | `tests/unit/test_json.py` | todo |
+| ActionEventTest.java | 188 | `streaming.py` | done - `tests/unit/test_streaming.py` |
 
 #### `flyway`
 

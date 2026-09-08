@@ -174,18 +174,37 @@ def test_an_event_is_told_which_model_it_is_about_rather_than_asked():
     assert event.model_id == "", "the original is untouched - these are frozen"
 
 
-def test_the_identity_fields_stay_out_of_the_payload_and_out_of_equality():
-    """They have columns of their own, which is where a consumer reads them.
+def test_the_identity_fields_are_in_the_payload_under_javas_spelling():
+    """They are columns of their own *and* payload keys, and the duplication is deliberate.
 
-    Java leaves them in the payload too, because they are public fields of its base class and
-    Jackson serialises them. `ActionEvent` - the contract - calls the payload raw JSON for the
-    consumer to deserialise as it likes, and reads `modelId` from the column.
+    Java's local event handler deserialises this payload straight into the handler's event class
+    (`objectMapper.treeToValue(notification.payload, handler.eventType())`), and every event
+    class there carries a `@JsonCreator` taking `@JsonProperty("modelId")` which it hands to
+    `ModelEvent`'s constructor - where `Validate.notBlank` refuses a null. A payload written
+    without them does not deserialise on the Java side at all.
+
+    `modelId`, not `model_id`: the key is Java's, because Java is the one reading it.
     """
     event = WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110"))
     told = event.about(a_wallet())
 
-    assert set(told.payload()) == {"amount", "new_balance"}
+    assert set(told.payload()) == {"amount", "new_balance", "modelId", "modelName"}
+    assert told.payload()["modelName"] == "Wallet"
     assert told == event, "being told what it is about is not a different event"
+
+
+def test_a_payload_written_by_either_port_rebuilds_a_complete_event():
+    """The round trip that makes a shared eventlog work in both directions."""
+    from ekbatan._json import canonical, decode
+
+    wallet = a_wallet()
+    told = WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110")).about(wallet)
+
+    rebuilt = decode(WalletMoneyDeposited, canonical(told.payload()))
+
+    assert rebuilt.amount == Decimal("10")
+    assert rebuilt.model_id == str(wallet.id), "read back from Java's `modelId` key"
+    assert rebuilt.model_name == "Wallet"
 
 
 def test_an_event_attached_to_a_model_with_no_usable_id_is_refused():
