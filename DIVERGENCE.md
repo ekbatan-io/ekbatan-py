@@ -516,21 +516,35 @@ last-call-wins `leaseTime` would let an inner re-entry shorten the outer holder'
 same holder *provides* the behaviour, because nothing underneath does. Both make the outermost
 `max_hold` the one that governs.
 
-## A timed-out Postgres advisory lock rolls back before it resets
+## The lock connection runs in autocommit, as Java's pooled one does
 
-Not a divergence so much as a bug this port had and Java does not, fixed and recorded because the
-shape is worth remembering. `pg_advisory_lock` under a `lock_timeout` raises `55P03` **and aborts
-the transaction**, so every later statement on that connection is refused until a rollback. The
-`SET lock_timeout = 0` reset sat in a `finally`, ran on that aborted transaction, and raised
-`InFailedSqlTransaction` - which `_attempt` turned into `LockAcquisitionError`.
+Not a divergence - a bug this port had and Java does not, recorded because finding the *cause*
+took a second pass and the first pass looked convincing.
 
-The effect was that a `try_acquire` which simply timed out **raised instead of returning None**,
-which is the precise confusion the empty-result contract exists to prevent: a caller cannot tell
-a busy lock from a broken one if both arrive the same way. Java has no equivalent because jOOQ's
-`lock_timeout` handling never runs a statement on the aborted transaction.
+The symptom: a `try_acquire` that simply timed out **raised instead of returning None**, which is
+the precise confusion the empty-result contract exists to prevent - a caller cannot tell a busy
+lock from a broken one if both arrive the same way. `pg_advisory_lock` under a `lock_timeout`
+raises `55P03` *and aborts the transaction*, after which Postgres refuses every later statement
+on that connection; the `SET lock_timeout = 0` reset sat in a `finally`, ran on the aborted
+transaction, and raised `InFailedSqlTransaction`.
 
-Found by the first run of the integration suite against a real Postgres; no unit test could have,
-because the in-process provider has no transaction to abort.
+The first fix was to keep the reset off that path. It works, and it is the wrong fix: it removes
+one statement from an aborted transaction and leaves the next one to find it. The cause is that
+this port opened the lock connection through `engine.connect()`, where SQLAlchemy begins a
+transaction implicitly. Java borrows a pooled JDBC connection with `autoCommit=true`, so a failed
+statement ends its own implicit transaction and leaves nothing behind. An advisory lock is
+session-scoped in both Postgres and MySQL, so there was never a transaction to want.
+
+Measured both ways: with the original `finally` restored and `AUTOCOMMIT` added, the suite passes;
+the reset is simply no longer running against a poisoned connection. Both changes are in, because
+the narrower one is still correct and costs nothing.
+
+Two more things came out of reading `PostgresKeyedLockProvider` whole rather than inferring it
+from its tests. A connection whose `lock_timeout` reset failed is now **invalidated** rather than
+returned - Java calls it `dirty` and evicts it, because the next borrower would otherwise inherit
+a timeout nobody set. And a failed `pg_advisory_unlock` invalidates too: the unlock did not
+happen, so that session still holds the lock, and handing the connection back to the pool would
+hand the lock with it.
 
 ## Not ported
 

@@ -92,7 +92,12 @@ class SqlKeyedLockProvider(ABC):
 
     def _attempt(self, key: str, wait: timedelta, max_hold: timedelta) -> Lease | None:
         hashed = lock_key_hash(key)
-        conn = self._engine.connect()
+        # AUTOCOMMIT, as Java's pooled connection is - and not incidentally. Without it a
+        # statement that fails leaves an open aborted transaction, and Postgres then refuses
+        # every later statement on the connection until it is rolled back, which is how a
+        # timed-out `try_acquire` came to report itself as a backend failure. An advisory lock
+        # is session-scoped in both Postgres and MySQL, so there is no transaction to want.
+        conn = self._engine.connect().execution_options(isolation_level="AUTOCOMMIT")
         try:
             acquired = self._try_lock(conn, hashed, wait)
         except LockAcquisitionError:
@@ -112,9 +117,13 @@ class SqlKeyedLockProvider(ABC):
         try:
             self._unlock(conn, hashed)
         except Exception:
-            LOG.exception("failed to release a database lock; its session will be closed anyway")
-        finally:
-            _discard(conn)
+            # Evicted rather than returned, as Java evicts here. The unlock did not happen, so
+            # this session still holds the lock: handing the connection back to the pool would
+            # hand the lock to whoever borrows it next, invisibly. Closing the physical
+            # connection is what makes the server drop the session and its locks with it.
+            LOG.exception("failed to release a database lock; discarding its session")
+            conn.invalidate()
+        _discard(conn)
 
 
 def _discard(conn: Connection) -> None:
@@ -159,20 +168,16 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
         except Exception as exc:
             if not _is_lock_timeout(exc):
                 raise
-            # Postgres aborts the transaction when `lock_timeout` fires and then refuses every
-            # later statement on this connection until it is rolled back. The reset below used
-            # to sit in a `finally`, so it ran here too and raised `InFailedSqlTransaction` -
-            # which surfaced as "the lock backend failed", reporting a busy lock as a broken
-            # one. That is exactly the confusion `try_acquire` returning None exists to prevent.
-            #
-            # Keeping the reset off this path is the fix. The rollback is not load-bearing -
-            # the caller discards this connection and the pool resets it - but it leaves the
-            # connection clean here rather than depending on that.
-            conn.rollback()
             return False
-        # Only on the way out of a healthy transaction. The timeout path above discards this
-        # connection rather than returning it, so there is nothing to tidy there.
-        conn.exec_driver_sql("SET lock_timeout = 0")
+        try:
+            conn.exec_driver_sql("SET lock_timeout = 0")
+        except Exception:
+            # Java marks the connection dirty here and evicts it rather than releasing it. The
+            # next borrower would otherwise inherit this lock_timeout and wait on some
+            # unrelated statement for a duration nobody set.
+            LOG.warning("could not reset lock_timeout; the connection will be discarded")
+            conn.invalidate()
+            raise
         return True
 
     def _unlock(self, conn: Connection, key: int) -> None:

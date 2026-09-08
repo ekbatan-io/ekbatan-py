@@ -99,12 +99,12 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| KeyedLockProvider.java | 152 | `locks/base.py` | todo |
-| KeyedReentrantHolder.java | 275 | `locks/_holder.py` | todo |
-| LockAcquisitionException.java | 44 | `errors.py` | todo |
-| MariaDBKeyedLockProvider.java | 257 | `locks/sql.py` | todo |
-| MySQLKeyedLockProvider.java | 262 | `locks/sql.py` | todo |
-| PostgresKeyedLockProvider.java | 267 | `locks/sql.py` | todo |
+| KeyedLockProvider.java | 152 | `locks/base.py` | done - `locks/base.py`; a Protocol plus `Lease` |
+| KeyedReentrantHolder.java | 275 | `locks/_holder.py` | done - `locks/_holder.py`; a lock where Java uses a CAS |
+| LockAcquisitionException.java | 44 | `errors.py` | done - `LockAcquisitionError` |
+| MariaDBKeyedLockProvider.java | 257 | `locks/sql.py` | done - subclasses the MySQL one, as Java's does |
+| MySQLKeyedLockProvider.java | 262 | `locks/sql.py` | done |
+| PostgresKeyedLockProvider.java | 267 | `locks/sql.py` | done |
 
 #### `core/config`
 

@@ -87,7 +87,11 @@ class _Holding:
         try:
             callback(payload, ReleaseReason.EXPIRED)
             LOG.warning("released the lock on %r: its hold limit elapsed", self.key)
-        except Exception:
+        except BaseException:
+            # BaseException, as Java catches `RuntimeException | Error` here. This runs on a
+            # timer thread: anything that escapes reaches stderr through the threading hook
+            # rather than the logger, and the operator is left with a lock that is held by
+            # nobody and no record of why.
             # Reported against the key that caused it. The backend lock may stay held until its
             # own expiry - but the hold is already marked released, and putting that back would
             # strand the entry instead.
@@ -140,12 +144,21 @@ class KeyedReentrantHolder:
             holding.timer = timer
             timer.start()
             return Lease(holding)
-        except BaseException:
+        except BaseException as failure:
             # Registration failed after the backend lock was taken. Give it back, or it is held
             # by nobody until it expires.
             with self._gate:
                 self._held.pop(entry, None)
-            release_cb(payload, ReleaseReason.CLOSED)
+            if holding.timer is not None:
+                holding.timer.cancel()
+            try:
+                release_cb(payload, ReleaseReason.CLOSED)
+            except BaseException as cleanup:
+                # Attached, never substituted. Java says the same thing with `addSuppressed`,
+                # and the reason is worth keeping: raising the cleanup failure instead would
+                # put "returning the connection failed" in front of the caller and bury the
+                # thing that actually went wrong one link down the context chain.
+                failure.add_note(f"releasing the lock afterwards also failed: {cleanup!r}")
             raise
 
     def _forget(self, holding: _Holding) -> None:

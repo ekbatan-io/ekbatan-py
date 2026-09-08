@@ -226,3 +226,136 @@ def test_the_hash_is_sha256_truncated_as_the_nist_vectors_say():
     # SHA-256("abc") = ba7816bf8f01cfea 414140de5dae2223 ...
     assert lock_key_hash("") == as_signed(0xE3B0C44298FC1C14)
     assert lock_key_hash("abc") == as_signed(0xBA7816BF8F01CFEA)
+
+
+# -- what the holder promises when things go wrong ---------------------------------------------
+#
+# Java's `KeyedReentrantHolder` is 275 lines and most of it is this: who wins between a close and
+# a watchdog, and what happens when the cleanup fails too.
+
+
+def test_a_failed_registration_gives_the_lock_back(monkeypatch):
+    """The backend lock is already taken by the time the holder registers it, so a failure here
+    has to hand it back - or it is held by nobody until it expires."""
+    from ekbatan.locks._holder import KeyedReentrantHolder
+
+    holder = KeyedReentrantHolder()
+    returned: list[tuple] = []
+
+    real = threading.Timer
+
+    class CannotStart(real):
+        def start(self):
+            raise OSError("cannot start a thread")
+
+    monkeypatch.setattr(threading, "Timer", CannotStart)
+
+    with pytest.raises(OSError):
+        holder.register("k", "payload", HOLD, lambda p, r: returned.append((p, r)))
+
+    assert [p for p, _ in returned] == ["payload"], "the lock was given back"
+
+
+def test_a_cleanup_that_also_fails_is_attached_rather_than_substituted(monkeypatch):
+    """Java attaches it with `addSuppressed`, and the reason survives translation: raising the
+    cleanup failure instead puts "returning the connection failed" in front of the caller and
+    buries what actually went wrong."""
+    from ekbatan.locks._holder import KeyedReentrantHolder
+
+    holder = KeyedReentrantHolder()
+
+    def cleanup_also_fails(payload, reason):
+        raise RuntimeError("returning the connection failed too")
+
+    real = threading.Timer
+
+    class CannotStart(real):
+        def start(self):
+            raise OSError("the registration failure")
+
+    monkeypatch.setattr(threading, "Timer", CannotStart)
+
+    with pytest.raises(OSError, match="the registration failure") as raised:
+        holder.register("k", "payload", HOLD, cleanup_also_fails)
+
+    notes = getattr(raised.value, "__notes__", [])
+    assert any("releasing the lock afterwards also failed" in n for n in notes)
+    assert any("returning the connection failed too" in n for n in notes)
+
+
+def test_a_watchdog_whose_release_fails_says_so_and_does_not_die_quietly(caplog):
+    """This runs on a timer thread. Anything that escapes reaches stderr through the threading
+    hook rather than the logger, and Java's comment records what that cost: a log line asserting
+    the release had succeeded, and the real failure nowhere near it."""
+    import logging
+
+    from ekbatan.locks._holder import KeyedReentrantHolder
+
+    holder = KeyedReentrantHolder()
+
+    def release_fails(payload, reason):
+        raise BaseException("the backend refused")
+
+    with caplog.at_level(logging.ERROR):
+        holder.register("k", "payload", timedelta(milliseconds=50), release_fails)
+        time.sleep(0.4)
+
+    assert any("may remain held" in r.message for r in caplog.records), (
+        "the failure is reported against the key that caused it"
+    )
+    assert not any("released the lock on" in r.message for r in caplog.records), (
+        "and the success line is not written, because the release did not succeed"
+    )
+
+
+def test_the_success_line_is_written_only_after_the_release_worked(caplog):
+    import logging
+
+    from ekbatan.locks._holder import KeyedReentrantHolder
+
+    holder = KeyedReentrantHolder()
+    released: list[str] = []
+
+    with caplog.at_level(logging.WARNING):
+        holder.register(
+            "k", "payload", timedelta(milliseconds=50), lambda p, r: released.append(p)
+        )
+        time.sleep(0.4)
+
+    assert released == ["payload"]
+    assert any("hold limit elapsed" in r.message for r in caplog.records)
+
+
+def test_a_close_and_a_watchdog_cannot_both_release(caplog):
+    """Java arbitrates this with a CAS on the counter; here it is a lock. Either way exactly one
+    of them owns the release, and releasing twice would hand the key to a second waiter while
+    the first still believes it holds it."""
+    from ekbatan.locks._holder import KeyedReentrantHolder
+
+    holder = KeyedReentrantHolder()
+    releases: list[str] = []
+
+    lease = holder.register(
+        "k", "payload", timedelta(milliseconds=80), lambda p, r: releases.append(r.value)
+    )
+    time.sleep(0.3)
+    lease.release()
+
+    assert len(releases) == 1, f"released {len(releases)} times: {releases}"
+    assert releases == ["EXPIRED"], "the watchdog got there first, so the close is a no-op"
+
+
+def test_releasing_everything_at_once_frees_each_outermost_hold():
+    """`close()` on a provider. Java's `KeyedLockProvider.close()` is a no-op by default; the
+    providers here own a holder and hand back whatever is still out."""
+    from ekbatan.locks._holder import KeyedReentrantHolder
+
+    holder = KeyedReentrantHolder()
+    released: list[str] = []
+
+    holder.register("a", "pa", HOLD, lambda p, r: released.append(p))
+    holder.register("b", "pb", HOLD, lambda p, r: released.append(p))
+
+    holder.release_all()
+
+    assert sorted(released) == ["pa", "pb"]
