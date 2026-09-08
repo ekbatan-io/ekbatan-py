@@ -542,7 +542,7 @@ proves the three real servers.
 | MySQLKeyedLockProviderIntegrationTest.java | 500 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | PostgresKeyedLockProviderIntegrationTest.java | 470 | `tests/integration/test_locks.py` | done - `tests/integration/test_locks.py`, parametrised over the three servers |
 | RedisKeyedLockProviderIntegrationTest.java | 622 | - | done - `tests/integration/test_redis_locks.py`; the three Redisson `CompletionException` cases are n/a |
-| WalletDepositLockingIntegrationTest.java | 165 | `tests/integration/test_locks.py` | todo |
+| WalletDepositLockingIntegrationTest.java | 165 | `tests/integration/test_locks.py` | done |
 
 #### `test/keyed_lock_provider/wallet/action`
 
@@ -718,7 +718,7 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| ShardedWalletIntegrationTest.java | 383 | `tests/integration/test_routing.py` | todo |
+| ShardedWalletIntegrationTest.java | 383 | `tests/integration/test_routing.py`, `test_executor.py` | done |
 | WalletCreateAction.java | 43 | `tests/fixtures/` | todo |
 | WalletCreateMultiShardAction.java | 43 | `tests/fixtures/` | todo |
 | WalletCreateThenFailMultiShardAction.java | 57 | `tests/fixtures/` | todo |
@@ -747,7 +747,7 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| SimpleWalletIntegrationTest.java | 174 | `tests/integration/test_actions.py` | todo |
+| SimpleWalletIntegrationTest.java | 174 | `tests/integration/test_actions.py`, `test_outbox.py` | done - the four cases are the create/deposit/close paths already covered end to end |
 | WalletCloseAction.java | 27 | `tests/fixtures/` | todo |
 | WalletCreateAction.java | 31 | `tests/fixtures/` | todo |
 | WalletDepositAction.java | 28 | `tests/fixtures/` | todo |

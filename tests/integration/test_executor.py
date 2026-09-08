@@ -362,3 +362,83 @@ def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
     assert not any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
         "nothing was committed, so there is nothing partial about it"
     )
+
+
+@dataclass(frozen=True, kw_only=True)
+class StaleOnMexico:
+    """The id of a wallet on MEXICO, to be updated at a version it no longer has."""
+
+    wallet_id: WalletId
+
+
+class CreateOnGlobalThenFailOnMexico(Action[StaleOnMexico, None]):
+    """Commits one shard, then fails the other - Java's `WalletCreateThenFailMultiShardAction`.
+
+    The failure is an optimistic-lock miss rather than a thrown exception, because that is the
+    realistic shape: the second shard's write is refused by the database, not by the action.
+    """
+
+    def __init__(self, wallets) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: StaleOnMexico) -> None:
+        self.plan.add(
+            Wallet.open(
+                id=WalletId.generate(GLOBAL),
+                owner_id=uuid4(),
+                currency="EUR",
+                balance=Decimal("1.00"),
+            )
+        )
+        stale = self.wallets.get(params.wallet_id)
+        # Two versions behind, so the `WHERE version = ?` matches nothing.
+        self.plan.update(stale.evolve(version=stale.version + 5).deposit(Decimal("1.00")))
+        return None
+
+
+def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_one(
+    sharded, sharded_registry, caplog
+):
+    """Java's `cross_shard_partial_commit_keeps_committed_shard_and_rolls_back_the_failing_one`.
+
+    The property the alarm is *about*, and the one an operator acts on. There is no cross-shard
+    rollback and the framework does not pretend otherwise: the shard that committed stays
+    committed, and only the shard that failed is undone. Opting into `allow_cross_shard` is
+    opting into exactly this.
+    """
+    import logging
+
+    executor, wallets = sharded
+
+    # Placed directly rather than through an action: `CreateWallet` mints its id with
+    # `WalletId.random()`, which lands on the default shard, and this needs one that does not.
+    on_mexico = wallets.add(
+        Wallet.open(
+            id=WalletId.generate(MEXICO),
+            owner_id=uuid4(),
+            currency="MXN",
+            balance=Decimal("5.00"),
+        )
+    )
+    assert wallets.shard_of(on_mexico) == MEXICO
+
+    before_global = wallets.count(shard=GLOBAL)
+    before_mexico = wallets.count(shard=MEXICO)
+
+    # Retries off, so the action runs exactly once and the count arithmetic is unambiguous.
+    config = ExecutionConfiguration(allow_cross_shard=True, retry_configs=())
+
+    with caplog.at_level(logging.CRITICAL), pytest.raises(StaleRecordError):
+        executor.execute(
+            CreateOnGlobalThenFailOnMexico(wallets),
+            StaleOnMexico(wallet_id=on_mexico.id),
+            config=config,
+        )
+
+    assert wallets.count(shard=GLOBAL) == before_global + 1, (
+        "the shard that committed stays committed - there is no cross-shard rollback"
+    )
+    assert wallets.count(shard=MEXICO) == before_mexico, "and the failing shard was undone"
+    assert any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
+        "and the only notice anyone gets was written"
+    )

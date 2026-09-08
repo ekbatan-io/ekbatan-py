@@ -16,6 +16,7 @@ from __future__ import annotations
 import threading
 import time
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -362,3 +363,83 @@ def test_what_a_sub_second_wait_actually_does_on_each_server(locks, dialect, req
             f"MySQL truncates a sub-second timeout to zero, so this returns at once; "
             f"waited {waited:.2f}s"
         )
+
+
+# -- a lock around a whole unit of work ----------------------------------------------------------
+#
+# Java's WalletDepositLockingIntegrationTest. The lease wraps `executor.execute(...)`, so it spans
+# both `perform` and the commit that follows it. The action stays lock-agnostic: locking is a
+# policy applied at the boundary, not a thing the domain code knows about.
+
+
+def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallets, request):
+    """Java's `deposit_succeeds_when_lock_is_uncontested`.
+
+    Nothing clever - but it is the composition the whole lock exists to support, and neither the
+    lock suite nor the action suite exercises it alone.
+    """
+    from decimal import Decimal
+
+    from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
+
+    wallet = executor.execute(
+        CreateWallet(),
+        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
+    )
+
+    with locks.acquire(f"wallet:{wallet.id}", timedelta(seconds=10)):
+        updated = executor.execute(
+            DepositMoney(wallets),
+            DepositParams(wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@x"),
+        )
+
+    assert updated.balance == Decimal("125.5000")
+    assert wallets.get(wallet.id).balance == Decimal("125.5000"), "and it committed"
+
+
+def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, wallets, request):
+    """Java's `brokenAcquire_blocksIndefinitely_whenLockHeldElsewhere`.
+
+    `acquire` has no wait timeout by design: it waits as long as it takes. The name in Java calls
+    that "broken", which is fair as a caller-side observation - a deposit stuck behind another
+    deployment's lease has no way to give up - and is exactly why `try_acquire` exists beside it.
+    What is asserted here is that the waiting is real (still blocked while the other holder has
+    it) and that it ends (completes once the holder lets go), rather than either failing fast or
+    hanging forever.
+    """
+    from decimal import Decimal
+
+    from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
+
+    wallet = executor.execute(
+        CreateWallet(),
+        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
+    )
+    key = f"wallet:{wallet.id}"
+
+    held_by_someone_else = locks.acquire(key, timedelta(minutes=1))
+    finished: list[object] = []
+
+    def deposit_under_the_same_lock() -> None:
+        with locks.acquire(key, timedelta(seconds=30)):
+            finished.append(
+                executor.execute(
+                    DepositMoney(wallets),
+                    DepositParams(wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@x"),
+                )
+            )
+
+    waiter = threading.Thread(target=deposit_under_the_same_lock)
+    waiter.start()
+    time.sleep(0.75)
+
+    assert waiter.is_alive(), "still waiting, because the other holder has not let go"
+    assert finished == []
+    assert wallets.get(wallet.id).balance == Decimal("100.0000"), "and nothing was written"
+
+    held_by_someone_else.release()
+    waiter.join(30)
+
+    assert not waiter.is_alive(), "the wait ended when the holder released"
+    assert finished and finished[0].balance == Decimal("110.0000")
+    assert wallets.get(wallet.id).balance == Decimal("110.0000")
