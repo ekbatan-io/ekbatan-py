@@ -562,6 +562,47 @@ The rule that makes both coherent: `None` means "no parameters" and has an unamb
 empty-object form; `"MXN"` means "one unnamed parameter" and does not - storing it would mean
 inventing a key that no reader on either side knows to look for.
 
+## The scheduler has no shutdown hook, and the event jobs never see the shutdown
+
+Two halves of one gap, found by re-reading `JobRegistry.java` whole after noticing its ledger row
+had been marked `done` at ledger-creation time rather than by a porting pass.
+
+**The hook.** db-scheduler's own `SchedulerBuilder.registerShutdownHook` defaults to `false`;
+Java's `JobRegistry.Builder` deliberately flips it to `true` and calls it in `build()`, so an
+ordinary SIGTERM runs `Scheduler.stop()` and in-flight executions drain. This port has no
+counterpart at either level - not on `JobRegistryBuilder`, and not on the vendored
+`SchedulerBuilder`. Verified by running: building a registry adds no `atexit` callback and leaves
+`SIGTERM` at `SIG_DFL`. So a container stop kills the process mid-execution; those rows stay
+`picked` with a frozen heartbeat and are only revived by the dead-execution path, 60 seconds
+later on framework defaults. `JobRegistry.stop()` and the `with` block do the right thing - the
+divergence is only in what happens when nobody calls them.
+
+**The loop.** Java's `EventFanoutJob.execute` is `while (!shouldStop(ctx))` around
+`drainOneRound()`, sleeping `pollDelay` between idle rounds: one execution runs for the life of
+the process and checks `ctx.getSchedulerState().isShuttingDown()` each round. This port's
+`execute` calls `drain_until_idle()` and returns, letting the `FixedDelay` schedule bring it
+back - and ignores `ctx` entirely, so there is no counterpart to `shouldStop`.
+
+The restructure is defensible on its own: short executions free the worker thread, leave the row
+unpicked between rounds, and fail over faster because any instance can pick it up on the next
+poll rather than waiting out a dead-execution window. `drain_until_idle` also caps itself at
+1000 rounds and warns, where Java would spin indefinitely. What is not defensible is that it was
+never written down, and that it compounds with the missing hook: neither port half can currently
+be asked to stop early.
+
+## Additions with no Java counterpart
+
+Recorded because a reader comparing the two trees will find these and wonder what they map to.
+Nothing in Java corresponds to any of them, confirmed by searching the Java for the concept
+rather than the name.
+
+| module | what | why there is no Java one |
+| --- | --- | --- |
+| `locks/inprocess.py` | `InProcessKeyedLockProvider`, on the same `KeyedReentrantHolder` as the SQL and Redis backends | Java ships only the three SQL providers and the Redis one; a single-instance deployment there is expected to take a SQL lock against the database it already has |
+| `accounting.py` | counts statements issued, so "one unit of work is one transaction, N staged rows is one statement" is checkable | Java asserts the same claims through jOOQ's execute listener in its own tests, not through a shipped module |
+| `schema.py` | the framework's tables as SQLAlchemy metadata | Java's DDL lives in the Flyway migration SQL; there is no programmatic table definition to port. This is the definition Alembic generates from, and the one the cross-compatibility scenarios check |
+| `codegen.py` | generates typed builders | Java's annotation processor does this at compile time; the processor itself is `n/a` in the ledger |
+
 ## Not ported
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus

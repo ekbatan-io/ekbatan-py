@@ -27,6 +27,26 @@ A `todo` row with a Python file beside it means "something is there, and nobody 
 against the Java". That is the honest starting position for most of this table. The Python column
 is a best guess at the destination, not a claim about what is in it.
 
+## The pre-method audit
+
+Some of this port was written before the file-first method existed, and a `done` set at
+ledger-creation time records a belief rather than a read. Checked mechanically rather than from
+memory, by walking the ledger's own history and asking, for every row, which commit first set it
+to `done`:
+
+- **66 of 69** got their flag in a commit whose subject names an actual porting pass
+  (`EKB-0112` core/shard, `EKB-0113` core/persistence, `EKB-0118` core/action, and so on).
+- **3** - `DistributedJob.java`, `JobRegistry.java`, `JobsConfig.java` - were marked `done` in
+  `EKB-0107`, the commit that created this file. Nothing had read them.
+
+Those three, 680 lines, were then read whole. Two hold up. `JobRegistry.java` does not, and is
+now `partial`: `registerShutdownHook` has no counterpart on either side of the port.
+
+Two mechanical checks ran alongside it, both clean: every `.java` file on disk that is not
+excluded above appears as a row here (set difference by path, 243 files plus 4 resources = 247
+rows, nothing missing in either direction), and no ledger row names a Python file that does not
+exist.
+
 ## Out of scope
 
 Excluded by decision, not by oversight:
@@ -212,14 +232,14 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| DistributedJob.java | 92 | `distributedjobs/__init__.py` | done |
-| JobRegistry.java | 447 | `distributedjobs/__init__.py` | done |
+| DistributedJob.java | 92 | `distributedjobs/__init__.py` | done - re-read in the pre-method audit |
+| JobRegistry.java | 447 | `distributedjobs/__init__.py` | partial - `registerShutdownHook` is not ported at either level, so nothing stops the scheduler on SIGTERM; see DIVERGENCE.md |
 
 #### `distributedjobs/config`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| JobsConfig.java | 141 | `distributedjobs/config.py` | done |
+| JobsConfig.java | 141 | `distributedjobs/config.py` | done - re-read in the pre-method audit |
 
 #### `events/localeventhandler`
 
