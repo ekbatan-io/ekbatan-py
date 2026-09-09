@@ -350,7 +350,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventEntityDeliveredDefaultTest.java | 65 | `tests/integration/test_outbox.py` | todo |
+| EventEntityDeliveredDefaultTest.java | 65 | `tests/unit/test_outbox.py` | done - plus the sentinel row, which is the one an "already delivered" optimisation would special-case |
 
 #### `core/concurrent`
 
@@ -388,7 +388,7 @@ which means "use the default".
 | CollectionUtilsTest.java | 27 | - | n/a - tests a helper that is not ported |
 | LockKeyHashTest.java | 62 | `tests/unit/test_locks.py` | done |
 | MapUtilsTest.java | 24 | - | n/a - as above |
-| ValidateTest.java | 164 | `tests/unit/test_errors.py` | todo |
+| ValidateTest.java | 164 | `tests/unit/test_errors.py` | done - there is no `Validate` helper here, so the contract is tested at each of the eight sites that inline it; that is the cost of the divergence, and what can drift |
 
 #### `core/persistence`
 
@@ -429,23 +429,23 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| DatabaseRegistryFromConfigTest.java | 210 | `tests/integration/test_routing.py` | todo |
-| DatabaseRegistrySecondaryPoolTest.java | 176 | `tests/integration/test_routing.py` | todo |
+| DatabaseRegistryFromConfigTest.java | 210 | `tests/unit/test_persistence.py` | done - unit, not integration: an Engine resolves its dialect with no I/O, as Hikari does with `initializationFailTimeout = -1` |
+| DatabaseRegistrySecondaryPoolTest.java | 176 | `tests/unit/test_persistence.py` | done |
 | ShardIdentifierTest.java | 62 | `tests/unit/test_ids.py` | done |
 
 #### `distributedjobs`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| JobRegistryBuilderTest.java | 204 | `tests/integration/test_jobs.py` | todo |
-| JobRegistryDialectPinningTest.java | 123 | `tests/integration/test_jobs.py` | todo |
+| JobRegistryBuilderTest.java | 204 | `tests/unit/test_jobs.py` | done - the refusals that want a real database stay in `tests/integration/test_jobs.py` |
+| JobRegistryDialectPinningTest.java | 123 | `tests/unit/test_jobs.py` | done - the race Java pins against cannot happen here (SQLAlchemy reads the dialect off the url), so the tests assert the wiring that makes that true |
 
 #### `distributedjobs/config`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| JobsConfigDurationValidationTest.java | 94 | `tests/unit/test_jobs_config.py` | todo |
-| JobsConfigJacksonBindingTest.java | 142 | `tests/unit/test_jobs_config.py` | n/a - Jackson binding |
+| JobsConfigDurationValidationTest.java | 94 | `tests/unit/test_jobs.py` | done |
+| JobsConfigJacksonBindingTest.java | 142 | - | n/a - Jackson binding; nothing here binds configuration from a property file |
 
 #### `events/localeventhandler`
 

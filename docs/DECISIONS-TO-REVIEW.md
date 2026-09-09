@@ -10,6 +10,56 @@ This file is the other list: every change to Python **behaviour** made during th
 how much scrutiny it deserves rather than by subject. Renames and test-only changes are at the
 bottom.
 
+## Open - not decided, needs a call
+
+Nothing has been done about these. They are here so they are not lost between "noticed" and
+"fixed".
+
+### The scheduler cannot be stopped by a signal
+
+Found in `EKB-0132`, by re-reading the three files that had been marked `done` at ledger-creation
+time rather than by a porting pass. Written up in full in `DIVERGENCE.md`; the decision needed is
+below.
+
+**What Java does.** db-scheduler's own `SchedulerBuilder.registerShutdownHook` defaults to
+`false`. `JobRegistry.Builder` deliberately flips it to `true`, and calls it in `build()`. So a
+SIGTERM runs `Scheduler.stop()` and in-flight executions drain. Opting out is a documented
+choice - `registerShutdownHook(false)` - for tests and for hosts that own shutdown.
+
+**What this port does.** Nothing, at either level. Verified by running: building a registry adds
+no `atexit` callback and leaves `SIGTERM` at `SIG_DFL`. A container stop kills the process
+mid-execution; those rows stay `picked` with a frozen heartbeat and are revived only by the
+dead-execution path, 60s later on framework defaults. `JobRegistry.stop()` and the `with` block
+work - the gap is only when nobody calls them.
+
+**Why it is two changes, not one.** The vendored `SchedulerBuilder` has no `register_shutdown_hook`
+either, so `JobRegistryBuilder` currently *cannot* offer one. db-scheduler's `FILE-LEDGER.md` row
+is now `partial` for the same reason.
+
+**What needs deciding, and why I did not just port it.** A JVM shutdown hook and a Python exit
+hook are not the same object:
+
+- `atexit` does not run on SIGTERM at all - the default disposition terminates the process. Java's
+  hook does run on SIGTERM. Matching the behaviour therefore means installing a **signal handler**,
+  not an `atexit` callback.
+- A library installing a process-wide `signal.signal` handler is a bigger imposition in Python
+  than `addShutdownHook` is in Java: there is one handler per signal per process, it can only be
+  set from the main thread, and overwriting an application's own handler is a real hazard.
+  Gunicorn, Celery and uvicorn all install their own.
+- So the faithful option and the polite option differ, and which one is right depends on how this
+  framework expects to be hosted. Candidates: (a) signal handler, default on, as Java; (b) signal
+  handler, default **off**, opt-in via `register_shutdown_hook(True)`; (c) `atexit` only, which
+  covers a clean interpreter exit but not the container stop that actually matters; (d) leave it
+  to the caller and document `with job_registry(...) as reg` as the supported shape.
+
+My inclination is (b) - chain to the previous handler rather than replace it - but it is a
+framework-shape question, not a porting question, so it is yours.
+
+**Related, same area, also open:** Java's `EventFanoutJob.execute` loops until
+`ctx.getSchedulerState().isShuttingDown()`; this port's returns when idle and ignores `ctx`
+entirely, so there is no `shouldStop` counterpart to hook a cooperative stop into. Whatever is
+decided above, these two want deciding together.
+
 ## Already reverted
 
 | what | commit | how it went |
