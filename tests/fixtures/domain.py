@@ -6,6 +6,7 @@ says what happened, and no mention anywhere of a transaction, a flush, a publish
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -68,6 +69,12 @@ class Wallet(Model[WalletId, WalletState]):
     owner_id: UUID
     currency: str
     balance: Decimal
+    #: A list, stored as JSON. Here so the repository suite exercises a value that only
+    #: reaches the database through a type mapper - Java's `Dummy.aliases`, same purpose.
+    aliases: list[str] = dataclasses.field(default_factory=list)
+    #: Nullable on purpose, and nothing may default it to a non-null value: a batch write in
+    #: which every row leaves this null is what exposes an untyped NULL bind.
+    reward_points: int | None = None
 
     @classmethod
     def open(cls, *, id: WalletId, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:

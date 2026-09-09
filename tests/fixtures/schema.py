@@ -13,6 +13,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     MetaData,
+    Integer,
     Numeric,
     String,
     Table,
@@ -22,6 +23,7 @@ from sqlalchemy import (
 from ekbatan.schema import (
     notifications_table,
     outbox_table,
+    json_column,
     scheduled_tasks_table,
     uuid_column,
 )
@@ -39,6 +41,18 @@ WALLETS = Table(
     Column("balance", Numeric(19, 4), nullable=False),
     Column("created_date", DateTime, nullable=False),
     Column("updated_date", DateTime, nullable=False),
+    # Two columns that exist only so the repository suite has something to catch with.
+    # Java's `Dummy` fixture carries the same pair for the same reasons.
+    #
+    # `aliases` is a value that can only reach the database through a type mapper - a write
+    # path binding from the value's runtime class rather than from the declared field type
+    # would discard it, and nothing else here would notice.
+    #
+    # `reward_points` is nullable on purpose and nothing may default it: a batch write in
+    # which every row leaves it null is what exposes an untyped NULL bind, which some drivers
+    # refuse outright because they cannot infer the parameter's type.
+    Column("aliases", json_column()),
+    Column("reward_points", Integer),
 )
 
 NOTIFICATIONS = Table(

@@ -26,6 +26,11 @@ def a_wallet(balance: str = "100.00") -> Wallet:
     )
 
 
+def a_wallet_with(**fields: object) -> Wallet:
+    """A wallet with one of the two columns that exist only to be caught with."""
+    return a_wallet().evolve(**fields)
+
+
 def test_an_inserted_row_reads_back_exactly(wallets, clock):
     stored = wallets.add(a_wallet())
     found = wallets.get(stored.id)
@@ -489,3 +494,78 @@ def test_batch_and_single_update_store_identical_timestamps(wallets, clock):
     many = wallets.update_all([b.evolve(balance=Decimal("2"))])
 
     assert one.updated_date == many[0].updated_date, "one clock read per call, same instant"
+
+
+# A value that only reaches the database through a type mapper. Java's `Dummy` carries an
+# `aliases` column for exactly this and says why: "a write path that binds from the value's
+# runtime class rather than from the target field discards that converter, which is precisely
+# what these helpers make observable". Nothing else in this suite round-trips a structured
+# value - the conversions covered above are all scalar (Decimal scale, a TypedValue id, an
+# Enum state), and a scalar survives a binder that ignores the declared type.
+
+
+def test_a_json_list_column_round_trips(wallets):
+    """Java's `Dummy.aliases`, whole purpose."""
+    stored = wallets.add(a_wallet_with(aliases=["primary", "billing", "éè"]))
+
+    found = wallets.get(stored.id)
+
+    assert found.aliases == ["primary", "billing", "éè"]
+    assert isinstance(found.aliases, list)
+
+
+def test_an_empty_json_list_is_not_confused_with_a_missing_one(wallets):
+    """Java maps an empty list to a null column and back to an empty list, so the two are
+    deliberately indistinguishable there. Here they are stored as they are given, which means
+    the distinction survives - and a reader has to be able to tell them apart."""
+    empty = wallets.get(wallets.add(a_wallet_with(aliases=[])).id)
+    absent = wallets.get(wallets.add(a_wallet()).id)
+
+    assert empty.aliases == []
+    assert absent.aliases == [], "the field's own default, not a null read back as one"
+
+
+def test_json_lists_survive_a_batch(wallets):
+    """The batch path builds a derived VALUES table by hand, so it is a different binder from
+    the single-row one and can lose a mapper the single-row path keeps."""
+    made = wallets.add_all(
+        [a_wallet_with(aliases=[f"alias-{n}", f"other-{n}"]) for n in range(3)]
+    )
+    assert sorted(w.aliases[0] for w in made) == ["alias-0", "alias-1", "alias-2"]
+
+    wallets.update_all([w.evolve(aliases=[*w.aliases, "added"]) for w in made])
+
+    back = wallets.find_many([w.id for w in made])
+    assert all(w.aliases[-1] == "added" for w in back)
+    assert sorted(len(w.aliases) for w in back) == [3, 3, 3]
+
+
+def test_an_integer_column_null_in_every_row_of_a_batch(wallets):
+    """The untyped-NULL bind, on an integer rather than the text column
+    `test_all_null_column_in_a_batch` already covers. A derived VALUES table whose column is
+    NULL in every row has no inferable type, and which types a driver will refuse to guess
+    differs between them - so the case is worth having on more than one."""
+    made = wallets.add_all([a_wallet() for _ in range(3)])
+    assert all(w.reward_points is None for w in made)
+
+    wallets.update_all([w.evolve(balance=Decimal("5")) for w in made])
+
+    back = wallets.find_many([w.id for w in made])
+    assert all(w.reward_points is None for w in back)
+    assert all(w.balance == Decimal("5.0000") for w in back)
+
+
+def test_an_integer_column_set_in_some_rows_and_null_in_others(wallets):
+    """The mixed shape, which is what makes a per-column type decision necessary rather than a
+    per-batch one."""
+    made = wallets.add_all(
+        [
+            a_wallet_with(reward_points=points)
+            for points in (10, None, 30)
+        ]
+    )
+
+    back = sorted(
+        wallets.find_many([w.id for w in made]), key=lambda w: (w.reward_points is None, w.reward_points or 0)
+    )
+    assert [w.reward_points for w in back] == [10, 30, None]

@@ -30,10 +30,12 @@ from sqlalchemy import (
     Table,
     any_,
     bindparam,
+    cast,
     column,
     func,
     insert,
     literal,
+    null,
     select,
     union_all,
     update,
@@ -781,9 +783,30 @@ class Repository[M: Persistable[Any, Any], K]:
         )
 
     def _values_update(self, models: Sequence[M]) -> Any:
-        """Postgres: ``UPDATE … FROM (VALUES …) AS v (cols)``."""
+        """Postgres: ``UPDATE … FROM (VALUES …) AS v (cols)``.
+
+        A ``None`` is cast rather than passed through. SQLAlchemy renders a bare Python ``None``
+        inside ``VALUES`` as the literal ``NULL`` - not as a bound parameter - so the column's
+        declared type is dropped on the floor, and Postgres then types the derived column by
+        inference. With a nullable column that is null in *every* row of the batch there is
+        nothing to infer from, Postgres settles on ``text``, and the assignment fails with
+        "column is of type integer but expression is of type text".
+
+        It only bites on a column whose type is not text, which is why it survived a suite that
+        had one nullable text column and no other: an uncast NULL infers as text, so the one
+        case anybody had written happened to be the one case that works.
+        """
         types = self._derived_types()
-        rows = [(m.version - 1, *(self.to_row(m)[name] for name in self._columns)) for m in models]
+        rows = [
+            tuple(
+                cast(null(), types[name]) if value is None else value
+                for name, value in zip(types, raw, strict=True)
+            )
+            for raw in (
+                (m.version - 1, *(self.to_row(m)[name] for name in self._columns))
+                for m in models
+            )
+        ]
         source = values(*[column(name, types[name]) for name in types], name="v").data(rows)
         return self._joined(source)
 
