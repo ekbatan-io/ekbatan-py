@@ -416,15 +416,20 @@ def test_an_event_nobody_wanted_is_picked_up_once_someone_does(
 
 
 def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
-    executor, wallets, pipeline, notifications_in, outbox
+    executor, wallets, notifications, pipeline, notifications_in, outbox
 ):
     """Java's `widget_handler_chains_into_note_action_and_note_handler_writes_audit_entry`.
 
     The existing chaining test stops one level short: `Notify` writes an entity, and an entity
     emits nothing, so nothing downstream can subscribe. This goes the distance Java's does - a
     handler starts an action, that action's model emits its own event, and a *second* handler
-    is dispatched from it. Which is the shape every saga has, and the one where a pipeline that
-    only half works still looks fine.
+    is dispatched from it, which writes a row of its own. Which is the shape every saga has,
+    and the one where a pipeline that only half works still looks fine.
+
+    Both hops do real work on purpose. A second handler that only counted its calls would prove
+    the dispatch reached it and nothing about whether the unit of work it starts can commit -
+    and it is the second hop, running inside the handling job rather than inside a request,
+    where that is worth doubting.
     """
 
     class OpenASecondWalletOnDeposit:
@@ -443,8 +448,33 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
                 ),
             )
 
+    class AuditTheOpening:
+        """Java's `NoteCreatedAuditEntryHandler`: the second hop writes an entity."""
+
+        name = "wallet-open-auditor"
+        event_type = WalletCreated
+
+        def __init__(self) -> None:
+            self.received = []
+
+        @property
+        def calls(self) -> int:
+            return len(self.received)
+
+        def handle(self, envelope) -> None:
+            self.received.append(envelope)
+            executor.execute(
+                Notify(),
+                NotifyParams(
+                    wallet_id=WalletId.of(envelope.model_id or ""),
+                    kind="WALLET_OPENED",
+                    recipient="auditor@example.com",
+                    message=f"opened in {envelope.event.currency}",
+                ),
+            )
+
     opener = OpenASecondWalletOnDeposit()
-    auditor = succeeding("wallet-open-auditor", WalletCreated)
+    auditor = AuditTheOpening()
     fanout, dispatch = pipeline(opener, auditor)
 
     wallet = a_wallet(executor)
@@ -469,7 +499,13 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
     assert opened[0].action_name == "CreateWallet"
     assert opened[0].model_type == "Wallet"
 
-    assert len({r["action_id"] for r in outbox()}) == 3, (
-        "three units of work: the first wallet, the deposit, and the handler's own"
+    audited = [n for n in notifications.all() if n.kind == "WALLET_OPENED"]
+    assert len(audited) == auditor.calls, (
+        "the second hop's own unit of work committed, one row per dispatch"
+    )
+    assert any(n.recipient == "auditor@example.com" for n in audited)
+
+    assert len({r["action_id"] for r in outbox()}) == 3 + auditor.calls, (
+        "the first wallet, the deposit, the handler's own - and one per audit"
     )
     assert notifications_in().get("FAILED", 0) == 0

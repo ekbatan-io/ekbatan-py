@@ -568,30 +568,30 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletCloseAction.java | 27 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
-| WalletCreateAction.java | 31 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
-| WalletDepositAction.java | 40 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletCloseAction.java | 27 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
+| WalletCreateAction.java | 31 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
+| WalletDepositAction.java | 40 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
 
 #### `test/keyed_lock_provider/wallet/models`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Wallet.java | 80 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
-| WalletState.java | 6 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| Wallet.java | 80 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
+| WalletState.java | 6 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
 
 #### `test/keyed_lock_provider/wallet/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletClosedEvent.java | 13 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
-| WalletCreatedEvent.java | 21 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
-| WalletMoneyDepositedEvent.java | 18 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletClosedEvent.java | 13 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
+| WalletCreatedEvent.java | 21 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
+| WalletMoneyDepositedEvent.java | 18 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
 
 #### `test/keyed_lock_provider/wallet/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletRepository.java | 47 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletRepository.java | 47 | - | n/a - the unsharded wallet again, copied so the lock-provider suite has a model to lock on. Identical to `postgres-simple`'s apart from its package, verified by diff |
 
 #### `test/local_event_handler`
 
@@ -603,13 +603,13 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| AuditEntry.java | 44 | `tests/fixtures/domain.py` | done - `Notification` |
+| AuditEntry.java | 44 | `tests/fixtures/domain.py` | done - `Notification`, written by the second-hop handler as Java's is (`EKB-0136`); before that the second handler only counted its calls |
 
 #### `test/local_event_handler/note/action`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| NoteCreateAction.java | 25 | `tests/fixtures/actions.py` | done - `Notify` |
+| NoteCreateAction.java | 25 | `tests/fixtures/actions.py` | done - `CreateWallet`, which is what the chaining handler starts; `Notify` is the entity-writing counterpart the second hop uses |
 
 #### `test/local_event_handler/note/handler`
 
@@ -622,8 +622,8 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Note.java | 41 | `tests/fixtures/domain.py` | done - `Notification` |
-| NoteState.java | 6 | `tests/fixtures/domain.py` | done - `Notification` has no state enum; an entity's lifecycle is not the event stream's business |
+| Note.java | 41 | `tests/fixtures/domain.py` | done - the second `Wallet` in `test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn`. Not `Notification`: `Note` is a Model and emits its own event, which is the whole point of the second hop, and `Notification` is an Entity and emits nothing |
+| NoteState.java | 6 | `tests/fixtures/domain.py` | done - `WalletState` |
 
 #### `test/local_event_handler/note/models/events`
 
@@ -660,7 +660,7 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WidgetCreatedEvent.java | 30 | `tests/fixtures/domain.py` | done - `WalletMoneyDeposited`, the event the handler suite subscribes to |
+| WidgetCreatedEvent.java | 30 | `tests/fixtures/domain.py` | done - `WalletCreated` and `WalletMoneyDeposited`; the handler suite subscribes to both |
 
 #### `test/local_event_handler_mariadb`
 
@@ -739,7 +739,7 @@ proves the three real servers.
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | ShardedWalletIntegrationTest.java | 383 | `tests/integration/test_routing.py`, `test_executor.py` | done |
-| WalletCreateAction.java | 43 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletCreateAction.java | 43 | `tests/integration/test_routing.py` | done - the country-to-shard routing (`MX`/`AU`/default) is `test_routing.py`, which mints on `GLOBAL` and `MEXICO` directly rather than through a country code; what is being pinned is where the row lands, not how the caller spells it |
 | WalletCreateMultiShardAction.java | 43 | `tests/fixtures/actions.py` | done - `TransferMoney`, which reaches two shards in one unit of work; the cross-shard refusal and the `allow_cross_shard` path are `test_executor.py` |
 | WalletCreateThenFailMultiShardAction.java | 57 | `tests/fixtures/actions.py` | done - `DepositThenFail` for the staging half; the partial-commit alarm a later shard failing raises is `test_executor.py` (`EKB-0131`) |
 
@@ -747,21 +747,21 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Wallet.java | 78 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
-| WalletState.java | 7 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| Wallet.java | 78 | `tests/fixtures/domain.py` | done - `Wallet`. **This** is the copy it matches: a `ShardedId`, an `aliases` list and a `DELETED` state |
+| WalletState.java | 7 | `tests/fixtures/domain.py` | done - `WalletState`, `DELETED` included |
 
 #### `test/postgres_sharded/wallet/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletCreatedEvent.java | 21 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
-| WalletMoneyDepositedEvent.java | 18 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletCreatedEvent.java | 21 | `tests/fixtures/domain.py` | done - `WalletCreated` |
+| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/domain.py` | done - `WalletMoneyDeposited` |
 
 #### `test/postgres_sharded/wallet/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletRepository.java | 49 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletRepository.java | 49 | `tests/integration/test_routing.py` | done - `sharded_wallets`, the same repository under `EmbeddedBitsShardingStrategy` |
 
 #### `test/postgres_simple/wallet/action`
 
@@ -769,29 +769,29 @@ proves the three real servers.
 | --- | --- | --- | --- |
 | SimpleWalletIntegrationTest.java | 174 | `tests/integration/test_actions.py`, `test_outbox.py` | done - the four cases are the create/deposit/close paths already covered end to end |
 | WalletCloseAction.java | 27 | `tests/fixtures/actions.py` | done - `CloseWallet` |
-| WalletCreateAction.java | 31 | `tests/fixtures/actions.py` | done - `CreateWallet` |
+| WalletCreateAction.java | 31 | `tests/fixtures/actions.py` | done - `CreateWallet`, which takes owner, currency and balance as this copy does |
 | WalletDepositAction.java | 28 | `tests/fixtures/actions.py` | done - `DepositMoney` |
 
 #### `test/postgres_simple/wallet/models`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Wallet.java | 80 | `tests/fixtures/domain.py` | done - `Wallet` |
-| WalletState.java | 6 | `tests/fixtures/domain.py` | done - `WalletState` |
+| Wallet.java | 80 | `tests/fixtures/domain.py` | done - the **unsharded** variant (`Id<Wallet>`). Python's `Wallet` matches the sharded copy instead; the plain-`Id` case this one covers is `Notification`, whose `NotificationId` is an `Id`, and `test_routing.py` pins reading by a non-shard-aware id |
+| WalletState.java | 6 | `tests/fixtures/domain.py` | done - `WalletState`, less the `DELETED` member only the sharded copy declares |
 
 #### `test/postgres_simple/wallet/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletClosedEvent.java | 13 | `tests/fixtures/domain.py` | done - `WalletClosed` |
-| WalletCreatedEvent.java | 21 | `tests/fixtures/domain.py` | done - `WalletCreated` |
-| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/domain.py` | done - `WalletMoneyDeposited` |
+| WalletClosedEvent.java | 13 | `tests/fixtures/domain.py` | done - `WalletClosed`; identical in both copies |
+| WalletCreatedEvent.java | 21 | `tests/fixtures/domain.py` | done - `WalletCreated`. Byte-identical in all three Java copies apart from its package |
+| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/domain.py` | done - `WalletMoneyDeposited`; identical in all three copies |
 
 #### `test/postgres_simple/wallet/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletRepository.java | 47 | `tests/integration/test_repository.py` | done - `Repository(Wallet, WALLETS, ...)` |
+| WalletRepository.java | 47 | `tests/integration/test_repository.py` | done - `Repository(Wallet, WALLETS, ...)`; no subclass, because mapping is by field name |
 
 ## Resources
 
