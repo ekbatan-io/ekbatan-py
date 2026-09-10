@@ -328,16 +328,16 @@ which means "use the default".
 | ActionRegistryBuilderTest.java | 61 | `tests/integration/test_registries.py` | done |
 | ActionRegistryTest.java | 112 | `tests/integration/test_registries.py` | done |
 | ActionSpecTest.java | 633 | `tests/unit/test_action_testing.py` | done - the cases testing the assertion DSL itself are n/a; `assert` needs no test |
-| CreateAction.java | 17 | `tests/fixtures/actions.py` | todo |
-| CreateBothAction.java | 18 | `tests/fixtures/actions.py` | todo |
-| DeleteAction.java | 19 | `tests/fixtures/actions.py` | todo |
+| CreateAction.java | 17 | `tests/fixtures/actions.py` | done - `CreateWallet` |
+| CreateBothAction.java | 18 | `tests/unit/test_action_testing.py` | done - `CreatesBoth`, a model and an entity staged in one unit of work |
+| DeleteAction.java | 19 | `tests/fixtures/domain.py` | done - deletion is the model's own (`Wallet.delete()`) and reaches the database through `plan.update`, which `test_repository.py` covers; the action wrapper adds nothing |
 | ExecutionConfigurationTest.java | 85 | `tests/integration/test_actions.py` | done - the four map-shaped cases are n/a; policies are an ordered tuple here |
-| FailingAction.java | 16 | `tests/fixtures/actions.py` | todo |
-| RenameAction.java | 19 | `tests/fixtures/actions.py` | todo |
+| FailingAction.java | 16 | `tests/fixtures/actions.py` | done - `DepositThenFail`, the stronger shape: it stages a real change first, so "staging is not writing" is observable |
+| RenameAction.java | 19 | `tests/fixtures/actions.py` | done - `DepositMoney` is the same shape, one field updated on a model read back |
 | RetryConfigTest.java | 55 | `tests/unit/test_policies.py` | done |
 | RetryTest.java | 292 | `tests/unit/test_policies.py` | done - the interrupt-flag case is n/a; `time.sleep` raises rather than setting a flag |
-| TestModel.java | 75 | `tests/fixtures/domain.py` | todo |
-| TestProduct.java | 58 | `tests/fixtures/domain.py` | todo |
+| TestModel.java | 75 | `tests/fixtures/domain.py` | done - `Wallet` |
+| TestProduct.java | 58 | `tests/fixtures/domain.py` | done - `Notification`, the second type `CreatesBoth` stages |
 
 #### `core/action/persister`
 
@@ -507,27 +507,27 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| TestActionParams.java | 3 | `tests/fixtures/` | todo |
-| TestModelEvent.java | 68 | `tests/fixtures/` | todo |
-| TestStatusChangedEvent.java | 29 | `tests/fixtures/` | todo |
+| TestActionParams.java | 3 | `tests/fixtures/actions.py` | done - the params dataclasses |
+| TestModelEvent.java | 68 | `tests/fixtures/domain.py` | done - the `Wallet*` events |
+| TestStatusChangedEvent.java | 29 | `tests/fixtures/domain.py` | done - `WalletClosed` and `WalletDeleted` |
 
 #### `core/test/model`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Aliases.java | 50 | `tests/fixtures/` | todo |
-| Dummy.java | 105 | `tests/fixtures/` | todo |
-| DummyState.java | 7 | `tests/fixtures/` | todo |
-| SomeTest.java | 11 | `tests/fixtures/` | todo |
+| Aliases.java | 50 | `tests/fixtures/domain.py` | done - `Wallet.aliases`. No converter pair is needed because SQLAlchemy's JSON type does the mapping, so the fixture is a field rather than a helper class - but it is there for Java's reason, to have a value that only reaches the database through a mapper |
+| Dummy.java | 105 | `tests/fixtures/domain.py` | done - `Wallet`, which carries Dummy's two coverage columns as of `EKB-0134` |
+| DummyState.java | 7 | `tests/fixtures/domain.py` | done - `WalletState` |
+| SomeTest.java | 11 | - | n/a - a placeholder asserting `2 == 2`, present so the shared testFixtures source set holds a test class |
 
 #### `core/test/model/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| DummyCreatedEvent.java | 21 | `tests/fixtures/` | todo |
-| DummyDeletedEvent.java | 12 | `tests/fixtures/` | todo |
-| DummyMoneyDepositedEvent.java | 17 | `tests/fixtures/` | todo |
-| DummyMoneyWithdrawnEvent.java | 17 | `tests/fixtures/` | todo |
+| DummyCreatedEvent.java | 21 | `tests/fixtures/domain.py` | done - `WalletCreated` |
+| DummyDeletedEvent.java | 12 | `tests/fixtures/domain.py` | done - `WalletDeleted` |
+| DummyMoneyDepositedEvent.java | 17 | `tests/fixtures/domain.py` | done - `WalletMoneyDeposited` |
+| DummyMoneyWithdrawnEvent.java | 17 | `tests/fixtures/domain.py` | done - `WalletMoneyWithdrawn` |
 
 #### `core/test/repository`
 
@@ -535,24 +535,24 @@ proves the three real servers.
 | --- | --- | --- | --- |
 | BaseRepositoryTest.java | 1251 | `tests/integration/test_repository.py` | done - `tests/integration/test_repository.py` |
 | BaseShardedRepositoryTest.java | 676 | `tests/integration/test_routing.py` | done - `tests/integration/test_routing.py` |
-| DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
-| DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
-| DummyRepository.java | 52 | `tests/fixtures/schema.py` | todo |
+| DummyRepository.java | 52 | `tests/integration/test_repository.py` | done - `Repository(Wallet, WALLETS, ...)`; there is no subclass to write because mapping is by field name |
+| DummyRepository.java | 52 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| DummyRepository.java | 52 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 | MariadbRepositoryTest.java | 56 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | MariadbShardedRepositoryTest.java | 80 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | MysqlRepositoryTest.java | 56 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | MysqlShardedRepositoryTest.java | 79 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | PgRepositoryTest.java | 117 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
 | PgShardedRepositoryTest.java | 80 | - | n/a - the per-dialect subclass; Python parametrises one test with `--dialects` |
-| ShardedDummyRepository.java | 53 | `tests/fixtures/schema.py` | todo |
-| ShardedDummyRepository.java | 53 | `tests/fixtures/schema.py` | todo |
-| ShardedDummyRepository.java | 53 | `tests/fixtures/schema.py` | todo |
+| ShardedDummyRepository.java | 53 | `tests/integration/test_repository.py` | done - the same repository with `EmbeddedBitsShardingStrategy` |
+| ShardedDummyRepository.java | 53 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| ShardedDummyRepository.java | 53 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/distributed_jobs_pg`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| JobRegistryIntegrationTest.java | 262 | `tests/integration/test_jobs.py` | todo |
+| JobRegistryIntegrationTest.java | 262 | `tests/integration/test_jobs.py` | done - the two timing-based cases are asserted rather than sampled: the atomic claim by running two manual schedulers over one due slot, and `customize_scheduler` by reading the waiter the poll loop sleeps on |
 
 #### `test/keyed_lock_provider`
 
@@ -568,30 +568,30 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletCloseAction.java | 27 | `tests/fixtures/` | todo |
-| WalletCreateAction.java | 31 | `tests/fixtures/` | todo |
-| WalletDepositAction.java | 40 | `tests/fixtures/` | todo |
+| WalletCloseAction.java | 27 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletCreateAction.java | 31 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletDepositAction.java | 40 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/keyed_lock_provider/wallet/models`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Wallet.java | 80 | `tests/fixtures/` | todo |
-| WalletState.java | 6 | `tests/fixtures/` | todo |
+| Wallet.java | 80 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletState.java | 6 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/keyed_lock_provider/wallet/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletClosedEvent.java | 13 | `tests/fixtures/` | todo |
-| WalletCreatedEvent.java | 21 | `tests/fixtures/` | todo |
-| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/` | todo |
+| WalletClosedEvent.java | 13 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletCreatedEvent.java | 21 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletMoneyDepositedEvent.java | 18 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/keyed_lock_provider/wallet/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletRepository.java | 47 | `tests/fixtures/` | todo |
+| WalletRepository.java | 47 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/local_event_handler`
 
@@ -603,64 +603,64 @@ proves the three real servers.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| AuditEntry.java | 44 | `tests/fixtures/` | todo |
+| AuditEntry.java | 44 | `tests/fixtures/domain.py` | done - `Notification` |
 
 #### `test/local_event_handler/note/action`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| NoteCreateAction.java | 25 | `tests/fixtures/` | todo |
+| NoteCreateAction.java | 25 | `tests/fixtures/actions.py` | done - `Notify` |
 
 #### `test/local_event_handler/note/handler`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| NoteCreatedAuditEntryHandler.java | 42 | `tests/fixtures/` | todo |
-| NoteCreatedAuditHandler.java | 35 | `tests/fixtures/` | todo |
+| NoteCreatedAuditEntryHandler.java | 42 | `tests/fixtures/handlers.py` | done - the second hop, covered by `test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn` |
+| NoteCreatedAuditHandler.java | 35 | `tests/fixtures/handlers.py` | done - `on_close()` |
 
 #### `test/local_event_handler/note/models`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Note.java | 41 | `tests/fixtures/` | todo |
-| NoteState.java | 6 | `tests/fixtures/` | todo |
+| Note.java | 41 | `tests/fixtures/domain.py` | done - `Notification` |
+| NoteState.java | 6 | `tests/fixtures/domain.py` | done - `Notification` has no state enum; an entity's lifecycle is not the event stream's business |
 
 #### `test/local_event_handler/note/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| NoteCreatedEvent.java | 30 | `tests/fixtures/` | todo |
+| NoteCreatedEvent.java | 30 | `tests/fixtures/domain.py` | done - `WalletCreated`, the chained action's own event |
 
 #### `test/local_event_handler/widget/action`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WidgetCreateAction.java | 25 | `tests/fixtures/` | todo |
+| WidgetCreateAction.java | 25 | `tests/fixtures/actions.py` | done - `DepositMoney` |
 
 #### `test/local_event_handler/widget/handler`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| AlwaysFailingWidgetCreatedHandler.java | 31 | `tests/fixtures/` | todo |
-| ErrorThrowingWidgetCreatedHandler.java | 40 | `tests/fixtures/` | todo |
-| FlakyWidgetCreatedHandler.java | 38 | `tests/fixtures/` | todo |
-| SlowAlwaysFailingHandler.java | 45 | `tests/fixtures/` | todo |
-| WidgetCreatedAutoNoteHandler.java | 48 | `tests/fixtures/` | todo |
-| WidgetCreatedEmailHandler.java | 35 | `tests/fixtures/` | todo |
-| WidgetCreatedIndexerHandler.java | 35 | `tests/fixtures/` | todo |
+| AlwaysFailingWidgetCreatedHandler.java | 31 | `tests/fixtures/handlers.py` | done - `failing()` with no limit |
+| ErrorThrowingWidgetCreatedHandler.java | 40 | `tests/fixtures/handlers.py` | done - `fatal()`. Java throws `NoClassDefFoundError` because a `LinkageError` is what the mainstream fatal-throwable sets rethrow; the Python hazard with the same shape is `BaseException`, which an ordinary `except Exception` misses |
+| FlakyWidgetCreatedHandler.java | 38 | `tests/fixtures/handlers.py` | done - `failing(times=N)`, fails its first N calls then succeeds |
+| SlowAlwaysFailingHandler.java | 45 | `tests/fixtures/handlers.py` | done - `RecordingHandler(on_call=...)` with a sleeping callback; used the same way, to hold a batch past a deadline |
+| WidgetCreatedAutoNoteHandler.java | 48 | `tests/fixtures/handlers.py` | done - `NotifyOnDeposit`, a handler that runs another action. Java co-locates the note by decoding the widget's shard from its id; here the chained action routes on the id it is given, which is the same rule expressed once |
+| WidgetCreatedEmailHandler.java | 35 | `tests/fixtures/handlers.py` | done - `succeeding()` |
+| WidgetCreatedIndexerHandler.java | 35 | `tests/fixtures/handlers.py` | done - a second `succeeding()`; two handlers on one event is the fan-out case |
 
 #### `test/local_event_handler/widget/models`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Widget.java | 41 | `tests/fixtures/` | todo |
-| WidgetState.java | 6 | `tests/fixtures/` | todo |
+| Widget.java | 41 | `tests/fixtures/domain.py` | done - `Wallet` |
+| WidgetState.java | 6 | `tests/fixtures/domain.py` | done - `WalletState` |
 
 #### `test/local_event_handler/widget/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WidgetCreatedEvent.java | 30 | `tests/fixtures/` | todo |
+| WidgetCreatedEvent.java | 30 | `tests/fixtures/domain.py` | done - `WalletMoneyDeposited`, the event the handler suite subscribes to |
 
 #### `test/local_event_handler_mariadb`
 
@@ -739,59 +739,59 @@ proves the three real servers.
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | ShardedWalletIntegrationTest.java | 383 | `tests/integration/test_routing.py`, `test_executor.py` | done |
-| WalletCreateAction.java | 43 | `tests/fixtures/` | todo |
-| WalletCreateMultiShardAction.java | 43 | `tests/fixtures/` | todo |
-| WalletCreateThenFailMultiShardAction.java | 57 | `tests/fixtures/` | todo |
+| WalletCreateAction.java | 43 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletCreateMultiShardAction.java | 43 | `tests/fixtures/actions.py` | done - `TransferMoney`, which reaches two shards in one unit of work; the cross-shard refusal and the `allow_cross_shard` path are `test_executor.py` |
+| WalletCreateThenFailMultiShardAction.java | 57 | `tests/fixtures/actions.py` | done - `DepositThenFail` for the staging half; the partial-commit alarm a later shard failing raises is `test_executor.py` (`EKB-0131`) |
 
 #### `test/postgres_sharded/wallet/models`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Wallet.java | 78 | `tests/fixtures/` | todo |
-| WalletState.java | 7 | `tests/fixtures/` | todo |
+| Wallet.java | 78 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletState.java | 7 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/postgres_sharded/wallet/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletCreatedEvent.java | 21 | `tests/fixtures/` | todo |
-| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/` | todo |
+| WalletCreatedEvent.java | 21 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
+| WalletMoneyDepositedEvent.java | 18 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/postgres_sharded/wallet/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletRepository.java | 49 | `tests/fixtures/` | todo |
+| WalletRepository.java | 49 | - | n/a - the same fixture again for another database; this port runs one suite against every dialect (`--dialects=all`) instead of copying it per server |
 
 #### `test/postgres_simple/wallet/action`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | SimpleWalletIntegrationTest.java | 174 | `tests/integration/test_actions.py`, `test_outbox.py` | done - the four cases are the create/deposit/close paths already covered end to end |
-| WalletCloseAction.java | 27 | `tests/fixtures/` | todo |
-| WalletCreateAction.java | 31 | `tests/fixtures/` | todo |
-| WalletDepositAction.java | 28 | `tests/fixtures/` | todo |
+| WalletCloseAction.java | 27 | `tests/fixtures/actions.py` | done - `CloseWallet` |
+| WalletCreateAction.java | 31 | `tests/fixtures/actions.py` | done - `CreateWallet` |
+| WalletDepositAction.java | 28 | `tests/fixtures/actions.py` | done - `DepositMoney` |
 
 #### `test/postgres_simple/wallet/models`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| Wallet.java | 80 | `tests/fixtures/` | todo |
-| WalletState.java | 6 | `tests/fixtures/` | todo |
+| Wallet.java | 80 | `tests/fixtures/domain.py` | done - `Wallet` |
+| WalletState.java | 6 | `tests/fixtures/domain.py` | done - `WalletState` |
 
 #### `test/postgres_simple/wallet/models/events`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletClosedEvent.java | 13 | `tests/fixtures/` | todo |
-| WalletCreatedEvent.java | 21 | `tests/fixtures/` | todo |
-| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/` | todo |
+| WalletClosedEvent.java | 13 | `tests/fixtures/domain.py` | done - `WalletClosed` |
+| WalletCreatedEvent.java | 21 | `tests/fixtures/domain.py` | done - `WalletCreated` |
+| WalletMoneyDepositedEvent.java | 18 | `tests/fixtures/domain.py` | done - `WalletMoneyDeposited` |
 
 #### `test/postgres_simple/wallet/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| WalletRepository.java | 47 | `tests/fixtures/` | todo |
+| WalletRepository.java | 47 | `tests/integration/test_repository.py` | done - `Repository(Wallet, WALLETS, ...)` |
 
 ## Resources
 

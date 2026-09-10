@@ -320,3 +320,112 @@ class TestRefusingARegistryThatCannotWork:
             builder.poll_interval(bad).build()
         with pytest.raises(ValidationError, match="heartbeat_interval must be positive"):
             builder.poll_interval(timedelta(seconds=1)).heartbeat_interval(bad).build()
+
+
+class CountingJob(DistributedJob):
+    """Java's `CountingJob`. Counts its own executions and does nothing else."""
+
+    def __init__(self, name: str, schedule: Schedule) -> None:
+        self._name = name
+        self._schedule = schedule
+        self.count = 0
+
+    def name(self) -> str:
+        return self._name
+
+    def schedule(self) -> Schedule:
+        return self._schedule
+
+    def execute(self, ctx: ExecutionContext) -> None:
+        self.count += 1
+
+
+class TestOneSlotRunsOnce:
+    """Java's `multipleInstances_runJobOncePerSlot`.
+
+    Java starts two real schedulers, sleeps two seconds and bounds the total. Here both
+    instances are manual, so the claim is asserted rather than sampled: whichever one polls
+    first takes the row, and the second finds nothing due. No sleeping, and no bound to widen
+    when CI is slow.
+    """
+
+    def test_two_instances_and_one_due_slot_produce_one_execution(self, registry, clock):
+        name = f"counting-{uuid4()}"
+        first = CountingJob(name, FixedDelay(timedelta(seconds=60)))
+        second = CountingJob(name, FixedDelay(timedelta(seconds=60)))
+
+        a = a_registry(registry, clock, [first])
+        b = a_registry(registry, clock, [second])
+        a.start()
+        b.start()
+
+        a.scheduler.run_any_due_executions()
+        b.scheduler.run_any_due_executions()
+
+        assert (first.count, second.count) == (1, 0), (
+            "the row is claimed atomically, so the slot belongs to exactly one instance"
+        )
+
+    def test_and_the_slot_after_it_is_claimable_by_the_other(self, registry, clock):
+        """The claim releases. A lock that stayed with the first instance would pass the test
+        above and still leave the second one idle."""
+        name = f"counting-{uuid4()}"
+        first, second = (
+            CountingJob(name, FixedDelay(timedelta(seconds=1))),
+            CountingJob(name, FixedDelay(timedelta(seconds=1))),
+        )
+        a = a_registry(registry, clock, [first])
+        b = a_registry(registry, clock, [second])
+        a.start()
+        b.start()
+
+        a.scheduler.run_any_due_executions()
+        a.scheduler.clock.set(SCHEDULER_EPOCH + timedelta(seconds=5))
+        b.scheduler.clock.set(SCHEDULER_EPOCH + timedelta(seconds=5))
+        b.scheduler.run_any_due_executions()
+
+        assert (first.count, second.count) == (1, 1)
+
+
+class TestCustomizingTheScheduler:
+    """Java's `customizeScheduler_runsLastAndCanOverrideEkbatanDefaults`."""
+
+    def test_the_customizer_runs_and_its_override_wins(self, registry):
+        """Applied *last* in build(), so anything set there beats the framework's own value.
+
+        Java demonstrates this by timing: it sets a 10s poll, overrides it to 50ms, sleeps two
+        seconds and counts executions. Read off the built scheduler instead - the override
+        either took or it did not, and a two-second sleep proves the same thing more slowly and
+        less reliably. The waiter's duration is what the poll loop actually sleeps on; Java
+        reaches for the same value reflectively.
+        """
+        seen: list[object] = []
+
+        built = (
+            job_registry()
+            .engine(registry.default.primary)
+            .with_job(CountingJob(f"customize-{uuid4()}", FixedDelay(timedelta(seconds=60))))
+            .poll_interval(timedelta(seconds=10))
+            .heartbeat_interval(timedelta(seconds=1))
+            .customize_scheduler(
+                lambda builder: (seen.append(builder), builder.polling_interval(timedelta(milliseconds=50)))
+            )
+            .build()
+        )
+
+        assert seen, "the customizer was never invoked"
+        assert built.scheduler._execute_due_waiter.duration == timedelta(milliseconds=50), (
+            "the framework's 10s should have been overwritten by the customizer's 50ms"
+        )
+
+    def test_without_a_customizer_the_builders_own_value_stands(self, registry):
+        """The other half: the override is what changed it, not the plumbing."""
+        built = (
+            job_registry()
+            .engine(registry.default.primary)
+            .with_job(CountingJob(f"plain-{uuid4()}", FixedDelay(timedelta(seconds=60))))
+            .poll_interval(timedelta(seconds=10))
+            .build()
+        )
+
+        assert built.scheduler._execute_due_waiter.duration == timedelta(seconds=10)
