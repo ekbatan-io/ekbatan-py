@@ -189,3 +189,75 @@ def test_a_failure_names_the_shard_and_what_had_already_been_done(backend, scrip
     assert "0:0" in message, "the shard that failed"
     assert "Already migrated: none" in message
     assert "the applied ones are skipped" in message, "and what to do about it"
+
+
+# Java's `FlywayMigrator.migrate(Target...)`: a named subset of the layout, for rolling a
+# migration out one group at a time rather than to every database at once.
+
+
+def _two_shards(backend, request, suffix=""):
+    name = "ekb_mig_sub_" + request.node.name.replace("[", "_").replace("]", "").lower()[:20]
+    return ShardingConfig(
+        shards=(
+            ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=backend.url(name + suffix + "_a"))),
+            ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=backend.url(name + suffix + "_b"))),
+        ),
+        default_shard=GLOBAL,
+    )
+
+
+def test_a_named_subset_migrates_only_those_shards(backend, scripts, request):
+    config = _two_shards(backend, request)
+
+    at = migrate(config, scripts.path, shards=[MEXICO])
+
+    assert at == {MEXICO: "0002"}, "only the shard that was asked for"
+
+    untouched = create_engine(config.shards[0].primary.url)
+    try:
+        assert "widgets" not in set(inspect(untouched).get_table_names()), (
+            "the shard nobody named must not have been migrated"
+        )
+    finally:
+        untouched.dispose()
+
+
+def test_and_the_rest_can_be_migrated_afterwards(backend, scripts, request):
+    """The point of a subset: the remainder is still migratable, and the first group is not
+    re-run from scratch when it is."""
+    config = _two_shards(backend, request)
+
+    migrate(config, scripts.path, shards=[MEXICO])
+    at = migrate(config, scripts.path)
+
+    assert at == {GLOBAL: "0002", MEXICO: "0002"}, "both, and the already-done one is a no-op"
+
+
+def test_shards_are_migrated_in_layout_order_not_argument_order(backend, scripts, request):
+    """So a run that stops halfway leaves a state the operator can reason about."""
+    config = _two_shards(backend, request)
+
+    at = migrate(config, scripts.path, shards=[MEXICO, GLOBAL])
+
+    assert list(at) == [GLOBAL, MEXICO]
+
+
+def test_a_shard_the_layout_does_not_have_is_refused(backend, scripts, request):
+    """Rather than skipped. A typo would otherwise read as "nothing to do" and migrate nothing,
+    which is the failure this whole module exists to prevent."""
+    config = _two_shards(backend, request)
+
+    with pytest.raises(ValidationError) as raised:
+        migrate(config, scripts.path, shards=[ShardIdentifier(9, 9)])
+
+    assert "9:9" in str(raised.value)
+    assert "not in this layout" in str(raised.value)
+
+
+def test_an_empty_subset_migrates_nothing_and_says_so(backend, scripts, request):
+    """Distinct from `shards=None`, which means every shard. Passing an empty collection is a
+    caller that computed a subset and found it empty; doing the whole layout instead would be
+    the opposite of what they asked."""
+    config = _two_shards(backend, request)
+
+    assert migrate(config, scripts.path, shards=[]) == {}

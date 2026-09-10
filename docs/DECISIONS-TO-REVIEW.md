@@ -15,6 +15,17 @@ bottom.
 Nothing has been done about these. They are here so they are not lost between "noticed" and
 "fixed".
 
+### No leak detection, and no idle timeout, on the connection pools
+
+Java's `DataSourceConfig` carries `leakDetectionThreshold` and `idleTimeout` (and `minimumIdle`);
+SQLAlchemy's pool has no equivalent of any of the three, so this port simply does not offer them.
+Written up in `DIVERGENCE.md`; the decision needed is whether `leakDetectionThreshold` is worth
+building. A connection borrowed and never returned inside a unit of work is the failure this
+framework's transaction handling exists to prevent, and Java gets a log line for it that we do
+not. It is implementable - a checkout timestamp plus a periodic sweep over `pool.checkedout()` -
+but it is new code with a background thread, not a setting to pass through, so it is a call
+rather than a port.
+
 ### The scheduler cannot be stopped by a signal
 
 Found in `EKB-0132`, by re-reading the three files that had been marked `done` at ledger-creation
@@ -106,6 +117,8 @@ without it.
 `copy_from` → `copy_base`, `emits_events` → `is_model`, `RetryConfig.retries` → `max_retries`,
 `ExecutionConfiguration.retries` → `retry_configs` (`EKB-0108`, `EKB-0118`). The last one also
 removed a collision: two fields called `retries` meaning different things.
+
+`ReleaseReason.CLOSE` / `WATCHDOG` → `CLOSED` / `EXPIRED` (pre-existing, found by diffing enum members in `EKB-0137`). Internal to a private module and never stored, so it is a name only - unlike `EventNotificationState`, which is a column value and matches Java member for member.
 
 ## Test harness - changed what is being tested
 

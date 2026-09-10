@@ -562,6 +562,31 @@ The rule that makes both coherent: `None` means "no parameters" and has an unamb
 empty-object form; `"MXN"` means "one unnamed parameter" and does not - storing it would mean
 inventing a key that no reader on either side knows to look for.
 
+## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
+
+Found by diffing Java's public API against this port's definitions, one file at a time, after
+the shutdown hook showed that reading a name and assuming a rename is not verification.
+
+`DataSourceConfig` exposes different knobs on each side because the pools underneath are
+different objects, not because anything was forgotten - but three of Java's have no equivalent
+at all, and an operator moving across should know which:
+
+| Java (Hikari) | here | note |
+| --- | --- | --- |
+| `jdbcUrl` | `url` | credentials live in the url here, so `username` / `password` are gone with it |
+| `driverClassName` | the url's `+driver` | `postgresql+psycopg`, not a separate class name |
+| `maximumPoolSize` | `pool_size` + `max_overflow` | SQLAlchemy splits the ceiling in two and this port leaves the split visible, because an operator tuning a pool needs to see the knobs their own tooling reports on |
+| `minimumIdle` | **none** | `QueuePool` keeps `pool_size` connections and has no separate floor; there is nothing to set |
+| `idleTimeout` | **none** | `pool_recycle` is the closest and is *not* the same thing - it caps a connection's total age, not how long it may sit unused |
+| `leakDetectionThreshold` | **none** | SQLAlchemy has no borrowed-too-long warning. A connection held past a threshold goes unreported here |
+| - | `pool_recycle` | maximum age, which Hikari calls `maxLifetime` and this config does not expose |
+| - | `pool_pre_ping` | liveness check on checkout |
+
+The two that cost something are `idleTimeout` and `leakDetectionThreshold`. Neither is a rename
+away; both would have to be written. `leakDetectionThreshold` is the one worth arguing about -
+a connection leaked inside a unit of work is exactly the failure this framework's transaction
+handling exists to prevent, and Java gets a log line for it that this port does not.
+
 ## The scheduler has no shutdown hook, and the event jobs never see the shutdown
 
 Two halves of one gap, found by re-reading `JobRegistry.java` whole after noticing its ledger row

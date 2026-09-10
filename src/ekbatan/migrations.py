@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -86,11 +86,18 @@ def migrate(
     script_location: str | Path,
     *,
     revision: str = "head",
+    shards: Iterable[ShardIdentifier] | None = None,
 ) -> Mapping[ShardIdentifier, str]:
-    """Upgrade every configured shard to ``revision``.
+    """Upgrade every configured shard to ``revision``, or only the ones named in ``shards``.
 
     Returns the revision each shard is on afterwards. One shard at a time, fail-fast: carrying
     on past a failure turns one broken database into several.
+
+    ``shards`` is Java's ``FlywayMigrator.migrate(Target...)`` - a named subset, for rolling a
+    migration out one group at a time rather than to the whole layout at once. Every shard is
+    the default because that is what a deployment usually wants; naming a subset is the
+    deliberate act. A coordinate the layout does not contain is refused rather than skipped: a
+    typo there would otherwise read as "nothing to do" and migrate nothing at all.
     """
     from sqlalchemy import create_engine
 
@@ -98,8 +105,21 @@ def migrate(
     if not location.is_dir():
         raise ValidationError(f"no Alembic script directory at {location}")
 
+    targets = list(config.shards)
+    if shards is not None:
+        wanted = set(shards)
+        unknown = sorted(wanted - {t.shard for t in targets}, key=str)
+        if unknown:
+            raise ValidationError(
+                f"cannot migrate {', '.join(str(s) for s in unknown)}: not in this layout, "
+                f"which has {', '.join(str(t.shard) for t in targets)}"
+            )
+        # Config order, not argument order: shards go in a defined sequence, so a run that
+        # stops halfway leaves a state the operator can reason about.
+        targets = [t for t in targets if t.shard in wanted]
+
     done: dict[ShardIdentifier, str] = {}
-    for shard in config.shards:
+    for shard in targets:
         engine = create_engine(shard.primary.url)
         try:
             checksum_table(MetaData()).create(engine, checkfirst=True)
