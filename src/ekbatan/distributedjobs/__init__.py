@@ -250,6 +250,7 @@ class JobRegistryBuilder:
         "_poll_interval",
         "_scheduler_customizer",
         "_shutdown_max_wait",
+        "_workers",
     )
 
     def __init__(self) -> None:
@@ -259,6 +260,7 @@ class JobRegistryBuilder:
         self._heartbeat_interval: timedelta = EKBATAN_HEARTBEAT_INTERVAL
         self._shutdown_max_wait: timedelta | None = None
         self._scheduler_customizer: Callable[[SchedulerBuilder], None] | None = None
+        self._workers: int | None = None
 
     def engine(self, engine: Engine) -> Self:
         """The database db-scheduler will poll. Required.
@@ -327,6 +329,30 @@ class JobRegistryBuilder:
         self._shutdown_max_wait = duration
         return self
 
+    def workers(self, count: int) -> Self:
+        """How many threads run job bodies. Defaults to one per registered job.
+
+        This knob exists because CPython has no virtual threads. Java hands db-scheduler an
+        ``Executors.newVirtualThreadPerTaskExecutor()``, so its worker count is effectively
+        unbounded and ``threads(jobs.size())`` only sizes the polling batch. Here the workers
+        are a fixed pool of real OS threads, so the same number has to be chosen rather than
+        assumed.
+
+        One per job is the right default: a recurring task is a single row, so a job has at most
+        one execution in flight at a time and N jobs need N workers. Raise it if you schedule the
+        same job to overlap itself, or use ``enable_immediate_execution`` through
+        :meth:`customize_scheduler`; below the job count, a slow job delays the others rather
+        than only itself.
+
+        The pool must not be larger than the engine's - a worker that cannot get a connection
+        blocks holding a slot, and the scheduler's own heartbeat needs one too. db-scheduler
+        warns when the two are mismatched.
+        """
+        if count < 1:
+            raise ValidationError(f"workers must be at least 1, got {count}")
+        self._workers = count
+        return self
+
     def customize_scheduler(self, customizer: Callable[[SchedulerBuilder], None]) -> Self:
         """Escape hatch for db-scheduler settings this builder does not expose - for example
         ``missed_heartbeats_limit``, ``delete_unresolved_after``, or the polling strategy.
@@ -369,7 +395,7 @@ class JobRegistryBuilder:
             create_manual_scheduler(self._engine)
             .clock(clock or _SettableClock())
             .add_start_tasks(tasks)
-            .threads(len(self._jobs))
+            .threads(self._workers or len(self._jobs))
             .heartbeat_interval(self._heartbeat_interval)
             .polling_interval(self._poll_interval)
         )
@@ -454,7 +480,7 @@ class JobRegistryBuilder:
         builder = (
             create(self._engine)
             .add_start_tasks(tasks)
-            .threads(len(self._jobs))
+            .threads(self._workers or len(self._jobs))
             .heartbeat_interval(self._heartbeat_interval)
             .polling_interval(self._poll_interval)
         )

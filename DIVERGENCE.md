@@ -562,6 +562,52 @@ The rule that makes both coherent: `None` means "no parameters" and has an unamb
 empty-object form; `"MXN"` means "one unnamed parameter" and does not - storing it would mean
 inventing a key that no reader on either side knows to look for.
 
+## There are no virtual threads, so each place Java forks one is answered separately
+
+Java is built around virtual threads and says so on its front page. CPython has nothing
+equivalent: a thread is an OS thread, it costs about a megabyte of stack, and the GIL means
+more of them buys concurrency on I/O but not parallelism on CPU. So "port the virtual threads"
+is not a thing that can be done - each site where Java forks one is its own decision. There are
+five in the main sources, and they went five different ways.
+
+**The unit of work itself - no threads either side.** This is the one that matters most and it
+needs none. Java binds the open transaction to a `ScopedValue`; here it is a `ContextVar`
+holding a shard-to-connection mapping. Neither forks anything; both answer "is this execution
+context already inside a transaction on this shard". The model above it is the host's to
+choose - a thread per request, a pool, a single thread - and the framework works under any of
+them because the state is per-context rather than global. Verified rather than assumed, in
+`tests/integration/test_concurrency.py`: eight concurrent units of work take eight distinct
+connections, cannot see each other, and a pool worker does not carry a transaction into its
+next task.
+
+**Work forked from inside an action - the same rule, stated the same way.** Java's own
+documentation tells you to fan out on virtual threads, *join*, and only then touch the plan,
+because a plain virtual thread does not inherit a `ScopedValue` binding. A `ContextVar` behaves
+identically, and `current_plan()` raises rather than returning `None` so the mistake is loud.
+
+**The keyed-lock watchdog - a real thread, and it costs.** Java gives each outermost hold a
+`Thread.ofVirtual()` watchdog to force-release at `maxHold`. Here it is a `threading.Timer`,
+which is an OS thread. Same behaviour, and fine at the scale a keyed lock is meant for - but a
+service holding a thousand locks at once holds a thousand threads, where Java holds a thousand
+virtual ones. If that ever becomes the constraint the fix is one timer thread with a heap of
+deadlines, not a thread per hold.
+
+**Job workers - a fixed pool, now with a knob.** Java hands db-scheduler
+`Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is unbounded and
+`threads(jobs.size())` only sizes the polling batch. Here the workers are a fixed
+`DaemonThreadPool`, defaulting to one per registered job - right, because a recurring task is a
+single row and so has at most one execution in flight. `JobRegistryBuilder.workers(n)` changes
+it, which Java has no need of and this port does.
+
+**Fan-out and dispatch - sequential, where Java is parallel.** Java forks one virtual thread per
+shard in `EventFanoutJob.drainOneRound`, and one per due notification in `EventHandlingJob`.
+Both are sequential here: a round visits each shard in turn, and a batch is delivered in order.
+The dispatch half and its consequences are under "Dispatch delivers one notification at a time";
+the fan-out half is the same trade for the same reason. On an eight-shard deployment a fan-out
+round therefore takes eight batches' time rather than one. It has not bitten, the rounds are
+short because the work per shard is one bounded batch, and the fix if it does is a pool around
+the existing `_drain_shard` - which is a change of one line and a pool to size, not a redesign.
+
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 
 Found by diffing Java's public API against this port's definitions, one file at a time, after

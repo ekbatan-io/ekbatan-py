@@ -226,3 +226,60 @@ class TestJobsConfigDurationValidation:
         dataclass is the public shape and the builder is a convenience - both must refuse."""
         with pytest.raises(ValidationError, match="ekbatan.jobs.polling-interval"):
             JobsConfig.builder().polling_interval(timedelta(0)).build()
+
+
+class TestSizingTheWorkerPool:
+    """Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker
+    count is effectively unbounded and `threads(jobs.size())` only sizes the polling batch.
+    CPython has no virtual threads, so the workers here are a fixed pool of real OS threads and
+    the number has to be chosen rather than assumed."""
+
+    def test_the_default_is_one_worker_per_registered_job(self) -> None:
+        """A recurring task is a single row, so a job has at most one execution in flight."""
+        built = (
+            job_registry()
+            .engine(an_engine())
+            .with_jobs([NoOpJob("a"), NoOpJob("b"), NoOpJob("c")])
+            .build()
+        )
+
+        assert built.scheduler.threadpool_size == 3
+
+    def test_it_can_be_raised_for_jobs_that_overlap_themselves(self) -> None:
+        built = (
+            job_registry().engine(an_engine()).with_job(NoOpJob()).workers(12).build()
+        )
+
+        assert built.scheduler.threadpool_size == 12
+
+    def test_and_lowered_below_the_job_count(self) -> None:
+        """Legal, and worth being able to do: a deployment that would rather queue its jobs than
+        hold a connection open per job."""
+        built = (
+            job_registry()
+            .engine(an_engine())
+            .with_jobs([NoOpJob("a"), NoOpJob("b"), NoOpJob("c")])
+            .workers(1)
+            .build()
+        )
+
+        assert built.scheduler.threadpool_size == 1
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_a_pool_that_cannot_run_anything_is_refused(self, bad: int) -> None:
+        with pytest.raises(ValidationError, match="workers must be at least 1"):
+            job_registry().engine(an_engine()).with_job(NoOpJob()).workers(bad)
+
+    def test_the_manual_builder_sizes_the_same_way(self) -> None:
+        """So a test and production do not differ on the one number this controls."""
+        from db_scheduler.clock import SettableClock
+
+        built = (
+            job_registry()
+            .engine(an_engine())
+            .with_job(NoOpJob())
+            .workers(4)
+            .build_manual(SettableClock())
+        )
+
+        assert built.scheduler.threadpool_size == 4
