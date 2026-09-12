@@ -51,6 +51,18 @@ dev = [
 # every other job proves the absence path.
 tracing = ["opentelemetry-sdk>=1.27"]
 
+# What the examples need and the framework does not. Its own group for the same reason as
+# `tracing`: nothing in `src/` may import a web framework, and a group that is not installed
+# by default is the cheapest way to keep that true.
+examples = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    # `wallet_api` migrates from files at startup, as a deployment does - so it needs the
+    # `migrations` extra, which the framework itself keeps optional.
+    "alembic>=1.14",
+]
+
 [project.urls]
 Homepage = "https://ekbatan-io.github.io/ekbatan/"
 Source = "https://github.com/ekbatan-io/ekbatan-py"
@@ -88,6 +100,12 @@ exclude = "examples/.*/test_.*\\.py$"
 # required.
 [[tool.mypy.overrides]]
 module = "opentelemetry.*"
+ignore_missing_imports = true
+
+# Alembic ships no stubs. Only the example's revision files import it directly; the framework
+# imports it inside functions, where the extra may legitimately be absent.
+[[tool.mypy.overrides]]
+module = "alembic.*"
 ignore_missing_imports = true
 
 # Strictness in the library is a promise to its users; strictness in a test file is a tax on
