@@ -91,9 +91,9 @@ python_version = "3.13"
 strict = true
 # The library and the examples, strictly. An example is documentation, and documentation that
 # would not type-check is documentation that is wrong.
-files = ["src", "examples"]
+files = ["src", "ekbatan-py-examples"]
 # An example's own test is a test, and is held to the same bar as the rest of them.
-exclude = "examples/.*/test_.*\\.py$"
+exclude = "ekbatan-py-examples/.*/test_.*\\.py$"
 
 # OpenTelemetry is optional at runtime and absent from the dev environment on purpose: the
 # framework must work without it, and a type checker that demanded it would quietly make it
@@ -113,7 +113,7 @@ ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
-src = ["src", "tests", "examples"]
+src = ["src", "tests", "ekbatan-py-examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

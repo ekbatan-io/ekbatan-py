@@ -126,7 +126,7 @@ already needs no generation here, so none is done. The output is ordinary Python
 read it, regenerate it when a model changes. A stale one is a type error rather than a wrong
 answer, because `build()` still calls the real constructor.
 
-`examples/wallet_service_sqlite` uses it, including the three-line `copy()` override that makes a
+`ekbatan-py-examples/wallet_service_sqlite` uses it, including the three-line `copy()` override that makes a
 model's own methods typed too.
 
 ## Layout
@@ -137,7 +137,7 @@ tests/
   fixtures/           the domain the suite is written against - owned by the suite
   unit/               no database, ever. 56 tests, about a second
   integration/        everything that touches one. 118 tests, on any dialect
-examples/
+ekbatan-py-examples/
   wallet_service_sqlite/     a standalone application. Imports only ekbatan; imported by nothing
 ```
 
@@ -171,8 +171,8 @@ uv run pytest tests/unit              # no database at all, about a second
 uv run pytest                         # the whole suite, on SQLite
 uv run pytest --dialects=postgres     # in a container
 uv run pytest --dialects=all          # every test, on all four
-uv run pytest examples                # the examples' own tests
-uv run python -m examples.wallet_service_sqlite
+uv run pytest ekbatan-py-examples                # the examples' own tests
+cd ekbatan-py-examples && uv run python -m wallet_service_sqlite
 
 uv run mypy                           # strict, on the library and the examples
 uv run ruff check .

@@ -16,7 +16,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TESTS = ROOT / "tests"
-EXAMPLES = ROOT / "examples"
+EXAMPLES = ROOT / "ekbatan-py-examples"
 
 DATABASE_FIXTURES = {
     "registry",
@@ -168,7 +168,7 @@ def test_the_layout_is_what_it_claims_to_be():
     assert (TESTS / "fixtures").is_dir(), "the tests own their domain"
     assert (TESTS / "unit").is_dir() and (TESTS / "integration").is_dir()
     assert not (EXAMPLES / "__init__.py").exists(), (
-        "examples/ is a folder of separate applications, not a package to import from"
+        "ekbatan-py-examples/ is a folder of separate applications, not a package to import from"
     )
     assert list((TESTS / "unit").glob("test_*.py")), "the unit suite is not empty"
     assert list((TESTS / "integration").glob("test_*.py")), "the integration suite is not empty"
