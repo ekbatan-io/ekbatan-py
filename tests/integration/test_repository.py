@@ -142,7 +142,7 @@ def test_deleting_is_a_domain_event(wallets):
 
     gone = wallet.delete()
 
-    assert [type(e).__name__ for e in gone.events] == ["WalletDeleted"]
+    assert [type(e).__name__ for e in gone.events] == ["WalletDeletedEvent"]
     assert gone.state is WalletState.DELETED
     assert gone.delete() is gone, "deleting a deleted row changes nothing and emits nothing"
 
@@ -528,9 +528,7 @@ def test_an_empty_json_list_is_not_confused_with_a_missing_one(wallets):
 def test_json_lists_survive_a_batch(wallets):
     """The batch path builds a derived VALUES table by hand, so it is a different binder from
     the single-row one and can lose a mapper the single-row path keeps."""
-    made = wallets.add_all(
-        [a_wallet_with(aliases=[f"alias-{n}", f"other-{n}"]) for n in range(3)]
-    )
+    made = wallets.add_all([a_wallet_with(aliases=[f"alias-{n}", f"other-{n}"]) for n in range(3)])
     assert sorted(w.aliases[0] for w in made) == ["alias-0", "alias-1", "alias-2"]
 
     wallets.update_all([w.evolve(aliases=[*w.aliases, "added"]) for w in made])
@@ -558,14 +556,10 @@ def test_an_integer_column_null_in_every_row_of_a_batch(wallets):
 def test_an_integer_column_set_in_some_rows_and_null_in_others(wallets):
     """The mixed shape, which is what makes a per-column type decision necessary rather than a
     per-batch one."""
-    made = wallets.add_all(
-        [
-            a_wallet_with(reward_points=points)
-            for points in (10, None, 30)
-        ]
-    )
+    made = wallets.add_all([a_wallet_with(reward_points=points) for points in (10, None, 30)])
 
     back = sorted(
-        wallets.find_many([w.id for w in made]), key=lambda w: (w.reward_points is None, w.reward_points or 0)
+        wallets.find_many([w.id for w in made]),
+        key=lambda w: (w.reward_points is None, w.reward_points or 0),
     )
     assert [w.reward_points for w in back] == [10, 30, None]

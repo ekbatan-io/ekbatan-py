@@ -21,10 +21,10 @@ from ekbatan.clock import SystemClock, VirtualClock
 from ekbatan.errors import ValidationError
 
 from .actions import (
-    CloseWallet,
-    DepositMoney,
+    CloseWalletAction,
+    DepositMoneyAction,
     DepositParams,
-    OpenWallet,
+    OpenWalletAction,
     OpenWalletParams,
     WalletIdParams,
 )
@@ -43,7 +43,7 @@ def service(tmp_path: Path) -> Iterator[WalletService]:
 
 def a_wallet(service: WalletService, balance: str = "100.00"):
     return service.executor.execute(
-        OpenWallet(),
+        OpenWalletAction(),
         OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal(balance)),
     )
 
@@ -57,21 +57,30 @@ def test_a_deposit_writes_the_balance_and_its_event_together(service):
     wallet = a_wallet(service)
 
     service.executor.execute(
-        DepositMoney(service.wallets),
+        DepositMoneyAction(service.wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@example.com"),
     )
 
     assert service.wallets.get(wallet.id).balance == Decimal("125.5000")
-    deposited = [r for r in outbox(service) if r.event_type == "MoneyDeposited"]
+    deposited = [r for r in outbox(service) if r.event_type == "MoneyDepositedEvent"]
     assert len(deposited) == 1
-    assert deposited[0].payload == {"amount": "25.50", "new_balance": "125.5000"}
+    assert deposited[0].payload == {
+        "amount": "25.50",
+        "new_balance": "125.5000",
+        # The event's own identity travels *inside* the payload as well as in its columns,
+        # because a consumer deserialising the payload into a typed event needs them there -
+        # Java's `@JsonCreator` requires both, and a handler reading a row written without
+        # them would fail, retry, and expire. Spelled as Java spells them.
+        "modelId": str(wallet.id),
+        "modelName": "Wallet",
+    }
 
 
 def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):
     """The README's claim: the recipient travels as an action parameter, not in the event."""
     wallet = a_wallet(service)
     service.executor.execute(
-        DepositMoney(service.wallets),
+        DepositMoneyAction(service.wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@example.com"),
     )
 
@@ -82,7 +91,7 @@ def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):
     assert alerts[0].recipient == "ada@example.com"
     assert "10.00" in alerts[0].message
 
-    deposited = next(r for r in outbox(service) if r.event_type == "MoneyDeposited")
+    deposited = next(r for r in outbox(service) if r.event_type == "MoneyDepositedEvent")
     assert "recipient" not in deposited.payload, "the event stays clean"
     assert deposited.action_params["recipient"] == "ada@example.com"
 
@@ -90,12 +99,12 @@ def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):
 def test_writing_an_entity_emits_nothing_and_is_still_recorded(service):
     wallet = a_wallet(service)
     service.executor.execute(
-        DepositMoney(service.wallets),
+        DepositMoneyAction(service.wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
     service.deliver_pending_events()
 
-    alert_rows = [r for r in outbox(service) if r.action_name == "RaiseAlert"]
+    alert_rows = [r for r in outbox(service) if r.action_name == "RaiseAlertAction"]
     assert len(alert_rows) == 1
     assert alert_rows[0].event_type is None, "an entity's changes are not events"
     assert len(service.alerts.all()) == 1, "and the row was still written"
@@ -103,13 +112,17 @@ def test_writing_an_entity_emits_nothing_and_is_still_recorded(service):
 
 def test_closing_twice_changes_nothing_the_second_time(service):
     wallet = a_wallet(service, "0.00")
-    service.executor.execute(CloseWallet(service.wallets), WalletIdParams(wallet_id=wallet.id))
+    service.executor.execute(
+        CloseWalletAction(service.wallets), WalletIdParams(wallet_id=wallet.id)
+    )
     before = service.wallets.get(wallet.id)
 
-    service.executor.execute(CloseWallet(service.wallets), WalletIdParams(wallet_id=wallet.id))
+    service.executor.execute(
+        CloseWalletAction(service.wallets), WalletIdParams(wallet_id=wallet.id)
+    )
 
     assert service.wallets.get(wallet.id).version == before.version
-    closed = [r for r in outbox(service) if r.event_type == "WalletClosed"]
+    closed = [r for r in outbox(service) if r.event_type == "WalletClosedEvent"]
     assert len(closed) == 1, "the second close emitted nothing"
 
 
@@ -136,7 +149,7 @@ def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
 
     wallet = a_wallet(service, "10.00")
     service.executor.execute(
-        DepositMoney,
+        DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
     )
 
@@ -152,7 +165,7 @@ def test_a_rejected_deposit_leaves_nothing_behind(service):
 
     with pytest.raises(ValidationError, match="amount"):
         service.executor.execute(
-            DepositMoney(service.wallets),
+            DepositMoneyAction(service.wallets),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@example.com"),
         )
 
@@ -183,11 +196,11 @@ def test_wallets_are_found_by_owner_across_shards(service):
     owner = uuid4()
     for _ in range(2):
         service.executor.execute(
-            OpenWallet(),
+            OpenWalletAction(),
             OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
         )
     service.executor.execute(
-        OpenWallet(),
+        OpenWalletAction(),
         OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("1.00")),
     )
 
@@ -199,7 +212,7 @@ def test_a_domain_query_still_hides_deleted_rows(service):
     which is what stops a reporting query from disagreeing with the application's own screens."""
     owner = uuid4()
     wallet = service.executor.execute(
-        OpenWallet(),
+        OpenWalletAction(),
         OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
     )
     service.wallets.update(wallet.delete())
@@ -211,7 +224,9 @@ def test_open_wallets_running_low_can_be_listed(service):
     rich = a_wallet(service, "500.00")
     poor = a_wallet(service, "2.00")
     closed = a_wallet(service, "1.00")
-    service.executor.execute(CloseWallet(service.wallets), WalletIdParams(wallet_id=closed.id))
+    service.executor.execute(
+        CloseWalletAction(service.wallets), WalletIdParams(wallet_id=closed.id)
+    )
 
     found = {w.id for w in service.wallets.find_open_below(Decimal("10.00"))}
 
@@ -243,7 +258,7 @@ def test_a_shard_can_be_asked_directly(service):
 def test_alerts_are_found_by_the_wallet_they_are_about(service):
     wallet = a_wallet(service)
     service.executor.execute(
-        DepositMoney(service.wallets),
+        DepositMoneyAction(service.wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
     )
     service.deliver_pending_events()

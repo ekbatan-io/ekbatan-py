@@ -20,9 +20,9 @@ from fixtures.domain import (
     Notification,
     NotificationId,
     Wallet,
-    WalletClosed,
+    WalletClosedEvent,
     WalletId,
-    WalletMoneyDeposited,
+    WalletMoneyDepositedEvent,
     WalletState,
 )
 
@@ -65,11 +65,14 @@ def test_versions_move_through_the_builder():
 
 def test_events_are_attached_through_the_builder():
     wallet = a_wallet()
-    deposited = WalletMoneyDeposited(amount=Decimal("1"), new_balance=Decimal("101"))
+    deposited = WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("101"))
 
     changed = wallet.copy().balance(Decimal("101")).with_event(deposited).build()
 
-    assert [e.event_type for e in changed.events] == ["WalletCreated", "WalletMoneyDeposited"]
+    assert [e.event_type for e in changed.events] == [
+        "WalletCreatedEvent",
+        "WalletMoneyDepositedEvent",
+    ]
     assert changed.copy().events(()).build().events == ()
 
 
@@ -128,7 +131,7 @@ def test_an_entity_defaults_its_lifecycle_but_a_model_does_not():
 
 def test_evolve_and_the_builder_agree():
     wallet = a_wallet()
-    event = WalletMoneyDeposited(amount=Decimal("1"), new_balance=Decimal("101"))
+    event = WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("101"))
 
     short = wallet.evolve(balance=Decimal("101"), emit=event)
     long = wallet.copy().balance(Decimal("101")).with_event(event).build()
@@ -149,7 +152,7 @@ def test_events_stay_out_of_equality():
     wallet = a_wallet()
     with_event = (
         wallet.copy()
-        .with_event(WalletMoneyDeposited(amount=Decimal("0"), new_balance=Decimal("100.00")))
+        .with_event(WalletMoneyDepositedEvent(amount=Decimal("0"), new_balance=Decimal("100.00")))
         .build()
     )
 
@@ -161,7 +164,7 @@ def test_events_stay_out_of_equality():
 def test_an_event_is_told_which_model_it_is_about_rather_than_asked():
     """Java's `ModelEvent` takes `modelId` and `modelName` in its constructor; these are the
     same two fields, filled in by the framework instead of by the application."""
-    event = WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110"))
+    event = WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110"))
 
     assert (event.model_id, event.model_name) == ("", ""), "unset until it is attached"
 
@@ -185,7 +188,7 @@ def test_the_identity_fields_are_in_the_payload_under_javas_spelling():
 
     `modelId`, not `model_id`: the key is Java's, because Java is the one reading it.
     """
-    event = WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110"))
+    event = WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110"))
     told = event.about(a_wallet())
 
     assert set(told.payload()) == {"amount", "new_balance", "modelId", "modelName"}
@@ -198,9 +201,9 @@ def test_a_payload_written_by_either_port_rebuilds_a_complete_event():
     from ekbatan._json import canonical, decode
 
     wallet = a_wallet()
-    told = WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110")).about(wallet)
+    told = WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110")).about(wallet)
 
-    rebuilt = decode(WalletMoneyDeposited, canonical(told.payload()))
+    rebuilt = decode(WalletMoneyDepositedEvent, canonical(told.payload()))
 
     assert rebuilt.amount == Decimal("10")
     assert rebuilt.model_id == str(wallet.id), "read back from Java's `modelId` key"
@@ -213,23 +216,23 @@ def test_an_event_attached_to_a_model_with_no_usable_id_is_refused():
         id: str = ""
 
     with pytest.raises(ValidationError, match="model_id column"):
-        WalletMoneyDeposited(amount=Decimal("1"), new_balance=Decimal("1")).about(Anonymous())
+        WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("1")).about(Anonymous())
 
 
 def test_with_event_can_be_called_as_many_times_as_the_change_needs():
     wallet = a_wallet()
     built = (
         wallet.copy()
-        .with_event(WalletMoneyDeposited(amount=Decimal("10"), new_balance=Decimal("110")))
-        .with_event(WalletMoneyDeposited(amount=Decimal("5"), new_balance=Decimal("115")))
+        .with_event(WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110")))
+        .with_event(WalletMoneyDepositedEvent(amount=Decimal("5"), new_balance=Decimal("115")))
         .balance(Decimal("115"))
         .build()
     )
 
     assert [e.event_type for e in built.events] == [
-        "WalletCreated",
-        "WalletMoneyDeposited",
-        "WalletMoneyDeposited",
+        "WalletCreatedEvent",
+        "WalletMoneyDepositedEvent",
+        "WalletMoneyDepositedEvent",
     ], "each call appends; the last one does not replace the others"
     assert [e.amount for e in built.events[1:]] == [Decimal("10"), Decimal("5")], (
         "and they keep the order they were attached in, which is the order they reach the outbox"
@@ -243,10 +246,10 @@ def test_domain_methods_chain_and_their_events_accumulate():
     assert closed.balance == Decimal("130.00")
     assert closed.state is WalletState.CLOSED
     assert [e.event_type for e in closed.events] == [
-        "WalletCreated",
-        "WalletMoneyDeposited",
-        "WalletMoneyWithdrawn",
-        "WalletClosed",
+        "WalletCreatedEvent",
+        "WalletMoneyDepositedEvent",
+        "WalletMoneyWithdrawnEvent",
+        "WalletClosedEvent",
     ]
 
 
@@ -357,7 +360,7 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
     the persister then writes - in a transaction that had already decided what it was writing.
     Java's constructor says ``List.copyOf(...)`` for this; here the tuple is the copy.
     """
-    attached = [WalletMoneyDeposited(amount=Decimal("1"), new_balance=Decimal("2"))]
+    attached = [WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("2"))]
     wallet = Wallet(
         id=WalletId.random(),
         state=WalletState.OPENED,
@@ -367,12 +370,12 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
         events=attached,
     )
 
-    attached.append(WalletMoneyDeposited(amount=Decimal("999"), new_balance=Decimal("999")))
+    attached.append(WalletMoneyDepositedEvent(amount=Decimal("999"), new_balance=Decimal("999")))
 
     assert isinstance(wallet.events, tuple)
     assert len(wallet.events) == 1, "the model kept what it was built with"
     with pytest.raises(AttributeError):
-        wallet.events.append(WalletClosed())
+        wallet.events.append(WalletClosedEvent())
 
 
 def test_a_typed_value_refuses_to_wrap_nothing():

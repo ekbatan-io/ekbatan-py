@@ -12,11 +12,10 @@ once-only name read, the dialect wiring, and the duration validation.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine, select
-
 from db_scheduler.jdbc.customization import (
     DefaultJdbcCustomization,
     MariaDBJdbcCustomization,
@@ -24,6 +23,8 @@ from db_scheduler.jdbc.customization import (
     PostgreSqlJdbcCustomization,
 )
 from db_scheduler.task.schedule import FixedDelay
+from sqlalchemy import create_engine, select
+
 from ekbatan.distributedjobs import DistributedJob, JobsConfig, job_registry
 from ekbatan.errors import ValidationError
 
@@ -139,9 +140,8 @@ class TestJobRegistryDialectPinning:
         the dialect the engine already knows, so this asserts the emitted SQL rather than a
         string on the customization.
         """
-        from sqlalchemy import MetaData
-
         from db_scheduler.jdbc.schema import scheduled_tasks_table
+        from sqlalchemy import MetaData
 
         table = scheduled_tasks_table(MetaData())
         compiled = str(select(table).limit(10).compile(dialect=an_engine(url).dialect))
@@ -166,9 +166,7 @@ class TestJobsConfigDurationValidation:
     when the duration is not positive, and queries the database as fast as one core can go -
     silently, with the application reporting healthy."""
 
-    @pytest.mark.parametrize(
-        "value", [timedelta(0), timedelta(seconds=-1), timedelta(minutes=-10)]
-    )
+    @pytest.mark.parametrize("value", [timedelta(0), timedelta(seconds=-1), timedelta(minutes=-10)])
     def test_a_non_positive_polling_interval_is_rejected(self, value: timedelta) -> None:
         with pytest.raises(ValidationError) as raised:
             JobsConfig(polling_interval=value)
@@ -180,7 +178,7 @@ class TestJobsConfigDurationValidation:
     def test_a_non_positive_heartbeat_interval_is_rejected(self, value: timedelta) -> None:
         """The heartbeat is not only a heartbeat: the dead-execution window is built from it, so
         a tiny value also makes live executions look dead."""
-        with pytest.raises(ValidationError, match="ekbatan.jobs.heartbeat-interval"):
+        with pytest.raises(ValidationError, match=re.escape("ekbatan.jobs.heartbeat-interval")):
             JobsConfig(heartbeat_interval=value)
 
     def test_a_zero_shutdown_wait_is_allowed_but_a_negative_one_is_not(self) -> None:
@@ -188,7 +186,7 @@ class TestJobsConfigDurationValidation:
         wrong."""
         assert JobsConfig(shutdown_max_wait=timedelta(0)).shutdown_max_wait == timedelta(0)
 
-        with pytest.raises(ValidationError, match="ekbatan.jobs.shutdown-max-wait"):
+        with pytest.raises(ValidationError, match=re.escape("ekbatan.jobs.shutdown-max-wait")):
             JobsConfig(shutdown_max_wait=timedelta(seconds=-1))
 
     def test_the_error_names_the_property_and_the_offending_value(self) -> None:
@@ -224,7 +222,7 @@ class TestJobsConfigDurationValidation:
     def test_the_builder_validates_what_the_dataclass_validates(self) -> None:
         """Java's knobs are only reachable through a builder, so its test drives that. Here the
         dataclass is the public shape and the builder is a convenience - both must refuse."""
-        with pytest.raises(ValidationError, match="ekbatan.jobs.polling-interval"):
+        with pytest.raises(ValidationError, match=re.escape("ekbatan.jobs.polling-interval")):
             JobsConfig.builder().polling_interval(timedelta(0)).build()
 
 
@@ -246,9 +244,7 @@ class TestSizingTheWorkerPool:
         assert built.scheduler.threadpool_size == 3
 
     def test_it_can_be_raised_for_jobs_that_overlap_themselves(self) -> None:
-        built = (
-            job_registry().engine(an_engine()).with_job(NoOpJob()).workers(12).build()
-        )
+        built = job_registry().engine(an_engine()).with_job(NoOpJob()).workers(12).build()
 
         assert built.scheduler.threadpool_size == 12
 

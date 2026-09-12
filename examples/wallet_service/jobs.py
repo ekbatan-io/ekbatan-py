@@ -19,12 +19,12 @@ from db_scheduler.task.schedule import FixedDelay, Schedule
 from ekbatan import ActionExecutor
 from ekbatan.distributedjobs import DistributedJob
 
-from .actions import DepositMoney, DepositParams
+from .actions import DepositMoneyAction, DepositParams
 from .model import WalletState
 from .repository import WalletRepository
 
 
-class PayStipend(DistributedJob):
+class PayStipendJob(DistributedJob):
     """Deposits into every open wallet, once a day, from one instance.
 
     Nothing about being a job makes the work special: it invokes the same unit of work an HTTP
@@ -53,7 +53,7 @@ class PayStipend(DistributedJob):
         for wallet in self.wallets.all():
             if wallet.state is WalletState.OPENED:
                 self.executor.execute(
-                    DepositMoney,
+                    DepositMoneyAction,
                     DepositParams(
                         wallet_id=wallet.id,
                         amount=self.amount,

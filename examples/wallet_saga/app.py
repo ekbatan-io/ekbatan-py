@@ -28,8 +28,13 @@ from ekbatan.events import (
 )
 from ekbatan.migrations import migrate_registry
 
-from .actions import CompleteTransfer, InitiateTransfer, OpenWallet, RefundTransfer
-from .handlers import OnTransferFailed, OnTransferInitiated
+from .actions import (
+    CompleteTransferAction,
+    InitiateTransferAction,
+    OpenWalletAction,
+    RefundTransferAction,
+)
+from .handlers import TransferFailedEventHandler, TransferInitiatedEventHandler
 from .repository import TransferStepRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
 
@@ -81,17 +86,19 @@ def build(url: str, *, clock: Clock | None = None) -> SagaService:
         ),
         actions=(
             ActionRegistry.builder()
-            .with_action(OpenWallet())
-            .with_action(InitiateTransfer(wallets))
-            .with_action(CompleteTransfer(wallets))
-            .with_action(RefundTransfer(wallets))
+            .with_action(OpenWalletAction())
+            .with_action(InitiateTransferAction(wallets))
+            .with_action(CompleteTransferAction(wallets))
+            .with_action(RefundTransferAction(wallets))
             .build()
         ),
         events=EVENTS,
         clock=running,
     )
 
-    handlers = EventHandlerRegistry([OnTransferInitiated(executor), OnTransferFailed(executor)])
+    handlers = EventHandlerRegistry(
+        [TransferInitiatedEventHandler(executor), TransferFailedEventHandler(executor)]
+    )
 
     return SagaService(
         registry=registry,

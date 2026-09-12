@@ -15,14 +15,14 @@ consumer would read.
 **`model.py`** - `Wallet.deposit`. Five lines, one of which says what happened. No transaction,
 no flush, no publish, no outbox. That is the whole argument for the framework.
 
-**`actions.py`** - `DepositMoney.perform`. Three lines: read, change, stage. The executor turns
+**`actions.py`** - `DepositMoneyAction.perform`. Three lines: read, change, stage. The executor turns
 that into one transaction holding the row and its event.
 
-**`handlers.py`** - `NotifyOnDeposit`. Reacts to a committed event by starting another unit of
+**`handlers.py`** - `MoneyDepositedEventHandler`. Reacts to a committed event by starting another unit of
 work. It reads the recipient off the producing action's parameters rather than the event,
 because a delivery address has no business inside a money-deposited event.
 
-**`jobs.py`** - `PayStipend`. The same actions, on a schedule, one instance across a cluster.
+**`jobs.py`** - `PayStipendJob`. The same actions, on a schedule, one instance across a cluster.
 
 **`repository.py`** - `WalletRepository`. Where a query that means something to the business
 lives, and where the sharding strategy is named. Note what is *not* there: no row mapping. The

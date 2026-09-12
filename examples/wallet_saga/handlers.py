@@ -15,27 +15,27 @@ from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
 
 from .actions import (
-    CompleteTransfer,
+    CompleteTransferAction,
     CompleteTransferParams,
-    RefundTransfer,
+    RefundTransferAction,
     RefundTransferParams,
 )
-from .model import TransferFailed, TransferInitiated, WalletId
+from .model import TransferFailedEvent, TransferInitiatedEvent, WalletId
 
 
-class OnTransferInitiated:
+class TransferInitiatedEventHandler:
     """Step one committed; run step two."""
 
     name = "transfer-initiated"
-    event_type = TransferInitiated
+    event_type = TransferInitiatedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
 
-    def handle(self, envelope: EventEnvelope[TransferInitiated]) -> None:
+    def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
         event = envelope.event
         self.executor.execute(
-            CompleteTransfer,
+            CompleteTransferAction,
             CompleteTransferParams(
                 transfer_id=event.transfer_id,
                 from_wallet_id=WalletId(event.from_wallet_id),
@@ -46,24 +46,25 @@ class OnTransferInitiated:
         )
 
 
-class OnTransferFailed:
+class TransferFailedEventHandler:
     """Step two could not finish; compensate.
 
-    Subscribed to `TransferFailed`, which `CompleteTransfer` emitted on the *source* wallet -
+    Subscribed to `TransferFailedEvent`, which `CompleteTransferAction` emitted on the
+    *source* wallet -
     so this handler is triggered by a business outcome that was committed like any other,
     rather than by an exception that would have been retried forever.
     """
 
     name = "transfer-failed"
-    event_type = TransferFailed
+    event_type = TransferFailedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
 
-    def handle(self, envelope: EventEnvelope[TransferFailed]) -> None:
+    def handle(self, envelope: EventEnvelope[TransferFailedEvent]) -> None:
         event = envelope.event
         self.executor.execute(
-            RefundTransfer,
+            RefundTransferAction,
             RefundTransferParams(
                 transfer_id=event.transfer_id,
                 from_wallet_id=WalletId(event.from_wallet_id),

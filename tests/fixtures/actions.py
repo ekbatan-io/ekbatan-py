@@ -52,7 +52,7 @@ class NotifyParams:
     message: str | None = None
 
 
-class CreateWallet(Action[CreateWalletParams, Wallet]):
+class CreateWalletAction(Action[CreateWalletParams, Wallet]):
     def perform(self, params: CreateWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
@@ -64,7 +64,7 @@ class CreateWallet(Action[CreateWalletParams, Wallet]):
         )
 
 
-class DepositMoney(Action[DepositParams, Wallet]):
+class DepositMoneyAction(Action[DepositParams, Wallet]):
     def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
         self.wallets = wallets
 
@@ -73,7 +73,7 @@ class DepositMoney(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 
 
-class CloseWallet(Action[WalletIdParams, Wallet]):
+class CloseWalletAction(Action[WalletIdParams, Wallet]):
     def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
         self.wallets = wallets
 
@@ -85,7 +85,7 @@ class CloseWallet(Action[WalletIdParams, Wallet]):
         return self.plan.update(closed) if closed is not wallet else wallet
 
 
-class TransferMoney(Action[TransferParams, tuple[Wallet, Wallet]]):
+class TransferMoneyAction(Action[TransferParams, tuple[Wallet, Wallet]]):
     """Two models, one transaction. Both balances move or neither does, and nothing in here
     arranges that."""
 
@@ -105,7 +105,7 @@ class TransferMoney(Action[TransferParams, tuple[Wallet, Wallet]]):
         )
 
 
-class Notify(Action[NotifyParams, Notification]):
+class NotifyAction(Action[NotifyParams, Notification]):
     """Writes an entity. Emits nothing - and is still recorded, as one sentinel row."""
 
     def perform(self, params: NotifyParams) -> Notification:
@@ -120,7 +120,7 @@ class Notify(Action[NotifyParams, Notification]):
         )
 
 
-class DepositThenFail(Action[DepositParams, Wallet]):
+class DepositThenFailAction(Action[DepositParams, Wallet]):
     """Stages a real change and then raises.
 
     No business has one. It exists because "staging is not writing" cannot be observed any

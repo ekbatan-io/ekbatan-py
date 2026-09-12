@@ -13,11 +13,11 @@ from uuid import uuid4
 
 from ekbatan import Action, count_statements
 from fixtures.actions import (
-    CreateWallet,
+    CreateWalletAction,
     CreateWalletParams,
-    DepositMoney,
+    DepositMoneyAction,
     DepositParams,
-    TransferMoney,
+    TransferMoneyAction,
     TransferParams,
 )
 from fixtures.domain import Wallet, WalletId
@@ -25,7 +25,7 @@ from fixtures.domain import Wallet, WalletId
 
 def a_wallet(executor, balance="100.00"):
     return executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
 
@@ -35,7 +35,7 @@ def test_one_unit_of_work_is_one_transaction(executor, wallets, registry):
 
     with count_statements(registry) as cost:
         executor.execute(
-            DepositMoney(wallets),
+            DepositMoneyAction(wallets),
             DepositParams(wallet_id=wallet.id, amount=Decimal("1"), recipient="ada@x"),
         )
 
@@ -51,7 +51,7 @@ def test_two_models_still_cost_one_transaction(executor, wallets, registry):
 
     with count_statements(registry) as cost:
         executor.execute(
-            TransferMoney(wallets),
+            TransferMoneyAction(wallets),
             TransferParams(
                 from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("5")
             ),
@@ -93,7 +93,7 @@ def test_a_failed_unit_of_work_rolls_back_rather_than_committing(executor, walle
 
     with count_statements(registry) as cost, contextlib.suppress(Exception):
         executor.execute(
-            DepositMoney(wallets),
+            DepositMoneyAction(wallets),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"),
         )
 

@@ -11,11 +11,11 @@ from db_scheduler.task.schedule import FixedDelay, Schedule
 from ekbatan import ActionExecutor, Repository
 from ekbatan.distributedjobs import DistributedJob
 
-from .actions import DepositMoney, DepositParams
+from .actions import DepositMoneyAction, DepositParams
 from .domain import Wallet, WalletState
 
 
-class PayStipend(DistributedJob):
+class PayStipendJob(DistributedJob):
     """Deposits into every open wallet, once a day, from one instance in the cluster.
 
     Nothing about being a job makes its work special: it invokes the same unit of work an HTTP
@@ -44,14 +44,14 @@ class PayStipend(DistributedJob):
         for wallet in self.wallets.all():
             if wallet.state is WalletState.OPENED:
                 self.executor.execute(
-                    DepositMoney(self.wallets),
+                    DepositMoneyAction(self.wallets),
                     DepositParams(
                         wallet_id=wallet.id, amount=self.amount, recipient="stipend@example.com"
                     ),
                 )
 
 
-class CountWallets(DistributedJob):
+class CountWalletsJob(DistributedJob):
     """Reads and writes nothing. The shape of a reporting job."""
 
     def __init__(self, wallets: Repository[Wallet, object]) -> None:

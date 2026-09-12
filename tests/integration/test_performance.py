@@ -286,11 +286,11 @@ def test_a_write_with_no_returning_still_costs_one_statement(wallets, sql):
 def test_a_unit_of_work_does_not_pay_to_read_its_own_writes_back(executor, wallets, sql):
     """The plan already holds what was staged and the events came off those, so the executor
     has no use for the written rows."""
-    from fixtures.actions import CreateWallet, CreateWalletParams
+    from fixtures.actions import CreateWalletAction, CreateWalletParams
 
     sql.clear()
     executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
 

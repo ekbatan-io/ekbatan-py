@@ -2,7 +2,7 @@
 
 One thing here is load-bearing rather than cosmetic: the unique constraint on
 `(transfer_id, step)`. That constraint is what makes the saga safe to replay - see
-`TransferStep` in `model.py`, and `CompleteTransfer` in `actions.py`, which relies on it
+`TransferStep` in `model.py`, and `CompleteTransferAction` in `actions.py`, which relies on it
 rather than on a read-then-check.
 """
 

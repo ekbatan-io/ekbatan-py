@@ -21,8 +21,8 @@ from sqlalchemy import func, select
 
 from ekbatan.distributedjobs import DistributedJob, JobRegistry, job_registry
 from ekbatan.errors import ValidationError
-from fixtures.actions import CreateWallet, CreateWalletParams
-from fixtures.jobs import CountWallets, PayStipend
+from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.jobs import CountWalletsJob, PayStipendJob
 from fixtures.schema import SCHEDULED_TASKS
 
 #: Where the scheduler's clock starts. Any fixed instant will do; a fixed one keeps the tests
@@ -33,7 +33,7 @@ SCHEDULER_EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 @pytest.fixture
 def wallet(executor):
     return executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")),
     )
 
@@ -56,7 +56,7 @@ def a_registry(registry, clock, jobs) -> JobRegistry:
 
 class TestRunningJobs:
     def test_a_job_runs_and_reschedules(self, registry, executor, wallets, clock, wallet):
-        job = PayStipend(executor, wallets)
+        job = PayStipendJob(executor, wallets)
         jobs = a_registry(registry, clock, [job])
 
         jobs.start()
@@ -68,7 +68,7 @@ class TestRunningJobs:
     def test_a_slot_that_is_not_due_yet_does_not_run(
         self, registry, executor, wallets, clock, wallet
     ):
-        job = PayStipend(executor, wallets)
+        job = PayStipendJob(executor, wallets)
         jobs = a_registry(registry, clock, [job])
         jobs.start()
 
@@ -86,7 +86,7 @@ class TestRunningJobs:
         """A rolling deploy starts every instance within the same second, and each registers the
         same jobs. One job, one row - the row is what stops five servers running it."""
         for _ in range(4):
-            a_registry(registry, clock, [PayStipend(executor, wallets)]).start()
+            a_registry(registry, clock, [PayStipendJob(executor, wallets)]).start()
 
         with registry.default.connection(readonly=True) as conn:
             rows = conn.execute(select(func.count()).select_from(SCHEDULED_TASKS)).scalar_one()
@@ -96,13 +96,13 @@ class TestRunningJobs:
     def test_work_done_by_a_job_is_audited_like_any_other(
         self, registry, executor, wallets, clock, wallet, outbox
     ):
-        jobs = a_registry(registry, clock, [PayStipend(executor, wallets)])
+        jobs = a_registry(registry, clock, [PayStipendJob(executor, wallets)])
         jobs.start()
         jobs.scheduler.run_any_due_executions()
 
-        deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDeposited"]
+        deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent"]
         assert len(deposits) == 1
-        assert deposits[0]["action_name"] == "DepositMoney", (
+        assert deposits[0]["action_name"] == "DepositMoneyAction", (
             "a job is a caller, not a special case; a consumer cannot tell and need not"
         )
         assert deposits[0]["namespace"] == "example.wallet"
@@ -202,7 +202,7 @@ class TestDisabledJobs:
 
             def execute(self, ctx: ExecutionContext) -> None: ...
 
-        jobs = a_registry(registry, clock, [Dormant(), CountWallets(wallets)])
+        jobs = a_registry(registry, clock, [Dormant(), CountWalletsJob(wallets)])
 
         jobs.start()  # must not raise
 
@@ -239,7 +239,7 @@ class TestVerifyingRegistration:
     def test_and_says_so_when_it_cannot_even_check(self, registry, executor, wallets, clock):
         """A dropped table takes the verification query down with it. Reported as "could not
         verify" rather than as a missing job, because those are different problems."""
-        jobs = a_registry(registry, clock, [PayStipend(executor, wallets)])
+        jobs = a_registry(registry, clock, [PayStipendJob(executor, wallets)])
         jobs.start()
 
         SCHEDULED_TASKS.drop(registry.default.primary)
@@ -250,7 +250,7 @@ class TestVerifyingRegistration:
             SCHEDULED_TASKS.create(registry.default.primary)
 
     def test_a_healthy_start_says_nothing(self, registry, executor, wallets, clock, wallet):
-        a_registry(registry, clock, [PayStipend(executor, wallets)]).start()  # must not raise
+        a_registry(registry, clock, [PayStipendJob(executor, wallets)]).start()  # must not raise
 
 
 class TestRefusingARegistryThatCannotWork:
@@ -273,7 +273,7 @@ class TestRefusingARegistryThatCannotWork:
             a_registry(
                 registry,
                 clock,
-                [PayStipend(executor, wallets), PayStipend(executor, wallets)],
+                [PayStipendJob(executor, wallets), PayStipendJob(executor, wallets)],
             )
 
     def test_a_null_schedule_is_refused(self, registry, clock):
@@ -299,7 +299,7 @@ class TestRefusingARegistryThatCannotWork:
 
     def test_a_registry_with_no_engine_is_refused(self, executor, wallets):
         with pytest.raises(ValidationError, match="engine is required"):
-            job_registry().with_job(PayStipend(executor, wallets)).build()
+            job_registry().with_job(PayStipendJob(executor, wallets)).build()
 
     def test_a_none_job_is_refused_where_it_was_passed(self, registry, clock):
         """Rather than at build(), where it surfaced with no indication of which call put it
@@ -314,7 +314,9 @@ class TestRefusingARegistryThatCannotWork:
         """A zero or negative interval makes db-scheduler skip its wait entirely and poll in a
         tight loop - around ten thousand queries a second, measured."""
         builder = (
-            job_registry().engine(registry.default.primary).with_job(PayStipend(executor, wallets))
+            job_registry()
+            .engine(registry.default.primary)
+            .with_job(PayStipendJob(executor, wallets))
         )
         with pytest.raises(ValidationError, match="poll_interval must be positive"):
             builder.poll_interval(bad).build()
@@ -408,7 +410,10 @@ class TestCustomizingTheScheduler:
             .poll_interval(timedelta(seconds=10))
             .heartbeat_interval(timedelta(seconds=1))
             .customize_scheduler(
-                lambda builder: (seen.append(builder), builder.polling_interval(timedelta(milliseconds=50)))
+                lambda builder: (
+                    seen.append(builder),
+                    builder.polling_interval(timedelta(milliseconds=50)),
+                )
             )
             .build()
         )

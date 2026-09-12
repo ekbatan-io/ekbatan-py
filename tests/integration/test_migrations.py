@@ -199,8 +199,12 @@ def _two_shards(backend, request, suffix=""):
     name = "ekb_mig_sub_" + request.node.name.replace("[", "_").replace("]", "").lower()[:20]
     return ShardingConfig(
         shards=(
-            ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=backend.url(name + suffix + "_a"))),
-            ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=backend.url(name + suffix + "_b"))),
+            ShardConfig(
+                shard=GLOBAL, primary=DataSourceConfig(url=backend.url(name + suffix + "_a"))
+            ),
+            ShardConfig(
+                shard=MEXICO, primary=DataSourceConfig(url=backend.url(name + suffix + "_b"))
+            ),
         ),
         default_shard=GLOBAL,
     )

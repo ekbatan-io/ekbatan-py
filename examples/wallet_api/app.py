@@ -48,9 +48,9 @@ from ekbatan.locks import KeyedLockProvider, PostgresKeyedLockProvider
 from ekbatan.migrations import migrate
 from ekbatan.sharding import DEFAULT_SHARD
 
-from .actions import CloseWallet, DepositMoney, OpenWallet, RaiseAlert
-from .handlers import NotifyOnDeposit
-from .jobs import PayStipend
+from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
+from .handlers import MoneyDepositedEventHandler
+from .jobs import PayStipendJob
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS
 
@@ -148,17 +148,17 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         repositories=repositories,
         actions=(
             ActionRegistry.builder()
-            .with_action(OpenWallet())
-            .with_action(DepositMoney(wallets))
-            .with_action(CloseWallet(wallets))
-            .with_action(RaiseAlert())
+            .with_action(OpenWalletAction())
+            .with_action(DepositMoneyAction(wallets))
+            .with_action(CloseWalletAction(wallets))
+            .with_action(RaiseAlertAction())
             .build()
         ),
         events=EVENTS,
         clock=running,
     )
 
-    handlers = EventHandlerRegistry([NotifyOnDeposit(executor)])
+    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
     events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
     return WalletService(
@@ -189,7 +189,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                         config=events_config,
                         clock=running,
                     ),
-                    PayStipend(executor, wallets),
+                    PayStipendJob(executor, wallets),
                 ]
             )
             .workers(config.job_workers)

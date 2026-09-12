@@ -16,24 +16,24 @@ import pytest
 from ekbatan import Action, VirtualClock, run_action
 from ekbatan.errors import EkbatanError, ValidationError
 from fixtures.actions import (
-    CreateWallet,
+    CreateWalletAction,
     CreateWalletParams,
     DepositParams,
-    Notify,
+    NotifyAction,
     NotifyParams,
 )
 from fixtures.domain import (
     Notification,
     NotificationId,
     Wallet,
-    WalletCreated,
+    WalletCreatedEvent,
     WalletId,
-    WalletMoneyDeposited,
-    WalletMoneyWithdrawn,
+    WalletMoneyDepositedEvent,
+    WalletMoneyWithdrawnEvent,
 )
 
 
-class Deposit(Action[DepositParams, Wallet]):
+class DepositAction(Action[DepositParams, Wallet]):
     """Takes a repository, the way a real one does - stubbed here, since the point is that no
     database is involved."""
 
@@ -54,7 +54,7 @@ def test_running_an_action_reports_what_it_staged():
     wallet = a_wallet()
 
     staged = run_action(
-        Deposit(wallet),
+        DepositAction(wallet),
         DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"),
     )
 
@@ -74,29 +74,29 @@ def test_it_reports_what_was_emitted():
     wallet = a_wallet()
 
     staged = run_action(
-        Deposit(wallet),
+        DepositAction(wallet),
         DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"),
     )
 
-    assert [type(e).__name__ for e in staged.events] == ["WalletMoneyDeposited"]
-    assert staged.emitted(WalletMoneyDeposited)[0].amount == Decimal("50.00")
-    assert staged.emitted(WalletMoneyWithdrawn) == []
+    assert [type(e).__name__ for e in staged.events] == ["WalletMoneyDepositedEvent"]
+    assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
+    assert staged.emitted(WalletMoneyWithdrawnEvent) == []
 
 
 def test_an_insert_and_its_event_are_both_visible():
     staged = run_action(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("10.00")),
     )
 
     assert len(staged.added(Wallet)) == 1
     assert staged.updated(Wallet) == []
-    assert staged.emitted(WalletCreated)[0].currency == "EUR"
+    assert staged.emitted(WalletCreatedEvent)[0].currency == "EUR"
 
 
 def test_an_entity_stages_without_emitting():
     staged = run_action(
-        Notify(),
+        NotifyAction(),
         NotifyParams(wallet_id=WalletId.random(), kind="X", recipient="ada@x"),
     )
 
@@ -107,23 +107,23 @@ def test_an_entity_stages_without_emitting():
 def test_the_action_sees_the_clock_it_was_given():
     clock = VirtualClock(datetime(2026, 6, 1, 9, 0, tzinfo=UTC))
 
-    class ReadsTheClock(Action[None, datetime]):
+    class ReadsTheClockAction(Action[None, datetime]):
         def perform(self, params: None) -> datetime:
             return self.now()
 
-    assert run_action(ReadsTheClock(), None, clock=clock).result == clock.now()
+    assert run_action(ReadsTheClockAction(), None, clock=clock).result == clock.now()
 
     clock.advance(timedelta(hours=2))
-    assert run_action(ReadsTheClock(), None, clock=clock).result == clock.now()
+    assert run_action(ReadsTheClockAction(), None, clock=clock).result == clock.now()
 
 
 def test_the_action_sees_the_principal_it_was_given():
-    class ReadsThePrincipal(Action[None, str | None]):
+    class ReadsThePrincipalAction(Action[None, str | None]):
         def perform(self, params: None) -> str | None:
             return self.principal
 
-    assert run_action(ReadsThePrincipal(), None, principal="ada").result == "ada"
-    assert run_action(ReadsThePrincipal(), None).result is None
+    assert run_action(ReadsThePrincipalAction(), None, principal="ada").result == "ada"
+    assert run_action(ReadsThePrincipalAction(), None).result is None
 
 
 def test_a_refusal_is_an_ordinary_exception():
@@ -132,7 +132,7 @@ def test_a_refusal_is_an_ordinary_exception():
 
     with pytest.raises(ValidationError, match="amount"):
         run_action(
-            Deposit(wallet),
+            DepositAction(wallet),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"),
         )
 
@@ -140,20 +140,20 @@ def test_a_refusal_is_an_ordinary_exception():
 def test_the_plan_behaves_as_it_does_in_production():
     wallet = a_wallet()
 
-    class StagesTwice(Action[None, Wallet]):
+    class StagesTwiceAction(Action[None, Wallet]):
         def perform(self, params: None) -> Wallet:
             once = self.plan.update(wallet.deposit(Decimal("1.00")))
             return self.plan.update(once.deposit(Decimal("1.00")))
 
     with pytest.raises(ValidationError, match="already staged"):
-        run_action(StagesTwice(), None)
+        run_action(StagesTwiceAction(), None)
 
 
 def test_the_binding_is_gone_afterwards():
     from ekbatan import current_plan
 
     run_action(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
     with pytest.raises(EkbatanError, match="no unit of work here"):
@@ -164,7 +164,7 @@ def test_the_plan_cannot_be_emptied_from_outside():
     """A caller holding the real map could empty the plan, and the executor would then commit a
     unit of work that had quietly become a no-op."""
     staged = run_action(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
 
@@ -179,18 +179,18 @@ def test_a_unit_of_work_touching_two_types_is_countable_across_both():
     A per-type count stops telling you whether anything *extra* was staged the moment a unit of
     work touches two types, which is when it matters most.
     """
-    staged = run_action(CreatesBoth(), None)
+    staged = run_action(CreatesBothAction(), None)
 
     assert len(staged.additions) == 2, "one of each, and nothing else"
     assert staged.updates == []
     assert len(staged.added(Wallet)) == 1
     assert len(staged.added(Notification)) == 1
-    assert [type(e).__name__ for e in staged.events] == ["WalletCreated"], (
+    assert [type(e).__name__ for e in staged.events] == ["WalletCreatedEvent"], (
         "the entity stages without emitting; only the model has events"
     )
 
 
-class CreatesBoth(Action[None, Wallet]):
+class CreatesBothAction(Action[None, Wallet]):
     """A model and an entity in one unit of work."""
 
     def perform(self, params: None) -> Wallet:

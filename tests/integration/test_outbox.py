@@ -14,15 +14,15 @@ from sqlalchemy import event
 
 from ekbatan.errors import ValidationError
 from fixtures.actions import (
-    CloseWallet,
-    CreateWallet,
+    CloseWalletAction,
+    CreateWalletAction,
     CreateWalletParams,
-    DepositMoney,
+    DepositMoneyAction,
     DepositParams,
-    DepositThenFail,
-    Notify,
+    DepositThenFailAction,
+    NotifyAction,
     NotifyParams,
-    TransferMoney,
+    TransferMoneyAction,
     TransferParams,
     WalletIdParams,
 )
@@ -31,7 +31,7 @@ from fixtures.domain import WalletId, WalletState
 
 def a_wallet(executor, balance="100.00", currency="EUR"):
     return executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency=currency, initial_balance=Decimal(balance)),
     )
 
@@ -43,7 +43,7 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
     event.listen(registry.default.primary, "commit", lambda conn: commits.append("commit"))
 
     executor.execute(
-        DepositMoney(wallets),
+        DepositMoneyAction(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"),
     )
 
@@ -52,12 +52,12 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
 
     rows = outbox()
     assert len(rows) == 2
-    (deposited,) = [r for r in rows if r["action_name"] == "DepositMoney"]
+    (deposited,) = [r for r in rows if r["action_name"] == "DepositMoneyAction"]
     assert deposited["namespace"] == "example.wallet"
-    assert deposited["action_name"] == "DepositMoney"
+    assert deposited["action_name"] == "DepositMoneyAction"
     assert deposited["model_id"] == str(wallet.id)
     assert deposited["model_type"] == "Wallet"
-    assert deposited["event_type"] == "WalletMoneyDeposited"
+    assert deposited["event_type"] == "WalletMoneyDepositedEvent"
     assert deposited["delivered"] is False
     # The scale is the column's, not the caller's: the wallet came back from a
     # DECIMAL(19,4), so its balance carries four places and the sum does too.
@@ -79,7 +79,7 @@ def test_a_failed_unit_of_work_writes_neither(executor, wallets, outbox):
 
     with pytest.raises(ValidationError, match="amount"):
         executor.execute(
-            DepositMoney(wallets),
+            DepositMoneyAction(wallets),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-50"), recipient="ada@example.com"),
         )
 
@@ -94,7 +94,7 @@ def test_a_failure_after_staging_discards_the_plan(executor, wallets, outbox):
 
     with pytest.raises(ValidationError, match="changed my mind"):
         executor.execute(
-            DepositThenFail(wallets),
+            DepositThenFailAction(wallets),
             DepositParams(wallet_id=wallet.id, amount=Decimal("25"), recipient="ada@example.com"),
         )
 
@@ -107,13 +107,13 @@ def test_events_of_one_unit_of_work_share_an_action_id(executor, wallets, outbox
     destination = a_wallet(executor, "0.00")
 
     executor.execute(
-        TransferMoney(wallets),
+        TransferMoneyAction(wallets),
         TransferParams(
             from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("25.00")
         ),
     )
 
-    transfer = [r for r in outbox() if r["action_name"] == "TransferMoney"]
+    transfer = [r for r in outbox() if r["action_name"] == "TransferMoneyAction"]
     assert len(transfer) == 2
     assert len({r["action_id"] for r in transfer}) == 1, "one invocation, one action id"
     assert len({r["id"] for r in transfer}) == 2, "each event is its own row"
@@ -142,15 +142,18 @@ def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_orde
     source = a_wallet(executor, "100.00")
     destination = a_wallet(executor, "0.00")
     executor.execute(
-        TransferMoney(wallets),
+        TransferMoneyAction(wallets),
         TransferParams(
             from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("10.00")
         ),
     )
 
-    transfer = [r for r in outbox() if r["action_name"] == "TransferMoney"]
+    transfer = [r for r in outbox() if r["action_name"] == "TransferMoneyAction"]
 
-    assert {r["event_type"] for r in transfer} == {"WalletMoneyWithdrawn", "WalletMoneyDeposited"}
+    assert {r["event_type"] for r in transfer} == {
+        "WalletMoneyWithdrawnEvent",
+        "WalletMoneyDepositedEvent",
+    }
     assert len({r["action_id"] for r in transfer}) == 1, "one invocation, one action id"
     assert len({r["id"] for r in transfer}) == 2, "one row per event"
     assert {r["event_date"] for r in transfer} == {transfer[0]["event_date"]}, (
@@ -160,7 +163,7 @@ def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_orde
 
 def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, outbox, notifications):
     executor.execute(
-        Notify(),
+        NotifyAction(),
         NotifyParams(
             wallet_id=WalletId.random(), kind="MONEY_DEPOSITED", recipient="ada@example.com"
         ),
@@ -169,7 +172,7 @@ def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, out
     rows = outbox()
     assert len(rows) == 1
     sentinel = rows[0]
-    assert sentinel["action_name"] == "Notify"
+    assert sentinel["action_name"] == "NotifyAction"
     assert sentinel["event_type"] is None
     assert sentinel["model_id"] is None
     assert sentinel["model_type"] is None
@@ -180,10 +183,10 @@ def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, out
 
 def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outbox):
     wallet = a_wallet(executor, "0.00")
-    closed = executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=wallet.id))
+    closed = executor.execute(CloseWalletAction(wallets), WalletIdParams(wallet_id=wallet.id))
     before = {r["id"] for r in outbox()}
 
-    executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=wallet.id))
+    executor.execute(CloseWalletAction(wallets), WalletIdParams(wallet_id=wallet.id))
 
     again = wallets.get(wallet.id)
     assert again.state is WalletState.CLOSED
@@ -198,11 +201,11 @@ def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outb
 def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
     wallet = a_wallet(executor, "0.00")
     executor.execute(
-        DepositMoney(wallets),
+        DepositMoneyAction(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
 
-    deposited = next(r for r in outbox() if r["event_type"] == "WalletMoneyDeposited")
+    deposited = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
     assert deposited["action_params"] == {
         "wallet_id": str(wallet.id),
         "amount": "1.00",
@@ -213,7 +216,7 @@ def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
 def test_the_namespace_is_on_every_row_and_events_are_undelivered(executor, wallets, outbox):
     wallet = a_wallet(executor, "0.00")
     executor.execute(
-        DepositMoney(wallets),
+        DepositMoneyAction(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
 
@@ -226,11 +229,11 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
     wallet = a_wallet(executor, "0.00")
     for amount in ("1.00", "2.00"):
         executor.execute(
-            DepositMoney(wallets),
+            DepositMoneyAction(wallets),
             DepositParams(wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"),
         )
 
-    deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDeposited"]
+    deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent"]
     assert len(deposits) == 2
     assert len({r["action_id"] for r in deposits}) == 2, "two invocations are two units of work"
     # By value, not by position: the clock is frozen for these tests, so both invocations stamp
@@ -241,11 +244,11 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
 def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, clock):
     wallet = a_wallet(executor, "0.00")
     executor.execute(
-        DepositMoney(wallets),
+        DepositMoneyAction(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
 
-    row = next(r for r in outbox() if r["event_type"] == "WalletMoneyDeposited")
+    row = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
     assert row["started_date"] <= row["completion_date"]
     assert row["event_date"] == row["completion_date"], (
         "an event becomes true when its transaction commits, not when the object was built"

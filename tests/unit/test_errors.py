@@ -42,7 +42,7 @@ BLANK = ["", " ", "   \t\n"]
 
 
 @dataclass(frozen=True, kw_only=True)
-class SomethingHappened(ModelEvent):
+class SomethingHappenedEvent(ModelEvent):
     pass
 
 
@@ -64,7 +64,7 @@ class BlankNamed:
 
     @property
     def event_type(self) -> type:
-        return SomethingHappened
+        return SomethingHappenedEvent
 
     def handle(self, envelope: object) -> None: ...
 
@@ -119,7 +119,7 @@ class TestEveryBlankCheckAgrees:
 
     def test_a_model_id_an_event_is_attached_to(self, blank: str) -> None:
         with pytest.raises(ValidationError, match="no id"):
-            SomethingHappened().about(Idless(blank))
+            SomethingHappenedEvent().about(Idless(blank))
 
 
 def test_a_blank_check_that_only_tested_empty_would_pass_the_empty_case_alone() -> None:

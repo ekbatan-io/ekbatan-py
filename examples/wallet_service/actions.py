@@ -45,7 +45,7 @@ class RaiseAlertParams:
     message: str
 
 
-class OpenWallet(Action[OpenWalletParams, Wallet]):
+class OpenWalletAction(Action[OpenWalletParams, Wallet]):
     def perform(self, params: OpenWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
@@ -56,7 +56,7 @@ class OpenWallet(Action[OpenWalletParams, Wallet]):
         )
 
 
-class DepositMoney(Action[DepositParams, Wallet]):
+class DepositMoneyAction(Action[DepositParams, Wallet]):
     def __init__(self, wallets: WalletRepository) -> None:
         self.wallets = wallets
 
@@ -65,7 +65,7 @@ class DepositMoney(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 
 
-class CloseWallet(Action[WalletIdParams, Wallet]):
+class CloseWalletAction(Action[WalletIdParams, Wallet]):
     def __init__(self, wallets: WalletRepository) -> None:
         self.wallets = wallets
 
@@ -77,7 +77,7 @@ class CloseWallet(Action[WalletIdParams, Wallet]):
         return self.plan.update(closed) if closed is not wallet else wallet
 
 
-class RaiseAlert(Action[RaiseAlertParams, Alert]):
+class RaiseAlertAction(Action[RaiseAlertParams, Alert]):
     """Writes an entity. Emits nothing, and is still audited."""
 
     def perform(self, params: RaiseAlertParams) -> Alert:

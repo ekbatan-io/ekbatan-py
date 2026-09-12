@@ -19,7 +19,12 @@ from ekbatan import (
     RepositoryRegistry,
 )
 from ekbatan.errors import ValidationError
-from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
+from fixtures.actions import (
+    CreateWalletAction,
+    CreateWalletParams,
+    DepositMoneyAction,
+    DepositParams,
+)
 from fixtures.domain import Notification, Wallet
 from fixtures.schema import EVENTS
 
@@ -88,19 +93,19 @@ def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
         registry=registry,
         repositories=RepositoryRegistry([wallets, notifications]),
         actions=ActionRegistry.builder()
-        .with_action(CreateWallet())
-        .with_action(DepositMoney(wallets))
+        .with_action(CreateWalletAction())
+        .with_action(DepositMoneyAction(wallets))
         .build(),
         events=EVENTS,
         clock=clock,
     )
 
     wallet = executor.execute(
-        CreateWallet,
+        CreateWalletAction,
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("10.00")),
     )
     deposited = executor.execute(
-        DepositMoney,
+        DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
     )
 
@@ -111,37 +116,37 @@ def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
 def test_an_instance_still_works_with_no_registry(executor, wallets):
     """The registry is not compulsory - a test usually wants the instance it just built."""
     wallet = executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
     assert wallets.get(wallet.id) is not None
 
 
 def test_running_an_unregistered_type_names_it(executor):
-    with pytest.raises(ValidationError, match="no instance of CreateWallet is registered"):
+    with pytest.raises(ValidationError, match="no instance of CreateWalletAction is registered"):
         executor.execute(
-            CreateWallet,
+            CreateWalletAction,
             CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
         )
 
 
 def test_registering_the_class_rather_than_an_instance_is_refused():
     """The commonest way to get this wrong, and it would otherwise fail much later."""
-    with pytest.raises(ValidationError, match="CreateWallet is a class, not an instance"):
-        ActionRegistry([CreateWallet])  # type: ignore[list-item]
+    with pytest.raises(ValidationError, match="CreateWalletAction is a class, not an instance"):
+        ActionRegistry([CreateWalletAction])  # type: ignore[list-item]
 
 
 def test_two_instances_of_one_action_are_refused(wallets):
-    with pytest.raises(ValidationError, match="two instances of DepositMoney"):
-        ActionRegistry([DepositMoney(wallets), DepositMoney(wallets)])
+    with pytest.raises(ValidationError, match="two instances of DepositMoneyAction"):
+        ActionRegistry([DepositMoneyAction(wallets), DepositMoneyAction(wallets)])
 
 
 def test_the_same_instance_twice_is_not_a_conflict(wallets):
-    once = DepositMoney(wallets)
+    once = DepositMoneyAction(wallets)
     built = ActionRegistry([once, once])
 
     assert len(built) == 1
-    assert built.get(DepositMoney) is once
+    assert built.get(DepositMoneyAction) is once
 
 
 # -- what the executor refuses to be built or run without ---------------------------------------

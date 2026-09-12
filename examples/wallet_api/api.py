@@ -25,10 +25,10 @@ from pydantic import BaseModel, Field
 from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
 
 from .actions import (
-    CloseWallet,
-    DepositMoney,
+    CloseWalletAction,
+    DepositMoneyAction,
     DepositParams,
-    OpenWallet,
+    OpenWalletAction,
     OpenWalletParams,
     WalletIdParams,
 )
@@ -158,7 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
         return WalletResponse.of(
             service.executor.execute(
-                OpenWallet,
+                OpenWalletAction,
                 OpenWalletParams(
                     owner_id=body.owner_id,
                     currency=body.currency,
@@ -199,7 +199,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with lease:
             return WalletResponse.of(
                 service.executor.execute(
-                    DepositMoney,
+                    DepositMoneyAction,
                     DepositParams(
                         wallet_id=WalletId(wallet_id),
                         amount=body.amount,
@@ -211,7 +211,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/wallets/{wallet_id}/closure", response_model=WalletResponse)
     def close_wallet(wallet_id: UUID, service: Service) -> WalletResponse:
         return WalletResponse.of(
-            service.executor.execute(CloseWallet, WalletIdParams(wallet_id=WalletId(wallet_id)))
+            service.executor.execute(
+                CloseWalletAction, WalletIdParams(wallet_id=WalletId(wallet_id))
+            )
         )
 
     @app.get("/wallets/{wallet_id}/alerts", response_model=list[AlertResponse])

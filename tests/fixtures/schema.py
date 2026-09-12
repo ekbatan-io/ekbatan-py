@@ -12,8 +12,8 @@ from sqlalchemy import (
     BigInteger,
     Column,
     DateTime,
-    MetaData,
     Integer,
+    MetaData,
     Numeric,
     String,
     Table,
@@ -21,9 +21,9 @@ from sqlalchemy import (
 )
 
 from ekbatan.schema import (
+    json_column,
     notifications_table,
     outbox_table,
-    json_column,
     scheduled_tasks_table,
     uuid_column,
 )

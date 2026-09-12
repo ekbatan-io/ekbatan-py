@@ -201,9 +201,7 @@ class TestDatabaseRegistryFromConfig:
         assert "names no configured database" in str(from_layout.value)
 
         registry = DatabaseRegistry.from_config(
-            ShardingConfig(
-                shards=(ShardConfig(shard=GLOBAL, primary=G0_M0),), default_shard=GLOBAL
-            )
+            ShardingConfig(shards=(ShardConfig(shard=GLOBAL, primary=G0_M0),), default_shard=GLOBAL)
         )
         with pytest.raises(ValidationError) as direct:
             DatabaseRegistry({GLOBAL: registry.default}, ShardIdentifier(9, 9))

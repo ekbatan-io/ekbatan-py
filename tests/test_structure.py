@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TESTS = ROOT / "tests"
@@ -74,36 +75,76 @@ def test_no_example_imports_a_test():
     assert offenders == {}, f"an example is reading from the suite: {offenders}"
 
 
-def test_an_example_depends_on_nothing_but_the_framework():
+#: What an example may import besides the framework and the standard library.
+#:
+#: Every one of these is declared in the `examples` dependency group in `pyproject.toml`, and
+#: that is the point of the list: adding a dependency to an example is an edit in two places
+#: and therefore a decision, rather than something that happens because an import was
+#: convenient. Nothing in `src/` may import any of them.
+EXAMPLE_DEPENDENCIES = {
+    # The framework itself, which is the point.
+    "ekbatan",
+    # db-scheduler is part of the framework's surface, not a third-party import an example
+    # sneaked in: a `DistributedJob` returns a db-scheduler `Schedule`, exactly as the Java
+    # `DistributedJob` returns one. A user writing a job imports it in either language.
+    "db_scheduler",
+    "sqlalchemy",
+    # `wallet_api` is a REST service, which is the whole thing it exists to show - so it needs
+    # a web framework, the way Java's grid examples need Spring, Quarkus or Micronaut.
+    "fastapi",
+    "pydantic",
+    "starlette",
+    "uvicorn",
+    "httpx",
+    # Migrations from files, which is what makes `wallet_api` a deployment shape rather than a
+    # demo.
+    "alembic",
+    # The example suites, which run against real servers for the same reason the framework's do.
+    "pytest",
+    "testcontainers",
+}
+
+
+def test_an_example_depends_on_nothing_but_the_framework_and_its_declared_extras():
     """An example that needs another example is not standalone, and neither is one that reaches
-    into a sibling package."""
-    allowed = {
-        "ekbatan",
-        "sqlalchemy",
-        "pytest",
-        "dataclasses",
-        "decimal",
-        "enum",
-        "uuid",
-        "datetime",
-        "typing",
-        "pathlib",
-        "collections",
-        "tempfile",
-        "__future__",
-        # db-scheduler is part of the framework's surface, not a third-party import an example
-        # sneaked in: a `DistributedJob` returns a db-scheduler `Schedule`, exactly as the Java
-        # `DistributedJob` returns one. A user writing a job imports it in either language.
-        "db_scheduler",
-    }
+    into a sibling package.
+
+    The standard library is read from the interpreter rather than listed by hand: a hand-list
+    turns "this example used `os`" into a test failure, which trains people to extend the list
+    without reading it - and the list is the part that is supposed to be read.
+    """
+    allowed = EXAMPLE_DEPENDENCIES | set(sys.stdlib_module_names)
     for path in EXAMPLES.rglob("*.py"):
         package = path.relative_to(EXAMPLES).parts[0]
         for module in imported_modules(path):
             root = module.split(".")[0]
             assert root in allowed or module.startswith(f"examples.{package}"), (
-                f"{path.relative_to(ROOT)} imports {module!r}; an example may use the framework "
-                f"and the standard library, and nothing else"
+                f"{path.relative_to(ROOT)} imports {module!r}; an example may use the framework, "
+                f"the standard library, and what the `examples` dependency group declares - see "
+                f"EXAMPLE_DEPENDENCIES in this file"
             )
+
+
+def test_the_framework_itself_imports_none_of_an_example_s_extras():
+    """The other half, and the one that matters: `src/` must not grow a web framework because
+    an example has one."""
+    # Minus the ones the framework legitimately has: `sqlalchemy` and `db_scheduler` are hard
+    # dependencies, and `alembic` is the framework's own `migrations` extra - imported inside a
+    # function precisely so it stays optional. What is left is the web stack, which `src/` must
+    # never acquire.
+    forbidden = EXAMPLE_DEPENDENCIES - {
+        "ekbatan",
+        "sqlalchemy",
+        "db_scheduler",
+        "alembic",
+        "pytest",
+    }
+    offenders: dict[str, list[str]] = {}
+    for path in (ROOT / "src").rglob("*.py"):
+        reached = sorted(m for m in imported_modules(path) if m.split(".")[0] in forbidden)
+        if reached:
+            offenders[str(path.relative_to(ROOT))] = reached
+    assert offenders == {}, f"the framework reached for an example's dependency: {offenders}"
 
 
 def test_the_unit_suite_never_asks_for_a_database():

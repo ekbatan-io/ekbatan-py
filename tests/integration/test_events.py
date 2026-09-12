@@ -7,29 +7,29 @@ from decimal import Decimal
 from uuid import uuid4
 
 from fixtures.actions import (
-    CloseWallet,
-    CreateWallet,
+    CloseWalletAction,
+    CreateWalletAction,
     CreateWalletParams,
-    DepositMoney,
+    DepositMoneyAction,
     DepositParams,
-    Notify,
+    NotifyAction,
     NotifyParams,
     WalletIdParams,
 )
-from fixtures.domain import WalletCreated, WalletId, WalletMoneyDeposited
-from fixtures.handlers import NotifyOnDeposit, failing, fatal, on_close, succeeding
+from fixtures.domain import WalletCreatedEvent, WalletId, WalletMoneyDepositedEvent
+from fixtures.handlers import MoneyDepositedEventHandler, failing, fatal, on_close, succeeding
 
 
 def a_wallet(executor, balance="100.00"):
     return executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
 
 
 def deposit(executor, wallets, wallet, amount="10.00"):
     return executor.execute(
-        DepositMoney(wallets),
+        DepositMoneyAction(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"),
     )
 
@@ -58,7 +58,7 @@ def test_fan_out_marks_delivered_and_dispatch_does_not(executor, wallets, pipeli
     fanout.drain_once()
 
     delivered = {r["event_type"]: r["delivered"] for r in outbox()}
-    assert delivered["WalletMoneyDeposited"] is True
+    assert delivered["WalletMoneyDepositedEvent"] is True
     assert email.calls == 0, "fan-out creates work; it does not do it"
 
 
@@ -69,7 +69,7 @@ def test_an_event_nobody_subscribes_to_stays_available(executor, wallets, pipeli
     deposit(executor, wallets, wallet)
     assert fanout.drain_once() == 0
 
-    deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDeposited"]
+    deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent"]
     assert deposits[0]["delivered"] is False
 
     # ... and a handler registered later still picks it up.
@@ -83,7 +83,8 @@ def test_an_event_nobody_subscribes_to_stays_available(executor, wallets, pipeli
 def test_a_sentinel_row_is_never_fanned_out(executor, pipeline, notifications_in):
     fanout, _ = pipeline(succeeding("email"))
     executor.execute(
-        Notify(), NotifyParams(wallet_id=WalletId.random(), kind="X", recipient="ada@example.com")
+        NotifyAction(),
+        NotifyParams(wallet_id=WalletId.random(), kind="X", recipient="ada@example.com"),
     )
     assert fanout.drain_once() == 0, "a row with no event type belongs on no topic"
     assert notifications_in() == {}
@@ -218,14 +219,14 @@ def test_handlers_only_see_the_event_type_they_subscribed_to(
 
     wallet = a_wallet(executor)
     deposit(executor, wallets, wallet)
-    executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=wallet.id))
+    executor.execute(CloseWalletAction(wallets), WalletIdParams(wallet_id=wallet.id))
 
     fanout.drain_until_idle()
     dispatch.drain_until_idle()
 
     assert deposits.calls == 1 and closes.calls == 1
-    assert [e.event.__class__.__name__ for e in deposits.received] == ["WalletMoneyDeposited"]
-    assert [e.event.__class__.__name__ for e in closes.received] == ["WalletClosed"]
+    assert [e.event.__class__.__name__ for e in deposits.received] == ["WalletMoneyDepositedEvent"]
+    assert [e.event.__class__.__name__ for e in closes.received] == ["WalletClosedEvent"]
 
 
 def test_a_handler_receives_a_typed_event_and_its_producing_context(executor, wallets, pipeline):
@@ -243,7 +244,7 @@ def test_a_handler_receives_a_typed_event_and_its_producing_context(executor, wa
     assert envelope.model_id == str(wallet.id)
     assert envelope.model_type == "Wallet"
     assert envelope.namespace == "example.wallet"
-    assert envelope.action_name == "DepositMoney"
+    assert envelope.action_name == "DepositMoneyAction"
     assert envelope.action_params["recipient"] == "ada@example.com", (
         "readable off the envelope, so the event need not carry a routing concern"
     )
@@ -253,7 +254,7 @@ def test_a_handler_receives_a_typed_event_and_its_producing_context(executor, wa
 def test_a_handler_may_start_another_unit_of_work(
     executor, wallets, pipeline, notifications, outbox
 ):
-    notifier = NotifyOnDeposit(executor)
+    notifier = MoneyDepositedEventHandler(executor)
     fanout, dispatch = pipeline(notifier)
 
     wallet = a_wallet(executor)
@@ -270,7 +271,11 @@ def test_a_handler_may_start_another_unit_of_work(
     # As a set: the rows come back ordered by `event_date`, and the frozen test clock stamps
     # every invocation with the same one. What is being asserted is that all three ran and each
     # was its own unit of work, which the action ids below say.
-    assert {r["action_name"] for r in outbox()} == {"CreateWallet", "DepositMoney", "Notify"}
+    assert {r["action_name"] for r in outbox()} == {
+        "CreateWalletAction",
+        "DepositMoneyAction",
+        "NotifyAction",
+    }
     assert len({r["action_id"] for r in outbox()}) == 3, "the chained work is its own unit"
 
 
@@ -420,7 +425,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
 ):
     """Java's `widget_handler_chains_into_note_action_and_note_handler_writes_audit_entry`.
 
-    The existing chaining test stops one level short: `Notify` writes an entity, and an entity
+    The existing chaining test stops one level short: `NotifyAction` writes an entity, and an entity
     emits nothing, so nothing downstream can subscribe. This goes the distance Java's does - a
     handler starts an action, that action's model emits its own event, and a *second* handler
     is dispatched from it, which writes a row of its own. Which is the shape every saga has,
@@ -434,7 +439,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
 
     class OpenASecondWalletOnDeposit:
         name = "second-wallet-opener"
-        event_type = WalletMoneyDeposited
+        event_type = WalletMoneyDepositedEvent
 
         def __init__(self) -> None:
             self.calls = 0
@@ -442,7 +447,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
         def handle(self, envelope) -> None:
             self.calls += 1
             executor.execute(
-                CreateWallet(),
+                CreateWalletAction(),
                 CreateWalletParams(
                     owner_id=uuid4(), currency="USD", initial_balance=Decimal("0.00")
                 ),
@@ -452,7 +457,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
         """Java's `NoteCreatedAuditEntryHandler`: the second hop writes an entity."""
 
         name = "wallet-open-auditor"
-        event_type = WalletCreated
+        event_type = WalletCreatedEvent
 
         def __init__(self) -> None:
             self.received = []
@@ -464,7 +469,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
         def handle(self, envelope) -> None:
             self.received.append(envelope)
             executor.execute(
-                Notify(),
+                NotifyAction(),
                 NotifyParams(
                     wallet_id=WalletId.of(envelope.model_id or ""),
                     kind="WALLET_OPENED",
@@ -496,7 +501,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
     assert auditor.calls > first_pass, "the second level was dispatched too"
     opened = [e for e in auditor.received if e.event.currency == "USD"]
     assert len(opened) == 1, "and it is the wallet the handler opened, not the original"
-    assert opened[0].action_name == "CreateWallet"
+    assert opened[0].action_name == "CreateWalletAction"
     assert opened[0].model_type == "Wallet"
 
     audited = [n for n in notifications.all() if n.kind == "WALLET_OPENED"]

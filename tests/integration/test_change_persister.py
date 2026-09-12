@@ -58,7 +58,7 @@ def test_it_writes_the_rows_and_then_their_events(persister, registry, wallets):
     assert wallets.get(wallet.id).balance == Decimal("100.0000")
     with registry.default.connection(readonly=True) as conn:
         rows = list(conn.execute(select(EVENTS.c.model_id, EVENTS.c.event_type)))
-    assert [r.event_type for r in rows] == ["WalletCreated"]
+    assert [r.event_type for r in rows] == ["WalletCreatedEvent"]
     assert rows[0].model_id == str(wallet.id)
 
 

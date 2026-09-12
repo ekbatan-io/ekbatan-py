@@ -19,10 +19,10 @@ from sqlalchemy import select
 from ekbatan.clock import SystemClock
 
 from .actions import (
-    CompleteTransfer,
+    CompleteTransferAction,
     CompleteTransferParams,
-    InitiateTransfer,
-    OpenWallet,
+    InitiateTransferAction,
+    OpenWalletAction,
     OpenWalletParams,
     TransferParams,
     TransferResult,
@@ -48,14 +48,14 @@ def service(tmp_path: Path) -> Iterator[SagaService]:
 
 def a_wallet(service: SagaService, balance: str = "100.00", currency: str = "EUR") -> Wallet:
     return service.executor.execute(
-        OpenWallet,
+        OpenWalletAction,
         OpenWalletParams(owner_id=uuid4(), currency=currency, opening_balance=Decimal(balance)),
     )
 
 
 def transfer(service: SagaService, source: Wallet, target: WalletId, amount: str) -> TransferResult:
     result: TransferResult = service.executor.execute(
-        InitiateTransfer,
+        InitiateTransferAction,
         TransferParams(from_wallet_id=source.id, to_wallet_id=target, amount=Decimal(amount)),
     )
     return result
@@ -96,8 +96,8 @@ def test_the_source_carries_the_whole_story(service: SagaService) -> None:
     transfer(service, source, destination.id, "30.00")
     service.deliver_pending_events()
 
-    assert events_on(service, source.id) == ["WalletOpened", "TransferInitiated"]
-    assert events_on(service, destination.id) == ["WalletOpened", "TransferCompleted"]
+    assert events_on(service, source.id) == ["WalletOpenedEvent", "TransferInitiatedEvent"]
+    assert events_on(service, destination.id) == ["WalletOpenedEvent", "TransferCompletedEvent"]
 
 
 def test_a_closed_destination_is_compensated_not_lost(service: SagaService) -> None:
@@ -119,7 +119,7 @@ def test_a_closed_destination_is_compensated_not_lost(service: SagaService) -> N
 
 
 def test_the_failure_and_the_refund_land_on_the_source_s_trail(service: SagaService) -> None:
-    """`TransferFailed` is emitted on the source, not the destination - the destination may be
+    """`TransferFailedEvent` is emitted on the source, not the destination - the destination may be
     closed, or may not exist at all. Reading one aggregate tells the whole story."""
     source, destination = a_wallet(service, "100.00"), a_wallet(service, "0.00")
     service.wallets.update(service.wallets.get(destination.id).close())
@@ -128,10 +128,10 @@ def test_the_failure_and_the_refund_land_on_the_source_s_trail(service: SagaServ
     service.deliver_pending_events()
 
     assert events_on(service, source.id) == [
-        "WalletOpened",
-        "TransferInitiated",
-        "TransferFailed",
-        "TransferRefunded",
+        "WalletOpenedEvent",
+        "TransferInitiatedEvent",
+        "TransferFailedEvent",
+        "TransferRefundedEvent",
     ]
 
 
@@ -143,7 +143,7 @@ def test_a_mismatched_currency_is_refused_the_same_way(service: SagaService) -> 
     service.deliver_pending_events()
 
     assert service.wallets.get(source.id).balance == Decimal("100.0000")
-    assert "TransferRefunded" in events_on(service, source.id)
+    assert "TransferRefundedEvent" in events_on(service, source.id)
 
 
 def test_a_destination_that_does_not_exist_is_refused_the_same_way(service: SagaService) -> None:
@@ -155,13 +155,14 @@ def test_a_destination_that_does_not_exist_is_refused_the_same_way(service: Saga
     service.deliver_pending_events()
 
     assert service.wallets.get(source.id).balance == Decimal("100.0000")
-    assert "TransferRefunded" in events_on(service, source.id)
+    assert "TransferRefundedEvent" in events_on(service, source.id)
 
 
 def test_a_replayed_delivery_does_not_credit_twice(service: SagaService) -> None:
     """Local delivery is at-least-once *by design*, so the saga has to survive a repeat.
 
-    The second `CompleteTransfer` stages the same `(transfer_id, COMPLETED)` marker, the unique
+    The second `CompleteTransferAction` stages the same `(transfer_id, CREDIT)` marker, and
+    the unique
     constraint refuses the insert, and the credit beside it is rolled back with it. Invoked
     directly rather than by duplicating a notification row, because what is being tested is the
     action's idempotency and not the dispatcher's bookkeeping.
@@ -187,7 +188,7 @@ def test_a_replayed_delivery_does_not_credit_twice(service: SagaService) -> None
         currency="EUR",
     )
     with pytest.raises(IntegrityError):
-        service.executor.execute(CompleteTransfer, replay)
+        service.executor.execute(CompleteTransferAction, replay)
 
     assert service.wallets.get(destination.id).balance == Decimal("30.0000"), (
         "the credit was rolled back with the marker that refused"
@@ -206,7 +207,7 @@ def test_a_transfer_larger_than_the_balance_never_starts(service: SagaService) -
         transfer(service, source, destination.id, "30.00")
 
     assert service.wallets.get(source.id).balance == Decimal("10.0000")
-    assert events_on(service, source.id) == ["WalletOpened"]
+    assert events_on(service, source.id) == ["WalletOpenedEvent"]
 
 
 def test_every_step_is_its_own_unit_of_work(service: SagaService) -> None:

@@ -32,7 +32,12 @@ from uuid import uuid4
 
 import pytest
 
-from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
+from fixtures.actions import (
+    CreateWalletAction,
+    CreateWalletParams,
+    DepositMoneyAction,
+    DepositParams,
+)
 from fixtures.domain import Wallet, WalletId
 
 WORKERS = 8
@@ -66,9 +71,8 @@ def test_two_threads_in_a_transaction_hold_different_connections(registry, diale
     lock = threading.Lock()
 
     def unit(_i: int) -> None:
-        with manager.transaction() as tx:
-            with lock:
-                seen.append(id(tx.connection))
+        with manager.transaction() as tx, lock:
+            seen.append(id(tx.connection))
 
     _in_parallel(unit)
 
@@ -106,9 +110,8 @@ def test_work_handed_to_a_pool_does_not_join_the_unit_of_work(registry, dialect)
         pytest.skip("needs a second live connection")
 
     manager = registry.default
-    with manager.transaction():
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            assert pool.submit(manager.current).result() is None
+    with manager.transaction(), ThreadPoolExecutor(max_workers=1) as pool:
+        assert pool.submit(manager.current).result() is None
 
 
 def test_a_pool_worker_does_not_carry_a_transaction_into_its_next_task(registry):
@@ -150,7 +153,7 @@ def test_concurrent_units_of_work_all_commit_and_none_interleave(registry, execu
 
     def create(i: int):
         return executor.execute(
-            CreateWallet(),
+            CreateWalletAction(),
             CreateWalletParams(
                 owner_id=uuid4(), currency="EUR", initial_balance=Decimal(f"{i}.00")
             ),
@@ -191,7 +194,7 @@ def test_concurrent_updates_to_one_row_leave_exactly_one_winner_per_version(
     def deposit(_i: int) -> str:
         try:
             executor.execute(
-                DepositMoney(wallets),
+                DepositMoneyAction(wallets),
                 DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="a@b"),
             )
             return "ok"

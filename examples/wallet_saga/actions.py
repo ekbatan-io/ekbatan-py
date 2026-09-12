@@ -1,8 +1,9 @@
 """The three steps, and the two ordinary actions around them.
 
 Each step is one unit of work on one aggregate, and each commits on its own. Read them in the
-order the saga runs them: `InitiateTransfer`, then `CompleteTransfer`, then - only when the
-second could not finish - `RefundTransfer`.
+order the saga runs them: `InitiateTransferAction`, then `CompleteTransferAction`, then -
+only when the
+second could not finish - `RefundTransferAction`.
 """
 
 from __future__ import annotations
@@ -13,7 +14,14 @@ from uuid import UUID
 
 from ekbatan import Action
 
-from .model import StepName, TransferFailed, TransferInitiated, TransferStep, Wallet, WalletId
+from .model import (
+    StepName,
+    TransferFailedEvent,
+    TransferInitiatedEvent,
+    TransferStep,
+    Wallet,
+    WalletId,
+)
 from .repository import WalletRepository
 
 
@@ -62,7 +70,7 @@ class TransferResult:
     source: Wallet
 
 
-class OpenWallet(Action[OpenWalletParams, Wallet]):
+class OpenWalletAction(Action[OpenWalletParams, Wallet]):
     def perform(self, params: OpenWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
@@ -73,7 +81,7 @@ class OpenWallet(Action[OpenWalletParams, Wallet]):
         )
 
 
-class InitiateTransfer(Action[TransferParams, TransferResult]):
+class InitiateTransferAction(Action[TransferParams, TransferResult]):
     """Step one: debit the source and say so. One aggregate, one transaction.
 
     Note what it does *not* do: touch the destination. That is the whole point - the two
@@ -92,7 +100,7 @@ class InitiateTransfer(Action[TransferParams, TransferResult]):
         return TransferResult(transfer_id=transfer_id, source=self.plan.update(debited))
 
 
-class CompleteTransfer(Action[CompleteTransferParams, Wallet | None]):
+class CompleteTransferAction(Action[CompleteTransferParams, Wallet | None]):
     """Step two: credit the destination, or fail the transfer on the source's trail.
 
     Both outcomes are ordinary units of work. "Failed" here is a business outcome, not an
@@ -109,7 +117,7 @@ class CompleteTransfer(Action[CompleteTransferParams, Wallet | None]):
         # beside it is rolled back with it - which is why the money cannot arrive twice.
         self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
 
-        arriving = TransferInitiated(
+        arriving = TransferInitiatedEvent(
             transfer_id=params.transfer_id,
             from_wallet_id=params.from_wallet_id.value,
             to_wallet_id=params.to_wallet_id.value,
@@ -131,7 +139,7 @@ class CompleteTransfer(Action[CompleteTransferParams, Wallet | None]):
         return self.plan.update(destination.complete_transfer_in(arriving))
 
 
-class RefundTransfer(Action[RefundTransferParams, Wallet]):
+class RefundTransferAction(Action[RefundTransferParams, Wallet]):
     """Step three: put the money back.
 
     A new change with its own commit and its own event, not a rollback of step one - step one
@@ -146,7 +154,7 @@ class RefundTransfer(Action[RefundTransferParams, Wallet]):
         self.plan.add(TransferStep.of(params.transfer_id, StepName.REFUND))
 
         source = self.wallets.get(params.from_wallet_id)
-        failure = TransferFailed(
+        failure = TransferFailedEvent(
             transfer_id=params.transfer_id,
             from_wallet_id=params.from_wallet_id.value,
             to_wallet_id=params.to_wallet_id.value,
@@ -157,12 +165,12 @@ class RefundTransfer(Action[RefundTransferParams, Wallet]):
 
 
 __all__ = [
-    "CompleteTransfer",
+    "CompleteTransferAction",
     "CompleteTransferParams",
-    "InitiateTransfer",
-    "OpenWallet",
+    "InitiateTransferAction",
+    "OpenWalletAction",
     "OpenWalletParams",
-    "RefundTransfer",
+    "RefundTransferAction",
     "RefundTransferParams",
     "TransferParams",
     "TransferResult",

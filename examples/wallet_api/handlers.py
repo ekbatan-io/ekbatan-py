@@ -13,22 +13,22 @@ from __future__ import annotations
 from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
 
-from .actions import RaiseAlert, RaiseAlertParams
-from .model import MoneyDeposited, WalletId
+from .actions import RaiseAlertAction, RaiseAlertParams
+from .model import MoneyDepositedEvent, WalletId
 
 
-class NotifyOnDeposit:
+class MoneyDepositedEventHandler:
     """Tells the owner money arrived, by starting another unit of work."""
 
     name = "wallet-deposit-alert"
-    event_type = MoneyDeposited
+    event_type = MoneyDepositedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
 
-    def handle(self, envelope: EventEnvelope[MoneyDeposited]) -> None:
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
         self.executor.execute(
-            RaiseAlert,
+            RaiseAlertAction,
             RaiseAlertParams(
                 wallet_id=WalletId.of(envelope.model_id or ""),
                 # Off the producing action's parameters, not the event. The event says what

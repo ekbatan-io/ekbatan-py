@@ -18,12 +18,12 @@ from ekbatan.action.outbox import OutboxRecord
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, StaleRecordError, ValidationError
 from fixtures.actions import (
-    CreateWallet,
+    CreateWalletAction,
     CreateWalletParams,
-    DepositMoney,
+    DepositMoneyAction,
     DepositParams,
 )
-from fixtures.domain import NotificationId, Wallet, WalletId, WalletMoneyDeposited
+from fixtures.domain import NotificationId, Wallet, WalletId, WalletMoneyDepositedEvent
 from fixtures.schema import EVENTS
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -33,7 +33,7 @@ MEXICO = ShardIdentifier(1, 0)
 # --------------------------------------------------------------------------- retry
 
 
-class FlakyDeposit(Action[DepositParams, Wallet]):
+class FlakyDepositAction(Action[DepositParams, Wallet]):
     """Fails the first attempt the way a lost version race does, then behaves."""
 
     def __init__(self, wallets: Repository[Wallet, UUID], failures: int = 1) -> None:
@@ -53,14 +53,14 @@ class FlakyDeposit(Action[DepositParams, Wallet]):
 
 def _new_wallet(executor, balance="0.00"):
     return executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
 
 
 def test_a_conflict_is_retried_once_by_default(executor, wallets, outbox):
     wallet = _new_wallet(executor)
-    action = FlakyDeposit(wallets)
+    action = FlakyDepositAction(wallets)
 
     executor.execute(
         action, DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x")
@@ -73,11 +73,11 @@ def test_a_conflict_is_retried_once_by_default(executor, wallets, outbox):
 def test_a_retry_starts_from_an_empty_plan(executor, wallets, outbox):
     wallet = _new_wallet(executor)
     executor.execute(
-        FlakyDeposit(wallets),
+        FlakyDepositAction(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x"),
     )
 
-    deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDeposited"]
+    deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent"]
     assert len(deposits) == 1, (
         "the failed attempt's staged change must not be committed alongside the retry's"
     )
@@ -86,7 +86,7 @@ def test_a_retry_starts_from_an_empty_plan(executor, wallets, outbox):
 
 def test_retries_can_be_switched_off(executor, wallets, outbox):
     wallet = _new_wallet(executor)
-    action = FlakyDeposit(wallets)
+    action = FlakyDepositAction(wallets)
     before = len(outbox())
 
     with pytest.raises(StaleRecordError):
@@ -108,7 +108,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     executor, wallets = sharded
 
     executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(
             wallet_id=WalletId.generate(GLOBAL),
             owner_id=uuid4(),
@@ -117,7 +117,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
         ),
     )
     there = executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(
             wallet_id=WalletId.generate(MEXICO),
             owner_id=uuid4(),
@@ -136,7 +136,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     )
 
 
-class CreateOnBothShards(Action[None, tuple[Wallet, Wallet]]):
+class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
     def perform(self, params: None) -> tuple[Wallet, Wallet]:
         return (
             self.plan.add(
@@ -164,7 +164,7 @@ def test_a_unit_of_work_spanning_shards_is_refused_before_anything_is_written(
     executor, wallets = sharded
 
     with pytest.raises(CrossShardError, match="no cross-shard transaction"):
-        executor.execute(CreateOnBothShards(), None)
+        executor.execute(CreateOnBothShardsAction(), None)
 
     assert wallets.count(shard=GLOBAL) == 0
     assert wallets.count(shard=MEXICO) == 0
@@ -176,7 +176,7 @@ def test_crossing_shards_can_be_opted_into(sharded, sharded_registry):
     executor, wallets = sharded
 
     executor.execute(
-        CreateOnBothShards(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+        CreateOnBothShardsAction(), None, config=ExecutionConfiguration(allow_cross_shard=True)
     )
 
     assert wallets.count(shard=GLOBAL) == 1
@@ -219,7 +219,7 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
     class Impostor(ModelEvent):
         pass
 
-    Impostor.__name__ = "WalletMoneyDeposited"
+    Impostor.__name__ = "WalletMoneyDepositedEvent"
 
     class EmitColliding(Action[None, None]):
         def perform(self, params: None) -> None:
@@ -227,7 +227,7 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
             self.plan.update(
                 wallet.evolve(
                     emit=[
-                        WalletMoneyDeposited(amount=Decimal("1"), new_balance=Decimal("1")),
+                        WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("1")),
                         Impostor(),
                     ]
                 )
@@ -290,12 +290,12 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
     )
     wallet = _new_wallet(executor)
     executor.execute(
-        DepositMoney(wallets),
+        DepositMoneyAction(wallets),
         DepositParams(wallet_id=wallet.id, amount=Decimal("5"), recipient="ada@x"),
     )
 
-    assert [r.action_name for r in written] == ["CreateWallet", "DepositMoney"]
-    assert [e.event_type for e in written[1].events] == ["WalletMoneyDeposited"]
+    assert [r.action_name for r in written] == ["CreateWalletAction", "DepositMoneyAction"]
+    assert [e.event_type for e in written[1].events] == ["WalletMoneyDepositedEvent"]
     assert outbox() == [], "nothing reached the default table"
     assert wallets.get(wallet.id).balance == Decimal("5.0000"), "the state change still committed"
 
@@ -328,7 +328,7 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(KeyboardInterrupt):
         executor.execute(
-            CreateOnBothShards(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+            CreateOnBothShardsAction(), None, config=ExecutionConfiguration(allow_cross_shard=True)
         )
 
     assert any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
@@ -356,7 +356,7 @@ def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(RuntimeError):
         executor.execute(
-            CreateOnBothShards(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+            CreateOnBothShardsAction(), None, config=ExecutionConfiguration(allow_cross_shard=True)
         )
 
     assert not any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
@@ -371,7 +371,7 @@ class StaleOnMexico:
     wallet_id: WalletId
 
 
-class CreateOnGlobalThenFailOnMexico(Action[StaleOnMexico, None]):
+class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
     """Commits one shard, then fails the other - Java's `WalletCreateThenFailMultiShardAction`.
 
     The failure is an optimistic-lock miss rather than a thrown exception, because that is the
@@ -410,7 +410,7 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
 
     executor, wallets = sharded
 
-    # Placed directly rather than through an action: `CreateWallet` mints its id with
+    # Placed directly rather than through an action: `CreateWalletAction` mints its id with
     # `WalletId.random()`, which lands on the default shard, and this needs one that does not.
     on_mexico = wallets.add(
         Wallet.open(
@@ -430,7 +430,7 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(StaleRecordError):
         executor.execute(
-            CreateOnGlobalThenFailOnMexico(wallets),
+            CreateOnGlobalThenFailOnMexicoAction(wallets),
             StaleOnMexico(wallet_id=on_mexico.id),
             config=config,
         )

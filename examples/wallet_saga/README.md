@@ -18,17 +18,17 @@ stops working the first time they are on different shards, or the destination mo
 service. So the transfer is three steps, each its own transaction:
 
 ```
-InitiateTransfer          debit the source, emit TransferInitiated
-  └─► CompleteTransfer    credit the destination, emit TransferCompleted
-      │                   ...or, if it cannot, emit TransferFailed on the SOURCE
-      └─► RefundTransfer  credit the source back, emit TransferRefunded
+InitiateTransferAction          debit the source, emit TransferInitiatedEvent
+  └─► CompleteTransferAction    credit the destination, emit TransferCompletedEvent
+      │                   ...or, if it cannot, emit TransferFailedEvent on the SOURCE
+      └─► RefundTransferAction  credit the source back, emit TransferRefundedEvent
 ```
 
 Two commits in the happy case, three when it compensates. Each independently durable.
 
 ## The four ideas
 
-**Forward-only compensation.** `RefundTransfer` is not a rollback. Step one's debit committed
+**Forward-only compensation.** `RefundTransferAction` is not a rollback. Step one's debit committed
 long ago and cannot be undone; the refund is a *new* action with its own commit and its own
 event. The outbox is what makes the compensation exactly as durable as the debit it undoes.
 
@@ -36,17 +36,17 @@ event. The outbox is what makes the compensation exactly as durable as the debit
 thing: given this event, run that action. A fourth step means a new event and a new handler,
 and nothing that already works has to change.
 
-**The failure lands on the source.** `TransferFailed` is emitted on the *source* wallet, because
+**The failure lands on the source.** `TransferFailedEvent` is emitted on the *source* wallet, because
 the destination may be closed — or may not exist at all, in which case there is no aggregate
 there to attach anything to. It also means one aggregate's trail tells the whole story:
 
 ```
-TransferInitiated → TransferFailed → TransferRefunded
+TransferInitiatedEvent → TransferFailedEvent → TransferRefundedEvent
 ```
 
 which is what an audit query on `events WHERE model_id = ?` gets to rely on.
 
-**A failure is a business outcome, not an exception.** `CompleteTransfer` returns normally when
+**A failure is a business outcome, not an exception.** `CompleteTransferAction` returns normally when
 the destination is closed. Raising would make the delivery retry, and retrying a transfer into
 a closed wallet will never start working.
 

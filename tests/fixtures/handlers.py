@@ -13,8 +13,8 @@ from typing import Any
 from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
 
-from .actions import Notify, NotifyParams
-from .domain import WalletClosed, WalletId, WalletMoneyDeposited
+from .actions import NotifyAction, NotifyParams
+from .domain import WalletClosedEvent, WalletId, WalletMoneyDepositedEvent
 
 
 class RecordingHandler:
@@ -44,7 +44,9 @@ class RecordingHandler:
             self._on_call()
 
 
-def succeeding(name: str = "recorder", event_type: type = WalletMoneyDeposited) -> RecordingHandler:
+def succeeding(
+    name: str = "recorder", event_type: type = WalletMoneyDepositedEvent
+) -> RecordingHandler:
     return RecordingHandler(name, event_type)
 
 
@@ -59,7 +61,7 @@ def failing(name: str = "flaky", times: int | None = None) -> RecordingHandler:
             state["remaining"] -= 1
             raise RuntimeError("handler failed")
 
-    return RecordingHandler(name, WalletMoneyDeposited, boom)
+    return RecordingHandler(name, WalletMoneyDepositedEvent, boom)
 
 
 def fatal(name: str = "exploder") -> RecordingHandler:
@@ -73,10 +75,10 @@ def fatal(name: str = "exploder") -> RecordingHandler:
     def explode() -> None:
         raise BaseException("something a normal except would not catch")
 
-    return RecordingHandler(name, WalletMoneyDeposited, explode)
+    return RecordingHandler(name, WalletMoneyDepositedEvent, explode)
 
 
-class NotifyOnDeposit:
+class MoneyDepositedEventHandler:
     """Chains into another unit of work - the shape a saga step has.
 
     Reads the recipient off the producing action's parameters, because a delivery address has
@@ -88,12 +90,12 @@ class NotifyOnDeposit:
         self.calls = 0
 
     name = "wallet-deposit-notification"
-    event_type = WalletMoneyDeposited
+    event_type = WalletMoneyDepositedEvent
 
-    def handle(self, envelope: EventEnvelope[WalletMoneyDeposited]) -> None:
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.calls += 1
         self.executor.execute(
-            Notify(),
+            NotifyAction(),
             NotifyParams(
                 wallet_id=WalletId.of(envelope.model_id or ""),
                 kind="MONEY_DEPOSITED",
@@ -104,4 +106,4 @@ class NotifyOnDeposit:
 
 
 def on_close(name: str = "closer") -> RecordingHandler:
-    return RecordingHandler(name, WalletClosed)
+    return RecordingHandler(name, WalletClosedEvent)

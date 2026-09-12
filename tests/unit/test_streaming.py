@@ -28,13 +28,13 @@ def a_row(**overrides) -> dict:
         "id": uuid.uuid4(),
         "namespace": "com.example.finance",
         "action_id": uuid.uuid4(),
-        "action_name": "DepositMoney",
+        "action_name": "DepositMoneyAction",
         "action_params": {"amount": "50.00"},
         "started_date": PRECISE,
         "completion_date": datetime(2026, 8, 2, 10, 15, 31, tzinfo=UTC),
         "model_id": str(uuid.uuid4()),
         "model_type": "Wallet",
-        "event_type": "WalletMoneyDeposited",
+        "event_type": "WalletMoneyDepositedEvent",
         "payload": {"amount": "50.00", "new_balance": "150.00"},
         "event_date": datetime(2026, 8, 2, 10, 15, 31, tzinfo=UTC),
         "delivered": False,
@@ -67,14 +67,14 @@ def test_the_pairs_java_needed_a_builder_for_cannot_be_transposed():
     event = ActionEvent.from_row(
         a_row(
             model_type="Wallet",
-            event_type="WalletMoneyDeposited",
+            event_type="WalletMoneyDepositedEvent",
             started_date=started,
             completion_date=completed,
         )
     )
 
     assert event.model_type == "Wallet"
-    assert event.event_type == "WalletMoneyDeposited"
+    assert event.event_type == "WalletMoneyDepositedEvent"
     assert event.started_date == started
     assert event.completion_date == completed
 
@@ -96,7 +96,7 @@ def test_a_sentinel_row_becomes_an_event_with_nothing_to_route_on():
         None,
         None,
     )
-    assert event.action_name == "DepositMoney", "the action context is still there"
+    assert event.action_name == "DepositMoneyAction", "the action context is still there"
     assert event.action_params == {"amount": "50.00"}
 
 

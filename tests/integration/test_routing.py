@@ -259,7 +259,7 @@ class OpenWalletParams:
 def _open_wallet(currency):
     from ekbatan.action import Action
 
-    class OpenWallet(Action[OpenWalletParams, Wallet]):
+    class OpenWalletAction(Action[OpenWalletParams, Wallet]):
         def perform(self, params):
             return self.plan.add(
                 Wallet.open(
@@ -270,7 +270,7 @@ def _open_wallet(currency):
                 )
             )
 
-    return OpenWallet(), OpenWalletParams(currency=currency)
+    return OpenWalletAction(), OpenWalletParams(currency=currency)
 
 
 def test_a_strategy_that_cannot_route_by_id_alone_still_runs(sharded_registry, clock, outbox):

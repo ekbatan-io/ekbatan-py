@@ -7,10 +7,10 @@ the first time the two live on different shards, or the second wallet moves to a
 
 So the transfer is three single-aggregate steps, each its own transaction, chained by events:
 
-    InitiateTransfer  debit the source, emit TransferInitiated
-      -> CompleteTransfer  credit the destination, emit TransferCompleted
-                           ...or, if it cannot, emit TransferFailed on the *source*
-      -> RefundTransfer    credit the source back, emit TransferRefunded
+    InitiateTransferAction  debit the source, emit TransferInitiatedEvent
+      -> CompleteTransferAction  credit the destination, emit TransferCompletedEvent
+                           ...or, if it cannot, emit TransferFailedEvent on the *source*
+      -> RefundTransferAction    credit the source back, emit TransferRefundedEvent
 
 Two ideas carry the whole design:
 
@@ -20,7 +20,8 @@ event. The outbox makes the compensation exactly as durable as the thing it comp
 
 **Choreography, not orchestration.** There is no saga state machine. Each handler knows only
 its own next step, and the state of a transfer is the event trail on the source wallet:
-`TransferInitiated -> TransferFailed -> TransferRefunded` reads the whole story from one
+`TransferInitiatedEvent -> TransferFailedEvent -> TransferRefundedEvent` reads the whole
+story from one
 aggregate, which is what an audit query gets to rely on.
 """
 
@@ -62,14 +63,14 @@ class WalletState(Enum):
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletOpened(ModelEvent):
+class WalletOpenedEvent(ModelEvent):
     owner_id: UUID
     currency: str
     opening_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferInitiated(ModelEvent):
+class TransferInitiatedEvent(ModelEvent):
     transfer_id: UUID
     from_wallet_id: UUID
     to_wallet_id: UUID
@@ -78,7 +79,7 @@ class TransferInitiated(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferCompleted(ModelEvent):
+class TransferCompletedEvent(ModelEvent):
     transfer_id: UUID
     from_wallet_id: UUID
     to_wallet_id: UUID
@@ -86,7 +87,7 @@ class TransferCompleted(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferFailed(ModelEvent):
+class TransferFailedEvent(ModelEvent):
     """Emitted on the **source** wallet, not the destination.
 
     The destination may be closed, or may not exist at all - there is no aggregate there to
@@ -102,7 +103,7 @@ class TransferFailed(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferRefunded(ModelEvent):
+class TransferRefundedEvent(ModelEvent):
     transfer_id: UUID
     from_wallet_id: UUID
     amount: Decimal
@@ -137,7 +138,9 @@ class Wallet(Model[WalletId, WalletState]):
             .currency(currency)
             .balance(balance)
             .with_initial_version()
-            .with_event(WalletOpened(owner_id=owner_id, currency=currency, opening_balance=balance))
+            .with_event(
+                WalletOpenedEvent(owner_id=owner_id, currency=currency, opening_balance=balance)
+            )
             .build()
         )
 
@@ -166,7 +169,7 @@ class Wallet(Model[WalletId, WalletState]):
             self.copy()
             .balance(self.balance - amount)
             .with_event(
-                TransferInitiated(
+                TransferInitiatedEvent(
                     transfer_id=transfer_id,
                     from_wallet_id=self.id.value,
                     to_wallet_id=to.value,
@@ -179,12 +182,12 @@ class Wallet(Model[WalletId, WalletState]):
 
     # -- step two, on the destination -----------------------------------------------------------
 
-    def complete_transfer_in(self, event: TransferInitiated) -> Wallet:
+    def complete_transfer_in(self, event: TransferInitiatedEvent) -> Wallet:
         return (
             self.copy()
             .balance(self.balance + event.amount)
             .with_event(
-                TransferCompleted(
+                TransferCompletedEvent(
                     transfer_id=event.transfer_id,
                     from_wallet_id=event.from_wallet_id,
                     to_wallet_id=event.to_wallet_id,
@@ -194,7 +197,7 @@ class Wallet(Model[WalletId, WalletState]):
             .build()
         )
 
-    def can_receive(self, event: TransferInitiated) -> str | None:
+    def can_receive(self, event: TransferInitiatedEvent) -> str | None:
         """Why this wallet cannot take the transfer, or None if it can."""
         if self.state is not WalletState.OPENED:
             return f"destination wallet is {self.state.name}"
@@ -204,7 +207,7 @@ class Wallet(Model[WalletId, WalletState]):
 
     # -- step two's other outcome, back on the source --------------------------------------------
 
-    def mark_transfer_failed(self, event: TransferInitiated, reason: str) -> Wallet:
+    def mark_transfer_failed(self, event: TransferInitiatedEvent, reason: str) -> Wallet:
         """A version-only update that carries an event.
 
         No balance changes here - the money is still gone, and putting it back is step three's
@@ -214,7 +217,7 @@ class Wallet(Model[WalletId, WalletState]):
         return (
             self.copy()
             .with_event(
-                TransferFailed(
+                TransferFailedEvent(
                     transfer_id=event.transfer_id,
                     from_wallet_id=event.from_wallet_id,
                     to_wallet_id=event.to_wallet_id,
@@ -227,13 +230,13 @@ class Wallet(Model[WalletId, WalletState]):
 
     # -- step three, the compensation -------------------------------------------------------------
 
-    def refund_transfer(self, event: TransferFailed) -> Wallet:
+    def refund_transfer(self, event: TransferFailedEvent) -> Wallet:
         """Credit the money back. A new change, not an undo - see the module docstring."""
         return (
             self.copy()
             .balance(self.balance + event.amount)
             .with_event(
-                TransferRefunded(
+                TransferRefundedEvent(
                     transfer_id=event.transfer_id,
                     from_wallet_id=event.from_wallet_id,
                     amount=event.amount,
@@ -246,7 +249,7 @@ class Wallet(Model[WalletId, WalletState]):
 class StepName(Enum):
     """Named for the *step*, not for how it turned out.
 
-    `CREDIT` is staged by `CompleteTransfer` whether the credit happened or the transfer was
+    `CREDIT` is staged by `CompleteTransferAction` whether the credit happened or the transfer was
     failed instead, because what the marker guards is "step two has run for this transfer" -
     and a replay must not re-run it either way.
     """

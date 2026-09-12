@@ -27,9 +27,9 @@ from ekbatan.events import (
     LocalEventHandlerConfig,
 )
 
-from .actions import CloseWallet, DepositMoney, OpenWallet, RaiseAlert
-from .handlers import NotifyOnDeposit
-from .jobs import PayStipend
+from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
+from .handlers import MoneyDepositedEventHandler
+from .jobs import PayStipendJob
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
 
@@ -83,14 +83,14 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
     )
 
     # Each action, built once with what it needs. This is the only place that knows what that
-    # is - a caller runs `executor.execute(DepositMoney, params)` and depends on neither the
+    # is - a caller runs `executor.execute(DepositMoneyAction, params)` and depends on neither the
     # repository nor the constructor.
     actions = (
         ActionRegistry.builder()
-        .with_action(OpenWallet())
-        .with_action(DepositMoney(wallets))
-        .with_action(CloseWallet(wallets))
-        .with_action(RaiseAlert())
+        .with_action(OpenWalletAction())
+        .with_action(DepositMoneyAction(wallets))
+        .with_action(CloseWalletAction(wallets))
+        .with_action(RaiseAlertAction())
         .build()
     )
 
@@ -103,7 +103,7 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
         clock=running,
     )
 
-    handlers = EventHandlerRegistry([NotifyOnDeposit(executor)])
+    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
 
     # Turning committed events into deliveries is work a cluster must do once, not once per
     # instance - so it is two distributed jobs, claimed through `scheduled_tasks` like any
@@ -143,7 +143,7 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
         jobs=(
             job_registry()
             .engine(registry.default.primary)
-            .with_jobs([fanout, dispatch, PayStipend(executor, wallets)])
+            .with_jobs([fanout, dispatch, PayStipendJob(executor, wallets)])
             .build_manual(SettableClock(running.now()))
         ),
     )

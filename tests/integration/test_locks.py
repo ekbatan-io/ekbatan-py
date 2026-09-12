@@ -380,16 +380,21 @@ def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallets, request
     """
     from decimal import Decimal
 
-    from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
+    from fixtures.actions import (
+        CreateWalletAction,
+        CreateWalletParams,
+        DepositMoneyAction,
+        DepositParams,
+    )
 
     wallet = executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
     )
 
     with locks.acquire(f"wallet:{wallet.id}", timedelta(seconds=10)):
         updated = executor.execute(
-            DepositMoney(wallets),
+            DepositMoneyAction(wallets),
             DepositParams(wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@x"),
         )
 
@@ -409,10 +414,15 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
     """
     from decimal import Decimal
 
-    from fixtures.actions import CreateWallet, CreateWalletParams, DepositMoney, DepositParams
+    from fixtures.actions import (
+        CreateWalletAction,
+        CreateWalletParams,
+        DepositMoneyAction,
+        DepositParams,
+    )
 
     wallet = executor.execute(
-        CreateWallet(),
+        CreateWalletAction(),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
     )
     key = f"wallet:{wallet.id}"
@@ -424,7 +434,7 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
         with locks.acquire(key, timedelta(seconds=30)):
             finished.append(
                 executor.execute(
-                    DepositMoney(wallets),
+                    DepositMoneyAction(wallets),
                     DepositParams(wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@x"),
                 )
             )

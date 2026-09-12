@@ -21,7 +21,7 @@ def a_wallet(balance: str = "100.00") -> Wallet:
     ).without_events()
 
 
-class Deposit(Action[DepositParams, Wallet]):
+class DepositAction(Action[DepositParams, Wallet]):
     def __init__(self, wallet: Wallet) -> None:
         self.wallet = wallet
 
@@ -37,7 +37,7 @@ def test_nothing_reaches_a_database(registry, clock):
     stored = wallets.add(a_wallet("100.00"))
 
     staged = run_action(
-        Deposit(stored),
+        DepositAction(stored),
         DepositParams(wallet_id=stored.id, amount=Decimal("50.00"), recipient="ada@x"),
     )
 
