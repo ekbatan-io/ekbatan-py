@@ -9,38 +9,62 @@ application would want. If the tests read from here instead, every change made f
 would land in the documentation and every change made for clarity would break the suite. So
 they do not meet, and `tests/test_structure.py` keeps it that way.
 
-## Start here
+Every directory carries its database in its name, as Java's do.
 
-| | | |
-|---|---|---|
-| [`wallet_service/`](wallet_service/) | SQLite, one command, no server | one wallet end to end: a model that emits events, actions that stage them, a handler that reacts, and a scheduled job. Read this one first. |
-| [`wallet_api/`](wallet_api/) | FastAPI + PostgreSQL | the deployment shape - REST endpoints, Alembic migrations from files, three separate connection pools, and a keyed lock around the endpoint that needs one |
+## The matrix: one REST service per database
 
-```
-uv run python -m examples.wallet_service     # runs now, needs nothing
-```
+The same application three times, differing only by database - the counterpart to Java's
+`*-wallet-rest-*` grid.
 
-## The specialized ones
+| | Database |
+|---|---|
+| [`fastapi_wallet_rest_pg/`](fastapi_wallet_rest_pg/) | PostgreSQL |
+| [`fastapi_wallet_rest_mysql/`](fastapi_wallet_rest_mysql/) | MySQL |
+| [`fastapi_wallet_rest_mariadb/`](fastapi_wallet_rest_mariadb/) | MariaDB |
 
-Each shows one thing, rather than repeating the whole application.
+REST endpoints, Alembic migrations from files, three separate connection pools, and a keyed lock
+around the deposit endpoint. The domain is byte-identical across all three; **four things
+differ** and each is a real difference rather than a setting:
+
+- the **url scheme** and driver extra
+- the **keyed lock provider** - `pg_advisory_lock` on PostgreSQL, `GET_LOCK` on the other two
+- the **migration DDL** - native `UUID`/`JSONB` against `CHAR(36)`/`JSON`
+- the **test container**
+
+And one that only shows up when you run it: PyMySQL executes a single statement per call and
+rejects a script, where psycopg accepts one. A migration written as one block passes on
+PostgreSQL and fails on the other two.
+
+## Outside the matrix
+
+These exist once each, on PostgreSQL, exactly as their Java counterparts do. A second copy per
+database would demonstrate nothing the matrix above does not already.
 
 | | Shows |
 |---|---|
-| [`wallet_sharded/`](wallet_sharded/) | two databases and routing packed into the id - no lookup table, no tenant column, and a cross-shard reach refused rather than half-committed |
-| [`wallet_saga/`](wallet_saga/) | a transfer as three single-aggregate steps chained by events, with forward-only compensation and a replay that credits nothing twice |
-| [`job_worker/`](job_worker/) | a worker process with no HTTP at all: two jobs, once per slot across a cluster, and shutdown done properly |
+| [`wallet_saga_pg/`](wallet_saga_pg/) | a transfer as three single-aggregate steps chained by events, with forward-only compensation and a replay that credits nothing twice |
+| [`wallet_sharded_pg/`](wallet_sharded_pg/) | two databases and routing packed into the id - no lookup table, no tenant column, and a cross-shard reach refused rather than half-committed |
+| [`job_worker_pg/`](job_worker_pg/) | a worker process with no HTTP at all: two jobs, once per slot across a cluster, and shutdown done properly |
 
-## Why there are five and not thirty-six
+## Start here instead
 
-Java's `ekbatan-examples` holds 41 projects, 36 of which are one grid: three DI frameworks x two
-build tools x three databases, each JVM and native. That matrix is a *Java packaging* concern -
-there, changing the database means new driver dependencies and a fresh jOOQ codegen, and
-changing the build tool means a different project layout.
+| | |
+|---|---|
+| [`wallet_service_sqlite/`](wallet_service_sqlite/) | one wallet end to end on SQLite, in one command, with no server and nothing to install. No Java counterpart - there, the smallest example still needs Docker. |
 
-Here the database is a url and the build tool is a line in `pyproject.toml`. So the grid
-collapses to one REST example, and what is left maps one-for-one onto Java's *specialized*
-examples - the ones that demonstrate framework behaviour rather than packaging. Native-image has
-no counterpart and is not represented.
+```
+uv run python -m examples.wallet_service_sqlite     # runs now, needs nothing
+```
+
+## Why three REST projects and not thirty-six
+
+Java's grid is three DI frameworks x two build tools x three databases, each JVM and native.
+Two of those axes are Java packaging concerns: changing the build tool means a different project
+layout, and changing the database means new driver dependencies and a fresh jOOQ codegen.
+
+Here the build tool is a line in `pyproject.toml` and there is one web framework worth
+targeting, so those axes collapse. The **database** axis does not, for the four reasons above -
+which is why it is the one that survives.
 
 ## Naming
 
@@ -51,8 +75,8 @@ are looking at: `...Action` for a unit of work, `...Event` for something that ha
 ## Running them
 
 ```
-uv sync --group examples
-uv run pytest examples          # all five; wallet_api and wallet_sharded need Docker
+uv sync --all-extras --group examples
+uv run pytest examples          # everything except wallet_service_sqlite needs Docker
 ```
 
 An example nobody runs is an example that rots - and one did, silently, for several commits. So

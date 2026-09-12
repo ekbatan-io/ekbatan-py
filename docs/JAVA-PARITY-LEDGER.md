@@ -56,7 +56,7 @@ Excluded by decision, not by oversight:
 | `ekbatan-di` | 23 main, 14 test | Spring / Quarkus / Micronaut wiring. Revisit if and when a Python DI framework is worth targeting |
 | `ekbatan-native` | 4 | GraalVM native-image configuration. CPython has no counterpart |
 | `ekbatan-events/streaming/debezium-smt` | 7 | a Kafka Connect single-message transform - a Java artifact that runs inside Kafka Connect, not inside the application |
-| `ekbatan-examples` | 755 main, 65 test | the same wallet application repeated across DI framework x build tool x database. `examples/wallet_service` is the Python counterpart |
+| `ekbatan-examples` | 755 main, 65 test | the same wallet application repeated across DI framework x build tool x database. `examples/wallet_service_sqlite` is the Python counterpart |
 | `ekbatan-integration-tests/event-pipeline` | 34 | the Debezium/Kafka harness, which tests the SMT above |
 | `ekbatan-integration-tests/di` | 6 | Spring / Quarkus / Micronaut wiring, as above |
 | generated Avro/Protobuf Java | 4 | build output, not source |

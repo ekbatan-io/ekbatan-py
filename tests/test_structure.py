@@ -89,15 +89,16 @@ EXAMPLE_DEPENDENCIES = {
     # `DistributedJob` returns one. A user writing a job imports it in either language.
     "db_scheduler",
     "sqlalchemy",
-    # `wallet_api` is a REST service, which is the whole thing it exists to show - so it needs
-    # a web framework, the way Java's grid examples need Spring, Quarkus or Micronaut.
+    # The `fastapi_wallet_rest_*` projects are REST services, which is the whole thing they
+    # exist to show - so they need a web framework, the way Java's grid examples need Spring,
+    # Quarkus or Micronaut.
     "fastapi",
     "pydantic",
     "starlette",
     "uvicorn",
     "httpx",
-    # Migrations from files, which is what makes `wallet_api` a deployment shape rather than a
-    # demo.
+    # Migrations from files, which is what makes the REST projects a deployment shape rather
+    # than a demo.
     "alembic",
     # The example suites, which run against real servers for the same reason the framework's do.
     "pytest",

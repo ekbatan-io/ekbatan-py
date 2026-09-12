@@ -47,11 +47,11 @@ jobs:
       # gets it. Without this the job fails at import.
       - run: uv sync --all-extras --group examples
       # An example nobody runs is an example that rots - and one did. The payload assertion in
-      # `wallet_service` went stale at EKB-0129 and stayed that way, because this repository
+      # `wallet_service_sqlite` went stale at EKB-0129 and stayed that way, because this repository
       # has no remote and so this file has never actually run. When it does, it catches that.
       - run: uv run pytest examples
-      # The two that need no database, run as a user would run them.
-      - run: uv run python -m examples.wallet_service
+      # The one that needs no database, run as a user would run it.
+      - run: uv run python -m examples.wallet_service_sqlite
 
   tracing:
     # The span names are a cross-language contract - an operator filtering a trace on
