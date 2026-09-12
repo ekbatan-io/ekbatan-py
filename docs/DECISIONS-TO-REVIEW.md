@@ -17,6 +17,67 @@ Nothing has been done about these. They are here so they are not lost between "n
 
 ### No leak detection, and no idle timeout, on the connection pools
 
+**Investigated in depth before deciding. Every claim below was verified by running.**
+
+Java's `DataSourceConfig` carries `leakDetectionThreshold`, `idleTimeout` and `minimumIdle`;
+SQLAlchemy's pool has no equivalent of any of the three.
+
+#### The easy half: `idleTimeout` and `minimumIdle`
+
+SQLAlchemy's idiom is `pool_use_lifo=True` alongside `pool_recycle`. LIFO reuses the hot
+connection so the cold tail sits untouched and ages out. Measured over eight sequential borrows
+against a pool of four: FIFO touches **all four** connections, LIFO touches **one**. Not
+Hikari's semantics - there is no floor like `minimumIdle`, and retirement is by age rather than
+by idleness - but it is the outcome people want the knob for, and it is one config line.
+
+#### The hard half: `leakDetectionThreshold`
+
+A naive port is *worse than nothing*, and the investigation found why. Ten findings:
+
+| # | finding | consequence |
+| --- | --- | --- |
+| 1 | A handler raising in `checkin` **strands the connection** - verified, pool left with 1 checked out | a bug in the leak detector *causes* the exact leak it exists to find. The worst possible failure |
+| 2 | A handler raising in `checkout` propagates | any bug breaks every checkout in the process |
+| 3 | `id(ConnectionRecord)` is **reused** after `dispose()` - observed directly | keying the map by `id()` matches the wrong entry. Use `record.info` or a weakref |
+| 4 | `detach` fires **no** `checkin` | the map grows forever and warns about a connection that legitimately left the pool |
+| 5 | The keyed lock holds `engine.connect()` for the whole lease, up to `max_hold` (typically 30s) | Hikari's 2s minimum threshold would flood the lock pool with false positives. Detection has to be per-engine |
+| 6 | In CPython a *dropped* connection returns on garbage collection - immediately by refcount, or at the next cyclic collection | the "forgot to close" leak Hikari catches is largely self-healing here. Only a **retained** reference is a true leak |
+| 7 | Handlers are reentrant, and a handler touching its own pool recurses | a detector must never touch the pool from inside a handler |
+| 8 | The pool holds no lock across the event - another thread made progress during a handler | our own lock cannot deadlock against the pool's. The one piece of good news |
+| 9 | The map must be guarded; 3200 concurrent borrows across 8 threads | a sweep iterating an unguarded dict races with checkout |
+| 10 | A forked child inherits the map but not the watchdog thread | stale entries, reported by nobody |
+
+#### Cost, measured
+
+| | per checkout |
+| --- | --- |
+| sweep at `pool_size=10` / `50` / `200` | 0.44 / 1.39 / 4.89 us |
+| stack capture (the dominant cost) | 5.9 - 7.7 us |
+| for scale: `select 1` on in-memory SQLite | 9.3 us |
+| for scale: Postgres over a socket | 150 - 500 us |
+
+#### What I would build, and what I would not
+
+**Not** Hikari's design. A periodic sweeper on the hot path of every checkout, whose failure
+mode is stranding connections, is a bad trade for a language whose garbage collector already
+returns dropped connections.
+
+**Instead**, the narrow version that keeps all the value:
+
+- Record the borrower's stack on checkout **only when enabled** - zero cost otherwise.
+- Report at the one moment it is certainly not a false alarm: **pool exhaustion**. Wrap
+  SQLAlchemy's `TimeoutError` where this port opens connections and attach "these N connections
+  are checked out, and here is where each was borrowed".
+- Every handler body wrapped in `try/except BaseException`, never re-raising - finding 1 makes
+  that non-negotiable.
+- Also report anything still outstanding at `close()`, which costs nothing.
+
+That gives an operator staring at a hung service the thing they actually need - the application
+line that borrowed and never returned - with no background thread, no periodic work, no
+false positives, and no way to strand a connection. The idle-pool and long-hold problems simply
+do not arise, because the detector only ever speaks when the pool is genuinely exhausted.
+
+
 Java's `DataSourceConfig` carries `leakDetectionThreshold` and `idleTimeout` (and `minimumIdle`);
 SQLAlchemy's pool has no equivalent of any of the three, so this port simply does not offer them.
 Written up in `DIVERGENCE.md`; the decision needed is whether `leakDetectionThreshold` is worth
