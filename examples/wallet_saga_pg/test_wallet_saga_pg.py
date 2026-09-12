@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from decimal import Decimal
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,14 +31,25 @@ from .model import StepName, Wallet, WalletId
 from .schema import EVENTS
 
 
+@pytest.fixture(scope="module")
+def database() -> Iterator[str]:
+    from testcontainers.postgres import PostgresContainer
+
+    # PostgreSQL, because the directory says so. Java's counterpart is `-pg` too, and the
+    # reason is the same: a saga is about steps that commit independently, and a database that
+    # serialises every writer makes that harder to see rather than easier.
+    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        yield container.get_connection_url()
+
+
 @pytest.fixture
-def service(tmp_path: Path) -> Iterator[SagaService]:
+def service(database: str) -> Iterator[SagaService]:
     # A *running* clock, not a frozen one. The event trail below is read in `event_date` order,
     # and the outbox has no ordinal column - so under a frozen clock every step ties and the
     # order falls back to a random uuid. Each saga step is a separate unit of work at a
     # different instant, which is exactly what makes the trail readable; freezing time would
     # be testing an order neither port promises.
-    built = build(f"sqlite:///{tmp_path / 'saga.db'}", clock=SystemClock())
+    built = build(database, clock=SystemClock())
     try:
         yield built
     finally:

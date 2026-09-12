@@ -73,11 +73,12 @@ happened or the transfer was failed instead, because what it guards is "step two
 | `schema.py` | the unique constraint that does the idempotency |
 | `test_wallet_saga.py` | happy path, three compensation paths, and a replay that credits nothing |
 
-## Running on SQLite
+## Running on PostgreSQL
 
-Deliberately. This example is about the saga, and the steps are driven by hand through
+As Java's `spring-boot-wallet-saga-gradle-pg` does. This example is about the saga, and the steps are driven by hand through
 `deliver_pending_events()` so they happen where a reader can see them. In a service, fan-out
-and dispatch are two distributed jobs and nobody calls them — `fastapi_wallet_rest_pg` shows that shape.
+and dispatch are two distributed jobs and nobody calls them — `fastapi_wallet_rest_pg` shows
+that shape. For a run that needs nothing installed, `wallet_service_sqlite` is the one.
 
 One thing the tests had to get right, and it is worth knowing: the event trail is read in
 `event_date` order, and the outbox has **no ordinal column**. Under a frozen test clock every

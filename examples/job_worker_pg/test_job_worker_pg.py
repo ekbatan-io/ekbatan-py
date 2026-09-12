@@ -12,12 +12,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from db_scheduler.clock import SettableClock
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from ekbatan import (
     ActionExecutor,
@@ -130,9 +129,27 @@ class Harness:
         self.registry.close()
 
 
+@pytest.fixture(scope="module")
+def database() -> Iterator[str]:
+    from testcontainers.postgres import PostgresContainer
+
+    # PostgreSQL, because the directory says so. Java's counterpart is `-pg` too, and the
+    # reason is the same: running once per slot across a cluster is the thing this shows, and
+    # a cluster does not share a SQLite file.
+    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        yield container.get_connection_url()
+
+
 @pytest.fixture
-def worker(tmp_path: Path) -> Iterator[Harness]:
-    built = Harness(f"sqlite:///{tmp_path / 'worker.db'}")
+def worker(database: str) -> Iterator[Harness]:
+    built = Harness(database)
+    # One container for the module, so every test starts from an empty database rather than
+    # from whatever the last one left. `scheduled_tasks` goes too: each test builds its own
+    # registry and `start()` writes the rows again, and a row left behind from the previous
+    # test carries its `execution_time` with it.
+    with built.registry.default.connection() as conn:
+        for table in ("event_notifications", "events", "alerts", "wallets", "scheduled_tasks"):
+            conn.execute(text(f"TRUNCATE TABLE {table}"))
     try:
         built.jobs.start()
         yield built

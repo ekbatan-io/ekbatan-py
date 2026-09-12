@@ -4,7 +4,7 @@ A worker process: jobs, no HTTP. The Python counterpart to Java's
 `spring-boot-job-worker-gradle-pg`.
 
 ```
-uv run python -m examples.job_worker_pg     # SQLite, ctrl-c to stop
+uv run python -m examples.job_worker_pg     # PostgreSQL, ctrl-c to stop
 uv run pytest examples/job_worker_pg
 ```
 
@@ -62,8 +62,7 @@ is chosen rather than assumed.
 
 ## Seeing the cluster behaviour
 
-SQLite will not show you the interesting part. Point two workers at one Postgres and watch each
-slot run once:
+Start two of these against the same database and watch each slot run once rather than twice:
 
 ```
 WORKER_DATABASE_URL=postgresql+psycopg://ekbatan:ekbatan@localhost:5432/wallet \
