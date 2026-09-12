@@ -803,8 +803,7 @@ class Repository[M: Persistable[Any, Any], K]:
                 for name, value in zip(types, raw, strict=True)
             )
             for raw in (
-                (m.version - 1, *(self.to_row(m)[name] for name in self._columns))
-                for m in models
+                (m.version - 1, *(self.to_row(m)[name] for name in self._columns)) for m in models
             )
         ]
         source = values(*[column(name, types[name]) for name in types], name="v").data(rows)

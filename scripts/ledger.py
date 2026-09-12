@@ -17,7 +17,9 @@ from pathlib import Path
 LEDGER = Path(__file__).resolve().parent.parent / "docs" / "JAVA-PARITY-LEDGER.md"
 
 #: `| Model.java | 290 | `domain.py` | todo |` - and not a header, a rule, or the scope table.
-ROW = re.compile(r"^\| (?!Java file|file |\*\*|---|`ekbatan|generated)([^|]+)\| *(\d+) *\| *([^|]*)\| *([\w/]+)")
+ROW = re.compile(
+    r"^\| (?!Java file|file |\*\*|---|`ekbatan|generated)([^|]+)\| *(\d+) *\| *([^|]*)\| *([\w/]+)"
+)
 SECTION = re.compile(r"^## (.+)")
 
 STATUSES = ("done", "partial", "todo", "n/a")

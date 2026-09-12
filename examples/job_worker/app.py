@@ -1,0 +1,147 @@
+"""A worker process: jobs, no HTTP.
+
+The wiring is the same as any other service's minus the web layer - which is the point. A
+deployment usually runs both shapes from one image: the API replicas serve requests, the worker
+replicas run this, and the jobs claim their rows against the same database either way.
+
+Two things here are worth copying into a real worker.
+
+**The scheduler gets its own engine**, sized above the worker count. db-scheduler writes
+heartbeats from a housekeeping thread; a job body holding the last connection starves it, and an
+execution whose heartbeat stops is declared dead and run again somewhere else. The framework
+warns at startup when the two are mismatched - listen to it.
+
+**Shutdown is explicit.** This port installs no signal handler and no `atexit` hook, so a
+SIGTERM ends the process with executions still picked and their rows waiting out the
+dead-execution window. `run()` below catches the interrupt and calls `stop()`, which is what
+makes a rolling deploy clean rather than merely survivable. (Java's `JobRegistry` registers a
+JVM shutdown hook by default; that divergence is recorded in `DIVERGENCE.md`.)
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+from sqlalchemy import create_engine
+
+from ekbatan import (
+    ActionExecutor,
+    ActionRegistry,
+    DatabaseRegistry,
+    RepositoryRegistry,
+    ShardingConfig,
+)
+from ekbatan.clock import Clock, SystemClock
+from ekbatan.distributedjobs import JobRegistry, job_registry
+from ekbatan.events import (
+    EventFanoutJob,
+    EventHandlerRegistry,
+    EventHandlingJob,
+    HandlingConfig,
+    LocalEventHandlerConfig,
+)
+from ekbatan.migrations import migrate_registry
+
+from .actions import (
+    CloseWalletAction,
+    DepositMoneyAction,
+    OpenWalletAction,
+    RaiseAlertAction,
+)
+from .handlers import MoneyDepositedEventHandler
+from .jobs import PayStipendJob, WalletReportJob
+from .repository import AlertRepository, WalletRepository
+from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
+
+DEFAULT_URL = os.environ.get("WORKER_DATABASE_URL", "sqlite:///worker.db")
+
+
+@dataclass(frozen=True, slots=True)
+class Worker:
+    registry: DatabaseRegistry
+    wallets: WalletRepository
+    alerts: AlertRepository
+    executor: ActionExecutor
+    report: WalletReportJob
+    jobs: JobRegistry
+
+    def start(self) -> None:
+        self.jobs.start()
+
+    def close(self) -> None:
+        self.jobs.stop()
+        self.registry.close()
+
+
+def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 4) -> Worker:
+    running = clock or SystemClock()
+    registry = DatabaseRegistry.from_config(ShardingConfig.single(url))
+    migrate_registry(registry, metadata)
+
+    wallets = WalletRepository(registry, clock=running)
+    alerts = AlertRepository(registry, clock=running)
+
+    executor = ActionExecutor(
+        namespace="example.job_worker",
+        registry=registry,
+        repositories=(
+            RepositoryRegistry.builder()
+            .with_model_repository(wallets)
+            .with_entity_repository(alerts)
+            .build()
+        ),
+        actions=(
+            ActionRegistry.builder()
+            .with_action(OpenWalletAction())
+            .with_action(DepositMoneyAction(wallets))
+            .with_action(CloseWalletAction(wallets))
+            .with_action(RaiseAlertAction())
+            .build()
+        ),
+        events=EVENTS,
+        clock=running,
+    )
+
+    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+    events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+    report = WalletReportJob(wallets)
+
+    return Worker(
+        registry=registry,
+        wallets=wallets,
+        alerts=alerts,
+        executor=executor,
+        report=report,
+        jobs=(
+            job_registry()
+            # Its own engine, and more connections than workers - see the module docstring.
+            .engine(create_engine(url, pool_size=workers * 2, max_overflow=0))
+            .with_jobs(
+                [
+                    # The event pipeline is two jobs like any other, claimed through the same
+                    # table - which is how a cluster fans out and dispatches once rather than
+                    # once per replica.
+                    EventFanoutJob(
+                        registry,
+                        handlers,
+                        events=EVENTS,
+                        notifications=EVENT_NOTIFICATIONS,
+                        config=events_config,
+                        clock=running,
+                    ),
+                    EventHandlingJob(
+                        registry,
+                        handlers,
+                        notifications=EVENT_NOTIFICATIONS,
+                        config=events_config,
+                        clock=running,
+                    ),
+                    PayStipendJob(executor, wallets),
+                    report,
+                ]
+            )
+            .workers(workers)
+            .build()
+        ),
+    )
