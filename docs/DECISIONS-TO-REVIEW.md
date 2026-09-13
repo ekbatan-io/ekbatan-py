@@ -12,6 +12,9 @@ bottom.
 
 ## Open - not decided, needs a call
 
+These also appear in [`SHORTCOMINGS.md`](SHORTCOMINGS.md),
+which lists every way this port is behind the Java one in one place.
+
 Nothing has been done about these. They are here so they are not lost between "noticed" and
 "fixed".
 

@@ -84,7 +84,9 @@ PyMySQL. Migrations with yoyo, which runs plain per-dialect SQL files.
 Only `event-streaming` is missing, and it is not planned: publishing runs inside Kafka Connect,
 in a JVM, whichever language wrote the row.
 
-[DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one.
+[DIVERGENCE.md](DIVERGENCE.md) records where this port deliberately differs from the Java one,
+and [docs/SHORTCOMINGS.md](docs/SHORTCOMINGS.md) records where it is simply behind - what is
+missing, what is slower, and what has not been decided yet.
 
 ## Typed builders
 

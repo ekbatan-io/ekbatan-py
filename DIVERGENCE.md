@@ -1,5 +1,9 @@
 # Where this port disagrees with the charter's reference
 
+Most of what follows is neutral: the two ports do the same thing in different idioms.
+For the biased subset - every way this port is *behind* the Java one, in one place -
+see [`docs/SHORTCOMINGS.md`](docs/SHORTCOMINGS.md).
+
 Rule 1 of [the charter](https://github.com/ekbatan-io/ekbatan-spec) is that idiomatic beats
 identical: a port must read as if written by someone fluent in the language, not translated
 into it. That guarantees disagreements, and written disagreement is how a port stays honest -
@@ -607,6 +611,39 @@ the fan-out half is the same trade for the same reason. On an eight-shard deploy
 round therefore takes eight batches' time rather than one. It has not bitten, the rounds are
 short because the work per shard is one bounded batch, and the fix if it does is a pool around
 the existing `_drain_shard` - which is a change of one line and a pool to size, not a redesign.
+
+## The framework is synchronous, and blocking is not free here as it is in Java
+
+Java is built on virtual threads, where a blocking call costs almost nothing: the carrier thread
+is released and picked up by other work. That is what lets its whole API be blocking without
+apology.
+
+This port is synchronous too - there is no `async` or `await` anywhere in `src/` - and under a
+threaded server that is exactly right, for the same reason. Under an **asyncio** server it is
+not, because a blocking call there stops the entire event loop rather than one carrier thread.
+
+Measured: a 0.5s framework call made from inside an `async def` handler let a background
+heartbeat tick **5 times where a free loop manages about 55**. Every other request on that loop
+stalled for the duration.
+
+So under FastAPI, Litestar or any ASGI server, a repository or executor call belongs in a
+worker thread::
+
+    wallet = await asyncio.to_thread(wallets.get, wallet_id)
+    # or, in Starlette/FastAPI
+    wallet = await run_in_threadpool(wallets.get, wallet_id)
+
+Two things make this less painful than it sounds. A plain `def` endpoint in FastAPI is already
+run in a threadpool by the framework, so the ordinary way of writing one is safe without any of
+the above - `ekbatan-py-examples/fastapi_wallet_rest_pg` is written that way throughout, and
+that is why it needs no `to_thread` anywhere. And the ambient transaction lives in a
+`ContextVar`, which is per-async-task as well as per-thread, so the state mechanism is already
+correct if this port ever grows an async surface.
+
+It has not grown one, and would not gain much by it: SQLAlchemy's async support is a wrapper
+over the same drivers, and the framework's value is in what it does between the queries. But an
+`async def` handler calling straight into it is a real mistake with a real cost, and nothing in
+the API stops you making it.
 
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 

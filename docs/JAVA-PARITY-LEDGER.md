@@ -49,6 +49,9 @@ exist.
 
 ## Out of scope
 
+Excluded here means *not counted*, not *not missed*. What their absence costs a user is in
+[`SHORTCOMINGS.md`](SHORTCOMINGS.md).
+
 Excluded by decision, not by oversight:
 
 | what | files | why |
