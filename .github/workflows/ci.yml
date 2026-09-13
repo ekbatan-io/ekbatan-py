@@ -17,10 +17,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with: { enable-cache: true }
-      - run: uv sync --all-extras
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy
+      - run: uv sync --all-extras --group examples
+      # Generated modules are gitignored, as Java's `build/generated-jooq` is, and mypy
+      # reads them - so this job generates first, exactly as compiling in Java does.
+      - run: make lint
 
   fast:
     name: tests (unit, then sqlite)
@@ -49,9 +49,9 @@ jobs:
       # An example nobody runs is an example that rots - and one did. The payload assertion in
       # `wallet_service_sqlite` went stale at EKB-0129 and stayed that way, because this repository
       # has no remote and so this file has never actually run. When it does, it catches that.
-      - run: uv run pytest ekbatan-py-examples
-      # The one that needs no database, run as a user would run it.
-      - run: cd ekbatan-py-examples && uv run python -m wallet_service_sqlite
+      # `make` rather than `uv run pytest` so the generated schema is built first, and so
+      # this job and the Makefile cannot drift apart.
+      - run: make examples
 
   tracing:
     # The span names are a cross-language contract - an operator filtering a trace on

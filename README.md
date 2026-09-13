@@ -61,7 +61,8 @@ Wallet.balance)` checks as `Select[tuple[UUID, Decimal]]` - and statements execu
 unit-of-work implementation, and two of those fighting over one transaction is the worst thing
 you could do to this design.
 
-Schema classes are generated with `sqlacodegen`. Postgres via psycopg 3, MySQL and MariaDB via
+Table definitions are generated with `python -m ekbatan.schemagen`, which starts a container,
+runs your migrations into it and reflects the result - the counterpart to Java's jOOQ step. Postgres via psycopg 3, MySQL and MariaDB via
 PyMySQL. Migrations with yoyo, which runs plain per-dialect SQL files.
 
 ## What is here

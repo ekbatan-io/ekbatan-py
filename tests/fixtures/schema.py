@@ -1,7 +1,7 @@
 """The wallet application's tables.
 
 Written by hand here so the example is readable in one place. In a real project this file is
-generated from the database - ``sqlacodegen --generator declarative`` - and regenerated when a
+generated from the database - ``python -m ekbatan.schemagen`` - and regenerated when a
 migration lands, so the Python and the schema cannot drift.
 """
 

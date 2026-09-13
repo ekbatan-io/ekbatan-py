@@ -22,7 +22,10 @@ postgres = ["psycopg[binary]>=3.2"]
 mysql = ["PyMySQL>=1.1"]
 mariadb = ["PyMySQL>=1.1"]
 migrations = ["alembic>=1.14"]
-codegen = ["sqlacodegen>=4.0"]
+# `schemagen` starts a throwaway database, migrates into it and reflects the result - Java
+# does the same in its build. `sqlacodegen` is deliberately not here: it cannot force the
+# per-dialect types, and a schema generated without that forcing corrupts data on MySQL.
+codegen = ["testcontainers[postgres]>=4.15", "psycopg[binary]>=3.2"]
 # The Redis-backed keyed lock, which Java ships as its own `ekbatan-keyed-lock-redis` module.
 redis = ["redis>=6"]
 
@@ -37,7 +40,6 @@ dev = [
     "pytest>=8.0",
     "mypy>=1.11",
     "ruff>=0.6",
-    "sqlacodegen>=4.0",
     # The suite runs on SQLite by default and against real servers with --dialects=all.
     "testcontainers[postgres,mysql]>=4.15",
     "psycopg[binary]>=3.2",

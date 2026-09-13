@@ -100,7 +100,9 @@ EXAMPLE_DEPENDENCIES = {
     # Migrations from files, which is what makes the REST projects a deployment shape rather
     # than a demo.
     "alembic",
-    # The example suites, which run against real servers for the same reason the framework's do.
+    # The example suites, which run against real servers for the same reason the framework's
+    # do - and `testcontainers` is also the framework's own `codegen` extra, because
+    # `schemagen` starts a throwaway database exactly as Java's build does.
     "pytest",
     "testcontainers",
 }
@@ -137,7 +139,11 @@ def test_the_framework_itself_imports_none_of_an_example_s_extras():
         "ekbatan",
         "sqlalchemy",
         "db_scheduler",
+        # Framework extras, each imported inside a function so it stays optional: `alembic`
+        # for migrations, `testcontainers` for `schemagen`, which starts a throwaway database
+        # exactly as Java's build does.
         "alembic",
+        "testcontainers",
         "pytest",
     }
     offenders: dict[str, list[str]] = {}

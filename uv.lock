@@ -417,7 +417,8 @@ dependencies = [
 
 [package.optional-dependencies]
 codegen = [
-    { name = "sqlacodegen" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "testcontainers" },
 ]
 mariadb = [
     { name = "pymysql" },
@@ -443,7 +444,6 @@ dev = [
     { name = "pytest" },
     { name = "redis" },
     { name = "ruff" },
-    { name = "sqlacodegen" },
     { name = "testcontainers", extra = ["mysql"] },
 ]
 examples = [
@@ -460,12 +460,13 @@ tracing = [
 requires-dist = [
     { name = "alembic", marker = "extra == 'migrations'", specifier = ">=1.14" },
     { name = "ekbatan-py-db-scheduler", editable = "db-scheduler" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'codegen'", specifier = ">=3.2" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pymysql", marker = "extra == 'mariadb'", specifier = ">=1.1" },
     { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=6" },
-    { name = "sqlacodegen", marker = "extra == 'codegen'", specifier = ">=4.0" },
     { name = "sqlalchemy", specifier = ">=2.0.30" },
+    { name = "testcontainers", extras = ["postgres"], marker = "extra == 'codegen'", specifier = ">=4.15" },
 ]
 provides-extras = ["postgres", "mysql", "mariadb", "migrations", "codegen", "redis"]
 
@@ -477,7 +478,6 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "redis", specifier = ">=6" },
     { name = "ruff", specifier = ">=0.6" },
-    { name = "sqlacodegen", specifier = ">=4.0" },
     { name = "testcontainers", extras = ["postgres", "mysql"], specifier = ">=4.15" },
 ]
 examples = [
@@ -656,19 +656,6 @@ wheels = [
 ]
 
 [[package]]
-name = "inflect"
-version = "7.5.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "more-itertools" },
-    { name = "typeguard" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/78/c6/943357d44a21fd995723d07ccaddd78023eace03c1846049a2645d4324a3/inflect-7.5.0.tar.gz", hash = "sha256:faf19801c3742ed5a05a8ce388e0d8fe1a07f8d095c82201eb904f5d27ad571f", size = 73751, upload-time = "2024-12-28T17:11:18.897Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/eb/427ed2b20a38a4ee29f24dbe4ae2dafab198674fe9a85e3d6adf9e5f5f41/inflect-7.5.0-py3-none-any.whl", hash = "sha256:2aea70e5e70c35d8350b8097396ec155ffd68def678c7ff97f51aa69c1d92344", size = 35197, upload-time = "2024-12-28T17:11:15.931Z" },
-]
-
-[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -825,15 +812,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/df/5bd7a48c256faecd1d36edc13133e51397e41b73bb77e1a69deab746ebac/markupsafe-3.0.3-cp314-cp314t-win32.whl", hash = "sha256:915c04ba3851909ce68ccc2b8e2cd691618c4dc4c4232fb7982bca3f41fd8c3d", size = 14819, upload-time = "2025-09-27T18:37:26.285Z" },
     { url = "https://files.pythonhosted.org/packages/1a/8a/0402ba61a2f16038b48b39bccca271134be00c5c9f0f623208399333c448/markupsafe-3.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4faffd047e07c38848ce017e8725090413cd80cbc23d86e55c587bf979e579c9", size = 15426, upload-time = "2025-09-27T18:37:27.316Z" },
     { url = "https://files.pythonhosted.org/packages/70/bc/6f1c2f612465f5fa89b95bead1f44dcb607670fd42891d8fdcd5d039f4f4/markupsafe-3.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:32001d6a8fc98c8cb5c947787c5d08b0a50663d139f1305bac5885d98d9b40fa", size = 14146, upload-time = "2025-09-27T18:37:28.327Z" },
-]
-
-[[package]]
-name = "more-itertools"
-version = "11.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/de/1d/f4da6f02cdffe04d6362210b807146a26044c88d839208aec273bb0d9184/more_itertools-11.1.0.tar.gz", hash = "sha256:48e8f4d9e7e5878571ecf6f2b4e57634f93cd474cc8cfbd2376f2d11b396e30d", size = 145772, upload-time = "2026-05-22T14:14:29.909Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/3d/1087453384dbde46a8c7f9356eead2c58be8a7bf156bca40243377c85715/more_itertools-11.1.0-py3-none-any.whl", hash = "sha256:4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd542125a192", size = 72226, upload-time = "2026-05-22T14:14:28.824Z" },
 ]
 
 [[package]]
@@ -1256,19 +1234,6 @@ wheels = [
 ]
 
 [[package]]
-name = "sqlacodegen"
-version = "4.0.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "inflect" },
-    { name = "sqlalchemy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/f4/0af28df10f28d805c074f2070278d949d3f7eda27ec7157fafbe61a32e0b/sqlacodegen-4.0.4.tar.gz", hash = "sha256:403b322b22bf5bab9c89e3eb1999005b91164f29e79f8ef7bb461192e0e68118", size = 55786, upload-time = "2026-06-19T06:00:25.006Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/ae/467d29e898c70fda86d8af7882fbc23dee7693cf9f72efb0cae4475db5c0/sqlacodegen-4.0.4-py3-none-any.whl", hash = "sha256:484604103d8064b485b9f8e06cf2272ce1200a960f85f893303c4e78f74fbc0d", size = 27878, upload-time = "2026-06-19T06:00:23.786Z" },
-]
-
-[[package]]
 name = "sqlalchemy"
 version = "2.0.52"
 source = { registry = "https://pypi.org/simple" }
@@ -1328,18 +1293,6 @@ wheels = [
 mysql = [
     { name = "pymysql", extra = ["rsa"] },
     { name = "sqlalchemy" },
-]
-
-[[package]]
-name = "typeguard"
-version = "4.6.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/de/4420db493fa8fc0856d5e5c1b159c63a323d2de2317babe36b01568928e8/typeguard-4.6.0.tar.gz", hash = "sha256:e7414f09111317de3e335de92cd397c5c0ca00b1cc1676de12e1d444a79b3f21", size = 82330, upload-time = "2026-07-26T08:40:23.207Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/eb/461d5f167b6f5c7d97696f397c82f82e3480e003fce3f0a1cd1dd26e2eb2/typeguard-4.6.0-py3-none-any.whl", hash = "sha256:79878165bb86f2cf5d41d159a0ff1792a796cf496882d2fe1b1c6c7049b9cdd7", size = 36884, upload-time = "2026-07-26T08:40:21.868Z" },
 ]
 
 [[package]]

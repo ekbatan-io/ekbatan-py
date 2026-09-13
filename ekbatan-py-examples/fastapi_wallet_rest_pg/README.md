@@ -7,6 +7,44 @@ One of three projects that differ only by database - the Python counterpart to J
 `*-wallet-rest-*` grid. See [`../README.md`](../README.md) for why the matrix is three here and
 thirty-six there.
 
+## How the schema gets there
+
+This is the example that shows the **generated** schema, and it is the closest thing this port
+has to Java's build:
+
+```
+make            # generate if a migration changed, then test
+make run        # generate if a migration changed, then serve
+make schema     # just the generation
+```
+
+`schema.py` is **generated and gitignored**, exactly as Java's `build/generated-jooq` is. A fresh
+clone has no `schema.py`, runs `make`, and gets one - the same reason a fresh clone of the Java
+project runs `./gradlew build`.
+
+Under the hood, `python -m ekbatan.schemagen` does what the `dev.monosoul.jooq-docker` plugin
+does there: start a throwaway container, run **your** migrations into it, reflect the result.
+Make supplies the missing piece - a dependency on the migration files, so it regenerates when
+they change and skips the container entirely when they have not. Measured: **12 milliseconds**
+when nothing changed.
+
+Two things it does that a plain reflection would not:
+
+**It forces the types.** A column reflected from PostgreSQL as `TIMESTAMP` compiles on MySQL to
+`TIMESTAMP` - which has a 2038 ceiling and shifts with the session timezone - and a `UUID`
+becomes `CHAR(32)`, the hex with its hyphens stripped, which no Java service can join against.
+Both silent. Reflected types are mapped back onto the framework's helpers, which is precisely
+Java's `forcedTypes` block.
+
+**It refuses to reflect the framework's own tables.** `events`, `event_notifications` and
+`scheduled_tasks` are emitted as calls to `ekbatan.schema`, because their shape is a contract a
+CDC connector and other ports bind to. Java does the same with `includeFlywayTable(false)`.
+
+And one thing Java gets for free that this had to add: the generated module records a fingerprint
+of the migrations it came from and **checks it on import**. Gradle cannot compile without
+regenerating; nothing in Python runs before `python -m app`, so a stale schema would otherwise
+just quietly disagree with the database.
+
 ```
 docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=ekbatan -e POSTGRES_USER=ekbatan -e POSTGRES_DB=wallet postgres:17-alpine
 uv sync --extra postgres --group examples

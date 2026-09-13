@@ -1,8 +1,9 @@
 """The tables.
 
 Written by hand here so the whole example reads in one place. In a real project this file is
-generated - `sqlacodegen --generator declarative <url>` - and regenerated when a migration
-lands, so the Python and the database cannot drift.
+generated - `python -m ekbatan.schemagen` starts a container, runs the migrations into it and
+reflects the result, as Java's build does - so the Python and the database cannot drift.
+`fastapi_wallet_rest_pg` is the example that does it that way.
 
 The framework's own tables are built rather than transcribed: their shape is a contract that a
 Debezium connector or another service binds to, so there is one definition to be right about.
