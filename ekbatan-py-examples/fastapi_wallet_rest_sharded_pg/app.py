@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from ekbatan import (
     ActionExecutor,
@@ -19,11 +20,16 @@ from ekbatan import (
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config import DataSourceConfig, ShardConfig
-from ekbatan.migrations import migrate_registry
+from ekbatan.migrations import migrate
 
 from .actions import GLOBAL, MEXICO, DepositMoneyAction, OpenWalletAction, TransferWithinShardAction
 from .repository import WalletRepository
-from .schema import EVENTS, metadata
+from .schema import EVENTS
+
+#: Where the Alembic revisions live. Migrations run from files, not from `create_all`, which is
+#: the difference between an example and something you could deploy: `create_all` has no answer
+#: for a column that changed.
+MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,8 +56,10 @@ def build(urls: Mapping[ShardIdentifier, str], *, clock: Clock | None = None) ->
         default_shard=GLOBAL,
     )
 
+    # Every shard, one at a time, fail-fast - and refused outright if a revision that was
+    # already applied has since been edited.
+    migrate(layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)
-    migrate_registry(registry, metadata)
 
     wallets = WalletRepository(registry, clock=running)
     return ShardedWallets(

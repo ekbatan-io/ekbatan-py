@@ -59,6 +59,34 @@ reason.
 cd ekbatan-py-examples && uv run python -m wallet_service_sqlite     # runs now, needs nothing
 ```
 
+## The schema is generated, not written
+
+Every project here except `wallet_service_sqlite` generates its `schema.py` from the database
+its **own migrations** produce - a throwaway container, the migrations run into it, the result
+reflected. That is Java's build step, and the reason is the same: the schema is the database's,
+not a hand-transcription that can drift from it.
+
+```
+make schema     # regenerate all of them
+make            # generate what changed, then lint and test
+```
+
+The generated modules are **gitignored**, as Java's `build/generated-jooq` is. `make` builds a
+missing one, so a fresh clone works the same way `./gradlew build` does.
+
+Two things the generator does that a plain reflection would not, both of which were bugs before
+they were features:
+
+- **It forces the types.** A `UUID` reflected from PostgreSQL becomes `CHAR(32)` on MySQL - hex
+  with the hyphens stripped, which no Java service can join against. Reflected from MySQL it is
+  `CHAR(36)`, indistinguishable from any other char column, so it is forced by name instead -
+  which is what Java's `withIncludeExpression` does.
+- **It normalises dialect quirks.** MariaDB reflects a bigint as `BIGINT(display_width=20)`;
+  emitted verbatim that module does not even import.
+
+`wallet_service_sqlite` keeps a hand-written schema on purpose: its whole job is running with
+nothing installed, and generating needs Docker.
+
 ## Naming
 
 `[stack]_[domain]_[style][_variant]_[db]`, which is Java's

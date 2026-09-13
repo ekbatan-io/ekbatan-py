@@ -339,3 +339,78 @@ def test_render_needs_no_database(tmp_path: Path) -> None:
     assert "THINGS = Table(" in text
     assert "EVENTS = outbox_table(metadata)" in text
     assert 'MIGRATIONS_FINGERPRINT = "abc123"' in text
+
+
+# -- what reflection gets wrong, per dialect ------------------------------------------------------
+#
+# Both cases below are bugs this generator had. Reflection is asymmetric: PostgreSQL names a uuid
+# and MySQL does not, and MySQL decorates its integers with a display width that means nothing
+# anywhere else. A generator that transcribed either would emit a module that is wrong somewhere.
+
+
+def test_a_uuid_stored_as_text_is_recognised_by_name() -> None:
+    """From MySQL a uuid reflects as `CHAR(36)`, indistinguishable from any other char column.
+
+    Left alone it hard-codes `CHAR(36)` into a schema that then creates a text column on
+    PostgreSQL rather than a native `uuid` - and two ports that disagree about the column type
+    cannot join on it. Java forces the same way, with `withIncludeExpression` on the name.
+    """
+    from sqlalchemy import CHAR, Column, MetaData
+
+    table = Table(
+        "t",
+        MetaData(),
+        Column("id", CHAR(36), primary_key=True),
+        Column("owner_id", CHAR(36), nullable=False),
+        Column("currency", CHAR(3), nullable=False),
+        Column("label", CHAR(36), nullable=False),
+    )
+    text = render([table], framework=[], migrations_fingerprint="x", module=None)
+
+    assert 'Column("id", uuid_column(), primary_key=True)' in text
+    assert 'Column("owner_id", uuid_column(), nullable=False)' in text
+    assert 'Column("currency", CHAR(length=3), nullable=False)' in text, "too short to be one"
+    assert 'Column("label", CHAR(length=36), nullable=False)' in text, "not named like an id"
+
+
+def test_a_dialect_type_is_emitted_as_its_portable_equivalent() -> None:
+    """MariaDB reflects a bigint as `mysql.BIGINT(display_width=20)`.
+
+    Emitting that verbatim against the generic `BIGINT` gives a module that does not import -
+    `TypeError: BIGINT() takes no arguments` - which is exactly what this generator did before
+    the normalisation. `display_width` is a MySQL display artifact and belongs in no other
+    dialect's schema.
+    """
+    from sqlalchemy import Column, MetaData
+    from sqlalchemy.dialects import mysql
+
+    table = Table(
+        "t",
+        MetaData(),
+        Column("n", mysql.BIGINT(display_width=20), nullable=False),
+        Column("s", mysql.VARCHAR(length=24), nullable=False),
+    )
+    text = render([table], framework=[], migrations_fingerprint="x", module=None)
+
+    assert "display_width" not in text
+    assert 'Column("n", BIGINT(), nullable=False)' in text
+    assert 'Column("s", VARCHAR(length=24), nullable=False)' in text
+
+
+def test_the_generated_module_imports_whatever_it_used() -> None:
+    """A module that names a type it never imported does not run, and every other assertion
+    here reads the text rather than executing it."""
+    from sqlalchemy import Column, MetaData, Numeric
+    from sqlalchemy.dialects import mysql
+
+    table = Table(
+        "t",
+        MetaData(),
+        Column("n", mysql.BIGINT(display_width=20)),
+        Column("m", Numeric(19, 4)),
+    )
+    text = render([table], framework=["events"], migrations_fingerprint="x", module=None)
+
+    imported = text.split("from sqlalchemy import ")[1].split("\n")[0]
+    assert "BIGINT" in imported and "NUMERIC" in imported
+    assert "outbox_table" in text.split("from ekbatan.schema import ")[1].split("\n")[0]

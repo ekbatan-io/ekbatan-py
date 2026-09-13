@@ -13,6 +13,7 @@ shows that shape.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from ekbatan import (
     ActionExecutor,
@@ -27,7 +28,7 @@ from ekbatan.events import (
     EventFanout,
     EventHandlerRegistry,
 )
-from ekbatan.migrations import migrate_registry
+from ekbatan.migrations import migrate
 
 from .actions import (
     CompleteTransferAction,
@@ -37,7 +38,12 @@ from .actions import (
 )
 from .handlers import TransferFailedEventHandler, TransferInitiatedEventHandler
 from .repository import TransferStepRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
+from .schema import EVENT_NOTIFICATIONS, EVENTS
+
+#: Where the Alembic revisions live. Migrations run from files, not from `create_all`, which is
+#: the difference between an example and something you could deploy: `create_all` has no answer
+#: for a column that changed.
+MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +76,9 @@ class SagaService:
 
 def build(url: str, *, clock: Clock | None = None) -> SagaService:
     running = clock or SystemClock()
-    registry = DatabaseRegistry.from_config(ShardingConfig.single(url))
-    migrate_registry(registry, metadata)
+    layout = ShardingConfig.single(url)
+    migrate(layout, MIGRATIONS)
+    registry = DatabaseRegistry.from_config(layout)
 
     wallets = WalletRepository(registry, clock=running)
     steps = TransferStepRepository(registry, clock=running)

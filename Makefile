@@ -18,7 +18,13 @@
 UV := uv run
 
 # What is generated, and what it is generated from. Adding a project here is one line.
-GENERATED := ekbatan-py-examples/fastapi_wallet_rest_pg/schema.py
+GENERATED := \
+	ekbatan-py-examples/fastapi_wallet_rest_pg/schema.py \
+	ekbatan-py-examples/fastapi_wallet_rest_mysql/schema.py \
+	ekbatan-py-examples/fastapi_wallet_rest_mariadb/schema.py \
+	ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/schema.py \
+	ekbatan-py-examples/fastapi_wallet_saga_pg/schema.py \
+	ekbatan-py-examples/job_worker_pg/schema.py
 
 .PHONY: all lint format test test-all examples schema build clean help
 .DEFAULT_GOAL := all
@@ -35,6 +41,38 @@ ekbatan-py-examples/fastapi_wallet_rest_pg/schema.py: \
 		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/versions/*.py)
 	$(UV) python -m ekbatan.schemagen \
 		--migrations ekbatan-py-examples/fastapi_wallet_rest_pg/migrations \
+		--out $@
+
+ekbatan-py-examples/fastapi_wallet_rest_mysql/schema.py: \
+		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/versions/*.py)
+	$(UV) python -m ekbatan.schemagen \
+		--migrations ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations \
+		--out $@ \
+		--image mysql:8.4
+
+ekbatan-py-examples/fastapi_wallet_rest_mariadb/schema.py: \
+		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/versions/*.py)
+	$(UV) python -m ekbatan.schemagen \
+		--migrations ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations \
+		--out $@ \
+		--image mariadb:11.4
+
+ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/schema.py: \
+		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/migrations/versions/*.py)
+	$(UV) python -m ekbatan.schemagen \
+		--migrations ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/migrations \
+		--out $@
+
+ekbatan-py-examples/fastapi_wallet_saga_pg/schema.py: \
+		$(wildcard ekbatan-py-examples/fastapi_wallet_saga_pg/migrations/versions/*.py)
+	$(UV) python -m ekbatan.schemagen \
+		--migrations ekbatan-py-examples/fastapi_wallet_saga_pg/migrations \
+		--out $@
+
+ekbatan-py-examples/job_worker_pg/schema.py: \
+		$(wildcard ekbatan-py-examples/job_worker_pg/migrations/versions/*.py)
+	$(UV) python -m ekbatan.schemagen \
+		--migrations ekbatan-py-examples/job_worker_pg/migrations \
 		--out $@
 
 schema: $(GENERATED)

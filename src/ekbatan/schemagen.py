@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import keyword
+import re
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -107,16 +108,76 @@ def _constant(table: str) -> str:
     return f"{name}_" if keyword.iskeyword(name.lower()) else name
 
 
+#: A uuid stored as text, and the names it is allowed to be forced under.
+#:
+#: Reflection is asymmetric. From PostgreSQL a uuid column reflects as ``UUID`` and is
+#: unmistakable; from MySQL the same column is ``CHAR(36)``, which is also what a currency code
+#: or a country name might be. Generating from MySQL and forcing nothing would hard-code
+#: ``CHAR(36)`` into a schema that then creates a text column on PostgreSQL rather than a native
+#: ``uuid`` - and two ports that disagree about the column type cannot join on it.
+#:
+#: So a char column of exactly the canonical width, named like an identifier, is forced. This is
+#: Java's ``ForcedType().withIncludeExpression(...)``, which matches on the column name for the
+#: same reason. It is a heuristic and it is narrow on purpose: an application with a genuine
+#: 36-character non-uuid ``*_id`` column should pass ``--url`` against PostgreSQL instead, where
+#: nothing has to be guessed.
+CANONICAL_UUID_WIDTH = 36
+UUID_NAME = re.compile(r"^(id|.*_id)$")
+
+
+def _looks_like_a_uuid(column: Any) -> bool:
+    if type(column.type).__name__ not in ("CHAR", "VARCHAR", "String"):
+        return False
+    return (
+        getattr(column.type, "length", None) == CANONICAL_UUID_WIDTH
+        and UUID_NAME.match(column.name) is not None
+    )
+
+
 def _column_type(column: Any) -> tuple[str, set[str]]:
     """The source for one column's type, and what that source needs imported."""
     forced = FORCED.get(type(column.type).__name__)
     if forced is not None:
         return forced, set()
+    if _looks_like_a_uuid(column):
+        return "uuid_column()", set()
 
-    # Not forced: emit what SQLAlchemy reflected, with its arguments. `repr` on a type gives
-    # `VARCHAR(length=24)`; the constructor name plus its own repr is what round-trips.
-    rendered = repr(column.type)
-    return rendered, {rendered.split("(")[0]}
+    return _generic(column.type)
+
+
+#: The arguments worth carrying from a reflected type, and nothing else.
+#:
+#: `repr()` on a reflected type is not usable here: MariaDB reflects a bigint as
+#: `mysql.BIGINT(display_width=20)`, and emitting that against the generic `BIGINT` - which has
+#: no such argument - produces a module that does not import. `display_width` is a MySQL display
+#: artifact with no meaning anywhere else, and a schema generated from one server should not
+#: carry another's quirks into every dialect it is later used on.
+CARRIED = ("length", "precision", "scale")
+
+
+def _generic(reflected: Any) -> tuple[str, set[str]]:
+    """A reflected type as its portable, generic equivalent.
+
+    A dialect type is mapped back to the same name in SQLAlchemy's own namespace where one
+    exists - `mysql.BIGINT` to `BIGINT` - carrying only the arguments that mean the same thing
+    everywhere. Anything with no generic equivalent is emitted as reflected, because a wrong
+    guess there would be worse than a dialect-specific column.
+    """
+    import sqlalchemy
+
+    name = type(reflected).__name__
+    generic = getattr(sqlalchemy, name.upper(), None) or getattr(sqlalchemy, name, None)
+    if generic is None or not isinstance(generic, type):
+        rendered = repr(reflected)
+        return rendered, {rendered.split("(")[0]}
+
+    exported = name.upper() if hasattr(sqlalchemy, name.upper()) else name
+    arguments = [
+        f"{arg}={value!r}"
+        for arg in CARRIED
+        if (value := getattr(reflected, arg, None)) is not None
+    ]
+    return f"{exported}({', '.join(arguments)})", {exported}
 
 
 def render(
@@ -235,16 +296,7 @@ def generate(
 
     container = None
     if url is None:
-        try:
-            from testcontainers.postgres import PostgresContainer
-        except ImportError:  # pragma: no cover - the extra is not installed
-            raise ValidationError(
-                "generating without --url needs a throwaway database: "
-                "install ekbatan[codegen], or pass --url"
-            ) from None
-        container = PostgresContainer(image, driver="psycopg")
-        container.start()
-        url = container.get_connection_url()
+        container, url = _start(image)
 
     try:
         migrate(
@@ -291,6 +343,43 @@ def generate(
 #: climb further than this is one the two are not really related by - a temporary directory, a
 #: different checkout - and a fingerprint check across it would be noise.
 MAX_CLIMB = 4
+
+
+def _start(image: str) -> tuple[Any, str]:
+    """A throwaway database of the kind `image` names, and the url to reach it on.
+
+    The dialect follows the image rather than a separate flag: a MySQL migration cannot be run
+    against Postgres, so the two were never independent and asking for both invites the pair
+    that does not go together.
+    """
+    family = image.split(":")[0].split("/")[-1].lower()
+    try:
+        if family in ("mysql", "mariadb"):
+            from testcontainers.community.mysql import MySqlContainer
+
+            # `dialect=` here is the *driver* only; testcontainers prefixes `mysql+` itself.
+            # `username="root"` because the migrations issue DDL and the default `test` user is
+            # granted rights on the `test` schema alone.
+            mysql: Any = MySqlContainer(image, dialect="pymysql", username="root")
+            mysql.start()
+            _, _, rest = mysql.get_connection_url().partition("://")
+            # There is no MariaDB container class, so the MySQL one drives it - and then hands
+            # back a url saying `mysql+pymysql`. SQLAlchemy picks its DDL, version reporting and
+            # `SKIP LOCKED` support off that scheme, and this framework picks its keyed-lock
+            # provider off `engine.dialect.name`. Left alone, a MariaDB schema would be
+            # generated against MySQL's rules and nothing would say so.
+            return mysql, f"{family}+pymysql://{rest}"
+
+        from testcontainers.postgres import PostgresContainer
+
+        postgres: Any = PostgresContainer(image, driver="psycopg")
+        postgres.start()
+        return postgres, postgres.get_connection_url()
+    except ImportError:  # pragma: no cover - the extra is not installed
+        raise ValidationError(
+            "generating without --url needs a throwaway database: "
+            "install ekbatan[codegen], or pass --url"
+        ) from None
 
 
 def _relative(base: Path, target: Path) -> str | None:

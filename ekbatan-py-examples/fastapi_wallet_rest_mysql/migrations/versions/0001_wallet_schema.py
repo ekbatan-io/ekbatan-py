@@ -28,12 +28,12 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE alerts (
-            id CHAR(36) NOT NULL, 
-            version BIGINT NOT NULL, 
-            state VARCHAR(24) NOT NULL, 
-            wallet_id CHAR(36) NOT NULL, 
-            recipient VARCHAR(255) NOT NULL, 
-            message TEXT NOT NULL, 
+            id CHAR(36) NOT NULL,
+            version BIGINT NOT NULL,
+            state VARCHAR(24) NOT NULL,
+            wallet_id CHAR(36) NOT NULL,
+            recipient VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
             PRIMARY KEY (id)
         )
         """
@@ -42,26 +42,26 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE event_notifications (
-            id CHAR(36) NOT NULL, 
-            event_id CHAR(36) NOT NULL, 
-            handler_name VARCHAR(255) NOT NULL, 
-            namespace VARCHAR(255) NOT NULL, 
-            action_id CHAR(36) NOT NULL, 
-            action_name VARCHAR(255) NOT NULL, 
-            action_params JSON NOT NULL, 
-            started_date DATETIME(6) NOT NULL, 
-            completion_date DATETIME(6) NOT NULL, 
-            model_id VARCHAR(255), 
-            model_type VARCHAR(255), 
-            event_type VARCHAR(255) NOT NULL, 
-            payload JSON, 
-            event_date DATETIME(6) NOT NULL, 
-            state VARCHAR(24) NOT NULL, 
-            attempts INTEGER NOT NULL, 
-            next_retry_at DATETIME(6) NOT NULL, 
-            created_date DATETIME(6) NOT NULL, 
-            updated_date DATETIME(6) NOT NULL, 
-            PRIMARY KEY (id), 
+            id CHAR(36) NOT NULL,
+            event_id CHAR(36) NOT NULL,
+            handler_name VARCHAR(255) NOT NULL,
+            namespace VARCHAR(255) NOT NULL,
+            action_id CHAR(36) NOT NULL,
+            action_name VARCHAR(255) NOT NULL,
+            action_params JSON NOT NULL,
+            started_date DATETIME(6) NOT NULL,
+            completion_date DATETIME(6) NOT NULL,
+            model_id VARCHAR(255),
+            model_type VARCHAR(255),
+            event_type VARCHAR(255) NOT NULL,
+            payload JSON,
+            event_date DATETIME(6) NOT NULL,
+            state VARCHAR(24) NOT NULL,
+            attempts INTEGER NOT NULL,
+            next_retry_at DATETIME(6) NOT NULL,
+            created_date DATETIME(6) NOT NULL,
+            updated_date DATETIME(6) NOT NULL,
+            PRIMARY KEY (id),
             CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
         )
         """
@@ -76,19 +76,19 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE events (
-            id CHAR(36) NOT NULL, 
-            namespace VARCHAR(255) NOT NULL, 
-            action_id CHAR(36) NOT NULL, 
-            action_name VARCHAR(255) NOT NULL, 
-            action_params JSON NOT NULL, 
-            started_date DATETIME(6) NOT NULL, 
-            completion_date DATETIME(6) NOT NULL, 
-            model_id VARCHAR(255), 
-            model_type VARCHAR(255), 
-            event_type VARCHAR(255), 
-            payload JSON, 
-            event_date DATETIME(6) NOT NULL, 
-            delivered BOOL NOT NULL, 
+            id CHAR(36) NOT NULL,
+            namespace VARCHAR(255) NOT NULL,
+            action_id CHAR(36) NOT NULL,
+            action_name VARCHAR(255) NOT NULL,
+            action_params JSON NOT NULL,
+            started_date DATETIME(6) NOT NULL,
+            completion_date DATETIME(6) NOT NULL,
+            model_id VARCHAR(255),
+            model_type VARCHAR(255),
+            event_type VARCHAR(255),
+            payload JSON,
+            event_date DATETIME(6) NOT NULL,
+            delivered BOOL NOT NULL,
             PRIMARY KEY (id)
         )
         """
@@ -109,18 +109,18 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE scheduled_tasks (
-            task_name VARCHAR(100) NOT NULL, 
-            task_instance VARCHAR(100) NOT NULL, 
-            task_data BLOB, 
-            execution_time DATETIME(6) NOT NULL, 
-            picked BOOL NOT NULL, 
-            picked_by VARCHAR(50), 
-            last_success DATETIME(6), 
-            last_failure DATETIME(6), 
-            consecutive_failures INTEGER, 
-            last_heartbeat DATETIME(6), 
-            version BIGINT NOT NULL, 
-            priority SMALLINT, 
+            task_name VARCHAR(100) NOT NULL,
+            task_instance VARCHAR(100) NOT NULL,
+            task_data BLOB,
+            execution_time DATETIME(6) NOT NULL,
+            picked BOOL NOT NULL,
+            picked_by VARCHAR(50),
+            last_success DATETIME(6),
+            last_failure DATETIME(6),
+            consecutive_failures INTEGER,
+            last_heartbeat DATETIME(6),
+            version BIGINT NOT NULL,
+            priority SMALLINT,
             PRIMARY KEY (task_name, task_instance)
         )
         """
@@ -148,14 +148,14 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE wallets (
-            id CHAR(36) NOT NULL, 
-            version BIGINT NOT NULL, 
-            state VARCHAR(24) NOT NULL, 
-            owner_id CHAR(36) NOT NULL, 
-            currency CHAR(3) NOT NULL, 
-            balance NUMERIC(19, 4) NOT NULL, 
-            created_date DATETIME(6) NOT NULL, 
-            updated_date DATETIME(6) NOT NULL, 
+            id CHAR(36) NOT NULL,
+            version BIGINT NOT NULL,
+            state VARCHAR(24) NOT NULL,
+            owner_id CHAR(36) NOT NULL,
+            currency CHAR(3) NOT NULL,
+            balance NUMERIC(19, 4) NOT NULL,
+            created_date DATETIME(6) NOT NULL,
+            updated_date DATETIME(6) NOT NULL,
             PRIMARY KEY (id)
         )
         """

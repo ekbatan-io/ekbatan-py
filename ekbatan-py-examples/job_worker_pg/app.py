@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy import create_engine
 
@@ -41,7 +42,7 @@ from ekbatan.events import (
     HandlingConfig,
     LocalEventHandlerConfig,
 )
-from ekbatan.migrations import migrate_registry
+from ekbatan.migrations import migrate
 
 from .actions import (
     CloseWalletAction,
@@ -52,11 +53,16 @@ from .actions import (
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob, WalletReportJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
+from .schema import EVENT_NOTIFICATIONS, EVENTS
 
 DEFAULT_URL = os.environ.get(
     "WORKER_DATABASE_URL", "postgresql+psycopg://ekbatan:ekbatan@localhost:5432/wallet"
 )
+
+#: Where the Alembic revisions live. Migrations run from files, not from `create_all`, which is
+#: the difference between an example and something you could deploy: `create_all` has no answer
+#: for a column that changed.
+MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,8 +84,9 @@ class Worker:
 
 def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 4) -> Worker:
     running = clock or SystemClock()
-    registry = DatabaseRegistry.from_config(ShardingConfig.single(url))
-    migrate_registry(registry, metadata)
+    layout = ShardingConfig.single(url)
+    migrate(layout, MIGRATIONS)
+    registry = DatabaseRegistry.from_config(layout)
 
     wallets = WalletRepository(registry, clock=running)
     alerts = AlertRepository(registry, clock=running)
