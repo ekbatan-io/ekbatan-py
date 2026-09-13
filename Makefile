@@ -33,49 +33,27 @@ all: lint test
 
 # -- code generation ---------------------------------------------------------------------------
 #
-# `schema.py` is generated and gitignored, exactly as Java's `build/generated-jooq` is. The rule
-# starts a container, runs the migrations into it and reflects the result - so it is slow, and
-# the dependency on the migration files is what stops it running when nothing has changed.
+# Each example carries its own Makefile, as each Java example carries its own wrapper - so this
+# delegates rather than repeating the rules. `$(MAKE) -C` also means the up-to-date check is the
+# example's own: it starts a container when its migrations changed and does nothing when they
+# have not.
 
-ekbatan-py-examples/fastapi_wallet_rest_pg/schema.py: \
-		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/versions/*.py)
-	$(UV) python -m ekbatan.schemagen \
-		--migrations ekbatan-py-examples/fastapi_wallet_rest_pg/migrations \
-		--out $@
+# Listed rather than globbed: `$(wildcard */)` does not filter to directories on the make that
+# ships with macOS (3.81), so it picked up README.md and asked for a schema from it. A list is
+# also the place a reader looks to find out what is here.
+GENERATES := \
+	fastapi_wallet_rest_pg \
+	fastapi_wallet_rest_mysql \
+	fastapi_wallet_rest_mariadb \
+	fastapi_wallet_rest_sharded_pg \
+	fastapi_wallet_saga_pg \
+	job_worker_pg
 
-ekbatan-py-examples/fastapi_wallet_rest_mysql/schema.py: \
-		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/versions/*.py)
-	$(UV) python -m ekbatan.schemagen \
-		--migrations ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations \
-		--out $@ \
-		--image mysql:8.4
+.PHONY: $(addprefix schema-,$(GENERATES))
+$(addprefix schema-,$(GENERATES)): schema-%:
+	$(MAKE) -C ekbatan-py-examples/$* schema
 
-ekbatan-py-examples/fastapi_wallet_rest_mariadb/schema.py: \
-		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/versions/*.py)
-	$(UV) python -m ekbatan.schemagen \
-		--migrations ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations \
-		--out $@ \
-		--image mariadb:11.4
-
-ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/schema.py: \
-		$(wildcard ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/migrations/versions/*.py)
-	$(UV) python -m ekbatan.schemagen \
-		--migrations ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/migrations \
-		--out $@
-
-ekbatan-py-examples/fastapi_wallet_saga_pg/schema.py: \
-		$(wildcard ekbatan-py-examples/fastapi_wallet_saga_pg/migrations/versions/*.py)
-	$(UV) python -m ekbatan.schemagen \
-		--migrations ekbatan-py-examples/fastapi_wallet_saga_pg/migrations \
-		--out $@
-
-ekbatan-py-examples/job_worker_pg/schema.py: \
-		$(wildcard ekbatan-py-examples/job_worker_pg/migrations/versions/*.py)
-	$(UV) python -m ekbatan.schemagen \
-		--migrations ekbatan-py-examples/job_worker_pg/migrations \
-		--out $@
-
-schema: $(GENERATED)
+schema: $(addprefix schema-,$(GENERATES))
 
 # -- checks ------------------------------------------------------------------------------------
 #
@@ -89,7 +67,7 @@ schema: $(GENERATED)
 # a package this one only vendors.
 OURS := src tests ekbatan-py-examples scripts
 
-lint: $(GENERATED)
+lint: schema
 	$(UV) ruff check $(OURS)
 	$(UV) ruff format --check $(OURS)
 	$(UV) mypy
@@ -105,7 +83,7 @@ test:
 test-all:
 	$(UV) pytest --dialects=all
 
-examples: $(GENERATED)
+examples: schema
 	$(UV) pytest ekbatan-py-examples
 	cd ekbatan-py-examples && $(UV) python -m wallet_service_sqlite
 
@@ -113,7 +91,7 @@ build:
 	uv build
 
 clean:
-	rm -f $(GENERATED)
+	$(foreach e,$(GENERATES),$(MAKE) -C ekbatan-py-examples/$(e) clean;)
 
 help:
 	@grep -E '^#     make' $(MAKEFILE_LIST) | sed 's/^#     //'

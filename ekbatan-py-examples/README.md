@@ -66,8 +66,19 @@ its **own migrations** produce - a throwaway container, the migrations run into 
 reflected. That is Java's build step, and the reason is the same: the schema is the database's,
 not a hand-transcription that can drift from it.
 
+Each example carries its **own** Makefile, as each Java example carries its own wrapper - so you
+can work in one without the rest:
+
 ```
-make schema     # regenerate all of them
+cd ekbatan-py-examples/fastapi_wallet_saga_pg
+make            # generate if a migration changed, then test
+make run        # ...then serve
+```
+
+The root Makefile delegates to them rather than repeating the rules:
+
+```
+make schema     # every example that generates
 make            # generate what changed, then lint and test
 ```
 

@@ -1,42 +1,39 @@
-# The build, such as Python has one.
+# fastapi_wallet_rest_pg
 #
-# Java's `./gradlew build` starts a container, runs Flyway into it, points jOOQ at the result and
-# compiles the generated classes - so a developer never runs codegen and never has a stale
-# schema. Python has no step that runs before your code, so Make supplies the one thing that
-# makes the difference: a dependency graph with an up-to-date check.
+# Java's examples each carry their own wrapper, so you can clone the repository, `cd` into one
+# and build it without the rest. This is that: every target here runs from this directory, and
+# `uv` walks up to find the project on its own.
 #
-#     make run       generate if a migration changed, then serve
-#     make test      generate if a migration changed, then test
-#     make schema    just the generation
-#     make clean     throw the generated module away
+#     make            generate if a migration changed, then test
+#     make run        generate if a migration changed, then serve
+#     make schema     just the generation
+#     make clean      throw the generated module away
 #
 # `schema.py` is generated and **gitignored**, exactly as Java's `build/generated-jooq` is. A
-# fresh clone runs `make test` and gets a schema, because the rule below builds it first -
-# which is the same reason a fresh clone of the Java project runs `./gradlew build`.
+# fresh clone has none, runs `make`, and gets one - the same reason a fresh clone of the Java
+# project runs `./gradlew build`.
 
-UV      := uv run
-PYTHON  := $(UV) python
-MIGRATIONS := $(wildcard migrations/versions/*.py)
 PACKAGE := fastapi_wallet_rest_pg
+IMAGE   := postgres:17-alpine
 
-.PHONY: run test schema clean
-.DEFAULT_GOAL := test
+.PHONY: all run schema test clean
+.DEFAULT_GOAL := all
 
-# The rule that does the work. Newer migrations mean a stale schema, so Make regenerates it -
-# and skips the container entirely when nothing has changed, which is what makes this bearable
-# to have in front of every other target.
-schema.py: $(MIGRATIONS)
-	cd ../.. && $(PYTHON) -m ekbatan.schemagen \
-		--migrations ekbatan-py-examples/$(PACKAGE)/migrations \
-		--out ekbatan-py-examples/$(PACKAGE)/schema.py
+all: test
+
+# The dependency on the migration files is what makes this bearable to have in front of every
+# other target: it starts a container when they change and does nothing at all when they have
+# not.
+schema.py: $(wildcard migrations/versions/*.py)
+	uv run python -m ekbatan.schemagen --migrations migrations --out schema.py --image $(IMAGE)
 
 schema: schema.py
 
 run: schema.py
-	cd .. && $(UV) python -m $(PACKAGE)
+	cd .. && uv run python -m $(PACKAGE)
 
 test: schema.py
-	cd ../.. && $(UV) pytest ekbatan-py-examples/$(PACKAGE)
+	cd ../.. && uv run pytest ekbatan-py-examples/$(PACKAGE)
 
 clean:
 	rm -f schema.py
