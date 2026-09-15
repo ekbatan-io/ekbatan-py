@@ -1,0 +1,121 @@
+# `scheduled_tasks`
+
+Optional. Needed when you use distributed jobs, or anything built on them - and the in-process
+event handler is built on them, because fan-out and dispatch *are* jobs.
+
+**Needed when:** you use distributed jobs, or the in-process event handler.
+**Written by:** db-scheduler.
+**Built by:** `ekbatan.schema.scheduled_tasks_table(metadata, name="scheduled_tasks", schema=None)`.
+
+This table is **owned by [db-scheduler](https://github.com/kagkarlsson/db-scheduler)**, not by
+this framework. The job registry is a small facade over it and deliberately does not wrap the
+table in a model. Both ports keep the schema verbatim.
+
+Java depends on the upstream Java artifact. There is no upstream on PyPI, so this repository
+publishes its own port as `ekbatan-py-db-scheduler` - a separate distribution with its own
+tests, pinned to the version `ekbatan` was cut with. The **table is the same either way**, which
+is what lets a Java worker and a Python worker contend for the same executions.
+
+## DDL
+
+### PostgreSQL
+
+```sql
+CREATE TABLE scheduled_tasks (
+    task_name            VARCHAR(100) NOT NULL,
+    task_instance        VARCHAR(100) NOT NULL,
+    task_data            BYTEA,
+    execution_time       TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    picked               BOOLEAN      NOT NULL,
+    picked_by            VARCHAR(50),
+    last_success         TIMESTAMP WITHOUT TIME ZONE,
+    last_failure         TIMESTAMP WITHOUT TIME ZONE,
+    consecutive_failures INTEGER,
+    last_heartbeat       TIMESTAMP WITHOUT TIME ZONE,
+    version              BIGINT       NOT NULL,
+    priority             SMALLINT,
+    PRIMARY KEY (task_name, task_instance)
+);
+
+CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
+CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
+CREATE INDEX scheduled_tasks_priority_execution_time_idx
+    ON scheduled_tasks (priority, execution_time);
+```
+
+MySQL and MariaDB are the same with `BLOB` for `BYTEA` and `DATETIME(6)` for the timestamps.
+
+## Columns
+
+| column | null | meaning |
+| --- | :---: | --- |
+| `task_name` | no | which job |
+| `task_instance` | no | which instance of it. For a recurring job there is exactly one, named `recurring` |
+| `task_data` | yes | the serialised payload, for a job that carries one |
+| `execution_time` | no | when it is next due |
+| `picked` | no | whether some instance has claimed it |
+| `picked_by` | yes | which one |
+| `last_success`, `last_failure` | yes | the last outcomes |
+| `consecutive_failures` | yes | the backoff input |
+| `last_heartbeat` | yes | **the liveness signal.** An execution whose heartbeat stops is declared dead and run again elsewhere |
+| `version` | no | optimistic locking, the same idea as everywhere else |
+| `priority` | yes | which due execution to take first |
+
+`task_name` + `task_instance` is the primary key, and that composite is the entire
+cluster-exclusivity mechanism: a recurring job is one row, so exactly one instance can hold it.
+
+## The heartbeat is why the jobs pool is separate
+
+`last_heartbeat` is written from a housekeeping thread, continuously, for every execution this
+instance holds. If that thread cannot get a connection, the heartbeat stops, and the execution is
+declared dead and **run again somewhere else** - while it is still running here.
+
+That is why [Wiring](../../wiring.md) gives jobs their own pool, sized at **at least twice the worker
+count**. A job body holding the last connection starves the heartbeat. db-scheduler warns at
+startup when the pool is too small, and it warned while the examples were being written.
+
+## How this compares with Java
+
+Columns, order, nullability and the primary key are **identical** - both ports follow
+db-scheduler's own schema. Two differences on PostgreSQL:
+
+### `execution_time` is `timestamptz` in Java and `timestamp` here
+
+Java notes that it "intentionally steps off the always-TIMESTAMP rule here" because this is
+db-scheduler's table. This port emits `TIMESTAMP WITHOUT TIME ZONE`.
+
+**Either DDL works with either port, and that was checked.** The Python scheduler's clock returns
+`datetime.now(UTC)` - an *aware* datetime - and an aware datetime stores correctly in a
+`timestamptz` column whatever the session timezone is.
+
+The trap is worth spelling out, because it is the one that would have bitten. Writing a **naive**
+datetime into a `timestamptz` column makes PostgreSQL interpret it in the *session* timezone.
+Measured, writing `2026-09-15 12:00:00`:
+
+| session timezone | naive value lands as | aware value lands as |
+| --- | --- | --- |
+| `UTC` | `12:00:00 UTC` | `12:00:00 UTC` |
+| `America/New_York` | **`16:00:00 UTC`** | `12:00:00 UTC` |
+
+Four hours off, silently, and every execution fires at the wrong time. This is why the framework
+tables use `TIMESTAMP` without a zone everywhere else, and why CI runs the PostgreSQL suite a
+second time under a non-UTC process.
+
+If you share a `scheduled_tasks` table created by a Java service, nothing is required of you -
+the aware clock already handles it. If you write to that table yourself, pass aware datetimes.
+
+### Index names and the priority ordering
+
+Java names them `execution_time_idx`, `last_heartbeat_idx`, `priority_execution_time_idx`; this
+port prefixes each with the table name, which is what SQLAlchemy's convention produces and what
+keeps them unique when a schema holds two schedulers.
+
+Java's priority index is `(priority DESC, execution_time ASC)`; this port emits
+`(priority, execution_time)` with no direction. PostgreSQL can scan an index backwards, so the
+ordering is served either way; the cost is a backward scan rather than a forward one, which is
+not measurable at this table's size.
+
+## See also
+
+- [Framework tables](../tables.md) - the map
+- [Wiring](../../wiring.md) - the three pools, and why this one is separate

@@ -83,9 +83,9 @@ layout = ShardingConfig(
 ```
 
 One shard is the ordinary case and costs nothing - the framework treats a single entry as the
-default and adds no indirection. Add `ShardConfig` entries to shard.
+default and adds no indirection. Add `ShardConfig` entries to shard; see [Sharding](database/sharding.md).
 
-A `ShardConfig` also takes a `secondary` for non-transactional reads. Point it at a replica in
+A `ShardConfig` also takes a `replica` for non-transactional reads. Point it at a read replica in
 production, or leave it out and both go to the primary.
 
 ## 3. Migrations, before anything opens a pool
@@ -101,7 +101,7 @@ is missing in the one environment you did not test.
 
 It also refuses to run if a revision that was already applied has since been edited. Alembic does
 not check that; Flyway does, and losing the check on the way across would have been a silent
-downgrade.
+downgrade. See [Migrations](database/migrations.md).
 
 Ordering matters: run this before anything opens a pool against a schema that may not exist yet.
 
@@ -224,7 +224,7 @@ the worker count - and did, while the example was being written.
 
 Each block above is removable on its own:
 
-- **No replica?** Leave `secondary` out of the `ShardConfig`. Both go to the primary.
+- **No replica?** Leave `replica` out of the `ShardConfig`. Both go to the primary.
 - **No in-process handlers?** Drop block 7 and the two event jobs in block 8. Events still land
   in the outbox for an external consumer.
 - **No background jobs at all?** Drop block 8. Drop block 7 with it - without the jobs there is
@@ -232,7 +232,7 @@ Each block above is removable on its own:
 - **No keyed locks?** Drop the provider. Optimistic locking is still on, in every write.
 - **No sharding?** That is what is shown. One entry, no overhead.
 - **Sharding?** Add `ShardConfig` entries and give repositories an
-  `EmbeddedBitsShardingStrategy`.
+  `EmbeddedBitsShardingStrategy`. See [Sharding](database/sharding.md).
 
 ## No annotations, and nothing is discovered
 

@@ -4,7 +4,8 @@ One page, where Java has four. Java documents Gradle and Maven, and each of them
 for the dependencies and once for the jOOQ codegen plugin - because a build descriptor there is
 a real artifact with a version resolution problem in it. Here there is one dependency line.
 
-For the code generation step, which is the part with any depth to it, see *schemagen* below.
+For the code generation step, which is the part with any depth to it, see
+[schemagen](database/schemagen.md).
 
 ## Requirements
 
@@ -201,6 +202,7 @@ only a test against a real database checks it.
 ## Where to go next
 
 - [Wiring](wiring.md) - the complete bootstrap, every block of it
+- [schemagen](database/schemagen.md) - the code generation step in full
 - [Wiring with FastAPI](wiring-fastapi.md) - a lifespan, a dependency, and the three pools
 - [Concurrency](runtime/concurrency.md) - threads, the GIL, and the one way to use this wrongly
 - [`ekbatan-py-examples/`](../ekbatan-py-examples) - seven runnable projects

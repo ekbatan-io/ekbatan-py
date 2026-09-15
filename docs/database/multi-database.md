@@ -1,0 +1,116 @@
+# Multiple dialects
+
+PostgreSQL, MySQL and MariaDB are supported. SQLite runs the test suite and is **not** a
+production dialect - see [SQLite](sqlite.md) for exactly why.
+
+Most of the framework is dialect-agnostic. The differences concentrate in one place: **the column
+types in your migrations.** Get those right and the rest follows, which is why three helpers do
+all the work.
+
+## Three helpers instead of a converter table
+
+Java's counterpart to this page is a grid of Java types against DDL types against
+`SQLDataType` expressions against jOOQ converters - seven converters, and which one you need
+depends on the dialect. Here that collapses, because a SQLAlchemy type decorator already knows
+how to render itself per dialect.
+
+```python
+from ekbatan.schema import json_column, timestamp_column, uuid_column
+```
+
+| helper | PostgreSQL | MySQL | MariaDB | SQLite |
+| --- | --- | --- | --- | --- |
+| `uuid_column()` | `UUID` | `CHAR(36)` | `CHAR(36)` | `CHAR(32)` |
+| `timestamp_column()` | `TIMESTAMP WITHOUT TIME ZONE` | `DATETIME(6)` | `DATETIME(6)` | `DATETIME` |
+| `json_column()` | `JSONB` | `JSON` | `JSON` | `JSON` |
+
+Everything else is ordinary SQLAlchemy: `String(n)`, `Numeric(p, s)`, `Integer`, `BigInteger`,
+`Boolean`. They already render correctly everywhere.
+
+Use these helpers in your migrations rather than raw types. They are also what
+[`schemagen`](schemagen.md) forces reflected columns *back* to, which is what makes a schema
+generated on one dialect usable on another.
+
+## Always UTC, and no zone
+
+Every timestamp this framework writes is UTC, and it is stored in a column with **no zone**.
+That is enforced across the project and is not negotiable per table.
+
+- **`TIMESTAMP`, never `TIMESTAMPTZ`.** `TIMESTAMP WITH TIME ZONE` shifts values by the session's
+  offset, and two readers of one row then disagree about when the thing happened.
+- **`DATETIME(6)`, never bare `DATETIME`**, on MySQL and MariaDB. The bare form truncates to
+  whole seconds, silently - and the outbox's only ordering key is a timestamp.
+- **Set the server to UTC.** `TZ=UTC` on the container, or `serverTimezone=UTC` on the URL.
+- **CI runs the PostgreSQL suite a second time under a non-UTC process**, because that is where
+  a driver inferring a zoned type shows up and nowhere else.
+
+`timestamp_column()` handles all of this. The one place the framework steps off the rule is
+`scheduled_tasks`, which is db-scheduler's own schema - see
+[that table's page](tables/scheduled-tasks.md) for the measured consequence of getting it wrong.
+
+## Schema or database
+
+On PostgreSQL a schema is a namespace **inside** the connected database. `CREATE SCHEMA IF NOT
+EXISTS eventlog;` in your first migration is all it takes, and the connecting user normally has
+the right to do it.
+
+On MySQL and MariaDB "schema" and "database" are the same thing, so `schema="eventlog"` means a
+**separate database**. Two consequences:
+
+1. a migration that creates it, and
+2. an init script granting the connecting user rights to it.
+
+The grant cannot live in a migration - the migrator connects as that user, and a user cannot
+grant itself anything.
+
+**This port defaults to no schema at all**, because a Python service usually owns its database
+outright and one fewer namespace is one fewer thing to configure. Pass `schema="eventlog"` when
+you want Java's layout - which you do if a Java service shares the database. See
+[Framework tables](tables.md).
+
+## Partial indexes are PostgreSQL only
+
+PostgreSQL can index a subset of a table:
+
+```sql
+CREATE INDEX events_undelivered ON events (event_type, event_date) WHERE delivered = FALSE;
+```
+
+MySQL and MariaDB cannot. The portable form puts the predicate column into the index instead:
+
+```sql
+CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+```
+
+**The framework's own tables use the portable form on every dialect**, including PostgreSQL,
+because the table factory builds one index with no dialect variation. That costs real space on a
+large outbox - [measured at 63x](tables/events.md#the-undelivered-index-and-what-it-costs) - and
+is the one place you may want to replace a generated index with your own.
+
+## Where the dialects actually disagree
+
+Everything below was found by running the suite against all four, not by reading documentation.
+
+| | |
+| --- | --- |
+| **`SKIP LOCKED`** | PostgreSQL, MySQL 8+ and MariaDB 10.6+ have it. SQLite does not, which is the main reason it is not a production dialect |
+| **`RETURNING`** | PostgreSQL and SQLite support it on writes; MySQL and MariaDB do not, so the framework rebuilds written rows itself there |
+| **`GET_LOCK` sub-second timeouts** | MySQL truncates them to zero; MariaDB honours them. [Measured](keyed-locks.md#a-sub-second-wait-is-not-a-wait-on-mysql) |
+| **Native UUID** | PostgreSQL always; MariaDB 10.7+; MySQL never |
+| **Reflected type names** | MariaDB reports a bigint as `BIGINT(display_width=20)` and JSON as `LONGTEXT`. [`schemagen`](schemagen.md) normalises both |
+| **Untyped `NULL` in a multi-row `VALUES`** | PostgreSQL infers `text` and then refuses to insert it into an integer column. The framework casts every NULL explicitly |
+| **Multi-statement scripts** | PyMySQL rejects them, so a migration is one statement per `op.execute()` |
+
+## Adding a dialect
+
+The framework picks its lock provider and its dialect behaviour off
+`engine.dialect.name`, so a new dialect needs: a driver SQLAlchemy supports, a keyed-lock
+provider, the three column helpers taught to render, and the suite run against it. The suite is
+parametrised over the dialect rather than duplicated per dialect, so a new one cannot be
+accidentally left out of a test.
+
+## See also
+
+- [PostgreSQL](postgresql.md) · [MySQL](mysql.md) · [MariaDB](mariadb.md) · [SQLite](sqlite.md)
+- [Framework tables](tables.md) - the DDL, per dialect
+- [schemagen](schemagen.md) - why the forcing exists

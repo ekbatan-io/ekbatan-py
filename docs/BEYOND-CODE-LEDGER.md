@@ -81,33 +81,32 @@ be rewritten, and some of the reasoning changes with it - `sagas.md` has to expl
 
 ## Documentation - the database
 
-**Four links were removed from the pages written above** rather than shipped broken:
-`docs/database/schemagen.md` (twice, from getting-started) and `docs/database/sharding.md`
-(twice, from wiring). Writing the pages below is what restores them, and
-`uv run python scripts/links.py` - now part of `make lint` - is what will say when they are back.
-
-The largest area, and the most portable: what the tables are, how repositories read, how locks
+The largest area, and the most portable. Everything here was checked by **generating the DDL and
+comparing it against Java's**, not by translating Java's prose - which is how the findings below
+were found. The four forward references stripped when getting-started and wiring were written are
+restored; `scripts/links.py`, now part of `make lint`, is what confirmed it. what the tables are, how repositories read, how locks
 and transactions behave. The per-dialect pages need real checking rather than translation - this
 port's MySQL and MariaDB behaviour is not identical to Java's.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| database/README.md | 21 | `docs/database/README.md` | todo |
-| database/tables.md | 42 | `docs/database/tables.md` | todo |
-| database/tables/events.md | 153 | `docs/database/tables/events.md` | todo - a cross-language contract; the two must agree column for column |
-| database/tables/event-notifications.md | 171 | `docs/database/tables/event-notifications.md` | todo |
-| database/tables/scheduled-tasks.md | 124 | `docs/database/tables/scheduled-tasks.md` | todo |
-| database/outbox-schema.md | 11 | `docs/database/outbox-schema.md` | todo |
-| database/repositories.md | 213 | `docs/database/repositories.md` | todo - mapping is by field name here, so a good half of the Java page has no counterpart |
-| database/transaction-manager.md | 174 | `docs/database/transaction-manager.md` | todo - `with` blocks rather than four callback overloads |
-| database/keyed-locks.md | 248 | `docs/database/keyed-locks.md` | todo - must carry the measured `GET_LOCK` sub-second finding |
-| database/sharding.md | 323 | `docs/database/sharding.md` | todo |
-| database/multi-database.md | 136 | `docs/database/multi-database.md` | todo |
-| database/postgresql.md | 205 | `docs/database/postgresql.md` | todo |
-| database/mysql.md | 267 | `docs/database/mysql.md` | todo |
-| database/mariadb.md | 261 | `docs/database/mariadb.md` | todo |
-| database/jooq-codegen.md | 315 | `docs/database/schemagen.md` | todo - the counterpart is `ekbatan.schemagen`, and the type-forcing section is the part that matters |
-| - | - | `docs/database/sqlite.md` | todo - **no Java counterpart.** SQLite is a supported dialect here and is not one there |
+| database/README.md | 21 | `docs/database/README.md` | done - the index, plus the three things that must line up to interoperate with a Java service |
+| database/tables.md | 42 | `docs/database/tables.md` | done - the map. These are `Table` objects built by a factory rather than DDL you copy, so the page says how to build them |
+| database/tables/events.md | 153 | `docs/database/tables/events.md` | done - **they do agree, column for column, verified by generating both.** Two differences found: MariaDB's native UUID (checked to interoperate anyway) and PostgreSQL's missing partial index, **measured at 3,528 kB against Java's 56 kB** |
+| database/tables/event-notifications.md | 171 | `docs/database/tables/event-notifications.md` | done - identical columns and unique constraint. Same partial-index gap on PostgreSQL |
+| database/tables/scheduled-tasks.md | 124 | `docs/database/tables/scheduled-tasks.md` | done - Java uses `timestamptz` here and this port `timestamp`. **Verified safe**: the scheduler's clock is aware, and an aware datetime stores correctly either way. Carries the measurement showing a *naive* write shifting four hours under a non-UTC session |
+| database/outbox-schema.md | 11 | - | n/a - a redirect stub preserving an old Java URL. This port has no old URLs |
+| database/repositories.md | 213 | `docs/database/repositories.md` | done - and a good half of the Java page had no counterpart, as expected: mapping by field name deletes `fromRecord`/`toRecord` entirely |
+| database/transaction-manager.md | 174 | `docs/database/transaction-manager.md` | done - one `with` block against four overloads, and a sharper divergence than expected: **this port joins an open transaction where Java nests onto a second connection**, which Java documents as "do not nest" |
+| database/keyed-locks.md | 248 | `docs/database/keyed-locks.md` | done - carries the `GET_LOCK` table (MySQL truncates a sub-second wait to zero; MariaDB honours it) and the watchdog's thread cost |
+| database/sharding.md | 323 | `docs/database/sharding.md` | done - the reference half; the reasoning is in `concepts/sharding.md`. Documents why `max_overflow` defaults to 0 where SQLAlchemy's default is 10 |
+| database/multi-database.md | 136 | `docs/database/multi-database.md` | done - Java's grid of types against converters collapses to three column helpers, because a SQLAlchemy type decorator renders itself per dialect |
+| database/postgresql.md | 205 | `docs/database/postgresql.md` | done |
+| database/mysql.md | 267 | `docs/database/mysql.md` | done |
+| database/mariadb.md | 261 | `docs/database/mariadb.md` | done - leads with the scheme trap, because a url left as `mysql://` tests the wrong code path silently |
+| database/jooq-codegen.md | 315 | `docs/database/schemagen.md` | done - and the type-forcing section is indeed the part that matters |
+| - | - | `docs/database/migrations.md` | done - **no Java counterpart as a page**; Java documents Flyway inside getting-started and wiring. Needed here because Alembic is driven as a library, and because the checksum guard had to be added on top of it |
+| - | - | `docs/database/sqlite.md` | done - **no Java counterpart.** Says plainly why it is supported and why it is not a production dialect: no `SKIP LOCKED`, and advisory types that let a mapping bug pass |
 
 ## Documentation - events and jobs
 

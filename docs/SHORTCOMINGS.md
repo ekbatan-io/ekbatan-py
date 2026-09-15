@@ -20,6 +20,7 @@ Each row links to where the detail lives. Nothing is recorded only here.
 | **Kafka Connect transform** | `debezium-smt`, which routes outbox rows to topics | **Deliberate.** It runs inside Kafka Connect, in a JVM, whichever language wrote the row. A Python service points the same connector at its database. What this port owes is the schema, which is `ekbatan.schema` and is checked by the conformance scenarios |
 | **Graceful shutdown on a signal** | `JobRegistry.Builder.registerShutdownHook`, **on by default** | **Open, undecided.** A SIGTERM here kills the process mid-execution; the rows wait out the dead-execution window, 60s on framework defaults. Not a straight port: `atexit` does not fire on SIGTERM, so matching Java means a process-wide signal handler, which is a much bigger imposition in Python. See `DECISIONS-TO-REVIEW.md` |
 | **Connection-pool leak detection** | `leakDetectionThreshold` - Hikari logs the borrower's stack when a connection is held too long | **Open, undecided, investigated in depth.** A naive port is worse than nothing: a handler raising on `checkin` *strands* the connection, so the detector would cause the leak it looks for. Ten findings and a narrower design are written up in `DECISIONS-TO-REVIEW.md` |
+| **Partial indexes** | `WHERE delivered = FALSE` on the outbox and `WHERE state IN ('PENDING','FAILED')` on the notifications, on PostgreSQL | **Not emitted.** The table factory builds one index with no dialect variation, so PostgreSQL gets the portable composite form. Measured on 500,000 rows with a 1% backlog: **3,528 kB against Java's 56 kB**, and every insert pays for it. Workaround is a hand-written index in your own migration; the fix is dialect-aware index construction in `ekbatan.schema`. See [`database/tables/events.md`](database/tables/events.md) |
 | **Pool idle tuning** | `idleTimeout`, `minimumIdle` | **No direct counterpart.** `pool_use_lifo=True` plus `pool_recycle` reaches the same outcome - measured, LIFO touches 1 connection where FIFO touches 4 - but there is no floor like `minimumIdle`, and retirement is by age rather than by idleness |
 
 ---
@@ -52,12 +53,12 @@ synchronous"*.
 
 ## Everything outside the code
 
-There is **no website**, and the documentation tree is eleven pages in: the
-[concepts](concepts/README.md) are complete, and so are [getting started](getting-started.md),
-[wiring](wiring.md), [wiring with FastAPI](wiring-fastapi.md) and
-[concurrency](runtime/concurrency.md). The database pages and the events pages do not exist yet -
-fifteen and five respectively, and the largest remaining area. That surface is enumerated and
-counted in [`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 48%.
+There is **no website**. The documentation tree is now twenty-eight pages: the
+[concepts](concepts/README.md) and the [database section](database/README.md) are complete, along
+with [getting started](getting-started.md), [wiring](wiring.md),
+[wiring with FastAPI](wiring-fastapi.md) and [concurrency](runtime/concurrency.md). The events and
+jobs pages, and observability, do not exist yet. That surface is enumerated and counted in
+[`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 74%.
 
 The repository's own essentials are no longer part of it. LICENSE, AGENTS.md, CLAUDE.md,
 RELEASE.md and the publishing workflow were written in the first pass over that ledger, and two
