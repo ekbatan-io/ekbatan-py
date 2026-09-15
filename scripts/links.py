@@ -24,6 +24,18 @@ LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 PUNCTUATION = re.compile(r"[^\w\- ]")
 
 
+#: Fenced blocks and inline code spans. A link inside either is an illustration of a *shape* -
+#: `[the outbox](outbox.md)` shown as an example of what a docs page contains - not a promise
+#: that the file is there, and checking it produces a failure that can only be fixed by making
+#: the prose worse.
+CODE = re.compile(r"```.*?```|``.+?``|`[^`\n]+`", re.S)
+
+
+def strip_code(text: str) -> str:
+    """Blank out code, keeping line structure so headings still parse."""
+    return CODE.sub(lambda m: re.sub(r"[^\n]", " ", m.group()), text)
+
+
 def anchors(text: str) -> set[str]:
     found = set()
     for line in text.splitlines():
@@ -40,7 +52,7 @@ def main() -> int:
     checked = 0
 
     for path in files:
-        text = path.read_text()
+        text = strip_code(path.read_text())
         for target in LINK.findall(text):
             if target.startswith(("http://", "https://", "mailto:")):
                 continue
