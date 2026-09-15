@@ -53,14 +53,14 @@ synchronous"*.
 
 ## Everything outside the code
 
-**The documentation is written.** Thirty-four pages, indexed at [docs/README.md](README.md):
-every Java page that has a counterpart here now has one, plus five this port needed and Java does
-not - concurrency, SQLite, migrations, FastAPI wiring, and schemagen.
+**Nothing outstanding.** [`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md) stands at **68/68**:
+the licence, the agents guide, the release procedure and its workflow, thirty-four documentation
+pages, the website, the openspec workflow and the agent skills.
 
-What is left is **the website** - Java has 76 files of Astro at `ekbatan-io.github.io/ekbatan`
-and this port has nothing - and two process directories, `openspec/` and `agent-skills/`. That
-surface is enumerated and counted in [`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which
-stands at 86%.
+Two things about that number are worth saying plainly. It counts **written**, not **exercised** -
+the release workflow has never cut a release and the website has never been deployed. And five of
+those pages have no Java counterpart at all, because this port needed them and Java did not:
+concurrency, SQLite, migrations, FastAPI wiring, and schemagen.
 
 The repository's own essentials are no longer part of it. LICENSE, AGENTS.md, CLAUDE.md,
 RELEASE.md and the publishing workflow were written in the first pass over that ledger, and two

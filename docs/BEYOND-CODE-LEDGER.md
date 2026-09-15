@@ -172,5 +172,5 @@ Neither is user-facing, and both are how the Java repository is actually worked 
 
 | Java | files | Python | status |
 | --- | --- | --- | --- |
-| openspec/ | 54 | - | todo - the change-proposal workflow. `openspec/changes/fix-defects-found-porting-to-python` is where this port's Java findings were filed, so the two repositories already share it |
-| agent-skills/ | 12 | - | todo - skills for agents working in the repository |
+| openspec/ | 54 | `openspec/` | done - **the workflow, not the history.** 50 of Java's 54 files are proposals for features that now exist; their outcomes transferred as code and `JAVA-PARITY-LEDGER.md` is the record of that. What transferred is `config.yaml` - filled in here rather than left as the template's placeholders - and the convention. This port's own findings stay filed in the Java repository, because a proposal to change Java code belongs where that code is |
+| agent-skills/ | 12 | `agent-skills/` | done - three skills, mirrored into `.claude/skills/` and `.agents/skills/` by `scripts/sync.sh`. Named `ekbatan-py-*` so an agent with both repositories open cannot load Java's against this tree: its maintainer skill says "use jOOQ explicitly" and "prefer `txDbElseDb`", which are right there and near-misses here. Two mirror targets rather than Java's three - there is no plugin distribution |

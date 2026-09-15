@@ -1,0 +1,32 @@
+schema: spec-driven
+
+# Shown to an agent when it creates an artifact here. Java's is the template's commented-out
+# placeholders; this is filled in, because an agent proposing a change to this repository needs
+# to know it is a port before it proposes anything.
+context: |
+  ekbatan-py is the Python port of the Java framework at ../ekbatan. The two interoperate on the
+  same database tables: the outbox schema, the keyed-lock names and the shard bit layout are
+  cross-language contracts, and a change to any of them is a change to both ports.
+
+  Stack: Python 3.13+, SQLAlchemy 2.0 Core used as a typed statement builder - no ORM, no
+  Session. uv for dependencies and running; a Makefile for the dependency graph uv has no
+  answer for. PostgreSQL, MySQL and MariaDB are supported; SQLite runs the suite and is not a
+  production dialect.
+
+  Conventions: frozen dataclasses for domain objects, keyword-only. Actions named
+  OpenWalletAction, events MoneyDepositedEvent, handlers ...EventHandler, jobs ...Job. Commit
+  messages are one EKB-XXXX subject line and no body.
+
+  Read DIVERGENCE.md before proposing something that looks like a fix - it may be a deliberate
+  difference from the Java port. Read docs/SHORTCOMINGS.md before claiming parity.
+
+rules:
+  proposal:
+    - Say what the Java port does about this, and whether the change breaks interoperability.
+    - Name the cross-language contracts the change touches, or say that it touches none.
+  design:
+    - Distinguish "measured" from "read". A claim that was run says so; one taken from the
+      source says that instead. This is the discipline the port itself was done under.
+  tasks:
+    - Every task cites the finding in design.md that motivates it.
+    - A task that changes SQL requires `make test-all`, not `make test`.
