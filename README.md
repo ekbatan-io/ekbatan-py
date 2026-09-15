@@ -24,7 +24,7 @@ class Wallet(Model[UUID, WalletState]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(WalletMoneyDeposited(amount=amount, new_balance=new_balance))
+            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -33,7 +33,7 @@ class Wallet(Model[UUID, WalletState]):
 **An action stages changes on a plan instead of writing them.**
 
 ```python
-class DepositMoney(Action[DepositParams, Wallet]):
+class DepositMoneyAction(Action[DepositParams, Wallet]):
     def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
         self.wallets = wallets
 
@@ -45,12 +45,51 @@ class DepositMoney(Action[DepositParams, Wallet]):
 **The executor opens one transaction, writes the rows and their events, and commits.**
 
 ```python
-executor.execute(deposit_money, DepositParams(wallet_id=..., amount=Decimal("50.00"), ...))
+executor.execute(deposit_money_action, DepositParams(wallet_id=..., amount=Decimal("50.00"), ...))
 ```
 
 That is the whole surface for the common case. There is no transaction to open, nothing to
 flush, nothing to publish, and no mention of an outbox anywhere above - which is the point.
 State and events land together or neither does.
+
+## Install
+
+```
+uv add ekbatan[postgres]          # or [mysql], or [mariadb]
+```
+
+The extras are the drivers and the optional pieces, and nothing you do not ask for is installed.
+`postgres` brings psycopg 3, `mysql` and `mariadb` bring PyMySQL, `migrations` brings Alembic,
+`redis` brings the Redis-backed keyed lock, and `codegen` brings what `schemagen` needs to start
+a container at build time - a development dependency, not a runtime one:
+
+```
+uv add --dev ekbatan[codegen]
+```
+
+Python 3.13 or newer. SQLAlchemy 2.0 is the only unconditional dependency, alongside
+`ekbatan-py-db-scheduler` - the port of `kagkarlsson/db-scheduler`, which this repository also
+publishes because there is no upstream for it on PyPI.
+
+The package is typed and ships `py.typed`, so a checker reads its annotations rather than
+ignoring them - which is also why the classifiers claim `Typing :: Typed` truthfully.
+
+## Versioning and support
+
+Semantic versioning, and a version number shared with nothing else: **this port's versions do not
+track the Java framework's.** `ekbatan-py` 0.4 does not mean `ekbatan` 0.4. What the two do share
+is the on-disk contract - the outbox schema, the lock names, the `scheduled_tasks` table - and
+that is pinned by [ekbatan-spec](https://github.com/ekbatan-io/ekbatan-spec) rather than by a
+version number. A Java service and a Python service interoperate when both pass the same spec
+revision, whatever they call themselves.
+
+While the major version is 0, a minor bump may break an API. Pin accordingly: `ekbatan~=0.4.0`.
+Anything reached through `ekbatan.<name>` is public; anything under an underscore is not, and the
+`_holder` module is the example - it exists for the keyed lock and will change without notice.
+
+Releases are cut from this repository to PyPI with trusted publishing - no token is stored
+anywhere, and every artifact carries a PEP 740 attestation. [RELEASE.md](RELEASE.md) is the
+procedure.
 
 ## Built on
 
@@ -62,8 +101,9 @@ unit-of-work implementation, and two of those fighting over one transaction is t
 you could do to this design.
 
 Table definitions are generated with `python -m ekbatan.schemagen`, which starts a container,
-runs your migrations into it and reflects the result - the counterpart to Java's jOOQ step. Postgres via psycopg 3, MySQL and MariaDB via
-PyMySQL. Migrations with yoyo, which runs plain per-dialect SQL files.
+runs your migrations into it and reflects the result - the counterpart to Java's jOOQ step.
+Postgres via psycopg 3, MySQL and MariaDB via PyMySQL. Migrations with Alembic, driven as a
+library rather than from an `alembic.ini`, so one call migrates every shard.
 
 ## What is here
 
@@ -136,13 +176,24 @@ model's own methods typed too.
 
 ```
 src/ekbatan/          the library
+db-scheduler/         its own distribution: the port of kagkarlsson/db-scheduler
 tests/
   fixtures/           the domain the suite is written against - owned by the suite
-  unit/               no database, ever. 56 tests, about a second
-  integration/        everything that touches one. 118 tests, on any dialect
+  unit/               no database, ever. 250 tests, about a second
+  integration/        everything that touches one. 322 tests, on any dialect
 ekbatan-py-examples/
-  wallet_service_sqlite/     a standalone application. Imports only ekbatan; imported by nothing
+  fastapi_wallet_rest_pg/          the REST service, on PostgreSQL
+  fastapi_wallet_rest_mysql/       the same service, on MySQL
+  fastapi_wallet_rest_mariadb/     the same service, on MariaDB
+  fastapi_wallet_rest_sharded_pg/  the same service, across four shards
+  fastapi_wallet_saga_pg/          a saga: two services, choreography, compensation
+  job_worker_pg/                   a distributed job, no HTTP at all
+  wallet_service_sqlite/           the smallest one. No container, no web stack
 ```
+
+One REST example per dialect and one of everything else, which is the shape of Java's matrix -
+there, too, only the REST project is replicated per database. Each is standalone: it imports the
+framework and is imported by nothing.
 
 Three separate things with three separate jobs, and they do not import each other. The suite's
 domain exists to exercise every shape worth exercising, including a few no application would
@@ -157,10 +208,10 @@ An action's business logic needs no database. `run_action` runs one against a ba
 reports what it staged:
 
 ```python
-staged = run_action(DepositMoney(wallet), DepositParams(amount=Decimal("50.00"), ...))
+staged = run_action(DepositMoneyAction(wallets), DepositParams(amount=Decimal("50.00"), ...))
 
 assert staged.result.balance == Decimal("150.00")
-assert staged.emitted(MoneyDeposited)[0].amount == Decimal("50.00")
+assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
 assert staged.updated(Wallet) == [staged.result]
 ```
 
@@ -181,7 +232,7 @@ uv run mypy                           # strict, on the library and the examples
 uv run ruff check .
 ```
 
-175 tests. 114 of them are parametrised over the dialect, so `--dialects=all` runs 517.
+578 tests. 264 of them are parametrised over the dialect, so `--dialects=all` runs 1,370.
 
 There are no per-dialect test classes. Java needs one subclass per dialect per suite -
 `PgRepositoryTest`, `MysqlRepositoryTest`, `MariadbRepositoryTest` - because that is how JUnit

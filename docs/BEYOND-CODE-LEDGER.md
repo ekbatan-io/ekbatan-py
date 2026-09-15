@@ -47,11 +47,11 @@ The smallest set, and the one with a real defect in it.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| LICENSE | 201 | `LICENSE` | todo - **`pyproject.toml` declares `license = "Apache-2.0"` and there is no LICENSE file.** A wheel built today ships the declaration without the text. Blocks publishing |
-| README.md | 512 | `README.md` | partial - exists and is good on what the framework is; says nothing about installing from PyPI, versioning, or support policy |
-| AGENTS.md | 402 | `AGENTS.md` | todo - the conventions an agent needs to work in this repository. `CLAUDE.md` in the Java repo is a one-line pointer to it |
-| CLAUDE.md | 3 | `CLAUDE.md` | todo - a pointer to AGENTS.md |
-| RELEASE.md | 120 | `RELEASE.md` | todo - how a release is cut, which is the thing nobody remembers a year later |
+| LICENSE | 201 | `LICENSE` | done - copied byte for byte. Verified in both distributions: the wheel carries `dist-info/licenses/LICENSE` and the sdist carries `LICENSE`. **`db-scheduler/` had the same defect and it was fixed with it** |
+| README.md | 512 | `README.md` | done - gained *Install*, *Versioning and support*, the full example list and a link to RELEASE.md. Four stale claims corrected on the way: it named yoyo rather than Alembic, and its test counts (175/56/118) were collected as 578/250/322 |
+| AGENTS.md | 402 | `AGENTS.md` | done - Java's headings, with what this port learned in them: the traps the suite fell into, the ledger method, the ContextVar rule, and "do not commit in the Java repository" |
+| CLAUDE.md | 3 | `CLAUDE.md` | done - a pointer to AGENTS.md, as Java's is |
+| RELEASE.md | 120 | `RELEASE.md` | done - PyPI trusted publishing: no GPG, no Sonatype, no stored secret. Two distributions in dependency order, the TestPyPI rehearsal, and the warning Java has no counterpart to - **a PyPI filename is burned forever, deleting a release does not free the version** |
 
 ## Continuous integration and release
 
@@ -59,7 +59,7 @@ The smallest set, and the one with a real defect in it.
 | --- | --- | --- | --- |
 | .github/workflows/ci.yml | 180 | `.github/workflows/ci.yml` | done - lint, unit, four dialects, examples, tracing. **Has never run: this repository has no remote** |
 | .github/workflows/heavy-verification.yml | 96 | - | n/a - native-image and the example grid build. Neither has a Python counterpart |
-| .github/workflows/release.yml | 110 | `.github/workflows/release.yml` | todo - the publishing pipeline. Java signs and uploads to Sonatype; this needs PyPI, and should use trusted publishing rather than a stored token |
+| .github/workflows/release.yml | 110 | `.github/workflows/release.yml` | done - verify, build, smoke, publish, release. `uv publish --trusted-publishing always`, so no secret exists to leak. Written with RELEASE.md rather than an iteration later, because a procedure describing a workflow that does not exist is the thing this ledger exists to prevent |
 | .github/workflows/deploy-website.yml | 40 | - | todo - blocked on the website decision above |
 | - | - | `.github/workflows/db-scheduler.yml` | done - no Java counterpart; the vendored distribution has its own suite |
 

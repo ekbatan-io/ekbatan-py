@@ -52,10 +52,21 @@ synchronous"*.
 
 ## Everything outside the code
 
-There is no user-facing documentation, no website, no release pipeline and no LICENSE file -
-44 Java documentation pages have no counterpart, and `pyproject.toml` declares a licence whose
-text is not in the repository. That surface is enumerated and counted in
-[`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 22%.
+There is no user-facing documentation and no website: 44 Java documentation pages have no
+counterpart. That surface is enumerated and counted in
+[`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 32%.
+
+The repository's own essentials are no longer part of it. LICENSE, AGENTS.md, CLAUDE.md,
+RELEASE.md and the publishing workflow were written in the first pass over that ledger, and two
+real defects fell out of building the artifacts to check them:
+
+- **Neither distribution shipped its licence text** while both declared `license = "Apache-2.0"`.
+  Fixed in both; verified by reading `dist-info/licenses/` out of the built wheels.
+- **`ekbatan` depended on `ekbatan-py-db-scheduler` with no version bound at all**, so
+  `pip install ekbatan` would have taken any future release of a distribution this repository
+  cuts itself. Now pinned. The pin has a pre-release trap of its own, which `RELEASE.md`
+  records: `~=0.1.0` does not admit `0.1.0.dev0`, and `[tool.uv.sources]` hides that from every
+  test in this repository.
 
 ## Not a gap in the code, but worth knowing
 

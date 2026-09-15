@@ -1,0 +1,138 @@
+# Publishing, in one file.
+#
+# Java's counterpart signs 16 jars with GPG and stages them on Sonatype for a human to confirm.
+# This has no keys and no secrets at all: PyPI's trusted publishing swaps this workflow's OIDC
+# token for a short-lived upload token, and only for a workflow file, repository and environment
+# it was told about in advance. The `pypi` environment is where a required reviewer goes, and is
+# this pipeline's stage-and-confirm.
+#
+# Two distributions, published in dependency order. See RELEASE.md.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # The rehearsal. Same steps, TestPyPI, no tag burned.
+  workflow_dispatch:
+    inputs:
+      target:
+        description: where to publish
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # Before anything is built. Java checks gradle.properties against the tag; here there are
+    # three numbers rather than one, and the third - the pin from ekbatan to the db-scheduler
+    # distribution it is cut with - is the one that gets forgotten.
+    name: versions agree
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -euo pipefail
+          root=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          dbs=$(grep -m1 '^version = ' db-scheduler/pyproject.toml | cut -d'"' -f2)
+          pin=$(grep -o 'ekbatan-py-db-scheduler~=[0-9a-zA-Z.]*' pyproject.toml | cut -d'=' -f2)
+
+          echo "root=$root db-scheduler=$dbs pin=$pin"
+          [ "$root" = "$dbs" ] || { echo "::error::root is $root, db-scheduler is $dbs"; exit 1; }
+
+          # `~=0.3.0` admits 0.3.x, so the pin is compared on major.minor - it is a range, not
+          # an equality, and demanding it match the patch would be wrong.
+          series() { echo "$1" | cut -d. -f1,2; }
+          [ "$(series "$pin")" = "$(series "$root")" ] \
+            || { echo "::error::pin $pin does not cover $root"; exit 1; }
+
+          if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            [ "$tag" = "$root" ] || { echo "::error::tag $tag, version $root"; exit 1; }
+          fi
+          echo "version=$root" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build both distributions
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+
+      # Both into one directory, which is what `uv publish` and the GitHub Release both want.
+      - run: uv build --out-dir dist
+      - run: uv build --out-dir ../dist
+        working-directory: db-scheduler
+
+      # What a user gets, which is not what the test suite proves. `--no-project` ignores this
+      # checkout entirely, so a module left out of the wheel fails here and nowhere else. The
+      # find-links is because ekbatan's pin resolves to a db-scheduler that is not on the index
+      # yet - on the first release it does not exist anywhere but this directory.
+      - name: import from the wheel
+        run: |
+          set -euo pipefail
+          echo "ekbatan==${{ needs.verify.outputs.version }}" > /tmp/req.txt
+          uv run --no-project --isolated --with-requirements /tmp/req.txt --find-links dist \
+            python -c "from ekbatan import ActionExecutor, Entity, Model; import db_scheduler; print('ok')"
+
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: dist/ }
+
+  publish:
+    name: publish to ${{ inputs.target || 'pypi' }}
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target || 'pypi' }}
+    permissions:
+      # Per-job, and a job-level block replaces the workflow-level one rather than adding to
+      # it - so `contents: read` is repeated here deliberately.
+      contents: read
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+
+      - name: set the index
+        run: |
+          if [ "${{ inputs.target || 'pypi' }}" = testpypi ]; then
+            echo "UV_PUBLISH_URL=https://test.pypi.org/legacy/" >> "$GITHUB_ENV"
+            echo "CHECK_URL=https://test.pypi.org/simple/" >> "$GITHUB_ENV"
+          else
+            echo "UV_PUBLISH_URL=https://upload.pypi.org/legacy/" >> "$GITHUB_ENV"
+            echo "CHECK_URL=https://pypi.org/simple/" >> "$GITHUB_ENV"
+          fi
+
+      # In dependency order: ekbatan pins ekbatan-py-db-scheduler, so an installer that reaches
+      # the framework first finds a pin it cannot resolve. `--check-url` makes a re-run skip
+      # what is already up rather than failing - which matters because a PyPI filename can be
+      # uploaded exactly once, ever.
+      - name: db-scheduler
+        run: uv publish --trusted-publishing always --check-url "$CHECK_URL/ekbatan-py-db-scheduler/" dist/ekbatan_py_db_scheduler-*
+
+      - name: ekbatan
+        run: uv publish --trusted-publishing always --check-url "$CHECK_URL/ekbatan/" dist/ekbatan-*
+
+  github_release:
+    # Only for a real tag. Editable and deletable, unlike the PyPI half.
+    name: github release
+    if: github.ref_type == 'tag'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - run: gh release create "$GITHUB_REF_NAME" --generate-notes dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}

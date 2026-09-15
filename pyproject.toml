@@ -15,7 +15,16 @@ classifiers = [
     "Topic :: Database",
     "Typing :: Typed",
 ]
-dependencies = ["SQLAlchemy>=2.0.30", "ekbatan-py-db-scheduler"]
+# The db-scheduler port is pinned, as Java pins `com.github.kagkarlsson:db-scheduler` to one
+# version in gradle.properties. Unbound, `pip install ekbatan` would take any future release of
+# a distribution this repository cuts itself - and the two are released together.
+#
+# The `.dev0` in the pin is load-bearing while this is a pre-release: `~=0.1.0` excludes
+# pre-releases, so it does not admit `0.1.0.dev0` and resolves to nothing at all. `uv sync`
+# never notices, because [tool.uv.sources] below replaces the requirement with a path. A user
+# installing from PyPI would be the first to find out. Drop the suffix at the first real
+# release, and move the pin with every minor bump - the release workflow checks it.
+dependencies = ["SQLAlchemy>=2.0.30", "ekbatan-py-db-scheduler~=0.1.0.dev0"]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2"]
