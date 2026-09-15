@@ -12,7 +12,27 @@ silent divergence is how a spec becomes fiction.
 Every entry below is a place where this port does something the Java implementation does not.
 None of them changes observable behaviour; each one changes what the application has to write.
 
+## How to read this
+
+Every section below is labelled on the line under its heading:
+
+| | |
+| --- | --- |
+| **forced** | CPython or its libraries left no choice. Nothing to review - the alternative does not exist |
+| **chosen** | somebody decided, and it could have gone the other way. Links [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md), which lists all of them together |
+| **parity** | recorded here because the mechanism differs, while the behaviour does not |
+
+`uv run python scripts/divergence.py` refuses to pass if a section is unlabelled, or if a
+**chosen** one does not link somewhere it will be argued about. It runs in `make lint`.
+
+The labels exist because of a specific failure. `readonly_db()` was made to mean "a read,
+defaulting to the primary" rather than Java's "the replica" - a judgement call about whose job
+consistency is - and it was written up here as a neutral difference. It read like a fact about
+the language for weeks, and was caught by being asked about rather than by being reviewed.
+
 ## An action runs by type or by instance
+
+> **chosen** - Java dispatches only on a class token; this accepts an instance too. An addition to the surface, not a fact about Python. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Java dispatches on a class token, so `ActionRegistry` is the only way to reach an action:
 
@@ -48,6 +68,8 @@ executor's shard grouping, which is `EKB-0076` on the Java side.
 
 ## Events carry no identity
 
+> **chosen** - Java's event constructors take the model id and this port's do not. A user-visible API difference somebody decided. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 In Java every event constructor takes the id of the model it is about:
 
 ```java
@@ -77,6 +99,8 @@ reads `modelId` from the column.
 
 ## The builder is not generated
 
+> **chosen** - A runtime builder that works with nothing generated is an addition; Java has only the generated one. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 Both forms are here. `copy()` returns a builder with the same surface Java's has - `with_event`,
 `with_initial_version`, `increase_version`, `copy_base`, `build`, and a setter for every field:
 
@@ -97,6 +121,8 @@ dataclass at call time, so a new model needs no build step and no generated file
 
 ## `copy_base` takes every field, not only the framework's
 
+> **forced** - A Java base class cannot enumerate a subclass's fields; a dataclass can. The behaviour follows from the language.
+
 The name is Java's. What it copies is not: Java's `copyBase` hands over the six fields the base
 class knows about and leaves the subclass's for the next lines, because a Java base class
 cannot enumerate a subclass's fields. That is why every Java model writes its own `copy()`, and
@@ -107,6 +133,8 @@ inherited. A model that gains a field gains it in both places at once. Override 
 to make a copy that deliberately differs - dropping a cache, resetting a counter.
 
 ## Identifiers get a named type, not a generic parameter
+
+> **chosen** - Both languages erase, so `Id[Wallet]` would have worked. A named type per model is a convention this port adopted. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Java writes `Id<Wallet>` and `ShardedId<Wallet>` and gets erasure at runtime, so
 `id.equals(otherId)` compares uuids and nothing else. Python erases the same way, so the same
@@ -124,6 +152,8 @@ named subclass is what makes the interpreter agree.
 
 ## `AbstractRepository` is just `Repository`, and is usable as it stands
 
+> **chosen** - Java's four-name hierarchy collapses to fewer here. Structural, and could have been mirrored. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 Java's hierarchy is four names: a narrow `Repository` interface, an `AbstractRepository`
 holding the implementation, and `ModelRepository` / `EntityRepository` on top.
 
@@ -140,6 +170,8 @@ Protocol added before anything wants it is a name to maintain for nobody.
 
 ## Row mapping is by field name unless you say otherwise
 
+> **chosen** - Java requires `fromRecord`/`toRecord` on every repository. Defaulting them is this port's largest ergonomic decision. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 Java requires `toRecord` / `fromRecord` on every repository. Here they default to mapping
 dataclass fields to columns of the same name, converting enums by name and timestamps to
 storage form. Override them when the shapes differ; most repositories never do.
@@ -148,6 +180,8 @@ This is the largest single reduction in application code, and the one most at ri
 undone by a well-meant refactor - so it is stated here.
 
 ## Timestamps are stamped when the change is staged
+
+> **chosen** - Java leaves `createdDate`/`updatedDate` to the application. **Behavioural**, and the section says so. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Java leaves `createdDate` / `updatedDate` to the application. Here the plan stamps them from
 the executor's clock, so the value the action is holding is the value that will be written.
@@ -164,6 +198,8 @@ and gets it back one version on.
 
 ## The per-invocation plan lives in a `ContextVar`
 
+> **forced** - CPython has no `ScopedValue`. A `ContextVar` is the direct analogue.
+
 Java uses a `ScopedValue`. A `ContextVar` is the direct analogue and is per-thread and
 per-async-task at once, so the same mechanism works for a threaded service and an asyncio one
 without the framework choosing for you.
@@ -174,6 +210,8 @@ one would corrupt both - and it is the one thing about this that surprises peopl
 `current_plan()` says so in its error message rather than returning `None`.
 
 ## Transactions are the caller's, and batching with them
+
+> **parity** - Neither port's repository opens a transaction. Recorded because the mechanism differs, not the behaviour.
 
 Neither port's repository opens a transaction. Inside one it joins; outside one each statement
 commits itself - Java's `db()` is a jOOQ context over a DataSource with auto-commit left on, and
@@ -198,6 +236,8 @@ nothing to take it back. Run a batch inside a unit of work when the pieces belon
 
 ## Retries match an exception the way `except` does
 
+> **chosen** - Java matches the exact class and walks only `getCause()`. Matching subclasses and `__context__` is a decision that changes which failures retry. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 Java matches the thrown exception's exact class, and walks only `getCause()`. Here a policy
 matches subclasses, and the walk also follows `__context__` - the error that was being handled
 when this one was raised - unless it was deliberately suppressed.
@@ -212,6 +252,8 @@ retry. The consequence is that this port retries strictly more than Java does fo
 configuration; the default policy is one class with no subclasses, so the default is identical.
 
 ## The connection accessors are Java's, exactly
+
+> **parity** - Now identical, including the details. The earlier divergence here is the one this triage exists because of.
 
 `db()`, `dbs()`, `readonly_db()`, `readonly_dbs()`, `tx_db()` and `tx_db_else_db()` mean what
 their Java counterparts mean, down to the details that are easy to get wrong:
@@ -235,6 +277,8 @@ argued about rather than filed.
 
 ## Deleting
 
+> **parity** - The same as Java in both ports, after some wandering.
+
 The same as Java, after some wandering: there is no delete of any kind on the repository in
 either port. `GenericState.DELETED` is the convention, every read filters it, and what deletion
 *means* belongs to the model:
@@ -256,6 +300,8 @@ application that genuinely needs a physical delete writes it against its own rul
 `WalletRepository.erase` in the example, which refuses a wallet that still holds money.
 
 ## The scheduler is this framework's, not a dependency's
+
+> **forced** - There is no maintained, synchronous, multi-dialect, database-backed scheduler for Python. Checked against the ecosystem rather than assumed.
 
 Java delegates distributed jobs to db-scheduler. Python has no equivalent, which was checked
 against the ecosystem rather than assumed. What this needs is all four of: maintained,
@@ -334,12 +380,16 @@ dependency, and a `Schedule` is one method.
 
 ## Handlers are duck-typed
 
+> **forced** - A `Protocol` is how Python spells an interface. No behaviour differs.
+
 Java's `EventHandler` is an interface. Here it is a `Protocol`: anything with `name`,
 `event_type` and `handle` is a handler, so an existing class can subscribe without inheriting
 anything. `aliases` is optional and read with `getattr`, which is what makes a handler rename
 possible without every handler declaring an empty set.
 
 ## Names that still differ, and why
+
+> **parity** - A table of names, each differing because the thing differs. No behaviour.
 
 Everything that names the same concept now carries the same name, so a reader moving between the
 two ports recognises what they are looking at. What is left differs because the thing itself
@@ -377,6 +427,8 @@ has and the name is the thing worth matching. `RetryConfig` follows Java rather 
 
 ## A row checks its own invariants, because Python has no constructor to hide them in
 
+> **forced** - A frozen dataclass has no constructor body; `__post_init__` is where the same checks go.
+
 Java's `Model` and `Entity` constructors validate: `id`, `state` and `version` non-null,
 `version >= 1`, `events` non-null and copied. `ModelTest` and `EntityTest` pin each one by
 message. Those checks are here too, in `__post_init__`, for the same reason - without them the
@@ -393,6 +445,8 @@ writes, in a transaction that had already decided what it was writing. Java says
 
 ## Equality compares the whole row
 
+> **chosen** - **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 Java's `Model.equals` compares `id`, `state`, `version`, `createdDate` and `updatedDate`, and
 its `hashCode` is the id's alone - so two wallets with the same id and version but different
 balances are equal in Java and not here, where a frozen dataclass compares every field. Events
@@ -404,6 +458,8 @@ repository produces. Where they differ, this port is the stricter of the two, an
 asserting `loaded == expected` means here what it looks like it means.
 
 ## A shard member carries one datasource pair, not a named map
+
+> **chosen** - Java's `configFor(name)` map is dropped for a fixed pair. A surface removal somebody decided. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Java's `ShardMemberConfig` holds a `configs` map with two reserved keys, `primaryConfig` and
 `secondaryConfig`, plus any number of user-named entries reached through `configFor(name)`. Its
@@ -422,6 +478,8 @@ that, and this is the wrong shape for it.
 
 ## SQLite is a dialect here and is not one in Java
 
+> **chosen** - An addition. Java refuses everything but the three. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 `DataSourceConfig` accepts `sqlite://`. Java accepts PostgreSQL, MySQL and MariaDB and refuses
 everything else, including H2.
 
@@ -431,6 +489,8 @@ before anything is believed (`--dialects=all`). A framework whose tests need Doc
 all is a framework whose tests stop being run.
 
 ## A write without RETURNING rebuilds what it wrote
+
+> **forced** - MySQL has no `RETURNING`. Both ports branch; the branches differ because the drivers do.
 
 MySQL has no `INSERT ... RETURNING` and no `UPDATE ... RETURNING`, so there is nothing to read
 back. Java takes the obvious branch - `if (dialect.equals(SQLDialect.MYSQL)) { execute(); return
@@ -451,6 +511,8 @@ by re-reading rather than asserting on the return value, and the test here does 
 
 ## `plan.add` hands back the stamped row, not the argument
 
+> **chosen** - **Behavioural**: Java's test asserts `isSameAs` on the object you passed. Here it is a stamped copy. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 Java's `ActionPlanTest.add_returns_the_entity` asserts `isSameAs` - the very object you passed.
 Here it is the stamped copy, because the framework fills in `created_date` and `updated_date`
 and a caller holding the unstamped original is holding something that does not describe the row
@@ -463,6 +525,8 @@ and returning empty lets it through to become "this unit of work staged nothing"
 a sentinel row and looks like success.
 
 ## The test-support API is data, not an assertion DSL
+
+> **chosen** - Java ships `ActionSpec`/`ActionAssert`. Returning data instead was a decision, and it is a smaller surface. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Java ships `ActionSpec` and `ActionAssert` - 24 fluent assertion methods, and 38 tests of those
 methods. `run_action` returns a `StagedWork` instead: `result`, `added(Type)`, `updated(Type)`,
@@ -482,6 +546,8 @@ still means what Java's does.
 
 ## Dispatch delivers one notification at a time
 
+> **forced** - No virtual threads. Recorded as a shortcoming, not a preference.
+
 Java invokes a batch's handlers in parallel on virtual threads and then commits the outcomes in
 one batch `UPDATE` per bucket - one for the successes, one for the pre-flight expiries, one for
 the post-failure expiries, and one per distinct `attempts` value among the retries. Here the
@@ -500,6 +566,8 @@ still expires on the same retention window either way.
 
 ## Migrations run on Alembic, with the guard Alembic does not have
 
+> **forced** - There is no Flyway for Python. The checksum guard restores what Flyway has and Alembic lacks.
+
 Java uses Flyway. Here it is Alembic - SQLAlchemy's own migration tool, by the same author -
 driven as a library: a `Config` built in memory rather than an `alembic.ini`, so an application
 migrates itself with no external binary and no second copy of its connection settings.
@@ -517,6 +585,8 @@ that; so does this.
 
 ## The Redis lock is `SET NX PX` on redis-py, not Redisson
 
+> **forced** - There is no Redisson for Python. The mechanism underneath it is what this does directly.
+
 Java uses Redisson's `RLock`. There is no Redisson for Python, and the mechanism underneath it is
 `SET NX PX` plus a Lua compare-and-delete, which is what this does directly - verified against a
 real Redis: mutual exclusion under 32 contending threads, a TTL that expires on its own, and a
@@ -533,6 +603,8 @@ same holder *provides* the behaviour, because nothing underneath does. Both make
 `max_hold` the one that governs.
 
 ## The lock connection runs in autocommit, as Java's pooled one does
+
+> **parity** - Not a divergence - a bug this port had and fixed, kept because finding the cause took two passes.
 
 Not a divergence - a bug this port had and Java does not, recorded because finding the *cause*
 took a second pass and the first pass looked convincing.
@@ -564,6 +636,8 @@ hand the lock with it.
 
 ## An action with no parameters passes `None`; one with parameters passes an object
 
+> **parity** - Both ports refuse a scalar in the params column, with the same reasoning.
+
 `action_params` is a JSON object column, and both ports refuse to write a scalar or a list into
 it: `Action[DepositParams, Wallet]`, never `Action[str, Wallet]`. Java's message says the same -
 "use a record/class params object". A bare `"MXN"` in that column is a row no typed consumer can
@@ -579,6 +653,8 @@ empty-object form; `"MXN"` means "one unnamed parameter" and does not - storing 
 inventing a key that no reader on either side knows to look for.
 
 ## There are no virtual threads, so each place Java forks one is answered separately
+
+> **forced** - CPython has no equivalent. Five sites, five answers, each recorded.
 
 Java is built around virtual threads and says so on its front page. CPython has nothing
 equivalent: a thread is an OS thread, it costs about a megabyte of stack, and the GIL means
@@ -626,6 +702,8 @@ the existing `_drain_shard` - which is a change of one line and a pool to size, 
 
 ## The framework is synchronous, and blocking is not free here as it is in Java
 
+> **forced** - A blocking call on a virtual thread is cheap and on an event loop is not. A property of the runtimes.
+
 Java is built on virtual threads, where a blocking call costs almost nothing: the carrier thread
 is released and picked up by other work. That is what lets its whole API be blocking without
 apology.
@@ -659,6 +737,8 @@ the API stops you making it.
 
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 
+> **forced** - Different pool libraries expose different knobs. The missing three are in SHORTCOMINGS.md.
+
 Found by diffing Java's public API against this port's definitions, one file at a time, after
 the shutdown hook showed that reading a name and assuming a rename is not verification.
 
@@ -683,6 +763,8 @@ a connection leaked inside a unit of work is exactly the failure this framework'
 handling exists to prevent, and Java gets a log line for it that this port does not.
 
 ## The scheduler has no shutdown hook, and the event jobs never see the shutdown
+
+> **chosen** - Open and undecided rather than settled - `atexit` does not fire on SIGTERM, so matching Java means a process-wide signal handler. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Two halves of one gap, found by re-reading `JobRegistry.java` whole after noticing its ledger row
 had been marked `done` at ledger-creation time rather than by a porting pass.
@@ -712,6 +794,8 @@ be asked to stop early.
 
 ## Additions with no Java counterpart
 
+> **chosen** - Additions by definition. Each one is something this port has and Java does not. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
 Recorded because a reader comparing the two trees will find these and wonder what they map to.
 Nothing in Java corresponds to any of them, confirmed by searching the Java for the concept
 rather than the name.
@@ -724,6 +808,8 @@ rather than the name.
 | `codegen.py` | generates typed builders | Java's annotation processor does this at compile time; the processor itself is `n/a` in the ledger |
 
 ## Not ported
+
+> **parity** - `event-streaming` runs in a JVM whichever language wrote the row, so there is nothing to port.
 
 `event-streaming`, and not planned. Publishing the outbox to Kafka is a Debezium connector plus
 a routing transform, running inside Kafka Connect, in a JVM, regardless of which language wrote

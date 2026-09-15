@@ -76,6 +76,9 @@ lint: schema
 	# That is fine while it is being written and a broken promise once it ships, so it is
 	# checked rather than remembered.
 	$(UV) python scripts/links.py
+	# Every divergence from the Java port must say whether anybody chose it. A judgement
+	# call filed as a neutral difference is how one went unreviewed for weeks.
+	$(UV) python scripts/divergence.py
 
 format:
 	$(UV) ruff format $(OURS)

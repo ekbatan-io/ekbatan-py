@@ -10,6 +10,38 @@ This file is the other list: every change to Python **behaviour** made during th
 how much scrutiny it deserves rather than by subject. Renames and test-only changes are at the
 bottom.
 
+## Every divergence somebody chose
+
+`DIVERGENCE.md` now labels all 34 of its sections
+**forced**, **chosen** or **parity**, and `scripts/divergence.py` refuses to pass if one is
+unlabelled or if a **chosen** one does not link here. That check exists because it was needed:
+`readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
+reading like a fact about the language, and was found by being asked about.
+
+These are the **15 that somebody decided**. Each could have gone the other way.
+
+| divergence | why it is a decision, not a consequence |
+| --- | --- |
+| [An action runs by type or by instance](../DIVERGENCE.md) | Java dispatches only on a class token; this accepts an instance too. An addition to the surface, not a fact about Python. |
+| [Events carry no identity](../DIVERGENCE.md) | Java's event constructors take the model id and this port's do not. A user-visible API difference somebody decided. |
+| [The builder is not generated](../DIVERGENCE.md) | A runtime builder that works with nothing generated is an addition; Java has only the generated one. |
+| [Identifiers get a named type, not a generic parameter](../DIVERGENCE.md) | Both languages erase, so `Id[Wallet]` would have worked. A named type per model is a convention this port adopted. |
+| [`AbstractRepository` is just `Repository`, and is usable as it stands](../DIVERGENCE.md) | Java's four-name hierarchy collapses to fewer here. Structural, and could have been mirrored. |
+| [Row mapping is by field name unless you say otherwise](../DIVERGENCE.md) | Java requires `fromRecord`/`toRecord` on every repository. Defaulting them is this port's largest ergonomic decision. |
+| [Timestamps are stamped when the change is staged](../DIVERGENCE.md) | Java leaves `createdDate`/`updatedDate` to the application. **Behavioural**, and the section says so. |
+| [Retries match an exception the way `except` does](../DIVERGENCE.md) | Java matches the exact class and walks only `getCause()`. Matching subclasses and `__context__` is a decision that changes which failures retry. |
+| [Equality compares the whole row](../DIVERGENCE.md) | **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. |
+| [A shard member carries one datasource pair, not a named map](../DIVERGENCE.md) | Java's `configFor(name)` map is dropped for a fixed pair. A surface removal somebody decided. |
+| [SQLite is a dialect here and is not one in Java](../DIVERGENCE.md) | An addition. Java refuses everything but the three. |
+| [`plan.add` hands back the stamped row, not the argument](../DIVERGENCE.md) | **Behavioural**: Java's test asserts `isSameAs` on the object you passed. Here it is a stamped copy. |
+| [The test-support API is data, not an assertion DSL](../DIVERGENCE.md) | Java ships `ActionSpec`/`ActionAssert`. Returning data instead was a decision, and it is a smaller surface. |
+| [The scheduler has no shutdown hook, and the event jobs never see the shutdown](../DIVERGENCE.md) | Open and undecided rather than settled - `atexit` does not fire on SIGTERM, so matching Java means a process-wide signal handler. |
+| [Additions with no Java counterpart](../DIVERGENCE.md) | Additions by definition. Each one is something this port has and Java does not. |
+
+The other 12 are **forced** - CPython has no `ScopedValue`, no virtual threads, no Flyway, no
+Redisson - and 7 are **parity**, recorded because the mechanism differs while the behaviour
+does not.
+
 ## Open - not decided, needs a call
 
 These also appear in [`SHORTCOMINGS.md`](SHORTCOMINGS.md),
