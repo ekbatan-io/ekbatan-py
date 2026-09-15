@@ -52,11 +52,12 @@ synchronous"*.
 
 ## Everything outside the code
 
-There is **no website**, and the documentation tree is four pages into a planned thirty-odd:
-[getting started](getting-started.md), [wiring](wiring.md),
-[wiring with FastAPI](wiring-fastapi.md) and [concurrency](runtime/concurrency.md) exist; the
-concepts, the database pages and the events pages do not. That surface is enumerated and counted
-in [`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 38%.
+There is **no website**, and the documentation tree is eleven pages in: the
+[concepts](concepts/README.md) are complete, and so are [getting started](getting-started.md),
+[wiring](wiring.md), [wiring with FastAPI](wiring-fastapi.md) and
+[concurrency](runtime/concurrency.md). The database pages and the events pages do not exist yet -
+fifteen and five respectively, and the largest remaining area. That surface is enumerated and
+counted in [`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 48%.
 
 The repository's own essentials are no longer part of it. LICENSE, AGENTS.md, CLAUDE.md,
 RELEASE.md and the publishing workflow were written in the first pass over that ledger, and two

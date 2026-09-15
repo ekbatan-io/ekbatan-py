@@ -71,13 +71,13 @@ be rewritten, and some of the reasoning changes with it - `sagas.md` has to expl
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| concepts/README.md | 13 | `docs/concepts/README.md` | todo |
-| concepts/the-dual-write-trap.md | 55 | `docs/concepts/the-dual-write-trap.md` | todo - the argument for the whole framework; almost entirely prose |
-| concepts/outbox.md | 66 | `docs/concepts/outbox.md` | todo |
-| concepts/actions.md | 184 | `docs/concepts/actions.md` | todo |
-| concepts/models-and-entities.md | 247 | `docs/concepts/models-and-entities.md` | todo |
-| concepts/sagas.md | 175 | `docs/concepts/sagas.md` | todo - `ekbatan-py-examples/fastapi_wallet_saga_pg` is the worked example |
-| concepts/sharding.md | 92 | `docs/concepts/sharding.md` | todo |
+| concepts/README.md | 13 | `docs/concepts/README.md` | done |
+| concepts/the-dual-write-trap.md | 55 | `docs/concepts/the-dual-write-trap.md` | done - almost entirely prose, and it transferred almost entirely. Gained one section: the cross-shard action is the one place the trap reappears |
+| concepts/outbox.md | 66 | `docs/concepts/outbox.md` | done - carries the column list as a cross-language contract, including why `modelId`/`modelName` are spelled in Java's style, and the frozen-clock ordering trap |
+| concepts/actions.md | 184 | `docs/concepts/actions.md` | done - `ContextVar` in place of `ScopedValue`. Names the retry divergence: matching here is by `isinstance`, so a subclass matches, where Java's is exact by class |
+| concepts/models-and-entities.md | 247 | `docs/concepts/models-and-entities.md` | done - the `@AutoBuilder` section shrinks to the one thing Python cannot infer, and records the place this port is **ahead**: no `@JsonCreator` boilerplate, because `decode` is driven by the dataclass's own annotations |
+| concepts/sagas.md | 175 | `docs/concepts/sagas.md` | done - gained the section Java has no counterpart to: **202, not 200**, and why idempotency is a unique constraint in the same transaction rather than a check-then-act |
+| concepts/sharding.md | 92 | `docs/concepts/sharding.md` | done - same two axes and the same bit layout, which is a cross-language contract. Gained a section saying fan-out is sequential here |
 
 ## Documentation - the database
 

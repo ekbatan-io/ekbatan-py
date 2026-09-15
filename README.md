@@ -131,6 +131,8 @@ missing, what is slower, and what has not been decided yet.
 
 ## Documentation
 
+- [Concepts](docs/concepts/README.md) - the dual-write trap, the outbox, actions, models and
+  entities, sagas, sharding
 - [Getting started](docs/getting-started.md) - install, the extras, your first action
 - [Wiring](docs/wiring.md) - the complete bootstrap, block by block
 - [Wiring with FastAPI](docs/wiring-fastapi.md) - a lifespan, a dependency, and three sharp traps
@@ -197,7 +199,7 @@ ekbatan-py-examples/
   fastapi_wallet_rest_pg/          the REST service, on PostgreSQL
   fastapi_wallet_rest_mysql/       the same service, on MySQL
   fastapi_wallet_rest_mariadb/     the same service, on MariaDB
-  fastapi_wallet_rest_sharded_pg/  the same service, across four shards
+  fastapi_wallet_rest_sharded_pg/  the same service, over two databases
   fastapi_wallet_saga_pg/          a saga: two services, choreography, compensation
   job_worker_pg/                   a distributed job, no HTTP at all
   wallet_service_sqlite/           the smallest one. No container, no web stack
