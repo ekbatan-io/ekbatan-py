@@ -219,47 +219,99 @@ class Repository[M: Persistable[Any, Any], K]:
     def dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
         """Every shard's writer, one at a time, outside any transaction.
 
-        For work that is genuinely per-database - a backfill, a repair. Nothing is opened and
-        each statement commits itself, so a failure part way leaves everything before it
-        written. Open a transaction per shard yourself if the work on one shard has to land
-        together.
+        An unsharded repository visits **only the default shard**, even when the registry holds
+        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
+        repository that opted out of sharding would still scatter across every database a
+        sibling repository happens to use.
+
+        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
         """
-        for shard in self.registry.shards:
+        shards = (
+            (self.registry.default_shard,)
+            if isinstance(self.sharding, NoShardingStrategy)
+            else self.registry.shards
+        )
+        for shard in shards:
             with self.db(shard=shard) as conn:
                 yield shard, conn
 
     @contextmanager
-    def readonly_db(
-        self,
-        *,
-        key: K | None = None,
-        shard: ShardIdentifier | None = None,
-        replica: bool = False,
+    def _reader(
+        self, *, key: K | None = None, shard: ShardIdentifier | None = None
     ) -> Iterator[Connection]:
-        """A connection for a read: no write transaction to commit, and the primary by default.
+        """What every built-in read uses: the **primary**, joining an open transaction.
 
-        What every built-in read uses. The primary rather than a replica because a replica
-        answers with what it has replicated so far - ``add()`` then ``find()`` would come back
-        empty for a reason the caller cannot see and cannot reproduce.
-
-        ``replica=True`` asks for the replica anyway, which is the right trade for a report or
-        a dashboard and the wrong one for anything that just wrote. Inside an open transaction
-        it is ignored: a read there has to see the writes that transaction has made, and a
-        replica by definition has not.
+        Private, because it is not a choice - it is the framework reading on your behalf, and
+        the answer has to be the consistent one. Java's built-in reads go to `db()` for the
+        same reason. The public accessors are where *you* choose, and
+        :meth:`readonly_db` is how you say you can live with lag.
         """
-        with self._manager(key, None, shard).connection(readonly=True, replica=replica) as conn:
+        with self._manager(key, None, shard).connection() as conn:
             yield conn
 
-    def readonly_dbs(
-        self, *, replica: bool = False
-    ) -> Iterator[tuple[ShardIdentifier, Connection]]:
-        """Every shard's reader, one at a time, lazily.
+    def _readers(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
+        """Every shard's primary - the scatter counterpart to :meth:`_reader`.
 
-        Lazy so that a caller who stops at the first shard that answers has not queried the
-        rest - which is what makes :meth:`find_one_where` one query rather than one per shard.
+        An unsharded repository visits **only the default shard**, even when the registry holds
+        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
+        repository that opted out of sharding would still scatter across every database a
+        sibling repository happens to use.
+
+        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
         """
-        for shard in self.registry.shards:
-            with self.readonly_db(shard=shard, replica=replica) as conn:
+        shards = (
+            (self.registry.default_shard,)
+            if isinstance(self.sharding, NoShardingStrategy)
+            else self.registry.shards
+        )
+        for shard in shards:
+            with self._reader(shard=shard) as conn:
+                yield shard, conn
+
+    @contextmanager
+    def readonly_db(
+        self, *, key: K | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Connection]:
+        """The **replica**, for a read that can live with replication lag.
+
+        The same meaning as Java's ``readonlyDb()``, including the fallback: a shard with no
+        replica configured hands back its primary, so this is always safe to call.
+
+        Choosing it is the caller's, and deliberately so. A replica answers with what it has
+        replicated so far, so a read that follows a write of the same row can come back empty.
+        Whether that matters is something only the caller knows - if you care, use :meth:`db`;
+        if you do not, use this. The framework does not guess on your behalf.
+
+        It does **not** join an open transaction, and that is deliberate rather than an
+        oversight: a replica has not seen what the open transaction wrote, so joining would
+        be a promise this connection cannot keep. Java's ``readonlyDb()`` is a plain context
+        on the secondary for the same reason. If you need to see the transaction's own writes,
+        that is what :meth:`tx_db_else_db` is for.
+        """
+        with (
+            self._manager(key, None, shard)
+            .replica.connect()
+            .execution_options(isolation_level="AUTOCOMMIT") as conn
+        ):
+            yield conn
+
+    def readonly_dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
+        """Every shard's **replica**, one at a time.
+
+        An unsharded repository visits **only the default shard**, even when the registry holds
+        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
+        repository that opted out of sharding would still scatter across every database a
+        sibling repository happens to use.
+
+        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
+        """
+        shards = (
+            (self.registry.default_shard,)
+            if isinstance(self.sharding, NoShardingStrategy)
+            else self.registry.shards
+        )
+        for shard in shards:
+            with self.readonly_db(shard=shard) as conn:
                 yield shard, conn
 
     def tx_db(
@@ -355,7 +407,7 @@ class Repository[M: Persistable[Any, Any], K]:
     def find(self, key: K) -> M | None:
         """The row, or ``None``. The lookup that treats absence as ordinary."""
         stmt = select(self.table).where(*self._live(self.id_column == _to_column(key)))
-        with self.readonly_db(key=key) as conn:
+        with self._reader(key=key) as conn:
             row = conn.execute(stmt).first()
         return self.from_row(row) if row is not None else None
 
@@ -383,7 +435,7 @@ class Repository[M: Persistable[Any, Any], K]:
 
         found: list[M] = []
         for shard, shard_keys in by_shard.items():
-            with self.readonly_db(shard=shard) as conn:
+            with self._reader(shard=shard) as conn:
                 stmt = select(self.table).where(*self._live(self._id_among(conn, shard_keys)))
                 found += [self.from_row(r) for r in conn.execute(stmt)]
         return found
@@ -438,10 +490,10 @@ class Repository[M: Persistable[Any, Any], K]:
     def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Connection]:
         """The shard named, or every shard lazily, so a caller can stop at the first answer."""
         if shard is not None:
-            with self.readonly_db(shard=shard) as conn:
+            with self._reader(shard=shard) as conn:
                 yield conn
         else:
-            for _, conn in self.readonly_dbs():
+            for _, conn in self._readers():
                 yield conn
 
     def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
@@ -449,7 +501,7 @@ class Repository[M: Persistable[Any, Any], K]:
 
     def exists(self, key: K) -> bool:
         stmt = self._presence(self.id_column == _to_column(key))
-        with self.readonly_db(key=key) as conn:
+        with self._reader(key=key) as conn:
             return conn.execute(stmt).first() is not None
 
     def exists_where(
@@ -463,9 +515,9 @@ class Repository[M: Persistable[Any, Any], K]:
         """
         stmt = self._presence(*criteria)
         if shard is not None:
-            with self.readonly_db(shard=shard) as conn:
+            with self._reader(shard=shard) as conn:
                 return conn.execute(stmt).first() is not None
-        return any(conn.execute(stmt).first() is not None for _, conn in self.readonly_dbs())
+        return any(conn.execute(stmt).first() is not None for _, conn in self._readers())
 
     def _presence(self, *criteria: ColumnElement[bool]) -> Any:
         return select(literal(1)).select_from(self.table).where(*self._live(*criteria)).limit(1)
@@ -482,9 +534,9 @@ class Repository[M: Persistable[Any, Any], K]:
         that knows better narrows it with ``shard=``.
         """
         if shard is not None:
-            with self.readonly_db(shard=shard) as conn:
+            with self._reader(shard=shard) as conn:
                 return list(conn.execute(stmt))
-        return [row for _, conn in self.readonly_dbs() for row in conn.execute(stmt)]
+        return [row for _, conn in self._readers() for row in conn.execute(stmt)]
 
     # ----------------------------------------------------------------- writes
 

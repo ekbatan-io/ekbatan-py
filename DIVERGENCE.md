@@ -211,15 +211,27 @@ a policy naming a base class that then caught nothing would be a very quiet way 
 retry. The consequence is that this port retries strictly more than Java does for the same
 configuration; the default policy is one class with no subclasses, so the default is identical.
 
-## `readonly_db` means "a read", not "the replica"
+## The connection accessors are Java's, exactly
 
-Java's `readonlyDb()` always hands back the read-replica context, and nothing built into its
-`AbstractRepository` calls it - every built-in read uses the primary.
+`db()`, `dbs()`, `readonly_db()`, `readonly_dbs()`, `tx_db()` and `tx_db_else_db()` mean what
+their Java counterparts mean, down to the details that are easy to get wrong:
 
-Here every built-in read goes through `readonly_db`, which is the primary by default and takes
-`replica=True` to accept a replica's lag. Same routing as Java, one accessor instead of the
-built-in reads quietly bypassing the one named for reading. The name says what the caller is
-doing; the keyword says what they are willing to pay for it.
+- **`readonly_db()` is the replica**, falling back to the primary when a shard has none. It does
+  not join an open transaction - a replica has not seen what that transaction wrote, so joining
+  would be a promise the connection cannot keep.
+- **`db()` is the primary** and does not join an open transaction either. `tx_db_else_db()` is
+  the one that joins.
+- **`dbs()` and `readonly_dbs()` visit only the default shard** when the repository is
+  unsharded, so a repository that opted out of sharding cannot scatter onto a sibling's
+  databases.
+- **The built-in reads use the primary**, as Java's do. Choosing to accept lag belongs to the
+  caller, who is the only one who knows whether they just wrote the row they are about to read.
+
+This was not always true. An earlier version of this port made `readonly_db()` mean "a read" and
+default it to the primary, with `replica=True` to opt in - same routing, different name. It was
+recorded here as a neutral difference, which was the mistake: it is a judgement call about whose
+job consistency is, and it belonged in `docs/DECISIONS-TO-REVIEW.md` where it would have been
+argued about rather than filed.
 
 ## Deleting
 

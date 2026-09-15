@@ -41,7 +41,11 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
 
     def total_per_shard(self) -> dict[ShardIdentifier, Decimal]:
         """What each database holds. Drops to SQL, because the inherited reads answer
-        questions about rows rather than about databases."""
+        questions about rows rather than about databases.
+
+        `readonly_dbs()` is the replicas - fine for an operator's view of how the shards are
+        filling up, and the wrong choice for anything a caller acts on.
+        """
         query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(*self._live())
         return {
             shard: Decimal(str(conn.execute(query).scalar_one()))

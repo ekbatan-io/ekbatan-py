@@ -192,7 +192,7 @@ class TransactionManager:
         return _open().get(self.shard)
 
     @contextmanager
-    def connection(self, *, readonly: bool = False, replica: bool = False) -> Iterator[Connection]:
+    def connection(self, *, readonly: bool = False) -> Iterator[Connection]:
         """A connection for one statement: the ambient transaction if there is one, else a
         connection that commits each statement as it runs.
 
@@ -205,18 +205,20 @@ class TransactionManager:
         begins one, and a connection closed without ``commit`` rolls it back, so a write would
         vanish. ``AUTOCOMMIT`` is how you ask for the behaviour Java gets from the driver.
 
-        ``replica`` accepts a replica's lag, and is never the default: a write followed by a
-        read has to find the row. Ask for it where lag is genuinely acceptable.
+        ``readonly`` asks for the replica, exactly as Java's ``readonlyDb()`` does, and falls
+        back to the primary when a shard has no replica configured. It is never the default:
+        choosing to accept a replica's lag belongs to the caller, who is the only one who knows
+        whether they just wrote the row they are about to read.
 
-        A read taken inside a transaction ignores both and joins it - it has to see the writes
-        that transaction has already made, and a replica by definition has not seen them.
+        A read taken inside a transaction ignores it and joins the transaction - it has to see
+        the writes that transaction has already made, and a replica by definition has not.
         """
         existing = _open().get(self.shard)
         if existing is not None:
             yield existing
             return
 
-        engine = self.replica if (readonly and replica) else self.primary
+        engine = self.replica if readonly else self.primary
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             yield conn
 

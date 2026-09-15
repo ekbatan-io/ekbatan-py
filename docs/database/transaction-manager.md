@@ -119,11 +119,10 @@ If you only read, you need no transaction:
 
 ```python
 with tm.connection() as conn: ...                  # primary, freshest committed state
-with tm.connection(replica=True) as conn: ...      # the replica, tolerates lag
+with tm.connection(readonly=True) as conn: ...     # the replica, tolerates lag
 ```
 
-No transaction is opened and nothing is bound. `readonly=True` is the third knob, for a read that
-should be refused if it tries to write.
+No transaction is opened and nothing is bound.
 
 ## Cross-shard
 

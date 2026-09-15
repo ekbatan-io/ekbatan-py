@@ -99,9 +99,10 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
     def total_balance(self) -> Decimal:
         """The sum across every shard.
 
-        The one question the inherited reads cannot answer, so it drops to SQL - which is what
-        `readonly_dbs()` is for. Note it goes to the readers, and that a shard holding nothing
-        contributes zero rather than a null.
+        The one question the inherited reads cannot answer, so it drops to SQL. `readonly_dbs()`
+        is **the replicas**, and that is the deliberate choice here: a total is a report, and a
+        report can be a second out of date. A read that had to be current would use `dbs()`.
+        Note also that a shard holding nothing contributes zero rather than a null.
         """
         query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(*self._live())
         return sum(

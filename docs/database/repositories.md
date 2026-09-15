@@ -91,7 +91,7 @@ and picking wrongly is the mistake this section exists to prevent.
 
 ```python
 with self.db(key=..., model=..., shard=...) as conn: ...          # primary
-with self.readonly_db(key=..., shard=..., replica=True) as conn: ...  # replica
+with self.readonly_db(key=..., shard=...) as conn: ...             # the replica
 conn = self.tx_db(key=...)                                        # the open transaction, or None
 with self.tx_db_else_db(key=...) as conn: ...                     # that, else primary
 ```
@@ -100,14 +100,14 @@ And for every shard at once:
 
 ```python
 for shard, conn in self.dbs(): ...
-for shard, conn in self.readonly_dbs(replica=True): ...
+for shard, conn in self.readonly_dbs(): ...
 ```
 
 | you want | use |
 | --- | --- |
 | the default read behaviour | the inherited reads - primary-consistent by design |
 | a custom read that must be current | `db(...)` or `dbs()` |
-| a custom read where lag is fine | `readonly_db(..., replica=True)` or `readonly_dbs(replica=True)` |
+| a custom read where lag is fine | `readonly_db(...)` or `readonly_dbs()` - these **are** the replica |
 | a read that must see this transaction's uncommitted writes | `tx_db_else_db(...)` |
 | an insert, update or delete | `tx_db_else_db(...)` - joins the open transaction, falls back to primary |
 | "we must already be in a transaction", loudly | `tx_db(...)`, and raise on `None` |

@@ -33,8 +33,14 @@ class TransferStepRepository(EntityRepository[TransferStep, TransferStepId]):
         super().__init__(TransferStep, TRANSFER_STEPS, registry, clock=clock)
 
     def steps_of(self, transfer_id: UUID) -> list[StepName]:
-        """Which steps of this transfer have run, in the order they were written."""
-        with self.readonly_db() as conn:
+        """Which steps of this transfer have run, in the order they were written.
+
+        `db()`, not `readonly_db()`, and the distinction matters here more than anywhere else in
+        these examples. This backs `GET /transfers/{id}`, which a client polls immediately after
+        the 202 - so a replica's lag would report a step as not-yet-run when it has committed,
+        which is exactly the lie the 202 exists to avoid telling.
+        """
+        with self.db() as conn:
             rows = conn.execute(
                 select(TRANSFER_STEPS.c.step).where(TRANSFER_STEPS.c.transfer_id == transfer_id)
             ).scalars()

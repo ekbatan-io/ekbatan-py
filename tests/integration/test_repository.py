@@ -337,13 +337,83 @@ def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
         assert [w.id for w in wallets.find_many([stored.id])] == [stored.id]
         assert wallets.find_one_where(WALLETS.c.currency == "EUR") is not None
 
-        with wallets.readonly_db(replica=True) as conn:
+        with wallets.readonly_db() as conn:
             from sqlalchemy import func, select
 
             assert conn.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 0, (
-                "the replica really is a different database, so the assertions above mean "
-                "what they say"
+                "readonly_db() is the replica - the same meaning as Java's readonlyDb() - so "
+                "it sees the lagging database, while every built-in read above saw the primary"
             )
+
+
+def test_readonly_db_does_not_join_an_open_transaction(backend, clock):
+    """Java's `readonlyDb()` is a plain context on the secondary; it is not transaction-aware.
+
+    Joining would be a promise the connection cannot keep - a replica has not seen what the
+    open transaction wrote - so it must read the replica even from inside one.
+    """
+    from sqlalchemy import create_engine, func, select
+
+    from ekbatan.persistence import TransactionManager
+    from ekbatan.sharding import ShardIdentifier
+    from fixtures.schema import metadata
+
+    written, lagging = "ekbatan_written", "ekbatan_lagging"
+    for name in (written, lagging):
+        backend.prepare(name, metadata)
+        backend.truncate(name, metadata)
+
+    shard = ShardIdentifier(0, 0)
+    manager = TransactionManager(
+        shard, create_engine(backend.url(written)), create_engine(backend.url(lagging))
+    )
+    with DatabaseRegistry({shard: manager}, shard) as reg:
+        wallets = Repository(Wallet, WALLETS, reg, clock=clock)
+        with manager.transaction():
+            wallets.add(a_wallet())
+            # The built-in read joins the transaction and sees the uncommitted row.
+            assert wallets.count() == 1
+            # `readonly_db()` does not, and the replica has nothing.
+            with wallets.readonly_db() as conn:
+                on_replica = conn.execute(select(func.count()).select_from(WALLETS)).scalar_one()
+    assert on_replica == 0, "readonly_db() joined the transaction; Java's readonlyDb() does not"
+
+
+def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(backend, clock):
+    """Java's `dbs()` and `readonlyDbs()` return only the default shard under NoShardingStrategy.
+
+    Without the guard, a repository that opted out of sharding would still visit every database
+    a sibling repository happens to use - and would find rows that are none of its business.
+    """
+    from sqlalchemy import create_engine
+
+    from ekbatan.persistence import TransactionManager
+    from ekbatan.sharding import ShardIdentifier
+    from fixtures.schema import metadata
+
+    here, elsewhere = "ekbatan_default_shard", "ekbatan_other_shard"
+    for name in (here, elsewhere):
+        backend.prepare(name, metadata)
+        backend.truncate(name, metadata)
+
+    default, other = ShardIdentifier(0, 0), ShardIdentifier(1, 0)
+    managers = {
+        default: TransactionManager(default, create_engine(backend.url(here))),
+        other: TransactionManager(other, create_engine(backend.url(elsewhere))),
+    }
+    with DatabaseRegistry(managers, default) as reg:
+        wallets = Repository(Wallet, WALLETS, reg, clock=clock)  # NoShardingStrategy by default
+        wallets.add(a_wallet())
+
+        # Put a row on the other shard behind the repository's back. Stamped by hand because
+        # `add()` would route it back to the default shard, which is the thing being tested.
+        row = wallets.to_row(a_wallet("99.00"))
+        row["created_date"] = row["updated_date"] = clock.now()
+        with managers[other].connection() as conn:
+            conn.execute(WALLETS.insert(), row)
+
+        assert wallets.count() == 1, "an unsharded repository scattered onto another shard"
+        assert [shard for shard, _ in wallets.dbs()] == [default]
 
 
 def test_find_one_where_refuses_a_predicate_that_is_not_unique(wallets):
