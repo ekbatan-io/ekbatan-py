@@ -129,6 +129,18 @@ in a JVM, whichever language wrote the row.
 and [docs/SHORTCOMINGS.md](docs/SHORTCOMINGS.md) records where it is simply behind - what is
 missing, what is slower, and what has not been decided yet.
 
+## Documentation
+
+- [Getting started](docs/getting-started.md) - install, the extras, your first action
+- [Wiring](docs/wiring.md) - the complete bootstrap, block by block
+- [Wiring with FastAPI](docs/wiring-fastapi.md) - a lifespan, a dependency, and three sharp traps
+- [Concurrency](docs/runtime/concurrency.md) - threads, the GIL, asyncio, and the one way to use
+  this wrongly
+- [Releasing](RELEASE.md) - how a release is cut
+
+More is being written; [`docs/BEYOND-CODE-LEDGER.md`](docs/BEYOND-CODE-LEDGER.md) counts what is
+left.
+
 ## Typed builders
 
 `wallet.copy().balance(...)` works for every model with nothing generated, and refuses an

@@ -1,0 +1,256 @@
+# Wiring
+
+Java has five wiring pages: one for Spring, one for Quarkus, one for Micronaut, one for the
+annotations that drive all three, and one - `without-di.md` - for doing it by hand. Only the
+last has a counterpart here, and this is it.
+
+That is not a gap being apologised for. It is the whole difference in how the two languages
+assemble a program. Java's DI integration exists because constructing twenty objects in the
+right order in a `main()` is genuinely unpleasant there, and because classpath scanning can find
+your actions without you listing them. In Python, listing them is a function, the order is the
+order you read it in, and there is nothing to discover because you can see it.
+
+What this costs is real and is recorded in [SHORTCOMINGS.md](SHORTCOMINGS.md): Java's
+`@EkbatanAction` on a class is less to write than a line in a registry, and it does not go stale.
+This page is what you write instead.
+
+> Everything below is taken from
+> [`ekbatan-py-examples/fastapi_wallet_rest_pg/app.py`](../ekbatan-py-examples/fastapi_wallet_rest_pg/app.py),
+> which runs and is tested. The HTTP half is in [Wiring with FastAPI](wiring-fastapi.md); this
+> page is the part that has nothing to do with HTTP.
+
+## The shape
+
+One function that returns one object. Nothing above it knows which database, which handlers or
+which jobs; nothing below it does either.
+
+```python
+@dataclass(frozen=True, slots=True)
+class WalletService:
+    registry: DatabaseRegistry
+    wallets: WalletRepository
+    alerts: AlertRepository
+    executor: ActionExecutor
+    locks: KeyedLockProvider
+    jobs: JobRegistry
+
+    def start(self) -> None:
+        self.jobs.start()
+
+    def close(self) -> None:
+        # Order matters: stop taking work before closing what the work runs on.
+        self.jobs.stop()
+        self.locks.close()
+        self.registry.close()
+```
+
+Frozen and slotted because it is a value, not a service locator - it is built once and handed
+around. `start` and `close` are the only lifecycle there is.
+
+## 1. Settings
+
+```python
+@dataclass(frozen=True, slots=True)
+class Settings:
+    url: str = os.environ.get("WALLET_DATABASE_URL", DEFAULT_URL)
+    pool_size: int = int(os.environ.get("WALLET_POOL_SIZE", "10"))
+    job_pool_size: int = int(os.environ.get("WALLET_JOB_POOL_SIZE", "8"))
+    lock_pool_size: int = int(os.environ.get("WALLET_LOCK_POOL_SIZE", "5"))
+    job_workers: int = int(os.environ.get("WALLET_JOB_WORKERS", "3"))
+    run_migrations: bool = os.environ.get("WALLET_MIGRATE", "1") != "0"
+```
+
+Read from the environment, so one image runs everywhere; defaulted, so running the module works
+against a local server with no setup. Java's examples put the same values in an
+`application.yml`.
+
+`job_workers` has no Java counterpart at all. There, db-scheduler is handed
+`Executors.newVirtualThreadPerTaskExecutor()` and the worker count is unbounded. Here they are
+real OS threads, so the number is a decision. See [Concurrency](runtime/concurrency.md).
+
+## 2. The layout: which databases, and which is the default
+
+```python
+layout = ShardingConfig(
+    shards=(
+        ShardConfig(
+            shard=DEFAULT_SHARD,
+            primary=DataSourceConfig(url=config.url, pool_size=config.pool_size),
+        ),
+    ),
+    default_shard=DEFAULT_SHARD,
+)
+```
+
+One shard is the ordinary case and costs nothing - the framework treats a single entry as the
+default and adds no indirection. Add `ShardConfig` entries to shard.
+
+A `ShardConfig` also takes a `secondary` for non-transactional reads. Point it at a replica in
+production, or leave it out and both go to the primary.
+
+## 3. Migrations, before anything opens a pool
+
+```python
+if config.run_migrations:
+    migrate(layout, MIGRATIONS)
+```
+
+Every shard, one at a time, fail-fast. `migrate` drives Alembic as a **library** - there is no
+`alembic.ini` and no `env.py`, because a config file that has to be found is a config file that
+is missing in the one environment you did not test.
+
+It also refuses to run if a revision that was already applied has since been edited. Alembic does
+not check that; Flyway does, and losing the check on the way across would have been a silent
+downgrade.
+
+Ordering matters: run this before anything opens a pool against a schema that may not exist yet.
+
+## 4. The registry
+
+```python
+registry = DatabaseRegistry.from_config(layout)
+```
+
+One `TransactionManager` per shard, indexed by `ShardIdentifier`. Everything that touches a
+database goes through it, sharded or not.
+
+## 5. Repositories
+
+```python
+wallets = WalletRepository(registry, clock=running)
+alerts = AlertRepository(registry, clock=running)
+
+repositories = (
+    RepositoryRegistry.builder()
+    .with_model_repository(wallets)
+    .with_entity_repository(alerts)
+    .build()
+)
+```
+
+One instance per persistable type. `with_model_repository` and `with_entity_repository` are
+separate calls because the two are different things - a model's changes are events and an
+entity's are not - and the registry checks that the table can hold what the type carries.
+
+## 6. The executor
+
+```python
+executor = ActionExecutor(
+    namespace="example.fastapi_wallet_rest_pg",
+    registry=registry,
+    repositories=repositories,
+    actions=(
+        ActionRegistry.builder()
+        .with_action(OpenWalletAction())
+        .with_action(DepositMoneyAction(wallets))
+        .with_action(CloseWalletAction(wallets))
+        .with_action(RaiseAlertAction())
+        .build()
+    ),
+    events=EVENTS,
+    clock=running,
+)
+```
+
+The thing application code calls. Actions are singletons - per-call state lives on the plan, not
+on the action - so one instance each, constructed with whatever they read from.
+
+`namespace` is stamped on every outbox row and is how a consumer tells one service's events from
+another's. Pick it once; changing it later splits your own stream.
+
+`events` is the outbox table. Passing it explicitly rather than reaching for a global is what
+lets a test point two services at two tables in one process - which is exactly what the saga
+example does.
+
+## 7. Event handlers, if you want the listen-to-yourself path
+
+```python
+handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+```
+
+Optional. Without it the executor still writes every event with `delivered=false`, which is
+exactly the right state for a deployment that consumes the outbox externally through Debezium.
+The handlers here are the *in-process* path, and the two can both be on.
+
+Note the handler is constructed with the `executor`: a handler reacting to an event does its own
+work as its own unit of work, with its own transaction and its own outbox row. It does not get
+handed the transaction that produced the event, and it must not - that transaction is committed
+and gone by the time a handler runs.
+
+## 8. Locks and jobs
+
+```python
+locks = PostgresKeyedLockProvider(
+    create_engine(config.url, pool_size=config.lock_pool_size, max_overflow=0)
+)
+
+jobs = (
+    job_registry()
+    .engine(create_engine(config.url, pool_size=config.job_pool_size, max_overflow=0))
+    .with_jobs([
+        EventFanoutJob(registry, handlers, events=EVENTS,
+                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
+        EventHandlingJob(registry, handlers,
+                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
+        PayStipendJob(executor, wallets),
+    ])
+    .workers(config.job_workers)
+    .build()
+)
+```
+
+Fan-out and dispatch are themselves jobs. That is not an implementation detail leaking - it is
+the design: the event pipeline is cluster-exclusive scheduled work like any other, so it gets
+the same leader election, the same heartbeat and the same dead-execution recovery. Register them
+and `jobs.start()` runs the pipeline. Leave them out and events accumulate unread.
+
+### Three pools, and why
+
+This is the part worth copying into a real deployment, and the part the Java examples also carry
+(under a `lockConfig` slot in `application.yml`).
+
+| pool | sized for | why it is separate |
+| --- | --- | --- |
+| **requests** | concurrent requests | the ordinary one |
+| **jobs** | at least twice `job_workers` | db-scheduler polls continuously and writes a heartbeat from a housekeeping thread. Share the request pool and a traffic burst can starve that heartbeat - and an execution whose heartbeat stops is **declared dead and run again somewhere else** |
+| **locks** | maximum leases held at once | a keyed lock holds its connection for the life of the lease. That *is* the lock. A lease taken during a request would otherwise pin a request connection for its duration |
+
+The jobs pool default is 8, not 3, for a reason worth repeating: a job body holding the last
+connection starves the heartbeat. db-scheduler warns at startup when the pool is too small for
+the worker count - and did, while the example was being written.
+
+## What to drop
+
+Each block above is removable on its own:
+
+- **No replica?** Leave `secondary` out of the `ShardConfig`. Both go to the primary.
+- **No in-process handlers?** Drop block 7 and the two event jobs in block 8. Events still land
+  in the outbox for an external consumer.
+- **No background jobs at all?** Drop block 8. Drop block 7 with it - without the jobs there is
+  no dispatch.
+- **No keyed locks?** Drop the provider. Optimistic locking is still on, in every write.
+- **No sharding?** That is what is shown. One entry, no overhead.
+- **Sharding?** Add `ShardConfig` entries and give repositories an
+  `EmbeddedBitsShardingStrategy`.
+
+## No annotations, and nothing is discovered
+
+There is no `@EkbatanAction` here and there is nothing scanning your package for one. The
+framework knows about exactly what you put in a registry. That is a real trade:
+
+- An action you forget to register fails at `execute` with a clear error, at runtime, not at
+  startup and not at compile time. Java's Micronaut integration would have caught it during
+  compilation.
+- Against that: you can read this file and know what the program contains, which you cannot do
+  with a classpath scan.
+
+The registries are builders rather than plain lists so a duplicate registration is refused
+rather than silently overwriting - which is the one class of mistake a list would let through.
+
+## See also
+
+- [Wiring with FastAPI](wiring-fastapi.md) - the lifespan, the dependency, and where to put
+  `build()`
+- [Concurrency](runtime/concurrency.md) - what `job_workers` is actually sizing
+- [Getting started](getting-started.md)

@@ -20,8 +20,14 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT = ROOT / "docs" / "JAVA-PARITY-LEDGER.md"
 
 #: `| Model.java | 290 | `domain.py` | todo |` - and not a header, a rule, or the scope table.
+#:
+#: The line count may be `-`, and that case is not decoration: a row with no Java file is a page
+#: this port needs and Java does not have. Requiring a digit here dropped every one of them out
+#: of the denominator, so `docs/runtime/concurrency.md` could be written and the percentage not
+#: move. They count as rows worth 0 lines.
 ROW = re.compile(
-    r"^\| (?!Java file|file |\*\*|---|`ekbatan|generated)([^|]+)\| *(\d+) *\| *([^|]*)\| *([\w/]+)"
+    r"^\| (?!Java file|file |\*\*|---|`ekbatan|generated)([^|]+)"
+    r"\| *(\d+|-) *\| *([^|]*)\| *([\w/]+)"
 )
 SECTION = re.compile(r"^## (.+)")
 
@@ -39,9 +45,8 @@ def sections(ledger: Path) -> dict[str, list[tuple[str, int, str]]]:
             continue
         row = ROW.match(line)
         if row:
-            found.setdefault(current, []).append(
-                (row.group(1).strip(), int(row.group(2)), row.group(4))
-            )
+            count = 0 if row.group(2) == "-" else int(row.group(2))
+            found.setdefault(current, []).append((row.group(1).strip(), count, row.group(4)))
     return found
 
 

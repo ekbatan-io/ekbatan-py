@@ -71,6 +71,10 @@ lint: schema
 	$(UV) ruff check $(OURS)
 	$(UV) ruff format --check $(OURS)
 	$(UV) mypy
+	# A docs tree is written page by page and cross-linked to pages that do not exist yet.
+	# That is fine while it is being written and a broken promise once it ships, so it is
+	# checked rather than remembered.
+	$(UV) python scripts/links.py
 
 format:
 	$(UV) ruff format $(OURS)

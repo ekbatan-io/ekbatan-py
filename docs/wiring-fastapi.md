@@ -1,0 +1,192 @@
+# Wiring with FastAPI
+
+No Java counterpart. This is the nearest thing to Java's Spring, Quarkus and Micronaut pages -
+not because FastAPI is a DI container in the same sense, but because it is where a Python
+service actually gets assembled, and because two of the mistakes available here are sharp.
+
+[Wiring](wiring.md) is the framework half and has nothing to do with HTTP. This page is the
+seam between the two.
+
+> From [`ekbatan-py-examples/fastapi_wallet_rest_pg/api.py`](../ekbatan-py-examples/fastapi_wallet_rest_pg/api.py).
+
+## Build once, in a lifespan
+
+```python
+def create_app(settings: Settings | None = None) -> FastAPI:
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        service = build(settings)
+        service.start()
+        app.state.service = service
+        try:
+            yield
+        finally:
+            service.close()
+
+    app = FastAPI(title="Wallet", lifespan=lifespan)
+```
+
+Pools, the scheduler and the migration run belong to the process, not to a request. `lifespan`
+is where a process-scoped thing is born and buried, and the `try/finally` is what closes pools
+when the server shuts down rather than leaking them.
+
+A **factory** rather than a module-level `app = FastAPI()`, so a test can build one against a
+throwaway database without touching the environment. Every example's test does exactly that.
+
+## The dependency, and the trap in it
+
+```python
+def service_of(request: Request) -> WalletService:
+    service: WalletService = request.app.state.service
+    return service
+
+
+Service = Annotated[WalletService, Depends(service_of)]
+```
+
+Then every endpoint takes `service: Service`.
+
+**`Service` must be at module level.** This looks like a style point and is not. With
+`from __future__ import annotations` - which every module in this repository has - FastAPI
+resolves the string annotations against the **module** namespace. An `Annotated[...]` alias
+defined inside `create_app` is invisible to that lookup, so FastAPI cannot tell the parameter is
+a dependency and reads it as an unfilled *query parameter* instead.
+
+The symptom is a 422 on every endpoint, naming a field nobody declared. It cost an afternoon.
+
+## A plain `def` endpoint is the right endpoint
+
+```python
+@app.post("/wallets", response_model=WalletResponse, status_code=201)
+def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
+    return WalletResponse.of(
+        service.executor.execute(
+            OpenWalletAction,
+            OpenWalletParams(owner_id=body.owner_id, currency=body.currency,
+                             opening_balance=body.opening_balance),
+        )
+    )
+```
+
+`def`, not `async def`, and that is the single most important line on this page.
+
+The framework is synchronous - there is no `async` or `await` anywhere in `src/`. FastAPI runs a
+plain `def` endpoint **in a threadpool**, so a blocking database call there blocks one worker
+thread and nothing else. That is the same bargain Java gets from virtual threads, arrived at
+differently.
+
+An `async def` endpoint runs **on the event loop**, and a blocking call there stops the entire
+loop - every other request on that worker, not just this one. Measured: a 0.5s framework call
+from inside an `async def` handler let a background heartbeat tick **5 times where a free loop
+manages about 55**.
+
+If you need an `async def` endpoint - because something else in it genuinely awaits - then hand
+the framework call to a thread:
+
+```python
+wallet = await run_in_threadpool(service.wallets.get, wallet_id)
+```
+
+The example service is written with plain `def` throughout, which is why it needs no
+`to_thread` anywhere. See [Concurrency](runtime/concurrency.md).
+
+## Map the framework's errors once
+
+```python
+@app.exception_handler(EntityNotFoundError)
+async def _missing(request: Request, error: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(error)})
+
+
+@app.exception_handler(ValidationError)
+async def _rejected(request: Request, error: Exception) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(error)})
+
+
+@app.exception_handler(StaleRecordError)
+async def _lost_a_race(request: Request, error: Exception) -> JSONResponse:
+    # 409, not 500. The caller did nothing wrong; the right response is to try again.
+    return JSONResponse(status_code=409, content={"detail": "the wallet changed; retry"})
+```
+
+The error kinds exist precisely so a caller can tell a bad request from a lost race from an
+unreachable database - three things that call for opposite responses, which is what a status
+code is for. Mapping them once here beats catching them in every endpoint.
+
+**A Starlette exception handler must `return` a response, not `raise` one.** An exception raised
+from inside a handler is not caught again and becomes a 500, which is the exact opposite of what
+these are for. The signature returning `JSONResponse` is the reminder.
+
+`StaleRecordError` → **409** is the one worth arguing about and the answer is clear: two deposits
+raced, the loser's version check failed, and the caller did nothing wrong. A 500 would page
+somebody.
+
+## Keyed locks across a request
+
+```python
+lease = service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
+if lease is None:
+    raise HTTPException(status_code=503, detail="that wallet is busy; retry",
+                        headers={"Retry-After": "1"})
+with lease:
+    return WalletResponse.of(service.executor.execute(DepositMoneyAction, params))
+```
+
+Three things here.
+
+**The lease spans `execute`, not just the read.** It has to cover `perform()` *and* the
+executor's commit, or the race it exists to prevent reopens in the gap. This is Java's
+`try (var lease = lockProvider.acquire(...))` around the same call, written as a `with`.
+
+**`try_acquire`, not `acquire`.** An HTTP request must not block forever. A lease that cannot be
+had within the wait comes back as `None` - which is *contention*, not a failure, and the two are
+kept distinguishable on purpose. 503 with a `Retry-After` is a cue to come back, not a bug
+report.
+
+**Why lock at all, when optimistic locking already works?** It does work - a concurrent deposit
+loses the version check and raises. But it is correct by *failing*. Taking the key first means
+the second caller waits and then succeeds, which is what anyone depositing into a busy wallet
+wants. Different wallets take different keys and never contend.
+
+`max_hold` is not a timeout on your code. It is the promise that the lock is released even if
+this process dies holding it - set it above the worst case for the work inside.
+
+## Do not return the model
+
+```python
+class WalletResponse(BaseModel):
+    id: UUID
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+    state: str
+```
+
+`Wallet` carries a version, timestamps and an event list. A client needs none of them and should
+not break when one changes. Java's examples draw the same line with a `WalletResponse` record.
+
+One subtlety the example documents at length: **quantize money at the boundary.** What an action
+*returns* is the model it staged, at whatever scale the caller passed in; what a later read
+returns is the column's scale. So `POST /wallets` answers `100.00` and `GET /wallets/{id}`
+answers `100.0000` for the same untouched wallet - true, harmless, and exactly the sort of thing
+that becomes a bug report. Presentation scale is the API's business, so settle it once in the
+response model rather than making the write path do a read it does not need.
+
+## Testing
+
+```python
+with TestClient(create_app(settings)) as client:
+    ...
+```
+
+The `with` matters: `TestClient` only runs the lifespan inside a context manager, so without it
+`app.state.service` is never set and every request fails on the dependency. That is the third
+trap and the least interesting one.
+
+## See also
+
+- [Wiring](wiring.md) - what `build()` contains
+- [Concurrency](runtime/concurrency.md) - the `def` versus `async def` question in full
+- [`fastapi_wallet_rest_pg`](../ekbatan-py-examples/fastapi_wallet_rest_pg) - all of the above,
+  running

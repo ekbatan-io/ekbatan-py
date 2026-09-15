@@ -81,6 +81,11 @@ be rewritten, and some of the reasoning changes with it - `sagas.md` has to expl
 
 ## Documentation - the database
 
+**Four links were removed from the pages written above** rather than shipped broken:
+`docs/database/schemagen.md` (twice, from getting-started) and `docs/database/sharding.md`
+(twice, from wiring). Writing the pages below is what restores them, and
+`uv run python scripts/links.py` - now part of `make lint` - is what will say when they are back.
+
 The largest area, and the most portable: what the tables are, how repositories read, how locks
 and transactions behave. The per-dialect pages need real checking rather than translation - this
 port's MySQL and MariaDB behaviour is not identical to Java's.
@@ -121,18 +126,18 @@ tools and three DI frameworks; this port has one of each and no DI at all.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| gradle/getting-started.md | 368 | `docs/getting-started.md` | todo - one page replaces four. `uv add ekbatan`, the extras, the first action |
+| gradle/getting-started.md | 368 | `docs/getting-started.md` | done - one page replaces four, and most of Java's content evaporates: no BOM to override, no annotation processor on two classpaths, no `-parameters`, no compile-time visitor. What replaces it is the Makefile, which is the one thing uv has no answer for |
 | maven/getting-started.md | 712 | (the same page) | n/a - collapsed into the one above |
 | gradle/README.md, maven/README.md | 55 | - | n/a - build-tool index pages |
 | gradle/jooq-codegen.md | 387 | `docs/database/schemagen.md` | n/a - collapsed into the schemagen page |
 | maven/jooq-codegen.md | 521 | (the same page) | n/a - as above |
-| wiring/without-di.md | 323 | `docs/wiring.md` | todo - **this is the Python story**, and the only wiring page that transfers |
+| wiring/without-di.md | 323 | `docs/wiring.md` | done - eight blocks, each removable on its own, taken from `fastapi_wallet_rest_pg/app.py` so every line of it runs. Carries the three-pool argument and says plainly what registering by hand costs against `@EkbatanAction` |
 | wiring/annotations.md | 236 | - | n/a - `@EkbatanAction` and friends; there is no annotation processor here |
 | wiring/spring.md | 439 | - | n/a - no Python counterpart |
 | wiring/quarkus.md | 443 | - | n/a |
 | wiring/micronaut.md | 474 | - | n/a |
 | wiring/README.md | 16 | - | n/a |
-| - | - | `docs/wiring-fastapi.md` | todo - **no Java counterpart**, and the nearest thing to its DI pages: a lifespan, a dependency, three pools |
+| - | - | `docs/wiring-fastapi.md` | done - **no Java counterpart.** The lifespan, the module-level `Annotated` alias (a 422 on every endpoint if nested), plain `def` over `async def`, exception handlers that must return rather than raise, and a lease that must span the commit |
 
 ## Documentation - runtime
 
@@ -141,7 +146,7 @@ tools and three DI frameworks; this port has one of each and no DI at all.
 | runtime/README.md | 8 | `docs/runtime/README.md` | todo |
 | runtime/observability.md | 126 | `docs/runtime/observability.md` | todo - the span and metric names are a cross-language contract |
 | runtime/native-image.md | 172 | - | n/a - GraalVM. CPython has no counterpart |
-| - | - | `docs/runtime/concurrency.md` | todo - **no Java counterpart, and needed.** Java's answer is "virtual threads"; this port needs a page on threads, the GIL, asyncio and what blocks |
+| - | - | `docs/runtime/concurrency.md` | done - **no Java counterpart, and it was the most needed page in the tree.** Java settles this in two words; here it is five separate decisions, the measured asyncio cost (5 heartbeat ticks against ~55), pool sizing per process, and where the GIL actually bites |
 | docs/README.md | 14 | `docs/README.md` | todo - the index |
 | medium/01-event-driven-persistence.md | 211 | - | n/a - an article, not documentation |
 

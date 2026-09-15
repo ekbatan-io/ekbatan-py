@@ -1,0 +1,199 @@
+# Concurrency
+
+Java's answer to this whole subject is two words - *virtual threads* - and its front page says
+so. CPython has nothing equivalent, so what Java settles once has to be settled five times here.
+This page is those five answers, and the one way to use this framework wrongly.
+
+If you read one section, read [Blocking is not free](#blocking-is-not-free-under-asyncio).
+
+## The short version
+
+| you are running | is it safe | what to do |
+| --- | --- | --- |
+| a thread per request (gunicorn sync, waitress, a worker loop) | yes | nothing |
+| FastAPI or Starlette with plain `def` endpoints | yes | nothing - they run in a threadpool |
+| FastAPI with `async def` endpoints | **no** | `await run_in_threadpool(...)` around framework calls |
+| a process per worker (gunicorn, uvicorn `--workers`) | yes | nothing; pools are per process, so size them per process |
+| a thread pool you own | yes | see [Work forked from inside an action](#2-work-forked-from-inside-an-action) |
+
+## Why there is no port of "virtual threads"
+
+A virtual thread is cheap: millions of them, and a blocking call parks one without holding an OS
+thread. A CPython thread is an OS thread - about a megabyte of stack - and the GIL means more of
+them buys concurrency on I/O but not parallelism on CPU.
+
+So "port the virtual threads" is not a thing that can be done. Each site where Java forks one is
+its own decision. There are five in the main sources and they went five different ways.
+
+### 1. The unit of work - no threads either side
+
+The one that matters most needs none.
+
+Java binds the open transaction to a `ScopedValue`. Here it is a **`ContextVar`** holding a
+shard-to-connection mapping. Neither forks anything; both answer one question - *is this
+execution context already inside a transaction on this shard?*
+
+A `ContextVar` is per-thread **and** per-async-task, so the same mechanism is correct under a
+threaded server and an asyncio one. The threading model above the framework is the host's to
+choose and the framework works under any of them, because the state is per-context rather than
+global.
+
+Pinned rather than assumed, in
+[`tests/integration/test_concurrency.py`](../../tests/integration/test_concurrency.py): eight
+concurrent units of work take eight distinct connections, cannot see each other's uncommitted
+rows, and a pool worker does not carry a transaction into its next task.
+
+### 2. Work forked from inside an action
+
+The rule is the same as Java's, and so is the reason.
+
+Java's own documentation says: fan out on virtual threads, **join**, and only then touch the
+plan - because a plain virtual thread does not inherit a `ScopedValue` binding. A `ContextVar`
+behaves identically. Work handed to a pool from inside a unit of work does **not** inherit the
+ambient transaction.
+
+```python
+def perform(self, params: Params) -> Result:
+    with ThreadPoolExecutor() as pool:
+        prices = list(pool.map(self.fetch_price, params.symbols))  # no plan, no transaction
+    return self.plan.update(portfolio.priced(prices))              # back on this thread
+```
+
+Read and compute in the pool; stage on the thread that owns the plan. `current_plan()` raises
+rather than returning `None`, so getting it wrong is loud rather than subtle.
+
+That a worker does not inherit the transaction is correct, not a limitation - a pool thread
+outliving the unit of work and holding its connection is precisely the bug the design avoids.
+
+### 3. The keyed-lock watchdog - a real thread, and it costs
+
+Java gives each outermost hold a `Thread.ofVirtual()` watchdog to force-release at `max_hold`.
+Here it is a `threading.Timer`, which is an OS thread.
+
+Same behaviour, and fine at the scale a keyed lock is for. But **a service holding a thousand
+locks at once holds a thousand threads**, where Java holds a thousand virtual ones. If that ever
+becomes the constraint, the fix is one timer thread with a heap of deadlines rather than a thread
+per hold - a contained change, not a redesign.
+
+Size your lock pool for the maximum number of leases held at once, not for traffic: a lease holds
+its connection for as long as it is held, because that is what the lock *is*.
+
+### 4. Job workers - a fixed pool, with a knob
+
+Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
+unbounded and `threads(n)` only sizes the polling batch.
+
+Here the workers are a fixed pool of daemon threads, defaulting to one per registered job. That
+default is right: a recurring task is a single row, so it has at most one execution in flight.
+
+```python
+job_registry().engine(engine).with_jobs(jobs).workers(3).build()
+```
+
+`workers(n)` has no Java counterpart, because Java never has to choose.
+
+Two sizing rules, and the second has teeth:
+
+- Workers run job **bodies**. Size for how many jobs can be due at once.
+- **The jobs pool needs at least twice the worker count.** db-scheduler writes a heartbeat from a
+  housekeeping thread; a job body holding the last connection starves it, and an execution whose
+  heartbeat stops is declared dead and **run again somewhere else**. db-scheduler warns at
+  startup when the pool is short for the worker count.
+
+Give jobs their own pool, separate from the request pool, for the same reason: a traffic burst
+must not be able to starve that heartbeat.
+
+### 5. Fan-out and dispatch - sequential, where Java is parallel
+
+Java forks one virtual thread per shard in `EventFanoutJob`, and one per due notification in
+`EventHandlingJob`. Both are sequential here.
+
+On an eight-shard deployment a fan-out round therefore takes eight batches' time rather than one,
+and a hundred due notifications are a hundred `UPDATE`s where Java batches them into about four.
+
+It has not bitten - rounds are short because the work per shard is one bounded batch - and the
+fix if it does is a pool around the existing `_drain_shard`, which is a change of one line and a
+pool to size. It is recorded in [SHORTCOMINGS.md](../SHORTCOMINGS.md) rather than left implicit,
+because it is a real step down from Java and not a matter of taste.
+
+## Blocking is not free under asyncio
+
+This is the one that will actually hurt you.
+
+The framework is synchronous. There is no `async` or `await` anywhere in `src/`, and under a
+**threaded** server that is exactly right - a blocking call holds one worker thread and the GIL
+is released for the duration of the I/O, which is the same bargain Java gets from virtual
+threads.
+
+Under an **asyncio** server it is not right, because a blocking call there stops the entire event
+loop rather than one carrier thread.
+
+Measured: a 0.5s framework call from inside an `async def` handler let a background heartbeat
+tick **5 times where a free loop manages about 55**. Every other request on that loop stalled for
+the duration.
+
+```python
+# wrong, in an async def
+wallet = wallets.get(wallet_id)
+
+# right
+wallet = await asyncio.to_thread(wallets.get, wallet_id)
+
+# right, in Starlette or FastAPI
+from starlette.concurrency import run_in_threadpool
+wallet = await run_in_threadpool(wallets.get, wallet_id)
+```
+
+Two things make this less painful than it sounds.
+
+**A plain `def` endpoint in FastAPI is already run in a threadpool** by the framework, so the
+ordinary way of writing one is safe with none of the above.
+[`fastapi_wallet_rest_pg`](../../ekbatan-py-examples/fastapi_wallet_rest_pg) is written that way
+throughout, which is why it contains no `to_thread` at all.
+
+**The ambient transaction is a `ContextVar`,** which is per-async-task as well as per-thread - so
+the state mechanism is already correct if this port ever grows an async surface.
+
+It has not grown one and would not gain much from it: SQLAlchemy's async support is a wrapper
+over the same drivers, and this framework's value is in what it does *between* the queries. But
+an `async def` handler calling straight into it is a real mistake with a real cost, and nothing
+in the API stops you making it.
+
+## Processes, and where the pools live
+
+A pool belongs to a process. Under `uvicorn --workers 4` or gunicorn with four workers there are
+four of every pool, so the database sees `4 x (pool_size + job_pool_size + lock_pool_size)`
+connections, not one set.
+
+Two consequences:
+
+- **Size per process, then multiply before comparing with `max_connections`.** This is the usual
+  way a Python deployment runs out of connections.
+- **Every worker process runs the scheduler.** That is fine and is the point - db-scheduler is
+  cluster-exclusive, so four processes contend for the same rows and exactly one wins each
+  execution. It is the same code path as four machines.
+
+If you would rather not have every web worker also be a job worker, run the jobs in their own
+process: build the service with the jobs registered and the HTTP app absent.
+[`job_worker_pg`](../../ekbatan-py-examples/job_worker_pg) is that shape.
+
+## The GIL, briefly
+
+The framework's own work is I/O: queries, waits, commits. The GIL is released during those, so
+threads give real concurrency for this workload and the usual Python caveat does not apply here.
+
+Where it does apply is inside **your** action or handler bodies. A handler doing something
+genuinely CPU-bound - parsing a large payload, computing a report - holds the GIL and blocks
+every other thread in the process, job workers included. That work belongs in a process pool, or
+in a different service.
+
+Free-threaded CPython changes this, and nothing in this framework prevents it - there is no
+global mutable state, and the ambient transaction is per-context by construction. It has not been
+tested under a free-threaded build, so that is a reasonable expectation rather than a claim.
+
+## See also
+
+- [Wiring](../wiring.md) - the three pools, and what each is sized for
+- [Wiring with FastAPI](../wiring-fastapi.md) - `def` versus `async def` at the endpoint
+- [`DIVERGENCE.md`](../../DIVERGENCE.md) - the same five decisions, from the porting side
+- [`SHORTCOMINGS.md`](../SHORTCOMINGS.md) - where sequential costs against Java's parallel
