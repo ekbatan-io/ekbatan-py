@@ -1,0 +1,263 @@
+# In-process event handlers
+
+For applications that do not need to fan events out to other services - a small monolith, an
+internal tool, anywhere a Kafka cluster would be overkill - events are delivered to handlers
+registered in your own application, by two background jobs polling the same outbox. Handlers feel
+like callbacks and inherit the full outbox guarantee: delivery survives restarts, retries on
+failure, and behaves correctly across several instances. No broker.
+
+```
+Your application
+   │  one transaction per action
+   ▼
+ ┌──────────────────────────────────────────────┐
+ │  wallets, orders, …  +  events               │  committed atomically,
+ └──────────────────────────────────────────────┘  delivered = FALSE
+   │
+   ▼
+ ┌──────────────────────────────────────────────┐
+ │  EventFanoutJob                              │  polls undelivered events,
+ │                                              │  writes one notification per
+ │                                              │  (event x subscribed handler),
+ │                                              │  flips delivered
+ └──────────────────────────────────────────────┘
+   │
+   ▼
+ ┌──────────────────────────────────────────────┐
+ │  event_notifications                         │  state = PENDING
+ └──────────────────────────────────────────────┘
+   │
+   ▼
+ ┌──────────────────────────────────────────────┐
+ │  EventHandlingJob                            │  polls due notifications,
+ │                                              │  invokes the typed handler,
+ │                                              │  moves to SUCCEEDED / FAILED /
+ │                                              │  EXPIRED with backoff
+ └──────────────────────────────────────────────┘
+   │
+   ▼
+ your handlers
+```
+
+Both are ordinary [distributed jobs](../jobs/distributed-jobs.md) on the same registry, so
+cluster exclusivity, heartbeating and crash recovery are inherited. One instance runs fan-out and
+one runs dispatch - the normal case rather than a guarantee, since a stalled instance can have
+its execution revived elsewhere, and both jobs are written to be safe under a repeat.
+
+## A handler
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: ActionExecutor) -> None:
+        self.executor = executor
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        event = envelope.event
+        ...
+```
+
+A plain class. **No base class, no decorator, no annotation** - three attributes and a method.
+There is nothing to inherit because there is nothing the framework needs to give you, and nothing
+scans for it: handlers go in the registry, in the wiring, where you can read them.
+
+Several handlers may subscribe to one event type; each gets its own notification row and its own
+retry lifecycle.
+
+The registry keys subscriptions by the event class's **name**, matching `events.event_type`. It
+allows several handlers per event class and **rejects two different event classes with the same
+name**, because those are indistinguishable in the outbox. Handler names and aliases must be
+globally unique.
+
+### `name` is schema
+
+It is the durable subscription id written on every notification row. Rename the class freely;
+rename `name` and the queued rows under the old one become invisible to the handler and sit until
+they expire.
+
+The way through is `aliases`:
+
+```python
+class MoneyDepositedWelcomeHandler:
+    name = "money-deposited-welcome"
+    aliases = ("money-deposited",)          # what it used to be
+    event_type = MoneyDepositedEvent
+```
+
+**Aliases are lookup-only.** Dispatch resolves an old-name row through them; fan-out keeps
+writing only the canonical `name`. They do not replay history and they do not create a second
+subscription - for that, write a second handler with its own name and no alias.
+
+Drop the alias once no non-terminal rows remain under the old name:
+
+```sql
+SELECT state, COUNT(*) FROM event_notifications
+WHERE handler_name = 'money-deposited' AND state IN ('PENDING', 'FAILED')
+GROUP BY state;
+```
+
+Keeping it longer is harmless.
+
+## Wiring
+
+```python
+handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+
+jobs = (
+    job_registry()
+    .engine(engine)
+    .with_jobs([
+        EventFanoutJob(registry, handlers, events=EVENTS,
+                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
+        EventHandlingJob(registry, handlers,
+                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
+    ])
+    .build()
+)
+jobs.start()
+```
+
+The executor already writes every committed event with `delivered = False`, so it becomes visible
+to fan-out automatically. There is no extra persister to configure.
+
+**Dispatch is opt-in** (`HandlingConfig(enabled=True)`, default off). Some deployments want
+fan-out on - so events leave the outbox into notifications - without running handlers in *this*
+process, because a separate worker picks them up. Fan-out has no such switch and is always on
+when the job is registered.
+
+## Configuration
+
+```python
+LocalEventHandlerConfig(
+    fanout_poll_delay=timedelta(seconds=1),      # default 1s
+    fanout_batch_size=200,                       # default 200
+    handling_poll_delay=timedelta(seconds=1),    # default 1s
+    handling_batch_size=100,                     # default 100
+    handling_max_backoff_cap=timedelta(minutes=5),   # default 5m
+    handling_retention_window=timedelta(days=7),     # default 7 days
+    handling=HandlingConfig(enabled=True),
+)
+```
+
+Every default matches Java's. Java binds these from `application.yml` and has a documented trap
+about ISO-8601 durations - `PT10S` works, `10s` does not. Here they are `timedelta`s in a frozen
+dataclass, so the trap does not exist and neither do the two spellings of every key.
+
+## Fan-out
+
+Each round:
+
+1. Drain a batch of undelivered events whose `event_type` **currently has a registered handler** -
+   `delivered = FALSE AND event_type IN (...)`, limited, ordered by `event_date`.
+2. For each, insert one notification row per subscribed handler, with the full denormalised
+   context: `PENDING`, `attempts = 0`, `next_retry_at = now`.
+3. Mark the source events `delivered = TRUE`.
+4. Loop immediately if anything was drained; otherwise sleep the poll delay.
+
+**Idempotent by insert conflict**, not by checking first: a re-run after a crash rewrites the same
+`(event_id, handler_name)` rows and the unique constraint makes it a no-op.
+
+**Sentinel rows are skipped** - `event_type IS NULL` means an action that emitted nothing, and
+there is no handler to invoke.
+
+**Events with no current subscriber are left undelivered.** Deploy a matching handler later and
+the next round materialises notifications for those historical rows. Backfill is therefore
+explicit, through deployment, rather than a silent acknowledgement of events nobody could
+receive.
+
+### The denormalisation is deliberate
+
+A notification row carries a copy of the event and its action context rather than a foreign key.
+Dispatch then reads one row and needs no join - and no race if the source row has since been aged
+out.
+
+## Dispatch
+
+Each round:
+
+1. Drain a batch of due notifications **from the primary** - `state IN ('PENDING','FAILED') AND
+   next_retry_at <= now`, limited, ordered. From the primary rather than a replica, so a handler
+   is not invoked from a stale row that was already marked complete.
+2. **Pre-flight expiry:** if `now > event_date + retention`, go straight to `EXPIRED` without
+   invoking the handler. A stale event should not burn anything.
+3. Invoke the handler:
+   - returns → `SUCCEEDED`, `attempts++`
+   - raises, within retention → `FAILED`, `attempts++`, `next_retry_at = now + backoff(attempts)`
+   - raises, past retention → `EXPIRED`, `attempts++`
+4. Write the outcomes.
+5. Loop if anything was drained; otherwise sleep.
+
+Backoff is capped exponential: `30s x 2^(attempts-1)`, capped at 5 minutes. So 30s, 1m, 2m, 4m,
+then 5m for ever, until the 7-day retention window closes.
+
+### This half is sequential, where Java is parallel
+
+Java invokes handlers **in parallel on virtual threads** and commits the outcomes in about four
+batched `UPDATE`s. Here a batch is delivered **one notification at a time**, and a hundred rows
+is a hundred `UPDATE`s. Fan-out is the same trade: Java forks a thread per shard, this visits
+them in turn.
+
+It has not bitten - the rounds are short because the work per round is one bounded batch - and
+the fix is a pool rather than a redesign. It is a real step down from Java and is recorded in
+[SHORTCOMINGS.md](../SHORTCOMINGS.md).
+
+One consequence in your favour: **handlers subscribed to the same event do not run concurrently
+here.** Do not rely on that. Java runs them in parallel, and a handler written against this
+port's ordering will not survive the other one.
+
+## Handlers must be idempotent
+
+Delivery is **at-least-once** - never less, occasionally more. A handler runs twice when:
+
+- it succeeds and the process dies before the row is marked `SUCCEEDED`;
+- it partially succeeds - the email goes out, the follow-up write fails - and the row is marked
+  `FAILED`;
+- it runs longer than the poll delay, the execution is declared dead, and the row is re-claimed.
+
+What works:
+
+- **`INSERT ... ON CONFLICT DO NOTHING`** for rows the handler creates, keyed off the source event
+  id. The replay's insert no-ops.
+- **`UPDATE ... WHERE state = <expected>`** for transitions. The first call moves the row out;
+  replays no-op.
+- **An idempotency key** on an external API call - most accept one.
+- **A chained action**, whose own outbox row carries the source event id in its params, so the
+  next consumer dedupes on that.
+
+What you must not rely on:
+
+- ordering **between** events - each shard drains its own backlog;
+- ordering between handlers on one event - sequential here, parallel in Java;
+- the handler being called *exactly* once. Plan for two.
+
+If a handler cannot be made idempotent in any of those ways, you want the Kafka path with
+consumer-group offsets, not this one.
+
+## Listen to yourself
+
+A handler may take the executor and start another action:
+
+```python
+def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+    self.executor.execute(CompleteTransferAction, params)
+```
+
+This is the **only** legitimate place one action chains off another's effect. The source action
+has already committed by the time a handler runs, so the new action gets its own clean
+transaction, its own retry policy and its own outbox rows. It is what a [saga](../concepts/sagas.md)
+is built from.
+
+## Coexisting with the Kafka path
+
+Both can run against one outbox. The Debezium transforms drop non-insert operations, so the
+`UPDATE delivered = TRUE` that fan-out writes never becomes a Kafka message.
+
+## See also
+
+- [The outbox](../concepts/outbox.md) - where these events come from
+- [`event_notifications`](../database/tables/event-notifications.md) - the table and its states
+- [Distributed jobs](../jobs/distributed-jobs.md) - what both of these are
+- [Streaming with Debezium](event-streaming.md) - the other consumer path

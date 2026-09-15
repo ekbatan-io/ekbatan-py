@@ -112,11 +112,11 @@ port's MySQL and MariaDB behaviour is not identical to Java's.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| events/README.md | 19 | `docs/events/README.md` | todo |
-| events/local-event-handler.md | 364 | `docs/events/local-event-handler.md` | todo - must say that fan-out and dispatch are sequential here |
-| events/event-streaming.md | 365 | `docs/events/event-streaming.md` | todo - the Debezium connector is shared; what differs is only that no Python artifact is involved |
-| jobs/README.md | 7 | `docs/jobs/README.md` | todo |
-| jobs/distributed-jobs.md | 237 | `docs/jobs/distributed-jobs.md` | todo - must carry `workers(n)` and the missing shutdown hook |
+| events/README.md | 19 | `docs/events/README.md` | done - the four topologies, and that every one of them is at-least-once |
+| events/local-event-handler.md | 364 | `docs/events/local-event-handler.md` | done - and it says so, with the consequence spelled out: **handlers on one event do not run concurrently here and do in Java**, so a handler written against this port's ordering will not survive the other one. Every tuning default matches Java's; the ISO-8601 duration trap does not exist here |
+| events/event-streaming.md | 365 | `docs/events/event-streaming.md` | done - and that is exactly what it says. What this port owes the pipeline is the row format, and `ActionEvent` is the consumer-side name for it |
+| jobs/README.md | 7 | `docs/jobs/README.md` | done |
+| jobs/distributed-jobs.md | 237 | `docs/jobs/distributed-jobs.md` | done - both carried. Also records one thing Java must do that this port does not: Java pins the SQL dialect by hand because db-scheduler detects it by opening a connection and can lose that race; SQLAlchemy resolves it from the url with no I/O |
 
 ## Documentation - getting started and wiring
 
@@ -142,11 +142,11 @@ tools and three DI frameworks; this port has one of each and no DI at all.
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| runtime/README.md | 8 | `docs/runtime/README.md` | todo |
-| runtime/observability.md | 126 | `docs/runtime/observability.md` | todo - the span and metric names are a cross-language contract |
+| runtime/README.md | 8 | `docs/runtime/README.md` | done |
+| runtime/observability.md | 126 | `docs/runtime/observability.md` | done - **every span name, attribute and metric verified identical to Java's.** Two differences, both deliberate: the instrumentation scope names this library rather than Java's, and three extra attributes report a cross-shard partial commit on the span where Java logs it at CRITICAL |
 | runtime/native-image.md | 172 | - | n/a - GraalVM. CPython has no counterpart |
 | - | - | `docs/runtime/concurrency.md` | done - **no Java counterpart, and it was the most needed page in the tree.** Java settles this in two words; here it is five separate decisions, the measured asyncio cost (5 heartbeat ticks against ~55), pool sizing per process, and where the GIL actually bites |
-| docs/README.md | 14 | `docs/README.md` | todo - the index |
+| docs/README.md | 14 | `docs/README.md` | done - the index |
 | medium/01-event-driven-persistence.md | 211 | - | n/a - an article, not documentation |
 
 ## Website

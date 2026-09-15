@@ -1,0 +1,175 @@
+# Observability
+
+The action pipeline is instrumented with the **OpenTelemetry API** only - no SDK. With no SDK
+registered at runtime every call is a no-op, so the framework costs nothing to an application
+that does not want tracing, and the absence path is the one most of the test suite exercises.
+
+**The span and metric names are a cross-language contract.** An operator filtering a trace on
+`ekbatan.action.name` is filtering across both implementations, so a service written here and one
+written in Java appear in one dashboard. Everything below was checked against Java's names rather
+than invented.
+
+## Installing an SDK
+
+```
+uv add opentelemetry-sdk opentelemetry-exporter-otlp
+```
+
+Configure through the standard environment variables - `OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_SERVICE_NAME`. The framework uses whatever the global provider returns, for both traces and
+metrics.
+
+This repository keeps the SDK in its own dependency group rather than in an extra, precisely so
+that `uv sync --all-extras` does **not** install it - otherwise the test proving the framework
+runs without a tracing stack would quietly stop testing anything. One CI job asks for the group
+and asserts the span names; every other job proves the absence path.
+
+## The span tree
+
+Each `executor.execute(...)` produces:
+
+```
+[ekbatan.action.execute]              the whole call
+├── [ekbatan.action.perform]          your perform()
+└── [ekbatan.action.persist]          the write phase
+    └── [ekbatan.transaction]         one per shard
+        ├── [ekbatan.repository]      the batched write
+        └── [ekbatan.event.persist]   the outbox rows
+```
+
+A single-shard action gives one of each. A cross-shard action gives one transaction span - with
+its nested repository and event spans - **per involved shard**.
+
+**Joining an open transaction produces no span.** Joining is not a transaction boundary, and a
+span there would report a nested duration for something that neither began nor committed. See
+[the transaction manager](../database/transaction-manager.md#it-joins-it-does-not-nest).
+
+## Attributes
+
+| attribute | type | span | meaning |
+| --- | --- | --- | --- |
+| `ekbatan.action.name` | string | action.execute | the action class's name |
+| `ekbatan.action.principal` | string | action.execute | who asked |
+| `ekbatan.action.outcome` | string | action.execute | `success` or `error` |
+| `ekbatan.action.retry.count` | int | action.execute | total retries; 0 if none |
+| `ekbatan.shard.cross_shard` | bool | action.persist | present and true when changes span shards |
+| `ekbatan.shard.group` | int | transaction | the shard's group |
+| `ekbatan.shard.member` | int | transaction | the shard's member |
+| `db.operation.name` | string | repository | `BATCH_INSERT` or `BATCH_UPDATE` |
+| `ekbatan.entity.type` | string | repository | the domain class's name |
+| `ekbatan.batch.size` | int | repository | rows in the batch |
+| `ekbatan.event.count` | int | event.persist | events written |
+
+`db.operation.name` uses the OpenTelemetry semantic-convention *key* with framework-specific
+values, because the executor always writes through the batch methods. Everything else is under
+`ekbatan.*`.
+
+### Three attributes Java does not have
+
+A cross-shard action that commits some shards and fails another sets, on the failing span:
+
+| | |
+| --- | --- |
+| `ekbatan.shard.partial_commit_failure` | that this happened |
+| `ekbatan.shard.committed_shards` | which shards are already committed and cannot be undone |
+| `ekbatan.shard.failed_shard` | which one did not |
+
+Java logs the same facts at CRITICAL. Putting them on the span as well means the trace that shows
+the failure also shows exactly what state the data is in - which is the question anyone looks at
+that trace to answer.
+
+### The instrumentation scope differs
+
+Java reports scope `io.ekbatan.core` at the Java artifact's version. This port reports `ekbatan`
+at its own. That is deliberate: the scope names the library that produced the span, the two
+versions are independent, and a dashboard filtering on span *names* - which are identical - sees
+both.
+
+## Retries
+
+Each retry adds a span **event** named `retry` to the action span, with `retry.count` and
+`retry.exception` - the matched exception's class name, which may have come from the cause chain.
+
+Retries are not their own spans. Each retry re-runs perform and persist, so the child spans of
+every attempt already appear under the action span; a separate level would be redundant.
+
+## Errors
+
+A failing span is marked `ERROR` and the exception is recorded on it.
+
+## Context propagation
+
+The ambient transaction is a `ContextVar`, which is per-thread **and** per-async-task, so context
+flows naturally under a threaded server and an asyncio one alike. Work handed to a pool from
+inside a unit of work does not inherit it - correct, and the same rule as the transaction itself.
+See [Concurrency](concurrency.md).
+
+## Metrics
+
+From the **event pipeline only**. The core emits spans and no metrics: action execution is traced,
+not counted.
+
+| instrument | type | unit | tags | from |
+| --- | --- | --- | --- | --- |
+| `ekbatan.events.handled` | counter | `{notification}` | `outcome`, `handler` | dispatch |
+| `ekbatan.events.handler.duration` | histogram | `s` | `handler`, `outcome` | dispatch |
+| `ekbatan.events.delivery.lag` | histogram | `s` | `handler` | dispatch |
+| `ekbatan.events.fanned_out` | counter | `{event}` | - | fan-out |
+| `ekbatan.events.notifications_created` | counter | `{notification}` | - | fan-out |
+
+**`handled`** is throughput and failure rate. The `handler` tag is what distinguishes one broken
+handler from a general problem.
+
+**`handler.duration`** is which handler is *slow*, as opposed to which is failing. A handler
+degrading from 5 ms to 5 s shows here long before it starts raising.
+
+**`delivery.lag`** is how far behind delivery is running, and it is the one to alert on: a shard
+falling behind still reports perfectly healthy success counts, so **no counter can reveal a
+growing backlog.** Recorded on success only, so it measures time-to-delivery rather than
+time-spent-failing.
+
+### `outcome` values
+
+| value | meaning |
+| --- | --- |
+| `succeeded` | the handler returned |
+| `failed_retry` | it raised; a retry is scheduled with backoff |
+| `expired_preflight` | the row was already past the retention window when claimed - the handler never ran |
+| `expired_postfailure` | it raised, and the next retry would land past the deadline |
+
+`handler.duration` uses a narrower `outcome` - just `succeeded` or `failed`. At the moment a
+handler returns, the only known fact is whether it raised; whether that becomes a retry or an
+expiry is decided afterwards, against the post-invocation clock. `expired_preflight` never appears
+in the histogram at all, because no handler ran.
+
+### What to alert on
+
+**`delivery.lag` rising steadily** is the one that matters most, for the reason above.
+
+**`handled{outcome="expired_postfailure"}` above zero means events were discarded.** A
+notification reaches that state only after failing for the whole retention window - seven days by
+default - so any occurrence is a delivery that was permanently given up on. Each is also logged at
+ERROR with the handler name and an example event id.
+
+**A steady stream of `failed_retry` on a single `handler`** usually means that handler cannot
+succeed at all - the classic case being an `ImportError` from a missing optional dependency, which
+no amount of retrying fixes. Alerting on that catches it in minutes, where the discard alert above
+only fires a week later, once the events are gone.
+
+### A known caveat
+
+`ekbatan.events.fanned_out` counts rows **read**, not rows written. On a deployment with a real
+replica and non-zero lag, a round can re-read events it has already delivered, so the counter
+over-reports. Treat it as an upper bound.
+
+## Reads are not instrumented
+
+A repository's reads produce no spans of their own. They run inside `perform()`, which already has
+one, and instrumenting every lookup would be noise for an action that does several. Instrument
+them in your own repository method if you need it.
+
+## See also
+
+- [Actions](../concepts/actions.md) - the source of the three action spans
+- [The transaction manager](../database/transaction-manager.md) - what `ekbatan.transaction` wraps
+- [In-process event handlers](../events/local-event-handler.md) - what emits the metrics

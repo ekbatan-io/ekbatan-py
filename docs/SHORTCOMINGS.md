@@ -53,12 +53,14 @@ synchronous"*.
 
 ## Everything outside the code
 
-There is **no website**. The documentation tree is now twenty-eight pages: the
-[concepts](concepts/README.md) and the [database section](database/README.md) are complete, along
-with [getting started](getting-started.md), [wiring](wiring.md),
-[wiring with FastAPI](wiring-fastapi.md) and [concurrency](runtime/concurrency.md). The events and
-jobs pages, and observability, do not exist yet. That surface is enumerated and counted in
-[`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 74%.
+**The documentation is written.** Thirty-four pages, indexed at [docs/README.md](README.md):
+every Java page that has a counterpart here now has one, plus five this port needed and Java does
+not - concurrency, SQLite, migrations, FastAPI wiring, and schemagen.
+
+What is left is **the website** - Java has 76 files of Astro at `ekbatan-io.github.io/ekbatan`
+and this port has nothing - and two process directories, `openspec/` and `agent-skills/`. That
+surface is enumerated and counted in [`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which
+stands at 86%.
 
 The repository's own essentials are no longer part of it. LICENSE, AGENTS.md, CLAUDE.md,
 RELEASE.md and the publishing workflow were written in the first pass over that ledger, and two

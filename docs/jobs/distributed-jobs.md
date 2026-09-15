@@ -1,0 +1,199 @@
+# Distributed jobs
+
+Background work that should run on **exactly one** instance across a cluster. A thin facade over
+[db-scheduler](https://github.com/kagkarlsson/db-scheduler), whose Python port this repository
+also publishes.
+
+## A job
+
+```python
+class PayStipendJob(DistributedJob):
+    name = "pay-stipend"
+
+    def __init__(self, executor: ActionExecutor, wallets: WalletRepository) -> None:
+        self.executor = executor
+        self.wallets = wallets
+
+    def schedule(self) -> Schedule:
+        return FixedDelay(timedelta(hours=24))
+
+    def execute(self, context: ExecutionContext) -> None:
+        for wallet in self.wallets.find_open_below(THRESHOLD):
+            self.executor.execute(DepositMoneyAction, DepositParams(...))
+```
+
+Nothing about being a job makes the work special. It goes through an ordinary action, so the
+outbox row it writes is indistinguishable from one a request produced - `action_name` says
+`DepositMoneyAction` either way, and nothing downstream can tell or needs to.
+
+## Coordination
+
+- Every instance polls the shared `scheduled_tasks` table.
+- When a slot comes due, **exactly one instance wins the atomic claim** and runs it.
+- The running instance heartbeats. If the heartbeat goes stale, another instance reclaims the row
+  **and runs the job again** - while the first may still be part-way through `execute()`.
+- A job that raises is retried per its schedule, and `consecutive_failures` increments.
+
+**This is at-most-one per scheduled slot, not at-most-one ever.** A daily-at-02:00 job runs once
+at 02:00 across the cluster; if 02:00 passes with every node down, the missed slot is taken by
+the next live node when it polls.
+
+### The rule every job body has to obey
+
+**A slot can run twice.** The claim protects the row, not your method. db-scheduler stops a stale
+instance from recording a *result*; it cannot undo the side effects that instance already caused.
+
+Write `execute()` so that running the same slot twice is harmless. The same techniques as for
+[event handlers](../events/local-event-handler.md#handlers-must-be-idempotent): insert with a
+conflict clause, update with an expected-state predicate, an idempotency key on an external call.
+
+### Bailing out before you are taken over
+
+An execution is declared dead after **60 seconds** of failed heartbeats - `heartbeat_interval x
+missed_heartbeats_limit`, 10s x 6. The instance being replaced is **not told and not
+interrupted**: heartbeats are written by a housekeeping thread, so a job whose work does not touch
+the scheduler's database carries on without noticing.
+
+That is how a slot ends up running twice - not because the original died, but because it briefly
+could not say that it hadn't.
+
+A job that must not overlap itself can watch its own standing. The `ExecutionContext` already
+handed to `execute` carries it:
+
+```python
+def execute(self, context: ExecutionContext) -> None:
+    health = context.currently_executing.heartbeat_state
+    for invoice in invoices:
+        # 0.0 right after a good heartbeat, 1.0 at the moment another instance may claim the
+        # row. Above ~0.5, contact has been lost long enough to be worth stopping over.
+        if health.fraction_dead > 0.5:
+            LOG.warning("heartbeats failing; stopping before another instance takes over")
+            return
+        send(invoice)
+```
+
+Returning early is a normal successful completion, so the row is rescheduled and the rest is
+picked up next run - or immediately by whichever instance reclaims it, since the reclaim happens
+regardless.
+
+This is **cooperative and only as good as where you put the check.** It suits a job looping over
+work items and cannot help one sitting inside a single long call. It narrows the overlap window
+rather than closing it; an idempotent `execute()` is the only complete answer.
+
+## Wiring
+
+```python
+jobs = (
+    job_registry()
+    .engine(create_engine(url, pool_size=8, max_overflow=0))
+    .with_jobs([PayStipendJob(executor, wallets), WalletReportJob(wallets)])
+    .workers(3)
+    .build()
+)
+jobs.start()
+...
+jobs.stop()
+```
+
+The event pipeline's two jobs are registered here too - they *are* distributed jobs. See
+[In-process event handlers](../events/local-event-handler.md#wiring).
+
+### `workers(n)` - a knob Java does not need
+
+Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
+unbounded and `threads(n)` only sizes the polling batch. Here the workers are a fixed pool of
+**real OS threads**, defaulting to one per registered job.
+
+That default is right: a recurring job is a single row, so it has at most one execution in flight.
+Raise it when several jobs can be due at once.
+
+**The jobs pool needs at least twice the worker count.** A job body holding the last connection
+starves the heartbeat, and an execution whose heartbeat stops is declared dead and run again
+somewhere else. db-scheduler warns at startup when the pool is short - and did, while these
+examples were being written, which is why the example default is 8 and not 3.
+
+### The three knobs
+
+| | default | what it controls |
+| --- | --- | --- |
+| `poll_interval` | 10s | how often each instance asks for due work. Sets start latency: a job due at 12:00:00 may begin at 12:00:07 |
+| `heartbeat_interval` | **10s** | how often a running execution stamps `last_heartbeat` |
+| `shutdown_max_wait` | 30 min | how long `stop()` lets in-flight executions finish |
+
+`heartbeat_interval` is **this framework's own default, not db-scheduler's**, which would be five
+minutes. The heartbeat is not only a heartbeat - an execution is declared dead after
+`heartbeat_interval x missed_heartbeats_limit`, and that limit defaults to 6:
+
+```
+this framework   10s   x 6 = 60 seconds    before another instance revives the job
+db-scheduler     5 min x 6 = 30 minutes
+```
+
+The short window is deliberate. Fan-out and dispatch are themselves jobs, so the scheduler carries
+the whole in-process event pipeline - and a recurring task is a **single row**, so a crashed
+instance freezes that entire schedule until the row is revived. Half an hour of stalled fan-out is
+worse than an occasional early revival.
+
+Lengthen it if your jobs run long and a duplicate costs more than a delay. The miss count is not a
+first-class setting, but the escape hatch reaches it:
+
+```python
+job_registry()
+    .heartbeat_interval(timedelta(seconds=30))
+    .customize_scheduler(lambda b: b.missed_heartbeats_limit(8))   # 30s x 8 = 4 min; minimum 4
+```
+
+The heartbeat is written by the housekeeping thread rather than by the thread running your job, so
+a long `execute()` is not itself at risk. What puts it at risk is the housekeeper stalling - a
+saturated pool, or a database that will not accept the write.
+
+**`shutdown_max_wait` is effectively doubled.** db-scheduler applies it to each of two shutdown
+phases - waiting politely, then waiting again after interrupting. On the 30-minute default that
+is up to an hour, which is usually worth lowering in tests. An execution still running when it
+expires is abandoned, leaving its row picked with a frozen heartbeat, and is recovered later by
+the same path as a crash.
+
+### One thing Java has to do that this port does not
+
+db-scheduler detects its SQL dialect by **opening a connection and reading the database
+metadata**. If that connection fails it logs and keeps generic SQL *for the scheduler's lifetime* -
+and the generic SQL emits `OFFSET 0 ROWS FETCH FIRST n ROWS ONLY`, which MySQL and MariaDB cannot
+parse. Since pools are built to let an application start before its database is reachable, that
+failure is ordinary rather than exotic, and the result would be a scheduler issuing an invalid
+poll query for ever while the application reports healthy.
+
+Java pins the dialect from the JDBC url by hand to avoid it. Here **SQLAlchemy resolves the
+dialect from the url when the engine is created, with no I/O** - so there is no race to lose and
+nothing to pin. Java also has to assume MySQL 8+ because a url cannot reveal a server version;
+that assumption does not arise here.
+
+## The missing shutdown hook
+
+**Java installs a JVM shutdown hook by default** - `JobRegistry.Builder.registerShutdownHook`,
+on unless you turn it off - so a SIGTERM drains in-flight executions.
+
+**This port has no counterpart, and it is an open decision.** A SIGTERM here kills the process
+mid-execution; the rows then wait out the dead-execution window, 60 seconds on these defaults,
+before another instance picks them up. Nothing is lost, and every job body already has to tolerate
+running twice - but the shutdown is abrupt where Java's is graceful.
+
+It is not a straight port: `atexit` does not fire on SIGTERM, so matching Java means installing a
+process-wide signal handler, which is a far bigger imposition in a Python application than a
+shutdown hook is in a JVM. Call `jobs.stop()` from your own shutdown path meanwhile - the examples
+do, from a FastAPI lifespan.
+
+Tracked in [SHORTCOMINGS.md](../SHORTCOMINGS.md) and
+[DECISIONS-TO-REVIEW.md](../DECISIONS-TO-REVIEW.md).
+
+## A dedicated pool
+
+Always. db-scheduler polls continuously and heartbeats from its own thread; sharing the request
+pool means a traffic burst can starve the heartbeat, and the consequence of a starved heartbeat is
+an execution running twice.
+
+## See also
+
+- [`scheduled_tasks`](../database/tables/scheduled-tasks.md) - the table, and the heartbeat column
+- [In-process event handlers](../events/local-event-handler.md) - two jobs on this registry
+- [Concurrency](../runtime/concurrency.md) - what `workers(n)` is actually sizing
+- [`job_worker_pg`](../../ekbatan-py-examples/job_worker_pg) - no HTTP at all

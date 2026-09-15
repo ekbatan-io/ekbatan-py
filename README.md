@@ -131,19 +131,20 @@ missing, what is slower, and what has not been decided yet.
 
 ## Documentation
 
+**[docs/](docs/README.md)** is the index. The short version:
+
 - [Concepts](docs/concepts/README.md) - the dual-write trap, the outbox, actions, models and
   entities, sagas, sharding
 - [Getting started](docs/getting-started.md) - install, the extras, your first action
-- [Database](docs/database/README.md) - the framework's tables, repositories, transactions,
-  keyed locks, sharding, migrations, the four dialects, and schemagen
-- [Wiring](docs/wiring.md) - the complete bootstrap, block by block
-- [Wiring with FastAPI](docs/wiring-fastapi.md) - a lifespan, a dependency, and three sharp traps
+- [Wiring](docs/wiring.md) and [with FastAPI](docs/wiring-fastapi.md) - the complete bootstrap
+- [Database](docs/database/README.md) - tables, repositories, transactions, keyed locks,
+  sharding, migrations, the four dialects, schemagen
+- [Events out](docs/events/README.md) and [Jobs](docs/jobs/README.md) - in-process handlers,
+  Debezium, cluster-exclusive background work
 - [Concurrency](docs/runtime/concurrency.md) - threads, the GIL, asyncio, and the one way to use
   this wrongly
+- [Observability](docs/runtime/observability.md) - spans, metrics, what to alert on
 - [Releasing](RELEASE.md) - how a release is cut
-
-More is being written; [`docs/BEYOND-CODE-LEDGER.md`](docs/BEYOND-CODE-LEDGER.md) counts what is
-left.
 
 ## Typed builders
 
