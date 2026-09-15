@@ -1,0 +1,532 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Complete project setup
+activeSection: learn
+lead: Every file of a working service, for your dialect and your installer. The page you end on.
+---
+
+import SetupPicker from "../../components/SetupPicker.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+import LearnPager from "../../components/LearnPager.astro";
+
+<SetupPicker />
+
+Everything below follows the picker. Choose your database and your installer once and the whole
+page rewrites itself; the choice persists across pages.
+
+This is a **complete** service: migrations, generated schema, domain, actions, repository,
+handler, job, wiring, HTTP layer, tests and a Makefile. The example named in the picker is this
+page as a runnable project.
+
+## 1. The project
+
+```
+wallet/
+├─ Makefile
+├─ pyproject.toml
+├─ migrations/
+│  ├─ env.py
+│  └─ versions/0001_initial.py
+├─ wallet/
+│  ├─ __init__.py
+│  ├─ model.py          the domain
+│  ├─ builders.py       GENERATED, committed
+│  ├─ schema.py         GENERATED, gitignored
+│  ├─ actions.py        the units of work
+│  ├─ repository.py     the queries this app asks
+│  ├─ handlers.py       in-process event handlers
+│  ├─ jobs.py           cluster-exclusive background work
+│  ├─ app.py            the wiring, all of it
+│  └─ api.py            the HTTP layer, and nothing else
+└─ tests/
+```
+
+Two generated files, and the difference between them matters: **`builders.py` is committed**
+because it is derived from source you already have; **`schema.py` is gitignored** because it is
+derived from a database you have to start.
+
+## 2. Dependencies
+
+<div data-install="uv">
+
+```bash
+uv init wallet && cd wallet
+```
+
+<div data-db="pg">
+
+```bash
+uv add ekbatan[postgres,migrations]
+uv add --dev ekbatan[codegen] pytest testcontainers[postgres]
+uv add fastapi uvicorn[standard] httpx
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+uv add ekbatan[mysql,migrations]
+uv add --dev ekbatan[codegen] pytest testcontainers[mysql]
+uv add fastapi uvicorn[standard] httpx
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+uv add ekbatan[mariadb,migrations]
+uv add --dev ekbatan[codegen] pytest testcontainers[mysql]
+uv add fastapi uvicorn[standard] httpx
+```
+
+</div>
+<div data-db="sqlite">
+
+```bash
+uv add ekbatan[migrations]
+uv add --dev pytest
+uv add fastapi uvicorn[standard] httpx
+```
+
+SQLite needs no driver extra and no `codegen` extra — there is no container to reflect from, so
+you write `schema.py` by hand and commit it.
+
+</div>
+</div>
+
+<div data-install="pip">
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+```
+
+<div data-db="pg">
+
+```bash
+pip install "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[codegen]" pytest "testcontainers[postgres]"
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+pip install "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+pip install "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
+
+</div>
+<div data-db="sqlite">
+
+```bash
+pip install "ekbatan[migrations]" fastapi "uvicorn[standard]" httpx pytest
+```
+
+</div>
+
+The quotes are load-bearing: `zsh` treats bare brackets as a glob and reports *"no matches
+found"*.
+
+</div>
+
+<div data-install="poetry">
+
+```bash
+poetry new wallet && cd wallet
+```
+
+<div data-db="pg">
+
+```bash
+poetry add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+poetry add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+poetry add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
+
+</div>
+<div data-db="sqlite">
+
+```bash
+poetry add "ekbatan[migrations]" fastapi "uvicorn[standard]" httpx
+poetry add --group dev pytest
+```
+
+</div>
+</div>
+
+**`codegen` is a development dependency, not a runtime one.** It starts a database container to
+reflect your schema — a thing your build does and your deployment must never do.
+
+## 3. The connection url
+
+<div data-db="pg">
+
+```
+postgresql+psycopg://user:pass@localhost:5432/wallet
+```
+
+`psycopg`, not `psycopg2` — the `postgres` extra brings psycopg 3.
+
+</div>
+<div data-db="mysql">
+
+```
+mysql+pymysql://user:pass@localhost:3306/wallet
+```
+
+</div>
+<div data-db="mariadb">
+
+```
+mariadb+pymysql://user:pass@localhost:3306/wallet
+```
+
+**The scheme has to say `mariadb`.** A MariaDB container hands back a `mysql://` url, and
+SQLAlchemy picks its DDL, its version reporting and its `SKIP LOCKED` support off the scheme —
+while this framework picks its keyed-lock provider off `engine.dialect.name`. Leave it as `mysql`
+and everything works, while running MySQL's code path against a MariaDB server.
+
+</div>
+<div data-db="sqlite">
+
+```
+sqlite:///wallet.db
+```
+
+Fine for one process. Not a production dialect: no `SKIP LOCKED`, so the scheduler and the SQL
+keyed lock degrade to single-process behaviour.
+
+</div>
+
+## 4. The first migration
+
+The framework's own tables have to exist. Do not hand-write their DDL — generate it once and
+commit the result:
+
+```python
+from sqlalchemy import MetaData
+from ekbatan.migrations import emit_ddl
+from ekbatan.schema import notifications_table, outbox_table, scheduled_tasks_table
+
+metadata = MetaData()
+outbox_table(metadata)
+notifications_table(metadata)
+scheduled_tasks_table(metadata)
+
+print(emit_ddl(metadata, "postgresql"))    # or "mysql", "sqlite"
+```
+
+Paste it into `migrations/versions/0001_initial.py` alongside your own tables, **one statement
+per `op.execute()`** — PyMySQL rejects a multi-statement script, so a revision that works on
+PostgreSQL fails elsewhere with an error naming the syntax rather than the cause.
+
+## 5. Generate the schema
+
+<div data-db="sqlite">
+
+Skip this step. There is no container to reflect from, so write `schema.py` by hand with the
+column helpers and commit it:
+
+```python
+from sqlalchemy import Column, MetaData, Numeric, String, Table
+from ekbatan.schema import timestamp_column, uuid_column
+
+metadata = MetaData()
+WALLETS = Table(
+    "wallets", metadata,
+    Column("id", uuid_column(), primary_key=True),
+    Column("version", Integer, nullable=False),
+    Column("state", String(32), nullable=False),
+    Column("owner_id", uuid_column(), nullable=False),
+    Column("currency", String(3), nullable=False),
+    Column("balance", Numeric(19, 4), nullable=False),
+    Column("created_date", timestamp_column(), nullable=False),
+    Column("updated_date", timestamp_column(), nullable=False),
+)
+```
+
+</div>
+
+<div data-db="pg">
+
+```bash
+uv run python -m ekbatan.schemagen --migrations migrations --out wallet/schema.py \
+  --image postgres:17-alpine
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+uv run python -m ekbatan.schemagen --migrations migrations --out wallet/schema.py \
+  --image mysql:8.4
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+uv run python -m ekbatan.schemagen --migrations migrations --out wallet/schema.py \
+  --image mariadb:11.4
+```
+
+</div>
+
+<div data-db="pg">
+It starts a throwaway container, runs **your** migrations into it, reflects the result and
+writes a module of `Table` definitions — the counterpart to the Java port's jOOQ step.
+</div>
+<div data-db="mysql">
+It starts a throwaway container, runs **your** migrations into it and reflects the result. The
+type forcing matters here: a uuid on MySQL is `CHAR(36)` and nothing in the database says it is a
+uuid, so a plain reflection would give you a text column that no other dialect can join against.
+</div>
+<div data-db="mariadb">
+It starts a throwaway container, runs **your** migrations into it and reflects the result. Two
+MariaDB quirks make the forcing essential: `JSON` is reported as `LONGTEXT`, and a bigint comes
+back as `BIGINT(display_width=20)` — which, emitted verbatim, does not even import.
+</div>
+
+## 6. The Makefile
+
+`uv` has no task runner and no dependency graph, which is the one real gap against Gradle.
+
+<div data-db="sqlite">
+
+```make
+.PHONY: run test lint
+run:   ; uv run uvicorn wallet.api:app --reload
+test:  ; uv run pytest
+lint:  ; uv run mypy wallet && uv run ruff check .
+```
+
+</div>
+<div data-db="pg">
+
+```make
+IMAGE := postgres:17-alpine
+
+wallet/schema.py: $(wildcard migrations/versions/*.py)
+	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
+
+.PHONY: run test lint
+run:  wallet/schema.py ; uv run uvicorn wallet.api:app --reload
+test: wallet/schema.py ; uv run pytest
+lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
+```
+
+</div>
+<div data-db="mysql">
+
+```make
+IMAGE := mysql:8.4
+
+wallet/schema.py: $(wildcard migrations/versions/*.py)
+	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
+
+.PHONY: run test lint
+run:  wallet/schema.py ; uv run uvicorn wallet.api:app --reload
+test: wallet/schema.py ; uv run pytest
+lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
+```
+
+</div>
+<div data-db="mariadb">
+
+```make
+IMAGE := mariadb:11.4
+
+wallet/schema.py: $(wildcard migrations/versions/*.py)
+	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
+
+.PHONY: run test lint
+run:  wallet/schema.py ; uv run uvicorn wallet.api:app --reload
+test: wallet/schema.py ; uv run pytest
+lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
+```
+
+</div>
+
+The dependency on the migration files is what makes this bearable in front of every target: **it
+starts a container when they change and does nothing when they have not.** That is Gradle's
+up-to-date check, in one line. `lint` depends on it because mypy reads the generated module.
+
+## 7. The wiring
+
+<CodeBlock filename="wallet/app.py" language="python" shadow="orange" code={`@dataclass(frozen=True, slots=True)
+class WalletService:
+    registry: DatabaseRegistry
+    wallets: WalletRepository
+    executor: ActionExecutor
+    locks: KeyedLockProvider
+    jobs: JobRegistry
+
+    def start(self) -> None:
+        self.jobs.start()
+
+    def close(self) -> None:
+        # Order matters: stop taking work before closing what the work runs on.
+        self.jobs.stop()
+        self.locks.close()
+        self.registry.close()
+
+
+def build(config: Settings) -> WalletService:
+    layout = ShardingConfig(
+        shards=(ShardConfig(shard=DEFAULT_SHARD,
+                            primary=DataSourceConfig(url=config.url,
+                                                     pool_size=config.pool_size)),),
+        default_shard=DEFAULT_SHARD,
+    )
+
+    if config.run_migrations:
+        migrate(layout, MIGRATIONS)          # before anything opens a pool
+
+    registry = DatabaseRegistry.from_config(layout)
+    wallets = WalletRepository(registry)
+
+    executor = ActionExecutor(
+        namespace="com.example.wallet",
+        registry=registry,
+        repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
+        actions=(ActionRegistry.builder()
+                 .with_action(OpenWalletAction())
+                 .with_action(DepositMoneyAction(wallets))
+                 .build()),
+        events=EVENTS,
+    )
+
+    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+    events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+
+    return WalletService(
+        registry=registry,
+        wallets=wallets,
+        executor=executor,
+        locks=PostgresKeyedLockProvider(
+            create_engine(config.url, pool_size=config.lock_pool_size, max_overflow=0)),
+        jobs=(job_registry()
+              .engine(create_engine(config.url, pool_size=config.job_pool_size, max_overflow=0))
+              .with_jobs([
+                  EventFanoutJob(registry, handlers, events=EVENTS,
+                                 notifications=EVENT_NOTIFICATIONS, config=events_config),
+                  EventHandlingJob(registry, handlers,
+                                   notifications=EVENT_NOTIFICATIONS, config=events_config),
+                  PayStipendJob(executor, wallets),
+              ])
+              .workers(3)
+              .build()),
+    )`} />
+
+**Three pools.** Requests get the main engine. Jobs get their own, sized at **at least twice the
+worker count**, because the scheduler heartbeats from a housekeeping thread and a job body
+holding the last connection starves it — and an execution whose heartbeat stops is declared dead
+and run again somewhere else. Locks get a third, because a keyed lock holds its connection for
+the life of the lease.
+
+<div data-db="mysql">
+Use `MySQLKeyedLockProvider` rather than the PostgreSQL one — and note that a sub-second
+`try_acquire` wait is a **poll** on MySQL, which truncates the fraction to zero.
+</div>
+<div data-db="mariadb">
+Use `MariaDBKeyedLockProvider`. It issues the same statements as the MySQL one and exists
+separately because MariaDB honours sub-second `GET_LOCK` timeouts where MySQL truncates them.
+</div>
+<div data-db="sqlite">
+Use `InProcessKeyedLockProvider`. It is a `threading.Lock`, not a distributed lock, and will not
+tell you so at runtime — two instances each get their own.
+</div>
+
+## 8. The HTTP layer
+
+<CodeBlock filename="wallet/api.py" language="python" shadow="yellow" code={`def service_of(request: Request) -> WalletService:
+    service: WalletService = request.app.state.service
+    return service
+
+
+# MODULE LEVEL. With \`from __future__ import annotations\`, FastAPI resolves string
+# annotations against the *module* namespace - an alias defined inside create_app is
+# invisible, and the parameter is read as an unfilled query parameter instead. The
+# symptom is a 422 on every endpoint, naming a field nobody declared.
+Service = Annotated[WalletService, Depends(service_of)]
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        service = build(settings or Settings())
+        service.start()
+        app.state.service = service
+        try:
+            yield
+        finally:
+            service.close()
+
+    app = FastAPI(title="Wallet", lifespan=lifespan)
+
+    # A handler must RETURN a response. Raising from inside one is not caught again and
+    # becomes a 500 - the opposite of what these exist for.
+    @app.exception_handler(StaleRecordError)
+    async def _lost_a_race(request: Request, error: Exception) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": "the wallet changed; retry"})
+
+    # \`def\`, not \`async def\`. FastAPI runs a plain def in a threadpool, so a blocking
+    # database call blocks one worker thread. An async def endpoint runs on the event
+    # loop, where the same call stops every request on that worker.
+    @app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
+    def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
+        return WalletResponse.of(
+            service.executor.execute(
+                DepositMoneyAction,
+                DepositParams(wallet_id=WalletId(wallet_id), amount=body.amount),
+            )
+        )
+
+    return app`} />
+
+## 9. A test
+
+```python
+with TestClient(create_app(settings)) as client:
+    created = client.post("/wallets", json={...}).json()
+    client.post(f"/wallets/{created['id']}/deposits", json={"amount": "25.50"})
+```
+
+**The `with` matters.** `TestClient` only runs the lifespan inside a context manager, so without
+it `app.state.service` is never set and every request fails on the dependency.
+
+## 10. Run it
+
+```bash
+make run
+```
+
+## What to read next
+
+- [Going to production](/learn/going-to-production/) — threads, pool sizing, what to alert on
+- [The reference](/reference/) — every detail of everything above
+
+<LearnPager current="complete-project-setup" />

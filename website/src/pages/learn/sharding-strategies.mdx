@@ -1,0 +1,79 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Sharding strategies
+activeSection: learn
+lead: Two axes, three strategies, and why cross-shard is refused by default.
+---
+
+import LearnPager from "../../components/LearnPager.astro";
+
+[Adding a shard](/learn/sharding/) is the mechanics. This is the model underneath it.
+
+## Two reasons to shard, two axes
+
+Most sharding designs use one number for "which database does this row live on" and let it
+conflate everything. A `ShardIdentifier` is a `(group, member)` pair, and the two answer
+different questions:
+
+| axis | the question | cardinality driven by | range |
+| --- | --- | --- | --- |
+| **group** (policy) | where is this data *allowed* to live? | data residency law, tenant isolation, business-domain separation. **You do not pick how many you have; the world picks** | 8 bits → 256 |
+| **member** (capacity) | how many writes per second can one database take? | capacity planning. You add members when one starts to fall over | 6 bits → 64 per group |
+
+The split matters because the two have completely different operational profiles. A new
+**group** — "we signed a bank that requires onshore data" — is a major event: new
+infrastructure, new region, new compliance posture, a separate failure domain. A new **member**
+is routine: same region, same VPC, same playbook, more compute.
+
+Conflating them into "shard #47" forces every routing decision through one lens. Routing for
+compliance is deterministic from the customer's properties; routing for capacity is whatever
+distributes load, usually a hash.
+
+## Three strategies, in order of weight
+
+**One database.** Everything at `DEFAULT_SHARD`. You write actions exactly as if sharding did
+not exist. The registry is still in the path; every call resolves to the same database.
+
+> Use it until you have a write-throughput problem or a policy forcing data location — which is
+> almost everyone. Stay here as long as you can.
+
+**Shard bits in the id** (`EmbeddedBitsShardingStrategy`). The pair is encoded into the UUID, so
+the shard is recoverable with no lookup. Chosen at creation and bonded for the row's life.
+
+> Use it when each row's shard is decidable from what you know at creation and you will never
+> move rows between shards. That covers most cases.
+
+**Your own strategy.** If you need to re-shard live data, or the shard is not knowable at
+creation but is derivable from the row, supply a `ShardingStrategy`. The cost is that the id is
+no longer self-describing: any read starting from an id alone needs the strategy to find the row
+first, which is a round trip you pay implicitly.
+
+## Why cross-shard is refused
+
+By default an action's staged changes must all route to one shard. One transaction, everything
+written, commit. **That is the only way the outbox guarantee survives**, because
+atomic-across-databases does not exist.
+
+With `allow_cross_shard=True` the executor opens **one transaction per shard**, each committing
+independently. A failure rolls back only its own shard; shards that already committed stay
+committed, and the framework logs that loudly, naming them.
+
+So you are back in [dual-write](/learn/the-dual-write-trap/) territory for that action — except
+the two systems are now two shards of your own database rather than a database and a broker.
+The mitigation is a [saga](/learn/sagas/): one action per shard, chained by outbox events, with
+compensation.
+
+Prefer opting in **per call**, so the risk is visible at the call site rather than buried in a
+builder somewhere.
+
+## What sharding does not solve
+
+- **Cross-shard transactions.** No framework can; that is a property of distributed systems.
+- **Scatter-gather latency.** A predicate across N members hits N databases, and here they are
+  visited sequentially, so it is the sum rather than the max.
+- **Hot shards.** If 80% of traffic targets one customer, that customer's shard is hot however
+  many others exist.
+
+If you are reaching for sharding to fix a *read latency* problem, it is probably the wrong tool.
+
+<LearnPager current="sharding-strategies" />

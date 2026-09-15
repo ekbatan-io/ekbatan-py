@@ -1,0 +1,111 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Adding a shard
+activeSection: learn
+lead: One database to two, without changing a single action signature.
+---
+
+import CodeBlock from "../../components/CodeBlock.astro";
+import LearnPager from "../../components/LearnPager.astro";
+
+The claim this page makes is narrow and testable: **going from one database to two changes the
+configuration and the model's id type, and nothing else.** Your actions, your repository
+queries and your HTTP layer stay as they are.
+
+[`fastapi_wallet_rest_sharded_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)
+is this page, running.
+
+## 1. Name the shards
+
+```python
+from ekbatan.sharding import ShardIdentifier
+
+GLOBAL = ShardIdentifier(0, 0)      # prints as "0:0"
+MEXICO = ShardIdentifier(1, 0)
+```
+
+A `(group, member)` pair. Group is the **policy** axis - where data is *allowed* to live. Member
+is the **capacity** axis - how many writes one database can take. See
+[sharding strategies](/learn/sharding-strategies/) for why those are separate.
+
+## 2. Configure both
+
+```python
+layout = ShardingConfig(
+    shards=(
+        ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=global_url)),
+        ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=mexico_url), name="mexico"),
+    ),
+    default_shard=GLOBAL,
+)
+registry = DatabaseRegistry.from_config(layout)
+```
+
+That is the whole configuration change. `migrate(layout, MIGRATIONS)` now visits both, in
+configuration order, stopping at the first failure and naming what had already succeeded.
+
+## 3. Make the id carry its shard
+
+```python
+class WalletId(ShardedId["Wallet"]):
+    pass
+```
+
+`ShardedId` rather than `Id`. The `(group, member)` pair is packed into 14 bits of the UUID
+itself, inside the `rand_b` field of a UUIDv7:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ MSB: [48-bit timestamp][4-bit version=7][12-bit rand_a]         │
+│ LSB: [2-bit variant][8-bit GROUP][6-bit MEMBER][48-bit rand]    │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**The shard is recoverable from the id, with no lookup.** A request arrives with a wallet id; the
+framework reads the bits, finds the database, opens the transaction. No directory service, no
+sticky sessions.
+
+This layout is a **cross-language contract** — an id minted by a Java service carries its shard
+in the same bits, so either port can route the other's rows.
+
+## 4. Give the repository a strategy
+
+```python
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry,
+                         sharding=EmbeddedBitsShardingStrategy())
+```
+
+One argument. That is step four of four.
+
+## 5. Choose the shard when you create
+
+The shard is bonded to the row for its lifetime, so it is chosen once, at creation:
+
+```python
+class OpenWalletAction(Action[OpenWalletParams, Wallet]):
+    def perform(self, params: OpenWalletParams) -> Wallet:
+        shard = MEXICO if params.country == "MX" else GLOBAL
+        return self.plan.add(Wallet.open(id=WalletId.generate(shard), ...))
+```
+
+**This is the only line in the whole application that knows there is more than one database.**
+
+## What did not change
+
+- `wallets.get(wallet_id)` — routes by the id's bits.
+- `wallets.find_where(...)` — has no id to route by, so it **scatters** across every shard.
+- Every action body. Every endpoint. Every test that does not assert on placement.
+
+## What to watch
+
+**A predicate read hits every shard.** Latency is the sum, because this port visits them one at
+a time where the Java port forks a thread per shard. On two shards that is invisible; on eight it
+is the first thing you would feel.
+
+**A cross-shard action is refused** unless you pass `allow_cross_shard=True`, and then each shard
+commits independently. If a partial commit would need compensating, you want a
+[saga](/learn/sagas/).
+
+<LearnPager current="sharding" />

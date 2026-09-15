@@ -5,6 +5,7 @@ activeSection: learn
 lead: In process, through a broker, or both at once. Every path is at-least-once.
 ---
 
+import AliasRenameFlow from "../../components/AliasRenameFlow.astro";
 import LearnPager from "../../components/LearnPager.astro";
 
 The framework's job is to persist events safely: the domain rows and the outbox rows commit in
@@ -50,7 +51,13 @@ class MoneyDepositedWelcomeHandler:
 ```
 
 Aliases are lookup-only: dispatch resolves old rows through them, fan-out keeps writing the
-canonical name.
+canonical name. This is the single most confusing thing in the pipeline, so here it is as a
+picture:
+
+<AliasRenameFlow />
+
+Drop the alias once no non-terminal rows remain under the old name. Keeping it longer is
+harmless.
 
 ## Through a broker
 

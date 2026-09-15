@@ -1,0 +1,172 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: The outbox
+activeSection: learn
+lead: The central guarantee, the table it lands in, and the two ways to drain it.
+---
+
+import DialectPicker from "../../components/DialectPicker.astro";
+import LearnPager from "../../components/LearnPager.astro";
+
+<DialectPicker />
+
+Every action's commit is one database transaction that touches as many domain tables as the
+action needs **plus** the outbox. They land together, or none of them do.
+
+```
+┌──────────────────  ONE DATABASE TRANSACTION  ──────────────────────┐
+│   wallets (UPDATE)     orders (INSERT)      events (INSERT)        │
+└────────────────────────────────────────────────────────────────────┘
+                                │
+       commit (every row persists)  —or—  rollback (none of them do)
+```
+
+## The table
+
+Pick your dialect above; the DDL below follows.
+
+<div data-db="pg">
+
+```sql
+CREATE TABLE events (
+    id              UUID         NOT NULL,
+    namespace       VARCHAR(255) NOT NULL,
+    action_id       UUID         NOT NULL,
+    action_name     VARCHAR(255) NOT NULL,
+    action_params   JSONB        NOT NULL,
+    started_date    TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    model_id        VARCHAR(255),
+    model_type      VARCHAR(255),
+    event_type      VARCHAR(255),
+    payload         JSONB,
+    event_date      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    delivered       BOOLEAN      NOT NULL,
+    PRIMARY KEY (id)
+);
+```
+
+`JSONB` rather than `JSON`: the binary form is indexable and compares by value, where `JSON` is
+stored text and compares by bytes, so two payloads differing only in key order would be unequal.
+
+</div>
+
+<div data-db="mysql">
+
+```sql
+CREATE TABLE events (
+    id              CHAR(36)     NOT NULL,
+    namespace       VARCHAR(255) NOT NULL,
+    action_id       CHAR(36)     NOT NULL,
+    action_name     VARCHAR(255) NOT NULL,
+    action_params   JSON         NOT NULL,
+    started_date    DATETIME(6)  NOT NULL,
+    completion_date DATETIME(6)  NOT NULL,
+    model_id        VARCHAR(255),
+    model_type      VARCHAR(255),
+    event_type      VARCHAR(255),
+    payload         JSON,
+    event_date      DATETIME(6)  NOT NULL,
+    delivered       BOOL         NOT NULL,
+    PRIMARY KEY (id)
+);
+```
+
+`DATETIME(6)`, never bare `DATETIME` — the bare form truncates to whole seconds, silently, and
+`event_date` is the outbox's only ordering key. MySQL has no UUID type, so ids are `CHAR(36)`:
+the hyphenated text form, chosen so they stay grep-able and so they match what the other
+dialects store.
+
+</div>
+
+<div data-db="mariadb">
+
+```sql
+CREATE TABLE events (
+    id              CHAR(36)     NOT NULL,
+    namespace       VARCHAR(255) NOT NULL,
+    action_id       CHAR(36)     NOT NULL,
+    action_name     VARCHAR(255) NOT NULL,
+    action_params   JSON         NOT NULL,
+    started_date    DATETIME(6)  NOT NULL,
+    completion_date DATETIME(6)  NOT NULL,
+    model_id        VARCHAR(255),
+    model_type      VARCHAR(255),
+    event_type      VARCHAR(255),
+    payload         JSON,
+    event_date      DATETIME(6)  NOT NULL,
+    delivered       BOOL         NOT NULL,
+    PRIMARY KEY (id)
+);
+```
+
+MariaDB 10.7+ has a native 16-byte `UUID` type and the Java port's DDL uses it. This port emits
+`CHAR(36)` because SQLAlchemy does not render the native one. **Interop is unaffected, and that
+was checked**: against a table created with the Java DDL, this port writes a uuid and reads back
+an identical value.
+
+Note also that MariaDB stores `JSON` as `LONGTEXT` with a check constraint. Invisible when you
+declare the column; very visible when something *reflects* it, which is why
+[schemagen](/reference/database/schemagen/) forces it back.
+
+</div>
+
+<div data-db="sqlite">
+
+```sql
+CREATE TABLE events (
+    id              CHAR(32)     NOT NULL,
+    namespace       VARCHAR(255) NOT NULL,
+    action_id       CHAR(32)     NOT NULL,
+    action_name     VARCHAR(255) NOT NULL,
+    action_params   JSON         NOT NULL,
+    started_date    DATETIME     NOT NULL,
+    completion_date DATETIME     NOT NULL,
+    model_id        VARCHAR(255),
+    model_type      VARCHAR(255),
+    event_type      VARCHAR(255),
+    payload         JSON,
+    event_date      DATETIME     NOT NULL,
+    delivered       BOOLEAN      NOT NULL,
+    PRIMARY KEY (id)
+);
+```
+
+`CHAR(32)` — hex with the hyphens stripped, because SQLite has no native uuid. The values round
+trip correctly but do not look like what PostgreSQL shows, so a hand-written query comparing
+against a hyphenated literal finds nothing.
+
+**SQLite is not a production dialect.** It has no `SKIP LOCKED`, so the scheduler and the SQL
+keyed lock degrade to single-process behaviour.
+
+</div>
+
+## Sentinel rows
+
+An action that emits no events still writes **one row**, with `model_id`, `model_type`,
+`event_type` and `payload` all null. The action happened, and that is a fact worth keeping.
+
+A consumer skips them with `event_type IS NULL`. The Debezium transforms already do.
+
+## Two consumer paths
+
+The outbox is **just a table**. Anything that can read it can consume it.
+
+**In process** — two jobs drain it and invoke typed handlers, with retry and expiry. No broker,
+no CDC. Right for a monolith or an internal service.
+
+**CDC to Kafka** — point Debezium at `events`. The transform that routes rows runs **inside
+Kafka Connect, in a JVM**, whichever language wrote the row, so a Python service uses the same
+artifact a Java one does. There is no Python counterpart to build and none is planned.
+
+Both can run against the same outbox at once. Fan-out flips `delivered` from false to true,
+producing `UPDATE` rows; the transforms drop non-insert operations, so those flips never become
+Kafka messages.
+
+## One trap worth knowing
+
+`event_date` is the only ordering key — there is no ordinal column, in either port. Under a real
+clock that is fine. Under a **frozen** clock every row of a run ties and the order falls back to
+a random uuid. The test suite fell into this more than once.
+
+<LearnPager current="outbox" />

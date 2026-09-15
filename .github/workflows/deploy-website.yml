@@ -47,6 +47,11 @@ jobs:
         working-directory: website
         env:
           BASE: /ekbatan-py/
+      # Three checks the build itself cannot make: that every utility class resolves against
+      # the frozen bundle, that every internal link points at a page that was built, and that
+      # the parity ledger still counts. The first two have each already caught a real break.
+      - run: npm run check
+        working-directory: website
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,0 +1,128 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Models and entities
+activeSection: learn
+lead: Two kinds of persistable object, why both are frozen, and what the generated builder buys you.
+---
+
+import CodeBlock from "../../components/CodeBlock.astro";
+import LearnPager from "../../components/LearnPager.astro";
+
+Both are immutable, both version-tracked, both with a `state` column that supports soft
+deletion. The difference is whether their changes are news.
+
+| | `Model` | `Entity` |
+| --- | :---: | :---: |
+| `id`, `state`, `version` | yes | yes |
+| `created_date` / `updated_date`, managed for you | yes | no |
+| Changes emit events | yes | no |
+
+Choose **`Model`** when a change should be recorded as an event. Choose **`Entity`** when the
+current state is enough: lookup tables, configuration, auxiliary records that take part in an
+action without needing a trail of their own.
+
+## A model
+
+<CodeBlock filename="model.py" language="python" shadow="yellow" code={`@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+
+    @classmethod
+    def open(cls, *, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
+        return (
+            WalletBuilder()
+            .id(WalletId.random())
+            .state(WalletState.OPENED)
+            .owner_id(owner_id)
+            .currency(currency)
+            .balance(balance)
+            .with_initial_version()
+            .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
+                                          opening_balance=balance))
+            .build()
+        )
+
+    def deposit(self, amount: Decimal) -> Wallet:
+        if amount <= 0:
+            raise ValidationError(f"deposit amount must be positive, got {amount}")
+        new_balance = self.balance + amount
+        return (
+            self.copy()
+            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .balance(new_balance)
+            .build()
+        )
+
+    def close(self) -> Wallet:
+        if self.state is WalletState.CLOSED:
+            return self
+        return self.copy().with_event(WalletClosedEvent()).state(WalletState.CLOSED).build()`} />
+
+Two patterns worth naming. **A factory** (`open`) builds a *new* aggregate, calls
+`with_initial_version()` and attaches the creation event. **`copy()`** returns a builder
+pre-populated with the current state; mutators build on it, change what changed, attach an event
+and `build()`.
+
+`close()` returning `self` when already closed is the shape to copy: nothing staged means
+nothing emitted, and the action's invocation is still recorded as a sentinel row.
+
+## Why frozen
+
+`@dataclass(frozen=True, kw_only=True)` is ordinary Python — the standard library has had
+dataclasses since 3.7, and pydantic, pytest, FastAPI and SQLAlchemy all use frozen ones. What is
+unusual is *what* is frozen here. The ecosystem freezes **value objects**: cache keys, config
+values, durations. This framework freezes the **aggregate**.
+
+That is deliberate, and the reason is [two-phase execution](/learn/actions/). The plan holds a
+*reference* to what you staged, and the executor writes it later. With a mutable model, anything
+touching that object between staging and commit would silently change what got written — a
+deposit of 100 committing as 0.
+
+`kw_only` does two jobs. It stops transposition, because `owner_id` sits next to `currency` and
+`started_date` next to `completion_date`. It also makes the inheritance **legal at all**: the
+base carries `version` and the timestamps, all with defaults, and a subclass field without one
+would otherwise be *"non-default argument follows default argument"*.
+
+If you are arriving from Django or the SQLAlchemy ORM: what you give up is dirty tracking. There
+is no `session.commit()` working out what changed; you say what changed, through the plan.
+
+## Events
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class MoneyDepositedEvent(ModelEvent):
+    amount: Decimal
+    new_balance: Decimal
+```
+
+That is the whole declaration, and it is one of the few places this port is straightforwardly
+**ahead of the Java one**. Java needs a `@JsonCreator` constructor with a `@JsonProperty` for
+every field, or the dispatch job cannot rebuild the event and the handler is silently never
+invoked. Here the payload is rebuilt from the dataclass's own annotations.
+
+## Optimistic locking, always
+
+Every update carries `WHERE version = ?`. If another transaction got there first, zero rows
+match and `StaleRecordError` unwinds the action, which then retries once by default.
+
+**The write path takes no pessimistic row locks, ever.** Conflicts surface as an exception rather
+than as blocked threads. But note that is correct by *failing* — two deposits race and the loser
+raises. When losing is the wrong outcome, take a keyed lock first so the second caller waits and
+then succeeds.
+
+## The one generated thing
+
+`wallet.copy().balance(...)` works with nothing generated. What it cannot do is tell a *type
+checker* that `.balance(...)` takes a `Decimal` — setters resolve by name at runtime.
+
+```
+uv run python -m ekbatan.codegen myapp.model --out myapp/builders.py
+```
+
+A generated builder declares **only the fields its model added**; `id`, `state`, `version` and
+the timestamps are typed on the base. **Commit the output** — it is derived from source you
+already have, unlike the schema module, which is derived from a database you have to start.
+
+<LearnPager current="models-and-entities" />

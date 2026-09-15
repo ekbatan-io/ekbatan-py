@@ -7,11 +7,12 @@
 // cannot drift when they are one file.
 import { defineCollection } from "astro:content";
 import { glob } from "astro/loaders";
+import { GLOB_EXCLUDES } from "./lib/published.mjs";
 
 export const collections = {
     docs: defineCollection({
         loader: glob({
-            pattern: ["**/*.md", "!**/*-LEDGER.md", "!DECISIONS-TO-REVIEW.md"],
+            pattern: ["**/*.md", ...GLOB_EXCLUDES],
             base: "../docs",
         }),
     }),

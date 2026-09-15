@@ -1,5 +1,6 @@
 import { visit } from "unist-util-visit";
 import path from "node:path";
+import { isPublished } from "../lib/published.mjs";
 
 /**
  * Rewrites the relative links in `docs/*.md` so the same file works both on GitHub and on
@@ -59,7 +60,13 @@ export default function remarkDocLinks({
                 return;
             }
 
-            // Inside docs/: a page on this site.
+            // Inside docs/, but not every docs file becomes a page. One that does not is
+            // repository bookkeeping, and a reader following it wants the file on GitHub.
+            const withoutExtension = resolved.replace(/\.md$/i, "");
+            if (!isPublished(withoutExtension)) {
+                node.url = `${repo}/blob/${branch}/docs/${withoutExtension}.md${hash}`;
+                return;
+            }
             node.url = `${prefix}/reference/${slugOf(resolved)}${hash}`;
         });
     };

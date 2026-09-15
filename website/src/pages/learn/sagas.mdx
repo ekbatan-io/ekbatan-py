@@ -1,0 +1,95 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Sagas
+activeSection: learn
+lead: Workflows that will not fit in one transaction — and what they cost the caller.
+---
+
+import CodeBlock from "../../components/CodeBlock.astro";
+import LearnPager from "../../components/LearnPager.astro";
+
+A saga models one business workflow as a sequence of smaller, independently committed actions.
+Use it when the workflow cannot honestly fit in one transaction: cross-shard transfers,
+cross-service work, or anything where a later step may need to compensate for one already
+committed.
+
+**There is no saga orchestrator here, and none is planned.** What the framework gives you is the
+two pieces a saga needs: every action commits its own state and events atomically, and the outbox
+lets a committed event reliably start the next step.
+
+So a saga is **action → committed event → post-commit consumer → next action**. That is
+choreography: there is no coordinator to ask what state a transfer is in, because the state *is*
+the rows.
+
+## The worked example
+
+[`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg)
+splits a transfer into three steps.
+
+| step | action | what commits atomically | event |
+| --- | --- | --- | --- |
+| 1 | `InitiateTransferAction` | debit the source | `TransferInitiatedEvent` |
+| 2 happy | `CompleteTransferAction` | credit the destination | `TransferCompletedEvent` |
+| 2 failed | `CompleteTransferAction` | mark it failed on the source | `TransferFailedEvent` |
+| 3 compensate | `RefundTransferAction` | credit the source back | `TransferRefundedEvent` |
+
+The happy path is two commits; the failure path is three. Every commit has its own outbox rows,
+so the trail shows what happened instead of pretending it was one invisible transaction.
+
+## What a saga costs a client: 202, not 200
+
+```
+POST /wallets/{id}/transfers   ->  202 Accepted, + transfer_id + status_url
+GET  /transfers/{id}           ->  IN_FLIGHT | COMPLETED | REFUNDED
+```
+
+When that response is written, **only step one has committed**: the money has left the source and
+has arrived nowhere. A 200 would be a claim about something still in flight. Returning 202 with a
+status URL is not politeness — it is the API telling the truth about what the database currently
+says, and it is how people avoid being surprised by a saga in production.
+
+The status endpoint reads the step markers, because that *is* the state.
+
+## Forward-only compensation
+
+The refund is not a rollback. By the time it runs, the debit has committed. The compensation is a
+**new business fact**: the source was credited back because transfer X failed.
+
+```
+TransferInitiated -> TransferFailed -> TransferRefunded
+```
+
+You can explain the system's behaviour after the fact, because every step was durable.
+
+## Idempotency is a constraint, not a check
+
+Delivery is at-least-once, so a handler can run twice. The example's shape is worth copying
+exactly:
+
+<CodeBlock filename="actions.py" language="python" shadow="orange" code={`def perform(self, params: CompleteTransferParams) -> Wallet | None:
+    # Staged *before* the credit, so the unique constraint decides whether this delivery is
+    # the first one. A replay stages the same marker, the insert is refused, and the credit
+    # beside it is rolled back with it - which is why the money cannot arrive twice.
+    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    ...`} />
+
+A check-then-act has a window. This has none, because the database refuses the duplicate and
+takes the credit down with it.
+
+## Terminal failures are events, not exceptions
+
+If the destination wallet is closed, retrying will never help. `CompleteTransferAction` emits
+`TransferFailedEvent` and **returns normally**. Raising would make the handler retry a transfer
+into a closed wallet forever — and "failed" is a business outcome that deserves a durable row
+like any other.
+
+## What you get, and what you do not
+
+You do not get global atomicity. A caller may observe intermediate state. The 202 is what makes
+that visible rather than surprising.
+
+What you get is a workflow that survives crashes and converges: each step commits atomically with
+the event announcing it, the next step is driven from a durable outbox row, failed business steps
+are visible in the event log, and compensation is explicit and auditable.
+
+<LearnPager current="sagas" />

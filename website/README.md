@@ -42,8 +42,30 @@ spacing and its breakpoints.
 | adapted - content changed, structure and CSS kept | `Nav`, `Footer`, `BaseLayout`, `index`, the two section indexes, `LearnPager` |
 | written here | the docs-rendering machinery, the palette, the Learn pages |
 
-`npm run check` is what keeps this honest: it reports every utility class used but not defined
-in the bundle, and the answer must not include anything the Java site does not also use.
+`npm run check` is what keeps this honest, and it runs in CI. Three checks:
+
+| | catches |
+| --- | --- |
+| `check-classes.mjs` | a utility class the frozen bundle does not define. Baselined against the Java site, so only *new* ones fail |
+| `check-links.mjs` | an internal link pointing at a page that was not built. The root's `scripts/links.py` cannot see this - a docs link is rewritten on the way in, so what must exist is the output |
+| `parity.mjs` | counts `PARITY.md`, which enumerates all 76 Java website files |
+
+Each of the first two has already caught a real break.
+
+## What is here, against Java's 76 files
+
+[`PARITY.md`](PARITY.md) is the ledger. The interactive pieces:
+
+| | |
+| --- | --- |
+| `DialectPicker` | four dialects, sticky, persisted. Switches every `[data-db]` block on the page |
+| `SetupPicker` | dialect x installer, with a per-dialect link to the matching example |
+| `GuidedFlow` | the two animated dual-write diagrams |
+| `AliasRenameFlow` | walks a handler rename, which is the most confusing thing in the event pipeline |
+| `LearnPager` | previous/next across the fourteen-page path |
+| `RedirectPage` | the `/concepts/` short URLs |
+
+Java's `NativeStackPicker` has no counterpart: CPython has no native image.
 
 ## The one file that owns the colours
 

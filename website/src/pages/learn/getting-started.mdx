@@ -1,0 +1,113 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Getting started
+activeSection: learn
+lead: One wallet change, followed all the way through. Everything else on this path is a detail of this page.
+---
+
+import CodeBlock from "../../components/CodeBlock.astro";
+import LearnPager from "../../components/LearnPager.astro";
+
+A deposit into a wallet. Watch what the database ends up holding, and what you did not have to
+write to get it there.
+
+## 1. The change happens on the model
+
+```python
+def deposit(self, amount: Decimal) -> Wallet:
+    new_balance = self.balance + amount
+    return (
+        self.copy()
+        .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+        .balance(new_balance)
+        .build()
+    )
+```
+
+Two things at once, in one expression: the new balance, and **the fact that it changed**. They
+are attached to the same object, so there is no path where one exists without the other.
+
+The wallet is a frozen dataclass, so this returns a *new* wallet. The old one is untouched.
+
+## 2. The action stages it
+
+```python
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    def perform(self, params: DepositParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+`self.plan.update` **writes nothing**. It stages. `perform()` returns, and only then does the
+executor open a transaction.
+
+That split is the whole design. During `perform()` you read and construct freely; the plan
+collects immutable snapshots; a half-written state is not expressible.
+
+## 3. The executor commits
+
+```python
+wallet = executor.execute(
+    DepositMoneyAction,
+    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+)
+```
+
+One transaction. Inside it:
+
+```
+UPDATE wallets SET balance = 125.50, version = 2 WHERE id = ? AND version = 1
+INSERT INTO events (id, action_id, action_name, event_type, payload, ...) VALUES (...)
+COMMIT
+```
+
+The row and the event, together. If either fails, neither happened.
+
+## 4. What is in the database now
+
+```sql
+SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date;
+```
+
+| action_name | model_type | event_type | delivered |
+| --- | --- | --- | --- |
+| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | false |
+| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | false |
+
+That table is an **outbox**. A CDC connector can tail it, or the in-process handler can drain
+it, or both. `delivered` is how the in-process path marks its own progress; a CDC-only
+deployment ignores it.
+
+## 5. Something reacts
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        ...
+```
+
+Register it and two background jobs do the rest: fan-out turns the event row into a delivery
+row per subscribed handler, dispatch invokes the handler with retry and expiry. Both are
+cluster-exclusive, so exactly one instance runs each.
+
+## What you did not write
+
+Read back over it. There is no `BEGIN`, no `COMMIT`, no flush, no publish call, and **no
+mention of an outbox anywhere except the query that read it**.
+
+That is the point, and it is worth being precise about why it matters. The alternative — write
+the row, then publish to the broker — is two operations across two systems, and a crash between
+them leaves them permanently disagreeing. Most teams bolt an outbox on: add a table, remember to
+write to it in every transaction, build a poller. It works, and you carry the discipline
+forever. Here there is no second table to remember, because you never write to it.
+
+## Where to next
+
+The rest of this path is detail. If you want the argument, read
+[the dual-write trap](/learn/the-dual-write-trap/) next. If you want to build something, skip to
+[your first action](/learn/your-first-action/).
+
+<LearnPager current="getting-started" />
