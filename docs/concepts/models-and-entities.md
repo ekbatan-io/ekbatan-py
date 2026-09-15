@@ -71,6 +71,36 @@ Two patterns worth naming:
 `close()` returning `self` when already closed is the shape to copy: nothing staged means
 nothing emitted, and the action's invocation is still recorded as a sentinel row.
 
+### If you are coming from Django or the SQLAlchemy ORM
+
+`deposit()` returning a *new* wallet instead of assigning to `self.balance` is the part that
+looks strange, so it is worth saying plainly what it is and is not.
+
+`@dataclass(frozen=True, kw_only=True)` is ordinary, idiomatic Python - the standard library has
+had dataclasses since 3.7, and pydantic, pytest, anyio, FastAPI and SQLAlchemy all use frozen
+ones. What is unusual is *what* is frozen here. The ecosystem freezes **value objects**: cache
+keys, config values, durations, markers. This framework freezes the **aggregate**.
+
+That is a deliberate stance rather than a Python convention, and the reason is
+[two-phase execution](actions.md#the-two-phases). The plan holds a *reference* to what you
+staged, and the executor writes it later, inside a transaction. With a mutable model, anything
+touching that object between staging and commit would silently change what got written - a
+deposit of 100 committing as 0. Frozen makes that unwritable rather than merely discouraged.
+
+What you give up is ORM-style dirty tracking. There is no `session.commit()` working out what
+changed; you say what changed, explicitly, through the plan. That is more typing, and it is what
+makes the outbox guarantee expressible at all.
+
+The Java port takes the identical stance - `public final` fields, a `copy()` builder, a `deposit`
+that returns a new `Wallet`. This is not a Python-side invention.
+
+`kw_only` is doing two jobs, and the second is not optional. It stops transposition, because
+`owner_id` sits next to `currency` and `started_date` next to `completion_date` - adjacent
+same-typed fields that swap silently when passed positionally. It also makes the inheritance
+legal at all: the base carries `version` and the timestamps, all with defaults, and a subclass
+field without one would otherwise be *"non-default argument follows default argument"*, a
+`TypeError` at class-definition time. Keyword arguments have no order, so that cannot arise.
+
 ### `copy()` versus `evolve()`
 
 `evolve()` is the framework's own shorthand and exists because internal code needs it. Domain
