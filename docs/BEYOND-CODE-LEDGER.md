@@ -26,18 +26,19 @@ Status is one of:
 | `config/` | 1 | Spotless configuration. Ruff's settings live in `pyproject.toml` |
 | `website/dist`, `website/node_modules` | many | build output |
 
-## The decision this ledger cannot make for you
+## The decision this ledger could not make, now made
 
-**The website.** Java's is 76 source files of Astro at `ekbatan-io.github.io/ekbatan`, and this
-port's README already links to it. Three options, and they are very different amounts of work:
+**The website: its own Astro site inside this repository**, deployed separately as a GitHub
+Page. Decided by the user, against the alternative of rendering `docs/` with a Python generator.
 
-1. **Add Python pages to the existing site** - one site, a language switcher, shared concept
-   pages. Least work, and a reader comparing the two ports never leaves the page.
-2. **A second site** for `ekbatan-py`. Most work, and the concept pages would be maintained twice.
-3. **No site**; `docs/` and the README carry it.
+The reasoning that settled it: matching the Java site's look mattered more than staying on one
+toolchain. What that cost is Node in the repository - confined to `website/` and to its own
+workflow.
 
-Every row under *Website* below is `todo` pending that choice, and the count reflects it. Pick
-one and the rows either collapse to `n/a` or become real work.
+What it did **not** cost is a second copy of the prose, and that is the part worth recording.
+The reference section is `docs/` itself: Astro's glob loader reads from outside `src/`, so a
+website page and its docs counterpart cannot drift because they are one file. The
+website-docs-sync rule that exists to police that duplication has nothing left to police.
 
 ---
 
@@ -60,7 +61,7 @@ The smallest set, and the one with a real defect in it.
 | .github/workflows/ci.yml | 180 | `.github/workflows/ci.yml` | done - lint, unit, four dialects, examples, tracing. **Has never run: this repository has no remote** |
 | .github/workflows/heavy-verification.yml | 96 | - | n/a - native-image and the example grid build. Neither has a Python counterpart |
 | .github/workflows/release.yml | 110 | `.github/workflows/release.yml` | done - verify, build, smoke, publish, release. `uv publish --trusted-publishing always`, so no secret exists to leak. Written with RELEASE.md rather than an iteration later, because a procedure describing a workflow that does not exist is the thing this ledger exists to prevent |
-| .github/workflows/deploy-website.yml | 40 | - | todo - blocked on the website decision above |
+| .github/workflows/deploy-website.yml | 40 | `.github/workflows/deploy-website.yml` | done - builds `website/` with `BASE=/ekbatan-py/` and publishes it as this repository's GitHub Page. Its own workflow, and triggered by `docs/**` as well as `website/**`, because the reference section *is* the docs tree |
 | - | - | `.github/workflows/db-scheduler.yml` | done - no Java counterpart; the vendored distribution has its own suite |
 
 ## Documentation - the concepts
@@ -155,12 +156,15 @@ Every row here is blocked on the decision at the top of this file.
 
 | Java | files | Python | status |
 | --- | --- | --- | --- |
-| website/src/pages/concepts | 7 | - | todo |
-| website/src/pages/learn | 9 | - | todo |
-| website/src/components, layouts | 13 | - | todo |
-| website/src/pages (index, other) | 4 | - | todo |
-| website/public/fonts | 11 | - | todo |
-| website/astro.config.mjs, package.json, tsconfig.json | 3 | - | todo |
+| website/src/pages/concepts | 7 | `website/src/pages/reference/[...slug].astro` | done - **rendered from `docs/concepts/`, not copied.** One dynamic route replaces seven pages and cannot go stale |
+| website/src/pages/learn | 9 | `website/src/pages/learn/*.mdx` | done - five pages, this port's own writing. The one section that is genuinely its own content rather than a rendering of the docs |
+| website/src/components, layouts | 13 | `website/src/components`, `website/src/layouts` | done - `CodeBlock`, `SectionCard` and `DocLayout` byte-identical; `Nav`, `Footer` and `LearnPager` adapted for content with their CSS kept. **Every shared file's `<style>` block is byte-identical, media queries included** - which is what makes the two behave the same at every width |
+| website/src/pages (index, other) | 4 | `website/src/pages/index.astro`, `privacy.astro`, two section indexes | done - the landing page is Java's, including the animated SVG diagrams, with Python content |
+| website/public/fonts | 11 | `website/public/fonts` | done - byte-identical |
+| website/astro.config.mjs, package.json, tsconfig.json | 3 | the same three | done - **Astro 7.3.2**, where Java pins 6.x. Astro 7 made a different Markdown processor the default, so `@astrojs/markdown-remark` is an explicit dependency |
+| - | - | `website/src/styles/palette.css` | done - **no Java counterpart.** Four custom properties; the one file to change to recolour the site |
+| - | - | `website/src/plugins/remark-doc-links.mjs` | done - **no Java counterpart, and the piece that makes rendering `docs/` work.** A link that stays inside docs/ becomes a `/reference/` URL; one that escapes becomes the file on GitHub |
+| - | - | `website/scripts/check-classes.mjs` | done - **no Java counterpart.** Reports every utility class used but not defined in the frozen bundle. It exists because that bundle is tree-shaken from the Java site's HTML, so a class that site never used does nothing, silently - which is how a hand-written `md:hidden` left the MENU button showing at every width |
 
 ## Process
 

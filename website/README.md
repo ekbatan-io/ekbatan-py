@@ -60,9 +60,9 @@ The three font families (Space Grotesk, DM Sans, JetBrains Mono) are self-hosted
 ## Links
 
 `src/plugins/remark-doc-links.mjs` exists because the docs are written to be read **in the
-repository** — `[the outbox](outbox.md)`,
-`[app.py](../../ekbatan-py-examples/fastapi_wallet_rest_pg/app.py)`. Those resolve on GitHub and
-would 404 here. Two rules:
+repository**. A page says `[the outbox](outbox.md)` or
+`[app.py](../../ekbatan-py-examples/.../app.py)` — spellings that resolve on GitHub and would
+404 here. Two rules:
 
 | a link that… | becomes |
 | --- | --- |
