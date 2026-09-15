@@ -1,0 +1,262 @@
+---
+// Brutalist code block — three colored "macOS window" dots, filename + language
+// chip in the header, line numbers, 2px ink border, brutalist-shadow drop.
+//
+// Internally uses Shiki (same highlighter Astro uses for fenced markdown code
+// blocks) so the color scheme matches everywhere on the site — github-light
+// theme, full Java/Kotlin/SQL/YAML/etc. token coloring. We then layer the
+// brutalist chrome and the errorTokens "red squiggle" effect on top of
+// Shiki's output.
+
+import { codeToHtml } from "shiki";
+
+interface Props {
+    /** Shown in the dotted header. */
+    filename: string;
+    /** Both the visual chip on the right AND the Shiki language hint (`java`, `kotlin`, `xml`, `yaml`, `properties`, `bash`, `sql`, ...). */
+    language: string;
+    /** Raw source as a single string; we split on \n for line numbers. */
+    code: string;
+    /** Drop-shadow tint. */
+    shadow?: "default" | "orange" | "yellow" | "grey" | "brown" | "darkblue";
+    /**
+     * Identifiers to render with a red wavy underline (the "compile error"
+     * effect the IDE shows for unresolved symbols). Useful for showing what
+     * jOOQ codegen will eventually produce before it's actually been run.
+     */
+    errorTokens?: readonly string[];
+}
+
+const {
+    filename,
+    language,
+    code,
+    shadow = "default",
+    errorTokens = [],
+} = Astro.props;
+
+// IDE-style breadcrumb: dim the directory part of the path, keep the filename
+// itself at full opacity. Lets us put the whole `src/main/java/.../Foo.java`
+// path in the header without overwhelming the eye.
+const slashIdx = filename.lastIndexOf("/");
+const filenameDir = slashIdx >= 0 ? filename.slice(0, slashIdx + 1) : "";
+const filenameBase = slashIdx >= 0 ? filename.slice(slashIdx + 1) : filename;
+
+const shadowClass =
+    shadow === "orange"
+        ? "brutalist-shadow-orange"
+        : shadow === "yellow"
+          ? "brutalist-shadow-yellow"
+          : shadow === "grey" || shadow === "brown" || shadow === "darkblue"
+            ? ""   // applied via inline style below — no class exists in the frozen Tailwind bundle
+            : "brutalist-shadow";
+
+// `grey`, `brown`, `darkblue` aren't in the bundled .brutalist-shadow-* class set;
+// emit them inline. These let us color-code file roles in the docs:
+//   grey     → ambient/infra files (compose.yaml)
+//   brown    → build descriptors + DB migrations (build.gradle.kts, *.sql)
+//   darkblue → runtime config (application.yml, application.properties)
+const shadowStyle =
+    shadow === "grey"     ? "box-shadow:6px 6px 0 0 #9ca3af"   // Tailwind gray-400
+  : shadow === "brown"    ? "box-shadow:6px 6px 0 0 #92400e"   // Tailwind amber-800, warm brown
+  : shadow === "darkblue" ? "box-shadow:6px 6px 0 0 #1e3a8a"   // Tailwind blue-900
+  : undefined;
+
+function escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Highlight via Shiki. Matches the github-light theme set in astro.config.mjs
+// for markdown fenced blocks, so a `<CodeBlock language="java">` and a
+// ```java fenced block on the same page look identical.
+const shikiHtml = await codeToHtml(code.replace(/\n$/, ""), {
+    lang: language,
+    theme: "github-light",
+});
+
+// Shiki wraps with <pre class="shiki ..."><code>...</code></pre>. Strip those
+// outer tags — we want just the colored span markup so we can re-wrap with
+// our own line-numbered <pre>.
+const codeMatch = shikiHtml.match(/<code[^>]*>([\s\S]*)<\/code>/);
+const inner = codeMatch ? codeMatch[1] : shikiHtml;
+
+// Split into lines. Each line is a row of colored <span style="color:#…"> tokens
+// followed by \n. (When Shiki emits .line wrapper spans we'd need a different
+// split, but with the default the inner content is just plain newline-
+// separated lines.)
+const rawLines = inner.split("\n");
+
+// Apply errorTokens AFTER Shiki, so the red-squiggle span ends up nested inside
+// the Shiki color span. Both CSS effects compose: Shiki provides the color, our
+// .compile-error class adds the wavy underline. We run a literal regex against
+// the Shiki HTML — the tokens we look for (e.g. WALLETS, WalletsRecord) never
+// appear in inline `style="color:#…"` attributes, so no false matches.
+const lines = rawLines.map((line) => {
+    let processed = line;
+    for (const tok of errorTokens) {
+        processed = processed.replace(
+            new RegExp(`\\b${escapeRegex(tok)}\\b`, "g"),
+            `<span class="compile-error">${tok}</span>`,
+        );
+    }
+    return processed;
+});
+---
+
+<div class:list={["brutalist-border", shadowClass, "bg-paper", "min-w-0", "code-card"]} style={shadowStyle}>
+    <div
+        class="flex items-center justify-between border-b-2 border-ink px-3 py-2 bg-ink text-paper"
+    >
+        <div
+            class="flex items-center gap-2 font-mono text-[10px] tracking-widest"
+        >
+            <span class="w-2 h-2 bg-[color:var(--brand-orange)]"></span>
+            <span class="w-2 h-2 bg-[color:var(--brand-yellow)]"></span>
+            <span class="w-2 h-2 bg-paper/60"></span>
+            <span class="ml-2">
+                {filenameDir && (
+                    <span style="opacity:0.55">{filenameDir}</span>
+                )}
+                {filenameBase}
+            </span>
+        </div>
+        <span
+            class="font-mono text-[10px] uppercase tracking-widest text-[color:var(--brand-yellow)]"
+            >{language}</span
+        >
+    </div>
+    <button
+        type="button"
+        class="copy-btn-floating"
+        data-code={code}
+        aria-label="Copy code"
+    >Copy</button>
+    <pre class="code-pre font-mono text-[12px] p-4 overflow-x-auto leading-6 bg-paper"><code>{lines.map((html, i) => (
+            <div class="flex">
+                <span class="line-num select-none pr-2 text-right text-[color:var(--muted-foreground)] text-[10px]">{i + 1}</span>
+                <span class="flex-1 whitespace-pre" set:html={html} />
+            </div>
+        ))}</code></pre>
+</div>
+
+<script>
+    // Wire up every .copy-btn on the page. The raw source is on `data-code` so
+    // we copy exactly what was passed into the component (no line numbers,
+    // no Shiki color spans). Visual feedback: button text → "Copied" for 1.5s,
+    // then reverts. Astro dedupes <script> tags across component usages so
+    // this listener installs once per page, not per CodeBlock.
+    document.querySelectorAll<HTMLButtonElement>(".code-card > .copy-btn-floating").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+            const code = btn.dataset.code ?? "";
+            try {
+                await navigator.clipboard.writeText(code);
+            } catch {
+                // Older browsers / non-HTTPS contexts — fallback via execCommand
+                const ta = document.createElement("textarea");
+                ta.value = code;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand("copy"); } catch {}
+                document.body.removeChild(ta);
+            }
+            const original = btn.textContent;
+            btn.textContent = "Copied";
+            btn.classList.add("copied");
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.classList.remove("copied");
+            }, 1500);
+        });
+    });
+</script>
+
+<style>
+    /* Line-number gutter: fixed width so every line's gutter is the same size
+       regardless of digit count (1, 11, 111, etc. all align at the right
+       edge). `w-6` from the original markup wasn't in the frozen Tailwind
+       bundle, which left the span content-sized — single digits got a
+       narrower gutter than double digits. font-variant-numeric: tabular-nums
+       forces equal-width digit glyphs even if the mono font isn't strictly
+       tabular for numerals. */
+    .line-num {
+        display: inline-block;
+        width: 2rem;
+        font-variant-numeric: tabular-nums;
+        /* The line-num lives in a `flex` row alongside a long code span. If
+           a code line overflows horizontally (like a long URL or path), the
+           default flex-shrink:1 would compress the line-num to make room,
+           making double-digit numbers appear narrower than single-digit ones
+           above. Pin the width so all gutters stay the same regardless of
+           how wide the corresponding code line is. */
+        flex-shrink: 0;
+    }
+    /* Lay out the card as a 2-row Grid: header on row 1, code on row 2. The
+       copy button is placed in the SAME cell as the <pre> (row 2) and pushed
+       to the top-right corner via justify-self/align-self — overlapping the
+       pre without needing an extra wrapper div, and without being a child
+       of the scrolling <pre> (which would make it drift with horizontal
+       scroll). Header height can grow freely without dislodging the button. */
+    .code-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "header"
+            "code";
+    }
+    .code-card > .code-pre {
+        grid-area: code;
+        min-width: 0;
+    }
+    .code-card > .copy-btn-floating {
+        grid-area: code;
+        justify-self: end;
+        align-self: start;
+        margin: 0.4rem 0.6rem 0 0;
+        z-index: 1;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink, #0a0a0a);
+        background: rgba(250, 250, 250, 0.85);
+        padding: 0.1rem 0.35rem;
+        border: 0;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s ease, color 0.15s ease;
+    }
+    .code-card:hover > .copy-btn-floating,
+    .code-card > .copy-btn-floating:focus,
+    .code-card > .copy-btn-floating.copied {
+        opacity: 1;
+    }
+    .code-card > .copy-btn-floating:hover,
+    .code-card > .copy-btn-floating.copied,
+    .code-card > .copy-btn-floating.copied:hover {
+        color: var(--brand-orange);
+    }
+    /* Code lines stay on one line (`white-space: pre` is critical so syntax
+       highlighting and indentation are preserved); the <pre> scrolls
+       horizontally when content exceeds the box. Use a thin macOS-style
+       overlay scrollbar so it doesn't visually compete with the brutalist
+       chrome — narrow, no track, semi-transparent ink thumb, rounded. */
+    pre {
+        scrollbar-width: thin; /* Firefox */
+        scrollbar-color: rgba(10, 10, 10, 0.25) transparent;
+    }
+    pre::-webkit-scrollbar {
+        height: 6px;
+    }
+    pre::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    pre::-webkit-scrollbar-thumb {
+        background: rgba(10, 10, 10, 0.25);
+        border-radius: 3px;
+    }
+    pre::-webkit-scrollbar-thumb:hover {
+        background: rgba(10, 10, 10, 0.45);
+    }
+</style>

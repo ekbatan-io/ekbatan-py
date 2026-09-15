@@ -1,0 +1,87 @@
+---
+// /reference/ - the repository's docs/ tree, grouped. Java's structure and card component.
+//
+// Built from the collection rather than a hand-written list, so a page added to docs/ appears
+// here without anyone remembering to add it.
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import SectionCard from "../../components/SectionCard.astro";
+import { getCollection } from "astro:content";
+import { titleOf, leadOf, slugOf, truncate } from "../../lib/docs";
+
+const B = import.meta.env.BASE_URL;
+const entries = await getCollection("docs");
+
+const GROUPS = [
+    { key: "", label: "Start here" },
+    { key: "concepts", label: "Concepts" },
+    { key: "database", label: "Database" },
+    { key: "events", label: "Events out" },
+    { key: "jobs", label: "Jobs" },
+    { key: "runtime", label: "Runtime" },
+];
+
+function groupOf(id: string) {
+    const top = id.includes("/") ? id.split("/")[0] : "";
+    return GROUPS.some((g) => g.key === top) ? top : "";
+}
+
+const pages = entries
+    .map((entry) => ({
+        href: `${B}reference/${slugOf(entry.id)}${slugOf(entry.id) ? "/" : ""}`,
+        title: titleOf(entry),
+        blurb: truncate(leadOf(entry), 150),
+        group: groupOf(entry.id),
+        // A section's own README sorts first within its group.
+        index: entry.id.toLowerCase().endsWith("readme"),
+        id: entry.id,
+    }))
+    .sort((a, b) => Number(b.index) - Number(a.index) || a.id.localeCompare(b.id));
+---
+
+<BaseLayout
+    title="Reference"
+    description="Every page of the ekbatan-py documentation: concepts, the database layer, events, jobs and runtime."
+    activeSection="reference"
+>
+    <section class="border-b-2 border-ink">
+        <div class="container-px max-w-7xl mx-auto py-20 md:py-28">
+            <div class="inline-flex items-center gap-3 brutalist-border bg-ink text-paper font-mono text-[11px] uppercase tracking-widest px-3 py-1.5">
+                <span class="text-yellow">§</span><span>Reference</span>
+            </div>
+            <h1 class="font-display font-bold text-5xl md:text-7xl tracking-tight max-w-4xl text-balance mt-6 leading-[0.95]">
+                Every page.
+                <span class="bg-yellow px-2">In one place.</span>
+            </h1>
+            <p class="mt-6 max-w-2xl text-lg leading-relaxed">
+                These pages are the repository's own <span class="bg-yellow px-1">docs/</span>{" "}
+                directory, rendered. Not a copy of it - the same files, so what you read here and
+                what you read on GitHub cannot drift apart.
+            </p>
+
+            {
+                GROUPS.map((group) => {
+                    const inGroup = pages.filter((p) => p.group === group.key);
+                    if (!inGroup.length) return null;
+                    return (
+                        <div class="mt-14">
+                            <h2 class="font-display text-3xl font-bold tracking-tight border-b-2 border-ink pb-2">
+                                {group.label}
+                            </h2>
+                            <div class="mt-6 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                {inGroup.map((page) => (
+                                    <SectionCard
+                                        href={page.href}
+                                        title={page.title}
+                                        blurb={page.blurb}
+                                        status="ready"
+                                        size="compact"
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })
+            }
+        </div>
+    </section>
+</BaseLayout>

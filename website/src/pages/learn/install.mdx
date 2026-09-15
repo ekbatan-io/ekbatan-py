@@ -1,0 +1,94 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Install it
+activeSection: learn
+lead: One dependency line, two generators, and the four lines of Makefile that replace what Gradle does for the Java port.
+---
+
+import LearnPager from "../../components/LearnPager.astro";
+
+## What you need
+
+**Python 3.13 or newer**, and a database: PostgreSQL, MySQL or MariaDB.
+
+SQLite works and the test suite runs on it, but it is not a supported production dialect — it
+has no `SKIP LOCKED`, so the job scheduler and the keyed lock degrade to behaviour that is fine
+for one process and wrong for a cluster.
+
+## Install
+
+```bash
+uv add ekbatan[postgres]
+```
+
+Everything optional is an extra, and nothing you do not name is installed:
+
+| extra | brings | when |
+|---|---|---|
+| `postgres` | psycopg 3 | your dialect |
+| `mysql`, `mariadb` | PyMySQL | your dialect |
+| `migrations` | Alembic | you want migrations run across every shard |
+| `redis` | redis-py | the Redis keyed lock rather than the SQL one |
+| `codegen` | testcontainers | **development only** — see below |
+
+`SQLAlchemy` and `ekbatan-py-db-scheduler` come unconditionally.
+
+`codegen` belongs in the dev group, not the runtime dependencies. It starts a database
+container to reflect your schema — a thing your build does and your deployment must never do:
+
+```bash
+uv add --dev ekbatan[codegen]
+```
+
+That is the whole of the setup. There is **no counterpart to the Java port's five numbered
+gotchas** — no BOM to override, no annotation processor to put on two classpaths, no
+`-parameters` flag, no compile-time visitor to forget. Python resolves parameter names at
+runtime for free, which is the single reason most of that page exists.
+
+## The two generators
+
+One is committed, one is not, and the difference is what each is derived from.
+
+**Typed builders — committed.**
+
+```bash
+uv run python -m ekbatan.codegen myapp.model --out myapp/builders.py
+```
+
+`wallet.copy().balance(...)` works with nothing generated. What it cannot do is tell a *type
+checker* that `.balance(...)` takes a `Decimal` — the setters resolve by name at runtime, so a
+checker sees only `__getattr__`. That is the one thing worth generating, and the only thing
+this generates. Commit the output: it is derived from source you already have.
+
+**Table definitions — gitignored.**
+
+```bash
+uv run python -m ekbatan.schemagen --migrations migrations --out myapp/schema.py
+```
+
+Starts a throwaway container, runs **your** migrations into it, reflects the result. The
+counterpart to the Java port's jOOQ step, and its output is gitignored for the same reason
+`build/generated-jooq` is: it is derived from a database you have to start.
+
+## A Makefile, because uv has no task runner
+
+`uv` manages dependencies and runs commands. What it does not have — and this is the one real
+gap against Gradle — is a **dependency graph**: something that knows `schema.py` comes from
+`migrations/` and rebuilds it when they change.
+
+```make
+schema.py: $(wildcard migrations/versions/*.py)
+	uv run python -m ekbatan.schemagen --migrations migrations --out $@
+
+lint: schema.py
+	uv run mypy
+```
+
+The dependency on the migration files is what makes this bearable in front of every other
+target: **it starts a container when they change and does nothing when they have not.** That is
+Gradle's up-to-date check, in one line.
+
+`lint` depends on it because mypy reads the generated module — a fresh clone would otherwise
+report `cannot find implementation for module myapp.schema`, which is true and unhelpful.
+
+<LearnPager current="install" />

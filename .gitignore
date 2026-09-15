@@ -8,3 +8,9 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+
+# The website's build output and toolchain. `website/.gitignore` covers these too; they are
+# repeated here so a `git status` from the root is clean without descending.
+website/dist/
+website/node_modules/
+website/.astro/

@@ -1,0 +1,111 @@
+---
+// Global footer - Java's, with this port's content. Three columns: brand + licence, links,
+// "built with". Carried over verbatim so the two sites are one project end to end.
+//
+// Lifted from the original landing page's <footer>. Keeping it identical to
+// preserve the brutalist identity end-to-end — same ink background, paper
+// text, yellow accent headings, mono uppercase tracking-widest.
+const privacyHref = `${import.meta.env.BASE_URL}privacy/`;
+---
+
+<footer class="bg-ink text-paper">
+    <div
+        class="container-px max-w-7xl mx-auto py-12 grid md:grid-cols-3 gap-8 items-start"
+    >
+        <div>
+            <div class="flex items-center gap-3">
+                <div
+                    class="w-8 h-8 brutalist-border border-paper bg-yellow flex items-center justify-center"
+                >
+                    <div class="w-3 h-3 bg-ink rounded-full"></div>
+                </div>
+                <span class="font-display text-xl font-bold tracking-tight"
+                    >EKBATAN</span
+                >
+                <span class="font-mono text-[10px] bg-orange text-paper px-1.5 py-0.5">PY</span>
+            </div>
+            <p
+                class="font-mono text-[11px] uppercase tracking-widest mt-4 text-paper/60"
+            >
+                Apache 2.0 · pypi.org/project/ekbatan
+            </p>
+        </div>
+        <div>
+            <div
+                class="font-mono text-[10px] uppercase tracking-widest text-yellow mb-3"
+            >
+                Links
+            </div>
+            <ul class="space-y-2 font-mono text-sm">
+                <li>
+                    <a
+                        href="https://github.com/ekbatan-io/ekbatan-py"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="hover:bg-yellow hover:text-ink px-1 transition-colors"
+                        >GitHub</a
+                    >
+                </li>
+                <li>
+                    <a
+                        href="https://pypi.org/project/ekbatan/"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="hover:bg-yellow hover:text-ink px-1 transition-colors"
+                        >PyPI</a
+                    >
+                </li>
+                <li>
+                    <a
+                        href="https://ekbatan-io.github.io/ekbatan/"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="hover:bg-yellow hover:text-ink px-1 transition-colors"
+                        >The Java port ↗</a
+                    >
+                </li>
+                <li>
+                    <a
+                        href="https://www.apache.org/licenses/LICENSE-2.0"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="hover:bg-yellow hover:text-ink px-1 transition-colors"
+                        >Apache License 2.0</a
+                    >
+                </li>
+                <li>
+                    <a
+                        href={privacyHref}
+                        class="hover:bg-yellow hover:text-ink px-1 transition-colors"
+                        >Privacy</a
+                    >
+                </li>
+            </ul>
+        </div>
+        <div>
+            <div
+                class="font-mono text-[10px] uppercase tracking-widest text-yellow mb-3"
+            >
+                Built with
+            </div>
+            <ul class="space-y-2 font-mono text-sm text-paper/80">
+                <li>Python 3.13 · frozen dataclasses</li>
+                <li>SQLAlchemy 2.0 Core · no ORM</li>
+                <li>PostgreSQL · MySQL · MariaDB</li>
+            </ul>
+        </div>
+    </div>
+    <div class="border-t-2 border-paper/20">
+        <div
+            class="container-px max-w-7xl mx-auto py-4 font-mono text-[10px] uppercase tracking-widest text-paper/50 flex flex-wrap gap-3 justify-between"
+        >
+            <span>© 2026 · a port of ekbatan</span>
+            <span class="flex gap-3">
+                <a href={privacyHref} class="hover:text-yellow transition-colors"
+                    >Privacy</a
+                >
+                <span>made with conviction</span>
+            </span>
+        </div>
+    </div>
+</footer>

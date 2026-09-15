@@ -1,0 +1,48 @@
+---
+// /learn/ - the guided path. Java's structure and card component, with this port's five
+// lessons. Copied rather than rewritten: the frozen bundle only contains classes the Java
+// site used, so hand-rolled markup silently loses its spacing and breakpoints.
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import SectionCard from "../../components/SectionCard.astro";
+import { LEARN_PAGES } from "../../lib/learn";
+
+const linkTo = (p: string) => `${import.meta.env.BASE_URL}${p.replace(/^\//, "")}`;
+---
+
+<BaseLayout
+    title="Learn"
+    description="A path through ekbatan-py in order: install it, write one action, wire a service, consume the events, go to production."
+    activeSection="learn"
+>
+    <section class="border-b-2 border-ink">
+        <div class="container-px max-w-7xl mx-auto py-20 md:py-28">
+            <div class="inline-flex items-center gap-3 brutalist-border bg-ink text-paper font-mono text-[11px] uppercase tracking-widest px-3 py-1.5">
+                <span class="text-yellow">§</span><span>Learn</span>
+            </div>
+            <h1 class="font-display font-bold text-5xl md:text-7xl tracking-tight max-w-4xl text-balance mt-6 leading-[0.95]">
+                Five pages.
+                <span class="bg-orange text-paper px-2">In order.</span>
+            </h1>
+            <p class="mt-6 max-w-2xl text-lg leading-relaxed">
+                Read them top to bottom the first time. Each one ends where the next begins, and
+                by the last you will have a service that commits state and events together,
+                handles those events, and can be deployed. Looking something up rather than
+                learning it? The <a href={linkTo("/reference/")} class="bg-yellow px-1">reference</a>{" "}
+                is the whole documentation tree.
+            </p>
+            <div class="mt-14 grid md:grid-cols-2 gap-5">
+                {
+                    LEARN_PAGES.map((page, i) => (
+                        <SectionCard
+                            href={linkTo(`/learn/${page.slug}/`)}
+                            title={page.title}
+                            blurb={page.blurb}
+                            status="ready"
+                            index={String(i + 1).padStart(2, "0")}
+                        />
+                    ))
+                }
+            </div>
+        </div>
+    </section>
+</BaseLayout>

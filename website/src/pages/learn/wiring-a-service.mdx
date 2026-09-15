@@ -1,0 +1,140 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Wiring a service
+activeSection: learn
+lead: One function, one object, three pools — and why the third one exists.
+---
+
+import LearnPager from "../../components/LearnPager.astro";
+
+The Java port has five wiring pages: Spring, Quarkus, Micronaut, the annotations that drive all
+three, and one for doing it by hand. Only the last has a counterpart here.
+
+That is not a gap being apologised for — it is the difference in how the two languages assemble
+a program. DI integration exists there because constructing twenty objects in the right order in
+a `main()` is genuinely unpleasant, and because classpath scanning can find your actions without
+you listing them. In Python, listing them is a function, the order is the order you read it in,
+and there is nothing to discover because you can see it.
+
+## The shape
+
+One function returning one object. Nothing above it knows which database, which handlers or
+which jobs; nothing below it does either.
+
+```python
+@dataclass(frozen=True, slots=True)
+class WalletService:
+    registry: DatabaseRegistry
+    wallets: WalletRepository
+    executor: ActionExecutor
+    locks: KeyedLockProvider
+    jobs: JobRegistry
+
+    def start(self) -> None:
+        self.jobs.start()
+
+    def close(self) -> None:
+        # Order matters: stop taking work before closing what the work runs on.
+        self.jobs.stop()
+        self.locks.close()
+        self.registry.close()
+```
+
+## Migrate before anything opens a pool
+
+```python
+if config.run_migrations:
+    migrate(layout, MIGRATIONS)
+
+registry = DatabaseRegistry.from_config(layout)
+```
+
+`migrate` drives Alembic as a **library** — there is no `alembic.ini` and no `env.py`, because a
+config file that has to be found is a config file that is missing in the one environment you did
+not test.
+
+It also refuses to run if a revision that was already applied has since been edited. Alembic does
+not check that; Flyway does, and losing the check on the way across would have been a silent
+downgrade.
+
+## Register what exists
+
+```python
+executor = ActionExecutor(
+    namespace="com.example.wallets",
+    registry=registry,
+    repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
+    actions=(
+        ActionRegistry.builder()
+        .with_action(OpenWalletAction())
+        .with_action(DepositMoneyAction(wallets))
+        .build()
+    ),
+    events=EVENTS,
+)
+```
+
+There is no `@EkbatanAction` and nothing scanning your package for one. The framework knows
+about exactly what you put in a registry. That is a real trade:
+
+- an action you forget to register fails at `execute` — at runtime, not at compile time, where
+  the Java port's Micronaut integration would have caught it;
+- against that, you can read this file and know what the program contains.
+
+`namespace` is stamped on every outbox row and is how a consumer tells one service's events from
+another's. It must be **dot-separated identifiers, shaped like a package** — and a hyphen is
+refused at startup, because the namespace doubles as a schema package when streaming and
+`package my-service;` is a protobuf syntax error. Write `my_service`.
+
+## Three pools, and why
+
+This is the part worth copying into a real deployment.
+
+| pool | sized for | why it is separate |
+|---|---|---|
+| **requests** | concurrent requests | the ordinary one |
+| **jobs** | at least twice the worker count | the scheduler heartbeats from a housekeeping thread. Share the request pool and a traffic burst can starve that heartbeat — and **an execution whose heartbeat stops is declared dead and run again somewhere else** |
+| **locks** | maximum leases held at once | a keyed lock holds its connection for the life of the lease. That *is* the lock |
+
+The jobs pool default is 8, not 3, for a reason worth repeating: a job body holding the last
+connection starves the heartbeat. The scheduler warns at startup when the pool is too small —
+and did, while the examples were being written.
+
+## Under FastAPI
+
+Build once, in a lifespan:
+
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    service = build(settings)
+    service.start()
+    app.state.service = service
+    try:
+        yield
+    finally:
+        service.close()
+```
+
+Three traps, all of which cost real time:
+
+**The dependency alias must be at module level.**
+
+```python
+Service = Annotated[WalletService, Depends(service_of)]
+```
+
+With `from __future__ import annotations`, FastAPI resolves string annotations against the
+*module* namespace. An alias defined inside `create_app` is invisible to that lookup, so the
+parameter is read as an unfilled **query parameter** instead. The symptom is a 422 on every
+endpoint, naming a field nobody declared.
+
+**Use `def`, not `async def`.** FastAPI runs a plain `def` endpoint in a threadpool, so a
+blocking database call blocks one worker thread. An `async def` endpoint runs on the event loop,
+where the same call stops **every** request on that worker. Measured: a 0.5s call from an
+`async def` handler let a heartbeat tick 5 times where a free loop manages about 55.
+
+**An exception handler must `return` a response, not raise one.** A raise from inside a handler
+is not caught again and becomes a 500 — the opposite of what they exist for.
+
+<LearnPager current="wiring-a-service" />

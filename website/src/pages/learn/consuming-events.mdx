@@ -1,0 +1,114 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Consuming events
+activeSection: learn
+lead: In process, through a broker, or both at once. Every path is at-least-once.
+---
+
+import LearnPager from "../../components/LearnPager.astro";
+
+The framework's job is to persist events safely: the domain rows and the outbox rows commit in
+the same transaction. What happens to them afterwards is your choice, and the outbox is **just a
+table** — anything that can read it can consume it.
+
+## In process
+
+Two background jobs poll the outbox: **fan-out** turns one event row into one delivery row per
+subscribed handler, and **dispatch** invokes the handler with retry and expiry.
+
+A handler is a plain class:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: ActionExecutor) -> None:
+        self.executor = executor
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        ...
+```
+
+No base class, no decorator, no annotation — three attributes and a method. There is nothing to
+inherit because there is nothing the framework needs to give you.
+
+Both jobs are ordinary distributed jobs on the same registry, so cluster exclusivity,
+heartbeating and crash recovery are inherited.
+
+### `name` is schema
+
+It is the durable subscription id written on every delivery row. Rename the class freely; rename
+`name` and the queued rows under the old one become invisible to the handler and sit until they
+expire. The way through is `aliases`:
+
+```python
+class MoneyDepositedWelcomeHandler:
+    name = "money-deposited-welcome"
+    aliases = ("money-deposited",)     # what it used to be
+    event_type = MoneyDepositedEvent
+```
+
+Aliases are lookup-only: dispatch resolves old rows through them, fan-out keeps writing the
+canonical name.
+
+## Through a broker
+
+Point Debezium at the outbox table. **Nothing in this path is Python code, and that is the
+point** — the connector and the transform run inside Kafka Connect, in a JVM, whichever language
+wrote the row. A service written here uses the *same* artifact a Java service uses.
+
+What this port owes the pipeline is the row format, and the columns are verified identical to
+the Java port's.
+
+Three topic levels, all prefixed `ekbatan.{namespace}`:
+
+```
+ekbatan.{namespace}                        the raw topic — everything
+ekbatan.{namespace}.model.{ModelType}      everything about one model
+ekbatan.{namespace}.event.{EventType}      one event type
+```
+
+Partition by `model_id` and you get per-entity ordering: every event for one wallet lands in one
+partition, while different entities parallelise.
+
+Both paths can run against one outbox at once. Fan-out flips `delivered` from false to true,
+producing `UPDATE` rows; the transforms drop non-insert operations, so those flips never become
+Kafka messages.
+
+## Handlers must be idempotent
+
+Delivery is **at-least-once** — never less, occasionally more. A handler runs twice when it
+succeeds and the process dies before the row is marked succeeded, when it partially succeeds, or
+when it runs longer than the poll delay and the row is re-claimed.
+
+What works:
+
+- **`INSERT ... ON CONFLICT DO NOTHING`** for rows the handler creates, keyed off the source
+  event id;
+- **`UPDATE ... WHERE state = <expected>`** for transitions;
+- **an idempotency key** on an external call.
+
+The shape worth internalising is that **idempotency is a unique constraint inside the
+transaction that does the work**, not a check-then-act in application code. A check-then-act has
+a window. This has none:
+
+```python
+def perform(self, params: CompleteTransferParams) -> Wallet | None:
+    # Staged *before* the credit, so the unique constraint decides whether this delivery is
+    # the first one. A replay stages the same marker, the insert is refused, and the credit
+    # beside it is rolled back with it - which is why the money cannot arrive twice.
+    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    ...
+```
+
+What you must **not** rely on: ordering between events, ordering between handlers on one event,
+or the handler being called exactly once. Plan for two.
+
+## Listen to yourself
+
+A handler may take the executor and start another action. This is the **only** legitimate place
+one action chains off another's effect — the source has already committed, so the new action gets
+its own clean transaction and its own outbox rows. That is what a saga is built from.
+
+<LearnPager current="consuming-events" />

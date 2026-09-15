@@ -1,0 +1,68 @@
+# Builds website/ and publishes it as this repository's GitHub Page.
+#
+# Deliberately its own workflow rather than a job in ci.yml: the site is the only part of this
+# repository that needs Node, and putting that in the main pipeline would make every test run
+# install a toolchain none of them use.
+#
+# The site is a project page, so it is served from /ekbatan-py/ rather than the root - hence
+# BASE. Astro's `base` and the two remark plugins between them prefix every internal link, so
+# the page source stays portable and only this one knob changes.
+
+name: Website
+
+on:
+  push:
+    branches: [main]
+    # Only when something the site is built from actually changes. `docs/**` is in the list
+    # because the reference section *is* the docs tree - a page added there is a page here.
+    paths:
+      - "website/**"
+      - "docs/**"
+      - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      # `npm ci` rather than `npm install`: it installs exactly the lock file and fails if
+      # package.json has drifted from it, which is what makes a deploy reproducible.
+      - run: npm ci
+        working-directory: website
+      - run: npm run build
+        working-directory: website
+        env:
+          BASE: /ekbatan-py/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

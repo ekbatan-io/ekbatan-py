@@ -1,0 +1,107 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Your first action
+activeSection: learn
+lead: A model, a repository, an action — and an outbox row you never wrote.
+---
+
+import LearnPager from "../../components/LearnPager.astro";
+
+## 1. A model
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+
+    def deposit(self, amount: Decimal) -> Wallet:
+        if amount <= 0:
+            raise ValidationError(f"deposit amount must be positive, got {amount}")
+        new_balance = self.balance + amount
+        return (
+            self.copy()
+            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .balance(new_balance)
+            .build()
+        )
+```
+
+Frozen, so a deposit returns a *new* wallet rather than mutating one. That is not decoration:
+it is what makes two-phase execution safe. An action reads and constructs freely, the plan
+collects references to immutable snapshots, and a partial write is not expressible.
+
+`with_event` is the entire outbox API from a domain author's point of view.
+
+## 2. A repository
+
+```python
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry)
+```
+
+That is the whole repository. `get`, `find_where`, `add`, `update`, counting and existence are
+inherited, and the mapping between the table and the dataclass is **by field name** — nothing
+to declare unless a name differs.
+
+The Java port writes `fromRecord` and `toRecord` by hand for the same repository, listing every
+column twice. A field added to the model and forgotten in `toRecord` is a real bug there; here
+it is not expressible.
+
+What you add are the questions your business actually asks:
+
+```python
+    def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+        return self.find_where(WALLETS.c.owner_id == owner_id)
+```
+
+## 3. An action
+
+```python
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: DepositParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+`self.plan.update` **writes nothing.** It stages. The executor opens one transaction afterwards
+and flushes the wallet row and its event together.
+
+## 4. Run it
+
+```python
+wallet = executor.execute(
+    DepositMoneyAction,
+    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+)
+```
+
+One transaction. The wallet row, its version bump and the outbox row — or none of them.
+
+Look at what you did not write: no `BEGIN`, no `COMMIT`, no flush, no publish, and no mention
+of an outbox anywhere. That is the point. There is no second table to remember, because you
+never write to it.
+
+## Test it without a database
+
+An action's logic needs none:
+
+```python
+staged = run_action(DepositMoneyAction(wallets), DepositParams(wallet_id=..., amount=Decimal("50.00")))
+
+assert staged.result.balance == Decimal("150.00")
+assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+```
+
+`run_action` binds the plan through the same mechanism the executor uses, so `self.plan`,
+`self.clock` and `self.principal` behave exactly as in production. Nothing is written.
+
+That is also the limit of it. **That state and events land *together* is a claim about a
+transaction**, and only a test against a real database checks it.
+
+<LearnPager current="your-first-action" />

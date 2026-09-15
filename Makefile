@@ -12,6 +12,7 @@
 #     make schema     regenerate what codegen owns
 #     make lint       ruff and mypy
 #     make format     rewrite what ruff can
+#     make website    build the site into website/dist
 #     make build      the wheel and sdist
 #     make clean      remove generated output
 
@@ -26,7 +27,7 @@ GENERATED := \
 	ekbatan-py-examples/fastapi_wallet_saga_pg/schema.py \
 	ekbatan-py-examples/job_worker_pg/schema.py
 
-.PHONY: all lint format test test-all examples schema build clean help
+.PHONY: all lint format test test-all examples schema build clean help website website-dev
 .DEFAULT_GOAL := all
 
 all: lint test
@@ -90,6 +91,18 @@ test-all:
 examples: schema
 	$(UV) pytest ekbatan-py-examples
 	cd ekbatan-py-examples && $(UV) python -m wallet_service_sqlite
+
+# -- the website -------------------------------------------------------------------------------
+#
+# The one part of this repository that does not run through uv. Node is confined to website/
+# and to its own workflow; these targets exist so `make help` lists them rather than leaving
+# somebody to find npm scripts on their own.
+
+website:
+	cd website && npm install && npm run build
+
+website-dev:
+	cd website && npm install && npm run dev
 
 build:
 	uv build

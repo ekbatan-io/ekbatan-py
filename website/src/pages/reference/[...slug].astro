@@ -1,0 +1,95 @@
+---
+// Every page of the repository's `docs/` tree, rendered with the site's chrome.
+//
+// The title and lead come out of the markdown itself - the first `# heading` and the
+// paragraph under it - so a docs page needs no frontmatter and no knowledge that a
+// website exists. Adding a page to docs/ adds it here.
+import { getCollection, render } from "astro:content";
+import DocLayout from "../../layouts/DocLayout.astro";
+import { titleOf, leadOf, slugOf } from "../../lib/docs";
+
+export async function getStaticPaths() {
+    const entries = await getCollection("docs");
+    return entries
+        // docs/README.md is an index of the tree; `reference/index.astro` is a better one,
+        // built from the collection itself. Rendering both would collide on /reference/.
+        .filter((entry) => slugOf(entry.id) !== "")
+        .map((entry) => ({
+            params: { slug: slugOf(entry.id) },
+            props: { entry },
+        }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+const frontmatter = {
+    title: titleOf(entry),
+    lead: leadOf(entry),
+    description: leadOf(entry),
+    activeSection: "reference" as const,
+};
+const sections = headings.filter((h) => h.depth === 2);
+---
+
+<DocLayout frontmatter={frontmatter}>
+    {
+        sections.length > 2 && (
+            <nav class="doc-toc" aria-label="On this page">
+                <span class="doc-toc-kicker">On this page</span>
+                <ul>
+                    {sections.map((h) => (
+                        <li>
+                            <a href={`#${h.slug}`}>{h.text}</a>
+                        </li>
+                    ))}
+                </ul>
+            </nav>
+        )
+    }
+    <Content />
+</DocLayout>
+
+<style is:global>
+    .doc-toc {
+        border: 2px solid var(--ink, #0a0a0a);
+        background: var(--muted, #f5f5f5);
+        padding: 1.25rem;
+        margin-bottom: 2.5rem;
+    }
+    .doc-toc-kicker {
+        display: block;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted-foreground, #666);
+        margin-bottom: 0.75rem;
+    }
+    .doc-toc ul {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.25rem 1.5rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    /* One column on a phone - two columns of long headings wrap into mush. */
+    @media (max-width: 639px) {
+        .doc-toc ul {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
+    .doc-toc li {
+        margin: 0;
+    }
+    .doc-toc a {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.75rem;
+        text-decoration: none;
+        padding: 0 0.25rem;
+        transition: background-color 0.15s ease;
+    }
+    .doc-toc a:hover {
+        background: var(--brand-yellow);
+    }
+</style>

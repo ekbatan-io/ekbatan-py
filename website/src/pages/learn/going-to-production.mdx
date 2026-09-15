@@ -1,0 +1,112 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Going to production
+activeSection: learn
+lead: What threads cost here, what to size, what to alert on — and what this port has not got.
+---
+
+import LearnPager from "../../components/LearnPager.astro";
+
+## Threads, and the one way to use this wrongly
+
+The Java port is built on virtual threads and says so on its front page. CPython has nothing
+equivalent, so what that settles in two words has to be settled five times here. If you read one
+thing on this page, read this.
+
+**The framework is synchronous.** Under a threaded server that is exactly right — a blocking
+call holds one worker thread and the GIL is released for the duration of the I/O, which is the
+same bargain virtual threads give.
+
+Under **asyncio** it is not, because a blocking call there stops the entire event loop rather
+than one carrier thread.
+
+```python
+# wrong, inside an async def
+wallet = wallets.get(wallet_id)
+
+# right
+wallet = await run_in_threadpool(wallets.get, wallet_id)
+```
+
+A plain `def` endpoint in FastAPI is already run in a threadpool, so the ordinary way of writing
+one is safe with none of this.
+
+### What is sequential here
+
+Three places where the Java port forks a virtual thread and this one does not:
+
+- **fan-out across shards** — an eight-shard round takes eight batches' time, not one;
+- **dispatch** — one notification at a time, so a hundred rows is a hundred `UPDATE`s where the
+  Java port batches them into about four;
+- **the keyed-lock watchdog** — a `threading.Timer` per hold, which is a real OS thread. A
+  service holding a thousand locks holds a thousand threads.
+
+None has bitten, each fix is a pool rather than a redesign, and all three are written down in
+`SHORTCOMINGS.md` rather than left to be discovered.
+
+One consequence in your favour, which you must not depend on: **handlers subscribed to the same
+event do not run concurrently here.** They do in the Java port, so a handler written against
+this port's ordering will not survive the other one.
+
+## Pools live in processes
+
+Under `uvicorn --workers 4` there are four of every pool, so the database sees
+`4 × (pool_size + job_pool_size + lock_pool_size)` connections. **Size per process, then multiply
+before comparing with `max_connections`** — this is the usual way a Python deployment runs out.
+
+Every worker process also runs the scheduler. That is fine and is the point: the scheduler is
+cluster-exclusive, so four processes contend for the same rows and exactly one wins each
+execution. It is the same code path as four machines.
+
+If you would rather not have every web worker also be a job worker, run the jobs in their own
+process.
+
+## Migrations
+
+Run them as their own deploy step rather than at startup once you are past the toy stage — which
+is what making it a setting is for.
+
+`migrate` visits shards in **configuration order**, stops at the first failure, and names the
+shard *and what had already succeeded*, because half a migrated cluster is a state an operator
+has to reason about.
+
+It also records a checksum of every applied revision and verifies it before upgrading. Alembic's
+own `alembic_version` holds a single row — the current head — with no record of what a revision
+*contained*, so editing an applied revision is otherwise silently accepted and the file and the
+database disagree with nothing to say so.
+
+## What to alert on
+
+Two rules rather than dashboard panels.
+
+**`ekbatan.events.delivery.lag` rising steadily.** A shard falling behind still reports perfectly
+healthy success counts, so **no counter can reveal a growing backlog** — only the lag can.
+
+**`ekbatan.events.handled{outcome="expired_postfailure"}` above zero means events were
+discarded.** A notification reaches that state only after failing for the whole retention window
+— seven days by default — so any occurrence is a delivery permanently given up on.
+
+A steady stream of `failed_retry` concentrated on a single handler usually means that handler
+cannot succeed at all — the classic case being an `ImportError` from a missing optional
+dependency. Alerting on that catches it in minutes; the discard alert only fires a week later,
+once the events are gone.
+
+## Two things this port has not got
+
+Worth knowing before you deploy, and both open rather than decided.
+
+**No graceful shutdown on a signal.** The Java port installs a JVM shutdown hook by default. A
+SIGTERM here kills the process mid-execution; the rows then wait out the dead-execution window —
+60 seconds on framework defaults — before another instance picks them up. Nothing is lost, and
+every job body already has to tolerate running twice, but the shutdown is abrupt. Call
+`jobs.stop()` from your own shutdown path meanwhile; the examples do, from a FastAPI lifespan.
+
+**No connection-pool leak detection.** Hikari's `leakDetectionThreshold` has no counterpart. A
+naive port would be worse than nothing — a handler raising on check-in *strands* the connection,
+so the detector would cause the leak it looks for.
+
+**And one thing that is not a gap in the code:** this port has never run in production. The
+parity ledger says 246 of 247 Java source files are settled and the suite passes on four
+dialects — but "settled" means *read whole and reconciled*, not *proven under load*.
+
+<LearnPager current="going-to-production" />

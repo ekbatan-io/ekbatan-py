@@ -1,0 +1,27 @@
+/* The one knob.
+ *
+ * `styles.css` is the Java site's compiled bundle, carried over verbatim and treated as
+ * frozen. Everything in it that has a colour reads one of the custom properties below, so
+ * this file - loaded after it - is the whole of this site's colour identity.
+ *
+ * To recolour the site, change these and nothing else. There are no hard-coded colours in
+ * any layout, component or page; `bg-orange`, `text-yellow` and friends are utility names
+ * that resolve through `--brand-orange` and `--brand-yellow`.
+ *
+ * The values are oklch: lightness, chroma, hue. Hue is the number worth turning - it is
+ * degrees on the colour wheel, so 38 is orange, 100 is yellow, 250 is blue, 145 is green.
+ * Keep the lightness and chroma of a replacement close to the original or the contrast
+ * ratios in the bundle stop holding.
+ *
+ *   --brand-orange   the primary accent: buttons, the hero highlight, the final CTA panel
+ *   --brand-yellow   the secondary accent: nav highlight, inline marks, the marquee
+ *   --paper          the page background
+ *   --ink            text, borders, the footer background
+ */
+:root {
+    /* Currently identical to the Java site. Change the hue to differentiate. */
+    --brand-orange: oklch(69% 0.21 38);
+    --brand-yellow: oklch(93% 0.18 100);
+    --paper: oklch(99% 0 0);
+    --ink: oklch(13% 0 0);
+}
