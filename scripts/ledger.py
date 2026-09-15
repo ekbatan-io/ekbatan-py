@@ -5,16 +5,19 @@ The ledger is the port's only honest progress measure: every in-scope Java file 
 ported whole. Counting it by hand is how a row quietly stays `partial` for a week, so it is
 counted here instead - split by section, because main sources and tests progress separately.
 
-    python scripts/ledger.py
+    python scripts/ledger.py                             # the source ledger
+    python scripts/ledger.py docs/BEYOND-CODE-LEDGER.md   # everything else
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 
-LEDGER = Path(__file__).resolve().parent.parent / "docs" / "JAVA-PARITY-LEDGER.md"
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT = ROOT / "docs" / "JAVA-PARITY-LEDGER.md"
 
 #: `| Model.java | 290 | `domain.py` | todo |` - and not a header, a rule, or the scope table.
 ROW = re.compile(
@@ -25,11 +28,11 @@ SECTION = re.compile(r"^## (.+)")
 STATUSES = ("done", "partial", "todo", "n/a")
 
 
-def sections() -> dict[str, list[tuple[str, int, str]]]:
+def sections(ledger: Path) -> dict[str, list[tuple[str, int, str]]]:
     """Ledger rows, grouped by the `##` heading they fall under."""
     found: dict[str, list[tuple[str, int, str]]] = {}
     current = "(none)"
-    for line in LEDGER.read_text().splitlines():
+    for line in ledger.read_text().splitlines():
         heading = SECTION.match(line)
         if heading:
             current = heading.group(1).strip()
@@ -61,9 +64,15 @@ def report(title: str, rows: list[tuple[str, int, str]]) -> tuple[int, int]:
 
 
 def main() -> None:
-    grouped = sections()
+    # A second ledger counts the same way, because the discipline is the same: enumerate the
+    # files, mark each one, and let a script say how far along it is rather than a feeling.
+    ledger = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT
+    if not ledger.is_absolute():
+        ledger = ROOT / ledger
+    grouped = sections(ledger)
     if not grouped:
-        raise SystemExit(f"no rows matched in {LEDGER}")
+        raise SystemExit(f"no rows matched in {ledger}")
+    print(f"\n  {ledger.relative_to(ROOT)}")
 
     settled = total = 0
     for title, rows in grouped.items():

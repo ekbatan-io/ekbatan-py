@@ -2,6 +2,9 @@
 
 Every source file in `ekbatan` that belongs in `ekbatan-py`, and where it went.
 
+This counts **source files only**. The documentation, the website and the release machinery
+are counted in [`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md).
+
 The unit of work is **the file**, not a feature. A feature-driven port only finds what the porter
 thought to look for, which is how the db-scheduler port shipped a schema MySQL refuses to create
 and a task hand-off that had never worked. Reading each file whole, and porting it whole, makes

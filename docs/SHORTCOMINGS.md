@@ -50,6 +50,13 @@ synchronous"*.
 
 ---
 
+## Everything outside the code
+
+There is no user-facing documentation, no website, no release pipeline and no LICENSE file -
+44 Java documentation pages have no counterpart, and `pyproject.toml` declares a licence whose
+text is not in the repository. That surface is enumerated and counted in
+[`BEYOND-CODE-LEDGER.md`](BEYOND-CODE-LEDGER.md), which stands at 22%.
+
 ## Not a gap in the code, but worth knowing
 
 **The port has never run in production.** The ledger says 246/247 settled and the suite passes on
