@@ -1,8 +1,8 @@
 # Wiring with FastAPI
 
-No Java counterpart. This is the nearest thing to Java's Spring, Quarkus and Micronaut pages -
-not because FastAPI is a DI container in the same sense, but because it is where a Python
-service actually gets assembled, and because two of the mistakes available here are sharp.
+Where a service meets the outside world, and where the two sharpest mistakes are available:
+building the service per request instead of once, and calling into the framework from an
+`async def` endpoint.
 
 [Wiring](wiring.md) is the framework half and has nothing to do with HTTP. This page is the
 seam between the two.

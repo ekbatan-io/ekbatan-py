@@ -1,11 +1,10 @@
 # Getting started
 
-One page, where Java has four. Java documents Gradle and Maven, and each of them twice - once
-for the dependencies and once for the jOOQ codegen plugin - because a build descriptor there is
-a real artifact with a version resolution problem in it. Here there is one dependency line.
+What it takes to have a service writing domain rows and their events in one transaction: one
+dependency, one connection url, one migration, one generated schema module, and a wiring
+function you can read top to bottom.
 
-For the code generation step, which is the part with any depth to it, see
-[schemagen](database/schemagen.md).
+The step with any depth to it is code generation - see [schemagen](database/schemagen.md).
 
 ## Requirements
 

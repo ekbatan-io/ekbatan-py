@@ -67,6 +67,7 @@ src/ekbatan/
   sharding.py        ShardIdentifier, the strategies, the bit layout
   repository.py      Repository, ModelRepository, EntityRepository, RepositoryRegistry
   persistence.py     DatabaseRegistry, TransactionManager, Transaction
+  fetching.py        Db - the connection every accessor hands back - and FetchResult
   config.py          DataSourceConfig, ShardConfig, ShardingConfig
   schema.py          the framework's own tables, and the column helpers
   errors.py          the exception hierarchy

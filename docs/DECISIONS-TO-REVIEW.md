@@ -12,13 +12,13 @@ bottom.
 
 ## Every divergence somebody chose
 
-`DIVERGENCE.md` now labels all 34 of its sections
+`DIVERGENCE.md` now labels all 35 of its sections
 **forced**, **chosen** or **parity**, and `scripts/divergence.py` refuses to pass if one is
 unlabelled or if a **chosen** one does not link here. That check exists because it was needed:
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **15 that somebody decided**. Each could have gone the other way.
+These are the **16 that somebody decided**. Each could have gone the other way.
 
 | divergence | why it is a decision, not a consequence |
 | --- | --- |
@@ -28,6 +28,7 @@ These are the **15 that somebody decided**. Each could have gone the other way.
 | [Identifiers get a named type, not a generic parameter](../DIVERGENCE.md) | Both languages erase, so `Id[Wallet]` would have worked. A named type per model is a convention this port adopted. |
 | [`AbstractRepository` is just `Repository`, and is usable as it stands](../DIVERGENCE.md) | Java's four-name hierarchy collapses to fewer here. Structural, and could have been mirrored. |
 | [Row mapping is by field name unless you say otherwise](../DIVERGENCE.md) | Java requires `fromRecord`/`toRecord` on every repository. Defaulting them is this port's largest ergonomic decision. |
+| [The connection they hand back has a `rows()` on it](../DIVERGENCE.md) | jOOQ ends a query with `fetch(this::fromRecord)` and SQLAlchemy has no such verb. Adding `Db.rows(...).fetch(mapper)` is new surface; a comprehension after `execute` would have done. |
 | [Timestamps are stamped when the change is staged](../DIVERGENCE.md) | Java leaves `createdDate`/`updatedDate` to the application. **Behavioural**, and the section says so. |
 | [Retries match an exception the way `except` does](../DIVERGENCE.md) | Java matches the exact class and walks only `getCause()`. Matching subclasses and `__context__` is a decision that changes which failures retry. |
 | [Equality compares the whole row](../DIVERGENCE.md) | **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. |

@@ -2,12 +2,69 @@
 layout: ../../layouts/DocLayout.astro
 title: Your first action
 activeSection: learn
-lead: A model, a repository, an action — and an outbox row you never wrote.
+lead: Build a wallet deposit end to end — define the event, define the model, write the action, call it from your HTTP layer, and watch the outbox row appear in events after the commit.
 ---
 
 import LearnPager from "../../components/LearnPager.astro";
 
-## 1. A model
+This lesson builds on [Getting started](/learn/getting-started/). We write actual domain code: a
+`Wallet` that emits a `MoneyDepositedEvent`, and a `DepositMoneyAction` that moves the balance.
+
+The model and action code are the same whatever serves your HTTP. The endpoint below uses
+FastAPI only to show where an application calls the executor. For a complete runnable project,
+see [Complete project setup](/learn/complete-project-setup/).
+
+The shape of the surface, before we type a line:
+
+```
+           POST /wallets/{id}/deposits
+                        ▼
+              deposit(wallet_id, body)
+                        ▼
+            executor.execute(
+                DepositMoneyAction,
+                DepositParams(wallet_id, amount, recipient))
+                        ▼
+        ┌─── Phase 1 — perform() ──────────────────┐
+        │  self.wallets.get(wallet_id)             │
+        │  wallet.deposit(amount)                  │
+        │      ↳ attaches MoneyDepositedEvent      │
+        │  self.plan.update(updated)               │
+        └──────────────────────────────────────────┘
+                        ▼
+        ┌─── Phase 2 — the executor commits ───────┐
+        │  one transaction, one shard:             │
+        │     UPDATE wallets  WHERE id=? AND v=?   │
+        │     INSERT events   (1 row)              │
+        │  commit                                  │
+        └──────────────────────────────────────────┘
+```
+
+## 1. Define the event
+
+Domain events are pure data carriers — frozen dataclasses with the fields a consumer needs and
+nothing else:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class MoneyDepositedEvent(ModelEvent):
+    amount: Decimal
+    new_balance: Decimal
+```
+
+That is the whole declaration. The event carries **no identity**: you do not pass it the
+wallet's id. The framework knows which model the event came off, because the event was attached
+to that model, and fills the outbox's `model_id` and `model_type` columns itself. A consumer
+correlates without opening the payload.
+
+Notice what is *not* in it. The deposit endpoint also takes a `recipient`, and it is absent
+here: a delivery address has no business inside a money-deposited event. It travels as an action
+parameter instead, and a handler reads it off the envelope. See
+[ModelEvent](/reference/model/).
+
+## 2. Define the model
+
+A model is immutable, version-tracked, and emits events through `with_event(...)`:
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -28,13 +85,19 @@ class Wallet(Model[WalletId, WalletState]):
         )
 ```
 
-Frozen, so a deposit returns a *new* wallet rather than mutating one. That is not decoration:
-it is what makes two-phase execution safe. An action reads and constructs freely, the plan
-collects references to immutable snapshots, and a partial write is not expressible.
+Frozen, so a deposit returns a *new* wallet rather than mutating one. That is not decoration: it
+is what makes two-phase execution safe. An action reads and constructs freely, the plan collects
+references to immutable snapshots, and a partial write is not expressible.
 
-`with_event` is the entire outbox API from a domain author's point of view.
+`deposit(amount)` is the only place this event is ever attached. That is the whole discipline —
+events are produced inside the model, staged inside the action's `perform()`, and persisted by
+the framework.
 
-## 2. A repository
+`copy()` returns a builder. Generate a typed one with `python -m ekbatan.codegen` so a checker
+sees the field types, which is the one thing Python cannot work out for itself — see
+[Models and entities](/learn/models-and-entities/).
+
+## 3. A repository
 
 ```python
 class WalletRepository(ModelRepository[Wallet, WalletId]):
@@ -43,12 +106,9 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
 ```
 
 That is the whole repository. `get`, `find_where`, `add`, `update`, counting and existence are
-inherited, and the mapping between the table and the dataclass is **by field name** — nothing
-to declare unless a name differs.
-
-The Java port writes `fromRecord` and `toRecord` by hand for the same repository, listing every
-column twice. A field added to the model and forgotten in `toRecord` is a real bug there; here
-it is not expressible.
+inherited, and the mapping between the table and the dataclass is **by field name** — nothing to
+declare unless a name differs, so there is no `from_row` and no `to_row` to keep in step with
+the model.
 
 What you add are the questions your business actually asks:
 
@@ -57,9 +117,22 @@ What you add are the questions your business actually asks:
         return self.find_where(WALLETS.c.owner_id == owner_id)
 ```
 
-## 3. An action
+See [Repositories](/reference/repository/) for the inherited surface, and for what to
+reach for when it runs out.
+
+## 4. Write the action
+
+The action does three things in `perform()`: read, mutate, stage. **No database writes happen
+here** — the executor opens the transaction *after* `perform()` returns.
 
 ```python
+@dataclass(frozen=True, kw_only=True)
+class DepositParams:
+    wallet_id: WalletId
+    amount: Decimal
+    recipient: str
+
+
 class DepositMoneyAction(Action[DepositParams, Wallet]):
     def __init__(self, wallets: WalletRepository) -> None:
         self.wallets = wallets
@@ -69,30 +142,94 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
-`self.plan.update` **writes nothing.** It stages. The executor opens one transaction afterwards
-and flushes the wallet row and its event together.
+`self.plan.update` **writes nothing.** It stages. Nothing discovers this class either: you put
+it in a registry in your wiring, where you can see it. See [Actions](/learn/actions/) and
+[Wiring](/reference/wiring/).
 
-## 4. Run it
+## 5. Call the action from application code
+
+The caller can be an HTTP endpoint, a message handler, a scheduled job or a CLI command. What
+matters is that it goes through `executor.execute(...)`.
 
 ```python
-wallet = executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
-)
+class DepositRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    recipient: str
+
+
+@app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
+def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
+    return WalletResponse.of(
+        service.executor.execute(
+            DepositMoneyAction,
+            DepositParams(
+                wallet_id=WalletId(wallet_id),
+                amount=body.amount,
+                recipient=body.recipient,
+            ),
+        )
+    )
 ```
 
-One transaction. The wallet row, its version bump and the outbox row — or none of them.
+`service` is the one built at startup, handed over by a FastAPI dependency — not built per
+request, which would open a connection pool per request.
+[Wiring with FastAPI](/reference/wiring-fastapi/) is that seam, and names the other sharp
+mistake: calling this from an `async def` endpoint blocks the event loop.
 
-Look at what you did not write: no `BEGIN`, no `COMMIT`, no flush, no publish, and no mention
-of an outbox anywhere. That is the point. There is no second table to remember, because you
-never write to it.
+Who is acting is a separate concern. The executor takes a principal; in a real service it comes
+from your authentication layer.
+
+## 6. Run a deposit
+
+Start your application, then:
+
+```bash
+curl -X POST http://localhost:8000/wallets/<wallet_id>/deposits \
+     -H 'Content-Type: application/json' \
+     -d '{"amount": 10.00, "recipient": "ada@example.com"}'
+```
+
+## 7. Look at the outbox
+
+```sql
+SELECT action_name, model_type, event_type, payload
+FROM events
+ORDER BY event_date DESC
+LIMIT 5;
+```
+
+One row, with `event_type = 'MoneyDepositedEvent'`, `model_type = 'Wallet'` and a payload of
+`{"amount": "10.00", "new_balance": "..."}`. The `wallets` row shows the new balance and
+`version + 1`. Both changed inside **one** transaction — see
+[`events`](/reference/tables/events/) for what every column means.
+
+Decimals are strings in that payload, and deliberately: JSON numbers are doubles, and a balance
+that round-trips through one is no longer the balance. A Java service reading this row gets the
+same string.
+
+## What just happened
+
+- **One** database transaction touched two tables (`wallets` UPDATE + `events` INSERT). The
+  outbox guarantee is structural — there is no second commit you could forget.
+- Your code never opened a transaction. The executor did, after `perform()` returned.
+- The event payload carries no infrastructure concern — no topic, no broker, no delivery flag.
+  It is pure domain.
+- The next deposit on this wallet uses the new version in its `WHERE version = ?`. A concurrent
+  stale write matches zero rows, raises `StaleRecordError`, and the framework re-runs phase one.
+  See [Actions](/learn/actions/).
+
+Look at what you did not write: no `BEGIN`, no `COMMIT`, no flush, no publish, and no mention of
+an outbox anywhere. There is no second table to remember, because you never write to it.
 
 ## Test it without a database
 
 An action's logic needs none:
 
 ```python
-staged = run_action(DepositMoneyAction(wallets), DepositParams(wallet_id=..., amount=Decimal("50.00")))
+staged = run_action(
+    DepositMoneyAction(wallets),
+    DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
+)
 
 assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
@@ -104,4 +241,22 @@ assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
 That is also the limit of it. **That state and events land *together* is a claim about a
 transaction**, and only a test against a real database checks it.
 
+## Next
+
+→ **[Consuming events](/learn/consuming-events/)** — turn that outbox row into work. Two paths:
+in-process handlers with no broker, and Debezium → Kafka.
+
 <LearnPager current="your-first-action" />
+
+## See also
+
+- [Actions](/learn/actions/) — the two-phase lifecycle, retries, and the two refusals
+- [The outbox](/learn/outbox/) — what just got written, and why it is one table
+- [Models and entities](/learn/models-and-entities/) — frozen dataclasses, versions, soft deletion
+- Reference: [Actions](/reference/action/),
+  [Models and entities](/reference/model/),
+  [Repositories](/reference/repository/),
+  [`events`](/reference/tables/events/)
+- [`ekbatan-py-examples/fastapi_wallet_rest_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_pg)
+  — the runnable project this lesson is distilled from, with siblings for MySQL, MariaDB,
+  sharding, sagas and jobs

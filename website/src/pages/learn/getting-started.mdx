@@ -104,6 +104,26 @@ them leaves them permanently disagreeing. Most teams bolt an outbox on: add a ta
 write to it in every transaction, build a poller. It works, and you carry the discipline
 forever. Here there is no second table to remember, because you never write to it.
 
+## Where the rest fits
+
+The whole framework grows from the same small model:
+
+- **Repositories** map immutable dataclasses to rows, by field name.
+- **Models** emit events; **entities** do not.
+- **Actions** stage new and changed objects; they never write.
+- **The executor** commits staged state and its events together, in one transaction.
+- **In-process handlers, CDC, brokers and routers** consume committed outbox rows afterwards.
+- **Sharding** routes the same actions across several databases, unchanged.
+- **Sagas** coordinate the workflows that should not be forced into one transaction.
+- **Distributed jobs** run periodic work on exactly one instance of a cluster.
+- **Keyed locks** are the pessimistic tool for when losing a version race is the wrong outcome.
+
+You need none of that on day one. The invariant stays the same whichever of them you add:
+
+```text
+business state + event row commit together
+```
+
 ## Where to next
 
 The rest of this path is detail. If you want the argument, read
@@ -111,3 +131,11 @@ The rest of this path is detail. If you want the argument, read
 [your first action](/learn/your-first-action/).
 
 <LearnPager current="getting-started" />
+
+## See also
+
+- [The dual-write trap](/learn/the-dual-write-trap/) — the failure this design removes
+- [Your first action](/learn/your-first-action/) — the same wallet, written out in full
+- [The outbox](/learn/outbox/) — the table, and the two ways to drain it
+- Reference: [Getting started](/learn/getting-started/),
+  [Wiring](/reference/wiring/)

@@ -37,6 +37,10 @@ with tm.transaction() as tx:
 Both writes commit together or neither does - the same atomicity an action gives you, without any
 of the action machinery: no plan, no outbox row, no retry on a lost version race.
 
+`tx.rows(statement)` is forwarded too, for a statement whose rows become objects - the same
+`fetch(mapper)` family a repository uses, described in [Repositories](repositories.md#turning-rows-into-objects).
+`tx.connection` is the `Db` underneath, for everything else SQLAlchemy offers.
+
 **One `with` block where Java has four overloads.** Java needs `inTransaction` and
 `inTransactionChecked`, each in a value-returning and a void form, because a lambda that throws a
 checked exception needs its own functional interface. A `with` block returns whatever you want
@@ -93,7 +97,7 @@ with tm.transaction():
 ```
 
 Reads are a choice. Inherited reads see committed state on the primary; if a read must see this
-block's own uncommitted writes, use `tx.execute` or a repository method built on
+block's own uncommitted writes, use `tx.execute` / `tx.rows` or a repository method built on
 `tx_db_else_db`. See [Repositories](repositories.md).
 
 ## When not to reach for it

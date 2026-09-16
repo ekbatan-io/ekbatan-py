@@ -1,0 +1,87 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: ModelEvent
+activeSection: reference
+lead: "A domain event emitted by a model. Subclasses describe transitions worth recording — opened, deposited, transferred, closed — and become rows in the outbox when the action commits."
+---
+
+## Type signature
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class MoneyDepositedEvent(ModelEvent):
+    amount: Decimal
+    new_balance: Decimal
+```
+
+That is the whole declaration. The event carries **no identity** — you do not pass it the
+model's id. It was attached to a model, so the framework knows.
+
+## How events become outbox rows
+
+```
+wallet.deposit(...)            attaches the event to the new wallet
+   │
+plan.update(wallet)            the event rides along with the row
+   │
+the executor commits           one INSERT into events, per event
+```
+
+The row's columns are filled from three places: the **action** supplies `action_id`,
+`action_name`, `action_params` and the timestamps; the **model** supplies `model_id` and
+`model_type`; the **event** supplies `event_type` and `payload`.
+
+So a consumer correlates without opening the payload, and routes on `event_type` without
+parsing it.
+
+## Writing an event
+
+Put in it what a consumer needs to act, and nothing else:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class WalletOpenedEvent(ModelEvent):
+    owner_id: UUID
+    currency: str
+    opening_balance: Decimal
+```
+
+A delivery address, a request id, a feature flag — those belong to the invocation, not to the
+fact. They travel in the action's parameters, and a handler reads them off the envelope.
+
+Name them in the past tense: an event describes something that already happened.
+
+## Serialisation
+
+The payload is JSON, written with a canonical encoder and read back into the same class from the
+dataclass's own annotations. Nothing extra is needed for that round trip.
+
+Two rules the encoder keeps, because two ports have to produce byte-identical JSON for the same
+event:
+
+- **Decimals are strings**, at their stored scale. A JSON number is a double, and a balance that
+  round-trips through one is no longer the balance.
+- **Timestamps are zone-less UTC** to the microsecond, and keys are sorted.
+
+## Attaching one
+
+```python
+return self.copy().with_event(MoneyDepositedEvent(...)).balance(new_balance).build()
+```
+
+Inside the model's own method, always — that is the whole discipline. Events are produced in the
+model, staged by the action, and persisted by the framework.
+
+## Consumers
+
+- **In process** — the dispatch job rebuilds the typed event and calls your handler. See
+  [Local event handlers](/reference/events/local-event-handler/).
+- **Through a broker** — Debezium tails the table. See [Streaming](/reference/events/streaming/).
+- **By hand** — `ActionEvent.from_row(...)` in `ekbatan.streaming` is the consumer-side view of
+  an outbox row.
+
+## See also
+
+- [Model](/reference/model/) — what emits these
+- [`events`](/reference/tables/events/) — the columns above, in full
+- [Learn → The outbox](/learn/outbox/)

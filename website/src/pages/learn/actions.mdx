@@ -37,6 +37,48 @@ single transaction, flush every staged change, write the outbox rows and commit.
 Phase 1 is pure construction. Phase 2 is the only place a transaction is opened, and it always
 wraps every staged change together with the matching event rows.
 
+## Writing one
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class DepositParams:
+    wallet_id: WalletId
+    amount: Decimal
+
+
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: DepositParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+Typed parameters in, a domain object out. The action reads through a repository, builds a new
+immutable wallet with an event already attached — that happened inside `wallet.deposit(...)` —
+and stages it. **No database write happens in `perform()`.**
+
+The generic parameters are what a checker holds you to: `Action[DepositParams, Wallet]` means
+`execute` on this action takes those params and returns a wallet, at the call site, without a
+cast.
+
+Calling it:
+
+```python
+wallet = executor.execute(
+    DepositMoneyAction,
+    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+)
+```
+
+The executor opens one transaction, writes the wallet row with its incremented version, writes
+the `MoneyDepositedEvent` row into `events`, and commits. If anything raises, both roll back
+together.
+
+An action with no parameters passes `None`. What it may not pass is a bare scalar — a string or
+an int in the params column is unreadable six months later, and both ports refuse it.
+
 ## The plan
 
 ```python
@@ -116,3 +158,12 @@ there is no two-phase commit — and a partial commit is the dual-write trap wea
 hat.
 
 <LearnPager current="actions" />
+
+## See also
+
+- [Your first action](/learn/your-first-action/) — the same action, end to end, with the outbox
+  row read back
+- [Models and entities](/learn/models-and-entities/) — what `perform()` reads and stages
+- [Sagas](/learn/sagas/) — what to write when the work does not fit in one transaction
+- Reference: [Actions](/reference/action/),
+  [Wiring](/reference/wiring/) — where an action is registered

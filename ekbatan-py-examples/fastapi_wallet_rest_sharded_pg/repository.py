@@ -45,8 +45,14 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
 
         `readonly_dbs()` is the replicas - fine for an operator's view of how the shards are
         filling up, and the wrong choice for anything a caller acts on.
+
+        No `state != DELETED` filter here, unlike the other examples, because this
+        application's `WalletState` declares no DELETED and no row can ever be in it. A
+        statement you write yourself carries exactly what you put in it - which is the point,
+        and cuts both ways: the inherited reads apply that filter for you, and this one does
+        not apply it for you either.
         """
-        query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(*self._live())
+        query = select(func.coalesce(func.sum(WALLETS.c.balance), 0))
         return {
             shard: Decimal(str(conn.execute(query).scalar_one()))
             for shard, conn in self.readonly_dbs()

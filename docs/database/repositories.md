@@ -116,6 +116,69 @@ for shard, conn in self.readonly_dbs(): ...
 They are context managers because a connection has a lifetime. `tx_db` is the exception: it
 returns the transaction's connection or `None`, and the transaction owns it.
 
+### Turning rows into objects
+
+What comes back from any of them is a `Db` - a `sqlalchemy.Connection` with one method added.
+Everything SQLAlchemy documents is still there and still means what its documentation says;
+`rows()` is the addition:
+
+```python
+def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+    statement = select(WALLETS).where(
+        WALLETS.c.owner_id == owner_id,
+        WALLETS.c.state != WalletState.DELETED.name,
+    )
+    with self.readonly_db() as conn:
+        return conn.rows(statement).fetch(self.from_row)
+```
+
+`conn.rows(statement)` hands back a `FetchResult`, and each of its terminals takes the mapper -
+so the mapping is the last thing you read, as it is in the Java port's `fetch(this::fromRecord)`.
+
+| | |
+| --- | --- |
+| `.fetch(mapper)` | every row, as a `list` |
+| `.fetch_first(mapper)` | the first, or `None` |
+| `.fetch_one(mapper)` | exactly one; raises on none **and** on two |
+| `.fetch_one_or_none(mapper)` | at most one, else `None`; raises on two |
+| `.each(mapper)` | every row, lazily - what a scatter-gather comprehension wants |
+| `.yield_per(n)` | read `n` rows at a time; chains ahead of a terminal |
+| `.partitions(mapper, size=None)` | batches of mapped rows, lazily |
+| `.unique(strategy=None)` | drop duplicate rows, before mapping |
+
+The difference between `fetch_first` and `fetch_one_or_none` is what a *second* row means:
+ignored by the first, an error to the second. Pick the one that matches your invariant.
+
+The names deliberately do not follow jOOQ's, which is the one place this parts from it. There,
+`fetchOne` means *at most one* and `fetchAny` means *the first* - so a `fetch_one` that did not
+mean "fetch one" would be a trap.
+
+The mapper is any callable, not only `from_row`, so a projection is the same call with a
+different argument:
+
+```python
+with self.readonly_db() as conn:
+    return conn.rows(select(WALLETS.c.currency).distinct()).fetch(lambda row: str(row.currency))
+```
+
+**A query with no rows to map still uses `execute`.** A count, a rowcount, an `EXISTS`, DDL -
+`rows()` would be claiming a shape the answer does not have:
+
+```python
+with self.tx_db_else_db(key=wallet_id) as conn:
+    return conn.execute(delete(WALLETS).where(self.id_matches(wallet_id))).rowcount == 1
+```
+
+Scatter-gather flattens, the same shape as Java's `readonlyDbs().stream().flatMap(...)`:
+
+```python
+return [
+    wallet
+    for _, conn in self.readonly_dbs()
+    for wallet in conn.rows(statement).each(self.from_row)
+]
+```
+
 > **`perform()` is not transactional.** The executor opens the transaction *after* `perform()`
 > returns. A `tx_db_else_db(...)` write from inside `perform()` finds nothing bound, falls back
 > to primary, and **writes immediately, outside the action's commit** - which is exactly the
@@ -124,8 +187,16 @@ returns the transaction's connection or `None`, and the transaction owns it.
 
 ### Soft deletion is yours again down here
 
-The inherited reads add the soft-delete predicate. Raw SQL through `db()` does not - the filter
-is not a table property, it is something the repository applies.
+The inherited reads add the soft-delete predicate. A statement you build yourself does not - the
+filter is not a table property, it is something the repository applies on the way to a query it
+built. Write it out, as the Java repository writes `.and(WALLETS.STATE.ne(...))`:
+
+```python
+select(WALLETS).where(
+    WALLETS.c.owner_id == owner_id,
+    WALLETS.c.state != WalletState.DELETED.name,
+)
+```
 
 The predicate helpers (`find_where`, `find_one_where`, `exists_where`, `count`) keep both the
 soft-delete filter and the shard routing, so reach for those before reaching for a connection.

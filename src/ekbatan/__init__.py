@@ -74,6 +74,7 @@ from .events import (
     HandlingConfig,
     LocalEventHandlerConfig,
 )
+from .fetching import Db, FetchResult
 from .ids import Id, ShardedId, TypedValue, unwrap
 from .locks import (
     InProcessKeyedLockProvider,
@@ -121,6 +122,7 @@ __all__ = [
     "CrossShardError",
     "DataSourceConfig",
     "DatabaseRegistry",
+    "Db",
     "DistributedJob",
     "EkbatanError",
     "EmbeddedBitsShardingStrategy",
@@ -139,6 +141,7 @@ __all__ = [
     "EventPersister",
     "ExecutionConfiguration",
     "ExecutionContext",
+    "FetchResult",
     "GenericState",
     "HandlingConfig",
     "Id",

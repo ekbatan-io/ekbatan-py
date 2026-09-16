@@ -1,86 +1,122 @@
 ---
-// /reference/ - the repository's docs/ tree, grouped. Java's structure and card component.
+// /reference/ - the API and convention reference. Dense, exhaustive, lookup-oriented.
+// Voice: assume the reader already knows what they want and wants the exact signature,
+// property or path.
 //
-// Built from the collection rather than a hand-written list, so a page added to docs/ appears
-// here without anyone remembering to add it.
+// This is Java's `reference/index.astro`, structurally: the same groups, in the same order,
+// with the same card component and the same hand-written one-line blurbs. Two group names
+// differ because the things under them do - there is no DI container here to integrate with -
+// and two of Java's entries have no counterpart at all (annotations, native image).
+//
+// The groups[] registry below is the single source of truth for what is linked from here.
+// Hand-written, as Java's is: these pages are the website's own. The repository's `docs/` tree
+// is written for somebody reading the repository, and the two are free to differ.
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import SectionCard from "../../components/SectionCard.astro";
-import { getCollection } from "astro:content";
-import { titleOf, leadOf, slugOf, truncate } from "../../lib/docs";
 
-const B = import.meta.env.BASE_URL;
-const entries = await getCollection("docs");
+const linkTo = (p: string) => `${import.meta.env.BASE_URL}${p.replace(/^\//, "")}`;
 
-const GROUPS = [
-    { key: "", label: "Start here" },
-    { key: "concepts", label: "Concepts" },
-    { key: "database", label: "Database" },
-    { key: "events", label: "Events out" },
-    { key: "jobs", label: "Jobs" },
-    { key: "runtime", label: "Runtime" },
-];
-
-function groupOf(id: string) {
-    const top = id.includes("/") ? id.split("/")[0] : "";
-    return GROUPS.some((g) => g.key === top) ? top : "";
-}
-
-const pages = entries
-    .map((entry) => ({
-        href: `${B}reference/${slugOf(entry.id)}${slugOf(entry.id) ? "/" : ""}`,
-        title: titleOf(entry),
-        blurb: truncate(leadOf(entry), 150),
-        group: groupOf(entry.id),
-        // A section's own README sorts first within its group.
-        index: entry.id.toLowerCase().endsWith("readme"),
-        id: entry.id,
-    }))
-    .sort((a, b) => Number(b.index) - Number(a.index) || a.id.localeCompare(b.id));
+const groups = [
+    {
+        title: "Core primitives",
+        entries: [
+            { href: "/reference/action/", title: "Action", blurb: "Two-phase lifecycle, perform() signature, plan, retry semantics." },
+            { href: "/reference/action-plan/", title: "ActionPlan", blurb: "Staging API - add(), update(), changes()." },
+            { href: "/reference/action-executor/", title: "ActionExecutor", blurb: "Construction, namespace, registry wiring, execute() variants." },
+            { href: "/reference/model/", title: "Model[ID, S]", blurb: "Immutable domain object, copy().with_event(), version + id." },
+            { href: "/reference/entity/", title: "Entity[ID]", blurb: "Persisted, version-tracked, no events." },
+            { href: "/reference/model-event/", title: "ModelEvent", blurb: "Frozen dataclass, namespace and event-type resolution." },
+        ],
+    },
+    {
+        title: "Persistence",
+        entries: [
+            { href: "/reference/repository/", title: "Repository", blurb: "Inherited reads and writes, mapping by field name, shard routing." },
+            { href: "/reference/transaction-manager/", title: "TransactionManager", blurb: "tm.transaction(), joining rather than nesting, isolation." },
+            { href: "/reference/sharding/", title: "Sharding", blurb: "ShardedId, EmbeddedBitsShardingStrategy, policy axes." },
+            { href: "/reference/keyed-locks/", title: "Keyed locks", blurb: "PostgreSQL / MySQL / MariaDB / Redis / in-process providers, lease semantics." },
+            { href: "/reference/multi-database/", title: "Multi-database", blurb: "Routing actions across several databases, and the column-type cheatsheet." },
+            { href: "/reference/migrations/", title: "Migrations", blurb: "Alembic driven as a library, plus the checksum guard it lacks." },
+            { href: "/reference/schemagen/", title: "schemagen", blurb: "Table definitions generated from a migrated database." },
+        ],
+    },
+    {
+        title: "Tables",
+        entries: [
+            { href: "/reference/tables/", title: "Framework tables", blurb: "Table map, optionality matrix, and links to each table's full DDL." },
+            { href: "/reference/tables/events/", title: "events", blurb: "Durable event rows written with each action transaction." },
+            { href: "/reference/tables/event-notifications/", title: "event_notifications", blurb: "Optional in-process delivery rows, states, retries, and handler names." },
+            { href: "/reference/tables/scheduled-tasks/", title: "scheduled_tasks", blurb: "Optional db-scheduler table used by distributed jobs and in-process handlers." },
+        ],
+    },
+    {
+        title: "Wiring",
+        entries: [
+            { href: "/reference/wiring/", title: "Wiring a service", blurb: "Databases, repositories, actions, handlers and jobs, in one function." },
+            { href: "/reference/wiring-fastapi/", title: "FastAPI", blurb: "The lifespan, the dependency, and the two sharp mistakes." },
+        ],
+    },
+    {
+        title: "Runtime",
+        entries: [
+            { href: "/reference/runtime/concurrency/", title: "Concurrency", blurb: "Threads, asyncio, the GIL, and the one way to use this wrongly." },
+            { href: "/reference/runtime/observability/", title: "Observability", blurb: "Spans, metrics, tracing through the action lifecycle." },
+            { href: "/reference/jobs/distributed-jobs/", title: "Distributed jobs", blurb: "DistributedJob, the db-scheduler facade, cluster-exclusive runs." },
+            { href: "/reference/events/local-event-handler/", title: "Local event handler", blurb: "Fan-out and dispatch jobs, in-process delivery." },
+            { href: "/reference/events/streaming/", title: "Streaming (Debezium)", blurb: "OutboxToAvro / OutboxToProtobuf SMTs, topic routing." },
+        ],
+    },
+    {
+        title: "Dialects",
+        entries: [
+            { href: "/reference/dialects/postgresql/", title: "PostgreSQL", blurb: "Native UUID, JSONB, partial indexes, SKIP LOCKED and RETURNING." },
+            { href: "/reference/dialects/mysql/", title: "MySQL", blurb: "No UUID type, no partial indexes, and what GET_LOCK does with sub-second waits." },
+            { href: "/reference/dialects/mariadb/", title: "MariaDB", blurb: "Close enough to MySQL to share a driver, and four ways it is not." },
+            { href: "/reference/dialects/sqlite/", title: "SQLite", blurb: "What the suite runs on, and exactly why it is not a production dialect." },
+        ],
+    },
+] as const;
 ---
 
 <BaseLayout
     title="Reference"
-    description="Every page of the ekbatan-py documentation: concepts, the database layer, events, jobs and runtime."
+    description="API and conventions reference. Class signatures, method semantics, dialect specifics, configuration keys."
     activeSection="reference"
 >
     <section class="border-b-2 border-ink">
         <div class="container-px max-w-7xl mx-auto py-20 md:py-28">
             <div class="inline-flex items-center gap-3 brutalist-border bg-ink text-paper font-mono text-[11px] uppercase tracking-widest px-3 py-1.5">
-                <span class="text-yellow">§</span><span>Reference</span>
+                <span class="text-yellow">&#167;</span><span>Reference</span>
             </div>
             <h1 class="font-display font-bold text-5xl md:text-7xl tracking-tight max-w-4xl text-balance mt-6 leading-[0.95]">
-                Every page.
-                <span class="bg-yellow px-2">In one place.</span>
+                Every class.
+                <span class="bg-yellow px-2">Every config.</span>
             </h1>
             <p class="mt-6 max-w-2xl text-lg leading-relaxed">
-                These pages are the repository's own <span class="bg-yellow px-1">docs/</span>{" "}
-                directory, rendered. Not a copy of it - the same files, so what you read here and
-                what you read on GitHub cannot drift apart.
+                Lookup-oriented. Each page is one class or one subsystem, with signatures,
+                semantics, dialect specifics, and pointers to the source. If you already know
+                what you are looking for, start here.
             </p>
 
             {
-                GROUPS.map((group) => {
-                    const inGroup = pages.filter((p) => p.group === group.key);
-                    if (!inGroup.length) return null;
-                    return (
-                        <div class="mt-14">
-                            <h2 class="font-display text-3xl font-bold tracking-tight border-b-2 border-ink pb-2">
-                                {group.label}
-                            </h2>
-                            <div class="mt-6 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-                                {inGroup.map((page) => (
-                                    <SectionCard
-                                        href={page.href}
-                                        title={page.title}
-                                        blurb={page.blurb}
-                                        status="ready"
-                                        size="compact"
-                                    />
-                                ))}
-                            </div>
+                groups.map((group) => (
+                    <div class="mt-14">
+                        <h2 class="font-display text-3xl font-bold tracking-tight border-b-2 border-ink pb-2">
+                            {group.title}
+                        </h2>
+                        <div class="mt-6 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                            {group.entries.map((entry) => (
+                                <SectionCard
+                                    href={linkTo(entry.href)}
+                                    title={entry.title}
+                                    blurb={entry.blurb}
+                                    status="ready"
+                                    size="compact"
+                                />
+                            ))}
                         </div>
-                    );
-                })
+                    </div>
+                ))
             }
         </div>
     </section>

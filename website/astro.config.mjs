@@ -2,7 +2,6 @@
 import { defineConfig } from "astro/config";
 import mdx from "@astrojs/mdx";
 import remarkBasePath from "./src/plugins/remark-base-path.mjs";
-import remarkDocLinks from "./src/plugins/remark-doc-links.mjs";
 import remarkStripLead from "./src/plugins/remark-strip-lead.mjs";
 
 // The ekbatan-py website.
@@ -29,13 +28,7 @@ export default defineConfig({
     integrations: [mdx()],
     markdown: {
         shikiConfig: { theme: "github-light" },
-        // Order matters: doc-links resolves the relative links in docs/*.md first,
-        // emitting absolute site paths; base-path then prefixes those for a subpath deploy.
-        remarkPlugins: [
-            remarkStripLead,
-            [remarkDocLinks, { base: BASE }],
-            [remarkBasePath, { base: BASE }],
-        ],
+        remarkPlugins: [remarkStripLead, [remarkBasePath, { base: BASE }]],
     },
     site: "https://ekbatan-io.github.io",
 });

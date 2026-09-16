@@ -39,9 +39,11 @@ class TransferStepRepository(EntityRepository[TransferStep, TransferStepId]):
         these examples. This backs `GET /transfers/{id}`, which a client polls immediately after
         the 202 - so a replica's lag would report a step as not-yet-run when it has committed,
         which is exactly the lie the 202 exists to avoid telling.
+
+        `conn.rows(...)` rather than `conn.execute(...)`, because these rows become objects.
+        The mapper is a lambda rather than `from_row`: this projects one column into an enum,
+        not a whole row into a `TransferStep`.
         """
+        statement = select(TRANSFER_STEPS.c.step).where(TRANSFER_STEPS.c.transfer_id == transfer_id)
         with self.db() as conn:
-            rows = conn.execute(
-                select(TRANSFER_STEPS.c.step).where(TRANSFER_STEPS.c.transfer_id == transfer_id)
-            ).scalars()
-            return [StepName(value) for value in rows]
+            return conn.rows(statement).fetch(lambda row: StepName(row.step))

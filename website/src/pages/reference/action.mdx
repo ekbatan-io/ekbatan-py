@@ -1,0 +1,124 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Action
+activeSection: reference
+lead: "Action[P, R] is the unit of business work. It stages new and changed domain objects on its ActionPlan during phase one; the ActionExecutor commits them in a single transaction during phase two."
+---
+
+## Type signature
+
+```python
+class Action[P, R]:
+    @property
+    def plan(self) -> ActionPlan: ...
+    def perform(self, params: P) -> R: ...
+```
+
+`P` is the parameter type, `R` what the action returns. Both are held to at the call site:
+`executor.execute(DepositMoneyAction, DepositParams(...))` returns a `Wallet` with no cast, and
+passing the wrong parameter object is a type error rather than a runtime one.
+
+There is no abstract base to satisfy beyond `perform`. No decorator, no registration marker,
+nothing scans for it.
+
+## Declaring an action
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class DepositParams:
+    wallet_id: WalletId
+    amount: Decimal
+
+
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: DepositParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+Dependencies come through `__init__`, once, in the wiring. An action with no parameters is
+invoked with `None`; a bare scalar is refused, because a string in the `action_params` column is
+unreadable six months later.
+
+## The two-phase lifecycle
+
+```
+execute(action, params)
+   │
+   ├── phase 1 — perform()          reads, constructs, stages. No writes.
+   │
+   └── phase 2 — the executor       one transaction:
+                                      domain rows  (INSERT / UPDATE ... WHERE version = ?)
+                                      outbox rows  (INSERT)
+                                    commit
+```
+
+Phase one touches no transaction. Phase two is the only place one is opened, and it always wraps
+every staged change together with the matching event rows. A partial write is not expressible.
+
+## Members
+
+### `plan`
+
+The accumulator for this invocation. A property rather than a field: it resolves the
+`ContextVar` bound for the duration of `perform()`, so one shared action instance serves every
+concurrent invocation safely. See [ActionPlan](/reference/action-plan/).
+
+### `perform(params)`
+
+Your logic. Read what you need, build the new immutable objects, stage them, return the result.
+It must be free of side effects you would not want repeated — a retry replays it whole.
+
+`current_principal()` and `current_clock()` reach the other two per-invocation values.
+
+## Actions are singletons
+
+One instance per class, shared by every concurrent invocation, so an action must hold no mutable
+instance state. Per-invocation state lives in a `ContextVar`, which is per-thread *and*
+per-async-task.
+
+Work handed to a pool does **not** inherit the binding. That is correct rather than a
+limitation: fan out, join, and stage only on the thread running `perform()`.
+
+## Retry semantics
+
+The default is one retry after 100 ms, on `StaleRecordError`.
+
+```python
+config = ExecutionConfiguration(
+    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
+)
+executor.execute(DepositMoneyAction, params, config=config)
+```
+
+- **`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice.
+- **Matching looks through the cause chain**, so a driver wrapping a conflict still matches.
+- **Matching is by `isinstance`**, so a subclass matches. Order is the only precedence rule —
+  put narrow policies first.
+- **A retry replays the whole action from phase one, with a fresh plan.**
+
+`ExecutionConfiguration.no_retry()` is the policy for a unit of work whose side effects are not
+safe to repeat.
+
+## Cross-shard execution
+
+An action whose staged changes span shards raises `CrossShardError`. With
+`allow_cross_shard=True` the executor opens **one transaction per shard**, each committing
+independently — there is no two-phase commit, and a partial commit is the dual-write trap in
+another hat. Prefer opting in per call, where the risk is visible.
+
+## No nesting
+
+An action must not execute another action inside `perform()`. If two things must happen
+together they are one action; if one must follow the other, chain them after the commit — which
+is what a [saga](/learn/sagas/) is.
+
+## See also
+
+- [ActionPlan](/reference/action-plan/) — what `plan` accumulates
+- [ActionExecutor](/reference/action-executor/) — what runs this
+- [Model](/reference/model/) · [Entity](/reference/entity/) — what it stages
+- [Learn → Actions](/learn/actions/)

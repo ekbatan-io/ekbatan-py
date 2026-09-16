@@ -2,22 +2,129 @@
 layout: ../../layouts/DocLayout.astro
 title: Consuming events
 activeSection: learn
-lead: In process, through a broker, or both at once. Every path is at-least-once.
+lead: After your first action commits, events holds a durable event row. From there you choose how to use it — handle it locally, publish from a handler, stream it with CDC, or fan it out through a router.
 ---
 
 import AliasRenameFlow from "../../components/AliasRenameFlow.astro";
 import LearnPager from "../../components/LearnPager.astro";
 
-The framework's job is to persist events safely: the domain rows and the outbox rows commit in
-the same transaction. What happens to them afterwards is your choice, and the outbox is **just a
-table** — anything that can read it can consume it.
+The framework's job is to persist events safely: when an action commits, the domain rows and the
+`events` rows are written in the same transaction. What happens to them afterwards is your
+application's choice, and the outbox is **just a table** — anything that can read it can consume
+it.
 
-## In process
+```
+                              events
+                                │
+              ┌─────────────────┴──────────────────┐
+              ▼                                    ▼
+    in-process handlers                       Debezium CDC
+    fan-out + dispatch jobs                   WAL/binlog → raw topic
+              │                                    │
+        handler code                        router / stream app
+              │                                    │
+   local work or broker publish        derived topics / rekeyed streams
+```
 
-Two background jobs poll the outbox: **fan-out** turns one event row into one delivery row per
-subscribed handler, and **dispatch** invokes the handler with retry and expiry.
+You do not have to pick one. In-process handlers and CDC can run against the same table at once:
+fan-out's `delivered = true` flip is an `UPDATE`, and the streaming transforms drop non-insert
+operations, so only the original inserts reach Kafka.
 
-A handler is a plain class:
+## Choose a delivery topology
+
+### 1. In process only — listen to yourself
+
+Use the in-process handlers when the consumer is part of the same deployment.
+
+```
+events → fan-out job → event_notifications → dispatch job → handler
+```
+
+The simplest path: no broker, no CDC connector, no separate consumer application. A good fit for
+local projections, notification rows, audit rows, internal workflows, saga steps inside one
+service, and "after this action commits, do this other piece of work".
+
+You write a handler for one event type. Whenever an event of that type is persisted, the
+dispatch job picks it up and calls you with an `EventEnvelope` carrying the typed event, the
+action's metadata, and the action's parameters. The handler can write a projection, call another
+service, or run another action through the executor.
+
+### 2. A handler as a broker publisher
+
+Write a handler and publish to Kafka, Pulsar, RabbitMQ, SQS or anything else from inside it.
+
+```
+events → dispatch job → your handler → Kafka / Pulsar / RabbitMQ / SQS
+```
+
+Think of the handler as a small publisher worker. Choose this when publishing is not a simple
+"copy each row to one topic": because you publish in application code, you decide the topic,
+key, headers, schema, partitioning and destination. One `MoneyDepositedEvent` could publish to
+`wallet.deposits`, also to `risk.large-deposits`, and nothing at all to billing when the action
+params say the deposit was internal.
+
+It also fits when the outgoing message needs enrichment before it leaves — tenant metadata,
+mapping an internal event to a public contract, redacting a field.
+
+The trade is that your handler is now an at-least-once publisher. If the publish succeeds and
+the process dies before the delivery row is marked `SUCCEEDED`, it runs again. Key your messages
+off the event row id so consumers can dedupe.
+
+### 3. CDC straight to one raw topic
+
+Use Debezium when you want infrastructure to stream committed rows without application code
+publishing anything.
+
+```
+events → Debezium → ekbatan.{namespace}
+```
+
+The row in `events` is the source of truth; the topic is a projection of it. Consumers subscribe
+to the raw topic and filter on `model_type`, `event_type` or namespace. Use `model_id` as the
+message key when consumers need per-aggregate ordering — every event for one wallet then lands
+on one partition.
+
+### 4. CDC to a raw topic, then fan out or rekey
+
+When one topic is not enough.
+
+```
+events → Debezium → raw topic → router / stream processor → derived topics
+```
+
+The connector writes everything to the raw topic; a routing layer branches it into whatever the
+organisation needs — one topic per event type, per model type, per tenant or region; several
+topics for one event; a rekeyed topic for one consumer. Kafka Streams, ksqlDB, Flink or a small
+consumer/producer service all do this. The point is that fan-out happens **after** the durable
+stream exists: the broker topology never reaches into the database write path.
+
+## Path A — in process (start here)
+
+Two background jobs do the work. **Fan-out** turns one event row into one delivery row per
+subscribed handler, in `event_notifications`; **dispatch** polls those rows and calls your
+handler, with retry, backoff and expiry. Both are ordinary distributed jobs on the same
+registry, so cluster exclusivity, heartbeating and crash recovery are inherited rather than
+re-implemented.
+
+### A.1 Turn it on
+
+There is no module to add — the in-process path ships in the framework. It is off until you
+register a handler and enable handling in your wiring:
+
+```python
+handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+```
+
+Without it the executor still writes every event with `delivered = false`, which is exactly the
+right state for a deployment that consumes the outbox externally. Both paths can be on at once.
+
+Note the handler takes the **executor**. A handler reacting to an event does its own work as its
+own unit of work, with its own transaction and its own outbox rows. It is not handed the
+transaction that produced the event, and it must not be — that transaction committed and went
+away before the handler ran.
+
+### A.2 Write the handler
 
 ```python
 class MoneyDepositedEventHandler:
@@ -28,20 +135,24 @@ class MoneyDepositedEventHandler:
         self.executor = executor
 
     def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        ...
+        event = envelope.event
+        print(f"deposited {event.amount}, new balance {event.new_balance}")
 ```
 
-No base class, no decorator, no annotation — three attributes and a method. There is nothing to
+No base class, no decorator, no annotation — two attributes and a method. There is nothing to
 inherit because there is nothing the framework needs to give you.
 
-Both jobs are ordinary distributed jobs on the same registry, so cluster exclusivity,
-heartbeating and crash recovery are inherited.
+- **`name`** — the durable subscription id, written to `event_notifications.handler_name`.
+  Cluster-stable; see below.
+- **`event_type`** — the payload class this handler accepts. It drives deserialisation.
+- **`handle(envelope)`** — your logic. `envelope.event` is the typed payload;
+  `envelope.action_params` is the source action's parameters, which is where routing concerns
+  live when you do not want them polluting the event.
 
-### `name` is schema
+#### `name` is schema
 
-It is the durable subscription id written on every delivery row. Rename the class freely; rename
-`name` and the queued rows under the old one become invisible to the handler and sit until they
-expire. The way through is `aliases`:
+Rename the class freely. Rename `name` and the queued rows under the old one become invisible to
+the handler and sit there until they expire. The way through is `aliases`:
 
 ```python
 class MoneyDepositedWelcomeHandler:
@@ -59,42 +170,123 @@ picture:
 Drop the alias once no non-terminal rows remain under the old name. Keeping it longer is
 harmless.
 
-## Through a broker
+### A.3 Run it
 
-Point Debezium at the outbox table. **Nothing in this path is Python code, and that is the
-point** — the connector and the transform run inside Kafka Connect, in a JVM, whichever language
-wrote the row. A service written here uses the *same* artifact a Java service uses.
+Restart the service and post another deposit. Within a poll interval the handler runs, and the
+delivery row records it:
 
-What this port owes the pipeline is the row format, and the columns are verified identical to
-the Java port's.
+```sql
+SELECT event_id, handler_name, state, attempts, updated_date
+FROM event_notifications
+WHERE handler_name = 'money-deposited'
+ORDER BY created_date DESC;
+```
 
-Three topic levels, all prefixed `ekbatan.{namespace}`:
+`state = 'SUCCEEDED'` means the handler returned without raising. `PENDING` is not yet resolved,
+`FAILED` will be retried, `EXPIRED` ran out of attempts or of time. Retries, backoff and expiry
+are automatic — see
+[Local event handlers](/reference/events/local-event-handler/) and
+[`event_notifications`](/reference/tables/event-notifications/).
+
+## Path B — Debezium CDC → Kafka
+
+When the consumers are other services, a lake or a warehouse, tail the table with Debezium.
+
+**Nothing in this path is Python code, and that is the point.** The connector and the transform
+run inside Kafka Connect, in a JVM, whichever language wrote the row — so a service written here
+uses the *same* artifact a Java service uses. What this port owes the pipeline is the row
+format, and those columns are verified identical.
+
+### B.1 Point Debezium at the table
+
+Capture only the outbox:
+
+```json
+{
+  "name": "wallet-events",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "wallet",
+    "database.password": "wallet",
+    "database.dbname": "wallet",
+    "table.include.list": "public.events",
+    "plugin.name": "pgoutput",
+
+    "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
+
+    "transforms": "encodeAvro",
+    "transforms.encodeAvro.type": "io.ekbatan.events.streaming.debeziumsmt.avro.OutboxToAvroTransform",
+    "transforms.encodeAvro.action.event.schema": "/schemas/ActionEvent.avsc",
+    "transforms.encodeAvro.payload.schemas": "com.example.finance.MoneyDepositedEvent:/schemas/MoneyDepositedEvent.avsc",
+
+    "errors.tolerance": "all",
+    "errors.log.enable": "true"
+  }
+}
+```
+
+`table.include.list` is `public.events` here where the Java projects write `eventlog.events`.
+The schema is a parameter, not a rule: pass `schema="eventlog"` to `outbox_table(...)` if you
+want the two ports' tables in the same place.
+
+The transform **drops UPDATE rows** — including fan-out's `delivered` flip — **skips sentinel
+rows** where `event_type` is null, and encodes the row as Avro using the schemas you mount into
+the Connect container. No Schema Registry is required. For Protobuf, swap in
+`OutboxToProtobufTransform` and give it descriptor sets. See
+[Streaming with Debezium](/reference/events/streaming/).
+
+### B.2 Consume from Kafka
+
+Any consumer in any language. The topics come in three levels, all prefixed
+`ekbatan.{namespace}`:
 
 ```
 ekbatan.{namespace}                        the raw topic — everything
-ekbatan.{namespace}.model.{ModelType}      everything about one model
+ekbatan.{namespace}.model.{ModelType}      every event for one model type
 ekbatan.{namespace}.event.{EventType}      one event type
 ```
 
-Partition by `model_id` and you get per-entity ordering: every event for one wallet lands in one
-partition, while different entities parallelise.
+Three levels for three consumption patterns: *everything from this service*, *everything about
+this model*, *this one event type*.
 
-Both paths can run against one outbox at once. Fan-out flips `delivered` from false to true,
-producing `UPDATE` rows; the transforms drop non-insert operations, so those flips never become
-Kafka messages.
+A consumer that wants the row as an object rather than as bytes has `ActionEvent.from_row` in
+`ekbatan.streaming`, which is the consumer-side view of an outbox row.
 
-## Handlers must be idempotent
+### B.3 Fan out or rekey downstream
 
-Delivery is **at-least-once** — never less, occasionally more. A handler runs twice when it
+The connector does not have to publish to every final topic:
+
+```
+ekbatan.com.example.finance
+        │
+        ├─ Kafka Streams / ksqlDB / Flink / a small router
+        │
+        ├─ ekbatan.com.example.finance.event.MoneyDepositedEvent
+        ├─ ekbatan.com.example.finance.model.Wallet
+        └─ billing.wallet-deposits-by-owner
+```
+
+Keep the raw topic as the append-only record of everything the service emitted, and derive the
+rest from it. Derived topics can have their own retention, schema, partition count and key
+without anything changing in how actions write to the database.
+
+## Idempotency and ordering
+
+Every path is **at-least-once** — never less, occasionally more. A handler runs twice when it
 succeeds and the process dies before the row is marked succeeded, when it partially succeeds, or
-when it runs longer than the poll delay and the row is re-claimed.
+when it runs longer than the poll delay and the row is re-claimed. A connector replays after a
+restart. A publisher retries.
 
 What works:
 
 - **`INSERT ... ON CONFLICT DO NOTHING`** for rows the handler creates, keyed off the source
   event id;
 - **`UPDATE ... WHERE state = <expected>`** for transitions;
-- **an idempotency key** on an external call.
+- **an idempotency key** on an external call;
+- **`model_id` as the message key** when ordering matters per aggregate.
 
 The shape worth internalising is that **idempotency is a unique constraint inside the
 transaction that does the work**, not a check-then-act in application code. A check-then-act has
@@ -110,7 +302,7 @@ def perform(self, params: CompleteTransferParams) -> Wallet | None:
 ```
 
 What you must **not** rely on: ordering between events, ordering between handlers on one event,
-or the handler being called exactly once. Plan for two.
+or a handler being called exactly once. Plan for two.
 
 ## Listen to yourself
 
@@ -118,4 +310,35 @@ A handler may take the executor and start another action. This is the **only** l
 one action chains off another's effect — the source has already committed, so the new action gets
 its own clean transaction and its own outbox rows. That is what a saga is built from.
 
+## What just happened
+
+- **In-process consumption** keeps delivery inside your application: same database, no broker,
+  nothing extra to operate.
+- **Handler publishing** lets application code publish to one or many destinations with its own
+  keys, headers and contracts.
+- **CDC to a raw topic** turns committed rows into a cross-service stream without publishing
+  from request handlers.
+- **CDC plus routing** turns one raw stream into many topics or differently keyed ones.
+- All of them read the same rows. The dual-write trap is structurally impossible: there is one
+  durable write, inside the action's transaction, and everything else consumes from it.
+
+If you start in process and add CDC later, **no application code changes.** The connector starts
+tailing the same table; backfill earlier rows with `snapshot.mode`.
+
+## Next
+
+→ **[Adding a shard](/learn/sharding/)** — take the single-database wallet to two databases. Your
+action signatures do not change.
+
 <LearnPager current="consuming-events" />
+
+## See also
+
+- [The outbox](/learn/outbox/) — why the durable table exists, and the one ordering trap
+- [Sagas](/learn/sagas/) — what listening to yourself becomes when a workflow spans shards
+- Reference: [Local event handlers](/reference/events/local-event-handler/),
+  [Streaming with Debezium](/reference/events/streaming/),
+  [`events`](/reference/tables/events/),
+  [`event_notifications`](/reference/tables/event-notifications/)
+- [`ekbatan-py-examples/wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite)
+  — runs the in-process handler end to end, with a test that asserts the delivery row appears

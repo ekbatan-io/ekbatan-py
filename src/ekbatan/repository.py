@@ -25,7 +25,6 @@ from typing import Any, Self
 
 from sqlalchemy import (
     ColumnElement,
-    Connection,
     Row,
     Table,
     any_,
@@ -53,6 +52,7 @@ from .errors import (
     UnsupportedError,
     ValidationError,
 )
+from .fetching import Db
 from .ids import TypedValue
 from .persistence import DatabaseRegistry, TransactionManager
 from .sharding import NoShardingStrategy, ShardIdentifier, ShardingStrategy
@@ -200,7 +200,7 @@ class Repository[M: Persistable[Any, Any], K]:
     @contextmanager
     def db(
         self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Connection]:
+    ) -> Iterator[Db]:
         """A writer connection for one shard, outside any transaction. Each statement commits.
 
         It does **not** join an open transaction. That is occasionally what you want - a write
@@ -209,14 +209,12 @@ class Repository[M: Persistable[Any, Any], K]:
         a row your own open transaction already holds will also block until one of them gives
         up, which is the other reason this is the deliberate choice rather than the default.
         """
-        with (
-            self._manager(key, model, shard)
-            .primary.connect()
-            .execution_options(isolation_level="AUTOCOMMIT") as conn
-        ):
+        with Db(self._manager(key, model, shard).primary).execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
             yield conn
 
-    def dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
+    def dbs(self) -> Iterator[tuple[ShardIdentifier, Db]]:
         """Every shard's writer, one at a time, outside any transaction.
 
         An unsharded repository visits **only the default shard**, even when the registry holds
@@ -238,7 +236,7 @@ class Repository[M: Persistable[Any, Any], K]:
     @contextmanager
     def _reader(
         self, *, key: K | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Connection]:
+    ) -> Iterator[Db]:
         """What every built-in read uses: the **primary**, joining an open transaction.
 
         Private, because it is not a choice - it is the framework reading on your behalf, and
@@ -249,7 +247,7 @@ class Repository[M: Persistable[Any, Any], K]:
         with self._manager(key, None, shard).connection() as conn:
             yield conn
 
-    def _readers(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
+    def _readers(self) -> Iterator[tuple[ShardIdentifier, Db]]:
         """Every shard's primary - the scatter counterpart to :meth:`_reader`.
 
         An unsharded repository visits **only the default shard**, even when the registry holds
@@ -271,7 +269,7 @@ class Repository[M: Persistable[Any, Any], K]:
     @contextmanager
     def readonly_db(
         self, *, key: K | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Connection]:
+    ) -> Iterator[Db]:
         """The **replica**, for a read that can live with replication lag.
 
         The same meaning as Java's ``readonlyDb()``, including the fallback: a shard with no
@@ -288,14 +286,12 @@ class Repository[M: Persistable[Any, Any], K]:
         on the secondary for the same reason. If you need to see the transaction's own writes,
         that is what :meth:`tx_db_else_db` is for.
         """
-        with (
-            self._manager(key, None, shard)
-            .replica.connect()
-            .execution_options(isolation_level="AUTOCOMMIT") as conn
-        ):
+        with Db(self._manager(key, None, shard).replica).execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
             yield conn
 
-    def readonly_dbs(self) -> Iterator[tuple[ShardIdentifier, Connection]]:
+    def readonly_dbs(self) -> Iterator[tuple[ShardIdentifier, Db]]:
         """Every shard's **replica**, one at a time.
 
         An unsharded repository visits **only the default shard**, even when the registry holds
@@ -316,7 +312,7 @@ class Repository[M: Persistable[Any, Any], K]:
 
     def tx_db(
         self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
-    ) -> Connection | None:
+    ) -> Db | None:
         """The transaction already open on this shard, or ``None``.
 
         For code that must behave differently depending on whether it is inside one. Most code
@@ -327,7 +323,7 @@ class Repository[M: Persistable[Any, Any], K]:
     @contextmanager
     def tx_db_else_db(
         self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Connection]:
+    ) -> Iterator[Db]:
         """The transaction open on this shard, or no transaction at all if there is none.
 
         What every built-in read and write uses, and what a subclass writing its own query
@@ -487,7 +483,7 @@ class Repository[M: Persistable[Any, Any], K]:
                 return self.from_row(rows[0])
         return None
 
-    def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Connection]:
+    def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Db]:
         """The shard named, or every shard lazily, so a caller can stop at the first answer."""
         if shard is not None:
             with self._reader(shard=shard) as conn:

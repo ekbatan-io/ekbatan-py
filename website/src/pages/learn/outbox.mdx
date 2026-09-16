@@ -107,7 +107,7 @@ an identical value.
 
 Note also that MariaDB stores `JSON` as `LONGTEXT` with a check constraint. Invisible when you
 declare the column; very visible when something *reflects* it, which is why
-[schemagen](/reference/database/schemagen/) forces it back.
+[schemagen](/reference/schemagen/) forces it back.
 
 </div>
 
@@ -170,3 +170,12 @@ clock that is fine. Under a **frozen** clock every row of a run ties and the ord
 a random uuid. The test suite fell into this more than once.
 
 <LearnPager current="outbox" />
+
+## See also
+
+- [Your first action](/learn/your-first-action/) — where a row in this table comes from
+- [Consuming events](/learn/consuming-events/) — the four topologies for draining it
+- [The dual-write trap](/learn/the-dual-write-trap/) — why one table rather than two systems
+- Reference: [`events`](/reference/tables/events/),
+  [`event_notifications`](/reference/tables/event-notifications/),
+  [Streaming with Debezium](/reference/events/streaming/)

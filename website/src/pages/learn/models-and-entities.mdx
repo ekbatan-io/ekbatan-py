@@ -97,10 +97,14 @@ class MoneyDepositedEvent(ModelEvent):
     new_balance: Decimal
 ```
 
-That is the whole declaration, and it is one of the few places this port is straightforwardly
-**ahead of the Java one**. Java needs a `@JsonCreator` constructor with a `@JsonProperty` for
-every field, or the dispatch job cannot rebuild the event and the handler is silently never
-invoked. Here the payload is rebuilt from the dataclass's own annotations.
+That is the whole declaration. The event carries **no identity** — you do not pass it the
+model's id. It was attached to a model, so the framework knows, and fills the outbox's
+`model_id` and `model_type` columns itself.
+
+Events are stored as JSON in `events.payload`, and read back into the same class when an
+in-process handler is invoked. Nothing extra is needed for that round trip: the payload is
+rebuilt from the dataclass's own annotations. Decimals travel as strings, deliberately — a JSON
+number is a double, and a balance that round-trips through one is no longer the balance.
 
 ## Optimistic locking, always
 
@@ -125,4 +129,74 @@ A generated builder declares **only the fields its model added**; `id`, `state`,
 the timestamps are typed on the base. **Commit the output** — it is derived from source you
 already have, unlike the schema module, which is derived from a database you have to start.
 
+## Soft deletion
+
+Nothing is physically removed. `delete()` on the model flips `state` to `DELETED` and emits an
+event like any other change, and every inherited read filters those rows out:
+
+```python
+def delete(self) -> Wallet:
+    if self.state is WalletState.DELETED:
+        return self
+    return self.copy().with_event(WalletDeletedEvent()).state(WalletState.DELETED).build()
+```
+
+then `repo.update(wallet.delete())`, or `plan.update(wallet.delete())` inside an action.
+
+There is no `delete()` on the repository, in either port, and that is deliberate: a row that
+silently stopped existing would leave every event already published about it with nothing on the
+other side. What leaves is the wallet, not the history.
+
+Two things follow. **Deleting is a domain decision**, so the model says what it means — some
+models refuse to be deleted while they hold money. And **a query you write yourself does not get
+the filter**: the inherited reads apply it, a statement you build carries what you put in it, so
+add `WALLETS.c.state != WalletState.DELETED.name` when you drop to SQL.
+
+When a physical delete is genuinely required — an erasure request, purging expired rows — write
+it against your own rule. [`WalletRepository.erase`](/reference/repository/) in the
+example does exactly that, and refuses a wallet that still holds money.
+
+## Inherited builder methods
+
+Both builders carry a shared set on the base, typed `Self` so the return stays your builder:
+
+| | model | entity |
+| --- | :-: | :-: |
+| `id(...)` | yes | yes |
+| `state(...)` | yes | yes |
+| `version(...)` / `with_initial_version()` / `increase_version()` | yes | yes |
+| `copy_base(other)` | yes | yes |
+| `set(**changes)` | yes | yes |
+| `with_event(...)` / `events(...)` | yes | — |
+| `created_date(...)` / `updated_date(...)` | yes | — |
+
+`copy_base(other)` is what `model.copy()` returns first: the id, state, version, and for a model
+the events and timestamps, pre-populated — so domain code only names the fields that changed.
+
+The split is the whole difference between the two kinds. An entity has no events to attach and
+no timestamps to hold, so those methods are not on it to be called by mistake.
+
+## Naming conventions
+
+The same in both ports, so a reader moving between them recognises what they are looking at.
+
+- **Model** — a singular noun: `Wallet`, `Order`, `Subscription`.
+- **State enum** — `<Model>State`, values in `UPPER_SNAKE`: `WalletState.OPENED`,
+  `OrderState.SHIPPED`. `GenericState` (`ACTIVE` / `DELETED`) is fine for an entity, or a model
+  with no real state machine.
+- **Event** — `<Model><Verb>ed` + `Event`: `WalletOpenedEvent`, `MoneyDepositedEvent`,
+  `OrderShippedEvent`. Past tense: an event describes something that already happened.
+- **Action** — `<Verb><Model>Action`: `OpenWalletAction`, `DepositMoneyAction`,
+  `ShipOrderAction`. Imperative: an action describes intent.
+- **Id** — `<Model>Id`, a named subclass rather than `Id[Wallet]`, so
+  `WalletId(u) == AlertId(u)` is false at runtime and not only to a checker.
+
 <LearnPager current="models-and-entities" />
+
+## See also
+
+- [Actions](/learn/actions/) — how a model flows through `perform()` into the database
+- [Your first action](/learn/your-first-action/) — the same wallet, end to end
+- [The outbox](/learn/outbox/) — where the events a model emits end up
+- Reference: [Models and entities](/reference/model/),
+  [Repositories](/reference/repository/) — how a model becomes a row and back

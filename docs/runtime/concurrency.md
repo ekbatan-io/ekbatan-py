@@ -1,8 +1,7 @@
 # Concurrency
 
-Java's answer to this whole subject is two words - *virtual threads* - and its front page says
-so. CPython has nothing equivalent, so what Java settles once has to be settled five times here.
-This page is those five answers, and the one way to use this framework wrongly.
+This framework is synchronous, and every place it could have run something concurrently is
+answered here - five of them - along with the one way to use it wrongly.
 
 If you read one section, read [Blocking is not free](#blocking-is-not-free-under-asyncio).
 

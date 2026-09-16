@@ -275,6 +275,59 @@ recorded here as a neutral difference, which was the mistake: it is a judgement 
 job consistency is, and it belonged in `docs/DECISIONS-TO-REVIEW.md` where it would have been
 argued about rather than filed.
 
+## The connection they hand back has a `rows()` on it
+
+> **chosen** - jOOQ ends a query with the mapping and SQLAlchemy has no such verb, so this port adds one. It could as easily have been left to a comprehension. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
+The accessors above mean exactly what Java's mean. What they *hand back* differs: a `Db`, which
+is a `sqlalchemy.Connection` with one method added.
+
+Java ends a custom query with the mapping, in the same chain as the query:
+
+```java
+ctx.selectFrom(WALLETS)
+   .where(WALLETS.OWNER_ID.eq(ownerId))
+   .and(WALLETS.STATE.ne(WalletState.DELETED.name()))
+   .fetch(this::fromRecord);
+```
+
+SQLAlchemy has no verb for it. A bare connection leaves the mapping to the caller, afterwards:
+
+```python
+rows = conn.execute(statement).all()
+return [self.from_row(row) for row in rows]
+```
+
+So `Db` supplies the missing one, and the order matches the Java:
+
+```python
+return conn.rows(statement).fetch(self.from_row)
+```
+
+`conn.rows(statement)` returns a `FetchResult`, whose terminals each take the mapper:
+`fetch`, `fetch_first`, `fetch_one`, `fetch_one_or_none`, `each`, plus `yield_per`,
+`partitions` and `unique` for shaping. Full table in
+[`docs/database/repositories.md`](docs/database/repositories.md#turning-rows-into-objects).
+
+Three things about it are deliberate:
+
+- **It adds, it does not replace.** `Db` is a subclass, so `execute`, `begin`,
+  `exec_driver_sql` and the rest are SQLAlchemy's, unchanged. A query with no rows to map - a
+  count, a rowcount, an `EXISTS` - still goes through `execute`, because `rows()` would be
+  claiming a shape the answer does not have.
+- **The names are not jOOQ's.** There, `fetchOne` means *at most one, raise if there are two*
+  and `fetchAny` means *the first*. Copying the spellings would give a `fetch_one` that does not
+  mean "fetch one", so these say what they do instead.
+- **`FetchResult` holds a `Result`; it does not subclass one.** Subclassing was shorter and was
+  rejected: reproducing a `Result` means setting `_real_result`, `_metadata`,
+  `_post_creational_filter` and `_unique_filter_state` by hand - four private attributes whose
+  contract can change in a patch release. Everything `FetchResult` calls is documented API.
+
+What it does **not** do is filter soft-deleted rows. A statement you build yourself carries
+what you put in it, in both ports - which is why the example repositories write
+`WALLETS.c.state != WalletState.DELETED.name` out, exactly where the Java writes
+`.and(WALLETS.STATE.ne(...))`.
+
 ## Deleting
 
 > **parity** - The same as Java in both ports, after some wandering.

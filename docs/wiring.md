@@ -1,18 +1,11 @@
 # Wiring
 
-Java has five wiring pages: one for Spring, one for Quarkus, one for Micronaut, one for the
-annotations that drive all three, and one - `without-di.md` - for doing it by hand. Only the
-last has a counterpart here, and this is it.
+Everything a service is made of, assembled in one function: the databases, the repositories,
+the actions, the event handlers and the jobs. Nothing scans, nothing is discovered - the list
+**is** the wiring, and it is the one place that knows what this service is.
 
-That is not a gap being apologised for. It is the whole difference in how the two languages
-assemble a program. Java's DI integration exists because constructing twenty objects in the
-right order in a `main()` is genuinely unpleasant there, and because classpath scanning can find
-your actions without you listing them. In Python, listing them is a function, the order is the
-order you read it in, and there is nothing to discover because you can see it.
-
-What this costs is real and is recorded in [SHORTCOMINGS.md](SHORTCOMINGS.md): Java's
-`@EkbatanAction` on a class is less to write than a line in a registry, and it does not go stale.
-This page is what you write instead.
+That is the whole of it. There is no container to configure, no annotation to remember and no
+startup order to reason about beyond the order the lines are in.
 
 > Everything below is taken from
 > [`ekbatan-py-examples/fastapi_wallet_rest_pg/app.py`](../ekbatan-py-examples/fastapi_wallet_rest_pg/app.py),

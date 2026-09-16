@@ -92,6 +92,81 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
 
 **This is the only line in the whole application that knows there is more than one database.**
 
+## 6. Spin up the second database
+
+Two databases, not two schemas in one — the point is separate capacity, and a second schema
+shares the first one's connections, WAL and CPU.
+
+```yaml
+services:
+  wallets-global:
+    image: postgres:17
+    environment: { POSTGRES_DB: wallets, POSTGRES_PASSWORD: dev }
+    ports: ["5432:5432"]
+  wallets-mexico:
+    image: postgres:17
+    environment: { POSTGRES_DB: wallets, POSTGRES_PASSWORD: dev }
+    ports: ["5433:5432"]
+```
+
+Then migrate both with the one call — `migrate(layout, MIGRATIONS)` — **before anything opens a
+pool**. Every shard gets the same schema, including the framework's own tables: each database
+carries its own outbox, and an event is written to the database whose row it describes.
+
+## 7. Run it, and check the placement
+
+```python
+mx = service.executor.execute(
+    OpenWalletAction,
+    OpenWalletParams(owner_id=uuid4(), currency="MXN", country="MX", opening_balance=Decimal(0)),
+)
+print(mx.id.shard)          # 1:0 - the bits are in the id
+```
+
+The row is only on that database, and so is its event:
+
+```bash
+psql -p 5433 wallets -c "SELECT count(*) FROM wallets"   # 1
+psql -p 5432 wallets -c "SELECT count(*) FROM wallets"   # 0
+psql -p 5433 wallets -c "SELECT count(*) FROM events"    # 1
+```
+
+`wallets.get(mx.id)` finds it with no lookup table and no extra query: the shard was read out of
+the id. `wallets.find_where(...)` has no id to read, so it asks both.
+
+## 8. Optional — a transfer that crosses shards
+
+Two wallets on two databases cannot be moved in one transaction. Nothing can do that; there is
+no atomic commit across databases to have.
+
+Asking for it anyway is refused:
+
+```python
+executor.execute(TransferAction, params)      # raises CrossShardError
+```
+
+You have two honest answers. Opt in per call, and accept that each shard commits on its own:
+
+```python
+executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+The executor then opens **one transaction per shard**. A failure rolls back only its own shard;
+the ones that already committed stay committed, and the framework logs that loudly, naming them.
+That is the [dual-write trap](/learn/the-dual-write-trap/) again, with two shards of your own
+database standing in for the database and the broker.
+
+Or write it as a [saga](/learn/sagas/): one action per shard, chained through the outbox, with a
+compensating action if a later step fails. Slower to write, and the only version that recovers
+from a partial failure without a human.
+
+Prefer opting in **per call** rather than in a builder, so the risk is visible where the risk is
+taken.
+
 ## What did not change
 
 - `wallets.get(wallet_id)` — routes by the id's bits.
@@ -108,4 +183,20 @@ is the first thing you would feel.
 commits independently. If a partial commit would need compensating, you want a
 [saga](/learn/sagas/).
 
+## Next
+
+→ **[Sharding strategies](/learn/sharding-strategies/)** — the two axes, the three strategies,
+and what sharding does not solve.
+
 <LearnPager current="sharding" />
+
+## See also
+
+- [Sharding strategies](/learn/sharding-strategies/) — policy and capacity, and which strategy
+  answers which
+- [Sagas](/learn/sagas/) — the workflow that survives a partial commit
+- Reference: [Sharding concepts](/reference/sharding/),
+  [Sharding configuration](/reference/sharding/),
+  [Migrations](/reference/migrations/) — one call migrates every shard
+- [`ekbatan-py-examples/fastapi_wallet_rest_sharded_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)
+  — two databases, running, with tests that assert placement

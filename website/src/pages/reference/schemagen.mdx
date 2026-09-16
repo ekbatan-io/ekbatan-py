@@ -1,0 +1,141 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: schemagen
+activeSection: reference
+lead: "Table definitions that cannot drift from the database, because they are generated from it: start a throwaway database, run your migrations into it, reflect the result, generate code. One command, and four lines of Makefile to make it incremental."
+---
+
+```
+uv add --dev ekbatan[codegen]
+uv run python -m ekbatan.schemagen --migrations migrations --out myapp/schema.py
+```
+
+| | |
+| --- | --- |
+| `--migrations` | your Alembic directory |
+| `--out` | the module to write |
+| `--url` | an existing database to migrate and reflect, instead of starting one |
+| `--image` | the container image; the family decides which container starts |
+
+## Why generate at all
+
+You could hand-write `Table` definitions. Then they and your migrations are two descriptions of
+one schema, and they drift - which is the entire argument, and the same one that put jOOQ in the
+Java build.
+
+The generated module is the **only** description your application code reads. If it is wrong,
+your migrations are what were wrong.
+
+## The output is gitignored
+
+Exactly as Java's `build/generated-jooq` is. A fresh clone has no `schema.py`, runs `make`, and
+gets one - the same as a fresh clone of the Java project running `./gradlew build`.
+
+That is the opposite of the *other* generator: `ekbatan.codegen`'s typed builders **are**
+committed. The distinction is what each is derived from. A builder is derived from source you
+already have in the repository; a schema is derived from a database you have to start.
+
+## Wire it into Make
+
+`uv` has no task runner and no dependency graph, which is the one real gap against Gradle. Make
+fills it:
+
+```make
+schema.py: $(wildcard migrations/versions/*.py)
+	uv run python -m ekbatan.schemagen --migrations migrations --out schema.py --image $(IMAGE)
+
+test: schema.py
+	uv run pytest
+```
+
+The dependency on the migration files is what makes this bearable to put in front of every other
+target: **it starts a container when they change and does nothing at all when they have not.**
+That is Gradle's up-to-date check, in one line. A warm `make schema` across all six generating
+examples in this repository takes about 32 ms.
+
+`lint` should depend on it too - mypy reads the generated module, and a fresh clone otherwise
+reports `cannot find implementation for module myapp.schema`, which is true and unhelpful. Java's
+compiler has the same dependency and its build resolves it the same way.
+
+## Type forcing, which is the part that matters
+
+A plain reflection is not good enough, and this is why.
+
+### A uuid reflected from MySQL is indistinguishable from any other text
+
+PostgreSQL has a native `UUID` and reflection recovers it. MySQL does not - a uuid there is
+`CHAR(36)`, and nothing in the database says it is a uuid. Reflected verbatim and used on
+PostgreSQL, that becomes a `CHAR(36)` **text** column, and the two services can no longer join
+on the id.
+
+Worse in the other direction: a PostgreSQL `UUID` rendered naively onto MySQL becomes `CHAR(32)`
+- hex with the hyphens stripped - which no Java service can match against.
+
+So uuids are forced, and **by name as well as by type**: a column called `id` or `*_id` of the
+right width becomes `uuid_column()` whatever the database reported. That is the same mechanism as
+jOOQ's `withIncludeExpression`, and Java needs it for the same reason.
+
+### MariaDB reports JSON as `LONGTEXT`
+
+MariaDB stores `JSON` as `LONGTEXT` with a CHECK constraint, and the driver says so. Reflected
+verbatim, a JSON column becomes a text column and your payloads stop being JSON on the way back.
+Forced to `json_column()`.
+
+Java hits this too, and its fix is a `ForcedType` carrying `withName("JSON")` - the Java page
+notes that matching on `(?i:JSON)` never fires and widening to `LONGTEXT` matches but does not
+compile.
+
+### Timestamps
+
+`TIMESTAMP` and `DATETIME` both become `timestamp_column()`, which pins microsecond precision.
+MySQL's bare `DATETIME` truncates to whole seconds, silently, and the outbox's only ordering key
+is a timestamp.
+
+### Dialect noise
+
+MariaDB reflects a bigint as `BIGINT(display_width=20)`. Emitted verbatim, the generated module
+**does not import** - `TypeError: BIGINT() takes no arguments`. Dialect-specific types are
+normalised to their portable equivalents, carrying `length`, `precision` and `scale` across.
+
+That normalisation is what makes a schema generated on one dialect usable on another, which is
+what the example matrix depends on: three REST examples, three databases, one set of migrations
+each and the same application code.
+
+## The framework's own tables
+
+`events`, `event_notifications` and `scheduled_tasks` are recognised and emitted through
+`outbox_table()`, `notifications_table()` and `scheduled_tasks_table()` rather than reflected
+column by column. They are a cross-language contract; reflecting them would let a drifted
+migration silently redefine them.
+
+## The stale-module guard
+
+Nothing in Python runs before `python -m yourapp`. There is no compiler to notice that a
+generated file is older than what it came from, so the module notices itself: it carries a
+fingerprint of the migrations it was generated from and checks it on import. A stale module
+raises `ValidationError` naming what changed, instead of failing later as a missing column.
+
+Java gets this from Gradle - the build will not compile against a stale `build/generated-jooq`
+because the task reruns first. This is the same guarantee, arrived at from the other end.
+
+## Which container starts
+
+From the `--image` family: `postgres:*` starts a PostgreSQL container, `mysql:*` a MySQL one,
+`mariadb:*` a MariaDB one. Set it explicitly in your Makefile rather than relying on a default -
+a base-image change should be a commit, not a surprise.
+
+The MariaDB case needs the scheme rewritten to `mariadb+pymysql` after the container hands back a
+`mysql://` url; `schemagen` does that, and [the MariaDB page](/reference/dialects/mariadb/#the-scheme-has-to-say-mariadb)
+explains why it matters.
+
+## Why not sqlacodegen
+
+It cannot force the per-dialect types, and a schema generated without that forcing corrupts data
+on MySQL. That is recorded in `pyproject.toml` next to the extra, so the question does not get
+re-asked.
+
+## See also
+
+- [Migrations](/reference/migrations/) - what gets run into the container
+- [Multiple dialects](/reference/multi-database/) - the three column helpers the forcing targets
+- [Getting started](/learn/getting-started/) - the Makefile, in context

@@ -31,22 +31,50 @@ distributes load, usually a hash.
 
 ## Three strategies, in order of weight
 
-**One database.** Everything at `DEFAULT_SHARD`. You write actions exactly as if sharding did
-not exist. The registry is still in the path; every call resolves to the same database.
+### One database (no sharding)
+
+Everything at `DEFAULT_SHARD`. You write actions exactly as if sharding did not exist — the
+registry is still in the path, and every call resolves to the same database.
+
+```python
+registry = DatabaseRegistry.from_config(ShardingConfig.single(url))
+```
+
+Nothing opts in, and nothing costs anything: a repository with no strategy uses
+`NoShardingStrategy`, which resolves every key to the default shard. Its scatter accessors visit
+only that shard too, so a repository that opted out cannot wander onto a sibling's databases.
 
 > Use it until you have a write-throughput problem or a policy forcing data location — which is
 > almost everyone. Stay here as long as you can.
 
-**Shard bits in the id** (`EmbeddedBitsShardingStrategy`). The pair is encoded into the UUID, so
-the shard is recoverable with no lookup. Chosen at creation and bonded for the row's life.
+### Shard bits in the id (`EmbeddedBitsShardingStrategy`)
+
+The shard pair is encoded into the UUID itself, so the shard is recoverable from the id with no
+lookup and no extra column. Chosen at creation, and bonded to the row for its life.
+
+```python
+class WalletId(ShardedId["Wallet"]):
+    pass
+
+
+wallet_id = WalletId.generate(ShardIdentifier(group=1, member=0))
+```
+
+The layout is a cross-language contract: the same bits, in the same places, so a Java service
+and a Python one reading the same id agree about where the row lives.
 
 > Use it when each row's shard is decidable from what you know at creation and you will never
 > move rows between shards. That covers most cases.
 
-**Your own strategy.** If you need to re-shard live data, or the shard is not knowable at
-creation but is derivable from the row, supply a `ShardingStrategy`. The cost is that the id is
-no longer self-describing: any read starting from an id alone needs the strategy to find the row
-first, which is a round trip you pay implicitly.
+### Your own strategy
+
+If you need to re-shard live data, or the shard is not knowable at creation but is derivable
+from the row, supply a `ShardingStrategy` and override `shard_for` on the repository.
+
+The cost is that the id stops being self-describing: any read starting from an id alone needs
+the strategy to find the row first, which is a round trip you pay implicitly on every lookup. A
+repository whose strategy cannot resolve a shard from an id says so at construction rather than
+failing on the first read.
 
 ## Why cross-shard is refused
 
@@ -77,3 +105,11 @@ builder somewhere.
 If you are reaching for sharding to fix a *read latency* problem, it is probably the wrong tool.
 
 <LearnPager current="sharding-strategies" />
+
+## See also
+
+- [Adding a shard](/learn/sharding/) — one database to two, step by step
+- [Sagas](/learn/sagas/) — what to write when the work genuinely spans shards
+- Reference: [Sharding concepts](/reference/sharding/),
+  [Sharding configuration](/reference/sharding/),
+  [Multiple dialects](/reference/multi-database/)

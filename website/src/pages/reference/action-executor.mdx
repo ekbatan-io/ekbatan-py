@@ -1,0 +1,82 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: ActionExecutor
+activeSection: reference
+lead: "The framework's main entry point. Runs actions atomically against the configured shards — application code calls executor.execute(MyAction, params) and never touches an action directly."
+---
+
+## Type signature
+
+```python
+class ActionExecutor:
+    def execute[P, R](
+        self,
+        action: Action[P, R] | type[Action[P, R]],
+        params: P,
+        *,
+        principal: str | None = None,
+        config: ExecutionConfiguration | None = None,
+    ) -> R: ...
+```
+
+Takes the action **or its type** when one is registered. The type is the usual form: callers
+depend on a class, not on a constructed object with repositories hanging off it.
+
+## What "atomically" means
+
+One transaction, on one shard, containing:
+
+- every staged INSERT, with its initial version and timestamps;
+- every staged UPDATE, each carrying `WHERE version = ?`;
+- one outbox row per event, plus a sentinel row when an invocation emitted none.
+
+They commit together or not at all. There is no second write to forget, and no publish step that
+can fail after the commit.
+
+## Cross-shard behaviour
+
+Refused by default with `CrossShardError`. `ExecutionConfiguration(allow_cross_shard=True)`
+opens one transaction per shard; each commits independently, a failure rolls back only its own,
+and the executor logs the partial outcome naming the shards that had already committed.
+
+## Retries
+
+`ExecutionConfiguration.retry_configs` is an ordered tuple of `RetryConfig(on=..., max_retries=..., delay=...)`.
+The first whose `on` matches wins, so order is the precedence rule. The default is one retry on
+`StaleRecordError` after 100 ms. `ExecutionConfiguration.no_retry()` turns it off.
+
+## Tracing
+
+Every invocation opens a span, with the action name, the shard, the principal and the outcome as
+attributes, and a retry is an event on that span. The instrumentation is the OpenTelemetry **API
+only** — with no SDK registered every call is a no-op. See
+[Observability](/reference/runtime/observability/).
+
+## Building one
+
+```python
+executor = ActionExecutor(
+    registry=databases,
+    repositories=repositories,
+    actions=actions,
+    namespace="com.example.finance",
+    clock=clock,
+)
+```
+
+`namespace` goes on every outbox row and becomes the topic prefix downstream. It must be
+dot-separated identifiers shaped like a package — a hyphen is refused up front, because the
+namespace doubles as a protobuf package and `package my-service;` is a syntax error.
+
+## Custom event persister
+
+The default writes one JSON row per event into the outbox table. Supply your own
+`EventPersister` to write a different shape — a second table, a different column layout — while
+keeping the same transaction.
+
+## See also
+
+- [Action](/reference/action/) · [ActionPlan](/reference/action-plan/)
+- [`events`](/reference/tables/events/) — what it writes
+- [Wiring](/reference/wiring/) — where it is constructed
+- [Observability](/reference/runtime/observability/)

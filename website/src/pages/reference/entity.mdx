@@ -1,0 +1,76 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Entity
+activeSection: reference
+lead: "A persistent aggregate that does NOT emit events. Use an entity when you need optimistic-locked rows whose changes carry no domain meaning worth recording — lookup tables, idempotency markers, auxiliary records."
+---
+
+## Type signature
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class Alert(Entity[AlertId]):
+    wallet_id: WalletId
+    recipient: str
+    message: str
+```
+
+`Entity[ID, S]` takes the id type and, optionally, a state enum — it defaults to
+`GenericState` (`ACTIVE` / `DELETED`), which is usually all an entity needs.
+
+## When to use Entity rather than Model
+
+Ask whether a change is **news**. If something downstream should learn that this row changed,
+it is a model. If nobody outside this service would subscribe to it, it is an entity.
+
+Good entities: idempotency markers, lookup and reference tables, per-row settings, alerts
+already described by the event that caused them.
+
+## Differences from Model
+
+| | model | entity |
+| --- | --- | --- |
+| emits events | yes | **no** |
+| `created_date` / `updated_date` | yes | **no** |
+| `version`, optimistic locking | yes | yes |
+| `state`, soft deletion | yes | yes |
+| staged on the plan | yes | yes |
+| appears in the outbox | one row per event | only inside the action's sentinel row |
+
+An entity has no timestamps because it is state, not history — the repository refuses a table
+that carries the wrong shape for the kind you declared, at construction rather than at the first
+write.
+
+Writing one is still **audited**: the action that wrote it records an invocation row, so the
+audit trail is of units of work even where there are no events.
+
+## Construction and mutation
+
+The same builder shape as a model, minus the event and timestamp methods:
+
+```python
+@classmethod
+def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
+    return cls(
+        id=TransferStepId.random(),
+        state=GenericState.ACTIVE,
+        transfer_id=transfer_id,
+        step=step,
+    )
+```
+
+## Equality
+
+As for a model: every field is compared.
+
+## Builder API
+
+`id`, `state`, `version`, `with_initial_version()`, `increase_version()`, `copy_base(other)`
+and `set(**changes)`. `with_event` and the timestamp setters are **not** on it — so attaching an
+event to something that does not emit them is not expressible.
+
+## See also
+
+- [Model](/reference/model/) — the same, with events
+- [Repository](/reference/repository/)
+- [Learn → Models and entities](/learn/models-and-entities/)

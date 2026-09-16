@@ -1,12 +1,12 @@
 # Migrations
 
-No Java counterpart as a page - Java uses Flyway and documents it inside its getting-started and
-wiring pages. Here it needs one, because the tool is different and because two things had to be
-added on top of it.
+How the schema gets into every database, including the shards, before anything opens a pool.
 
 The migrations themselves are **[Alembic](https://alembic.sqlalchemy.org)**'s - SQLAlchemy's own
 migration tool, by the same author. Nothing here reimplements ordering, the revision graph,
-transactional DDL, autogenerate or the CLI.
+transactional DDL, autogenerate or the CLI. What this framework adds is two things Alembic
+leaves to you: driving it as a library so one call migrates every shard, and a checksum guard
+so an edited migration is caught rather than skipped.
 
 ```
 uv add ekbatan[migrations]

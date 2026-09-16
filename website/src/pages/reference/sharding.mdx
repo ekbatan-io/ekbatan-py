@@ -1,0 +1,159 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Sharding
+activeSection: reference
+lead: "The reference. For why there are two axes and when to reach for each strategy, read Concepts → Sharding first; this page is the configuration and the wire format."
+---
+
+## `ShardIdentifier`
+
+A `(group, member)` pair. Group is the policy axis, member the capacity axis.
+
+```python
+from ekbatan.sharding import DEFAULT_SHARD, ShardIdentifier
+
+GLOBAL = ShardIdentifier(0, 0)      # prints as "0:0"; DEFAULT_SHARD is this
+MEXICO = ShardIdentifier(1, 0)
+```
+
+| | bits | range |
+| --- | --- | --- |
+| group | 8 | 0-255 |
+| member | 6 | 0-63 |
+
+So 16,384 addressable shards, and the numbers are part of the id rather than a lookup key.
+
+## Configuration
+
+```python
+layout = ShardingConfig(
+    shards=(
+        ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=global_url)),
+        ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=mexico_url), name="mexico"),
+    ),
+    default_shard=GLOBAL,
+)
+registry = DatabaseRegistry.from_config(layout)
+```
+
+`ShardConfig` takes:
+
+| | |
+| --- | --- |
+| `shard` | the identifier |
+| `primary` | the pool for writes and transactional reads |
+| `replica` | optional. A read replica for non-transactional reads; omit it and both go to the primary |
+| `name` | optional label, used in spans and log lines |
+
+`DataSourceConfig` is the pool:
+
+| | default | |
+| --- | --- | --- |
+| `url` | - | a SQLAlchemy url; the dialect is read from it |
+| `pool_size` | 10 | connections kept |
+| `max_overflow` | 0 | connections beyond `pool_size`. Zero is deliberate - see below |
+| `pool_timeout` | 30.0 | seconds to wait for one |
+| `pool_recycle` | 1800 | retire a connection after this many seconds |
+| `pool_pre_ping` | True | check a connection is alive before handing it out |
+| `connect_args` | `{}` | passed to the driver |
+| `echo` | False | log every statement |
+
+**`max_overflow=0` by default**, where SQLAlchemy's own default is 10. An overflow connection is
+opened on demand and closed on return, so a burst that exceeds `pool_size` silently becomes a
+burst of connection *establishment* against the database - which is the expensive part, and
+exactly when you can least afford it. A fixed pool makes the limit visible as waiting rather than
+invisible as latency.
+
+There is no counterpart to Hikari's `idleTimeout` or `minimumIdle`; retirement here is by age
+rather than by idleness. See [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).
+
+## Routing
+
+```python
+registry.manager(MEXICO)          # the manager for one shard
+registry.default                  # the default shard's
+registry.effective_shard(key)     # where this key lives
+registry.shards                   # every configured identifier
+```
+
+A repository routes for you. Give it a strategy:
+
+```python
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy())
+```
+
+| strategy | routes by |
+| --- | --- |
+| `NoShardingStrategy` | everything to the default shard. The implicit default |
+| `EmbeddedBitsShardingStrategy` | the bits inside the id |
+| your own | anything. It takes a model or a key and returns a `ShardIdentifier` |
+
+Key-based reads (`get`, `find`, `exists`) resolve one shard and go there. Predicate-based reads
+(`find_where`, `count`, `exists_where`) have no key to resolve, so they **scatter across every
+shard** - a predicate says nothing about where its rows are. Pass `shard=` to confine one.
+
+## The bit layout
+
+The shard is packed into the `rand_b` region of a UUIDv7:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ MSB: [48-bit timestamp][4-bit version=7][12-bit rand_a]         │
+│ LSB: [2-bit variant][8-bit GROUP][6-bit MEMBER][48-bit rand]    │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**This layout is a cross-language contract.** An id minted by a Java service and one minted here
+carry the shard in the same bits, so either port can route the other's rows without a lookup.
+
+Minting and reading:
+
+```python
+wallet_id = WalletId.generate(MEXICO)      # bonded to that shard for the row's life
+wallet_id.shard                            # -> ShardIdentifier(1, 0)
+wallet_id.minted_at                        # -> datetime, from the v7 timestamp
+```
+
+`WalletId.random()` uses the default shard. Because the timestamp is the high bits, ids sort
+chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
+
+## Cross-shard
+
+Refused by default. `CrossShardError` names the two shards involved.
+
+```python
+executor.execute(TransferAction, params,
+                 config=ExecutionConfiguration(allow_cross_shard=True))
+```
+
+With it on: one transaction per shard, each committing independently, and the action's outbox row
+written to **every** involved shard so each holds the full context. A failure rolls back only its
+own shard and the framework logs the partial commit, naming what stayed.
+
+Per call rather than per executor, so the risk is visible at the call site. See
+[Sagas](/learn/sagas/) for the shape that does not need it.
+
+## Migrating every shard
+
+```python
+migrate(layout, MIGRATIONS)                        # all of them
+migrate(layout, MIGRATIONS, shards=[MEXICO])       # one
+migrate(layout, MIGRATIONS, revision="head")
+```
+
+Ordered by the configuration rather than by the argument, and an unknown identifier is refused
+rather than skipped. See [Migrations](/reference/migrations/).
+
+## What is sequential here
+
+A scatter read and an event fan-out round visit shards **one at a time**; Java forks a virtual
+thread per shard. On eight shards a round takes eight batches' time rather than one. Recorded in
+[SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md); the fix is a pool around the per-shard drain.
+
+## See also
+
+- [Concepts → Sharding](/reference/sharding/) - the reasoning
+- [Migrations](/reference/migrations/) - applying revisions across shards
+- [`fastapi_wallet_rest_sharded_pg`](../../ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)

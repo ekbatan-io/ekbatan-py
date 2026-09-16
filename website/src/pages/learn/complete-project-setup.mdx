@@ -507,7 +507,110 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     return app`} />
 
-## 9. A test
+## 9. Example actions
+
+Three shapes, which between them cover almost everything you will write.
+
+```python
+class OpenWalletAction(Action[OpenWalletParams, Wallet]):
+    """Creates. `plan.add` stages an INSERT and returns the stamped row."""
+
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: OpenWalletParams) -> Wallet:
+        return self.plan.add(
+            Wallet.open(
+                owner_id=params.owner_id,
+                currency=params.currency,
+                balance=params.opening_balance,
+            )
+        )
+
+
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    """Changes. Read, mutate, stage - and the event goes along with the row."""
+
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: DepositParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+
+
+class CloseWalletAction(Action[WalletIdParams, Wallet]):
+    """Changes, sometimes. Closing a closed wallet stages nothing and emits nothing -
+    and the invocation is still recorded, as one sentinel row."""
+
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: WalletIdParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        closed = wallet.close()
+        return self.plan.update(closed) if closed is not wallet else wallet
+```
+
+That last one is worth pausing on. An action that changes nothing still writes a row to the
+outbox, with `event_type` null — so *"this ran and decided there was nothing to do"* is a fact
+in the log rather than a silence you cannot distinguish from a crash.
+
+## 10. An example event handler
+
+Two attributes and a method. Register it in `build()` alongside everything else:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: ActionExecutor) -> None:
+        self.executor = executor
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        # The recipient is not on the event - a delivery address has no business inside a
+        # money-deposited event - so it comes off the action's parameters instead.
+        self.executor.execute(
+            RaiseAlertAction,
+            RaiseAlertParams(
+                wallet_id=WalletId(UUID(envelope.model_id)),
+                recipient=envelope.action_params["recipient"],
+                message=f"deposited {envelope.event.amount}",
+            ),
+        )
+```
+
+The handler takes the **executor**, not a connection: it does its own work as its own unit of
+work, with its own transaction and its own outbox rows. The transaction that produced the event
+committed and went away before this ran.
+
+## 11. An example distributed job
+
+Periodic work that must run on exactly one instance of the cluster, however many are deployed:
+
+```python
+class PayStipendJob(DistributedJob):
+    name = "pay-stipend"
+    schedule = Schedule.fixed_delay(timedelta(hours=24))
+
+    def __init__(self, wallets: WalletRepository, executor: ActionExecutor) -> None:
+        self.wallets = wallets
+        self.executor = executor
+
+    def run(self, context: ExecutionContext) -> None:
+        for wallet in self.wallets.find_open_below(Decimal("10.00")):
+            self.executor.execute(
+                DepositMoneyAction,
+                DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="stipend"),
+            )
+```
+
+Exclusivity comes from the `scheduled_tasks` row, not from configuration: whichever instance
+claims it runs, the rest do not. **The body must still tolerate running twice** — a claim can be
+lost to a dead-execution timeout, and then another instance picks the task up.
+
+## 12. A test
 
 ```python
 with TestClient(create_app(settings)) as client:
@@ -518,15 +621,40 @@ with TestClient(create_app(settings)) as client:
 **The `with` matters.** `TestClient` only runs the lifespan inside a context manager, so without
 it `app.state.service` is never set and every request fails on the dependency.
 
-## 10. Run it
+## 13. Run it
 
 ```bash
 make run
 ```
 
-## What to read next
+## 14. Use the example projects as your reference
 
-- [Going to production](/learn/going-to-production/) — threads, pool sizing, what to alert on
-- [The reference](/reference/) — every detail of everything above
+Everything above is distilled from projects that run and are tested on every commit. When a
+snippet here has drifted from reality, they are the truth:
+
+| | |
+| --- | --- |
+| [`fastapi_wallet_rest_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_pg) | this project, complete, on PostgreSQL |
+| [`fastapi_wallet_rest_mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mysql) · [`_mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mariadb) | the same, on the other dialects |
+| [`fastapi_wallet_rest_sharded_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_sharded_pg) | two databases, with placement asserted |
+| [`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg) | a transfer across shards, with compensation |
+| [`job_worker_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job_worker_pg) | no HTTP at all — a worker running distributed jobs |
+| [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) | one file to read, one command to run, no container |
+
+## After setup
+
+You have a service that writes domain rows and their events in one transaction, a schema
+generated from your own migrations, and a test that exercises it over HTTP. What is left is
+operational: how many pools, how many threads, and what to watch.
 
 <LearnPager current="complete-project-setup" />
+
+## See also
+
+- [Going to production](/learn/going-to-production/) — threads, pool sizing, what to alert on
+- [Wiring a service](/learn/wiring-a-service/) — the `build()` function in detail
+- [Consuming events](/learn/consuming-events/) — turning those outbox rows into work
+- Reference: [schemagen](/reference/schemagen/),
+  [Migrations](/reference/migrations/),
+  [Wiring with FastAPI](/reference/wiring-fastapi/),
+  [everything else](/reference/)

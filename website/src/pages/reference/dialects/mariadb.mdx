@@ -1,0 +1,79 @@
+---
+layout: ../../../layouts/DocLayout.astro
+title: MariaDB
+activeSection: reference
+lead: "Close enough to MySQL to share a driver and most of a page, and different in four ways that have each cost real time."
+---
+
+## Quick reference
+
+```
+uv add ekbatan[mariadb]
+```
+
+| | |
+| --- | --- |
+| driver | PyMySQL |
+| url | `mariadb+pymysql://user:pass@host:3306/db` |
+| uuid | `CHAR(36)` here; MariaDB also has a native `UUID` |
+| json | `JSON` - stored as `LONGTEXT` internally |
+| timestamps | `DATETIME(6)`, UTC |
+| keyed lock | `MariaDBKeyedLockProvider`, `GET_LOCK` |
+| `SKIP LOCKED` | yes, 10.6+ |
+| `RETURNING` | **no** (the framework does not use MariaDB's non-standard form) |
+| tested against | `mariadb:11.4` |
+
+## The scheme has to say `mariadb`
+
+**This is the trap, and it is not cosmetic.** A MariaDB container hands back a `mysql://` url:
+
+```python
+MySqlContainer("mariadb:11.4").get_connection_url()   # -> mysql://test:test@localhost:59994/test
+```
+
+SQLAlchemy picks its DDL, its version reporting and its `SKIP LOCKED` support off the **scheme**,
+and this framework picks its keyed-lock provider off `engine.dialect.name`. Leave it as `mysql`
+and everything works - while testing MySQL behaviour against a MariaDB server, which is the worst
+of both outcomes.
+
+Rewrite it to `mariadb+pymysql://`. The test suite does, and the one time it did not, "the
+MariaDB suite" was exercising the MySQL code path.
+
+## Gotchas
+
+**Native UUID exists, and this port does not emit it.** MariaDB 10.7+ has a real 16-byte `UUID`
+type; Java's DDL uses it. SQLAlchemy does not render it, so `uuid_column()` gives `CHAR(36)`.
+
+**Interop is unaffected, and that was checked rather than assumed.** Against a table created with
+Java's `id UUID` DDL, this port writes a uuid and reads back an identical value, and
+`CAST(id AS CHAR)` gives the canonical hyphenated text. Either DDL works with either port. The
+difference is 16 bytes against 36.
+
+**`JSON` is `LONGTEXT` underneath.** MariaDB has no separate JSON storage - it is `LONGTEXT` with
+a CHECK constraint, and the driver reports it that way. That is invisible when you *declare* the
+column with `json_column()`, and very visible when something **reflects** it: a reflected JSON
+column comes back as text. [`schemagen`](/reference/schemagen/) forces it back, and that forcing is the
+reason it exists.
+
+Java has the same problem and solves it the same way, with a jOOQ `ForcedType` carrying
+`withName("JSON")`.
+
+**A reflected bigint carries a display width.** MariaDB reports `BIGINT(display_width=20)`.
+Emitted verbatim into a generated module, it does not even import - `TypeError: BIGINT() takes no
+arguments`. `schemagen` normalises it.
+
+**`GET_LOCK` honours sub-second timeouts here** - unlike MySQL, which truncates them to zero.
+That is why there is a separate provider class for a backend that issues identical statements.
+[The measurements](/reference/keyed-locks/#a-sub-second-wait-is-not-a-wait-on-mysql).
+
+**No partial indexes**, same as MySQL. The predicate column goes in the index.
+
+**`DATETIME(6)`, not `TIMESTAMP`**, and not bare `DATETIME`. Same reasoning as MySQL.
+
+**One statement per `op.execute()`**, and **`TZ=UTC` on the server**. Same as MySQL.
+
+## See also
+
+- [MySQL](/reference/dialects/mysql/) - most of this, with the differences called out
+- [schemagen](/reference/schemagen/) - the normalisation that makes reflection usable here
+- [`fastapi_wallet_rest_mariadb`](../../ekbatan-py-examples/fastapi_wallet_rest_mariadb)

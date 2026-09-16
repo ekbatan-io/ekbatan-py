@@ -1,0 +1,98 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Model
+activeSection: reference
+lead: "A persistent aggregate that emits domain events. Every change worth telling the rest of the system about — opened, deposited, closed, refunded — is attached to the model as a ModelEvent and persisted atomically alongside the domain row when the action commits."
+---
+
+## Type signature
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+```
+
+`Model[ID, S]` takes the id type and the state enum. From the base it gets `id`, `version`,
+`state`, `created_date`, `updated_date` and the attached `events`.
+
+`frozen=True` makes it immutable; `kw_only=True` is what makes the inheritance legal at all —
+without it a subclass field with no default would follow the base's defaulted fields and Python
+would refuse the class.
+
+## Construction and mutation
+
+A change returns a **new** model:
+
+```python
+def deposit(self, amount: Decimal) -> Wallet:
+    if amount <= 0:
+        raise ValidationError(f"deposit amount must be positive, got {amount}")
+    new_balance = self.balance + amount
+    return (
+        self.copy()
+        .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+        .balance(new_balance)
+        .build()
+    )
+```
+
+- **`copy()`** returns a builder pre-populated from this instance, so domain code names only the
+  fields that changed.
+- **`evolve(**changes)`** is the framework's own shorthand. Domain code should prefer `copy()`,
+  so every change in an application reads the same way.
+
+Immutability is not decoration: it is what makes two-phase execution safe. The plan collects
+references to snapshots, so a partially applied change cannot exist.
+
+## Events
+
+`with_event(event)` attaches one. They ride along with the model into the plan and become outbox
+rows in the commit. Reading a model back from the database returns it with **no** events — what
+comes back is the database's view of a row, and events are not a column.
+
+## Optimistic locking
+
+Every model carries `version`, and every update carries `WHERE version = ?`. If another
+transaction got there first, zero rows match and `StaleRecordError` unwinds the action, which
+retries once by default.
+
+**The write path takes no pessimistic row locks, ever.** That is correct by *failing*: when
+losing the race is the wrong outcome, take a [keyed lock](/reference/keyed-locks/) first so the
+second caller waits and then succeeds.
+
+## Soft deletion
+
+`delete()` on the model flips `state` to `DELETED` and emits an event like any other change.
+Every inherited read filters those rows out; a statement you write yourself does not, so add
+`state != 'DELETED'` when you drop to SQL. There is no `delete()` on the repository — a row that
+silently stopped existing would leave every published event with nothing on the other side.
+
+## Equality
+
+A dataclass compares **every field**, so two wallets with the same id and version but different
+balances are not equal. `without_events()` gives the row-shaped view for comparing against what
+a read returned.
+
+## Builder API
+
+| | model | entity |
+| --- | :-: | :-: |
+| `id(...)` · `state(...)` | yes | yes |
+| `version(...)` · `with_initial_version()` · `increase_version()` | yes | yes |
+| `copy_base(other)` · `set(**changes)` | yes | yes |
+| `with_event(...)` · `events(...)` | yes | — |
+| `created_date(...)` · `updated_date(...)` | yes | — |
+
+The runtime builder resolves setters by name, so a checker sees only `__getattr__`. Generate a
+typed one — `python -m ekbatan.codegen myapp.model --out myapp/builders.py` — and commit it: it
+is derived from source you already have.
+
+## See also
+
+- [Entity](/reference/entity/) — the same, without events
+- [ModelEvent](/reference/model-event/) — what `with_event` takes
+- [Repository](/reference/repository/) — how a model becomes a row and back
+- [Learn → Models and entities](/learn/models-and-entities/)

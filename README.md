@@ -95,10 +95,11 @@ procedure.
 
 SQLAlchemy 2.0, used as a typed statement builder rather than as an ORM. Declarative classes
 describe the schema, because that is where the type information lives - `select(Wallet.id,
-Wallet.balance)` checks as `Select[tuple[UUID, Decimal]]` - and statements execute on a plain
-`Connection`. There is no `Session` anywhere: its identity map and autoflush are a second
-unit-of-work implementation, and two of those fighting over one transaction is the worst thing
-you could do to this design.
+Wallet.balance)` checks as `Select[tuple[UUID, Decimal]]` - and statements execute on a
+`Connection`. The one this framework hands you is `Db`, a subclass that adds `rows(...)` for
+turning rows into objects and takes nothing away. There is no `Session` anywhere: its identity
+map and autoflush are a second unit-of-work implementation, and two of those fighting over one
+transaction is the worst thing you could do to this design.
 
 Table definitions are generated with `python -m ekbatan.schemagen`, which starts a container,
 runs your migrations into it and reflects the result - the counterpart to Java's jOOQ step.

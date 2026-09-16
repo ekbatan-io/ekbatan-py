@@ -1,0 +1,74 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: ActionPlan
+activeSection: reference
+lead: "The accumulator for one action invocation's intended changes. Created fresh per execute(...) call and bound to a ContextVar for the duration of perform(); inside the action, code reaches it as self.plan."
+---
+
+## Type signature
+
+```python
+class ActionPlan:
+    def add[P: Persistable](self, model: P) -> P: ...
+    def add_all[P: Persistable](self, models: Iterable[P]) -> list[P]: ...
+    def update[P: Persistable](self, model: P) -> P: ...
+    def update_all[P: Persistable](self, models: Iterable[P]) -> list[P]: ...
+
+    def changes(self) -> Mapping[type, PersistableChanges]: ...
+    def additions[P: Persistable](self, model_type: type[P]) -> Sequence[P]: ...
+    def updates[P: Persistable](self, model_type: type[P]) -> Sequence[P]: ...
+```
+
+The staging methods are generic in the thing staged, so `plan.add(wallet)` is a `Wallet` and
+not a `Persistable`.
+
+## Single-writer; not thread-safe
+
+Deliberately. The plan belongs to one invocation, and a plan mutated from work handed to a pool
+is a data race with a correct-looking traceback. Fan out, join, then stage.
+
+## Methods
+
+### `add(model)` / `add_all(models)`
+
+Stage an INSERT. Returns the **stamped** row — id, initial version and timestamps filled in —
+not the object you passed. Later code in the same `perform()` should use what came back.
+
+### `update(model)` / `update_all(models)`
+
+Stage an UPDATE. Returns the object **at its next version**, so a later read in the same
+`perform()` sees the increment rather than the stale one.
+
+One id may be staged at most once per invocation; re-staging raises. Two changes to one row in
+one action is almost always a bug you would rather find here.
+
+### `additions(model_type)` / `updates(model_type)`
+
+What has been staged, per type. For a persister or a test that wants to look.
+
+### `changes()`
+
+Everything staged, keyed by type. `bool(plan_changes)` is false when nothing was staged.
+
+## Lifecycle
+
+```
+execute()
+   ├── a fresh ActionPlan, bound to a ContextVar
+   ├── perform()          ← self.plan resolves to it
+   ├── the executor reads changes() and writes them in one transaction
+   └── the binding is reset
+```
+
+A retry gets a **new** plan, so attempts are independent and a half-staged attempt cannot leak
+into the next one.
+
+An invocation that stages nothing still writes **one** outbox row, with `event_type` null — so
+*"this ran and decided there was nothing to do"* is a fact in the log rather than a silence you
+cannot tell from a crash.
+
+## See also
+
+- [Action](/reference/action/) — what holds the plan
+- [ActionExecutor](/reference/action-executor/) — what flushes it
+- [`events`](/reference/tables/events/) — where the sentinel row lands

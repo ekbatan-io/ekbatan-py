@@ -83,6 +83,33 @@ If the destination wallet is closed, retrying will never help. `CompleteTransfer
 into a closed wallet forever — and "failed" is a business outcome that deserves a durable row
 like any other.
 
+## Design rules
+
+**Put a correlation id in every saga event.** The example mints a `transfer_id` in
+`InitiateTransferAction` and carries it through every event of the workflow, so a human can
+reconstruct one transfer from the outbox with a single `WHERE`.
+
+**Make event payloads self-contained.** A handler should not have to parse the producing
+action's parameters to know what to do next. Put the next step's identifiers and the amount in
+the event itself. Self-describing events are what make choreography possible — a handler that
+had to look things up would need to know where they are.
+
+**Make each step idempotent**, with a unique constraint rather than a check. Delivery is
+at-least-once everywhere, so a step runs twice sooner or later. The example stages a
+`TransferStep` keyed by `(transfer_id, step)` *before* the credit, inside the same transaction:
+a replay hits the constraint and the credit beside it rolls back with it.
+
+**Record terminal business failures as events, not exceptions.** A closed destination wallet
+will still be closed on the next attempt, so retrying forever does not help. The example writes
+a `TransferFailedEvent`, and compensation reacts to it like any other event.
+
+**Keep compensation forward-only.** Do not erase earlier facts — add a new compensating action
+and its event. The debit happened; the refund is a second thing that also happened.
+
+**Choose in-process or broker by deployment shape.** The example uses in-process handlers
+because every step lives in one application. If a later step belongs to another service, let
+that service consume the event through Debezium instead. Nothing in the saga's shape changes.
+
 ## What you get, and what you do not
 
 You do not get global atomicity. A caller may observe intermediate state. The 202 is what makes
@@ -93,3 +120,14 @@ the event announcing it, the next step is driven from a durable outbox row, fail
 are visible in the event log, and compensation is explicit and auditable.
 
 <LearnPager current="sagas" />
+
+## See also
+
+- [Consuming events](/learn/consuming-events/) — the handler pipeline a saga is built on
+- [Sharding strategies](/learn/sharding-strategies/) — why a cross-shard action is refused by
+  default
+- [The outbox](/learn/outbox/) — why every saga step gets a durable row
+- Reference: [Sagas](/learn/sagas/),
+  [Local event handlers](/reference/events/local-event-handler/)
+- [`ekbatan-py-examples/fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg)
+  — the runnable transfer, including the replay test that shows nothing is written twice

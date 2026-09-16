@@ -25,6 +25,7 @@ from sqlalchemy import Connection, Engine, Table, create_engine, insert
 from ._tracing import span
 from .config import ShardConfig, ShardingConfig
 from .errors import ValidationError
+from .fetching import Db, FetchResult
 from .sharding import ShardIdentifier
 
 __all__ = [
@@ -39,14 +40,12 @@ LOG = logging.getLogger("ekbatan.persistence")
 # Default None rather than an empty dict: a mutable default on a ContextVar is shared by every
 # context that never set one, and the day something mutates it in place is the day two requests
 # start sharing a connection.
-_ambient: ContextVar[Mapping[ShardIdentifier, Connection] | None] = ContextVar(
-    "ekbatan_tx", default=None
-)
+_ambient: ContextVar[Mapping[ShardIdentifier, Db] | None] = ContextVar("ekbatan_tx", default=None)
 
-_NONE: Mapping[ShardIdentifier, Connection] = MappingProxyType({})
+_NONE: Mapping[ShardIdentifier, Db] = MappingProxyType({})
 
 
-def _open() -> Mapping[ShardIdentifier, Connection]:
+def _open() -> Mapping[ShardIdentifier, Db]:
     """The transactions open on this thread or task."""
     return _ambient.get() or _NONE
 
@@ -64,13 +63,22 @@ class Transaction:
     else SQLAlchemy offers.
     """
 
-    connection: Connection
+    connection: Db
     shard: ShardIdentifier
     dialect: str
 
     def execute(self, statement: Any, parameters: Any = None, **kwargs: Any) -> Any:
         """Run one statement on this transaction."""
         return self.connection.execute(statement, parameters, **kwargs)
+
+    def rows(self, statement: Any) -> FetchResult:
+        """Run one statement and hand back its rows, for mapping.
+
+        Forwarded for the same reason :meth:`execute` is: a block inside ``with
+        registry.transaction()`` should read the way one inside a repository does, rather than
+        reaching through :attr:`connection` for every statement.
+        """
+        return self.connection.rows(statement)
 
     def __repr__(self) -> str:
         return f"Transaction(shard={self.shard}, {self.dialect})"
@@ -137,7 +145,7 @@ class TransactionManager:
                     "ekbatan.shard.member": self.shard.member,
                 },
             ),
-            self.primary.connect() as conn,
+            Db(self.primary) as conn,
         ):
             token = _ambient.set({**_open(), self.shard: conn})
             # Begin, commit and roll back by hand rather than through `with conn.begin()`. The
@@ -182,7 +190,7 @@ class TransactionManager:
             finally:
                 _ambient.reset(token)
 
-    def current(self) -> Connection | None:
+    def current(self) -> Db | None:
         """The transaction open on this shard right now, or ``None``.
 
         The counterpart to Java's ``currentTransactionDbContext``. Where the ambient
@@ -192,7 +200,7 @@ class TransactionManager:
         return _open().get(self.shard)
 
     @contextmanager
-    def connection(self, *, readonly: bool = False) -> Iterator[Connection]:
+    def connection(self, *, readonly: bool = False) -> Iterator[Db]:
         """A connection for one statement: the ambient transaction if there is one, else a
         connection that commits each statement as it runs.
 
@@ -219,7 +227,7 @@ class TransactionManager:
             return
 
         engine = self.replica if readonly else self.primary
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        with Db(engine).execution_options(isolation_level="AUTOCOMMIT") as conn:
             yield conn
 
     def close(self) -> None:

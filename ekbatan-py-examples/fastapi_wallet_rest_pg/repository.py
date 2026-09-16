@@ -103,8 +103,14 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         is **the replicas**, and that is the deliberate choice here: a total is a report, and a
         report can be a second out of date. A read that had to be current would use `dbs()`.
         Note also that a shard holding nothing contributes zero rather than a null.
+
+        The `state != DELETED` filter is spelled out because this is *your* statement. The
+        inherited reads apply it for you; one you build yourself carries only what you put in
+        it, exactly as the Java repository's `.and(WALLETS.STATE.ne(...))` does.
         """
-        query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(*self._live())
+        query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(
+            WALLETS.c.state != WalletState.DELETED.name
+        )
         return sum(
             (Decimal(str(conn.execute(query).scalar_one())) for _, conn in self.readonly_dbs()),
             Decimal(0),

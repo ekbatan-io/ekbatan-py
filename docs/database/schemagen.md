@@ -1,8 +1,8 @@
 # schemagen
 
-The counterpart to Java's jOOQ step, and the same developer experience: **start a throwaway
-database, run your migrations into it, reflect the result, generate code.** Java does it with
-the `dev.monosoul.jooq-docker` Gradle plugin; here it is one command and four lines of Makefile.
+Table definitions that cannot drift from the database, because they are generated from it:
+**start a throwaway database, run your migrations into it, reflect the result, generate code.**
+One command, and four lines of Makefile to make it incremental.
 
 ```
 uv add --dev ekbatan[codegen]
