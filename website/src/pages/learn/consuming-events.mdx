@@ -253,7 +253,35 @@ Three levels for three consumption patterns: *everything from this service*, *ev
 this model*, *this one event type*.
 
 A consumer that wants the row as an object rather than as bytes has `ActionEvent.from_row` in
-`ekbatan.streaming`, which is the consumer-side view of an outbox row.
+`ekbatan.streaming`, which is the consumer-side view of an outbox row — the action's context and
+the event it produced, in one frozen dataclass.
+
+With Variant A (JSON on the wire), a consumer is an ordinary Kafka consumer and nothing else:
+
+```python
+consumer = KafkaConsumer(
+    "ekbatan.com.example.finance",
+    bootstrap_servers="kafka:9092",
+    group_id="warehouse",
+    value_deserializer=json.loads,
+)
+
+for message in consumer:
+    row = message.value
+    if row["event_type"] is None:
+        continue                                  # a sentinel; the action changed nothing
+    handle(row["event_type"], row["payload"])
+```
+
+With Variant B the value is `bytes` and the deserialiser is `ActionEvent` in whichever binary
+format you configured — decode the envelope first, then decode `payload` with the schema that
+matches its `event_type`. The two-step is the point: a consumer routes on `event_type` without
+parsing a body it may not have a schema for.
+
+**A Variant A consumer needs the sentinel check**, as above. An action that decided there was
+nothing to do still writes a row with `event_type` null, and raw CDC publishes it like any other.
+Variant B consumers do not: the transforms drop sentinels before they reach a topic. That is one
+more reason the variant is a deployment-wide choice rather than a per-consumer one.
 
 ### B.3 Fan out or rekey downstream
 

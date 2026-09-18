@@ -37,6 +37,27 @@ single transaction, flush every staged change, write the outbox rows and commit.
 Phase 1 is pure construction. Phase 2 is the only place a transaction is opened, and it always
 wraps every staged change together with the matching event rows.
 
+Three consequences follow from the split, and they are most of why it exists.
+
+**`perform()` cannot write, so it cannot half-write.** There is no flush, no `save()`, no
+connection to reach for. The worst an action can do is stage something the executor then refuses,
+and refusing costs nothing because nothing has been written.
+
+**A retry is cheap and correct.** When a version check fails, phase 2 rolls back and the executor
+re-runs phase 1 from the top with a **fresh plan** — re-reading the row it lost the race on, so
+the second attempt is computed from the winner's state rather than patched onto the loser's.
+An action that only reads, computes and stages is safe to re-run by construction; one that
+posted to an external API in `perform()` is not, which is the real reason for the rule.
+
+**Sharding stays out of the action.** The grouping step is in phase 2, so `perform()` stages
+objects without knowing which database each one lands on. The same action body works on one
+database and on eight.
+
+The cost is the one thing you have to hold in your head: **`self.plan.update(x)` has not written
+`x`.** It returns the row as it *will be* written — stamped, version already moved — so later
+code in the same `perform()` reads the new state. But the database has not seen it, and will not
+until `perform()` returns.
+
 ## Writing an action
 
 ```python

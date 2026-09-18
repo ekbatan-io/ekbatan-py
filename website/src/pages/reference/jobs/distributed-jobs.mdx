@@ -192,8 +192,38 @@ One row per registered job, and it is the coordination itself rather than a log 
 carries the next execution time, the identity of whichever instance currently holds the task,
 and its heartbeat. Whichever instance claims the row runs; the rest do not.
 
-The table is db-scheduler's, unchanged, so a Java service and a Python one can share one - see
-[`scheduled_tasks`](/reference/tables/scheduled-tasks/) for the columns and the DDL.
+The table is db-scheduler's, unchanged, so a Java service and a Python one can share one — see
+[`scheduled_tasks`](/reference/tables/scheduled-tasks/) for every column and the DDL on each
+dialect, generated rather than transcribed:
+
+```python
+from ekbatan.schema import scheduled_tasks_table
+```
+
+One difference from the Java port's copy is worth knowing if you are sharing a database:
+`execution_time` and the other timestamps are `TIMESTAMP` here, where Java's migration writes
+`TIMESTAMP WITH TIME ZONE`. Both store the same instant and both are read back correctly by
+either port; the column type differs because db-scheduler's own schema is zoned and this port
+holds the always-unzoned rule everywhere. The
+[table's page](/reference/tables/scheduled-tasks/#execution_time-is-timestamptz-in-java-and-timestamp-here)
+has the measured consequence of getting that wrong in the other direction.
+
+**What exclusivity does and does not mean.** When a task's `execution_time` arrives, exactly one
+instance wins the atomic claim *for that slot*, and that instance runs it. Each running instance
+heartbeats. If a heartbeat goes stale — the process crashed, the network partitioned, the
+interpreter stalled — another instance reclaims the row **and runs the job again**, while the
+original may still be part-way through `run()`.
+
+The claim protects the row, not your method. The scheduler stops the stale instance recording a
+result; it cannot undo side effects that instance has already caused. **Write `run()` so that
+running the same slot twice is harmless.**
+
+And it is at-most-one *per scheduled slot*, not at-most-one ever. A daily 02:00 job runs once at
+02:00 across the cluster; if 02:00 passes while every node is down, the missed slot is picked up
+by the next live node when it polls.
+
+A task that raises is retried according to its `Schedule`, and the row's `consecutive_failures`
+increments — which is the column to alert on.
 
 ## Use a dedicated connection pool
 

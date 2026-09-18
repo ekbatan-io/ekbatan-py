@@ -38,8 +38,38 @@ What this port owes the pipeline is the **row format** - and that is
 ## Variant A — JSON on Kafka
 
 The default, and the one to start with. Point Debezium at the outbox, let its JSON converter
-emit the row as-is, and consumers read fields straight off the wire. No schemas to mount, no
-JAR to deploy into Kafka Connect, and `kafka-console-consumer` shows you a readable message.
+emit the row as-is, and consumers read fields straight off the wire. No schemas to mount, no JAR
+to deploy into Kafka Connect, and `kafka-console-consumer` shows you a readable message.
+
+```
+Your application
+   │  one transaction per action
+   ▼
+┌────────────────────────────────────────────────────┐
+│  domain rows  +  events            (jsonb)         │  ← committed atomically
+└────────────────────────────────────────────────────┘
+   │  outbox rows visible to CDC after commit
+   ▼
+┌────────────────────────────────────────────────────┐
+│  Debezium (CDC connector)                          │  ← passthrough,
+└────────────────────────────────────────────────────┘     no transform
+   │  JSON message
+   ▼
+┌────────────────────────────────────────────────────┐
+│  Kafka — raw topic                 (JSON)          │
+└────────────────────────────────────────────────────┘
+   │  router fans out by model_type / event_type
+   ▼
+┌────────────────────────────────────────────────────┐
+│  per-model / per-event topics      (JSON)          │
+└────────────────────────────────────────────────────┘
+   │
+   ▼
+Your consumers — `json.loads`, and nothing else
+```
+
+Nothing in that diagram is Python-specific, and nothing in it is Java-specific either: the only
+producer-side requirement is a row in `events`, which both ports write identically.
 
 ## Variant B — Binary on Kafka (Avro / Protobuf)
 
