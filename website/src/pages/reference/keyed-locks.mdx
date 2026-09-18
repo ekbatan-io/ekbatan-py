@@ -1,6 +1,6 @@
 ---
 layout: ../../layouts/DocLayout.astro
-title: Keyed locks
+title: Pessimistic locking via KeyedLockProvider
 activeSection: reference
 lead: "Optimistic locking is the framework's default and is in every write. A keyed lock is the other tool: pessimistic, named by a string you choose, and held across whatever work you wrap in it."
 ---
@@ -34,22 +34,30 @@ with lease:
     ...
 ```
 
-## Where to take it
+## Where to acquire the lock
 
-**At the caller, around `executor.execute(...)`.** This is the default and almost always right.
-The lease has to span **both** `perform()` and the executor's commit, or the race it exists to
-prevent reopens in the gap between them - and only the caller can wrap both.
+### ✅ At the caller, around `executor.execute(...)` — the default
+
+Almost always right. The lease has to span **both** `perform()` and the executor's commit, or
+the race it exists to prevent reopens in the gap between them - and only the caller can wrap
+both.
 
 ```python
 with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
     service.executor.execute(DepositMoneyAction, params)
 ```
 
-**Inside `perform()`** is narrower and usually wrong for exactly that reason: `perform()` returns
-before anything is written, so a lease taken and released inside it is gone before the commit.
-It is defensible only for serialising a read-and-compute that has no write of its own.
+### ⚠️ Inside `Action.perform()` — narrower use case only
 
-## Reentrancy
+Defensible only for serialising a read-and-compute that has no write of its own.
+
+### Why not just always lock inside `perform()`?
+
+Because `perform()` returns before anything is written. A lease taken and released inside it is
+gone by the time the executor opens its transaction, so the window it was meant to close is
+exactly the window it leaves open.
+
+## Reentrancy contract — uniform across all five backends
 
 Uniform across every backend: **the same key, taken again in the same context, re-enters.** It
 does not deadlock and it does not take a second connection. The lock is released when the
@@ -58,7 +66,7 @@ outermost lease closes.
 Re-entry is per context, the same way the ambient transaction is - a thread you hand work to does
 not inherit your hold.
 
-## The backends
+## Five backends
 
 | backend | mechanism | scope |
 | --- | --- | --- |
@@ -80,7 +88,7 @@ Each key is hashed to a 64-bit integer, and the hash matches Java's exactly, **s
 service and a Java service contending for one key actually contend.** The MySQL lock name is
 `ekbatan:<unsigned hex>`, byte for byte what Java produces.
 
-### Wiring one
+### Wiring up a backend
 
 ```python
 locks = PostgresKeyedLockProvider(
@@ -155,7 +163,7 @@ locks at once holds a thousand threads.** If that becomes the constraint the fix
 thread with a heap of deadlines rather than a thread per hold - contained, not a redesign. It is
 recorded in [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).
 
-## Optimistic or pessimistic?
+## Optimistic vs pessimistic — picking one
 
 | | |
 | --- | --- |

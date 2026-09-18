@@ -5,7 +5,7 @@ activeSection: reference
 lead: "The reference. For why there are two axes and when to reach for each strategy, read Concepts → Sharding first; this page is the configuration and the wire format."
 ---
 
-## `ShardIdentifier`
+## Two axes: group + member
 
 A `(group, member)` pair. Group is the policy axis, member the capacity axis.
 
@@ -23,7 +23,7 @@ MEXICO = ShardIdentifier(1, 0)
 
 So 16,384 addressable shards, and the numbers are part of the id rather than a lookup key.
 
-## Configuration
+## Declarative configuration
 
 ```python
 layout = ShardingConfig(
@@ -67,7 +67,7 @@ invisible as latency.
 There is no counterpart to Hikari's `idleTimeout` or `minimumIdle`; retirement here is by age
 rather than by idleness. See [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).
 
-## Routing
+## Sharded models and repositories
 
 ```python
 registry.manager(MEXICO)          # the manager for one shard
@@ -94,7 +94,7 @@ Key-based reads (`get`, `find`, `exists`) resolve one shard and go there. Predic
 (`find_where`, `count`, `exists_where`) have no key to resolve, so they **scatter across every
 shard** - a predicate says nothing about where its rows are. Pass `shard=` to confine one.
 
-## The bit layout
+## Self-describing IDs: `ShardedId`
 
 The shard is packed into the `rand_b` region of a UUIDv7:
 
@@ -119,7 +119,7 @@ wallet_id.minted_at                        # -> datetime, from the v7 timestamp
 `WalletId.random()` uses the default shard. Because the timestamp is the high bits, ids sort
 chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
 
-## Cross-shard
+## Cross-shard actions
 
 Refused by default. `CrossShardError` names the two shards involved.
 
@@ -146,7 +146,7 @@ migrate(layout, MIGRATIONS, revision="head")
 Ordered by the configuration rather than by the argument, and an unknown identifier is refused
 rather than skipped. See [Migrations](/reference/migrations/).
 
-## What is sequential here
+## What sharding does not provide
 
 A scatter read and an event fan-out round visit shards **one at a time**; Java forks a virtual
 thread per shard. On eight shards a round takes eight batches' time rather than one. Recorded in

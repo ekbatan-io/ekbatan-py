@@ -28,7 +28,7 @@ beyond what the column type does. Most repositories never do.
 That is the single largest ergonomic difference between the two ports, and it removes an entire
 class of bug: a field added to a model and forgotten in `toRecord` is not expressible here.
 
-## What you get for free
+## Inherited CRUD surface
 
 **Writes**
 
@@ -85,7 +85,7 @@ pagination does not work across shards - "rows 100 to 120" has no meaning when t
 four databases and each has its own ordering. Use keyset or temporal pagination, written on the
 concrete repository where you know the ordering key.
 
-## Dropping down to SQLAlchemy
+## Custom queries
 
 When the inherited surface is not enough, take a connection. The choice is about **consistency**,
 and picking wrongly is the mistake this section exists to prevent.
@@ -104,6 +104,8 @@ for shard, conn in self.dbs(): ...
 for shard, conn in self.readonly_dbs(): ...
 ```
 
+### Picking the right one
+
 | you want | use |
 | --- | --- |
 | the default read behaviour | the inherited reads - primary-consistent by design |
@@ -117,7 +119,7 @@ for shard, conn in self.readonly_dbs(): ...
 They are context managers because a connection has a lifetime. `tx_db` is the exception: it
 returns the transaction's connection or `None`, and the transaction owns it.
 
-### Turning rows into objects
+### Examples
 
 What comes back from any of them is a `Db` - a `sqlalchemy.Connection` with one method added.
 Everything SQLAlchemy documents is still there and still means what its documentation says;
@@ -186,7 +188,7 @@ return [
 > dual-write the framework exists to prevent, reintroduced by hand. Inside `perform()`, stage
 > with `self.plan.add(...)` and `self.plan.update(...)`.
 
-### Soft deletion is yours again down here
+## Soft delete in custom queries
 
 The inherited reads add the soft-delete predicate. A statement you build yourself does not - the
 filter is not a table property, it is something the repository applies on the way to a query it
@@ -202,7 +204,7 @@ select(WALLETS).where(
 The predicate helpers (`find_where`, `find_one_where`, `exists_where`, `count`) keep both the
 soft-delete filter and the shard routing, so reach for those before reaching for a connection.
 
-## Registration
+## Registration, which nothing discovers
 
 There is no annotation and nothing scans for your repositories. They go in the registry, in the
 wiring, where you can see them:

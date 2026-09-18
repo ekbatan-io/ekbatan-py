@@ -10,7 +10,7 @@ lead: "The action pipeline is instrumented with the OpenTelemetry API only - no 
 written in Java appear in one dashboard. Everything below was checked against Java's names rather
 than invented.
 
-## Installing an SDK
+## Bringing your own SDK
 
 ```
 uv add opentelemetry-sdk opentelemetry-exporter-otlp
@@ -25,7 +25,7 @@ that `uv sync --all-extras` does **not** install it - otherwise the test proving
 runs without a tracing stack would quietly stop testing anything. One CI job asks for the group
 and asserts the span names; every other job proves the absence path.
 
-## The span tree
+## Span hierarchy
 
 Each `executor.execute(...)` produces:
 
@@ -65,7 +65,7 @@ span there would report a nested duration for something that neither began nor c
 values, because the executor always writes through the batch methods. Everything else is under
 `ekbatan.*`.
 
-### Three attributes Java does not have
+### Attributes on a partial cross-shard commit
 
 A cross-shard action that commits some shards and fails another sets, on the failing span:
 
@@ -79,14 +79,14 @@ Java logs the same facts at CRITICAL. Putting them on the span as well means the
 the failure also shows exactly what state the data is in - which is the question anyone looks at
 that trace to answer.
 
-### The instrumentation scope differs
+### The instrumentation scope
 
 Java reports scope `io.ekbatan.core` at the Java artifact's version. This port reports `ekbatan`
 at its own. That is deliberate: the scope names the library that produced the span, the two
 versions are independent, and a dashboard filtering on span *names* - which are identical - sees
 both.
 
-## Retries
+## Retry events
 
 Each retry adds a span **event** named `retry` to the action span, with `retry.count` and
 `retry.exception` - the matched exception's class name, which may have come from the cause chain.
@@ -117,6 +117,8 @@ not counted.
 | `ekbatan.events.delivery.lag` | histogram | `s` | `handler` | dispatch |
 | `ekbatan.events.fanned_out` | counter | `{event}` | - | fan-out |
 | `ekbatan.events.notifications_created` | counter | `{notification}` | - | fan-out |
+
+### What each one answers
 
 **`handled`** is throughput and failure rate. The `handler` tag is what distinguishes one broken
 handler from a general problem.
@@ -157,13 +159,13 @@ succeed at all - the classic case being an `ImportError` from a missing optional
 no amount of retrying fixes. Alerting on that catches it in minutes, where the discard alert above
 only fires a week later, once the events are gone.
 
-### A known caveat
+### Known caveat
 
 `ekbatan.events.fanned_out` counts rows **read**, not rows written. On a deployment with a real
 replica and non-zero lag, a round can re-read events it has already delivered, so the counter
 over-reports. Treat it as an upper bound.
 
-## Reads are not instrumented
+## Read-path tracing is not instrumented
 
 A repository's reads produce no spans of their own. They run inside `perform()`, which already has
 one, and instrumenting every lookup would be noise for an action that does several. Instrument

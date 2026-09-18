@@ -21,7 +21,19 @@ So a saga is **action → committed event → post-commit consumer → next acti
 choreography: there is no coordinator to ask what state a transfer is in, because the state *is*
 the rows.
 
-## The worked example
+## Why not one cross-shard action?
+
+Because there is no atomic commit across databases to have. An action whose changes span shards
+is refused by default, and `allow_cross_shard=True` does not buy atomicity — it opens **one
+transaction per shard**, each committing independently. A failure rolls back only its own shard
+and the ones that already committed stay committed.
+
+That is the [dual-write trap](/learn/the-dual-write-trap/) again, with two shards of your own
+database standing in for the database and the broker. A saga is the honest alternative: every
+step commits on its own, and a step that cannot proceed compensates rather than pretending the
+earlier ones did not happen.
+
+## Wallet transfer example
 
 [`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg)
 splits a transfer into three steps.
@@ -60,6 +72,25 @@ TransferInitiated -> TransferFailed -> TransferRefunded
 ```
 
 You can explain the system's behaviour after the fact, because every step was durable.
+
+## Where the next step is started
+
+Do **not** execute another action from inside `perform()`. That would hide a second transaction
+inside the first action's business logic and make the execution model hard to reason about.
+
+The safe boundary is **after the previous action has committed and its event is being
+consumed**. That consumer can be:
+
+- an in-process handler running in your application (database-backed, restart-safe, any
+  instance),
+- a Kafka / Pulsar / RabbitMQ / SQS consumer fed by Debezium or by a publishing handler,
+- a separate worker process that polls or streams the outbox,
+- or a service-level coordinator that reacts to a committed event and starts the next step.
+
+The important part is the boundary: the next step starts from a committed event, so it gets its
+own transaction and its own durable outcome.
+
+The runnable example uses in-process handlers, because every step lives in one application.
 
 ## Idempotency is a constraint, not a check
 
@@ -110,7 +141,7 @@ and its event. The debit happened; the refund is a second thing that also happen
 because every step lives in one application. If a later step belongs to another service, let
 that service consume the event through Debezium instead. Nothing in the saga's shape changes.
 
-## What you get, and what you do not
+## What this gives you
 
 You do not get global atomicity. A caller may observe intermediate state. The 202 is what makes
 that visible rather than surprising.

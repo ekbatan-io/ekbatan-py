@@ -15,36 +15,7 @@ queries and your HTTP layer stay as they are.
 [`fastapi_wallet_rest_sharded_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)
 is this page, running.
 
-## 1. Name the shards
-
-```python
-from ekbatan.sharding import ShardIdentifier
-
-GLOBAL = ShardIdentifier(0, 0)      # prints as "0:0"
-MEXICO = ShardIdentifier(1, 0)
-```
-
-A `(group, member)` pair. Group is the **policy** axis - where data is *allowed* to live. Member
-is the **capacity** axis - how many writes one database can take. See
-[sharding strategies](/learn/sharding-strategies/) for why those are separate.
-
-## 2. Configure both
-
-```python
-layout = ShardingConfig(
-    shards=(
-        ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=global_url)),
-        ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=mexico_url), name="mexico"),
-    ),
-    default_shard=GLOBAL,
-)
-registry = DatabaseRegistry.from_config(layout)
-```
-
-That is the whole configuration change. `migrate(layout, MIGRATIONS)` now visits both, in
-configuration order, stopping at the first failure and naming what had already succeeded.
-
-## 3. Make the id carry its shard
+## 1. Change the model's ID type
 
 ```python
 class WalletId(ShardedId["Wallet"]):
@@ -68,8 +39,6 @@ sticky sessions.
 This layout is a **cross-language contract** — an id minted by a Java service carries its shard
 in the same bits, so either port can route the other's rows.
 
-## 4. Give the repository a strategy
-
 ```python
 class WalletRepository(ModelRepository[Wallet, WalletId]):
     def __init__(self, registry: DatabaseRegistry) -> None:
@@ -79,7 +48,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
 
 One argument. That is step four of four.
 
-## 5. Choose the shard when you create
+## 2. Pick the shard at creation
 
 The shard is bonded to the row for its lifetime, so it is chosen once, at creation:
 
@@ -92,7 +61,34 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
 
 **This is the only line in the whole application that knows there is more than one database.**
 
-## 6. Spin up the second database
+## 3. Wire the second database
+
+```python
+from ekbatan.sharding import ShardIdentifier
+
+GLOBAL = ShardIdentifier(0, 0)      # prints as "0:0"
+MEXICO = ShardIdentifier(1, 0)
+```
+
+A `(group, member)` pair. Group is the **policy** axis - where data is *allowed* to live. Member
+is the **capacity** axis - how many writes one database can take. See
+[sharding strategies](/learn/sharding-strategies/) for why those are separate.
+
+```python
+layout = ShardingConfig(
+    shards=(
+        ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=global_url)),
+        ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=mexico_url), name="mexico"),
+    ),
+    default_shard=GLOBAL,
+)
+registry = DatabaseRegistry.from_config(layout)
+```
+
+That is the whole configuration change. `migrate(layout, MIGRATIONS)` now visits both, in
+configuration order, stopping at the first failure and naming what had already succeeded.
+
+## 4. Spin up the second database
 
 Two databases, not two schemas in one — the point is separate capacity, and a second schema
 shares the first one's connections, WAL and CPU.
@@ -113,7 +109,7 @@ Then migrate both with the one call — `migrate(layout, MIGRATIONS)` — **befo
 pool**. Every shard gets the same schema, including the framework's own tables: each database
 carries its own outbox, and an event is written to the database whose row it describes.
 
-## 7. Run it, and check the placement
+## 5. Run it
 
 ```python
 mx = service.executor.execute(
@@ -134,7 +130,7 @@ psql -p 5433 wallets -c "SELECT count(*) FROM events"    # 1
 `wallets.get(mx.id)` finds it with no lookup table and no extra query: the shard was read out of
 the id. `wallets.find_where(...)` has no id to read, so it asks both.
 
-## 8. Optional — a transfer that crosses shards
+## 6. (Optional) Cross-shard transfer
 
 Two wallets on two databases cannot be moved in one transaction. Nothing can do that; there is
 no atomic commit across databases to have.
@@ -167,13 +163,11 @@ from a partial failure without a human.
 Prefer opting in **per call** rather than in a builder, so the risk is visible where the risk is
 taken.
 
-## What did not change
+## What just happened
 
 - `wallets.get(wallet_id)` — routes by the id's bits.
 - `wallets.find_where(...)` — has no id to route by, so it **scatters** across every shard.
 - Every action body. Every endpoint. Every test that does not assert on placement.
-
-## What to watch
 
 **A predicate read hits every shard.** Latency is the sum, because this port visits them one at
 a time where the Java port forks a thread per shard. On two shards that is invisible; on eight it

@@ -12,7 +12,7 @@ An **action** is one unit of business work. It does **not** write to the databas
 and updated domain objects on its plan. Only after `perform()` returns does the executor open a
 single transaction, flush every staged change, write the outbox rows and commit.
 
-## The two phases
+## The two-phase lifecycle
 
 ```
         executor.execute(DepositMoneyAction, params)
@@ -37,7 +37,7 @@ single transaction, flush every staged change, write the outbox rows and commit.
 Phase 1 is pure construction. Phase 2 is the only place a transaction is opened, and it always
 wraps every staged change together with the matching event rows.
 
-## Writing one
+## Writing an action
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -79,7 +79,7 @@ together.
 An action with no parameters passes `None`. What it may not pass is a bare scalar — a string or
 an int in the params column is unreadable six months later, and both ports refuse it.
 
-## The plan
+## ActionPlan
 
 ```python
 self.plan.add(entity)         # staged for INSERT
@@ -96,7 +96,7 @@ Three rules:
   see the increment.
 - **The plan is single-writer.** It is a plain dict; concurrent mutation is a data race.
 
-## Actions are singletons
+## Singletons + per-call state via a ContextVar
 
 One instance per class, shared by every concurrent invocation. Its only state is what the
 constructor set. Per-execution state — the plan, the clock, the principal — is bound into a
@@ -104,9 +104,16 @@ constructor set. Per-execution state — the plan, the clock, the principal — 
 `ScopedValue`.
 
 So an action must not have mutable instance state, and `self.plan` must be reached from the
-thread or task running `perform()`. Work handed to a pool does **not** inherit the binding —
-which is correct, not a limitation: a pool thread outliving the unit of work while holding its
-connection is exactly the bug this prevents.
+thread or task running `perform()`.
+
+## Plan is single-writer; spawning threads is fine
+
+The plan belongs to one invocation and is not thread-safe, deliberately: a plan mutated from
+work handed to a pool is a data race with a correct-looking traceback.
+
+Forking work is still fine — what is not fine is staging from the fork. Work handed to a pool
+does **not** inherit the `ContextVar` binding, which is correct rather than a limitation: a pool
+thread outliving the unit of work while holding its connection is exactly the bug this prevents.
 
 ```python
 def perform(self, params: Params) -> Order:
@@ -117,7 +124,7 @@ def perform(self, params: Params) -> Order:
 
 Fan out, **join**, and only then stage.
 
-## Retries
+## Retries on optimistic-lock conflicts
 
 The default is one retry after 100 ms — enough to absorb ordinary contention, not enough to hide
 a real problem.
@@ -145,14 +152,16 @@ error. Order is the only precedence rule, so put narrow policies first.
 **A retry replays the whole action from phase 1, with a fresh plan.** Side effects outside the
 plan — logging, counters, an HTTP call — replay too. Keep `perform()` pure.
 
-## Two refusals
+## No nested actions inside `perform()`
 
-**No nesting.** An action must not execute another action inside `perform()`. Nesting blurs the
-transaction boundary, hides coupling and makes the flow hard to follow. If two operations must
-happen together, they are one action. If one must follow the other, chain them *after* the
-commit — which is what a [saga](/learn/sagas/) is.
+An action must not execute another action inside `perform()`. Nesting blurs the transaction
+boundary, hides coupling and makes the flow hard to follow. If two operations must happen
+together, they are one action. If one must follow the other, chain them *after* the commit —
+which is what a [saga](/learn/sagas/) is.
 
-**No cross-shard, unless you ask.** An action whose changes span shards raises `CrossShardError`.
+## Cross-shard actions
+
+Refused unless you ask. An action whose changes span shards raises `CrossShardError`.
 With `allow_cross_shard=True` each shard gets its own transaction and commits independently —
 there is no two-phase commit — and a partial commit is the dual-write trap wearing a different
 hat.

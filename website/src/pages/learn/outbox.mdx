@@ -21,7 +21,7 @@ action needs **plus** the outbox. They land together, or none of them do.
        commit (every row persists)  —or—  rollback (none of them do)
 ```
 
-## The table
+## How rows get there
 
 Pick your dialect above; the DDL below follows.
 
@@ -141,14 +141,14 @@ keyed lock degrade to single-process behaviour.
 
 </div>
 
-## Sentinel rows
+## What the outbox row means
 
 An action that emits no events still writes **one row**, with `model_id`, `model_type`,
 `event_type` and `payload` all null. The action happened, and that is a fact worth keeping.
 
 A consumer skips them with `event_type IS NULL`. The Debezium transforms already do.
 
-## Two consumer paths
+## What happens after commit
 
 The outbox is **just a table**. Anything that can read it can consume it.
 

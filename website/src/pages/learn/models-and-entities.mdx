@@ -88,7 +88,7 @@ would otherwise be *"non-default argument follows default argument"*.
 If you are arriving from Django or the SQLAlchemy ORM: what you give up is dirty tracking. There
 is no `session.commit()` working out what changed; you say what changed, through the plan.
 
-## Events
+## ModelEvent
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -100,6 +100,8 @@ class MoneyDepositedEvent(ModelEvent):
 That is the whole declaration. The event carries **no identity** — you do not pass it the
 model's id. It was attached to a model, so the framework knows, and fills the outbox's
 `model_id` and `model_type` columns itself.
+
+### Deserialization (for in-process handlers)
 
 Events are stored as JSON in `events.payload`, and read back into the same class when an
 in-process handler is invoked. Nothing extra is needed for that round trip: the payload is
@@ -116,7 +118,7 @@ than as blocked threads. But note that is correct by *failing* — two deposits 
 raises. When losing is the wrong outcome, take a keyed lock first so the second caller waits and
 then succeeds.
 
-## The one generated thing
+## Generated builders
 
 `wallet.copy().balance(...)` works with nothing generated. What it cannot do is tell a *type
 checker* that `.balance(...)` takes a `Decimal` — setters resolve by name at runtime.

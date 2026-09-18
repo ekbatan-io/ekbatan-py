@@ -2,34 +2,115 @@
 layout: ../../layouts/DocLayout.astro
 title: Getting started
 activeSection: learn
-lead: One wallet change, followed all the way through. Everything else on this path is a detail of this page.
+description: "Learn the basic ekbatan flow: save application state and the event that describes it in the same database transaction, then process the event after commit."
+lead: "Start here if you are new to ekbatan. This page explains the problem it solves and the basic flow it uses to save state and events together."
 ---
 
-import CodeBlock from "../../components/CodeBlock.astro";
+import GuidedFlow from "../../components/GuidedFlow.astro";
 import LearnPager from "../../components/LearnPager.astro";
 
-A deposit into a wallet. Watch what the database ends up holding, and what you did not have to
-write to get it there.
+ekbatan is useful when a service needs to save a business change and also make that change
+available as an event. The event might be handled inside the same service, or it might later be
+published to Kafka, Pulsar, RabbitMQ, or another broker.
 
-## 1. The change happens on the model
+The examples below use a wallet. A wallet is just an account with a balance. A deposit means
+adding money to that balance. The example is small on purpose, so the persistence and event flow
+are easy to see.
 
-```python
-def deposit(self, amount: Decimal) -> Wallet:
-    new_balance = self.balance + amount
-    return (
-        self.copy()
-        .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
-        .balance(new_balance)
-        .build()
-    )
+Read the page in order. It starts with the failure case, then introduces the outbox pattern,
+then shows how ekbatan represents the same idea with models, actions, and an executor.
+
+## 1. The problem
+
+Many event-driven services start with this shape:
+
+```text
+request
+  -> write row to database
+  -> publish event to Kafka / Pulsar / RabbitMQ / ...
 ```
 
-Two things at once, in one expression: the new balance, and **the fact that it changed**. They
-are attached to the same object, so there is no path where one exists without the other.
+That looks normal, but it is two writes to two systems. If the database commit succeeds and the
+broker publish fails, the database says the business change happened but the event stream never
+hears about it. If the broker publish succeeds and the database commit fails, consumers react to
+a change that never committed.
 
-The wallet is a frozen dataclass, so this returns a *new* wallet. The old one is untouched.
+That is the dual-write problem.
 
-## 2. The action stages it
+<GuidedFlow variant="broken" />
+
+If an event must describe committed database state, the event needs to be saved with the
+database change. Publishing it as a separate operation can fail independently.
+
+For the full motivation, read [The dual-write trap](/learn/the-dual-write-trap/).
+
+## 2. The first fix
+
+The outbox pattern stores the event in the database first. An outbox is a table of committed
+events that can be read and delivered later.
+
+The request flow becomes:
+
+```text
+request
+  -> one database transaction
+       -> write state row
+       -> write event row
+  -> commit
+  -> publish later by reading the event row
+```
+
+The database is the transactional boundary. Either the state row and event row both commit, or
+neither does.
+
+<GuidedFlow variant="outbox" />
+
+Publishing happens after the database commit by reading the committed event row.
+
+Most teams bolt this on by hand: add a table, remember to write to it in every transaction,
+build a poller. It works, and you carry the discipline forever — every new action has to
+remember, and every review has to check. The rest of this page is what it looks like when the
+framework owns that instead.
+
+For the conceptual version, read [The outbox](/learn/outbox/).
+
+## 3. Where the event comes from
+
+In ekbatan, a domain object that emits events is a `Model`. A domain object is an object from
+your business model, such as a wallet, order, or account.
+
+When money is deposited into a wallet, the wallet does not just change its balance. It creates a
+new immutable wallet state and attaches a domain event that describes what happened.
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    ...
+
+    def deposit(self, amount: Decimal) -> Wallet:
+        new_balance = self.balance + amount
+        return (
+            self.copy()
+            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .balance(new_balance)
+            .build()
+        )
+```
+
+The event is not a Kafka message. It is a domain fact: "money was deposited into this wallet."
+
+The event is created next to the state change, inside the domain model, before any code
+publishes anything to a broker. The wallet is a frozen dataclass, so this returns a *new* wallet
+and the old one is untouched — which is what makes it impossible for the balance to exist
+without the event that explains it.
+
+For the deeper model rules, read [Models and entities](/learn/models-and-entities/).
+
+## 4. What an action does
+
+An `Action` is the unit of business work. A deposit action reads the current wallet, asks the
+model for the new wallet, and stages that new wallet on the action's plan. The plan is a
+temporary list of objects the executor should persist after `perform()` finishes.
 
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
@@ -38,13 +119,23 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
-`self.plan.update` **writes nothing**. It stages. `perform()` returns, and only then does the
-executor open a transaction.
+The important part is what does **not** happen here:
 
-That split is the whole design. During `perform()` you read and construct freely; the plan
-collects immutable snapshots; a half-written state is not expressible.
+- no manual transaction
+- no manual `INSERT INTO events`
+- no broker publish
+- no second write to remember
 
-## 3. The executor commits
+`perform()` declares intent. It builds the next state and stages it.
+
+`perform()` describes the state change. The executor persists the staged objects and events
+atomically.
+
+For the full lifecycle, read [Actions](/learn/actions/).
+
+## 5. What the executor commits
+
+The caller invokes the action through the executor:
 
 ```python
 wallet = executor.execute(
@@ -53,17 +144,37 @@ wallet = executor.execute(
 )
 ```
 
-One transaction. Inside it:
+The executor creates a fresh plan, calls `perform()`, and only then opens the transaction that
+writes everything:
 
+```text
+executor.execute(...)
+        |
+        v
+Action.perform(...)
+  - read wallet
+  - build updated wallet
+  - attach MoneyDepositedEvent
+  - plan.update(updated)
+        |
+        v
+one DB transaction
+  - UPDATE wallets SET balance = ?, version = ? WHERE id = ? AND version = ?
+  - INSERT INTO events
+  - commit
 ```
-UPDATE wallets SET balance = 125.50, version = 2 WHERE id = ? AND version = 1
-INSERT INTO events (id, action_id, action_name, event_type, payload, ...) VALUES (...)
-COMMIT
-```
 
-The row and the event, together. If either fails, neither happened.
+If the wallet update fails because another request changed the same row first, the transaction
+rolls back. If any event row write fails, the wallet row rolls back too.
 
-## 4. What is in the database now
+The outbox guarantee comes from the executor's commit path: the event row is written in the same
+transaction as the state row.
+
+For the API details, read [ActionExecutor](/reference/action-executor/).
+
+## 6. What happens after commit
+
+After commit, `events` contains a durable row. From there, you choose how to use it.
 
 ```sql
 SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date;
@@ -74,37 +185,32 @@ SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event
 | `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | false |
 | `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | false |
 
-That table is an **outbox**. A CDC connector can tail it, or the in-process handler can drain
-it, or both. `delivered` is how the in-process path marks its own progress; a CDC-only
-deployment ignores it.
-
-## 5. Something reacts
-
-```python
-class MoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = MoneyDepositedEvent
-
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        ...
+```text
+events
+      |
+      +--> in-process handler (database-backed, any service instance)
+      |
+      +--> handler that manually publishes to Kafka / Pulsar / RabbitMQ / ...
+      |
+      +--> Debezium CDC to a raw broker topic
+      |
+      +--> CDC raw topic -> router / stream processor -> derived topics
 ```
 
-Register it and two background jobs do the rest: fan-out turns the event row into a delivery
-row per subscribed handler, dispatch invokes the handler with retry and expiry. Both are
-cluster-exclusive, so exactly one instance runs each.
+All of those paths start from the same committed row. They are downstream of the database
+transaction, so they cannot make the original state change partially committed. `delivered` is
+how the in-process path marks its own progress; a CDC-only deployment ignores it.
 
-## What you did not write
+They are also at-least-once delivery paths. A handler or broker consumer can run twice after a
+crash or retry. Use idempotency keys, unique constraints, or the outbox event id so duplicate
+delivery is harmless.
 
-Read back over it. There is no `BEGIN`, no `COMMIT`, no flush, no publish call, and **no
-mention of an outbox anywhere except the query that read it**.
+ekbatan focuses on safely persisting events with state. Publishing and consumption are separate
+steps that read from the durable outbox row.
 
-That is the point, and it is worth being precise about why it matters. The alternative — write
-the row, then publish to the broker — is two operations across two systems, and a crash between
-them leaves them permanently disagreeing. Most teams bolt an outbox on: add a table, remember to
-write to it in every transaction, build a poller. It works, and you carry the discipline
-forever. Here there is no second table to remember, because you never write to it.
+For the practical choices, read [Consuming events](/learn/consuming-events/).
 
-## Where the rest fits
+## 7. Where the rest fits
 
 The whole framework grows from the same small model:
 
@@ -112,30 +218,35 @@ The whole framework grows from the same small model:
 - **Models** emit events; **entities** do not.
 - **Actions** stage new and changed objects; they never write.
 - **The executor** commits staged state and its events together, in one transaction.
-- **In-process handlers, CDC, brokers and routers** consume committed outbox rows afterwards.
+- **In-process handlers, CDC, brokers and routers** consume committed outbox rows later.
 - **Sharding** routes the same actions across several databases, unchanged.
 - **Sagas** coordinate the workflows that should not be forced into one transaction.
 - **Distributed jobs** run periodic work on exactly one instance of a cluster.
 - **Keyed locks** are the pessimistic tool for when losing a version race is the wrong outcome.
 
-You need none of that on day one. The invariant stays the same whichever of them you add:
+You do not need all of those on day one. The important invariant stays the same:
 
 ```text
 business state + event row commit together
 ```
 
-## Where to next
+## Suggested next steps
 
-The rest of this path is detail. If you want the argument, read
-[the dual-write trap](/learn/the-dual-write-trap/) next. If you want to build something, skip to
-[your first action](/learn/your-first-action/).
+If you want to keep learning the model:
+
+1. [The dual-write trap](/learn/the-dual-write-trap/) — understand the failure mode ekbatan
+   removes.
+2. [The outbox](/learn/outbox/) — see why state and event rows commit together.
+3. [Models and entities](/learn/models-and-entities/) — learn which objects emit events and
+   which do not.
+4. [Actions](/learn/actions/) — understand the two-phase lifecycle before writing your first
+   action.
+5. [Your first action](/learn/your-first-action/) — write the wallet deposit action and inspect
+   the event row.
+
+If you are ready to wire a real project:
+
+- [Complete project setup](/learn/complete-project-setup/) — dependencies, migrations, schema
+  generation, application config, and a runnable example for each supported database.
 
 <LearnPager current="getting-started" />
-
-## See also
-
-- [The dual-write trap](/learn/the-dual-write-trap/) — the failure this design removes
-- [Your first action](/learn/your-first-action/) — the same wallet, written out in full
-- [The outbox](/learn/outbox/) — the table, and the two ways to drain it
-- Reference: [Getting started](/learn/getting-started/),
-  [Wiring](/reference/wiring/)

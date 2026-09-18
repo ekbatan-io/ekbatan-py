@@ -31,7 +31,7 @@ distributes load, usually a hash.
 
 ## Three strategies, in order of weight
 
-### One database (no sharding)
+### Single-database (no sharding)
 
 Everything at `DEFAULT_SHARD`. You write actions exactly as if sharding did not exist — the
 registry is still in the path, and every call resolves to the same database.
@@ -47,7 +47,7 @@ only that shard too, so a repository that opted out cannot wander onto a sibling
 > Use it until you have a write-throughput problem or a policy forcing data location — which is
 > almost everyone. Stay here as long as you can.
 
-### Shard bits in the id (`EmbeddedBitsShardingStrategy`)
+### Embedded-bits UUID (`EmbeddedBitsShardingStrategy`)
 
 The shard pair is encoded into the UUID itself, so the shard is recoverable from the id with no
 lookup and no extra column. Chosen at creation, and bonded to the row for its life.
@@ -66,7 +66,7 @@ and a Python one reading the same id agree about where the row lives.
 > Use it when each row's shard is decidable from what you know at creation and you will never
 > move rows between shards. That covers most cases.
 
-### Your own strategy
+### Custom sharding strategy (full control)
 
 If you need to re-shard live data, or the shard is not knowable at creation but is derivable
 from the row, supply a `ShardingStrategy` and override `shard_for` on the repository.
@@ -76,7 +76,7 @@ the strategy to find the row first, which is a round trip you pay implicitly on 
 repository whose strategy cannot resolve a shard from an id says so at construction rather than
 failing on the first read.
 
-## Why cross-shard is refused
+## Cross-shard actions: one transaction per shard, never atomic across
 
 By default an action's staged changes must all route to one shard. One transaction, everything
 written, commit. **That is the only way the outbox guarantee survives**, because
@@ -94,7 +94,7 @@ compensation.
 Prefer opting in **per call**, so the risk is visible at the call site rather than buried in a
 builder somewhere.
 
-## What sharding does not solve
+## What sharding doesn't solve
 
 - **Cross-shard transactions.** No framework can; that is a property of distributed systems.
 - **Scatter-gather latency.** A predicate across N members hits N databases, and here they are

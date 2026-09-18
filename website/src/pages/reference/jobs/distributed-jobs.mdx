@@ -1,11 +1,11 @@
 ---
 layout: ../../../layouts/DocLayout.astro
-title: Distributed jobs
+title: Distributed background jobs
 activeSection: reference
 lead: "Background work that should run on exactly one instance across a cluster. A thin facade over db-scheduler, whose Python port this repository also publishes."
 ---
 
-## A job
+## Defining a job
 
 ```python
 class PayStipendJob(DistributedJob):
@@ -27,7 +27,7 @@ Nothing about being a job makes the work special. It goes through an ordinary ac
 outbox row it writes is indistinguishable from one a request produced - `action_name` says
 `DepositMoneyAction` either way, and nothing downstream can tell or needs to.
 
-## Coordination
+## Coordination semantics (inherited from db-scheduler)
 
 - Every instance polls the shared `scheduled_tasks` table.
 - When a slot comes due, **exactly one instance wins the atomic claim** and runs it.
@@ -99,7 +99,7 @@ jobs.stop()
 The event pipeline's two jobs are registered here too - they *are* distributed jobs. See
 [In-process event handlers](/reference/events/local-event-handler/#wiring).
 
-### `workers(n)` - a knob Java does not need
+### `workers(n)`, and sizing the pool
 
 Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
 unbounded and `threads(n)` only sizes the polling batch. Here the workers are a fixed pool of
@@ -154,7 +154,7 @@ is up to an hour, which is usually worth lowering in tests. An execution still r
 expires is abandoned, leaving its row picked with a frozen heartbeat, and is recovered later by
 the same path as a crash.
 
-### One thing Java has to do that this port does not
+### Database dialect
 
 db-scheduler detects its SQL dialect by **opening a connection and reading the database
 metadata**. If that connection fails it logs and keeps generic SQL *for the scheduler's lifetime* -
@@ -186,7 +186,16 @@ do, from a FastAPI lifespan.
 Tracked in [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md) and
 [DECISIONS-TO-REVIEW.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/DECISIONS-TO-REVIEW.md).
 
-## A dedicated pool
+## The `scheduled_tasks` table
+
+One row per registered job, and it is the coordination itself rather than a log of it: the row
+carries the next execution time, the identity of whichever instance currently holds the task,
+and its heartbeat. Whichever instance claims the row runs; the rest do not.
+
+The table is db-scheduler's, unchanged, so a Java service and a Python one can share one - see
+[`scheduled_tasks`](/reference/tables/scheduled-tasks/) for the columns and the DDL.
+
+## Use a dedicated connection pool
 
 Always. db-scheduler polls continuously and heartbeats from its own thread; sharing the request
 pool means a traffic burst can starve the heartbeat, and the consequence of a starved heartbeat is
