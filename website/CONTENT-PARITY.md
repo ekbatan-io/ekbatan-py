@@ -4,7 +4,8 @@
 
     cd website && npm run build
     cd ../../ekbatan/website && npm run build
-    python3 scripts/content-parity.py
+    python3 scripts/content-parity.py              # per page
+    python3 scripts/content-parity.py --sections   # per section, within the pages
 
 It compares the rendered text of both built sites, so it measures what a reader sees rather
 than what the source looks like. Two numbers, both proxies:
@@ -76,6 +77,36 @@ a cap that stops being true is one somebody can disprove:
   sections alone are **47%** of that page's 16,504 rendered words, and neither has a counterpart
   with anything like that surface. The page went 19% -> 40% of Java's words once the content that
   *does* port was written; the rest is the picker.
+
+## The page view goes green long before the pages are right
+
+Every page reached **done**, **capped** or **n/a**, and then `--sections` found **59 sections**
+that were thin or missing anyway. A page total averages a gap away: `reference/keyed-locks` sat
+at 100% of headings with `Five backends` at 58 words against Java's 491, because the eleven other
+sections around it were fine.
+
+That is the whole reason for the second view. It compares each of Java's headings against the
+words under ours - **subsections included**, since a `## DDL` whose body all sits under
+`### PostgreSQL` otherwise reports zero and reads as missing - and lists anything under 60% or
+absent, worst first.
+
+What closing those 59 actually added, since "the number went up" is not an outcome:
+
+- the SMT manual, six sections of it, which had been a link to the Java site
+- `CHARACTER SET ascii`, `CHAR(36)` vs `BINARY(16)`, and why MariaDB `JSON` needs forcing
+- what the generator writes and what it deliberately does not
+- what the decoder does with each annotation - **verified by running it**, including the two
+  limits (an unknown key is dropped; a multi-arm union stays raw)
+- the schema a migration actually creates, per dialect, on four pages that had one dialect
+- `Action.perform()` is not transactional, which is the sharpest footgun on the repository page
+  and was missing from it
+
+Three claims written during that pass were **wrong and caught by running the code**: that the
+provider's `close()` disposes its engine (it releases leases), that the accessors' routing
+arguments are mutually exclusive (first non-`None` wins), and that the saga example has a
+transfer state column (its state is derived from step markers). One more - a third index being
+PostgreSQL-only - was disproved by generating the DDL. The rule that keeps paying: write the
+claim, then run the thing.
 
 ## The matcher was too generous, once
 

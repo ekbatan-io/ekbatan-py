@@ -15,9 +15,15 @@ below with that reason, so the number is never improved by pretending.
 
     cd website && npm run build
     cd ../../ekbatan/website && npm run build
-    python3 scripts/content-parity.py
+    python3 scripts/content-parity.py              # per page
+    python3 scripts/content-parity.py --sections   # per section, within the pages
+
+`--sections` is the one that finds work. A page can sit at 100% on both numbers and still be
+missing a third of what Java says under one of its headings, because a page total averages that
+away. Run it after the page view goes green; it is where the last 59 gaps came from.
 """
 
+import html as _html
 import pathlib
 import re
 import subprocess
@@ -68,6 +74,41 @@ CAPPED = {
     ),
 }
 
+#: Pages whose `CAPPED` reason is about volume, so it accounts for their sections too. A cap
+#: about a page *title* does not: `reference/tables/events` is capped for its name and its
+#: sections are still scanned.
+CAP_COVERS_SECTIONS = {"learn/complete-project-setup"}
+
+#: Sections whose remaining gap is accounted for, keyed by Java's heading. Same rule as
+#: `CAPPED`: each reason names something checkable, and none of them retires work still owed.
+SECTIONS_OK = {
+    "The inTransaction(...) family": "named `tm.transaction()` here; one `with` block, not four overloads",
+    "add(entity) / addAll(entities)": "named `add(model)` / `add_all(models)` here",
+    "update(entity) / updateAll(entities)": "named `update(model)` / `update_all(models)` here",
+    "additions(entityClass) / updates(entityClass)": "named `additions(model_type)` here",
+    "Wiring via DI": "no DI container to wire into",
+    "Wiring without DI": "the only kind here, so it is just `Wiring`",
+    "jOOQ-backed. Thin extension.": "the card reads `Mapped by field name` here",
+    "A.1 Add the module": "no module to add; it is an extra and two jobs",
+    "Compiling to a native binary": "GraalVM",
+    "DDL": "Java repeats the whole CREATE TABLE once per dialect; this has two blocks, not three",
+    "SMT error handling": "Java's carries a 1.0.0 upgrade note for its own artifact",
+    "How to read the bytes": "same; and the hand-rolled reader it tells you to delete never existed here",
+    "@AutoBuilder - generated builders": "no annotation processor; it is `Generated builders` here",
+    "@AutoBuilder \u2014 generated builders": "no annotation processor; it is `Generated builders` here",
+    "eventlog.events": "the card is named `events`, because that is the table's name here",
+    "eventlog.event_notifications": "the card is named `event_notifications`, same reason",
+    "Model<T, S>": "spelled `Model[ID, S]`",
+    "Entity<T>": "spelled `Entity[ID]`",
+    "DI integration": "no DI container",
+    "Spring Boot": "no DI container",
+    "Quarkus": "no DI container",
+    "Micronaut": "no DI container",
+    "Plain Java": "is `/reference/wiring/` here",
+    "Annotations": "no annotation processor",
+    "Native image": "GraalVM",
+}
+
 DROP = re.compile(r"<(script|style|svg)\b.*?</\1>", re.S | re.I)
 TAG = re.compile(r"<[^>]+>")
 HEAD = re.compile(r"<(h[1-3])\b[^>]*>(.*?)</\1>", re.S | re.I)
@@ -103,7 +144,72 @@ def matches(head: str, ours: list[str]) -> bool:
     )
 
 
+def sections(path: pathlib.Path) -> list[tuple[str, int]]:
+    """Each heading and every word beneath it, subsections included.
+
+    Counting only as far as the next heading of any level reports 0 for a `## DDL` whose body
+    all sits under `### PostgreSQL`, and then calls that section missing.
+    """
+    html = DROP.sub(" ", path.read_text(errors="replace"))
+    parts = re.split(r"<h([23])\b[^>]*>(.*?)</h\1>", html, flags=re.S | re.I)
+    heads = []
+    for i in range(1, len(parts), 3):
+        title = _html.unescape(re.sub(r"\s+", " ", TAG.sub("", parts[i + 1])).strip())
+        own = len(TAG.sub(" ", parts[i + 2]).split()) if i + 2 < len(parts) else 0
+        heads.append((int(parts[i]), title, own))
+
+    out = []
+    for n, (level, title, own) in enumerate(heads):
+        total = own
+        for deeper, _, deeper_own in heads[n + 1 :]:
+            if deeper <= level:
+                break
+            total += deeper_own
+        out.append((title, total))
+    return out
+
+
+def thin() -> int:
+    """Every section materially shorter than Java's, worst first."""
+    rows = []
+    for jf in sorted(JAVA.rglob("index.html")):
+        name = route(JAVA, jf)
+        if name.startswith("concepts") or name in NA or name in CAP_COVERS_SECTIONS:
+            continue
+        pf = OURS / (name if name != "/" else "") / "index.html"
+        if not pf.exists():
+            continue
+        ours = sections(pf)
+        for title, jw in sections(jf):
+            n = norm(title)
+            exact = [w for t2, w in ours if norm(t2) == n]
+            loose = [
+                w
+                for t2, w in ours
+                if norm(t2).startswith(n[:14]) or n.startswith(norm(t2)[:14])
+            ]
+            mine = exact[0] if exact else (loose[0] if loose else None)
+            if mine is None or (jw > 90 and mine < jw * 0.6):
+                rows.append((jw - (mine or 0), name, title, jw, mine))
+
+    rows.sort(reverse=True)
+    owed = [r for r in rows if r[2] not in SECTIONS_OK]
+    print(f"{'page':36} {'section':44} {'J':>5} {'ours':>5}")
+    for _, name, title, jw, mine in rows:
+        note = SECTIONS_OK.get(title)
+        print(
+            f"{name[:35]:36} {title[:43]:44} {jw:>5} {str(mine):>5}"
+            + (f"  ok: {note}" if note else "")
+        )
+    print(f"\n  {len(rows)} thin or missing, {len(rows) - len(owed)} accounted for, {len(owed)} owed")
+    return 1 if owed else 0
+
+
 def main() -> int:
+    if "--sections" in sys.argv:
+        if not JAVA.exists():
+            sys.exit(f"build the Java site first: {JAVA} does not exist")
+        return thin()
     if not JAVA.exists():
         sys.exit(f"build the Java site first: {JAVA} does not exist")
     rows = []
