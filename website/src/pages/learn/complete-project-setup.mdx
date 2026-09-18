@@ -274,7 +274,13 @@ decision about what this framework supports. They want different fixes.
 ### The namespace
 
 ```python
-executor = ActionExecutor(namespace="example.wallet", ...)
+executor = ActionExecutor(
+    namespace="example.wallet",
+    registry=registry,
+    repositories=repositories,
+    actions=actions,
+    events=EVENTS,
+)
 ```
 
 Required, and it is a naming root rather than a label. It is written into every `events` and

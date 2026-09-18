@@ -139,9 +139,12 @@ Lengthen it if your jobs run long and a duplicate costs more than a delay. The m
 first-class setting, but the escape hatch reaches it:
 
 ```python
-job_registry()
+jobs = (
+    job_registry()
     .heartbeat_interval(timedelta(seconds=30))
-    .customize_scheduler(lambda b: b.missed_heartbeats_limit(8))   # 30s x 8 = 4 min; minimum 4
+    .customize_scheduler(lambda b: b.missed_heartbeats_limit(8))  # 30s x 8 = 4 min; minimum 4
+    .build()
+)
 ```
 
 The heartbeat is written by the housekeeping thread rather than by the thread running your job, so
