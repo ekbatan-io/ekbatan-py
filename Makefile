@@ -79,6 +79,9 @@ lint: schema
 	# Every divergence from the Java port must say whether anybody chose it. A judgement
 	# call filed as a neutral difference is how one went unreviewed for weeks.
 	$(UV) python scripts/divergence.py
+	# The website makes claims about this API in code a reader will copy. Checked here
+	# rather than in `npm run check`, which is the Node half and has no interpreter to ask.
+	$(UV) python website/scripts/check-api.py
 
 format:
 	$(UV) ruff format $(OURS)
