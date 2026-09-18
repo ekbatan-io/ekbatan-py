@@ -47,14 +47,60 @@ CREATE INDEX ix_event_notifications_due ON event_notifications (state, next_retr
 MySQL and MariaDB are the same with `JSON` for `JSONB`, `DATETIME(6)` for the timestamps and
 `CHAR(36)` for the uuids - exactly as in [`events`](/reference/tables/events/).
 
+### MySQL and MariaDB
+
+Generated from the same table definition, so the shape is identical and only the types differ -
+`CHAR(36)` for uuids, `DATETIME(6)` for the timestamps, `JSON` for the payloads:
+
+```sql
+CREATE TABLE event_notifications (
+    id               CHAR(36)     NOT NULL,
+    event_id         CHAR(36)     NOT NULL,
+    handler_name     VARCHAR(255) NOT NULL,
+    namespace        VARCHAR(255) NOT NULL,
+    action_id        CHAR(36)     NOT NULL,
+    action_name      VARCHAR(255) NOT NULL,
+    action_params    JSON         NOT NULL,
+    started_date     DATETIME(6)  NOT NULL,
+    completion_date  DATETIME(6)  NOT NULL,
+    model_id         VARCHAR(255),
+    model_type       VARCHAR(255),
+    event_type       VARCHAR(255) NOT NULL,
+    payload          JSON,
+    event_date       DATETIME(6)  NOT NULL,
+    state            VARCHAR(24)  NOT NULL,
+    attempts         INTEGER      NOT NULL,
+    next_retry_at    DATETIME(6)  NOT NULL,
+    created_date     DATETIME(6)  NOT NULL,
+    updated_date     DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
+);
+```
+
+`DATETIME(6)` rather than `DATETIME` is not cosmetic: a bare `DATETIME` truncates to whole
+seconds on MySQL, and `next_retry_at` is compared against instants that are not whole seconds.
+
 ## Columns
 
-The first fourteen are **copied from the source event row** at fan-out time: `event_id`,
-`namespace`, `action_id`, `action_name`, `action_params`, `started_date`, `completion_date`,
-`model_id`, `model_type`, `event_type`, `payload`, `event_date`. A handler therefore needs no
-join to do its work.
+Twelve of them are **copied from the source event row** at fan-out time, so a handler needs no
+join to do its work:
 
-The rest are the delivery state:
+| column | null | meaning |
+| --- | :---: | --- |
+| `event_id` | no | the outbox row this delivery is for |
+| `namespace` | no | copied; the service that emitted the event |
+| `action_id` | no | copied; correlates every row written by one invocation |
+| `action_name` | no | copied; what ran |
+| `action_params` | no | copied; where routing concerns live that do not belong in the event |
+| `started_date` | no | copied; when the invocation began |
+| `completion_date` | no | copied; when it committed |
+| `model_id` | yes | copied; null only for a row whose source had no model |
+| `model_type` | yes | copied; as above |
+| `payload` | yes | copied; null only if the source row was malformed |
+| `event_date` | no | copied; the ordering key on the source row |
+
+The rest are the delivery state, and they are this table's own:
 
 | column | null | meaning |
 | --- | :---: | --- |

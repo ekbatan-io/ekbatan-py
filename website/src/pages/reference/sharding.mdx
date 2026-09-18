@@ -23,6 +23,20 @@ MEXICO = ShardIdentifier(1, 0)
 
 So 16,384 addressable shards, and the numbers are part of the id rather than a lookup key.
 
+
+The split is not decoration. **Group** is a policy boundary — data that must live somewhere
+specific, for a regulator, a tenant contract or a latency requirement. **Member** is capacity
+within that boundary — how many databases share the load once the policy is satisfied.
+
+Keeping them as separate numbers means the two can move independently. Adding capacity to a
+region adds members and leaves every existing id valid, because a row's group did not change.
+Conflating them into one shard number forces a rebalance whenever either reason changes, which
+is the failure mode this layout is avoiding.
+
+`ShardIdentifier(group, member)` is the pair, and it is what everything else routes on: the
+registry maps it to a database, the id packs it, and the repository accessors take it as
+`shard=`.
+
 ## Declarative configuration
 
 ```python
@@ -155,6 +169,32 @@ The cost is that the id stops being self-describing: every read that starts from
 needs the strategy to locate the row first, which is a round trip you pay implicitly on each
 lookup. A repository whose strategy cannot resolve a shard from an id says so at construction
 rather than failing on the first read.
+
+
+The interface is small. A strategy answers one question — which shard does this key live on —
+and declares whether it can answer it from an id alone:
+
+```python
+class ShardingStrategy(Protocol):
+    @property
+    def uses_shard_aware_id(self) -> bool: ...
+
+    def shard_for_id(self, key: object) -> ShardIdentifier | None: ...
+```
+
+`shard_for_id` returns `None` to mean *use the default shard*, rather than guessing.
+
+`uses_shard_aware_id` is what the repository checks at construction. A strategy that cannot
+resolve a shard from an id, used by a repository whose reads start from ids, raises there
+rather than on the first lookup — the failure lands where somebody can fix it.
+
+Two cases justify writing one. **Re-sharding live data**, because embedded bits are bonded to
+the row for its lifetime and a move would invalidate the id. And **a key the id does not
+carry**, where placement follows something decided after creation.
+
+Both pay the same price: the id stops being self-describing, so a read starting from an id
+needs a lookup before it can route. That is a round trip on every such read, and it is why the
+embedded-bits strategy is the default despite being the less flexible one.
 
 ## Unregistered shards are refused, not defaulted
 

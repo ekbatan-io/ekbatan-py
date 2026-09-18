@@ -198,6 +198,36 @@ reflect your schema — a thing your build does and your deployment must never d
 
 ## 4. Configure the DB connection
 
+The framework reads its coordinates from a `ShardingConfig`, built in code rather than bound from
+a property file. One shard is still a sharding layout — the single-database case is the
+one-member case, which is why going to two databases later changes configuration and nothing
+else.
+
+```python
+from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
+from ekbatan.persistence import DatabaseRegistry
+from ekbatan.sharding import ShardIdentifier
+
+DEFAULT = ShardIdentifier(0, 0)
+
+layout = ShardingConfig(
+    shards=(
+        ShardConfig(
+            shard=DEFAULT,
+            primary=DataSourceConfig(url=os.environ["DATABASE_URL"], pool_size=20),
+        ),
+    ),
+    default_shard=DEFAULT,
+)
+registry = DatabaseRegistry.from_config(layout)
+```
+
+`default_shard` is required: the framework routes there when no sharding strategy commits, and a
+layout that cannot answer "where does this go" is rejected at construction rather than at the
+first write.
+
+### The url
+
 <div data-db="pg">
 
 ```
@@ -237,27 +267,518 @@ keyed lock degrade to single-process behaviour.
 
 </div>
 
+A url naming something unsupported is refused at construction, and the two refusals are
+deliberately separate: a url nothing can be read out of is a typo, and a url naming Oracle is a
+decision about what this framework supports. They want different fixes.
+
+### The namespace
+
+```python
+executor = ActionExecutor(namespace="example.wallet", ...)
+```
+
+Required, and it is a naming root rather than a label. It is written into every `events` and
+`event_notifications` row, which is what lets two applications share one database without reading
+each other's outbox. Change it after the fact and the rows already written are, correctly, no
+longer yours.
+
+### Sizing the pool
+
+| Knob | Default | What it is |
+|---|---|---|
+| `pool_size` | 10 | connections kept open |
+| `max_overflow` | 0 | extra connections allowed under burst, closed when returned |
+| `pool_timeout` | 30.0 | seconds a checkout waits before raising |
+| `pool_recycle` | 1800 | seconds before a connection is replaced |
+| `pool_pre_ping` | True | validate on checkout, to survive a database restart |
+
+`pool_size` and `max_overflow` together are what a Java reader knows as one maximum pool size.
+The split is SQLAlchemy's and is left visible rather than papered over, because an operator
+tuning a pool needs to see the knobs their own tooling reports on. Start at `pool_size` = your
+worker count, and `max_overflow=0` so an overloaded process queues rather than opening
+connections a database has not budgeted for.
+
+Every knob refuses rather than clamping. `pool_size=0`, a negative overflow or a non-positive
+timeout raise `ValidationError` naming the value, because a knob that silently disables itself is
+a knob an operator believes is set.
+
+### One pool, not three
+
+The Java port gives each shard member a map of named pools, and its DI modules use it to hand the
+job scheduler and the keyed-lock provider pools of their own, so a job storm cannot starve HTTP
+requests. Here a shard has a `primary` and an optional `replica`, and nothing else.
+
+That map exists in Java because a container binds YAML into it and there is nowhere to hand an
+object. This port hands the object:
+
+```python
+job_registry().engine(create_engine(url, pool_size=5))
+```
+
+Same isolation, one layer fewer. If your jobs are heavy, do this — the default is one pool, and
+under load the scheduler's polling competes with your requests for it.
+
+`replica` is the read path: `readonly_db()` uses it and falls back to the primary when a shard
+has none. It does not join an open transaction, because a replica has not seen what that
+transaction wrote.
+
 ## 5. Add a migration
 
-The framework's own tables have to exist. Do not hand-write their DDL — generate it once and
-commit the result:
+Alembic runs every revision in `migrations/versions/`, in `down_revision` order, and the schema
+generator (step 6) replays the same revisions against a throwaway container to discover the
+schema. **The framework does not ship its tables as a bundled migration** — you write them, or
+copy one verbatim out of any
+[`ekbatan-py-examples/*`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples).
+
+That is a deliberate refusal, not an omission. A library that creates its own tables on first
+connection decides your schema, your naming and your deploy order for you, and takes them out of
+the review that every other table goes through. These are your tables; the framework only tells
+you what shape they have to be.
+
+Revisions this guide ends up with:
+
+| Revision | What it is |
+|---|---|
+| `0001_eventlog` | the framework's outbox tables — `events` and `event_notifications` |
+| `0002_scheduled_tasks` | the scheduler's table; the in-process event handlers depend on it |
+| `0003_wallets` | your domain tables |
+
+Three revisions rather than one because they change for different reasons and at different
+times: the first two move when you upgrade the framework, the third moves whenever your domain
+does. Squashing them into one file works, and the first framework upgrade is where you find out
+why it was a bad idea.
+
+### 5a. Where the framework's tables live
+
+Nothing forces them into a schema of their own. `outbox_table(metadata)` writes `events` into the
+database you are already connected to, next to `wallets`, and the examples all do exactly that.
+
+If you want them separated, say so once, in your own `schema.py`:
+
+```python
+EVENTS = outbox_table(metadata, schema="eventlog")
+EVENT_NOTIFICATIONS = notifications_table(metadata, schema="eventlog")
+```
+
+<div data-db="pg">
+
+The framework is handed `Table` objects, so it qualifies every statement with whatever schema
+those carry. PostgreSQL has true schemas inside a database, so a `CREATE SCHEMA eventlog` at the
+top of `0001` is the whole cost.
+
+</div>
+<div data-db="mysql">
+
+The framework is handed `Table` objects, so it qualifies every statement with whatever schema
+those carry. MySQL treats "schema" and "database" as synonyms, so `eventlog` has to be its own
+database, created before `0001` writes into it — and the connecting user needs cross-database
+grants, which is the `mysql_init.sql` from step 2.
+
+</div>
+<div data-db="mariadb">
+
+The framework is handed `Table` objects, so it qualifies every statement with whatever schema
+those carry. MariaDB treats "schema" and "database" as synonyms, so `eventlog` has to be its own
+database, created before `0001` writes into it — and the connecting user needs cross-database
+grants, which is the `mariadb_init.sql` from step 2.
+
+</div>
+<div data-db="sqlite">
+
+SQLite has no schemas to speak of — `ATTACH` is the nearest thing, and it is per-connection
+rather than per-database. Leave the tables unqualified.
+
+</div>
+
+The rest of this section shows them unqualified, which is what you want unless a DBA has told
+you otherwise.
+
+### 5b. `0001_eventlog` — the framework's outbox tables
+
+Two tables. `events` is the outbox itself; `event_notifications` holds one row per
+(event, handler) and is what the in-process dispatcher marks off as it goes. Generate both rather
+than typing them:
 
 ```python
 from sqlalchemy import MetaData
 from ekbatan.migrations import emit_ddl
-from ekbatan.schema import notifications_table, outbox_table, scheduled_tasks_table
+from ekbatan.schema import notifications_table, outbox_table
 
 metadata = MetaData()
 outbox_table(metadata)
 notifications_table(metadata)
-scheduled_tasks_table(metadata)
 
-print(emit_ddl(metadata, "postgresql"))    # or "mysql", "sqlite"
+print(emit_ddl(metadata, "postgresql"))    # or "mysql", "mariadb", "sqlite"
 ```
 
-Paste it into `migrations/versions/0001_initial.py` alongside your own tables, **one statement
-per `op.execute()`** — PyMySQL rejects a multi-statement script, so a revision that works on
-PostgreSQL fails elsewhere with an error naming the syntax rather than the cause.
+<div data-db="pg">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE events (
+            id             UUID         NOT NULL,
+            namespace      VARCHAR(255) NOT NULL,
+            action_id      UUID         NOT NULL,
+            action_name    VARCHAR(255) NOT NULL,
+            action_params  JSONB        NOT NULL,
+            started_date   TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            model_id       VARCHAR(255),
+            model_type     VARCHAR(255),
+            event_type     VARCHAR(255),
+            payload        JSONB,
+            event_date     TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            delivered      BOOLEAN      NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+    op.execute("CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)")
+    op.execute("CREATE INDEX ix_events_action_id ON events (action_id)")
+    # ... event_notifications, same shape plus event_id, handler_name, state, attempts,
+    #     next_retry_at, and a UNIQUE (event_id, handler_name)
+```
+
+`JSONB`, not `JSON`: a consumer binds to the column type, and jsonb is queryable where json is a
+string somebody has to parse first. What lands in it is byte-identical to what the Java port
+writes.
+
+</div>
+<div data-db="mysql">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE events (
+            id             CHAR(36)     NOT NULL,
+            namespace      VARCHAR(255) NOT NULL,
+            action_id      CHAR(36)     NOT NULL,
+            action_name    VARCHAR(255) NOT NULL,
+            action_params  JSON         NOT NULL,
+            started_date   DATETIME(6)  NOT NULL,
+            completion_date DATETIME(6) NOT NULL,
+            model_id       VARCHAR(255),
+            model_type     VARCHAR(255),
+            event_type     VARCHAR(255),
+            payload        JSON,
+            event_date     DATETIME(6)  NOT NULL,
+            delivered      BOOL         NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+    op.execute("CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)")
+    op.execute("CREATE INDEX ix_events_action_id ON events (action_id)")
+```
+
+`DATETIME(6)` rather than `DATETIME`, and not for precision's sake: a bare `DATETIME` truncates
+to whole seconds, and `event_date` orders the outbox.
+
+</div>
+<div data-db="mariadb">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE events (
+            id             CHAR(36)     NOT NULL,
+            namespace      VARCHAR(255) NOT NULL,
+            action_id      CHAR(36)     NOT NULL,
+            action_name    VARCHAR(255) NOT NULL,
+            action_params  JSON         NOT NULL,
+            started_date   DATETIME(6)  NOT NULL,
+            completion_date DATETIME(6) NOT NULL,
+            model_id       VARCHAR(255),
+            model_type     VARCHAR(255),
+            event_type     VARCHAR(255),
+            payload        JSON,
+            event_date     DATETIME(6)  NOT NULL,
+            delivered      BOOL         NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+    op.execute("CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)")
+    op.execute("CREATE INDEX ix_events_action_id ON events (action_id)")
+```
+
+On MariaDB `JSON` is an alias for `LONGTEXT` with a check constraint — it is stored as text and
+reflects back as text, which is why step 6 forces the type rather than trusting the reflection.
+
+</div>
+<div data-db="sqlite">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE events (
+            id             CHAR(32)     NOT NULL,
+            namespace      VARCHAR(255) NOT NULL,
+            action_id      CHAR(32)     NOT NULL,
+            action_name    VARCHAR(255) NOT NULL,
+            action_params  JSON         NOT NULL,
+            started_date   DATETIME     NOT NULL,
+            completion_date DATETIME    NOT NULL,
+            model_id       VARCHAR(255),
+            model_type     VARCHAR(255),
+            event_type     VARCHAR(255),
+            payload        JSON,
+            event_date     DATETIME     NOT NULL,
+            delivered      BOOLEAN      NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+```
+
+SQLite stores a uuid as 32 hex characters with no dashes, which is what SQLAlchemy's `Uuid` type
+does there. It is the one dialect whose outbox rows are not byte-comparable with the others'.
+
+</div>
+
+Two details in that DDL are load-bearing, whichever dialect you are on. `action_params` is **not
+null** — every row carries the full input of the unit of work that produced it, so one row is a
+complete audit record without a join, and so a consumer can read a value the domain event
+deliberately does not carry. And `delivered` is the outbox's only mutable column: it belongs to
+the consumer, and a producer that flips it loses the event for every consumer that had not read
+it yet. See [`events`](/reference/tables/events/) for every column.
+
+### 5c. `0002_scheduled_tasks` — the scheduler's table
+
+The distributed job scheduler needs one table, and the in-process event dispatcher is built on
+the scheduler, so you need it even if you never write a job of your own:
+
+```python
+from ekbatan.schema import scheduled_tasks_table
+```
+
+<div data-db="pg">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE scheduled_tasks (
+            task_name            VARCHAR(100) NOT NULL,
+            task_instance        VARCHAR(100) NOT NULL,
+            task_data            BYTEA,
+            execution_time       TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            picked               BOOLEAN      NOT NULL,
+            picked_by            VARCHAR(50),
+            last_success         TIMESTAMP WITHOUT TIME ZONE,
+            last_failure         TIMESTAMP WITHOUT TIME ZONE,
+            consecutive_failures INTEGER,
+            last_heartbeat       TIMESTAMP WITHOUT TIME ZONE,
+            version              BIGINT       NOT NULL,
+            priority             SMALLINT,
+            PRIMARY KEY (task_name, task_instance)
+        )
+    """)
+    op.execute("CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)")
+    op.execute("CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)")
+    op.execute("CREATE INDEX scheduled_tasks_priority_execution_time_idx ON scheduled_tasks (priority, execution_time)")
+```
+
+</div>
+<div data-db="mysql">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE scheduled_tasks (
+            task_name            VARCHAR(100) NOT NULL,
+            task_instance        VARCHAR(100) NOT NULL,
+            task_data            BLOB,
+            execution_time       DATETIME(6)  NOT NULL,
+            picked               BOOL         NOT NULL,
+            picked_by            VARCHAR(50),
+            last_success         DATETIME(6),
+            last_failure         DATETIME(6),
+            consecutive_failures INTEGER,
+            last_heartbeat       DATETIME(6),
+            version              BIGINT       NOT NULL,
+            priority             SMALLINT,
+            PRIMARY KEY (task_name, task_instance)
+        )
+    """)
+    op.execute("CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)")
+    op.execute("CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)")
+```
+
+</div>
+<div data-db="mariadb">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE scheduled_tasks (
+            task_name            VARCHAR(100) NOT NULL,
+            task_instance        VARCHAR(100) NOT NULL,
+            task_data            BLOB,
+            execution_time       DATETIME(6)  NOT NULL,
+            picked               BOOL         NOT NULL,
+            picked_by            VARCHAR(50),
+            last_success         DATETIME(6),
+            last_failure         DATETIME(6),
+            consecutive_failures INTEGER,
+            last_heartbeat       DATETIME(6),
+            version              BIGINT       NOT NULL,
+            priority             SMALLINT,
+            PRIMARY KEY (task_name, task_instance)
+        )
+    """)
+    op.execute("CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)")
+    op.execute("CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)")
+```
+
+</div>
+<div data-db="sqlite">
+
+Same columns, with `BLOB` for `task_data` and `DATETIME` for the timestamps. The scheduler runs,
+but it has no `SKIP LOCKED` to lean on, so exactly-once picking across processes is not something
+SQLite can give you — see step 4.
+
+</div>
+
+`VARCHAR(100)`, not 255, and `priority` is not optional. Both are the scheduler's own definition,
+and a hand-written second copy of this table has a way of drifting from it until an insert fails.
+
+### 5d. `0003_wallets` — your domain tables
+
+Your tables are yours; the framework only requires the columns that make a model a model.
+
+<div data-db="pg">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE wallets (
+            id           UUID          NOT NULL,
+            version      BIGINT        NOT NULL,
+            state        VARCHAR(24)   NOT NULL,
+            owner_id     UUID          NOT NULL,
+            currency     VARCHAR(3)    NOT NULL,
+            balance      NUMERIC(19,4) NOT NULL,
+            created_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            updated_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+```
+
+</div>
+<div data-db="mysql">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE wallets (
+            id           CHAR(36)      NOT NULL,
+            version      BIGINT        NOT NULL,
+            state        VARCHAR(24)   NOT NULL,
+            owner_id     CHAR(36)      NOT NULL,
+            currency     VARCHAR(3)    NOT NULL,
+            balance      DECIMAL(19,4) NOT NULL,
+            created_date DATETIME(6)   NOT NULL,
+            updated_date DATETIME(6)   NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+```
+
+</div>
+<div data-db="mariadb">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE wallets (
+            id           CHAR(36)      NOT NULL,
+            version      BIGINT        NOT NULL,
+            state        VARCHAR(24)   NOT NULL,
+            owner_id     CHAR(36)      NOT NULL,
+            currency     VARCHAR(3)    NOT NULL,
+            balance      DECIMAL(19,4) NOT NULL,
+            created_date DATETIME(6)   NOT NULL,
+            updated_date DATETIME(6)   NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+```
+
+</div>
+<div data-db="sqlite">
+
+```python
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE wallets (
+            id           CHAR(32)      NOT NULL,
+            version      BIGINT        NOT NULL,
+            state        VARCHAR(24)   NOT NULL,
+            owner_id     CHAR(32)      NOT NULL,
+            currency     VARCHAR(3)    NOT NULL,
+            balance      NUMERIC(19,4) NOT NULL,
+            created_date DATETIME      NOT NULL,
+            updated_date DATETIME      NOT NULL,
+            PRIMARY KEY (id)
+        )
+    """)
+```
+
+</div>
+
+`version` and `state` are the two the framework insists on: `version` carries optimistic locking,
+and `state` is how a soft-deleted row stays readable. `created_date` and `updated_date` are
+written for you. A `balance` is `NUMERIC`/`DECIMAL` and never a float — see
+[Models and entities](/reference/model/).
+
+### One statement per `op.execute`
+
+Not for tidiness. PyMySQL executes a single statement per call and rejects a script; psycopg
+accepts one. A revision written as one multi-statement block therefore works on PostgreSQL and
+fails on MySQL and MariaDB with a syntax error pointing at the second `CREATE TABLE` — which is
+the kind of difference that makes these separate example projects rather than one project with a
+different url.
+
+Generate, paste, commit. Then edit `schema.py`, regenerate, and paste the *difference* into a new
+revision — never make a revision read today's `schema.py`, or it quietly changes meaning every
+time a column is added.
+
+### Running them
+
+One call, from the layout you already configured:
+
+```python
+from ekbatan.migrations import migrate
+
+migrate(layout, MIGRATIONS)          # before anything opens a pool
+```
+
+`migrate` takes the `ShardingConfig` itself rather than a url, so the coordinates are not copied
+into a second migration-specific block that can drift from the one the application reads. **This
+is the same shape for one database or many.** Here there is one shard, so it runs once; in a
+sharded application the same call runs the same revisions against every member's primary, one at
+a time and fail-fast — carrying on past a failure turns one broken database into several. It
+returns the revision each shard ended on.
+
+Rolling out to a subset is the deliberate act:
+
+```python
+migrate(layout, MIGRATIONS, shards=[MEXICO])
+```
+
+A coordinate the layout does not contain is refused rather than skipped, because a typo there
+would otherwise read as "nothing to do" and migrate nothing at all.
+
+**Before anything opens a pool**, and before the job registry starts — the scheduler writes to
+`scheduled_tasks` on its first tick, and a tick that beats the migration fails on a table that
+does not exist yet. In `build()` that ordering is just line order; in a stack with lazy
+initialisation it is something you have to say out loud.
+
+For development and tests there is a shortcut that skips the files:
+
+```python
+migrate_registry(registry, metadata)     # create_all, on every shard
+```
+
+Use it in tests. Not in a deployment: `create_all` has no answer for a column that changed.
 
 ## 6. Wire the schema generator
 
@@ -392,6 +913,118 @@ up-to-date check, in one line. `lint` depends on it because mypy reads the gener
 
 ## 8. Sneak peek — a model and a repository
 
+Four pieces, in the order they depend on each other: the state enum, the events the wallet emits,
+the model itself, and the repository.
+
+`WalletState` first, because the model's type signature names it:
+
+```python
+class WalletState(StrEnum):
+    OPENED = "OPENED"
+    CLOSED = "CLOSED"
+    DELETED = "DELETED"
+```
+
+`DELETED` is not decoration. It is how a soft-deleted row stays readable — `delete()` moves the
+state, it does not issue a `DELETE`, so the event that explains the deletion still has a row to
+point at.
+
+The events are pure data carriers, and carry **no identity**: the framework knows which model
+each came off and fills `model_id` and `model_type` itself.
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class WalletOpenedEvent(ModelEvent):
+    owner_id: UUID
+    currency: str
+    opening_balance: Decimal
+
+
+@dataclass(frozen=True, kw_only=True)
+class MoneyDepositedEvent(ModelEvent):
+    amount: Decimal
+    new_balance: Decimal
+```
+
+Then the model. Frozen, version-tracked, and every state change returns a *new* wallet with its
+event already attached:
+
+<CodeBlock filename="wallet/model.py" language="python" shadow="yellow" code={`@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+
+    @staticmethod
+    def open(*, owner_id: UUID, currency: str, opening_balance: Decimal) -> "Wallet":
+        return (
+            WalletBuilder()
+            .id(WalletId.generate())
+            .state(WalletState.OPENED)
+            .owner_id(owner_id)
+            .currency(currency)
+            .balance(opening_balance)
+            .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
+                                          opening_balance=opening_balance))
+            .build()
+        )
+
+    def deposit(self, amount: Decimal) -> "Wallet":
+        if amount <= 0:
+            raise ValidationError(f"deposit amount must be positive, got {amount}")
+        new_balance = self.balance + amount
+        return (
+            self.copy()
+            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .balance(new_balance)
+            .build()
+        )`} />
+
+`deposit()` is the only place `MoneyDepositedEvent` is ever attached. That is the whole
+discipline: events are produced inside the model, staged inside an action's `perform()`, and
+persisted by the framework. A balance cannot exist without the event that explains it, because
+there is no other way to change one.
+
+`copy()` returns a builder. `WalletBuilder` is generated — `python -m ekbatan.codegen` writes a
+typed one so a checker sees the field types, which is the one thing Python cannot work out for
+itself. Without it `copy()` still works; you just lose the checking.
+
+`balance` is `Decimal`, never `float`. It lands in a `NUMERIC` column, and a float that
+round-trips through JSON is no longer the balance.
+
+The id type is one line:
+
+```python
+class WalletId(Id["Wallet"]):
+    pass
+```
+
+A `UUID` subclass with the model's type in it, so a `WalletId` cannot be passed where an
+`OrderId` belongs. `ShardedId` is the same line when you add a second database — see
+[Adding a shard](/learn/sharding/).
+
+And the repository:
+
+```python
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry)
+
+    def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+        return self.find_where(WALLETS.c.owner_id == owner_id)
+```
+
+That is the whole thing. `get`, `find_where`, `add`, `update`, counting and existence are
+inherited, and the mapping between table and dataclass is **by field name** — no `from_row`, no
+`to_row`, nothing to keep in step with the model. What you add are the questions your business
+actually asks.
+
+`WALLETS` comes from the `schema.py` step 6 generated. That is the chain the whole setup exists
+to close: migration → generated schema → repository, with the database as the single source of
+truth for all three.
+
+## 9. Wire the service
+
 <CodeBlock filename="wallet/app.py" language="python" shadow="orange" code={`@dataclass(frozen=True, slots=True)
 class WalletService:
     registry: DatabaseRegistry
@@ -476,7 +1109,7 @@ Use `InProcessKeyedLockProvider`. It is a `threading.Lock`, not a distributed lo
 tell you so at runtime — two instances each get their own.
 </div>
 
-## 9. The HTTP layer
+## 10. The HTTP layer
 
 <CodeBlock filename="wallet/api.py" language="python" shadow="yellow" code={`def service_of(request: Request) -> WalletService:
     service: WalletService = request.app.state.service
@@ -523,7 +1156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     return app`} />
 
-## 10. Example actions
+## 11. Example actions
 
 Three shapes, which between them cover almost everything you will write.
 
@@ -572,12 +1205,19 @@ That last one is worth pausing on. An action that changes nothing still writes a
 outbox, with `event_type` null — so *"this ran and decided there was nothing to do"* is a fact
 in the log rather than a silence you cannot distinguish from a crash.
 
-## 11. An example event handler
+## 12. An example event handler
+
+With `EventFanoutJob` and `EventHandlingJob` registered — step 9 does both — the framework polls
+the outbox, materialises one `event_notifications` row per (event, handler), and invokes your
+handlers on a cluster-exclusive worker. Two jobs rather than one because fan-out and delivery
+fail for different reasons: a handler that keeps raising retries its own row without re-reading
+the outbox.
 
 Two attributes and a method. Register it in `build()` alongside everything else:
 
 ```python
 class MoneyDepositedEventHandler:
+    # Cluster-stable identifier; stored in event_notifications.handler_name.
     name = "money-deposited"
     event_type = MoneyDepositedEvent
 
@@ -601,7 +1241,12 @@ The handler takes the **executor**, not a connection: it does its own work as it
 work, with its own transaction and its own outbox rows. The transaction that produced the event
 committed and went away before this ran.
 
-## 12. An example distributed job
+**Delivery is at-least-once.** A handler can run twice — a crash between the work and the row
+update leaves the notification unmarked, and it is picked up again. Make the body idempotent:
+a unique constraint, an idempotency key, or the event id itself. Rename `name` and every
+notification written under the old one is orphaned, so treat it as cluster-stable.
+
+## 13. An example distributed job
 
 Periodic work that must run on exactly one instance of the cluster, however many are deployed:
 
@@ -626,7 +1271,7 @@ Exclusivity comes from the `scheduled_tasks` row, not from configuration: whiche
 claims it runs, the rest do not. **The body must still tolerate running twice** — a claim can be
 lost to a dead-execution timeout, and then another instance picks the task up.
 
-## 13. A test
+## 14. A test
 
 ```python
 with TestClient(create_app(settings)) as client:
@@ -637,13 +1282,82 @@ with TestClient(create_app(settings)) as client:
 **The `with` matters.** `TestClient` only runs the lifespan inside a context manager, so without
 it `app.state.service` is never set and every request fails on the dependency.
 
-## 14. Run + verify
+## 15. Run + verify
 
 ```bash
 make run
 ```
 
-## 15. Use the example projects as your reference
+Then check that the framework's tables are actually there — the most common setup failure is a
+migration that never ran, and it shows up as a confusing error on the first write rather than at
+boot:
+
+<div data-db="pg">
+
+```bash
+docker compose exec wallet-db psql -U wallet -c "\dt"
+```
+
+`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
+
+</div>
+<div data-db="mysql">
+
+```bash
+docker compose exec wallet-db mysql -u wallet -pwallet wallet -e "SHOW TABLES"
+```
+
+`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
+
+</div>
+<div data-db="mariadb">
+
+```bash
+docker compose exec wallet-db mariadb -u wallet -pwallet wallet -e "SHOW TABLES"
+```
+
+`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
+
+</div>
+<div data-db="sqlite">
+
+```bash
+sqlite3 wallet.db ".tables"
+```
+
+`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
+
+</div>
+
+Open a wallet and deposit into it:
+
+```bash
+WALLET=$(curl -sX POST localhost:8000/wallets \
+  -H 'Content-Type: application/json' \
+  -d '{"owner_id": "'$(uuidgen)'", "currency": "EUR", "opening_balance": "0.00"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -sX POST localhost:8000/wallets/$WALLET/deposits \
+  -H 'Content-Type: application/json' -d '{"amount": "25.50"}'
+```
+
+Then read the outbox, which is the whole point:
+
+```sql
+SELECT action_name, model_type, event_type, delivered
+FROM events ORDER BY event_date;
+```
+
+| action_name | model_type | event_type | delivered |
+| --- | --- | --- | --- |
+| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | true |
+| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | true |
+
+Two rows, written in the same transactions as the two `wallets` writes. `delivered` flips to true
+within a poll interval of the fanout job — if it stays false, the job registry never started, and
+the place to look is `service.start()`.
+
+## 16. Use the example projects as your reference
 
 Everything above is distilled from projects that run and are tested on every commit. When a
 snippet here has drifted from reality, they are the truth:

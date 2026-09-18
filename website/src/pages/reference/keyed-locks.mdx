@@ -34,6 +34,22 @@ with lease:
     ...
 ```
 
+
+Four things that contract fixes, and each of them is a decision somebody would otherwise make
+wrongly under pressure:
+
+- **A lease always expires.** `max_hold` is mandatory, not optional. It is not a timeout on your
+  code — it is the promise that the lock is released even if this process dies holding it. Set
+  it above the worst case for the work inside.
+- **Contention is not failure.** `try_acquire` returns `None` when the lease cannot be had
+  inside `max_wait`; `acquire` raises `LockAcquisitionError`. Keeping those distinguishable is
+  what lets an HTTP handler answer 503 with a `Retry-After` instead of 500.
+- **The key is a string you choose**, and its granularity is the whole design. `wallet:{id}`
+  serialises one wallet; `wallets` serialises every wallet, which is a different product.
+- **Releasing is not your job.** The lease is a context manager, so the release happens on the
+  way out of the block whichever way you leave it — including an exception, which is the path
+  that gets forgotten when release is a method call.
+
 ## Where to acquire the lock
 
 ### ✅ At the caller, around `executor.execute(...)` — the default
@@ -50,6 +66,16 @@ with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
 ### ⚠️ Inside `Action.perform()` — narrower use case only
 
 Defensible only for serialising a read-and-compute that has no write of its own.
+
+
+The reason it is narrow rather than forbidden: the lease has to cover the window where the race
+can happen, and `perform()` is only the first half of that window. Anything whose race is
+decided *by the commit* — two deposits on one wallet, two writers of one row — needs the lease
+to outlive `perform()`, which only the caller can arrange.
+
+What is left over is work whose race is decided inside `perform()` itself and writes nothing:
+serialising an expensive read-and-compute so two requests do not both pay for it, or holding a
+rate-limited external call to one in flight. Those are real, and they are the whole of it.
 
 ### Why not just always lock inside `perform()`?
 
@@ -107,6 +133,17 @@ Size that pool for the **maximum number of leases held at once**, not for traffi
 
 That is also why `max_hold` is mandatory rather than optional: a connection held forever is a
 pool exhausted forever.
+
+
+Sizing it is a different exercise from sizing a request pool, and the number is usually much
+smaller than people expect. It is bounded by **how many leases are held at the same instant**,
+not by request rate: a hundred requests a second each holding a lease for 20 ms need two or
+three connections, while ten long imports holding one for a minute each need ten.
+
+`max_overflow=0` is deliberate on that engine. Overflow exists to absorb bursts, and a burst of
+lock holders is exactly the thing you want to refuse rather than absorb — a refused
+`try_acquire` is a 503 the caller can retry, while an absorbed one is an unbounded number of
+connections held for the length of a lease.
 
 ### How the SQL backends wait
 

@@ -17,15 +17,33 @@ class ActionPlan:
     def changes(self) -> Mapping[type, PersistableChanges]: ...
     def additions[P: Persistable](self, model_type: type[P]) -> Sequence[P]: ...
     def updates[P: Persistable](self, model_type: type[P]) -> Sequence[P]: ...
+
+    def __bool__(self) -> bool: ...
 ```
 
-The staging methods are generic in the thing staged, so `plan.add(wallet)` is a `Wallet` and
-not a `Persistable`.
+`Persistable[ID, S]` is the framework's common supertype for both [`Model`](/reference/model/)
+and [`Entity`](/reference/entity/) — anything you can stage on a plan is one of those. A model
+carries events and an entity does not, and the plan does not care which it is holding; the
+executor does, when it comes to write the outbox rows.
+
+The staging methods are generic in the thing staged, so `plan.add(wallet)` is a `Wallet` and not
+a `Persistable`. That is the whole reason for the type parameter — without it every staged value
+would need a cast back to the type you already knew it was.
+
+`bool(plan)` is Java's `hasChanges()`. There is no separate method because Python already has the
+protocol for it, and the executor uses the same call.
 
 ## Single-writer; not thread-safe
 
-Deliberately. The plan belongs to one invocation, and a plan mutated from work handed to a pool
-is a data race with a correct-looking traceback. Fan out, join, then stage.
+Deliberately. Internally it is a plain `dict` keyed by type, holding plain dicts keyed by id, and
+nothing guards them. Within `perform()`, `add`, `add_all`, `update` and `update_all` must all
+happen on the thread that entered it. If the action fans work out to a pool to gather data,
+**join the children first and only then stage from the thread that invoked `perform()`.**
+
+The GIL is not the reprieve it looks like. A single dict assignment is atomic; the staging path
+is not — it checks whether the id is already staged, stamps the row, and then assigns, and two
+threads can both pass the check. The failure is a lost write with a correct-looking traceback,
+which is exactly the kind you find in production rather than in a test.
 
 ## Methods
 
@@ -39,16 +57,28 @@ not the object you passed. Later code in the same `perform()` should use what ca
 Stage an UPDATE. Returns the object **at its next version**, so a later read in the same
 `perform()` sees the increment rather than the stale one.
 
-One id may be staged at most once per invocation; re-staging raises. Two changes to one row in
-one action is almost always a bug you would rather find here.
+One id may be staged at most once per invocation; re-staging raises. A unit of work is one write
+per row, so staging the same row twice cannot mean two writes — the second call would have to
+either overwrite the first silently or invent a version the database has never held.
+
+The returned value is what makes it plain: after `a = plan.update(x)`, a second staging would
+leave `a` claiming a version it no longer has and a balance nobody is going to write. Compose the
+changes on the model and stage the result once, which is also how it reads best.
 
 ### `additions(model_type)` / `updates(model_type)`
 
-What has been staged, per type. For a persister or a test that wants to look.
+What has been staged, per type, in staging order. Empty rather than absent for a type nothing was
+staged for, so a caller never has to check first. For a persister, or a test that wants to look
+at what an action decided without touching a database.
 
 ### `changes()`
 
-Everything staged, keyed by type. `bool(plan_changes)` is false when nothing was staged.
+Everything staged, keyed by type — a **read-only view**, not the map itself. A caller holding the
+real one could empty the plan, and the executor would then commit a unit of work that had quietly
+become a no-op.
+
+`bool(plan)` is false when nothing was staged. That is not an error: see the sentinel row
+below.
 
 ## Lifecycle
 

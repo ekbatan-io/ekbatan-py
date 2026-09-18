@@ -39,6 +39,26 @@ NA = {
     "reference/outbox-schema": "a redirect stub for an old Java URL",
 }
 
+#: Pages whose remaining gap is fully accounted for, and what accounts for it. A capped page
+#: still prints its real numbers - the cap changes how the row is *read*, never what it measures.
+#: Every entry names something checkable, so a cap that stops being true is one somebody can
+#: disprove. Do not add one to retire a page that still owes content.
+CAPPED = {
+    "reference/action-plan": (
+        "three method headings carry this port's names - add(model) / add_all(models) against "
+        "Java's add(entity) / addAll(entities). Renaming them would be a lie about the API"
+    ),
+    "reference": (
+        "seven of Java's cards are for things absent here (five DI, annotations, native image) "
+        "and two spell generics Python's way: Model[ID, S], Entity[ID]"
+    ),
+    "learn/complete-project-setup": (
+        "Java's StackPicker renders 24 dependency blocks (2 build tools x 4 stacks x 3 dialects) "
+        "and a jOOQ codegen section; those two are 47% of its rendered words, and neither has a "
+        "counterpart with anything like that surface"
+    ),
+}
+
 DROP = re.compile(r"<(script|style|svg)\b.*?</\1>", re.S | re.I)
 TAG = re.compile(r"<[^>]+>")
 HEAD = re.compile(r"<(h[1-3])\b[^>]*>(.*?)</\1>", re.S | re.I)
@@ -87,6 +107,8 @@ def main() -> int:
         vol = round(100 * pw / jw) if jw else 0
         status = "done" if pct >= 90 and vol >= 75 else "partial" if pct >= 50 else "todo"
         missing = ", ".join(h for h in jh if not matches(h, ph))[:70]
+        if status != "done" and name in CAPPED:
+            status, missing = "capped", CAPPED[name]
         rows.append((name, len(jh), len(ph), jw, pw, pct, status, missing))
 
     print(f"{'page':38} {'J§':>3} {'§':>3} {'§ match':>8} {'words':>6}  status")
@@ -98,11 +120,11 @@ def main() -> int:
     tally: dict[str, int] = {}
     for r in rows:
         tally[r[6]] = tally.get(r[6], 0) + 1
-    settled = tally.get("done", 0) + tally.get("n/a", 0)
+    settled = tally.get("done", 0) + tally.get("capped", 0) + tally.get("n/a", 0)
     print()
-    for k in ("done", "partial", "todo", "n/a"):
+    for k in ("done", "capped", "partial", "todo", "n/a"):
         print(f"  {k:9}{tally.get(k, 0):>4}")
-    print(f"\n  settled (done + n/a): {settled}/{len(rows)} = {round(100 * settled / len(rows))}%")
+    print(f"\n  settled: {settled}/{len(rows)} = {round(100 * settled / len(rows))}%")
     return 0
 
 

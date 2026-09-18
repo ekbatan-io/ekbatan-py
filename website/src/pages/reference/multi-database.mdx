@@ -33,6 +33,73 @@ Use these helpers in your migrations rather than raw types. They are also what
 [`schemagen`](/reference/schemagen/) forces reflected columns *back* to, which is what makes a schema
 generated on one dialect usable on another.
 
+### Why MySQL needs `CHARACTER SET ascii` on uuid columns
+
+MariaDB has the same default and the same fix. A uuid in canonical form is pure 7-bit ASCII — 8-4-4-4-12 hex digits and four hyphens. Under
+MySQL's default `utf8mb4` a `CHAR(36)` reserves **four bytes per character**: 144 bytes per index
+entry where 36 would do. On a primary key that is read on every request, that is four times the
+index pages and four times the cache pressure, for no information.
+
+`uuid_column()` does not pin the charset, because a column's charset is part of your DDL rather
+than part of a type. Pin it in the migration:
+
+```sql
+id CHAR(36) CHARACTER SET ascii NOT NULL
+```
+
+PostgreSQL's native `UUID` is 16 bytes and has no charset to get wrong. MariaDB 10.7+ has a
+native `UUID` too, and this framework still writes `CHAR(36)` there — see below.
+
+### Why MySQL uuid columns are `CHAR(36)`-shaped, not `BINARY(16)`
+
+`BINARY(16)` is half the size and the obvious optimisation. It is not what this framework does,
+and the reason is that the outbox is read by things that are not this framework: `psql`, a
+Debezium connector, a Java service on the same database, a support engineer with a SQL prompt.
+A `BINARY(16)` `model_id` is unreadable to every one of them, and unjoinable against any column
+that is not also `BINARY(16)`.
+
+The same argument rules out MariaDB's native `UUID` type: it is stored as 16 bytes, reflects as
+a type MySQL does not have, and produces rows that a MySQL replica of the same schema cannot
+receive.
+
+SQLAlchemy's own default for a dialect with no uuid type is `CHAR(32)` — the hex with the
+hyphens stripped. This framework overrides that, and the bug it avoids is worth stating plainly:
+a Java service writing `d5143465-787a-...` and a Python service writing `d5143465787a...` cannot
+join on `model_id`, **and neither notices**, because both queries succeed and return nothing.
+
+### Why MariaDB `JSON` needs the type forced
+
+MariaDB stores `JSON` as `LONGTEXT` with a `CHECK` constraint, and the driver reports it that
+way. A `CREATE TABLE ... JSON` works; reading the schema back gives you `LONGTEXT`.
+
+This affects **reflection only** — a column declared `json_column()` in your own `schema.py`
+tells SQLAlchemy the type rather than asking the database, and is unaffected. But
+[`schemagen`](/reference/schemagen/) reflects a real database, so on MariaDB it would emit
+`Text` for a column you declared as JSON, and the generated module would then bind strings where
+the framework expects objects.
+
+`schemagen` therefore forces the type back rather than trusting the reflection. The same pass
+fixes `BIGINT(display_width=20)`, which MariaDB reports for a plain bigint and which does not
+even import. MySQL reports `JSON` correctly and needs neither.
+
+### Repository field definitions, and why there are none here
+
+Java's answer to this page is three parallel sets of field constants — `PG_*`, `MARIADB_*`,
+`MYSQL_*` — for the columns whose type differs, selected in the constructor by
+`dialect.family()`. jOOQ binds a field to a concrete `SQLDataType`, so a cross-dialect
+repository has to carry one of each.
+
+Here there is nothing to select. `with_variant()` puts the per-dialect rendering inside the type:
+
+```python
+Uuid().with_variant(_CanonicalUuid(), "mysql", "mariadb")
+JSON().with_variant(JSONB(), "postgresql")
+```
+
+One `Table`, one repository, and the engine picks the rendering at statement-compile time. That
+is the whole of the difference, and it is why this page is a cheatsheet where Java's is a
+pattern.
+
 ## Always UTC
 
 Every timestamp this framework writes is UTC, and it is stored in a column with **no zone**.

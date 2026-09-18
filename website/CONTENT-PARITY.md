@@ -15,9 +15,20 @@ than what the source looks like. Two numbers, both proxies:
 | **words** | ours as a share of Java's - volume drift |
 
 Neither is the goal. A page can sit at 100% on both and still read differently; they are the
-cheapest signal for *where to look*. **done** is >=90% of headings and >=75% of the words.
-Pages Java has and this port should not are listed in the script's `NA` with their reason, so
-the number is never improved by pretending.
+cheapest signal for *where to look*.
+
+Every page ends in one of four states, and two of them are held in the script so they cannot
+rot into prose nobody rechecks:
+
+| | |
+| --- | --- |
+| **done** | >=90% of headings, >=75% of the words |
+| **capped** | the remaining gap is accounted for; `CAPPED` holds the reason |
+| **n/a** | Java has it and this port should not; `NA` holds the reason |
+| **partial** / **todo** | content is still owed |
+
+The number is never improved by pretending: a `CAPPED` or `NA` entry names something checkable,
+and a page in either still prints its real measurements.
 
 Not wired into `npm run check`: it needs the Java site built next door, which CI does not have.
 
@@ -44,15 +55,42 @@ Each is a true observation and none of them is a heading: they describe the comp
 than the content, and a reader who has never seen the Java site cannot use them. They now say
 what is under them.
 
-## What will never reach 100%, and why
+## Where a page stops
 
-- **`reference/multi-database`** - Java's three `Why ...` subsections are all about jOOQ
-  converters, which SQLAlchemy's type helpers replace. Our dialect-disagreement table is the
-  counterpart. Same for its `Repository field-definition pattern`.
-- **`reference/events/streaming`** - Java documents two SMT variants, their configuration,
-  payload encoding, envelope timestamps and error handling at length. That artifact runs inside
-  Kafka Connect, in a JVM, whichever language wrote the row, so this port owes the row format
-  and a pointer to it rather than a second copy of its manual.
-- **`learn/complete-project-setup`** - Java's is inflated by its StackPicker rendering roughly
-  36 build-file combinations (Gradle/Maven x 3 DI frameworks x 3 dialects). There are no build
-  descriptors here to vary.
+**done** is >=90% of headings and >=75% of the words. Three pages will not reach it, and the
+script marks them **capped** with the reason inline, so the row still prints its real numbers and
+a cap that stops being true is one somebody can disprove:
+
+- **`reference/action-plan`** - three method headings carry this port's names, `add(model)` /
+  `add_all(models)` against Java's `add(entity)` / `addAll(entities)`. Renaming them to match
+  would be a lie about the API.
+- **`reference`** - seven of Java's cards are for things absent here (five DI integrations,
+  annotations, native image) and two spell generics Python's way: `Model[ID, S]`, `Entity[ID]`.
+- **`learn/complete-project-setup`** - Java's StackPicker renders 24 dependency blocks
+  (2 build tools x 4 stacks x 3 dialects) and a jOOQ codegen section. Measured: those two
+  sections alone are **47%** of that page's 16,504 rendered words, and neither has a counterpart
+  with anything like that surface. The page went 19% -> 40% of Java's words once the content that
+  *does* port was written; the rest is the picker.
+
+## Two caps that turned out not to be caps
+
+Both were recorded here as permanent and both were wrong. Worth keeping, because the failure mode
+is the same each time: *a Java-shaped implementation detail was mistaken for a Java-shaped
+concern.*
+
+**`reference/events/streaming`** was excused as "the SMT runs inside Kafka Connect, in a JVM, so
+this port owes the row format and a pointer rather than a second copy of its manual." The pointer
+was the error. Connect is a JVM process **whichever language wrote the row** - so a Python
+operator deploying Variant B needs exactly that configuration, and sending them to another site
+for it is drift, not economy. All six sections now live here, with the Python-side facts checked
+rather than assumed: the outbox writer inserts `delivered = False` and the fan-out job is the only
+writer that sets it true, which is the invariant the SMT's unwrapped-record fallback depends on.
+67% -> 100%.
+
+**`reference/multi-database`** was excused as "Java's three `Why ...` subsections are all about
+jOOQ converters, which SQLAlchemy's type helpers replace." True of the *mechanism* and false of
+the *question*. Why MySQL wants `CHARACTER SET ascii` on a uuid column is a fact about MySQL;
+why a uuid is `CHAR(36)` rather than `BINARY(16)` is a decision this port makes too, for the same
+reason; and MariaDB reporting `JSON` as `LONGTEXT` breaks reflection here exactly as it breaks
+codegen there. Only the *answer* to `Repository field-definition pattern` changed - `with_variant`
+puts the per-dialect rendering inside the type, so there is nothing to select. 64% -> 100%.
