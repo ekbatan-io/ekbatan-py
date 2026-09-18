@@ -54,14 +54,32 @@ wrongly under pressure:
 
 ### ✅ At the caller, around `executor.execute(...)` — the default
 
-Almost always right. The lease has to span **both** `perform()` and the executor's commit, or
-the race it exists to prevent reopens in the gap between them - and only the caller can wrap
-both.
+```
+├─ acquire lock       ←─┐
+├─ executor.execute()   │
+│   ├─ Action.perform() │ lock held
+│   │   ├─ read state   │
+│   │   └─ plan.update  │
+│   └─ commit           │
+└─ release lock       ←─┘
+```
 
 ```python
 with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
     service.executor.execute(DepositMoneyAction, params)
 ```
+
+The lease wraps **both** `perform()` and the executor's commit. A concurrent acquirer cannot
+enter until the previous commit is fully visible — so there is no race window, and no
+optimistic-locking conflict caused by writes that were supposed to be coordinated.
+
+**This is what most applications want.** Whenever the goal is "concurrent writes on the same key
+must produce a consistent result", the lock has to span the commit phase, and only the caller
+holds a scope that contains it.
+
+Size `LOCK_HOLD` as an honest upper bound on `perform()` plus the commit, not as a guess: it is
+the watchdog's deadline, and a lease that expires mid-commit hands the key to someone else while
+you are still writing.
 
 ### ⚠️ Inside `Action.perform()` — narrower use case only
 
@@ -188,7 +206,7 @@ long as it is held. If twelve requests can hold twelve different keys at once, t
 twelve, and `max_overflow=0` so the thirteenth waits rather than opening a connection the
 database has not budgeted for.
 
-## Dedicated pool via its own engine
+### Dedicated pool via its own engine
 
 **Give it its own pool.** A SQL keyed lock is *session*-scoped: each hold keeps a connection for
 as long as the lease lasts, because that is what the lock physically is. A lease taken during a
@@ -232,7 +250,7 @@ A network partition landing *inside* a segment still parks the caller in a block
 and no client-side loop can bound that. Set a socket timeout on the lock pool if you need a hard
 one; it is not lock-specific, any long-running query has the same exposure.
 
-## A sub-second wait is not a wait on MySQL
+### A sub-second wait is not a wait on MySQL
 
 `GET_LOCK` takes a `DOUBLE`, and the two servers have diverged on what they do with the
 fraction. Measured against the containers this suite runs, holding the lock and timing a second
@@ -257,7 +275,7 @@ rather than discovered.
 Java's own comment says MySQL "rounds up to the next whole second". That holds above one second
 and not below it: a 500 ms wait does not become 1 s, it becomes none.
 
-## The watchdog costs a thread here
+### The watchdog costs a thread here
 
 Each outermost hold gets a watchdog that force-releases at `max_hold`. Java uses
 `Thread.ofVirtual()`, which is effectively free. Here it is a `threading.Timer` - a real OS

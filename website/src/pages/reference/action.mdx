@@ -46,18 +46,34 @@ unreadable six months later.
 ## The two-phase lifecycle
 
 ```
-execute(action, params)
-   │
-   ├── phase 1 — perform()          reads, constructs, stages. No writes.
-   │
-   └── phase 2 — the executor       one transaction:
-                                      domain rows  (INSERT / UPDATE ... WHERE version = ?)
-                                      outbox rows  (INSERT)
-                                    commit
+executor.execute(DepositMoneyAction, params)
+         │
+         ▼
+┌─ Phase 1 — perform() — no transaction ───────────────────┐
+│  read · build · attach events · plan.add / plan.update   │
+└──────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─ Phase 2 — the executor — one atomic transaction ────────┐
+│  1. group the plan's changes by ShardIdentifier          │
+│  2. open the transaction on that shard                   │
+│       repository writes   → domain rows                  │
+│       outbox writes       → events rows                  │
+│  3. commit                                               │
+└──────────────────────────────────────────────────────────┘
 ```
 
 Phase one touches no transaction. Phase two is the only place one is opened, and it always wraps
-every staged change together with the matching event rows. A partial write is not expressible.
+every staged change together with the matching event rows. **A partial write is not
+expressible** — there is no code path that writes a domain row without its outbox row, because
+they are the same statement batch in the same transaction.
+
+The grouping step in phase two is what makes sharding invisible to phase one: `perform()` stages
+objects, and only afterwards does the executor work out which database each one belongs to. An
+action reads the same whether there is one database or eight.
+
+Each attempt gets a **fresh plan**. A retry re-runs phase one from the top rather than
+re-committing a stale plan, so a half-staged attempt cannot leak into the next one.
 
 ## Methods
 
@@ -105,10 +121,38 @@ safe to repeat.
 
 ## Cross-shard execution
 
-An action whose staged changes span shards raises `CrossShardError`. With
-`allow_cross_shard=True` the executor opens **one transaction per shard**, each committing
-independently — there is no two-phase commit, and a partial commit is the dual-write trap in
-another hat. Prefer opting in per call, where the risk is visible.
+By default an action's staged changes must all route to one shard; one that spans two raises
+`CrossShardError`, naming both. Opt in for a single invocation:
+
+```python
+executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+The executor then opens **one transaction per shard**, each committing independently. There is no
+two-phase commit — not as an omission, but because there is no atomic commit across separate
+databases to have. A partial commit is the dual-write trap in another hat.
+
+Three things happen that you would want to happen:
+
+- **A warning is logged before the first commit**, not after the last. An action that spans
+  shards and then fails partway is exactly when someone needs to know it spanned shards, and a
+  warning written after the final commit is never written at all in that case.
+- **A partial failure logs at `CRITICAL`**, naming which shards are committed and will not roll
+  back, and which one failed. That log line is the only notice anyone gets, and it is the
+  documented consequence of opting in.
+- **The span is annotated** — `cross_shard`, and on failure `partial_commit_failure` with the
+  committed and failed shards — so it is visible in tracing rather than only in logs.
+
+The failure is caught as broadly as possible, deliberately. A `KeyboardInterrupt` between two
+commits — a pod going away mid-action — is the realistic case, and it must not be the thing that
+decides whether the alarm is raised.
+
+Prefer opting in **per call**, where the risk is visible at the call site. If a partial commit
+would need compensating, write a [saga](/learn/sagas/) instead.
 
 ## No nesting
 

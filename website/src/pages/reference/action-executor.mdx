@@ -20,7 +20,40 @@ class ActionExecutor:
 ```
 
 Takes the action **or its type** when one is registered. The type is the usual form: callers
-depend on a class, not on a constructed object with repositories hanging off it.
+depend on a class, not on a constructed object with repositories hanging off it. Passing the
+instance needs no registry at all, which is what a test usually wants.
+
+Construction:
+
+```python
+class ActionExecutor:
+    def __init__(
+        self,
+        *,
+        namespace: str,
+        registry: DatabaseRegistry,
+        repositories: RepositoryRegistry | Iterable[Repository],
+        actions: ActionRegistry | Iterable[Action] = (),
+        events: Table | None = None,
+        clock: Clock | None = None,
+    ) -> None: ...
+```
+
+All keyword-only, the way Java names them in its builder — an executor takes six collaborators
+and positional order for six is a mistake waiting to be made silently.
+
+| | |
+|---|---|
+| `namespace` | written into every outbox row; required, and a naming root rather than a label |
+| `registry` | the shard layout, which is how the executor finds a database to commit to |
+| `repositories` | what persists each staged type. A type with none is refused when the executor goes to write it, with a message naming the type *and* listing what is registered |
+| `actions` | the registry that maps a class to a constructed instance; optional if you always pass instances |
+| `events` | the outbox `Table` to write to; the one from your generated `schema.py` |
+| `clock` | defaults to the system clock. Pass a fixed one in tests and every timestamp becomes assertable |
+
+`registry=None` and `repositories=None` are refused explicitly rather than accepted and dropped
+into an attribute, because the failure otherwise arrives at the first `execute(...)` — far from
+the wiring line that caused it.
 
 ## What "atomically" means
 
