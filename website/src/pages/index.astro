@@ -258,7 +258,7 @@ def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletRe
     color: var(--ink, #0a0a0a);
   }
   .broken-label-fail {
-    color: #ef4444;
+    color: var(--on-accent, inherit);
     background: var(--brand-yellow);
     padding: 1px 5px;
   }

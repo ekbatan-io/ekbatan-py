@@ -19,9 +19,204 @@
  *   --ink            text, borders, the footer background
  */
 :root {
-    /* Currently identical to the Java site. Change the hue to differentiate. */
-    --brand-orange: oklch(69% 0.21 38);
-    --brand-yellow: oklch(93% 0.18 100);
-    --paper: oklch(99% 0 0);
-    --ink: oklch(13% 0 0);
+    /* `formwork` - see PALETTES.md. Sampled from Algirdas Jasaitis's brutalism-exhibition
+     * shot: a warm off-white ground, charcoal rather than pure black, and no accent colour.
+     *
+     * As with `bone`, the accent slots hold no accents. The primary is the charcoal itself,
+     * so a filled block reads like that shot's "Concrete" wordmark; the highlight is a light
+     * warm grey, so an inline mark is a tint rather than a highlighter pen. */
+    --brand-orange: oklch(30% 0 90);
+    /* The fill slot IS the accent, so it gets the accent colour: the burgundy itself.
+     *
+     * Measured, rather than guessed. On the landing page the bone ground is 84.3% of the
+     * pixels, the charcoal fills 12.9%, and everything in this slot 2.8% across 26 elements.
+     * On a docs page it is 95.2 / 4.7 / 0.05. That is 60-30-10 with the accent at the bottom
+     * end of the range - and the rule for that band is to spend saturation there, because a
+     * quiet neutral is already carrying the bulk.
+     *
+     * Seven colours were tried in this slot at chroma 0.03 to 0.05. Java's yellow is 0.18.
+     * Over 2.8% of a page a wash that faint is not restraint, it is invisible - which is why
+     * every one of them read as nothing. The burgundy is chroma 0.152 and already on the page,
+     * so this adds no hue: it takes the one accent the design has and spends it where the
+     * accent belongs.
+     *
+     * Dark, so it carries paper text rather than ink - see the rules at the bottom. */
+    --brand-yellow: oklch(38% 0.152 19);
+    --paper: oklch(96% 0.003 68);
+    --ink: oklch(30% 0 90);
+
+    /* What text sits on an accent fill. A companion to `--brand-yellow`, because that token
+     * is now dark: every consumer of it was written when it was a light wash and so either
+     * hard-codes ink or inherits it. They read this instead, so the accent can be light or
+     * dark and nothing downstream has to know. */
+    --on-accent: var(--paper);
+
+    /* Hairline grey. The shot draws its whole grid in this and nothing heavier. */
+    --rule: oklch(88% 0.004 68);
+
+    /* Two more hues, and both live only on glyphs.
+     *
+     * Nothing large ever takes a colour here: the hero band, the buttons and the CTA panel
+     * stay charcoal, and a mark stays a tint of the paper. What gets colour is the handful of
+     * characters that are already set apart - the section numerals, the section mark, the
+     * arrows, the star in the marquee, and the full stop closing the wordmark.
+     *
+     * One hue at two lightnesses, because the glyphs sit on two different grounds. The
+     * numerals are inside charcoal chips and need to be light; the star and the full stop are
+     * on the bone and need to be dark. Same colour, read both ways. */
+    --glyph-dark: oklch(38% 0.152 19);
+    --glyph-light: oklch(96% 0.003 68);
+
+    /* The one colour on the site: burgundy. Wine rather than arterial - the difference from
+     * a blood red is almost entirely hue, 19 degrees against 29, rotated off orange-red and
+     * toward purple-red. Lightness and chroma barely move.
+     *
+     * In gamut at this chroma, unlike the red it replaces, so the number describes what
+     * renders and a later nudge will behave.
+     *
+     * Do not take the lightness lower to deepen it. It carries 8 units of lightness away from
+     * the charcoal around it, and that separation is what makes the one piece of colour on the
+     * page read as colour at a glance rather than as tinted ink. Below about 34% it stops. */
+    --blood: oklch(38% 0.152 19);
+}
+
+/* The wall.
+ *
+ * Four layers of texture over the paper colour, topmost first. Each one is doing a different
+ * job, and none of them is a pattern you should be able to name while reading:
+ *
+ *   1. grain      fine paper fibre. The base texture
+ *   2. aggregate  sparse darker specks, like the stone in a concrete pour. A steep gamma on
+ *                 the noise alpha keeps only its darkest end, so it reads as scattered flecks
+ *                 rather than a second fog
+ *   3. boarding   vertical streaking. `baseFrequency` takes two numbers - a low one across and
+ *                 a high one down stretches the noise into columns, which is the board-formed
+ *                 concrete in the reference photograph
+ *   4. pour       very low frequency mottling, the uneven patches a wall dries with
+ *
+ * Tiles get larger as the frequency drops: 180px for the grain, 1100px for the mottling.
+ * `stitchTiles` keeps the edges seamless, so the repeat down a long page is invisible.
+ *
+ * The stack **scrolls with the page**, which is the whole point and was wrong at first. With
+ * `background-attachment: fixed` the texture is pinned to the viewport and the content slides
+ * over a stationary surface - it reads as a filter on the screen rather than as a wall the
+ * page is mounted on. A wall moves when you move past it.
+ *
+ * That is why the header below is plain. A sticky element cannot carry a matching patch of a
+ * scrolling texture: its background is painted against its own box, so as the wall travels
+ * behind it the two would drift apart and the seam would crawl. A flat plane over a moving
+ * wall is coherent; a mismatched patch of wall is not.
+ *
+ * Cards keep `bg-paper` and so come out smooth: panels laid on the wall, not part of it.
+ */
+.min-h-screen.bg-paper {
+    background-color: var(--paper);
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23f)' opacity='0.5'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.22' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='gamma' exponent='6'/%3E%3C/feFuncA%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23f)' opacity='0.5'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='520'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='520' height='520' filter='url(%23f)' opacity='0.11'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1100' height='1100'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='1100' height='1100' filter='url(%23f)' opacity='0.11'/%3E%3C/svg%3E");
+    background-size: 180px 180px, 300px 300px, 520px 520px, 1100px 1100px;
+}
+
+/* The header is a plate in front of the wall, not a piece of it. */
+header.sticky.bg-paper {
+    background-color: var(--paper);
+    background-image: none;
+}
+
+/* Hairlines instead of 2px rules, and flat panels instead of hard shadows.
+ *
+ * This is the half of that shot which is not colour. Every rule in it is a 1px light grey and
+ * nothing casts a shadow, which is what makes the grid read as drawn rather than built. The
+ * bundle's `.brutalist-border` is `2px solid var(--ink)`; these override the weight and the
+ * colour without touching it. */
+.brutalist-border {
+    border-width: 1px;
+    border-color: var(--rule);
+}
+
+.border-b-2 {
+    border-bottom-width: 1px;
+    border-bottom-color: var(--rule);
+}
+
+.border-t-2 {
+    border-top-width: 1px;
+    border-top-color: var(--rule);
+}
+
+.brutalist-shadow,
+.brutalist-shadow-yellow,
+.brutalist-shadow-orange {
+    box-shadow: none;
+}
+
+/* One word in colour, on a site that otherwise has none.
+ *
+ * `python` is the only italic in the hero, so it needs no new markup - and the restraint is
+ * the point: a single accent lands because everything around it is charcoal. The word is
+ * display-sized, so 9.79:1 on the paper is far past what it needs.
+ */
+.hero-h1 .italic {
+    color: var(--blood);
+}
+
+/* The numerals, the section mark and the arrows - always inside a charcoal chip. 7.1:1. */
+.text-yellow {
+    color: var(--glyph-light);
+}
+
+/* A fill in the accent colour carries light text, not ink. `.bg-yellow` is the version chip,
+ * inline marks, the marquee band and every inline `code` in the docs; `.hover:bg-yellow` is
+ * the reference cards, which would otherwise keep ink text and go unreadable on hover. */
+.bg-yellow,
+.hover\:bg-yellow:hover {
+    color: var(--paper);
+}
+
+/* The star in the marquee and the full stop closing `framework.` - always on a light
+ * ground. 5.4:1 on the bone, 4.6:1 on the marquee band. */
+.text-orange {
+    color: var(--glyph-dark);
+}
+
+/* A dot inside an accent fill has to invert with it.
+ *
+ * The nav logo, the footer logo and the blinking dot in the version chip are each a round
+ * `bg-ink` sitting inside a `bg-yellow` square. That read correctly while this slot was a
+ * light grey; now that the slot is the burgundy, charcoal-on-burgundy is nearly invisible.
+ *
+ * Scoped to `.rounded-full` so it only catches the dots, not any deliberate dark panel that
+ * might later sit inside an accent block. */
+.bg-yellow .bg-ink.rounded-full {
+    background-color: var(--paper);
+}
+
+/* And a glyph inside one, for the same reason.
+ *
+ * `.text-orange` is burgundy because it is the star in the marquee and the full stop closing
+ * `framework.` - but the marquee band is itself an accent fill, so the star was burgundy on
+ * burgundy while the full stop, on the bone, was right. One class, two grounds: inside a fill
+ * it takes the fill's foreground. */
+.bg-yellow .text-orange,
+.bg-yellow .text-yellow {
+    color: var(--on-accent, inherit);
+}
+
+/* The overscroll gap: bone at the top, charcoal at the bottom.
+ *
+ * Rubber-band past either end and what shows is the canvas. Chrome fills that region with the
+ * canvas *background colour* and paints no content into it, so three things cannot reach it,
+ * all tried here: a `box-shadow` under the footer, a viewport-fixed gradient on `html`, and a
+ * scroll-driven animation (which registers and runs, but reports a null progress when the
+ * animated element is itself the scroller). Measured too - the footer's bottom, the wrapper's
+ * bottom and `scrollHeight` are the same pixel, so there is no gap in the document to paint.
+ *
+ * Only a solid colour fills the rubber band, and both ends share one canvas, so the two ends
+ * can differ only if that colour changes with scroll position. `Nav.astro` does it in four
+ * lines. This is the value it starts from and returns to.
+ */
+html {
+    background-color: var(--paper);
 }

@@ -46,5 +46,24 @@ const {
             <slot />
             <Footer />
         </div>
+        <script is:inline>
+            // The canvas is one colour shared by both overscroll ends, and only a solid colour
+            // fills the rubber band - so bone above the header and charcoal below the footer
+            // is only possible by changing it with the scroll position. See palette.css for
+            // the three CSS approaches that cannot do this.
+            (() => {
+                const de = document.documentElement;
+                const paint = () => {
+                    const atEnd =
+                        window.scrollY + window.innerHeight >= de.scrollHeight - 4;
+                    de.style.backgroundColor = atEnd
+                        ? "var(--ink)"
+                        : "var(--paper)";
+                };
+                addEventListener("scroll", paint, { passive: true });
+                addEventListener("resize", paint);
+                paint();
+            })();
+        </script>
     </body>
 </html>

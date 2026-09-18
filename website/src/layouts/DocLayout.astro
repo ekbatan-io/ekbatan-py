@@ -86,7 +86,7 @@ const { frontmatter } = Astro.props;
     }
     .doc-prose a:hover {
         background: var(--brand-yellow, #ffd23f);
-        color: var(--ink, #0a0a0a);
+        color: var(--on-accent, inherit);
     }
     .doc-prose ul,
     .doc-prose ol {
@@ -113,6 +113,7 @@ const { frontmatter } = Astro.props;
         font-family: "JetBrains Mono", ui-monospace, monospace;
         font-size: 0.9em;
         background: var(--brand-yellow, #ffd23f);
+        color: var(--on-accent, inherit);
         padding: 0 0.25rem;
         border: 1px solid var(--ink, #0a0a0a);
     }
@@ -260,6 +261,7 @@ const { frontmatter } = Astro.props;
     }
     .doc-prose th {
         background: var(--brand-yellow, #ffd23f);
+        color: var(--on-accent, inherit);
         font-family: "Space Grotesk", system-ui, sans-serif;
         font-weight: 700;
     }

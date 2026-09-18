@@ -10,9 +10,16 @@ const css = readFileSync("src/styles/styles.css", "utf8");
 
 // Classes the *Java* site also uses without the bundle defining them - verified by running this
 // script against ../ekbatan/website. The matcher below is deliberately naive about minified
-// selectors, so these are mostly its own false positives; the few that are real are Java's
-// too, and render identically there. What must stay empty is anything outside this set.
-const KNOWN = new Set(["...", "decoration-2", "example-row", "group", "hover:-translate-x-1", "hover:text-yellow", "lg:grid-cols-[1fr_2fr]", "mb-12", "md:p-14", "md:p-8", "md:py-20", "md:text-3xl", "md:text-7xl", "md:text-lg", "min-w-[160px]", "mt-3", "pb-2", "pb-8", "previous", "row-old-one", "row-old-two", "shiki", "space-y-14", "space-y-2", "space-y-4", "space-y-8", "text-5xl", "text-[12px]", "text-ink/60", "underline", "w-20", "whitespace-pre"]);
+// selectors, so these are mostly its own false positives. What must stay empty is anything
+// outside this set.
+//
+// `text-5xl` and `md:text-7xl` used to be in here, excused as "Java's too, and render
+// identically there". That was true and it was the wrong conclusion: identically *broken*.
+// The bundle has `.text-4xl`, `.text-7xl` and `md:text-6xl` but neither of those two, so the
+// /reference/, /learn/ and /privacy/ headlines fell back to inherited 16px on both sites. An
+// entry here needs to be a false positive or a real class - never a real miss that happens to
+// be shared.
+const KNOWN = new Set(["...", "decoration-2", "example-row", "group", "hover:-translate-x-1", "hover:text-yellow", "lg:grid-cols-[1fr_2fr]", "mb-12", "md:p-14", "md:p-8", "md:py-20", "md:text-3xl", "md:text-lg", "min-w-[160px]", "mt-3", "pb-2", "pb-8", "previous", "row-old-one", "row-old-two", "shiki", "space-y-14", "space-y-2", "space-y-4", "space-y-8", "text-[12px]", "text-ink/60", "underline", "w-20", "whitespace-pre"]);
 
 function walk(dir) {
     return readdirSync(dir).flatMap((name) => {

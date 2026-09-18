@@ -69,6 +69,7 @@ const linkTo = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/
     .learn-pager-link:hover,
     .learn-pager-link:focus-visible {
         background: var(--brand-yellow, #ffd23f);
+        color: var(--on-accent, inherit);
         box-shadow: 4px 4px 0 0 var(--ink, #0a0a0a);
         transform: translate(-2px, -2px);
     }
@@ -98,7 +99,15 @@ const linkTo = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/
     }
 
     :global(.doc-prose .learn-pager a:hover) {
-        color: var(--ink, #0a0a0a);
+        color: var(--on-accent, var(--ink, #0a0a0a));
+    }
+
+    /* The kicker states its own colour, so it cannot inherit the hover colour from the link
+     * the way the title does. On an accent fill it has to follow. */
+    .learn-pager-link:hover .learn-pager-kicker,
+    .learn-pager-link:focus-visible .learn-pager-kicker {
+        color: inherit;
+        opacity: 0.75;
     }
 
     @media (max-width: 640px) {
