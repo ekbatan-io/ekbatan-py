@@ -67,7 +67,9 @@ The rest are the delivery state:
 | `created_date` | no | when fan-out created the row |
 | `updated_date` | no | when it last changed |
 
-## The unique constraint is the whole design
+## Indexes
+
+### The unique constraint is the whole design
 
 `UNIQUE (event_id, handler_name)` is what makes fan-out idempotent per handler. If fan-out runs
 twice over the same event - after a crash, or because two instances raced - the second insert is
@@ -77,7 +79,7 @@ This is the same shape the saga example uses for its step markers, and it is wor
 **idempotency is a unique constraint inside the transaction that does the work**, not a
 check-then-act in application code. A check-then-act has a window. This has none.
 
-## States
+## State transitions
 
 | state | meaning |
 | --- | --- |
@@ -108,7 +110,7 @@ class MoneyDepositedEventHandler:
 New rows are written with `name`; queued rows written under an alias still route. Drop the alias
 once they have drained.
 
-## How this compares with Java
+## Dialect types
 
 Columns, order, nullability and the unique constraint are **identical**. Two differences, both in
 the indexes:

@@ -20,7 +20,7 @@ comparison against Java's.
 The in-process event handler is built on distributed jobs - fan-out and dispatch *are* jobs - so
 using it means all three tables.
 
-## Do I need each one?
+## Do I need each table?
 
 | what you are doing | `events` | `event_notifications` | `scheduled_tasks` |
 | --- | :---: | :---: | :---: |
@@ -28,6 +28,12 @@ using it means all three tables.
 | Debezium or CDC reading committed events | yes | no | no |
 | in-process fan-out and handling | yes | yes | yes |
 | distributed jobs only | no | no | yes |
+
+## Table pages
+
+- [`events`](/reference/tables/events/) - the outbox
+- [`event_notifications`](/reference/tables/event-notifications/) - in-process delivery rows
+- [`scheduled_tasks`](/reference/tables/scheduled-tasks/) - the scheduler's table
 
 ## Getting them into your database
 

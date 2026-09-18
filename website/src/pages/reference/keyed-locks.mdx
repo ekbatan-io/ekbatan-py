@@ -96,6 +96,8 @@ locks = PostgresKeyedLockProvider(
 )
 ```
 
+## Dedicated pool via its own engine
+
 **Give it its own pool.** A SQL keyed lock is *session*-scoped: each hold keeps a connection for
 as long as the lease lasts, because that is what the lock physically is. A lease taken during a
 request would otherwise pin a request connection for its duration.
@@ -178,6 +180,23 @@ writer that did not take the lock.
 thousand held connections on the SQL backends and a queue with no fairness promise. At that point
 the answer is to shard the key, or to serialise the work through a job rather than through a
 lock.
+
+## Caveat: not the right primitive at very high concurrency
+
+A keyed lock serialises everything contending for one key, and a SQL one costs a connection per
+hold while it does. Both of those are fine at the scale this is meant for — a busy wallet, a
+tenant-wide import, a job that must not overlap itself — and neither scales to thousands of
+simultaneous holders of the same key.
+
+Two symptoms tell you that you are past it. Waiters pile up faster than holders drain, so
+`try_acquire` starts returning `None` under normal traffic rather than under incidents. Or the
+lock pool saturates, and a request that could have proceeded blocks waiting for a connection
+whose only job is to hold a lock.
+
+At that point the answer is not a bigger pool. It is to stop serialising: shard the key so the
+contention spreads, batch the work so one holder does what many were queueing to do, or move to
+optimistic concurrency and let the version check reject the losers — which is what the framework
+does by default, and the reason a keyed lock is the exception rather than the tool.
 
 ## See also
 

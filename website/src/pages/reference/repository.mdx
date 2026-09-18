@@ -204,7 +204,7 @@ select(WALLETS).where(
 The predicate helpers (`find_where`, `find_one_where`, `exists_where`, `count`) keep both the
 soft-delete filter and the shard routing, so reach for those before reaching for a connection.
 
-## Registration, which nothing discovers
+## Discovery via the registry
 
 There is no annotation and nothing scans for your repositories. They go in the registry, in the
 wiring, where you can see them:

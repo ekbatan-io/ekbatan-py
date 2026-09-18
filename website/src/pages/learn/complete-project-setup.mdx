@@ -18,7 +18,7 @@ This is a **complete** service: migrations, generated schema, domain, actions, r
 handler, job, wiring, HTTP layer, tests and a Makefile. The example named in the picker is this
 page as a runnable project.
 
-## 1. The project
+## 1. Scaffold a project
 
 ```
 wallet/
@@ -45,7 +45,23 @@ Two generated files, and the difference between them matters: **`builders.py` is
 because it is derived from source you already have; **`schema.py` is gitignored** because it is
 derived from a database you have to start.
 
-## 2. Dependencies
+## 2. Start a database
+
+Nothing below needs a database until step 5, but the schema generator starts its own throwaway
+container and the tests need a real one — so it is worth having PostgreSQL up before you begin.
+
+```bash
+docker run --rm -d --name wallet-pg \
+  -e POSTGRES_DB=wallet -e POSTGRES_PASSWORD=dev \
+  -p 5432:5432 postgres:17
+```
+
+MySQL or MariaDB work the same way; only the url in step 3 and the driver extra in step 2
+change. SQLite needs no container at all, which is why
+[`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite)
+is the example to read first if you only want to see the framework work.
+
+## 3. Add dependencies
 
 <div data-install="uv">
 
@@ -180,7 +196,7 @@ poetry add --group dev pytest
 **`codegen` is a development dependency, not a runtime one.** It starts a database container to
 reflect your schema — a thing your build does and your deployment must never do.
 
-## 3. The connection url
+## 4. Configure the DB connection
 
 <div data-db="pg">
 
@@ -221,7 +237,7 @@ keyed lock degrade to single-process behaviour.
 
 </div>
 
-## 4. The first migration
+## 5. Add a migration
 
 The framework's own tables have to exist. Do not hand-write their DDL — generate it once and
 commit the result:
@@ -243,7 +259,7 @@ Paste it into `migrations/versions/0001_initial.py` alongside your own tables, *
 per `op.execute()`** — PyMySQL rejects a multi-statement script, so a revision that works on
 PostgreSQL fails elsewhere with an error naming the syntax rather than the cause.
 
-## 5. Generate the schema
+## 6. Wire the schema generator
 
 <div data-db="sqlite">
 
@@ -310,7 +326,7 @@ MariaDB quirks make the forcing essential: `JSON` is reported as `LONGTEXT`, and
 back as `BIGINT(display_width=20)` — which, emitted verbatim, does not even import.
 </div>
 
-## 6. The Makefile
+## 7. The Makefile
 
 `uv` has no task runner and no dependency graph, which is the one real gap against Gradle.
 
@@ -374,7 +390,7 @@ The dependency on the migration files is what makes this bearable in front of ev
 starts a container when they change and does nothing when they have not.** That is Gradle's
 up-to-date check, in one line. `lint` depends on it because mypy reads the generated module.
 
-## 7. The wiring
+## 8. Sneak peek — a model and a repository
 
 <CodeBlock filename="wallet/app.py" language="python" shadow="orange" code={`@dataclass(frozen=True, slots=True)
 class WalletService:
@@ -460,7 +476,7 @@ Use `InProcessKeyedLockProvider`. It is a `threading.Lock`, not a distributed lo
 tell you so at runtime — two instances each get their own.
 </div>
 
-## 8. The HTTP layer
+## 9. The HTTP layer
 
 <CodeBlock filename="wallet/api.py" language="python" shadow="yellow" code={`def service_of(request: Request) -> WalletService:
     service: WalletService = request.app.state.service
@@ -507,7 +523,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     return app`} />
 
-## 9. Example actions
+## 10. Example actions
 
 Three shapes, which between them cover almost everything you will write.
 
@@ -556,7 +572,7 @@ That last one is worth pausing on. An action that changes nothing still writes a
 outbox, with `event_type` null — so *"this ran and decided there was nothing to do"* is a fact
 in the log rather than a silence you cannot distinguish from a crash.
 
-## 10. An example event handler
+## 11. An example event handler
 
 Two attributes and a method. Register it in `build()` alongside everything else:
 
@@ -585,7 +601,7 @@ The handler takes the **executor**, not a connection: it does its own work as it
 work, with its own transaction and its own outbox rows. The transaction that produced the event
 committed and went away before this ran.
 
-## 11. An example distributed job
+## 12. An example distributed job
 
 Periodic work that must run on exactly one instance of the cluster, however many are deployed:
 
@@ -610,7 +626,7 @@ Exclusivity comes from the `scheduled_tasks` row, not from configuration: whiche
 claims it runs, the rest do not. **The body must still tolerate running twice** — a claim can be
 lost to a dead-execution timeout, and then another instance picks the task up.
 
-## 12. A test
+## 13. A test
 
 ```python
 with TestClient(create_app(settings)) as client:
@@ -621,13 +637,13 @@ with TestClient(create_app(settings)) as client:
 **The `with` matters.** `TestClient` only runs the lifespan inside a context manager, so without
 it `app.state.service` is never set and every request fails on the dependency.
 
-## 13. Run it
+## 14. Run + verify
 
 ```bash
 make run
 ```
 
-## 14. Use the example projects as your reference
+## 15. Use the example projects as your reference
 
 Everything above is distilled from projects that run and are tested on every commit. When a
 snippet here has drifted from reality, they are the truth:

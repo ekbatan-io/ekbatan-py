@@ -59,7 +59,7 @@ execute(action, params)
 Phase one touches no transaction. Phase two is the only place one is opened, and it always wraps
 every staged change together with the matching event rows. A partial write is not expressible.
 
-## Members
+## Methods
 
 ### `plan`
 
@@ -67,7 +67,7 @@ The accumulator for this invocation. A property rather than a field: it resolves
 `ContextVar` bound for the duration of `perform()`, so one shared action instance serves every
 concurrent invocation safely. See [ActionPlan](/reference/action-plan/).
 
-### `perform(params)`
+### `perform(principal, params)` — here, `perform(params)`
 
 Your logic. Read what you need, build the new immutable objects, stage them, return the result.
 It must be free of side effects you would not want repeated — a retry replays it whole.

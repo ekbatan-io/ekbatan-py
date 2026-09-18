@@ -32,7 +32,7 @@ operations, so only the original inserts reach Kafka.
 
 ## Choose a delivery topology
 
-### 1. In process only — listen to yourself
+### 1. Local only — listen to yourself
 
 Use the in-process handlers when the consumer is part of the same deployment.
 
@@ -49,7 +49,7 @@ dispatch job picks it up and calls you with an `EventEnvelope` carrying the type
 action's metadata, and the action's parameters. The handler can write a projection, call another
 service, or run another action through the executor.
 
-### 2. A handler as a broker publisher
+### 2. Local handler as a broker publisher
 
 Write a handler and publish to Kafka, Pulsar, RabbitMQ, SQS or anything else from inside it.
 
@@ -70,7 +70,7 @@ The trade is that your handler is now an at-least-once publisher. If the publish
 the process dies before the delivery row is marked `SUCCEEDED`, it runs again. Key your messages
 off the event row id so consumers can dedupe.
 
-### 3. CDC straight to one raw topic
+### 3. CDC directly to one raw broker topic
 
 Use Debezium when you want infrastructure to stream committed rows without application code
 publishing anything.
@@ -84,7 +84,7 @@ to the raw topic and filter on `model_type`, `event_type` or namespace. Use `mod
 message key when consumers need per-aggregate ordering — every event for one wallet then lands
 on one partition.
 
-### 4. CDC to a raw topic, then fan out or rekey
+### 4. CDC to raw topic, then fan out or rekey
 
 When one topic is not enough.
 
@@ -98,7 +98,7 @@ topics for one event; a rekeyed topic for one consumer. Kafka Streams, ksqlDB, F
 consumer/producer service all do this. The point is that fan-out happens **after** the durable
 stream exists: the broker topology never reaches into the database write path.
 
-## Path A — in process (start here)
+## Path A — Local event handler (start here)
 
 Two background jobs do the work. **Fan-out** turns one event row into one delivery row per
 subscribed handler, in `event_notifications`; **dispatch** polls those rows and calls your
@@ -197,7 +197,7 @@ run inside Kafka Connect, in a JVM, whichever language wrote the row — so a se
 uses the *same* artifact a Java service uses. What this port owes the pipeline is the row
 format, and those columns are verified identical.
 
-### B.1 Point Debezium at the table
+### B.1 Set up Debezium
 
 Capture only the outbox:
 

@@ -46,6 +46,30 @@ audit trail is of units of work even where there are no events.
 
 ## Construction and mutation
 
+Subclasses are **immutable** frozen dataclasses. A change produces a new instance through
+`copy()...build()`, and the builder threads the version forward, so what the repository writes
+carries the successor version its optimistic-locked update needs.
+
+Where a model's mutators attach an event as they go, an entity's simply return the new value -
+there is nothing to emit, so there is nothing to attach:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class Currency(Entity[CurrencyId]):
+    code: str
+    display_name: str
+
+    def __post_init__(self) -> None:
+        if not self.code.strip():
+            raise ValidationError("code cannot be blank")
+
+    def rename(self, display_name: str) -> Currency:
+        return self.copy().display_name(display_name).build()
+```
+
+`__post_init__` is where a frozen dataclass puts the checks a constructor body would hold,
+because there is no constructor body to put them in.
+
 The same builder shape as a model, minus the event and timestamp methods:
 
 ```python
@@ -61,7 +85,15 @@ def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
 
 ## Equality
 
-As for a model: every field is compared.
+Every field is compared, because a dataclass compares every field. Two entities read from the
+same row at the same version are equal; two that differ in any column are not.
+
+That is **wider** than the Java port, where equality is `id`, `state` and `version` only - and
+the difference is easy to trip over if you move between them. Two currencies with one id and
+version but different display names are equal there and not here.
+
+It is narrower than a model's in one respect, though, and for the same reason the rest of this
+page is shorter: there is no event list and there are no timestamps to take part in it.
 
 ## Builder API
 

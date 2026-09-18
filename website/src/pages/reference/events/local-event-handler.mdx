@@ -43,7 +43,7 @@ cluster exclusivity, heartbeating and crash recovery are inherited. One instance
 one runs dispatch - the normal case rather than a guarantee, since a stalled instance can have
 its execution revived elsewhere, and both jobs are written to be safe under a repeat.
 
-## A handler
+## Defining a handler
 
 ```python
 class MoneyDepositedEventHandler:
@@ -70,7 +70,7 @@ allows several handlers per event class and **rejects two different event classe
 name**, because those are indistinguishable in the outbox. Handler names and aliases must be
 globally unique.
 
-### `name` is schema
+### Renaming a handler safely
 
 It is the durable subscription id written on every notification row. Rename the class freely;
 rename `name` and the queued rows under the old one become invisible to the handler and sit until
@@ -99,7 +99,33 @@ GROUP BY state;
 
 Keeping it longer is harmless.
 
-## Wiring
+
+Two rules make the rename safe, and they are not symmetrical:
+
+1. **Fan-out writes the current `name` only.** From the deploy onward, every new delivery row
+   carries the new name. There is no backfill and no rewrite of rows already queued.
+2. **Dispatch resolves through `aliases` as well.** A row still carrying the old name is matched
+   to this handler and runs, so the queue drains under the new code rather than stalling.
+
+That asymmetry is what makes the rename a one-way door you can walk through slowly. New work
+uses the new identity immediately; old work finishes under the old one.
+
+**What breaks without an alias** is worth stating plainly, because it fails quietly: rows under
+the old name match no handler at all. They are not errors and they are not retried — they simply
+sit in `PENDING` until the expiry sweep marks them `EXPIRED`, and the side effects they were
+going to cause never happen. Nothing logs an exception, because from the dispatcher's point of
+view there is no handler that wants them.
+
+Drop the alias once no non-terminal rows remain under the old name:
+
+```sql
+SELECT count(*) FROM event_notifications
+WHERE handler_name = 'money-deposited' AND state IN ('PENDING', 'FAILED');
+```
+
+Keeping it longer costs nothing — it is a lookup, not a subscription, so an alias nobody uses
+does not create rows or consume work.
+## Wiring (manual)
 
 ```python
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
@@ -127,7 +153,7 @@ fan-out on - so events leave the outbox into notifications - without running han
 process, because a separate worker picks them up. Fan-out has no such switch and is always on
 when the job is registered.
 
-## Configuration
+## Schema additions
 
 ```python
 LocalEventHandlerConfig(
@@ -192,7 +218,7 @@ Each round:
 Backoff is capped exponential: `30s x 2^(attempts-1)`, capped at 5 minutes. So 30s, 1m, 2m, 4m,
 then 5m for ever, until the 7-day retention window closes.
 
-### This half is sequential, where Java is parallel
+### Dispatch is sequential
 
 Java invokes handlers **in parallel on virtual threads** and commits the outcomes in about four
 batched `UPDATE`s. Here a batch is delivered **one notification at a time**, and a hundred rows
@@ -235,7 +261,7 @@ What you must not rely on:
 If a handler cannot be made idempotent in any of those ways, you want the Kafka path with
 consumer-group offsets, not this one.
 
-## Listen to yourself
+## A realistic handler — calling external services
 
 A handler may take the executor and start another action:
 
@@ -249,7 +275,7 @@ has already committed by the time a handler runs, so the new action gets its own
 transaction, its own retry policy and its own outbox rows. It is what a [saga](/learn/sagas/)
 is built from.
 
-## Coexisting with the Kafka path
+## Coexistence with the Kafka path
 
 Both can run against one outbox. The Debezium transforms drop non-insert operations, so the
 `UPDATE delivered = TRUE` that fan-out writes never becomes a Kafka message.

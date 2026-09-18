@@ -119,6 +119,60 @@ wallet_id.minted_at                        # -> datetime, from the v7 timestamp
 `WalletId.random()` uses the default shard. Because the timestamp is the high bits, ids sort
 chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
 
+## Sharded repositories
+
+Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The bundled
+`EmbeddedBitsShardingStrategy` decodes the shard from the id's embedded bits:
+
+```python
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
+        )
+```
+
+That one keyword is the entire difference from an unsharded repository. There is no second line
+to change, because the mapping is by field name and the id type already carries the shard —
+where the Java port also has to widen `fromRecord` to rebuild a `ShardedId`.
+
+What it changes about the inherited reads and writes:
+
+| | routes by |
+| --- | --- |
+| `get`, `find`, `find_many`, `exists`, `update`, `delete` | the shard packed into the id |
+| `add` | the shard packed into the id the model was created with |
+| `find_where`, `find_one_where`, `exists_where`, `count` | **every shard** — a predicate says nothing about placement |
+| anything passed `shard=` | that shard, and only that one |
+
+## Custom sharding strategies
+
+When the shard is not derivable from the id — you need to move rows between shards, or the key
+is something the id does not carry — implement `ShardingStrategy` and override `shard_for` on
+the repository.
+
+The cost is that the id stops being self-describing: every read that starts from an id alone
+needs the strategy to locate the row first, which is a round trip you pay implicitly on each
+lookup. A repository whose strategy cannot resolve a shard from an id says so at construction
+rather than failing on the first read.
+
+## Unregistered shards are refused, not defaulted
+
+Asking the registry for a shard it does not hold **raises**, naming what is registered:
+
+```
+ValidationError: no database registered for shard 9:9; registered: ['0:0']
+```
+
+**This differs from the Java port,** which falls back to the default shard. That fallback makes
+one codebase run unsharded in development and sharded in production without branching — and it
+also makes a typo in a shard identifier silent, routing writes to the default where nobody looks
+for them. Refusing trades the convenience for the certainty.
+
+What does resolve to the default is a repository with `NoShardingStrategy`: every key maps
+there, and its scatter accessors visit only that shard. That is the supported way to run
+unsharded, rather than relying on a lookup miss.
+
 ## Cross-shard actions
 
 Refused by default. `CrossShardError` names the two shards involved.

@@ -106,9 +106,10 @@ clock that is fine. Under a **frozen** clock every row of a run ties and the ord
 a random uuid. The test suite fell into this more than once; assert on `action_name` or
 `action_id` rather than on position.
 
-## How this compares with Java
+## Dialect types
 
-Verified by generating both and comparing, rather than by reading:
+Where the three dialects differ, and how each compares with the Java port's DDL -
+verified by generating both and comparing, rather than by reading:
 
 | | agrees? |
 | --- | --- |
@@ -131,6 +132,8 @@ created with Java's DDL, this port writes a UUID and reads it back identical, an
 either port; whichever service migrates first decides the storage.
 
 The difference is 16 bytes per value against 36. It matters at outbox scale and nowhere else.
+
+## Indexes
 
 ### The undelivered index, and what it costs
 

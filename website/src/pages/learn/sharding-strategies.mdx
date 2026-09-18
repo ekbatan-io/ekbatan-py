@@ -60,6 +60,15 @@ class WalletId(ShardedId["Wallet"]):
 wallet_id = WalletId.generate(ShardIdentifier(group=1, member=0))
 ```
 
+When a request arrives carrying a wallet id, the framework reads the shard bits out of it,
+finds the matching database in the registry, and opens the transaction there. No round trip to
+a directory service, and no sticky session at the load balancer — the id is self-describing.
+
+The shard is chosen **at creation time**: your create action calls `WalletId.generate(shard)`,
+and from then on the id and its shard are bonded for the row's lifetime. Choosing it is your
+call — typically the create action maps something you already know (tenant, region, regulatory
+class) onto a shard.
+
 The layout is a cross-language contract: the same bits, in the same places, so a Java service
 and a Python one reading the same id agree about where the row lives.
 
@@ -82,17 +91,37 @@ By default an action's staged changes must all route to one shard. One transacti
 written, commit. **That is the only way the outbox guarantee survives**, because
 atomic-across-databases does not exist.
 
-With `allow_cross_shard=True` the executor opens **one transaction per shard**, each committing
-independently. A failure rolls back only its own shard; shards that already committed stay
-committed, and the framework logs that loudly, naming them.
+With `allow_cross_shard=True` the executor groups the staged changes by shard and opens **one
+transaction per shard**, in deterministic order, rolling each back independently on failure.
+Shards that already committed stay committed, and the framework logs that loudly, naming them.
+
+```python
+executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+Prefer opting in on one explicit call. Setting it as an executor-wide default should be
+reserved for a dedicated executor whose actions are *all* designed for per-shard commits and
+eventual consistency.
+
+That buys cross-shard workflows — a wallet-to-wallet transfer whose two wallets live on
+different shards — at two prices:
+
+- **Per-shard atomicity, not global atomicity.** Shard A can commit while shard B rolls back.
+- **No cross-shard reads inside one transaction.** A join across shards happens in application
+  code, after each shard's transaction has committed.
 
 So you are back in [dual-write](/learn/the-dual-write-trap/) territory for that action — except
 the two systems are now two shards of your own database rather than a database and a broker.
 The mitigation is a [saga](/learn/sagas/): one action per shard, chained by outbox events, with
 compensation.
 
-Prefer opting in **per call**, so the risk is visible at the call site rather than buried in a
-builder somewhere.
+The good news is that most actions need none of this. Routing customers to the same shard as
+their wallets, and orders to the same shard as their customer, removes most cross-shard
+pressure for free.
 
 ## What sharding doesn't solve
 

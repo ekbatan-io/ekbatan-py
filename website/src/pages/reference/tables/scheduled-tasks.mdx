@@ -76,7 +76,7 @@ That is why [Wiring](/reference/wiring/) gives jobs their own pool, sized at **a
 count**. A job body holding the last connection starves the heartbeat. db-scheduler warns at
 startup when the pool is too small, and it warned while the examples were being written.
 
-## How this compares with Java
+## Dialect types
 
 Columns, order, nullability and the primary key are **identical** - both ports follow
 db-scheduler's own schema. Two differences on PostgreSQL:
@@ -105,6 +105,8 @@ second time under a non-UTC process.
 
 If you share a `scheduled_tasks` table created by a Java service, nothing is required of you -
 the aware clock already handles it. If you write to that table yourself, pass aware datetimes.
+
+## Indexes
 
 ### Index names and the priority ordering
 

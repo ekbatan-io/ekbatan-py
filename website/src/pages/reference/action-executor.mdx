@@ -35,9 +35,26 @@ can fail after the commit.
 
 ## Cross-shard behaviour
 
-Refused by default with `CrossShardError`. `ExecutionConfiguration(allow_cross_shard=True)`
-opens one transaction per shard; each commits independently, a failure rolls back only its own,
-and the executor logs the partial outcome naming the shards that had already committed.
+By default an action that touches more than one shard is **refused** with `CrossShardError`,
+naming the two shards that disagreed:
+
+```python
+if len(shards) > 1 and not config.allow_cross_shard:
+    raise CrossShardError(first, second)
+```
+
+`ExecutionConfiguration(allow_cross_shard=True)` opts in to per-shard commits. Each shard
+commits independently, **there is no two-phase commit**, and a failure rolls back only its own
+shard — the ones that already committed stay committed. The executor logs that outcome loudly,
+naming the shards, because a partial commit nobody noticed is the worst version of it.
+
+Treat it as an escape hatch. Prefer passing it on one explicit `execute(...)` call rather than
+setting it as an executor-wide default, so the risk is visible where the risk is taken. If a
+partial commit would need compensating, use a [saga](/learn/sagas/) instead of one cross-shard
+action.
+
+See [Cross-shard actions](/learn/sharding-strategies/#cross-shard-actions-one-transaction-per-shard-never-atomic-across)
+for the consistency model and the saga mitigation.
 
 ## Retries
 
@@ -70,9 +87,23 @@ namespace doubles as a protobuf package and `package my-service;` is a syntax er
 
 ## Custom event persister
 
-The default writes one JSON row per event into the outbox table. Supply your own
-`EventPersister` to write a different shape — a second table, a different column layout — while
-keeping the same transaction.
+The default, `SingleTableJsonEventPersister`, writes one JSON row per event into the outbox
+table. Supply your own to write a different shape — a second table, a different column layout,
+encrypted payloads — while keeping the same transaction.
+
+The protocol is one method, and its signature is the whole contract:
+
+```python
+class EventPersister(Protocol):
+    def persist(self, conn: Connection, record: OutboxRecord) -> None: ...
+```
+
+Being handed the **connection** is the point. The seam is inside the transaction rather than
+around it, so a replacement cannot accidentally break the guarantee it is extending: whatever it
+writes, it writes where the domain rows are being written, or not at all.
+
+The same persister is reachable from outside an action — a backfill job replaying historical
+state can reuse the configured one rather than assembling events by hand.
 
 ## See also
 

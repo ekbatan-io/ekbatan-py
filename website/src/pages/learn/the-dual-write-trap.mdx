@@ -44,7 +44,7 @@ ships them onward.
 The dual write is gone. The only system that has to be transactionally consistent is the
 database, which is what databases are for.
 
-## Why it is the framework's job
+## Why it’s a framework concern
 
 The pattern is well known, and most teams bolt it on: add an `events` table, remember to write
 to it in every transaction, build a poller. It works, and you carry the discipline forever.

@@ -108,12 +108,21 @@ thread or task running `perform()`.
 
 ## Plan is single-writer; spawning threads is fine
 
-The plan belongs to one invocation and is not thread-safe, deliberately: a plan mutated from
-work handed to a pool is a data race with a correct-looking traceback.
+Spawning parallel work inside `perform()` is **allowed** — the *plan* is single-writer, not the
+action. Two hard rules:
 
-Forking work is still fine — what is not fine is staging from the fork. Work handed to a pool
-does **not** inherit the `ContextVar` binding, which is correct rather than a limitation: a pool
-thread outliving the unit of work while holding its connection is exactly the bug this prevents.
+1. **Only the thread that invoked `perform()` may call `self.plan.add(...)` or
+   `self.plan.update(...)`.** The plan is a plain dict; concurrent mutation from a pool thread
+   is a data race with a correct-looking traceback. Even *reading* it from a pool thread is
+   unsupported, because the `ContextVar` binding does not propagate — `self.plan` raises there
+   rather than returning the wrong plan, which is the better of the two failures.
+2. **Do not share the action's transactional connection across threads.** It is bound to the
+   invoking thread, and a DBAPI connection is not thread-safe regardless.
+
+That second rule is why the non-propagation is correct rather than a limitation: a pool thread
+outliving the unit of work while holding its connection is exactly the bug it prevents.
+
+The supported pattern is fan out, **join**, and only then stage — from the invoking thread:
 
 ```python
 def perform(self, params: Params) -> Order:
@@ -122,7 +131,14 @@ def perform(self, params: Params) -> Order:
     return self.plan.add(build_order(customer, quote))   # back on this thread
 ```
 
-Fan out, **join**, and only then stage.
+For *reads*, prefer doing the fan-out **before** `executor.execute(...)` — at the caller — so
+the parallel work uses ordinary pool connections rather than anything belonging to the action.
+Inside `perform()`, keep parallelism to work that needs none of the action's state: external
+calls, replica reads on their own connections, pure computation.
+
+Under asyncio the same rule applies with a sharper edge: a `ContextVar` is per-task as well as
+per-thread, so work handed to another task does not inherit the binding either. See
+[Concurrency](/reference/runtime/concurrency/).
 
 ## Retries on optimistic-lock conflicts
 
@@ -161,10 +177,28 @@ which is what a [saga](/learn/sagas/) is.
 
 ## Cross-shard actions
 
-Refused unless you ask. An action whose changes span shards raises `CrossShardError`.
-With `allow_cross_shard=True` each shard gets its own transaction and commits independently —
-there is no two-phase commit — and a partial commit is the dual-write trap wearing a different
-hat.
+Refused unless you ask. An action whose staged changes span shards raises `CrossShardError`,
+naming the two that disagreed — the check is on what was staged, so it fires at the boundary
+between `perform()` and the commit rather than half way through writing.
+
+```python
+executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+With that, each shard gets its own transaction and commits independently. **There is no
+two-phase commit**, and there is no way to add one: the shards are separate databases, and an
+atomic commit across them does not exist to be opted into. A failure rolls back only its own
+shard; the ones that already committed stay committed, and the executor logs that loudly.
+
+So a partial commit here is the [dual-write trap](/learn/the-dual-write-trap/) wearing a
+different hat — two systems that can disagree, where the two systems happen to both be yours.
+Prefer opting in per call rather than as an executor default, so the risk is visible at the
+call site. If a partial commit would need compensating, the honest answer is a
+[saga](/learn/sagas/).
 
 <LearnPager current="actions" />
 

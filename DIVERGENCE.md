@@ -328,6 +328,26 @@ what you put in it, in both ports - which is why the example repositories write
 `WALLETS.c.state != WalletState.DELETED.name` out, exactly where the Java writes
 `.and(WALLETS.STATE.ne(...))`.
 
+## An unregistered shard is refused, not defaulted
+
+> **chosen** - Java falls back to the default shard; this raises. A typo routing writes somewhere nobody looks is the failure that decided it. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
+Asking the registry for a shard it does not hold raises, naming what is registered:
+
+```
+ValidationError: no database registered for shard 9:9; registered: ['0:0']
+```
+
+Java returns the default shard instead. That fallback has a real use - one codebase runs
+unsharded in development and sharded in production with no branching - and a real cost: a
+mistyped shard identifier is silent, and the writes land on the default where nobody thinks to
+look for them. The bug it produces is invisible until somebody counts rows.
+
+Refusing gives up the convenience. What replaces it is explicit: a repository constructed with
+`NoShardingStrategy` resolves every key to the default shard, and its scatter accessors visit
+only that shard. That is the supported way to run unsharded, rather than relying on every
+lookup missing.
+
 ## Deleting
 
 > **parity** - The same as Java in both ports, after some wandering.
