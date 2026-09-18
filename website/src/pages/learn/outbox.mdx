@@ -23,7 +23,47 @@ action needs **plus** the outbox. They land together, or none of them do.
 
 ## How rows get there
 
-Pick your dialect above; the DDL below follows.
+Every row arrives the same way, and no other way exists:
+
+```text
+Model method
+  -> returns a new immutable model
+  -> with one or more ModelEvents attached
+
+Action.perform()
+  -> reads the current state
+  -> calls the model method
+  -> stages the new model on self.plan
+
+the executor
+  -> opens one database transaction
+  -> writes the domain row
+  -> writes the attached event rows to `events`
+  -> commits, or rolls back all of it
+```
+
+For a wallet deposit, that first step is:
+
+```python
+def deposit(self, amount: Decimal) -> Wallet:
+    new_balance = self.balance + amount
+    return (
+        self.copy()
+        .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+        .balance(new_balance)
+        .build()
+    )
+```
+
+The event is attached **before** persistence and written **after** it. In between it waits in the
+action's staged changes, touching nothing. Only the executor writes it, and only in the same
+transaction as the wallet row.
+
+**That is the important part:** your code creates domain facts; the framework persists those
+facts atomically with the state they describe. Neither half can happen without the other,
+because neither half is a separate call you could make.
+
+And this is the table they land in. Pick your dialect above; the DDL follows.
 
 <div data-db="pg">
 

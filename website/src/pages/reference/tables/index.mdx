@@ -28,12 +28,21 @@ using it means all three tables.
 | Debezium or CDC reading committed events | yes | no | no |
 | in-process fan-out and handling | yes | yes | yes |
 | distributed jobs only | no | no | yes |
+| a custom [`EventPersister`](/reference/action-executor/) that writes somewhere else | up to you | no, unless you also handle in-process | only if you use distributed jobs |
+
+The last row is the one that surprises people. The outbox table is the *default* persister's
+choice, not the framework's requirement: swap the persister and `events` is yours to shape —
+a different retention, a partitioned table, a second column your consumers need. What you cannot
+swap is *when* it is written, which is the part that makes it atomic.
 
 ## Table pages
 
-- [`events`](/reference/tables/events/) - the outbox
-- [`event_notifications`](/reference/tables/event-notifications/) - in-process delivery rows
-- [`scheduled_tasks`](/reference/tables/scheduled-tasks/) - the scheduler's table
+- [`events`](/reference/tables/events/) — the committed action and event rows the default
+  persister writes. Every deployment has this one
+- [`event_notifications`](/reference/tables/event-notifications/) — one row per (event, handler),
+  holding what the in-process pipeline has delivered and what it has not
+- [`scheduled_tasks`](/reference/tables/scheduled-tasks/) — the scheduler's own table, used by
+  distributed jobs and, through them, by the in-process handlers
 
 ## Getting them into your database
 
