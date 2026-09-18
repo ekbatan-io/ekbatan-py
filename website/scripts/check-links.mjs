@@ -5,7 +5,7 @@
 // site, so the thing that must exist is the *output*, not the source. This catches the gap -
 // and did, on the two ledgers that are deliberately not published.
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 function walk(dir) {
     return readdirSync(dir).flatMap((name) => {
@@ -20,12 +20,30 @@ if (!existsSync("dist")) {
 }
 
 const targets = new Set();
+// Relative hrefs are checked per page, because where they resolve to depends on where they
+// are. `[text](../../ekbatan-py-examples/x)` reads correctly in an editor and 404s once
+// deployed - the repository is not next to the pages. Thirteen of those shipped before this
+// looked for them.
+const escaping = [];
+
 for (const file of walk("dist")) {
     if (!file.endsWith(".html")) continue;
-    for (const href of readFileSync(file, "utf8").matchAll(/href="(\/[^"#?]*)"/g)) {
-        const target = href[1];
-        if (target.startsWith("/_astro") || /\.(css|js|woff2?|png|svg|ico)$/.test(target)) continue;
-        targets.add(target);
+    const page = dirname(file);
+    for (const match of readFileSync(file, "utf8").matchAll(/href="([^"]*)"/g)) {
+        const href = match[1];
+        if (/^([a-z]+:|#|\/\/)/i.test(href) || href === "") continue;
+        const target = href.replace(/[#?].*$/, "");
+        if (target === "") continue;
+        if (/\.(css|js|woff2?|png|svg|ico)$/.test(target)) continue;
+
+        if (target.startsWith("/")) {
+            if (!target.startsWith("/_astro")) targets.add(target);
+            continue;
+        }
+        const resolved = resolve(page, target);
+        if (!existsSync(join(resolved, "index.html")) && !existsSync(resolved)) {
+            escaping.push(`${relative("dist", file)} -> ${href}`);
+        }
     }
 }
 
@@ -34,6 +52,10 @@ const broken = [...targets].sort().filter((t) => {
     return !existsSync(join("dist", path, "index.html")) && !existsSync(join("dist", path));
 });
 
-console.log(`${targets.size} distinct internal targets, ${broken.length} broken`);
+console.log(
+    `${targets.size} distinct internal targets, ${broken.length} broken` +
+        (escaping.length ? `, ${escaping.length} relative links resolving outside the site` : ""),
+);
 for (const b of broken) console.log(`  BROKEN  ${b}`);
-process.exitCode = broken.length ? 1 : 0;
+for (const e of [...new Set(escaping)].sort()) console.log(`  ESCAPES  ${e}`);
+process.exitCode = broken.length + escaping.length ? 1 : 0;

@@ -180,6 +180,16 @@ accidentally left out of a test.
 
 ## See also
 
-- [PostgreSQL](/reference/dialects/postgresql/) · [MySQL](/reference/dialects/mysql/) · [MariaDB](/reference/dialects/mariadb/) · [SQLite](/reference/dialects/sqlite/)
-- [Framework tables](/reference/tables/) - the DDL, per dialect
-- [schemagen](/reference/schemagen/) - why the forcing exists
+- [PostgreSQL](/reference/dialects/postgresql/) ·
+  [MySQL](/reference/dialects/mysql/) ·
+  [MariaDB](/reference/dialects/mariadb/) ·
+  [SQLite](/reference/dialects/sqlite/) — one page each, for what only that dialect does
+- [schemagen](/reference/schemagen/) — what reflection gets wrong, and what the forcing pass
+  puts back
+- [Repositories](/reference/repository/) — where a `Table` and a dataclass meet, and why the
+  mapping needs no per-dialect branch
+- [Framework tables](/reference/tables/) — the on-disk shape of `events` and its neighbours, per
+  dialect
+- [The outbox](/learn/outbox/) — the schema this page exists to let you author correctly
+- [Complete project setup](/learn/complete-project-setup/#5-add-a-migration) — the migration
+  that creates all of it, one statement at a time

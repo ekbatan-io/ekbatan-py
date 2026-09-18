@@ -331,6 +331,17 @@ thread per shard. On eight shards a round takes eight batches' time rather than 
 
 ## See also
 
-- [Concepts → Sharding](/reference/sharding/) - the reasoning
-- [Migrations](/reference/migrations/) - applying revisions across shards
-- [`fastapi_wallet_rest_sharded_pg`](../../ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)
+- [Repositories](/reference/repository/) — `db(key=…)` / `readonly_db(key=…)` /
+  `tx_db_else_db(key=…)` are the shard-aware accessors
+- [Adding a shard](/learn/sharding/) — the same thing as four steps against a running example
+- [Sharding strategies](/learn/sharding-strategies/) — policy and capacity, and which axis
+  answers which question
+- [Actions](/reference/action/#cross-shard-execution) — `allow_cross_shard` is a per-call knob,
+  and what it costs
+- [Sagas](/learn/sagas/) — the compensation pattern for a workflow that cannot tolerate a hidden
+  partial commit
+- [The outbox](/learn/outbox/) — how the action's row is duplicated across shards in cross-shard
+  mode
+- [Migrations](/reference/migrations/) — one call applies every revision to every shard
+- [`fastapi_wallet_rest_sharded_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)
+  — two databases, running, with placement asserted

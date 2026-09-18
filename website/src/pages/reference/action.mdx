@@ -43,6 +43,27 @@ Dependencies come through `__init__`, once, in the wiring. An action with no par
 invoked with `None`; a bare scalar is refused, because a string in the `action_params` column is
 unreadable six months later.
 
+**Nothing discovers this class.** Java marks an action `@EkbatanAction` so its DI integrations
+can find and register it; here you put the instance in an `ActionRegistry` yourself:
+
+```python
+actions = (
+    ActionRegistry.builder()
+    .with_action(OpenWalletAction(wallets))
+    .with_action(DepositMoneyAction(wallets))
+    .build()
+)
+```
+
+That is what lets `executor.execute(DepositMoneyAction, params)` take the **class** — the
+registry is the map from class to constructed instance. Pass an instance directly and no registry
+is needed, which is the form a test usually wants.
+
+The registry also decides nothing about *how* the action runs. Retries and cross-shard allowance
+are [`ExecutionConfiguration`](/reference/action-executor/), set as the executor's default or on
+a single `execute(...)` call — never on the action class, so an action's behaviour cannot depend
+on where it was declared.
+
 ## The two-phase lifecycle
 
 ```
