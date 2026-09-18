@@ -19,7 +19,7 @@ Two type parameters, where Java needs three:
 
 | Parameter | Meaning | Typical value |
 |---|---|---|
-| `ID` | the identifier type | [`Id[T]`](/reference/model/) or [`ShardedId[T]`](/reference/sharding/) |
+| `ID` | the identifier type | `Id[T]`, or [`ShardedId[T]`](/reference/sharding/) when the row lives on one of several databases |
 | `S` | the state enum for this model's lifecycle | `WalletState` (`OPENED`, `CLOSED`, `DELETED`); `GenericState` by default |
 
 Java carries a third, the concrete subclass itself, so that its generated builder's setters

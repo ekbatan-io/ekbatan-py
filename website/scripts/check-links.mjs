@@ -25,11 +25,17 @@ const targets = new Set();
 // deployed - the repository is not next to the pages. Thirteen of those shipped before this
 // looked for them.
 const escaping = [];
+const selfLinks = [];
 
 for (const file of walk("dist")) {
     if (!file.endsWith(".html")) continue;
     const page = dirname(file);
-    for (const match of readFileSync(file, "utf8").matchAll(/href="([^"]*)"/g)) {
+    const pageRoute = "/" + relative("dist", page).replace(/\\/g, "/");
+    const html = readFileSync(file, "utf8");
+    // The nav marks the current section and the footer repeats every page; both point at
+    // themselves on purpose. Only prose self-links are dead ends.
+    const prose = html.replace(/<(nav|footer|header)\b[\s\S]*?<\/\1>/gi, " ");
+    for (const match of html.matchAll(/href="([^"]*)"/g)) {
         const href = match[1];
         if (/^([a-z]+:|#|\/\/)/i.test(href) || href === "") continue;
         const target = href.replace(/[#?].*$/, "");
@@ -38,6 +44,14 @@ for (const file of walk("dist")) {
 
         if (target.startsWith("/")) {
             if (!target.startsWith("/_astro")) targets.add(target);
+            // A `See also` entry pointing at the page it sits on is a dead end wearing a link.
+            if (
+                !href.includes("#") &&
+                target.replace(/\/$/, "") === pageRoute &&
+                prose.includes(`href="${href}"`)
+            ) {
+                selfLinks.push(`${relative("dist", file)} -> ${href}`);
+            }
             continue;
         }
         const resolved = resolve(page, target);
@@ -54,8 +68,10 @@ const broken = [...targets].sort().filter((t) => {
 
 console.log(
     `${targets.size} distinct internal targets, ${broken.length} broken` +
-        (escaping.length ? `, ${escaping.length} relative links resolving outside the site` : ""),
+        (escaping.length ? `, ${escaping.length} relative links resolving outside the site` : "") +
+        (selfLinks.length ? `, ${selfLinks.length} self-links` : ""),
 );
 for (const b of broken) console.log(`  BROKEN  ${b}`);
 for (const e of [...new Set(escaping)].sort()) console.log(`  ESCAPES  ${e}`);
-process.exitCode = broken.length + escaping.length ? 1 : 0;
+for (const s of [...new Set(selfLinks)].sort()) console.log(`  SELF     ${s}`);
+process.exitCode = broken.length + escaping.length + selfLinks.length ? 1 : 0;

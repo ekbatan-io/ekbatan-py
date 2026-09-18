@@ -52,7 +52,13 @@ Every new action has to remember. Every review has to check. The day somebody fo
 a silent dual write, and it will not be noticed until a downstream system is measurably wrong.
 
 This framework makes forgetting impossible. The executor writes the outbox row for every action,
-at every commit. **There is no second table to remember, because you never write to it.**
+at every commit. Concretely: your code stages a `DepositMoneyAction`; the executor opens the
+transaction, writes the `wallets` row, writes the matching `MoneyDepositedEvent` to `events`, and
+commits. **There is no second table to remember, because you never write to it.**
+
+That is the whole pitch, and the rest of this section is how the pieces make the guarantee
+*structural* rather than a convention somebody has to police. An action that forgot the outbox
+is not a bug you can write — there is no API for writing a domain row without one.
 
 ## The one place it reappears
 
@@ -67,5 +73,7 @@ atomicity between them. That is why it is refused by default rather than merely 
 - [The outbox](/learn/outbox/) — the table that makes the single write enough
 - [Consuming events](/learn/consuming-events/) — what reads it afterwards
 - [Sharding strategies](/learn/sharding-strategies/) — the one place the trap reappears
-- Reference: [The dual-write trap](/learn/the-dual-write-trap/),
-  [The outbox](/learn/outbox/)
+- Reference: [`events`](/reference/tables/events/) — the table this page argues for,
+  column by column
+- Reference: [Actions](/reference/action/) — the two phases that make the single write
+  structural
