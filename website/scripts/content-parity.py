@@ -52,6 +52,15 @@ CAPPED = {
         "seven of Java's cards are for things absent here (five DI, annotations, native image) "
         "and two spell generics Python's way: Model[ID, S], Entity[ID]"
     ),
+    "reference/tables/events": (
+        "the page is titled for the table as it exists here - `events`, unqualified. Java's is "
+        "`eventlog.events`, because its tables live in a schema of their own by default and "
+        "these do not"
+    ),
+    "reference/tables/event-notifications": (
+        "same as `reference/tables/events`: the title is the unqualified table name, because "
+        "that is where the table is"
+    ),
     "learn/complete-project-setup": (
         "Java's StackPicker renders 24 dependency blocks (2 build tools x 4 stacks x 3 dialects) "
         "and a jOOQ codegen section; those two are 47% of its rendered words, and neither has a "
@@ -82,8 +91,16 @@ def norm(s: str) -> str:
 
 
 def matches(head: str, ours: list[str]) -> bool:
+    """Whether one of our headings is Java's, allowing for a rename around the same words.
+
+    Anchored at the front rather than anywhere in the string. A free substring test counted
+    `Five backends` as matched by `Reentrancy contract - uniform across all five backends`,
+    which is how a section can go missing while the page reports 100%.
+    """
     n = norm(head)
-    return any(n[:14] in norm(o) or norm(o)[:14] in n for o in ours)
+    return any(
+        norm(o) == n or norm(o).startswith(n[:14]) or n.startswith(norm(o)[:14]) for o in ours
+    )
 
 
 def main() -> int:

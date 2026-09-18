@@ -57,9 +57,14 @@ what is under them.
 
 ## Where a page stops
 
-**done** is >=90% of headings and >=75% of the words. Three pages will not reach it, and the
+**done** is >=90% of headings and >=75% of the words. Five pages will not reach it, and the
 script marks them **capped** with the reason inline, so the row still prints its real numbers and
 a cap that stops being true is one somebody can disprove:
+
+- **`reference/tables/events`** and **`reference/tables/event-notifications`** - each page is
+  titled for the table as it exists here: `events`, unqualified. Java's are `eventlog.events`
+  and `eventlog.event_notifications`, because its tables live in a schema of their own by
+  default and these do not. One heading out of seven, and the heading is the page's own name.
 
 - **`reference/action-plan`** - three method headings carry this port's names, `add(model)` /
   `add_all(models)` against Java's `add(entity)` / `addAll(entities)`. Renaming them to match
@@ -71,6 +76,16 @@ a cap that stops being true is one somebody can disprove:
   sections alone are **47%** of that page's 16,504 rendered words, and neither has a counterpart
   with anything like that surface. The page went 19% -> 40% of Java's words once the content that
   *does* port was written; the rest is the picker.
+
+## The matcher was too generous, once
+
+Heading matching was a free substring test in both directions: Java's `Five backends` counted as
+matched by our `Reentrancy contract - uniform across all five backends`, which contains those
+words for an unrelated reason. That is how a section goes missing while its page reports 100%.
+
+It is anchored at the front now - equal, or one is the other's 14-character prefix. Tightening it
+moved two pages from **done** to **capped** and cost nothing else, which is roughly the ratio you
+would hope for: the loose test was wrong twice in 42 pages, and both times about a page title.
 
 ## Two caps that turned out not to be caps
 
