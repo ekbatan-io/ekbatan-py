@@ -268,9 +268,12 @@ const { frontmatter } = Astro.props;
 </style>
 
 <script>
-    // Markdown tables can be wider than mobile viewports. Wrap them in a
-    // scrolling container while leaving the table itself intact, so header and
-    // body columns are laid out together and stay aligned.
+    // Markdown tables can be wider than mobile viewports, so they are wrapped in
+    // a scrolling container. `rehype-table-scroll` now does that at build time -
+    // this used to be the only thing doing it, which meant a wide table pushed the
+    // page sideways until the script ran, and forever with JS off. What is left
+    // here is the fallback for a table an .astro component renders, which never
+    // goes through the markdown pipeline.
     document
         .querySelectorAll<HTMLTableElement>(".doc-prose table")
         .forEach((table) => {

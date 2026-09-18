@@ -3,6 +3,7 @@ import { defineConfig } from "astro/config";
 import mdx from "@astrojs/mdx";
 import remarkBasePath from "./src/plugins/remark-base-path.mjs";
 import remarkStripLead from "./src/plugins/remark-strip-lead.mjs";
+import rehypeTableScroll from "./src/plugins/rehype-table-scroll.mjs";
 
 // The ekbatan-py website.
 //
@@ -29,6 +30,7 @@ export default defineConfig({
     markdown: {
         shikiConfig: { theme: "github-light" },
         remarkPlugins: [remarkStripLead, [remarkBasePath, { base: BASE }]],
+        rehypePlugins: [rehypeTableScroll],
     },
     site: "https://ekbatan-io.github.io",
 });
