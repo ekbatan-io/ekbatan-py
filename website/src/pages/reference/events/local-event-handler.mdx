@@ -155,6 +155,39 @@ when the job is registered.
 
 ## Schema additions
 
+Two, relative to a deployment that only writes the outbox.
+
+**`event_notifications`** — one row per (event, handler), holding the delivery state each handler
+has reached. It carries a denormalised copy of the event and its action context, copied from
+`events` at fan-out time, so dispatch reads everything it needs from one row with no join and no
+hydration query. See [`event_notifications`](/reference/tables/event-notifications/) for the full
+DDL and every column.
+
+**An index for the fan-out scan** on `events`, which is the one place this port's schema differs
+from Java's:
+
+```sql
+-- Java, PostgreSQL only:
+CREATE INDEX events_undelivered ON eventlog.events (event_type, event_date)
+    WHERE delivered = FALSE;
+
+-- here, every dialect:
+CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+```
+
+A **partial** index holds only the rows fan-out is looking for, so it stays small however large
+the outbox grows. A leading-column index holds every row and pays for the delivered ones. The
+trade is portability: `WHERE` on an index is PostgreSQL-only, and MySQL and MariaDB have no
+counterpart, so one index definition serves all three here where Java emits a different one per
+dialect. [`events`](/reference/tables/events/#the-undelivered-index-and-what-it-costs) has the
+measured cost and when to switch.
+
+The `delivered` column itself is not an addition — it is part of the base table, written `FALSE`
+on insert by every deployment. Only the *index* and the *notifications table* arrive with the
+in-process path.
+
+## Configuration
+
 ```python
 LocalEventHandlerConfig(
     fanout_poll_delay=timedelta(seconds=1),      # default 1s
@@ -263,7 +296,40 @@ consumer-group offsets, not this one.
 
 ## A realistic handler — calling external services
 
-A handler may take the executor and start another action:
+Most handlers reach for something to do the useful part — send a notification, write an audit
+row, post to an external API. The shape is the same as any handler; the only difference is what
+the constructor takes:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited-notification"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, notifications: NotificationService) -> None:
+        self.notifications = notifications
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        self.notifications.deposit_received(
+            envelope.model_id, envelope.event.amount, envelope.event.new_balance
+        )
+```
+
+Nothing injects that service. You construct the handler in your wiring, where you can see what it
+took — the same place you register it. There is no scanning and no annotation, which is why this
+page has no "wiring via DI" section to match Java's three.
+
+**The external call is the part that makes idempotency hard.** A notification sent twice is a
+notification the user received twice, and the outbox cannot undo it. If the call has an
+idempotency key, pass the **event id** — it is stable across every retry of the same
+notification, and distinct for every other one. If it has none, keep a table of event ids you
+have acted on and check it in the same transaction as the work.
+
+If your handler cannot be made idempotent in any of those ways, you probably want the Kafka path
+with consumer-group offsets rather than this pipeline.
+
+### Listen-to-yourself
+
+A handler may instead take the executor and start another action:
 
 ```python
 def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
@@ -274,6 +340,10 @@ This is the **only** legitimate place one action chains off another's effect. Th
 has already committed by the time a handler runs, so the new action gets its own clean
 transaction, its own retry policy and its own outbox rows. It is what a [saga](/learn/sagas/)
 is built from.
+
+What it must **not** do is reach for a connection and write directly. A handler that writes
+outside an action writes without an outbox row, and the thing it changed then has no event
+explaining it — which is the failure this whole framework exists to make unexpressible.
 
 ## Coexistence with the Kafka path
 

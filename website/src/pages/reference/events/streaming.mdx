@@ -471,7 +471,21 @@ become Kafka messages.
   infrastructure-specific to be right for anyone.
 - **Debezium connector configuration** - the properties differ across PostgreSQL, MySQL and
   MariaDB and across deployment topologies.
-- **A Schema Registry binding.** The transforms read schema files and need no registry.
+- **A Schema Registry binding.** The transforms deliberately need none — they read schema files
+  and emit Avro's single-object encoding (`0xC3 0x01` plus an 8-byte schema fingerprint) or plain
+  protobuf.
+
+That last one has a trap worth spelling out. **You cannot simply swap in a Schema-Registry-backed
+converter.** The SMT emits `bytes` with a `BYTES` Connect schema, so an `AvroConverter` would
+register a useless `"bytes"` schema and wrap the already-encoded payload inside it — and
+Confluent's wire format (`0x00` plus a 4-byte schema id) is not the one written here anyway.
+
+Registry users have two honest options:
+
+1. **Keep the SMT** and treat the schema files as the contract. This is the supported shape, and
+   the fingerprint in each message is what identifies the schema.
+2. **Drop the SMT** and use Debezium plus a registry-backed converter directly — in which case
+   `payload` stays a JSON string rather than nested binary, and your consumer parses it.
 
 ## See also
 

@@ -67,21 +67,47 @@ with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
 
 Defensible only for serialising a read-and-compute that has no write of its own.
 
+```
+└─ executor.execute()
+    ├─ Action.perform()
+    │   ├─ acquire lock   ←─┐
+    │   ├─ read state       │ lock held
+    │   ├─ plan.update      │
+    │   └─ release lock   ←─┘  (the `with` block exits)
+    └─ commit                  ← race window: another acquirer reads pre-commit state
+```
 
-The reason it is narrow rather than forbidden: the lease has to cover the window where the race
-can happen, and `perform()` is only the first half of that window. Anything whose race is
-decided *by the commit* — two deposits on one wallet, two writers of one row — needs the lease
-to outlive `perform()`, which only the caller can arrange.
+The lease closes *before* the framework's commit runs. Another acquirer takes the lock
+immediately, reads the still-pre-commit state, computes a stale-version update, and collides at
+its own commit. Optimistic locking catches it — `StaleRecordError`, and the executor re-runs
+phase one — so **no data is lost**. But calls fail and retry under contention that a
+caller-side lease would have prevented entirely. The Java port measured its own version of this:
+ten concurrent deposits, about six committing first time.
 
-What is left over is work whose race is decided inside `perform()` itself and writes nothing:
-serialising an expensive read-and-compute so two requests do not both pay for it, or holding a
-rate-limited external call to one in flight. Those are real, and they are the whole of it.
+This placement is for **side-effect coordination, not commit serialisation**:
+
+- An outbound webhook where you want at-most-one in flight per resource. The lock is held across
+  the external call; the database write is thin record-keeping.
+- A long external compute — PDF generation, an inference call — where you want to deduplicate
+  in-flight work per key.
+- Anywhere the write is idempotent (an upsert) and serialising it was never the goal.
+
+For **write-path serialisation**, which is the common case, acquire at the caller.
 
 ### Why not just always lock inside `perform()`?
 
-Because `perform()` returns before anything is written. A lease taken and released inside it is
-gone by the time the executor opens its transaction, so the window it was meant to close is
-exactly the window it leaves open.
+Because `perform()` is the body of the action, not the transaction. The change plan is built
+there, but nothing is open yet: the executor opens the transaction *after* `perform()` returns
+the plan, and commits it before `execute(...)` returns to the caller. The transaction lifecycle
+belongs to the executor.
+
+So the action body has no way to "hold the lock until the executor commits" — the lease closes
+when the `with` block exits, and that is before the transaction it was meant to protect even
+begins. A lease taken and released inside `perform()` is gone exactly when it was needed.
+
+The caller-side pattern works for the mirror-image reason: the caller owns a boundary that
+*contains* the executor's whole lifecycle. Its lease closes after `execute(...)` returns, which
+is after the commit.
 
 ## Reentrancy contract — uniform across all five backends
 

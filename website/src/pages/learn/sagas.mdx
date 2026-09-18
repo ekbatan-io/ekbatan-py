@@ -48,6 +48,25 @@ splits a transfer into three steps.
 The happy path is two commits; the failure path is three. Every commit has its own outbox rows,
 so the trail shows what happened instead of pretending it was one invisible transaction.
 
+Two details in that table are the whole design.
+
+**Step 2's failure is an event, not an exception.** `CompleteTransferAction` emits
+`TransferFailedEvent` on the *source* wallet and commits it. A compensating handler is then
+triggered by a business outcome that was committed like any other — rather than by a thrown
+exception, which would be retried forever and never reach a compensation.
+
+**Each step touches one wallet.** Step 1 debits the source, step 2 credits the destination, step
+3 credits the source back. That is what lets each one be an ordinary single-shard action with an
+ordinary optimistic-lock version check, even when the two wallets live on different databases.
+Compare [`allow_cross_shard=True`](/reference/sharding/#cross-shard-actions), which would make
+this one action across two transactions with no recovery when the second fails.
+
+A client sees `202` and polls `GET /transfers/{id}`. What that endpoint reads is worth knowing,
+because it is the honest answer to "where does a saga's state live": **there is no saga table and
+no coordinator to ask.** The markers each step writes *are* the state, and the endpoint derives
+`IN_FLIGHT`, `COMPLETED` or `REFUNDED` from which of them exist. That is what choreography means
+— and it is why adding a step needs no schema change.
+
 ## What a saga costs a client: 202, not 200
 
 ```
@@ -90,7 +109,45 @@ consumed**. That consumer can be:
 The important part is the boundary: the next step starts from a committed event, so it gets its
 own transaction and its own durable outcome.
 
-The runnable example uses in-process handlers, because every step lives in one application.
+The runnable example uses in-process handlers, because every step lives in one application:
+
+```python
+class TransferInitiatedEventHandler:
+    """Step one committed; run step two."""
+
+    name = "transfer-initiated"
+    event_type = TransferInitiatedEvent
+
+    def __init__(self, executor: ActionExecutor) -> None:
+        self.executor = executor
+
+    def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+        event = envelope.event
+        self.executor.execute(
+            CompleteTransferAction,
+            CompleteTransferParams(
+                transfer_id=event.transfer_id,
+                from_wallet_id=WalletId(event.from_wallet_id),
+                to_wallet_id=WalletId(event.to_wallet_id),
+                amount=event.amount,
+                currency=event.currency,
+            ),
+        )
+```
+
+Notice what the handler takes: **the executor**, not a connection. It runs the next step as its
+own unit of work, with its own transaction and its own outbox rows. The transaction that produced
+`TransferInitiatedEvent` committed and went away before this line ran — which is exactly the
+property that makes the chain restartable.
+
+Notice also what it reads: `envelope.event`, and nothing else. The event carries the whole
+transfer, so the handler needs neither the producing action's parameters nor a second row nor any
+knowledge of where the other wallet lives.
+
+**There is no saga coordinator**, and that is the design rather than an omission. Each handler
+knows one thing: given *this* event, run *that* action. Adding a fourth step means writing a
+fifth event and a third handler, and changing nothing that already works. The trade is that
+no single file shows you the whole workflow — the outbox does, after the fact.
 
 ## Idempotency is a constraint, not a check
 

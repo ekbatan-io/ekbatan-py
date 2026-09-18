@@ -170,10 +170,26 @@ plan — logging, counters, an HTTP call — replay too. Keep `perform()` pure.
 
 ## No nested actions inside `perform()`
 
-An action must not execute another action inside `perform()`. Nesting blurs the transaction
-boundary, hides coupling and makes the flow hard to follow. If two operations must happen
-together, they are one action. If one must follow the other, chain them *after* the commit —
-which is what a [saga](/learn/sagas/) is.
+An action must not execute another action inside `perform()`. The framework **intentionally does
+not support nesting or composition**: an action is a self-contained unit of business work that
+produces one atomic transaction, and nesting blurs that boundary, creates hidden coupling, and
+makes the execution flow hard to reason about.
+
+There are three right answers, depending on what you actually meant:
+
+- **They must happen together** → they belong in a single action. One `perform()` can read three
+  repositories and stage four objects; that is not a reason to reach for a second action.
+- **They are independent** → execute them separately from the caller, which is the layer that
+  already knows they are independent.
+- **One must follow the other** → chain them *after* the commit.
+
+That last one is the only exception, and it is a real one: an in-process handler, a broker
+consumer or a worker reacts once the source action has **committed**, and starts the next step in
+its own transaction. A [saga](/learn/sagas/) is exactly this shape, repeated — one committed
+action emits an event, a post-commit consumer starts the next.
+
+The reason the exception is safe and nesting is not comes down to one thing: after the commit
+there is no outer transaction left to corrupt. Inside `perform()` there is not even one yet.
 
 ## Cross-shard actions
 

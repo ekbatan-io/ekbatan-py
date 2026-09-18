@@ -50,16 +50,51 @@ One argument. That is step four of four.
 
 ## 2. Pick the shard at creation
 
-The shard is bonded to the row for its lifetime, so it is chosen once, at creation:
+The shard is bonded to the row for its lifetime, so it is chosen once, at creation. The model's
+factory takes a `ShardIdentifier` and hands it to `generate`:
+
+```python
+@staticmethod
+def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
+         opening_balance: Decimal) -> "Wallet":
+    return (
+        WalletBuilder()
+        .id(WalletId.generate(shard))       # the shard bits live in the id forever
+        .state(WalletState.OPENED)
+        .owner_id(owner_id)
+        .currency(currency)
+        .balance(opening_balance)
+        .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
+                                      opening_balance=opening_balance))
+        .build()
+    )
+```
+
+Then the action decides *which* shard, from business properties:
 
 ```python
 class OpenWalletAction(Action[OpenWalletParams, Wallet]):
     def perform(self, params: OpenWalletParams) -> Wallet:
         shard = MEXICO if params.country == "MX" else GLOBAL
-        return self.plan.add(Wallet.open(id=WalletId.generate(shard), ...))
+        return self.plan.add(
+            Wallet.open(
+                shard=shard,
+                owner_id=params.owner_id,
+                currency=params.currency,
+                opening_balance=params.opening_balance,
+            )
+        )
 ```
 
-**This is the only line in the whole application that knows there is more than one database.**
+**That conditional is the only line in the whole application that knows there is more than one
+database.** Every other action, every endpoint, and every test that does not assert on placement
+is unchanged.
+
+It is also irreversible. A row cannot move between shards, because moving it would change its
+id, and its id is what everything else refers to it by. Choosing on `country` means a customer
+who relocates keeps their original shard — which is usually right, since the reason the shard
+existed was where the data is allowed to live at the time it was created. If it is not right for
+you, that is a decision to make here rather than a migration to plan later.
 
 ## 3. Wire the second database
 
