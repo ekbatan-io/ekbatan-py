@@ -116,6 +116,17 @@ const { frontmatter } = Astro.props;
         color: var(--on-accent, inherit);
         padding: 0 0.25rem;
         border: 1px solid var(--ink, #0a0a0a);
+        /* A fully-qualified name has no space to break at, so without this one
+           `io.ekbatan.events.streaming.debeziumsmt.avro.OutboxToAvroTransform`
+           made the whole page scroll sideways on a phone. Eleven paragraphs
+           across eight pages did. `anywhere` rather than `break-word` because
+           break-word will not break a word that is alone on its line, which is
+           exactly the case here. */
+        overflow-wrap: anywhere;
+        /* With the above, a broken fragment would otherwise lose its border and
+           padding on the wrapped side and read as two different things. */
+        -webkit-box-decoration-break: clone;
+        box-decoration-break: clone;
     }
     /* Shiki code fences are wrapped in <pre class="astro-code">. */
     .doc-prose pre {
