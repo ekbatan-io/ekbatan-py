@@ -45,7 +45,38 @@ CREATE INDEX scheduled_tasks_priority_execution_time_idx
     ON scheduled_tasks (priority, execution_time);
 ```
 
-MySQL and MariaDB are the same with `BLOB` for `BYTEA` and `DATETIME(6)` for the timestamps.
+### MySQL and MariaDB
+
+The same table, with `BLOB` for `BYTEA` and `DATETIME(6)` for the timestamps:
+
+```sql
+CREATE TABLE scheduled_tasks (
+    task_name            VARCHAR(100) NOT NULL,
+    task_instance        VARCHAR(100) NOT NULL,
+    task_data            BLOB,
+    execution_time       DATETIME(6)  NOT NULL,
+    picked               BOOL         NOT NULL,
+    picked_by            VARCHAR(50),
+    last_success         DATETIME(6),
+    last_failure         DATETIME(6),
+    consecutive_failures INTEGER,
+    last_heartbeat       DATETIME(6),
+    version              BIGINT       NOT NULL,
+    priority             SMALLINT,
+    PRIMARY KEY (task_name, task_instance)
+);
+
+CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
+CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
+```
+
+`DATETIME(6)` is the one to get right here rather than anywhere else on this page: the scheduler
+compares `execution_time` and `last_heartbeat` against instants that are not whole seconds, and a
+bare `DATETIME` truncates. See [the measured consequence](#dialect-types) below.
+
+`scheduled_tasks_priority_execution_time_idx` is emitted here too — all three indexes are the
+same on every dialect. It is omitted from the snippet above only for length; see
+[Indexes](#indexes) for what each is for.
 
 ## Columns
 

@@ -18,7 +18,19 @@ tm = registry.default                      # the default shard
 tm = registry.manager(MEXICO)              # a specific one
 ```
 
-Each owns one shard's pools (primary and replica), its dialect, and its `ShardIdentifier`.
+Each one owns four things, for exactly one shard:
+
+- **One pool pair** — the primary `Engine`, and the replica `Engine` if that shard has one. An
+  `Engine` is pool, dialect and lifecycle in one, which is why there is no separate connection
+  provider here.
+- **A dialect**, read off `engine.dialect.name`. It is what picks the keyed-lock provider, the
+  `RETURNING` support and the column renderings, so it is the manager's business rather than a
+  per-call argument.
+- **A `ShardIdentifier`** — `ShardIdentifier(0, 0)` when you are not sharding. It labels the
+  OpenTelemetry span and is what `DatabaseRegistry` routes by.
+- **A `ContextVar`** holding the in-flight transaction's connection for the duration of a
+  `tm.transaction()` block. A `ContextVar` rather than a thread local, so the binding follows an
+  `await` and a `ThreadPoolExecutor` does not inherit one by accident.
 
 ## The `tm.transaction()` family
 
@@ -85,6 +97,12 @@ issues an explicit `COMMIT`; MySQL and MariaDB send `SET autocommit=1`, which th
 implicit commit. Restoring it after a failed rollback would commit the very transaction that just
 failed to roll back. Physically closing the connection makes the server discard what was pending.
 
+**A failed commit is not on its own grounds for eviction.** The `COMMIT` is issued inside the
+`try`, so a commit that raises falls into the same `except` as any other failure and gets a
+`ROLLBACK` like any other transaction. If that rollback succeeds, the connection is clean and
+goes back to the pool normally. Only a rollback that *also* fails leaves the state unknown, and
+only then is the connection thrown away.
+
 ## Repository writes join automatically
 
 Because the connection is bound into the ambient context rather than passed around, a repository
@@ -146,7 +164,17 @@ with tm.connection() as conn: ...                  # primary, freshest committed
 with tm.connection(readonly=True) as conn: ...     # the replica, tolerates lag
 ```
 
-No transaction is opened and nothing is bound.
+Inside a `tm.transaction()` block these hand you that transaction's connection instead, so a
+read written this way joins rather than opening a second one.
+
+Outside one, no transaction is opened and nothing is bound — the connection runs in
+`AUTOCOMMIT`, so each statement stands on its own and commits itself. That is the behaviour Java
+gets for free from JDBC, where `db()` is a context over a DataSource with auto-commit left on.
+SQLAlchemy will not do it by default: an `execute` outside a transaction quietly begins one, and
+a connection closed without `commit` rolls it back, so a write would simply vanish.
+
+`readonly=True` asks for the replica and falls back to the primary when a shard has none. It is
+never the default, because a replica has not necessarily seen what you just wrote.
 
 ## Cross-shard
 

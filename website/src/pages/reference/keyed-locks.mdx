@@ -85,22 +85,43 @@ exactly the window it leaves open.
 
 ## Reentrancy contract — uniform across all five backends
 
-Uniform across every backend: **the same key, taken again in the same context, re-enters.** It
-does not deadlock and it does not take a second connection. The lock is released when the
-outermost lease closes.
+**The same key, taken again in the same context, re-enters.** It does not deadlock and it does
+not take a second connection. The backend lock is released only when the **outermost** lease
+closes — or when its watchdog fires.
 
-Re-entry is per context, the same way the ambient transaction is - a thread you hand work to does
-not inherit your hold.
+**The first acquire's `max_hold` governs the watchdog; a re-entry's `max_hold` is ignored.** That
+is stricter than the last-call-wins convention some lock libraries use, and it is the only rule
+under which the outer region's reasoning stays true: it committed to a worst case, and an inner
+call cannot pull that commitment out from under it. The same is true in the Java port, and for
+the same reason.
+
+Re-entry is **per context, not per call stack** — the same way the ambient transaction is. A
+thread you hand work to is a different identity and will block on a key you hold. That is not a
+bug to work around: if the child could inherit the hold, "this key is held by one holder" would
+stop being true.
+
+One shared helper owns the per-`(context, key)` counter, the watchdog timer and the
+release arbitration, so each backend implements only a low-level acquire and release. That is
+what makes "uniform across all five" checkable rather than aspirational.
 
 ## Five backends
 
-| backend | mechanism | scope |
-| --- | --- | --- |
-| `PostgresKeyedLockProvider` | `pg_advisory_lock` | the cluster |
-| `MySQLKeyedLockProvider` | `GET_LOCK` | the server |
-| `MariaDBKeyedLockProvider` | `GET_LOCK` | the server |
-| `RedisKeyedLockProvider` | Redis | the Redis deployment |
-| `InProcessKeyedLockProvider` | `threading.Lock` | **this process only** |
+| Provider | Scope | Mechanism | Hold | Notes |
+|---|---|---|---|---|
+| `PostgresKeyedLockProvider` | cross-process | `pg_advisory_lock` (session-scoped) | session + watchdog | Auto-released if the session ends — a crashed process or a dropped network connection releases the key without anyone intervening. One connection per lease |
+| `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | A sub-second `max_wait` is **not a wait** — see [below](#a-sub-second-wait-is-not-a-wait-on-mysql) |
+| `MariaDBKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | Same statements as the MySQL one, separate because MariaDB honours sub-second timeouts |
+| `RedisKeyedLockProvider` | the Redis deployment | `SET NX PX` | **TTL** + watchdog | Sub-millisecond hand-off. Single-master only — **not** Redlock |
+| `InProcessKeyedLockProvider` | **this process only** | `threading.Lock` | in-memory + watchdog | Tests and single-process deployments |
+
+The "Hold" column is the difference that matters operationally. The SQL backends hold a *session*
+— the lock exists because a connection is open, so losing the connection releases it. Redis holds
+a **TTL** — the key expires whether or not the holder is alive, so `max_hold` there has to be an
+honest upper bound on the work rather than a generous guess. A holder that dies releases nothing;
+the key simply expires and the next caller takes it.
+
+The Redis provider deliberately drives the expiry itself rather than letting a client library's
+own watchdog extend the lease, so the framework's first-acquire-wins rule holds there too.
 
 The four SQL and in-process providers come from `ekbatan.locks`. The Redis one is imported from
 `ekbatan.locks.redis` and needs the `redis` extra - it is deliberately *not* re-exported from the
@@ -121,6 +142,25 @@ locks = PostgresKeyedLockProvider(
     create_engine(url, pool_size=5, max_overflow=0)
 )
 ```
+
+A provider is a plain object you construct and hand to whatever needs it — there is no registry
+to declare it in and nothing discovers it. Close it when the service closes: `locks.close()`
+releases every lease still held, which for a SQL backend is what returns those connections. The
+engine is yours — you created it, so you dispose it — and the order matters: release the leases
+before disposing the pool they are holding connections from.
+
+Redis takes a client rather than an engine:
+
+```python
+from ekbatan.locks.redis import RedisKeyedLockProvider
+
+locks = RedisKeyedLockProvider(redis.Redis(host="localhost"))
+```
+
+Size the SQL pool by **concurrent leases**, not by request rate: a lease is a connection for as
+long as it is held. If twelve requests can hold twelve different keys at once, the pool needs
+twelve, and `max_overflow=0` so the thirteenth waits rather than opening a connection the
+database has not budgeted for.
 
 ## Dedicated pool via its own engine
 

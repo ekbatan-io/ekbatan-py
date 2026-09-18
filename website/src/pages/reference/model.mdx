@@ -15,12 +15,61 @@ class Wallet(Model[WalletId, WalletState]):
     balance: Decimal
 ```
 
-`Model[ID, S]` takes the id type and the state enum. From the base it gets `id`, `version`,
-`state`, `created_date`, `updated_date` and the attached `events`.
+Two type parameters, where Java needs three:
+
+| Parameter | Meaning | Typical value |
+|---|---|---|
+| `ID` | the identifier type | [`Id[T]`](/reference/model/) or [`ShardedId[T]`](/reference/sharding/) |
+| `S` | the state enum for this model's lifecycle | `WalletState` (`OPENED`, `CLOSED`, `DELETED`); `GenericState` by default |
+
+Java carries a third, the concrete subclass itself, so that its generated builder's setters
+return the subclass rather than the abstract parent. `Self` does that here without a parameter,
+which is why `Model[WalletId, WalletState]` reads the way it does and
+`Model<Wallet, Id<Wallet>, WalletState>` does not.
+
+What the base contributes:
+
+```python
+class Model[ID, S: Enum](Persistable[ID, S]):
+    id: ID
+    state: S
+    version: int = 1
+    created_date: datetime | None = None
+    updated_date: datetime | None = None
+    events: tuple[ModelEvent, ...] = ()
+
+    @property
+    def is_model(self) -> bool: ...        # always True on Model
+    @property
+    def is_deleted(self) -> bool: ...
+    def copy(self) -> ModelBuilder[Self, ID, S]: ...
+    def next_version(self) -> Self: ...
+```
+
+`created_date` and `updated_date` are `None` until the change is staged — the framework stamps
+them from its own clock. Making the application supply them would put two lines in every unit of
+work that are the same every time and wrong occasionally.
+
+`events` is excluded from equality. Two readers of one database row are looking at the same
+wallet whether or not one of them is mid-change.
 
 `frozen=True` makes it immutable; `kw_only=True` is what makes the inheritance legal at all —
 without it a subclass field with no default would follow the base's defaulted fields and Python
-would refuse the class.
+would refuse the class. Both are required, and a `@dataclass` without them fails at class
+definition rather than at runtime, which is the right time.
+
+Four things are refused at construction: a null `id`, a null `state`, a null `version` and a
+`version` below 1. Without them the mistake surfaces as an `IntegrityError` from inside a batched
+insert, naming a column and a driver, several frames from the line that made it. `version`
+matters most — it is the optimistic-locking primitive, and a row inserted at 0 quietly starts one
+behind whatever reads it back.
+
+> A subclass defining its own `__post_init__` **must** call `super().__post_init__()` or it loses
+> all four. Java's constructor chaining does that for you; Python's does not.
+
+The companion shape, [`Entity`](/reference/entity/), is for state the persistence layer needs to
+track but whose changes do not belong in the event stream — caches, lookup tables, audit-only
+side effects.
 
 ## Construction and mutation
 

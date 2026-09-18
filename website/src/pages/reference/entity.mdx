@@ -15,8 +15,39 @@ class Alert(Entity[AlertId]):
     message: str
 ```
 
-`Entity[ID, S]` takes the id type and, optionally, a state enum — it defaults to
-`GenericState` (`ACTIVE` / `DELETED`), which is usually all an entity needs.
+`Entity[ID, S]` takes the id type and, optionally, a state enum. `S` **defaults** —
+`Entity[AlertId]` is `Entity[AlertId, GenericState]`, and `GenericState` is `ACTIVE` /
+`DELETED`, which is usually all an entity needs. A model has no such default, because a model
+with no lifecycle of its own is nearly always a model nobody has thought about yet.
+
+```python
+class Entity[ID, S: Enum = GenericState](Persistable[ID, S]):
+    id: ID
+    state: S
+    version: int = 1
+
+    @property
+    def is_model(self) -> bool: ...        # always False on Entity
+    @property
+    def is_deleted(self) -> bool: ...
+    def copy(self) -> EntityBuilder[Self, ID, S]: ...
+    def next_version(self) -> Self: ...
+```
+
+Two differences from [`Model`](/reference/model/), and both are the point of the type existing:
+
+**No `events`, and `copy()` returns an `EntityBuilder`** — which has no `with_event`. Not a
+convention: there is no method to call. Writing an entity emits nothing.
+
+**No `created_date` / `updated_date`.** An entity is state, not history. Something that needs to
+know when it last changed almost certainly has changes worth telling the rest of the system
+about, which makes it a `Model`. If you find yourself adding a timestamp column to an entity,
+that is the signal.
+
+It still gets `version` and optimistic locking, still gets soft deletion through `state`, and is
+still staged on the plan the same way. **The unit of work that wrote it is still recorded** — one
+`events` row with `event_type` null — because the audit trail is of units of work rather than of
+events.
 
 ## When to use Entity rather than Model
 

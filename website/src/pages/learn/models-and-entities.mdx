@@ -103,10 +103,49 @@ model's id. It was attached to a model, so the framework knows, and fills the ou
 
 ### Deserialization (for in-process handlers)
 
-Events are stored as JSON in `events.payload`, and read back into the same class when an
-in-process handler is invoked. Nothing extra is needed for that round trip: the payload is
-rebuilt from the dataclass's own annotations. Decimals travel as strings, deliberately — a JSON
-number is a double, and a balance that round-trips through one is no longer the balance.
+Events are stored as JSON in `events.payload` and read back into the same class when an
+in-process handler is invoked. **Nothing extra is needed for that round trip** — no annotation,
+no registered constructor, no per-handler mapping layer. The payload is rebuilt from the
+dataclass's own annotations, which is the one place the field types are already written down.
+
+That is the whole of the Python side of a problem Java spends a `@JsonCreator` constructor on.
+Java's Jackson cannot reconstruct an event with constructor parameters unless you write a second
+constructor annotating every parameter with its JSON name; forget it and the dispatch job fails
+to invoke the handler at all. Here the dataclass's `__init__` already takes keyword arguments
+named after its fields, so there is nothing to declare.
+
+What the decoder does with each field, driven by its annotation:
+
+| Annotation | Rebuilt from |
+|---|---|
+| `Decimal` | its **string**, at the scale it was written |
+| `datetime` | its ISO-8601 form, back to an aware UTC instant |
+| `UUID` | its canonical text |
+| an `Enum` | its **member name**, never its ordinal |
+| a nested frozen dataclass | recursively, the same way |
+| `list` / `tuple` / `set` / `frozenset` of any of the above | element by element |
+| `T \| None` | the non-`None` arm, when there is exactly one |
+
+Decimals travel as strings deliberately: a JSON number is a double, and a balance that
+round-trips through one is no longer the balance. Enums travel by name for the same class of
+reason — an ordinal changes meaning the moment somebody inserts a member in the middle, and
+nothing about that change looks dangerous at the time.
+
+Two limits worth knowing:
+
+- **A key the dataclass does not declare is dropped**, not an error. An additive change on the
+  producer cannot break a consumer that has not caught up — which is the same tolerance the
+  streaming path has, and for the same reason.
+- **A union with more than one non-`None` arm is left as raw JSON.** There is no discriminator in
+  the payload to pick an arm with, so the decoder does not guess. Model that as a nested
+  dataclass with a `kind` field rather than as a union if a handler needs it typed.
+
+`model_id` and `model_name` arrive under Java's spelling — `modelId`, `modelName` — because its
+local event handler deserialises the payload straight into the event class and refuses one
+without them. They are read back under this port's names, so a payload written by *either* side
+rebuilds a complete event here.
+
+Streaming-only consumers do not go through any of this: they read the JSON off the broker.
 
 ## Optimistic locking, always
 
@@ -121,15 +160,72 @@ then succeeds.
 ## Generated builders
 
 `wallet.copy().balance(...)` works with nothing generated. What it cannot do is tell a *type
-checker* that `.balance(...)` takes a `Decimal` — setters resolve by name at runtime.
+checker* that `.balance(...)` takes a `Decimal` — setters resolve by name at runtime, so a
+`.balance("25.50")` is a string in a `NUMERIC` column that nothing complains about until the
+database does.
+
+That is the one thing Python cannot work out for itself, and the one thing the generator exists
+for:
 
 ```
 uv run python -m ekbatan.codegen myapp.model --out myapp/builders.py
 ```
 
-A generated builder declares **only the fields its model added**; `id`, `state`, `version` and
-the timestamps are typed on the base. **Commit the output** — it is derived from source you
-already have, unlike the schema module, which is derived from a database you have to start.
+It imports the modules you name, finds every `Model` and `Entity` in them, and writes a builder
+per class. For a `Wallet` with `owner_id: UUID`, `currency: str` and `balance: Decimal`:
+
+```python
+class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+    """Builds a Wallet, with the field types a checker can see."""
+
+    builds = Wallet
+
+    def owner_id(self, value: UUID) -> Self:
+        return self.set(owner_id=value)
+
+    def currency(self, value: str) -> Self:
+        return self.set(currency=value)
+
+    def balance(self, value: Decimal) -> Self:
+        return self.set(balance=value)
+
+
+def wallet(source: Wallet | None = None) -> WalletBuilder:
+    """A fresh WalletBuilder, optionally pre-loaded from an existing Wallet."""
+    made = WalletBuilder()
+    return made.copy_base(source) if source is not None else made
+```
+
+**What is generated:**
+
+- A class named `<ModelName>Builder`, subclassing `ModelBuilder` (or `EntityBuilder`) with the
+  right type parameters.
+- A `builds` attribute naming the class it constructs — which is what `build()` calls, so there
+  is no `build()` override to generate.
+- One fluent setter per field the model **declared**, returning `Self` so the chain keeps its
+  type. `id`, `state`, `version`, `created_date` and `updated_date` are typed on the base and are
+  not repeated.
+- A module-level factory named after the model in snake case — `wallet()` for `Wallet`,
+  `wallet_account()` for `WalletAccount` — optionally pre-loaded from an existing instance.
+- The imports the file needs, emitted relative when `--out` lands inside your package.
+
+**What is not generated** — these stay on the model, where you can see them:
+
+- The dataclass itself and its field declarations.
+- Validation. `deposit()` raising on a non-positive amount is business logic, not boilerplate.
+- Business methods, and the events they attach.
+- Factory methods like `Wallet.open(...)` that set up a fresh aggregate and its first event.
+- `copy()`, which the base already provides.
+- Any conditional default or computed field. If a builder needs one, write that builder by hand;
+  the generator will not fight you for the name.
+
+**Commit the output.** It is derived from source you already have, unlike the schema module,
+which is derived from a database you have to start. A stale builder is a type error rather than a
+wrong answer: `build()` calls the real constructor, which refuses a missing or unknown field.
+
+Nothing at runtime depends on the generated file. Delete it and the application still works —
+you lose the checking, not the behaviour, which is the opposite of Java's arrangement, where the
+builder *is* how a model is constructed and a missing annotation processor is a compile error.
 
 ## Soft deletion
 
