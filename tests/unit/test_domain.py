@@ -308,6 +308,13 @@ def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():
         ("version", None, "version cannot be null"),
         ("version", 0, "version must be greater than or equal to 1"),
         ("version", -1, "version must be greater than or equal to 1"),
+        ("created_date", None, "created_date cannot be null"),
+        # The application's own fields, which Java validates one `Validate.notNull` at a time
+        # in every model's constructor. A dataclass can enumerate them, so the rule is stated
+        # once in the base and covers the fields an author would have forgotten too.
+        ("owner_id", None, "owner_id cannot be null"),
+        ("currency", None, "currency cannot be null"),
+        ("balance", None, "balance cannot be null"),
     ],
 )
 def test_a_model_refuses_to_be_built_without_its_invariants(field, value, message):
@@ -320,7 +327,34 @@ def test_a_model_refuses_to_be_built_without_its_invariants(field, value, messag
         field: value,
     }
     with pytest.raises(ValidationError, match=message):
-        Wallet(**fields, created_date=NOW)
+        Wallet(**{"created_date": NOW, **fields})
+
+
+def test_an_optional_field_accepts_none_and_a_required_one_does_not():
+    """Java's `Optional<T>` versus `T`, with one sentinel instead of two.
+
+    There, `Optional.empty()` means absent and a null `Optional` *reference* is a bug the type
+    system cannot exclude. Here absence **is** `None`, so there is no fourth case to guard
+    against: the annotation says whether `None` belongs, and that is the whole rule.
+    """
+
+    @dataclass(frozen=True, kw_only=True)
+    class Tagged(Wallet):
+        note: str | None = None
+        label: str = "unset"
+
+    common = {
+        "id": WalletId.random(),
+        "state": WalletState.OPENED,
+        "created_date": NOW,
+        "owner_id": uuid4(),
+        "currency": "EUR",
+        "balance": Decimal("1.00"),
+    }
+    assert Tagged(**common, note=None).note is None, "`str | None` takes it"
+
+    with pytest.raises(ValidationError, match="label cannot be null"):
+        Tagged(**common, label=None)
 
 
 @pytest.mark.parametrize(

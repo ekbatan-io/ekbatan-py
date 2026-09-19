@@ -173,6 +173,25 @@ rebuilds a complete event here.
 
 Streaming-only consumers do not go through any of this: they read the JSON off the broker.
 
+## Required, and optional
+
+The base refuses `None` for any field whose annotation does not admit it — **including the ones
+you declare**. `owner_id: UUID` is required; `note: str | None` is not.
+
+| Java | here | `None` |
+|---|---|---|
+| `String currency` | `currency: str` | refused |
+| `Optional<String> note` | `note: str \| None` | accepted |
+
+Java writes this out per field — `Validate.notNull(builder.ownerId, ...)` once for each, in
+every model's constructor — because a Java base class cannot enumerate a subclass's fields. A
+dataclass can, so it is one rule rather than three lines per model, and it covers the fields
+somebody would have forgotten.
+
+There is no counterpart to Java's fourth case, a `null` where an `Optional` *reference* belongs:
+Python's absence **is** `None` rather than a wrapper that can itself be missing. One sentinel,
+not two.
+
 ## Optimistic locking, always
 
 Every persistable carries a `version`, and every update carries it:

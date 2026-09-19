@@ -573,6 +573,39 @@ to it afterwards and the model gains an event it was never built with, which the
 writes, in a transaction that had already decided what it was writing. Java says
 `List.copyOf(...)` for exactly this and gets immutability out of it as well.
 
+### The application's own fields are checked too, which Java's base class cannot do
+
+Java validates a subclass's fields one `Validate.notNull` at a time, in every model's
+constructor:
+
+```java
+Wallet(WalletBuilder builder) {
+    super(builder);
+    this.ownerId  = Validate.notNull(builder.ownerId,  "ownerId cannot be null");
+    this.currency = Validate.notNull(builder.currency, "currency cannot be null");
+    this.balance  = Validate.notNull(builder.balance,  "balance cannot be null");
+}
+```
+
+It has no choice: a Java base class cannot enumerate a subclass's fields. A dataclass can, so
+the rule is stated once, in `Persistable.__post_init__`, and reads the annotation:
+
+| Java | here | `None` |
+|---|---|---|
+| `String currency` | `currency: str` | refused |
+| `Optional<String> note`, present | `note: str \| None` | — |
+| `Optional<String> note`, absent | `note: str \| None` | accepted |
+| a `null` `Optional` **reference** | *no counterpart* | — |
+
+Same semantics, one sentinel instead of two: Python's absence **is** `None` rather than a
+wrapper that can itself be missing, so Java's fourth row has nothing to map to. The gain is that
+it covers the fields an author would have forgotten as well as the ones they remembered -
+`ekbatan-py-examples`' `Wallet` accepted `owner_id=None`, `currency=None` and `balance=None`
+until `EKB-0193`, because three lines Java writes by hand had not been written.
+
+Cached per class, since a dataclass's fields are fixed at definition: **1.6 us** per
+construction, measured over 200,000.
+
 ## Equality compares the whole row
 
 > **chosen** - **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)

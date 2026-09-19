@@ -64,6 +64,26 @@ read back.
 `Entity` has neither, in either port. Something that needs to know when it last changed almost
 certainly has changes worth telling the rest of the system about, which makes it a `Model`.
 
+
+### Required, and optional
+
+The base refuses `None` for any field whose annotation does not admit it — **including the ones
+you declare**. `owner_id: UUID` is required; `note: str | None` is not.
+
+| Java | here | `None` |
+|---|---|---|
+| `String currency` | `currency: str` | refused |
+| `Optional<String> note` | `note: str \| None` | accepted |
+
+Java writes this out per field — `Validate.notNull(builder.ownerId, ...)` once for each, in
+every model's constructor — because a Java base class cannot enumerate a subclass's fields. A
+dataclass can, so it is one rule rather than three lines per model, and it covers the fields
+somebody would have forgotten.
+
+There is no counterpart to Java's fourth case, a `null` where an `Optional` *reference* belongs:
+Python's absence **is** `None` rather than a wrapper that can itself be missing. One sentinel,
+not two.
+
 `events` is excluded from equality. Two readers of one database row are looking at the same
 wallet whether or not one of them is mid-change.
 

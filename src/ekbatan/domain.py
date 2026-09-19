@@ -25,6 +25,7 @@ fields come off the dataclass, so a model that gains one gains it everywhere at 
 from __future__ import annotations
 
 import dataclasses
+import typing
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -268,6 +269,46 @@ def _field_names(target: type) -> frozenset[str]:
     return frozenset(f.name for f in dataclasses.fields(target))
 
 
+#: Keyed by class and never invalidated - a dataclass's fields are fixed at definition.
+_REQUIRED: dict[type, tuple[str, ...]] = {}
+
+
+def _required(target: type) -> tuple[str, ...]:
+    """The fields of ``target`` that may not be ``None``, read off their annotations.
+
+    Java writes this out per class - ``Validate.notNull(builder.ownerId, ...)`` once per field,
+    in every model's constructor - because a Java base class cannot enumerate a subclass's
+    fields. A dataclass can, so the rule is stated once here and covers the fields an author
+    would have forgotten as well as the ones they remembered.
+
+    The mapping from Java is exact, and shorter by one row. ``String currency`` is
+    ``currency: str`` and refuses ``None``; ``Optional<String>`` is ``str | None`` and accepts
+    it. Java's fourth case - a ``null`` where an ``Optional`` reference belongs - has no
+    counterpart, because Python's absence *is* ``None`` rather than a wrapper that can itself
+    be missing.
+
+    Cached per class: this is read on every construction, and the answer cannot change.
+    """
+    cached = _REQUIRED.get(target)
+    if cached is not None:
+        return cached
+    try:
+        hints = typing.get_type_hints(target)
+    except Exception:  # an annotation naming something only importable under TYPE_CHECKING
+        _REQUIRED[target] = ()
+        return ()
+    names = []
+    for declared in dataclasses.fields(target):
+        hint = hints.get(declared.name)
+        if hint is None or hint is Any:
+            continue
+        if type(None) in typing.get_args(hint):
+            continue  # `T | None`: absence is part of the type
+        names.append(declared.name)
+    _REQUIRED[target] = tuple(names)
+    return _REQUIRED[target]
+
+
 @dataclass(frozen=True, kw_only=True)
 class Persistable[ID, S: Enum]:
     """A row, in memory: an identity, a lifecycle state, and an optimistic-locking version."""
@@ -288,12 +329,9 @@ class Persistable[ID, S: Enum]:
         A subclass that defines its own ``__post_init__`` must call ``super().__post_init__()``
         or it loses these; Java's constructor chaining does that for you and Python's does not.
         """
-        if self.id is None:
-            raise ValidationError("id cannot be null")
-        if self.state is None:
-            raise ValidationError("state cannot be null")
-        if self.version is None:
-            raise ValidationError("version cannot be null")
+        for name in _required(type(self)):
+            if getattr(self, name) is None:
+                raise ValidationError(f"{name} cannot be null")
         if self.version < 1:
             raise ValidationError(f"version must be greater than or equal to 1, not {self.version}")
 
@@ -391,14 +429,9 @@ class Model[ID, S: Enum](Persistable[ID, S]):
         if not isinstance(self.events, tuple):
             object.__setattr__(self, "events", tuple(self.events))
 
-        # Java: `Validate.notNull(builder.createdDate, "createdDate cannot be null")`. A
-        # keyword-only dataclass would otherwise let `created_date=None` through, since the
-        # annotation is not checked at runtime.
-        if self.created_date is None:
-            raise ValidationError(
-                f"{type(self).__name__}.created_date cannot be null. A model records when it "
-                f"happened; pass self.clock.now() from the action that built it."
-            )
+        # `created_date` is required, and `super().__post_init__()` has already refused a null
+        # one - its annotation is `datetime`, not `datetime | None`.
+        #
         # Java: `.truncatedTo(MICROS)` on the way in, so what the row holds is what the column
         # holds. Here that means UTC with the zone dropped - an aware value stored as-is would
         # not compare equal to the same instant read back.
