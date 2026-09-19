@@ -79,6 +79,9 @@ lint: schema
 	# Every divergence from the Java port must say whether anybody chose it. A judgement
 	# call filed as a neutral difference is how one went unreviewed for weeks.
 	$(UV) python scripts/divergence.py
+	# Java's annotation processor runs on every compile, so a generated builder there cannot
+	# be stale or missing. Here the file is committed, so this restores the guarantee.
+	$(UV) python scripts/check-builders.py
 	# Both trees make claims about this API in code a reader will copy: what they import,
 	# what they call on a class, and whether a snippet parses at all. Checked here rather
 	# than in `npm run check`, which is the Node half and has no interpreter to ask.

@@ -141,4 +141,3 @@ class ActionPlan:
 
     def _changes(self, model_type: type) -> PersistableChanges:
         return self._by_type.setdefault(model_type, PersistableChanges())
-

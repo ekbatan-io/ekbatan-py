@@ -219,9 +219,20 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
 - Any conditional default or computed field. If a builder needs one, write that builder by hand;
   the generator will not fight you for the name.
 
-**Commit the output.** It is derived from source you already have, unlike the schema module,
-which is derived from a database you have to start. A stale builder is a type error rather than a
-wrong answer: `build()` calls the real constructor, which refuses a missing or unknown field.
+**Commit the output**, and **regenerate it when a model changes.** It is derived from source
+you already have, unlike the schema module, which is derived from a database you have to start.
+
+Regenerating is not optional discipline, and it is worth knowing exactly what a stale builder
+costs, because it is less than you would hope: a setter the builder does not declare is **not**
+caught by a type checker — the base resolves setters through `__getattr__`, which accepts any
+name — and `build()` fails at runtime only if the new field is *required*, taking the default
+silently if it is not.
+
+Java has no equivalent exposure: its annotation processor runs on every compile, so its builder
+cannot be stale or missing. `scripts/check-builders.py` restores that guarantee here — it
+regenerates into memory, compares, and fails `make lint` on a builder that is missing or behind
+its model. A builder without the generator's header is taken as hand-written, and only its
+existence is checked.
 
 Nothing at runtime depends on the generated file. Delete it and the application still works —
 you lose the checking, not the behaviour, which is the opposite of Java's arrangement, where the

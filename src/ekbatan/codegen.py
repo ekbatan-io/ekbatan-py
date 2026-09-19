@@ -12,9 +12,14 @@ generation here.
 
     python -m ekbatan.codegen myapp.model --out myapp/builders.py
 
-The output is ordinary Python. Commit it, read it, and regenerate it when a model changes; a
-stale one is a type error rather than a silent wrong answer, because ``build()`` still calls
-the real constructor.
+The output is ordinary Python. Commit it, read it, and regenerate it when a model changes.
+
+Regenerating is not optional discipline, and this docstring used to imply it was: it claimed a
+stale builder was "a type error rather than a silent wrong answer". Measured, it is neither.
+A setter the builder does not declare is **not** caught by a checker - ``__getattr__`` on the
+base accepts any name - and ``build()`` fails at runtime only if the new field is required,
+taking the default silently if it is not. Java has no equivalent exposure: its processor runs
+on every compile. ``scripts/check-builders.py`` restores that, in ``make lint``.
 """
 
 from __future__ import annotations
