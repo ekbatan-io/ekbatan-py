@@ -11,15 +11,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from ekbatan.domain import Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
 
-if TYPE_CHECKING:
-    from .builders import NotificationBuilder, WalletBuilder
+from .builders import NotificationBuilder, WalletBuilder
 
 #: A fixed instant for a model built outside a unit of work. A test asserting on a
 #: timestamp against a moving clock passes on the machine it was written on.
@@ -74,7 +72,7 @@ class WalletDeletedEvent(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState]):
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -84,17 +82,6 @@ class Wallet(Model[WalletId, WalletState]):
     #: Nullable on purpose, and nothing may default it to a non-null value: a batch write in
     #: which every row leaves this null is what exposes an untyped NULL bind.
     reward_points: int | None = None
-
-    def copy(self) -> WalletBuilder:
-        from .builders import WalletBuilder
-
-        return WalletBuilder().copy_base(self)
-
-    @classmethod
-    def builder(cls) -> WalletBuilder:
-        from .builders import WalletBuilder
-
-        return WalletBuilder()
 
     @classmethod
     def open(
@@ -167,7 +154,7 @@ class Wallet(Model[WalletId, WalletState]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Notification(Entity[NotificationId]):
+class Notification(Entity[NotificationId, GenericState, NotificationBuilder]):
     """An entity: the persistence layer tracks it, the event stream does not care.
 
     No timestamps, because an entity is state rather than history - and nothing here is worth
@@ -178,17 +165,6 @@ class Notification(Entity[NotificationId]):
     kind: str
     recipient: str
     message: str | None = None
-
-    def copy(self) -> NotificationBuilder:
-        from .builders import NotificationBuilder
-
-        return NotificationBuilder().copy_base(self)
-
-    @classmethod
-    def builder(cls) -> NotificationBuilder:
-        from .builders import NotificationBuilder
-
-        return NotificationBuilder()
 
     @classmethod
     def create(

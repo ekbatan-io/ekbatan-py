@@ -9,7 +9,7 @@ lead: "A persistent aggregate that emits domain events. Every change worth telli
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState]):
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -30,7 +30,7 @@ which is why `Model[WalletId, WalletState]` reads the way it does and
 What the base contributes:
 
 ```python
-class Model[ID, S: Enum](Persistable[ID, S]):
+class Model[ID, S: Enum, B: ModelBuilder = ModelBuilder](Persistable[ID, S, B]):
     id: ID
     state: S
     version: int = 1
@@ -43,8 +43,8 @@ class Model[ID, S: Enum](Persistable[ID, S]):
     @property
     def is_deleted(self) -> bool: ...
     @classmethod
-    def builder(cls) -> ModelBuilder[Self, ID, S]: ...   # override both, or they refuse
-    def copy(self) -> ModelBuilder[Self, ID, S]: ...
+    def builder(cls) -> B: ...             # B is the third argument you pass
+    def copy(self) -> B: ...
     def next_version(self) -> Self: ...
 ```
 
@@ -149,7 +149,7 @@ def deposit(self, amount: Decimal) -> Wallet:
 ```
 
 - **`copy()`** returns a builder pre-populated from this instance, so domain code names only the
-  fields that changed. The base refuses until the model overrides it — see
+  fields that changed. Typed as `B`, the builder you named on the class line — see
   [Builder API](#builder-api).
 - **`evolve(**changes)`** is the framework's own shorthand. Domain code should prefer `copy()`,
   so every change in an application reads the same way.
@@ -200,24 +200,25 @@ The runtime builder resolves setters by name, so a checker sees only `__getattr_
 `.balance("oops")` type-checks. Generate a typed one — `python -m ekbatan.codegen myapp.model
 --out myapp/builders.py` — and commit it: it is derived from source you already have.
 
-**`copy()` and `builder()` on the base refuse**, naming both ways to satisfy them, because
-nothing here can make the untyped builder a compile error the way Java's annotation processor
-does. Point each route at your builder and the refusal goes away:
+**Name the builder on the class line.** It is the third type argument, and `copy()` and
+`builder()` both return it:
 
 ```python
-def copy(self) -> WalletBuilder:
-    return WalletBuilder().copy_base(self)
-
-@classmethod
-def builder(cls) -> WalletBuilder:
-    return WalletBuilder()
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+    balance: Decimal
 ```
 
-The refusal is **per route and at the call**, so a model that only ever calls `copy()` needs
-only that override. Generated or hand-written makes no difference — what is required is a
-builder a checker can read, and by hand is better where a setter needs a conditional default.
-`ModelBuilder(Wallet)` stays reachable by name for a model defined inside a test; what is closed
-is reaching the untyped builder *through a model*. `evolve()` is unaffected.
+Leave it out and both refuse, because nothing here can make the untyped builder a compile error
+the way Java's annotation processor does.
+
+Java needs no such argument: its `copy()` is `abstract`, so every model writes the method out,
+and writing it is where the narrower return type goes. Here the base can fill the method in —
+a dataclass knows its own fields — so the type has nowhere else to live but the class line.
+
+Generated or hand-written makes no difference; by hand is better where a setter needs a
+conditional default. `ModelBuilder(Wallet)` stays reachable by name for a model defined inside a
+test; what is closed is reaching the untyped builder *through a model*. `evolve()` is
+unaffected.
 
 ## See also
 

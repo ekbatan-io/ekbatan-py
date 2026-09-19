@@ -25,6 +25,7 @@ fields come off the dataclass, so a model that gains one gains it everywhere at 
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import typing
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -165,11 +166,18 @@ class EntityBuilder[T, ID = Any, S = Any]:
 
     __slots__ = ("_target", "_values")
 
-    #: Set by a subclass so it needs no constructor argument.
+    #: Set by a subclass so it needs no constructor argument, or filled in by
+    #: :meth:`Persistable.__init_subclass__` when the model names this builder on its class
+    #: line - whichever happens first.
     builds: ClassVar[type[Any] | None] = None
 
+    #: ``"package.module:Wallet"``, written by the generator. The fallback for the one order
+    #: the class line cannot cover: this module imported on its own, before the module that
+    #: defines the model. `wallet()` straight out of `builders` is exactly that.
+    builds_ref: ClassVar[str | None] = None
+
     def __init__(self, target: type[T] | None = None, values: dict[str, Any] | None = None) -> None:
-        resolved = target or type(self).builds
+        resolved = target or type(self).builds or type(self)._resolve_builds()
         if resolved is None:
             raise ValidationError(
                 f"{type(self).__name__} does not know what it builds; pass the type, or "
@@ -177,6 +185,16 @@ class EntityBuilder[T, ID = Any, S = Any]:
             )
         self._target: type[T] = resolved
         self._values: dict[str, Any] = dict(values or {})
+
+    @classmethod
+    def _resolve_builds(cls) -> type[Any] | None:
+        """Import the module that defines the model, once, and remember the answer."""
+        if cls.builds_ref is None:
+            return None
+        module_name, _, attribute = cls.builds_ref.partition(":")
+        module = importlib.import_module(module_name)
+        cls.builds = getattr(module, attribute)
+        return cls.builds
 
     # -- what every persistable has -----------------------------------------------------------
 
@@ -309,6 +327,32 @@ def _required(target: type) -> tuple[str, ...]:
     return _REQUIRED[target]
 
 
+def _declared_builder(target: type) -> type[EntityBuilder[Any, Any, Any]] | None:
+    """The builder named on the class line, or ``None`` if the model did not name one.
+
+    ``class Wallet(Model[WalletId, WalletState, WalletBuilder])`` puts the builder where a
+    checker can already see it - the return type of ``copy()`` is the third parameter - and
+    this is the other half: reading the same argument back so the base can build one.
+
+    Java has no counterpart because it needs none. Its ``copy()`` is ``abstract``, so every
+    model writes the method out, and writing it is where the narrower return type goes. Here
+    the base can fill the method in, because a dataclass knows its own fields - so the type
+    has nowhere else to live but the class line.
+
+    The walk is over ``__mro__`` rather than the class's own bases, so a model that subclasses
+    another model inherits the answer.
+    """
+    for klass in target.__mro__:
+        for base in getattr(klass, "__orig_bases__", ()):
+            args = typing.get_args(base)
+            # The third argument, and only if it really is a builder class. Matching on the
+            # shape rather than on `get_origin(base) is Model` because this runs while `Model`
+            # itself is being created, before the name exists to compare against.
+            if len(args) >= 3 and isinstance(args[2], type) and issubclass(args[2], EntityBuilder):
+                return args[2]
+    return None
+
+
 def _no_typed_builder(target: type, route: str) -> EkbatanError:
     """Java refuses this at compile time; there is no compile step here, so it refuses here.
 
@@ -318,46 +362,59 @@ def _no_typed_builder(target: type, route: str) -> EkbatanError:
     type-checks, and the file the generator exists for is quietly absent.
 
     Nothing here requires the builder to be *generated*. What is required is that the model
-    hands back a builder a checker can read, and a hand-written one does that as well as a
+    names a builder a checker can read, and a hand-written one does that as well as a
     generated one - better, where a setter needs a conditional default or a computed field.
     """
     name = target.__name__
-    override = (
-        f"  def copy(self) -> {name}Builder: return {name}Builder().copy_base(self)"
-        if route == "copy()"
-        else f"  @classmethod\n  def builder(cls) -> {name}Builder: return {name}Builder()"
-    )
+    kind = "Model" if issubclass(target, Model) else "Entity"
     return EkbatanError(
-        f"{name}.{route} needs a typed builder, and {name} has not overridden it.\n"
+        f"{name}.{route} needs a typed builder, and {name} has not named one.\n"
         f"\n"
         f"The untyped builder resolves setters by name, so a checker sees `__getattr__` and "
-        f"`.field(wrong_type)` slips through. Give {name} a builder a checker can read, "
-        f"either way round:\n"
+        f"`.field(wrong_type)` slips through. Write the builder, either way round:\n"
         f"\n"
         f"  generated   python -m ekbatan.codegen {target.__module__} --out <pkg>/builders.py\n"
-        f"  by hand     class {name}Builder(ModelBuilder[{name}, ...]):\n"
-        f"                  builds = {name}\n"
+        f'  by hand     class {name}Builder({kind}Builder["{name}", ...]):\n'
         f"                  def balance(self, value: Decimal) -> Self: "
         f"return self.set(balance=value)\n"
         f"\n"
-        f"then override {route} on {name} to return it - the narrower return type is what a "
-        f"checker reads:\n"
+        f"then name it on {name}'s class line, which is the whole of the wiring:\n"
         f"\n"
-        f"{override}\n"
+        f"  class {name}({kind}[{name}Id, {name}State, {name}Builder]):\n"
         f"\n"
         f"`evolve()` needs none of this and is the right call for a one-field change. "
-        f"ModelBuilder({name}) stays reachable by name, for a model with nowhere to put a "
+        f"{kind}Builder({name}) stays reachable by name, for a model with nowhere to put a "
         f"builder - a test defining one inline, or the framework's own internals."
     )
 
 
 @dataclass(frozen=True, kw_only=True)
-class Persistable[ID, S: Enum]:
+class Persistable[
+    ID,
+    S: Enum,
+    B: EntityBuilder[Any, Any, Any] = EntityBuilder[Any, Any, Any],
+]:
     """A row, in memory: an identity, a lifecycle state, and an optimistic-locking version."""
 
     id: ID
     state: S
     version: int = 1
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Tell the declared builder what it builds, at the moment the model is defined.
+
+        The class line already says which builder belongs to this model. Without this the
+        builder would have to say so as well - ``builds = Wallet`` - and saying it means
+        importing the model, which is the import the class line is already making in the other
+        direction. One of the two has to give, and the builder is the one with nothing to lose:
+        it is generated, and it is the half a checker never needs at runtime.
+
+        Only fills a blank. A hand-written builder that sets ``builds`` itself keeps it.
+        """
+        super().__init_subclass__(**kwargs)
+        declared = _declared_builder(cls)
+        if declared is not None and declared.builds is None:
+            declared.builds = cls
 
     def __post_init__(self) -> None:
         """Refuse a row that could not be written, where it was built.
@@ -387,23 +444,30 @@ class Persistable[ID, S: Enum]:
         return False
 
     @classmethod
-    def builder(cls) -> EntityBuilder[Self, ID, S]:
+    def builder(cls) -> B:
         """An empty builder for this type - what a constructor would be if it were fluent.
 
         The counterpart to :meth:`copy`: that one starts from a row you have, this one from
         nothing. Java's generated ``WalletBuilder.wallet()``.
 
-        Refused unless the entity overrides it, for the reason :func:`_no_typed_builder` gives.
+        Refused unless the entity named its builder on the class line. See
+        :func:`_no_typed_builder`.
         """
-        raise _no_typed_builder(cls, "builder()")
+        declared = _declared_builder(cls)
+        if declared is None:
+            raise _no_typed_builder(cls, "builder()")
+        return typing.cast("B", declared())
 
-    def copy(self) -> EntityBuilder[Self, ID, S]:
+    def copy(self) -> B:
         """A builder pre-loaded with every one of this row's values.
 
-        **You must override this**, returning a builder a type checker can read - generated by
-        `ekbatan.codegen` or written by hand. See :func:`_no_typed_builder`.
+        Refused unless the entity named its builder on the class line - a builder a checker can
+        read, generated by `ekbatan.codegen` or written by hand. See :func:`_no_typed_builder`.
         """
-        raise _no_typed_builder(type(self), "copy()")
+        declared = _declared_builder(type(self))
+        if declared is None:
+            raise _no_typed_builder(type(self), "copy()")
+        return typing.cast("B", declared().copy_base(self))
 
     def evolve(self, **changes: Any) -> Self:
         """This row with some fields changed.
@@ -423,7 +487,11 @@ class Persistable[ID, S: Enum]:
 
 
 @dataclass(frozen=True, kw_only=True)
-class Entity[ID, S: Enum = GenericState](Persistable[ID, S]):
+class Entity[
+    ID,
+    S: Enum = GenericState,
+    B: EntityBuilder[Any, Any, Any] = EntityBuilder[Any, Any, Any],
+](Persistable[ID, S, B]):
     """State whose changes are not events.
 
     Writing one emits nothing - but the unit of work that wrote it is still recorded, because
@@ -436,7 +504,11 @@ class Entity[ID, S: Enum = GenericState](Persistable[ID, S]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Model[ID, S: Enum](Persistable[ID, S]):
+class Model[
+    ID,
+    S: Enum,
+    B: ModelBuilder[Any, Any, Any] = ModelBuilder[Any, Any, Any],
+](Persistable[ID, S, B]):
     """A row whose changes are worth telling the rest of the system about.
 
     Events are excluded from equality: two readers of one database row are looking at the same
@@ -491,17 +563,26 @@ class Model[ID, S: Enum](Persistable[ID, S]):
         return True
 
     @classmethod
-    def builder(cls) -> ModelBuilder[Self, ID, S]:
-        """Refused unless the model overrides it. See :func:`_no_typed_builder`."""
-        raise _no_typed_builder(cls, "builder()")
+    def builder(cls) -> B:
+        """Refused unless the model named its builder on the class line.
 
-    def copy(self) -> ModelBuilder[Self, ID, S]:
+        See :func:`_no_typed_builder`.
+        """
+        declared = _declared_builder(cls)
+        if declared is None:
+            raise _no_typed_builder(cls, "builder()")
+        return typing.cast("B", declared())
+
+    def copy(self) -> B:
         """A builder that can attach events, because a model can emit them.
 
-        **You must override this**, returning a builder a type checker can read - generated by
-        `ekbatan.codegen` or written by hand. See :func:`_no_typed_builder`.
+        Refused unless the model named its builder on the class line - a builder a checker can
+        read, generated by `ekbatan.codegen` or written by hand. See :func:`_no_typed_builder`.
         """
-        raise _no_typed_builder(type(self), "copy()")
+        declared = _declared_builder(type(self))
+        if declared is None:
+            raise _no_typed_builder(type(self), "copy()")
+        return typing.cast("B", declared().copy_base(self))
 
     def evolve(self, *, emit: ModelEvent | Iterable[ModelEvent] = (), **changes: Any) -> Self:
         """This model with some fields changed, and whatever it emitted in changing.

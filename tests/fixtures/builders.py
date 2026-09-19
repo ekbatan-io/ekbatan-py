@@ -7,22 +7,25 @@ rather than a wrong answer: build() calls the real constructor, which will refus
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Self
+from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
-from ekbatan.domain import EntityBuilder, GenericState, ModelBuilder
+from ekbatan.domain import EntityBuilder, ModelBuilder
 
-from .domain import Notification, NotificationId, Wallet, WalletId, WalletState
+if TYPE_CHECKING:
+    from ekbatan.domain import GenericState  # noqa: F401
+
+    from .domain import Notification, NotificationId, Wallet, WalletId, WalletState  # noqa: F401
 
 
-class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+class WalletBuilder(ModelBuilder["Wallet", "WalletId", "WalletState"]):
     """Builds a Wallet, with the field types a checker can see.
 
     id, state, version and the timestamps come from ModelBuilder, typed by the
     parameters above, so only the fields Wallet added are declared here.
     """
 
-    builds = Wallet
+    builds_ref = "fixtures.domain:Wallet"
 
     def owner_id(self, value: UUID) -> Self:
         return self.set(owner_id=value)
@@ -46,14 +49,14 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
     return made.copy_base(source) if source is not None else made
 
 
-class NotificationBuilder(EntityBuilder[Notification, NotificationId, GenericState]):
+class NotificationBuilder(EntityBuilder["Notification", "NotificationId", "GenericState"]):
     """Builds a Notification, with the field types a checker can see.
 
     id, state and version come from EntityBuilder, typed by the
     parameters above, so only the fields Notification added are declared here.
     """
 
-    builds = Notification
+    builds_ref = "fixtures.domain:Notification"
 
     def wallet_id(self, value: WalletId) -> Self:
         return self.set(wallet_id=value)

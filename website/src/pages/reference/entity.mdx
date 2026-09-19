@@ -9,7 +9,7 @@ lead: "A persistent aggregate that does NOT emit events. Use an entity when you 
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Alert(Entity[AlertId]):
+class Alert(Entity[AlertId, GenericState, AlertBuilder]):
     wallet_id: WalletId
     recipient: str
     message: str
@@ -21,7 +21,9 @@ class Alert(Entity[AlertId]):
 with no lifecycle of its own is nearly always a model nobody has thought about yet.
 
 ```python
-class Entity[ID, S: Enum = GenericState](Persistable[ID, S]):
+class Entity[ID, S: Enum = GenericState, B: EntityBuilder = EntityBuilder](
+    Persistable[ID, S, B]
+):
     id: ID
     state: S
     version: int = 1
@@ -31,8 +33,8 @@ class Entity[ID, S: Enum = GenericState](Persistable[ID, S]):
     @property
     def is_deleted(self) -> bool: ...
     @classmethod
-    def builder(cls) -> EntityBuilder[Self, ID, S]: ...   # override both, or they refuse
-    def copy(self) -> EntityBuilder[Self, ID, S]: ...
+    def builder(cls) -> B: ...             # B is the third argument you pass
+    def copy(self) -> B: ...
     def next_version(self) -> Self: ...
 ```
 
@@ -88,7 +90,7 @@ there is nothing to emit, so there is nothing to attach:
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Currency(Entity[CurrencyId]):
+class Currency(Entity[CurrencyId, GenericState, CurrencyBuilder]):
     code: str
     display_name: str
 
@@ -134,18 +136,18 @@ page is shorter: there is no event list and there are no timestamps to take part
 and `set(**changes)`. `with_event` and the timestamp setters are **not** on it — so attaching an
 event to something that does not emit them is not expressible.
 
-`copy()` and `builder()` refuse until the entity overrides them, the same as on a
+Name the builder on the class line, the same as on a
 [model](/reference/model/#builder-api) and for the same reason — an untyped builder is invisible
 to a checker, and there is no compile step here to make that an error:
 
 ```python
-def copy(self) -> AlertBuilder:
-    return AlertBuilder().copy_base(self)
+class Alert(Entity[AlertId, GenericState, AlertBuilder]):
+    message: str
 ```
 
-The refusal is per route and at the call, so an entity that is only ever built through a factory
-like `Alert.create(...)` and never copied needs neither override. `EntityBuilder(Alert)` stays
-reachable by name.
+`copy()` and `builder()` refuse without it. The refusal is at the call, so an entity only ever
+built through a factory like `Alert.create(...)` and never copied can leave it out.
+`EntityBuilder(Alert)` stays reachable by name.
 
 ## See also
 

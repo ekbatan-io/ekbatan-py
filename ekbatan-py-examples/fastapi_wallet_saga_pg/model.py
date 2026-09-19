@@ -31,15 +31,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from ekbatan import Entity, GenericState, Model, ModelEvent, ShardedId
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id
 
-if TYPE_CHECKING:
-    from .builders import WalletBuilder
+from .builders import WalletBuilder
 
 
 class WalletId(ShardedId["Wallet"]):
@@ -114,15 +112,10 @@ class TransferRefundedEvent(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState]):
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
-
-    def copy(self) -> WalletBuilder:
-        from .builders import WalletBuilder
-
-        return WalletBuilder().copy_base(self)
 
     @classmethod
     def open(
@@ -134,8 +127,6 @@ class Wallet(Model[WalletId, WalletState]):
         id: WalletId | None = None,
         created_date: datetime,
     ) -> Wallet:
-        from .builders import WalletBuilder
-
         wallet_id = id or WalletId.random()
         return (
             WalletBuilder()

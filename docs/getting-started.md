@@ -99,7 +99,7 @@ Java example carries a Gradle wrapper. The repository root delegates to them wit
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState]):
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal

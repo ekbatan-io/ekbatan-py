@@ -16,14 +16,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from ekbatan import Model, ModelEvent, ShardedId
 from ekbatan.errors import ValidationError
 
-if TYPE_CHECKING:
-    from .builders import WalletBuilder
+from .builders import WalletBuilder
 
 
 class WalletId(ShardedId["Wallet"]):
@@ -60,15 +58,10 @@ class MoneyWithdrawnEvent(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState]):
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
-
-    def copy(self) -> WalletBuilder:
-        from .builders import WalletBuilder
-
-        return WalletBuilder().copy_base(self)
 
     @classmethod
     def open(
@@ -82,8 +75,6 @@ class Wallet(Model[WalletId, WalletState]):
     ) -> Wallet:
         """Takes its id rather than minting one, because *which shard* is a decision the
         caller makes - usually from something the business knows, like a country."""
-        from .builders import WalletBuilder
-
         return (
             WalletBuilder()
             .id(id)

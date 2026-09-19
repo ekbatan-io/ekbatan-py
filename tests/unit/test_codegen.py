@@ -40,12 +40,12 @@ def test_a_model_gets_a_ModelBuilder_and_an_entity_a_Builder():
     """An entity has no timestamps and no events, so offering setters for them would be an
     error waiting for someone to call it."""
     source = generate([MODULE])
-    assert "class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):" in source
-    assert (
-        "class NotificationBuilder(EntityBuilder[Notification, NotificationId, GenericState]):"
-        in source
+    assert 'class WalletBuilder(ModelBuilder["Wallet", "WalletId", "WalletState"]):' in source
+    entity = 'class NotificationBuilder(EntityBuilder["Notification", "NotificationId", '
+    assert entity + '"GenericState"]):' in source
+    assert 'builds_ref = "fixtures.domain:Wallet"' in source, (
+        "the builder can find its model even when imported before the model module is"
     )
-    assert "builds = Wallet" in source
 
 
 def test_only_the_fields_the_model_added_are_declared():
@@ -69,7 +69,7 @@ def test_the_setters_carry_the_field_s_real_type():
 
 def test_the_base_is_parameterised_so_id_and_state_are_typed_without_being_declared():
     source = generate([MODULE])
-    assert "[Wallet, WalletId, WalletState]" in source, (
+    assert '["Wallet", "WalletId", "WalletState"]' in source, (
         "an id resolved to the concrete type, not left as a type variable"
     )
 

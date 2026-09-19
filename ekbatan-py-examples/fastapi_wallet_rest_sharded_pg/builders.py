@@ -7,22 +7,23 @@ rather than a wrong answer: build() calls the real constructor, which will refus
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Self
+from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 from ekbatan.domain import ModelBuilder
 
-from .model import Wallet, WalletId, WalletState
+if TYPE_CHECKING:
+    from .model import Wallet, WalletId, WalletState  # noqa: F401
 
 
-class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+class WalletBuilder(ModelBuilder["Wallet", "WalletId", "WalletState"]):
     """Builds a Wallet, with the field types a checker can see.
 
     id, state, version and the timestamps come from ModelBuilder, typed by the
     parameters above, so only the fields Wallet added are declared here.
     """
 
-    builds = Wallet
+    builds_ref = "fastapi_wallet_rest_sharded_pg.model:Wallet"
 
     def owner_id(self, value: UUID) -> Self:
         return self.set(owner_id=value)

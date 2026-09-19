@@ -227,9 +227,21 @@ class knows about and leaves the subclass's for the next lines, because a Java b
 cannot enumerate a subclass's fields. That is why every Java model writes its own `copy()`, and
 why one of them eventually forgets a field.
 
-Here the fields come off the dataclass, so `copy_base` takes all of them and `copy()` is
-inherited. A model that gains a field gains it in both places at once. Override `copy()` only
-to make a copy that deliberately differs - dropping a cache, resetting a counter.
+Here the fields come off the dataclass, so `copy_base` takes all of them and the base can
+write `copy()` for you. A model that gains a field gains it everywhere at once - there is no
+second list to keep in step, which is the whole of the difference.
+
+What the model still owes is the *type*: which builder `copy()` hands back. Java needs no such
+declaration because its `copy()` is `abstract` - every model writes the method out, and writing
+it is where the narrower return type goes. With the method gone, the type has nowhere left to
+live but the class line (`EKB-0202`):
+
+```python
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+```
+
+Leave it off and `copy()` refuses, for the reason the section on the builder gives. Override
+`copy()` only to make a copy that deliberately differs - dropping a cache, resetting a counter.
 
 ## Identifiers get a named type, not a generic parameter
 

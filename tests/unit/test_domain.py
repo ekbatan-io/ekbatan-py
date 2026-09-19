@@ -462,26 +462,38 @@ def test_a_model_without_a_typed_builder_refuses_both_routes():
     row = Bare(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
 
     for call in (lambda: row.copy(), lambda: Bare.builder()):
-        with pytest.raises(EkbatanError, match="needs a typed builder"):
+        with pytest.raises(EkbatanError, match="has not named one"):
             call()
 
 
 def test_a_hand_written_builder_satisfies_it_as_well_as_a_generated_one():
-    @dataclass(frozen=True, kw_only=True)
-    class ByHand(Model[UUID, WalletState]):
-        note: str
+    """Named on the class line, which is the whole of the wiring (`EKB-0202`).
 
-        def copy(self) -> NoteBuilder:
-            return NoteBuilder().copy_base(self)
+    No `copy()`, no `builder()`, and no `builds = ByHand` - the model's own declaration is
+    what ties the two together, and `__init_subclass__` reads it back.
+    """
 
-    class NoteBuilder(ModelBuilder[ByHand, UUID, WalletState]):
-        builds = ByHand
-
+    class NoteBuilder(ModelBuilder["ByHand", UUID, WalletState]):
         def note(self, value: str) -> Self:
             return self.set(note=value)
 
+    @dataclass(frozen=True, kw_only=True)
+    class ByHand(Model[UUID, WalletState, NoteBuilder]):
+        note: str
+
     row = ByHand(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
     assert row.copy().note("y").build().note == "y"
+    assert (
+        ByHand.builder()
+        .id(row.id)
+        .state(WalletState.OPENED)
+        .created_date(NOW)
+        .note("z")
+        .build()
+        .note
+        == "z"
+    )
+    assert NoteBuilder.builds is ByHand, "wired when the model was defined, not when first used"
 
 
 def test_the_escape_hatch_the_refusal_names_actually_works():

@@ -23,7 +23,7 @@ An entity may add its own timestamp columns; the framework simply will not popul
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState]):
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -326,16 +326,12 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
 - Validation. `deposit()` raising on a non-positive amount is business logic, not boilerplate.
 - Business methods, and the events they attach.
 - Factory methods like `Wallet.open(...)` that set up a fresh aggregate and its first event.
-- The two one-line overrides that point `copy()` and `builder()` at it. The generator writes a
-  separate file and never edits your model, so those stay yours:
+- The one place your model names it — its own class line. The generator writes a separate file
+  and never edits your model:
 
   ```python
-  def copy(self) -> WalletBuilder:
-      return WalletBuilder().copy_base(self)
-
-  @classmethod
-  def builder(cls) -> WalletBuilder:
-      return WalletBuilder()
+  class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+      balance: Decimal
   ```
 - Any conditional default or computed field. If a builder needs one, write that builder by hand;
   the generator will not fight you for the name.
@@ -355,13 +351,21 @@ regenerates into memory, compares, and fails `make lint` on a builder that is mi
 its model. A builder without the generator's header is taken as hand-written, and only its
 existence is checked.
 
-**A model must hand back a typed builder.** `copy()` and `builder()` on the base refuse until
-the model overrides them:
+**A model must name a typed builder**, on its class line:
+
+```python
+class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+    balance: Decimal
+```
+
+That third argument is the return type of `copy()` and `builder()`, so a checker reads the real
+setters. Leave it out and both refuse:
 
 ```
-Wallet.copy() needs a typed builder, and Wallet has not overridden it.
+Wallet.copy() needs a typed builder, and Wallet has not named one.
   generated   python -m ekbatan.codegen myapp.model --out <pkg>/builders.py
-  by hand     class WalletBuilder(ModelBuilder[Wallet, ...]): ...
+  by hand     class WalletBuilder(ModelBuilder["Wallet", ...]): ...
+then name it on Wallet's class line, which is the whole of the wiring.
 ```
 
 Java's `copy()` returns a generated builder or the class does not compile. There is no compile
