@@ -81,7 +81,7 @@ Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and i
 | `created_date` | `TIMESTAMP WITHOUT TIME ZONE NOT NULL` | written once, on insert |
 | `updated_date` | `TIMESTAMP WITHOUT TIME ZONE NOT NULL` | bumped on every update, alongside `version` |
 
-## Gotchas
+## Postgres-specific gotchas
 
 **`JSONB`, not `JSON`.** `json_column()` gives you `JSONB`. The binary form is indexable and
 compares by value; `JSON` is stored text and compares by bytes, so two payloads that differ only

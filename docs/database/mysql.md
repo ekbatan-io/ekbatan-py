@@ -100,7 +100,7 @@ Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and i
 | `created_date` | `DATETIME(6) NOT NULL` | written once, on insert |
 | `updated_date` | `DATETIME(6) NOT NULL` | bumped on every update, alongside `version` |
 
-## Gotchas
+## MySQL-specific gotchas
 
 **No native UUID.** `uuid_column()` renders `CHAR(36)` - the hyphenated text form, chosen so ids
 stay grep-able in query logs and dumps, and so they match what PostgreSQL and MariaDB store as

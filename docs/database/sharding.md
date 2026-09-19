@@ -6,21 +6,35 @@ wire format.
 
 ## Two axes: group + member
 
-A `(group, member)` pair. Group is the policy axis, member the capacity axis.
+A `ShardIdentifier` is a numeric `(group, member)` pair, and the two axes answer different
+questions:
+
+- **Group** is the **policy** axis - boundaries forced on you from outside. Data residency
+  ("Mexico data stays in Mexico"), a tenant isolation contract, a business-domain separation.
+  How many groups you have is decided by those constraints, not by you. **8 bits, up to 256.**
+- **Member** is the **capacity** axis - horizontal scale inside one policy boundary. You add a
+  member when one database cannot take the write throughput. How many is capacity planning.
+  **6 bits, up to 64 per group.**
 
 ```python
 from ekbatan.sharding import DEFAULT_SHARD, ShardIdentifier
 
 GLOBAL = ShardIdentifier(0, 0)      # prints as "0:0"; DEFAULT_SHARD is this
 MEXICO = ShardIdentifier(1, 0)
+MEXICO_2 = ShardIdentifier(1, 1)    # a second database for the same policy boundary
 ```
 
-| | bits | range |
-| --- | --- | --- |
-| group | 8 | 0-255 |
-| member | 6 | 0-63 |
+16,384 addressable shards, and the numbers travel **inside the id** rather than in a lookup
+table - see [Self-describing IDs](#self-describing-ids-shardedid).
 
-So 16,384 addressable shards, and the numbers are part of the id rather than a lookup key.
+Members of one group are assumed to share network locality and a failure domain: same region,
+same VPC, same availability zone. A predicate read inside a group scatters across every member
+of it, so intra-group latency is what that read costs. Names like `global-eu-1`, `global-eu-2`
+reflect the convention. Nothing enforces it - a connection url is opaque to the framework - but
+it is the shape the design assumes, and ignoring it makes scatter reads slower than they look.
+
+Unlike the Java port, a shard this deployment does not have is **refused rather than defaulted**
+- see [Unregistered shards](#unregistered-shards-are-refused-not-defaulted) below.
 
 ## Declarative configuration
 
@@ -121,6 +135,8 @@ registry.shards                   # every configured identifier
 
 You need these rarely. A repository routes for you; these are for the admin script, the
 reconciliation job, and the test that asserts placement.
+
+## Sharded repositories
 
 Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The bundled
 `EmbeddedBitsShardingStrategy` decodes the shard from the id's embedded bits:

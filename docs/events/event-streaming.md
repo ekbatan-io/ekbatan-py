@@ -108,6 +108,18 @@ representation to interoperate at all.
 
 The transform encodes on the way out. Change variant and nothing about the table changes.
 
+Four things follow from that, and each one is a failure you do not get:
+
+- **The write path stays small.** Serialising against a schema costs time and can fail; keeping
+  it out of the transaction means a stale schema cannot make `executor.execute(...)` fail at
+  commit, with the domain change rolled back for a reason that has nothing to do with the domain.
+- **A schema mismatch surfaces in Connect**, where it can be retried, logged, alerted on and
+  routed to a dead-letter topic - not in your application's hot path, where it is a 500.
+- **Schema evolution is centralised** in the transform's configuration, rather than smeared
+  across every service that produces or consumes the event.
+- **An operator can read the outbox with plain SQL.** `jsonb` is greppable; Avro bytes are not,
+  and the row you most want to read is always the one from the incident.
+
 ## Consumer-side envelope contracts
 
 Every variant carries the same 13-field shape: `id`, `namespace`, `action_id`, `action_name`,
@@ -183,6 +195,11 @@ Keep the raw topic as the append-only record of everything the service emitted, 
 rest from it. Derived topics can carry their own retention, schema, partition count and key
 without anything changing in how actions write to the database — which is the property worth
 protecting: the broker topology never reaches back into the write path.
+
+A route is a rule, not a pipeline stage: one event can match several and go to all of them.
+Whatever runs the routing is **stateless and horizontally scalable**, and it is crash-safe for a
+reason worth naming - the raw topic buffers while it is down, so a router outage is a delay
+rather than a loss.
 
 ## SMTs (Variant B only)
 

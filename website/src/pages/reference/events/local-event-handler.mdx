@@ -294,6 +294,41 @@ What you must not rely on:
 If a handler cannot be made idempotent in any of those ways, you want the Kafka path with
 consumer-group offsets, not this one.
 
+### Using a handler as a broker publisher
+
+A handler does not have to keep the work inside the database. Write one for an event type and
+publish from inside `handle(...)` with your own client:
+
+```python
+class WalletEventPublisher:
+    name = "wallet-kafka-publisher"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, producer: KafkaProducer) -> None:
+        self.producer = producer
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        self.producer.send(
+            "wallets.deposits",
+            key=envelope.model_id.encode(),
+            value=json.dumps({"amount": str(envelope.event.amount)}).encode(),
+        ).get(timeout=10)
+```
+
+Reach for this when you want **full control over the outgoing message** — the topic, the
+partition key, the headers, the schema, the tenant route, which broker, or whether one event
+fans out to several destinations. The handler gets the typed event and the action context, so it
+can map an internal event onto whatever public contract the rest of the system expects.
+
+It is the third of the [four topologies](/learn/consuming-events/), and the one to pick when
+Debezium is more infrastructure than you want but a broker is not optional.
+
+**Still at-least-once.** If the publish succeeds and the process dies before the notification row
+is marked delivered, the handler runs again and publishes again. Consumers should deduplicate on
+the outbox event id or another stable business key. `.get(timeout=…)` above is not decoration
+either: an async send that has not flushed when `handle` returns is a message the framework has
+already recorded as delivered.
+
 ## A realistic handler — calling external services
 
 Most handlers reach for something to do the useful part — send a notification, write an audit
@@ -323,9 +358,6 @@ notification the user received twice, and the outbox cannot undo it. If the call
 idempotency key, pass the **event id** — it is stable across every retry of the same
 notification, and distinct for every other one. If it has none, keep a table of event ids you
 have acted on and check it in the same transaction as the work.
-
-If your handler cannot be made idempotent in any of those ways, you probably want the Kafka path
-with consumer-group offsets rather than this pipeline.
 
 ### Listen-to-yourself
 

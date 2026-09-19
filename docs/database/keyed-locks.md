@@ -33,6 +33,22 @@ with lease:
     ...
 ```
 
+
+Four things that contract fixes, and each of them is a decision somebody would otherwise make
+wrongly under pressure:
+
+- **A lease always expires.** `max_hold` is mandatory, not optional. It is not a timeout on your
+  code — it is the promise that the lock is released even if this process dies holding it. Set
+  it above the worst case for the work inside.
+- **Contention is not failure.** `try_acquire` returns `None` when the lease cannot be had
+  inside `max_wait`; `acquire` raises `LockAcquisitionError`. Keeping those distinguishable is
+  what lets an HTTP handler answer 503 with a `Retry-After` instead of 500.
+- **The key is a string you choose**, and its granularity is the whole design. `wallet:{id}`
+  serialises one wallet; `wallets` serialises every wallet, which is a different product.
+- **Releasing is not your job.** The lease is a context manager, so the release happens on the
+  way out of the block whichever way you leave it — including an exception, which is the path
+  that gets forgotten when release is a method call.
+
 ## Where to acquire the lock
 
 ### ✅ At the caller, around `executor.execute(...)` — the default
@@ -280,10 +296,22 @@ They compose: a keyed lock does not turn optimistic locking off, and a write ins
 carries its version check. That is a belt-and-braces you get for free, and it is what catches a
 writer that did not take the lock.
 
-**Not the right primitive at very high concurrency.** A thousand callers queued on one key is a
-thousand held connections on the SQL backends and a queue with no fairness promise. At that point
-the answer is to shard the key, or to serialise the work through a job rather than through a
-lock.
+## Caveat: not the right primitive at very high concurrency
+
+A keyed lock serialises everything contending for one key, and a SQL one costs a connection per
+hold while it does. Both of those are fine at the scale this is meant for — a busy wallet, a
+tenant-wide import, a job that must not overlap itself — and neither scales to thousands of
+simultaneous holders of the same key.
+
+Two symptoms tell you that you are past it. Waiters pile up faster than holders drain, so
+`try_acquire` starts returning `None` under normal traffic rather than under incidents. Or the
+lock pool saturates, and a request that could have proceeded blocks waiting for a connection
+whose only job is to hold a lock.
+
+At that point the answer is not a bigger pool. It is to stop serialising: shard the key so the
+contention spreads, batch the work so one holder does what many were queueing to do, or move to
+optimistic concurrency and let the version check reject the losers — which is what the framework
+does by default, and the reason a keyed lock is the exception rather than the tool.
 
 ## See also
 

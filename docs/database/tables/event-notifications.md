@@ -82,12 +82,24 @@ seconds on MySQL, and `next_retry_at` is compared against instants that are not 
 
 ## Columns
 
-The first fourteen are **copied from the source event row** at fan-out time: `event_id`,
-`namespace`, `action_id`, `action_name`, `action_params`, `started_date`, `completion_date`,
-`model_id`, `model_type`, `event_type`, `payload`, `event_date`. A handler therefore needs no
-join to do its work.
+Twelve of them are **copied from the source event row** at fan-out time, so a handler needs no
+join to do its work:
 
-The rest are the delivery state:
+| column | null | meaning |
+| --- | :---: | --- |
+| `event_id` | no | the outbox row this delivery is for |
+| `namespace` | no | copied; the service that emitted the event |
+| `action_id` | no | copied; correlates every row written by one invocation |
+| `action_name` | no | copied; what ran |
+| `action_params` | no | copied; where routing concerns live that do not belong in the event |
+| `started_date` | no | copied; when the invocation began |
+| `completion_date` | no | copied; when it committed |
+| `model_id` | yes | copied; null only for a row whose source had no model |
+| `model_type` | yes | copied; as above |
+| `payload` | yes | copied; null only if the source row was malformed |
+| `event_date` | no | copied; the ordering key on the source row |
+
+The rest are the delivery state, and they are this table's own:
 
 | column | null | meaning |
 | --- | :---: | --- |

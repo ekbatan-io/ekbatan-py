@@ -110,7 +110,28 @@ with tm.transaction():
 
 Reads are a choice. Inherited reads see committed state on the primary; if a read must see this
 block's own uncommitted writes, use `tx.execute` / `tx.rows` or a repository method built on
-`tx_db_else_db`. See [Repositories](repositories.md).
+`tx_db_else_db`. See [Repositories](../database/repositories.md).
+
+
+The mechanism is the ambient transaction, and it is worth being precise about it because it is
+what makes a repository call read the same inside a unit of work and outside one.
+
+Opening a transaction binds its connection to a `ContextVar` keyed by shard. Every repository
+write goes through `tx_db_else_db(...)`, which looks in that binding first: inside the block it
+finds the connection and joins, outside it finds nothing and each statement commits on its own.
+Nothing is threaded through arguments, and no repository takes a connection parameter.
+
+Two consequences follow, and both are the point rather than side effects:
+
+- **A repository method written once works in both places.** The same `wallets.update(...)` is
+  part of your transaction inside the block and a standalone write outside it.
+- **The binding does not propagate to other threads or tasks.** Work handed to a pool from
+  inside a transaction does not inherit it, which is correct: another thread is another
+  connection, and quietly sharing one would corrupt both. See
+  [Concurrency](../runtime/concurrency.md).
+
+What does *not* join is a read you route yourself. `db()` and `readonly_db()` open their own
+connections deliberately — see [Repositories](../database/repositories.md#picking-the-right-one).
 
 ## When NOT to use it directly
 

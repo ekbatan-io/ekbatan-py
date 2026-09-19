@@ -100,6 +100,33 @@ GROUP BY state;
 
 Keeping it longer is harmless.
 
+
+Two rules make the rename safe, and they are not symmetrical:
+
+1. **Fan-out writes the current `name` only.** From the deploy onward, every new delivery row
+   carries the new name. There is no backfill and no rewrite of rows already queued.
+2. **Dispatch resolves through `aliases` as well.** A row still carrying the old name is matched
+   to this handler and runs, so the queue drains under the new code rather than stalling.
+
+That asymmetry is what makes the rename a one-way door you can walk through slowly. New work
+uses the new identity immediately; old work finishes under the old one.
+
+**What breaks without an alias** is worth stating plainly, because it fails quietly: rows under
+the old name match no handler at all. They are not errors and they are not retried — they simply
+sit in `PENDING` until the expiry sweep marks them `EXPIRED`, and the side effects they were
+going to cause never happen. Nothing logs an exception, because from the dispatcher's point of
+view there is no handler that wants them.
+
+Drop the alias once no non-terminal rows remain under the old name:
+
+```sql
+SELECT count(*) FROM event_notifications
+WHERE handler_name = 'money-deposited' AND state IN ('PENDING', 'FAILED');
+```
+
+Keeping it longer costs nothing — it is a lookup, not a subscription, so an alias nobody uses
+does not create rows or consume work.
+
 ## Wiring
 
 ```python
@@ -299,9 +326,6 @@ idempotency key, pass the **event id** — it is stable across every retry of th
 notification, and distinct for every other one. If it has none, keep a table of event ids you
 have acted on and check it in the same transaction as the work.
 
-If your handler cannot be made idempotent in any of those ways, you probably want the Kafka path
-with consumer-group offsets rather than this pipeline.
-
 ### Listen-to-yourself
 
 A handler may instead take the executor and start another action:
@@ -319,6 +343,41 @@ is built from.
 What it must **not** do is reach for a connection and write directly. A handler that writes
 outside an action writes without an outbox row, and the thing it changed then has no event
 explaining it — which is the failure this whole framework exists to make unexpressible.
+
+### Using a handler as a broker publisher
+
+A handler does not have to keep the work inside the database. Write one for an event type and
+publish from inside `handle(...)` with your own client:
+
+```python
+class WalletEventPublisher:
+    name = "wallet-kafka-publisher"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, producer: KafkaProducer) -> None:
+        self.producer = producer
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        self.producer.send(
+            "wallets.deposits",
+            key=envelope.model_id.encode(),
+            value=json.dumps({"amount": str(envelope.event.amount)}).encode(),
+        ).get(timeout=10)
+```
+
+Reach for this when you want **full control over the outgoing message** — the topic, the
+partition key, the headers, the schema, the tenant route, which broker, or whether one event
+fans out to several destinations. The handler gets the typed event and the action context, so it
+can map an internal event onto whatever public contract the rest of the system expects.
+
+It is the third of the [four topologies](README.md), and the one to pick when
+Debezium is more infrastructure than you want but a broker is not optional.
+
+**Still at-least-once.** If the publish succeeds and the process dies before the notification row
+is marked delivered, the handler runs again and publishes again. Consumers should deduplicate on
+the outbox event id or another stable business key. `.get(timeout=…)` above is not decoration
+either: an async send that has not flushed when `handle` returns is a message the framework has
+already recorded as delivered.
 
 ## A realistic handler — calling external services
 

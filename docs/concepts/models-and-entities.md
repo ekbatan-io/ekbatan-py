@@ -209,39 +209,73 @@ the `DELETE` yourself through the repository's table.
 
 ## Generated builders
 
-`wallet.copy().balance(...)` works for every model with nothing generated, and refuses an unknown
-field at the point of the call. What it cannot do is tell a *type checker* that `.balance(...)`
-takes a `Decimal`: setters are resolved by name at runtime, so a checker sees only
-`__getattr__`.
+`wallet.copy().balance(...)` works with nothing generated. What it cannot do is tell a *type
+checker* that `.balance(...)` takes a `Decimal` — setters resolve by name at runtime, so a
+`.balance("25.50")` is a string in a `NUMERIC` column that nothing complains about until the
+database does.
 
-That is the one thing worth generating, and the only thing generated:
+That is the one thing Python cannot work out for itself, and the one thing the generator exists
+for:
 
 ```
 uv run python -m ekbatan.codegen myapp.model --out myapp/builders.py
 ```
 
+It imports the modules you name, finds every `Model` and `Entity` in them, and writes a builder
+per class. For a `Wallet` with `owner_id: UUID`, `currency: str` and `balance: Decimal`:
+
 ```python
 class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+    """Builds a Wallet, with the field types a checker can see."""
+
     builds = Wallet
 
-    def owner_id(self, value: UUID) -> Self: ...
-    def currency(self, value: str) -> Self: ...
-    def balance(self, value: Decimal) -> Self: ...
+    def owner_id(self, value: UUID) -> Self:
+        return self.set(owner_id=value)
+
+    def currency(self, value: str) -> Self:
+        return self.set(currency=value)
+
+    def balance(self, value: Decimal) -> Self:
+        return self.set(balance=value)
+
+
+def wallet(source: Wallet | None = None) -> WalletBuilder:
+    """A fresh WalletBuilder, optionally pre-loaded from an existing Wallet."""
+    made = WalletBuilder()
+    return made.copy_base(source) if source is not None else made
 ```
 
-A generated builder declares **only the fields its model added**. `id`, `state`, `version` and
-the timestamps are typed on the base through its parameters - the same trick Java's
-`Model.Builder<ID, B, M, STATE>` uses, and the reason a generated builder there declares three
-methods rather than eight. An entity gets `EntityBuilder`, so it is not offered setters for
-timestamps and events it does not have.
+**What is generated:**
 
-Everything else Java's `@AutoBuilder` emits - constructing, copying, incrementing a version -
-needs no generation here, so none is done. The output is ordinary Python: **commit it**, read it,
-regenerate when a model changes. A stale one is a type error rather than a wrong answer, because
-`build()` still calls the real constructor.
+- A class named `<ModelName>Builder`, subclassing `ModelBuilder` (or `EntityBuilder`) with the
+  right type parameters.
+- A `builds` attribute naming the class it constructs — which is what `build()` calls, so there
+  is no `build()` override to generate.
+- One fluent setter per field the model **declared**, returning `Self` so the chain keeps its
+  type. `id`, `state`, `version`, `created_date` and `updated_date` are typed on the base and are
+  not repeated.
+- A module-level factory named after the model in snake case — `wallet()` for `Wallet`,
+  `wallet_account()` for `WalletAccount` — optionally pre-loaded from an existing instance.
+- The imports the file needs, emitted relative when `--out` lands inside your package.
 
-Note the difference from `schemagen`, whose output is *gitignored*: a builder is derived from
-source you already have, a schema from a database you have to start.
+**What is not generated** — these stay on the model, where you can see them:
+
+- The dataclass itself and its field declarations.
+- Validation. `deposit()` raising on a non-positive amount is business logic, not boilerplate.
+- Business methods, and the events they attach.
+- Factory methods like `Wallet.open(...)` that set up a fresh aggregate and its first event.
+- `copy()`, which the base already provides.
+- Any conditional default or computed field. If a builder needs one, write that builder by hand;
+  the generator will not fight you for the name.
+
+**Commit the output.** It is derived from source you already have, unlike the schema module,
+which is derived from a database you have to start. A stale builder is a type error rather than a
+wrong answer: `build()` calls the real constructor, which refuses a missing or unknown field.
+
+Nothing at runtime depends on the generated file. Delete it and the application still works —
+you lose the checking, not the behaviour, which is the opposite of Java's arrangement, where the
+builder *is* how a model is constructed and a missing annotation processor is a compile error.
 
 ## Inherited builder methods
 

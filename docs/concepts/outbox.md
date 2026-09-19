@@ -28,35 +28,48 @@ in step. After the commit, the rows in `events` are the canonical record of what
 
 ## How rows get there
 
-The outbox write is owned by the **event persister**, which runs inside the executor's persist
-phase after the domain rows are written and before the transaction commits.
+Every row arrives the same way, and no other way exists:
 
-For each model in the plan, its events are extracted and written one row each - or a single
-**sentinel row** if there are none, because the action's existence is recorded whether or not it
-had anything to announce. Every row for one action shares an `action_id`.
+```text
+Model method
+  -> returns a new immutable model
+  -> with one or more ModelEvents attached
 
-`namespace` comes from the executor:
+Action.perform()
+  -> reads the current state
+  -> calls the model method
+  -> stages the new model on self.plan
 
-```python
-executor = ActionExecutor(
-    namespace="com.example.finance",   # -> events.namespace on every row
-    registry=registry,
-    repositories=repositories,
-    actions=actions,
-    events=EVENTS,
-)
+the executor
+  -> opens one database transaction
+  -> writes the domain row
+  -> writes the attached event rows to `events`
+  -> commits, or rolls back all of it
 ```
 
-The namespace must be **dot-separated identifiers, shaped like a package** - letters, digits and
-underscores, each segment starting with a letter or underscore - and is rejected at startup
-otherwise. A service name is the obvious thing to put here, service names are usually hyphenated,
-and that is the trap: the namespace doubles as a schema package when streaming, where a hyphen is
-a syntax error in both protobuf and Avro. Write `my_service`, not `my-service`.
+For a wallet deposit, that first step is:
 
-`event_type` is the event class's **name**, not its module path - so moving a module does not
-change the database contract. The persister guards that contract at runtime: if one service emits
-two different event classes with the same name, it refuses rather than writing rows a consumer
-cannot tell apart.
+```python
+def deposit(self, amount: Decimal) -> Wallet:
+    new_balance = self.balance + amount
+    return (
+        self.copy()
+        .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+        .balance(new_balance)
+        .build()
+    )
+```
+
+The event is attached **before** persistence and written **after** it. In between it waits in the
+action's staged changes, touching nothing. Only the executor writes it, and only in the same
+transaction as the wallet row.
+
+**That is the important part:** your code creates domain facts; the framework persists those
+facts atomically with the state they describe. Neither half can happen without the other,
+because neither half is a separate call you could make.
+
+And this is the table they land in - [`events`](../database/tables/events.md) has its DDL on
+every dialect, column by column.
 
 ## Passing the table explicitly
 
@@ -88,6 +101,13 @@ event handler deserialises the payload straight into its event class and refuses
 them. This port reads them back under its own names, so a payload written by either side rebuilds
 a complete event here. It is a contract, not an oversight.
 
+## What the outbox row means
+
+An action that emits no events still writes **one row**, with `model_id`, `model_type`,
+`event_type` and `payload` all null. The action happened, and that is a fact worth keeping.
+
+A consumer skips them with `event_type IS NULL`. The Debezium transforms already do.
+
 ## Two consumer paths
 
 The outbox is **just a table**. Anything that can read it can consume it.
@@ -105,6 +125,12 @@ format above.
 Both can run against the same outbox at once. In-process fan-out flips `delivered` from false to
 true, producing `UPDATE` rows; the Kafka transforms drop non-insert operations, so those flips
 are invisible downstream.
+
+## One trap worth knowing
+
+`event_date` is the only ordering key — there is no ordinal column, in either port. Under a real
+clock that is fine. Under a **frozen** clock every row of a run ties and the order falls back to
+a random uuid. The test suite fell into this more than once.
 
 ## Ordering, and the thing to know about it
 

@@ -20,6 +20,7 @@ purpose - `reference/multi-database` is `database/multi-database`, and `referenc
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -31,11 +32,68 @@ DOCS = ROOT / "docs"
 #: a docs page is free to be tighter. Below this, something was written in one place only.
 FLOOR = 80
 
+#: Website sections with no docs counterpart by design. A reference page carries a type
+#: signature and a method list that a concepts page has no business repeating, and the site
+#: carries navigation a Markdown tree does not have.
+SECTION_OK = {
+    "Type signature",
+    "Methods",
+    "Declaring an action",
+    "Lifecycle",
+    "Construction and mutation",
+    "Equality",
+    "Builder API",
+    "Differences from Model",
+    "Why frozen",
+    "See also",
+    "When to use Entity rather than Model",
+    "Suggested next steps",
+    "Next",
+    "perform(principal, params) - here, perform(params)",
+    "perform(principal, params) — here, perform(params)",
+    "plan",
+    "Cross-shard execution",
+    "Retry semantics",
+    "Actions are singletons",
+    "No nesting",
+    "add(model) / add_all(models)",
+    "update(model) / update_all(models)",
+    "additions(model_type) / updates(model_type)",
+    "changes()",
+    "Single-writer; not thread-safe",
+    "What just happened",
+    "Test it without a database",
+    # A tutorial and a concepts page answer the same question under different titles. The docs
+    # tree follows the Java port's naming, which is the one a porter cross-checks against.
+    "What happens after commit",
+    "One trap worth knowing",
+    # Java's website says `Events` and Java's docs say `ModelEvent`; each side here follows
+    # its own counterpart, so this pair disagrees on purpose.
+    "Events",
+}
+
 #: Where two pages share one docs file, the docs file is compared against the longer of them.
 PAIRS: dict[str, tuple[str, ...]] = {
-    "concepts/actions.md": ("reference/action.mdx", "reference/action-plan.mdx"),
-    "concepts/models-and-entities.md": ("reference/model.mdx", "reference/entity.mdx"),
+    "concepts/actions.md": (
+        "reference/action.mdx",
+        "reference/action-plan.mdx",
+        "learn/actions.mdx",
+    ),
+    "concepts/models-and-entities.md": (
+        "reference/model.mdx",
+        "reference/entity.mdx",
+        "learn/models-and-entities.mdx",
+    ),
+    "concepts/outbox.md": ("learn/outbox.mdx",),
+    "concepts/sagas.md": ("learn/sagas.mdx",),
+    "concepts/sharding.md": ("learn/sharding-strategies.mdx",),
+    "concepts/the-dual-write-trap.md": ("learn/the-dual-write-trap.mdx",),
     "database/keyed-locks.md": ("reference/keyed-locks.mdx",),
+    "database/mariadb.md": ("reference/dialects/mariadb.mdx",),
+    "database/mysql.md": ("reference/dialects/mysql.mdx",),
+    "database/postgresql.md": ("reference/dialects/postgresql.mdx",),
+    "database/sqlite.md": ("reference/dialects/sqlite.mdx",),
+    "database/tables.md": ("reference/tables/index.mdx",),
     "database/migrations.md": ("reference/migrations.mdx",),
     "database/multi-database.md": ("reference/multi-database.mdx",),
     "database/repositories.md": ("reference/repository.mdx",),
@@ -59,6 +117,26 @@ def words(path: pathlib.Path) -> int:
     return len(path.read_text().split()) if path.exists() else 0
 
 
+def headings(path: pathlib.Path) -> list[str]:
+    text = re.sub(r"```.*?```", "", path.read_text(), flags=re.S)
+    return [
+        re.sub(r"[`*]", "", line.lstrip("#").strip())
+        for line in text.splitlines()
+        if re.match(r"^#{2,3} ", line)
+    ]
+
+
+def norm(s: str) -> str:
+    return re.sub(r"[^a-z ]", "", s.lower())
+
+
+def covered(head: str, ours: list[str]) -> bool:
+    n = norm(head)
+    return any(
+        norm(o) == n or norm(o).startswith(n[:14]) or n.startswith(norm(o)[:14]) for o in ours
+    )
+
+
 def main() -> int:
     behind: list[str] = []
     missing: list[str] = []
@@ -77,6 +155,17 @@ def main() -> int:
         rows.append((share, doc, words(doc_path), web))
         if share < FLOOR:
             behind.append(f"{doc} holds {share}% of {max(pages, key=lambda p: words(WEB / p))}")
+
+        # Volume is a page average and hides a whole section. A heading the website has and
+        # the docs page does not is the shape the drift actually took.
+        mine = headings(doc_path)
+        for page in pages:
+            src = WEB / page
+            if not src.exists():
+                continue
+            for head in headings(src):
+                if head not in SECTION_OK and not covered(head, mine):
+                    behind.append(f"{doc} has no section for `{head}` ({page})")
 
     for share, doc, dw, web in sorted(rows):
         print(f"  {doc:42} {dw:>6} vs {web:>6}  {share:>3}%")

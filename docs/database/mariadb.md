@@ -116,7 +116,7 @@ services:
       - ./mariadb_init.sql:/docker-entrypoint-initdb.d/mariadb_init.sql:ro
 ```
 
-## Gotchas
+## MariaDB-specific gotchas
 
 **Native UUID exists, and this port does not emit it.** MariaDB 10.7+ has a real 16-byte `UUID`
 type; Java's DDL uses it. SQLAlchemy does not render it, so `uuid_column()` gives `CHAR(36)`.

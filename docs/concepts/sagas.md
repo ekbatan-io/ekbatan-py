@@ -28,39 +28,37 @@ the honest thing to have, because the alternative was never actually available.
 
 ## Wallet transfer example
 
-[`ekbatan-py-examples/fastapi_wallet_saga_pg`](../../ekbatan-py-examples/fastapi_wallet_saga_pg)
-runs on one PostgreSQL database with the in-process handler, but the shape is what you would use
-across shards or services.
+[`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg)
+splits a transfer into three steps.
 
 | step | action | what commits atomically | event |
 | --- | --- | --- | --- |
 | 1 | `InitiateTransferAction` | debit the source | `TransferInitiatedEvent` |
 | 2 happy | `CompleteTransferAction` | credit the destination | `TransferCompletedEvent` |
-| 2 failed | `CompleteTransferAction` | mark the transfer failed on the source | `TransferFailedEvent` |
+| 2 failed | `CompleteTransferAction` | mark it failed on the source | `TransferFailedEvent` |
 | 3 compensate | `RefundTransferAction` | credit the source back | `TransferRefundedEvent` |
-
-```
-POST /wallets/{id}/transfers
-        |
-        v
-InitiateTransferAction        debits the source, emits TransferInitiatedEvent
-        |
-        v
-  post-commit consumer        a handler, a broker consumer, or a worker
-        |
-        v
-CompleteTransferAction        destination can receive:  credit it, emit TransferCompleted
-                              destination cannot:       emit TransferFailed on the source
-        |
-        v
-  post-commit consumer
-        |
-        v
-RefundTransferAction          credits the source back, emits TransferRefunded
-```
 
 The happy path is two commits; the failure path is three. Every commit has its own outbox rows,
 so the trail shows what happened instead of pretending it was one invisible transaction.
+
+Two details in that table are the whole design.
+
+**Step 2's failure is an event, not an exception.** `CompleteTransferAction` emits
+`TransferFailedEvent` on the *source* wallet and commits it. A compensating handler is then
+triggered by a business outcome that was committed like any other — rather than by a thrown
+exception, which would be retried forever and never reach a compensation.
+
+**Each step touches one wallet.** Step 1 debits the source, step 2 credits the destination, step
+3 credits the source back. That is what lets each one be an ordinary single-shard action with an
+ordinary optimistic-lock version check, even when the two wallets live on different databases.
+Compare [`allow_cross_shard=True`](../database/sharding.md#cross-shard-actions), which would make
+this one action across two transactions with no recovery when the second fails.
+
+A client sees `202` and polls `GET /transfers/{id}`. What that endpoint reads is worth knowing,
+because it is the honest answer to "where does a saga's state live": **there is no saga table and
+no coordinator to ask.** The markers each step writes *are* the state, and the endpoint derives
+`IN_FLIGHT`, `COMPLETED` or `REFUNDED` from which of them exist. That is what choreography means
+— and it is why adding a step needs no schema change.
 
 ## What a saga costs a client: 202, not 200
 
@@ -80,6 +78,30 @@ says, and it is how people avoid being surprised by a saga in production.
 The status endpoint reads the step markers, because that *is* the state. There is no saga table
 and no coordinator to ask.
 
+## Idempotency is a constraint, not a check
+
+Delivery is at-least-once, so a handler can run twice. The example's shape is worth copying
+exactly:
+
+```python
+def perform(self, params: CompleteTransferParams) -> Wallet | None:
+    # Staged *before* the credit, so the unique constraint decides whether this delivery is
+    # the first one. A replay stages the same marker, the insert is refused, and the credit
+    # beside it is rolled back with it - which is why the money cannot arrive twice.
+    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    ...
+```
+
+A check-then-act has a window. This has none, because the database refuses the duplicate and
+takes the credit down with it.
+
+## Terminal failures are events, not exceptions
+
+If the destination wallet is closed, retrying will never help. `CompleteTransferAction` emits
+`TransferFailedEvent` and **returns normally**. Raising would make the handler retry a transfer
+into a closed wallet forever — and "failed" is a business outcome that deserves a durable row
+like any other.
+
 ## Forward-only compensation
 
 The refund is not a rollback. By the time it runs, the debit has committed. The compensation is a
@@ -96,13 +118,22 @@ You can explain the system's behaviour after the fact, because every step was du
 
 ## Where the next step is started
 
-**Not inside `perform()`.** That would hide a second transaction in the first action's business
-logic. See [Actions → no nesting](actions.md#no-nested-actions-inside-perform).
+Do **not** execute another action from inside `perform()`. That would hide a second transaction
+inside the first action's business logic and make the execution model hard to reason about.
 
-The boundary is: after the previous action has committed and its event is being consumed. That
-consumer can be an in-process handler, a broker consumer fed by Debezium, a worker polling the
-outbox, or a coordinator in another service. The point is the boundary - the next step starts
-from a committed event, so it gets its own transaction and its own durable outcome.
+The safe boundary is **after the previous action has committed and its event is being
+consumed**. That consumer can be:
+
+- an in-process handler running in your application (database-backed, restart-safe, any
+  instance),
+- a Kafka / Pulsar / RabbitMQ / SQS consumer fed by Debezium or by a publishing handler,
+- a separate worker process that polls or streams the outbox,
+- or a service-level coordinator that reacts to a committed event and starts the next step.
+
+The important part is the boundary: the next step starts from a committed event, so it gets its
+own transaction and its own durable outcome.
+
+The runnable example uses in-process handlers, because every step lives in one application:
 
 ```python
 class TransferInitiatedEventHandler:
@@ -128,9 +159,19 @@ class TransferInitiatedEventHandler:
         )
 ```
 
-A handler is a plain class - a `name`, an `event_type`, and a `handle`. No base class, no
-decorator, no registration annotation: it is put in the registry by the wiring, which is where
-you can see it.
+Notice what the handler takes: **the executor**, not a connection. It runs the next step as its
+own unit of work, with its own transaction and its own outbox rows. The transaction that produced
+`TransferInitiatedEvent` committed and went away before this line ran — which is exactly the
+property that makes the chain restartable.
+
+Notice also what it reads: `envelope.event`, and nothing else. The event carries the whole
+transfer, so the handler needs neither the producing action's parameters nor a second row nor any
+knowledge of where the other wallet lives.
+
+**There is no saga coordinator**, and that is the design rather than an omission. Each handler
+knows one thing: given *this* event, run *that* action. Adding a fourth step means writing a
+fifth event and a third handler, and changing nothing that already works. The trade is that
+no single file shows you the whole workflow — the outbox does, after the fact.
 
 ## Design rules
 

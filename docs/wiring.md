@@ -40,6 +40,41 @@ class WalletService:
 Frozen and slotted because it is a value, not a service locator - it is built once and handed
 around. `start` and `close` are the only lifecycle there is.
 
+## The domain (unchanged whether you wire it by hand or not)
+
+Nothing here changes because of how you wire it. These are the classes the rest of the page
+assembles, and they are the same ones you would write with a container doing the assembling:
+
+```python
+class WalletId(Id["Wallet"]): ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+
+    def deposit(self, amount: Decimal) -> "Wallet": ...
+
+
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry)
+
+
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: DepositParams) -> Wallet:
+        return self.plan.update(self.wallets.get(params.wallet_id).deposit(params.amount))
+```
+
+Four kinds of thing, and each takes what it needs through `__init__`. That is the only contract
+the wiring below has to satisfy: **construct them in dependency order and hand each one its
+collaborators.** There is nothing else a container would have been doing for you.
+
 ## 1. Settings
 
 ```python

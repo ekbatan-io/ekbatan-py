@@ -13,38 +13,46 @@ by the framework, never by your code.
 ```
         executor.execute(DepositMoneyAction, params)
                               │
-                              ▼
    ┌─── Phase 1 - perform()   (no transaction yet) ─────────────┐
-   │                                                            │
-   │   1. Read from repositories                                │
-   │   2. Build new immutable models and entities               │
-   │   3. Attach events to the models                           │
-   │   4. Stage them:   self.plan.add(order)                    │
-   │                    self.plan.update(wallet)                │
-   │   5. Return a result                                       │
-   │                                                            │
-   │   Nothing is written in this phase.                        │
+   │   read from repositories                                   │
+   │   build new immutable models                               │
+   │   attach events to them                                    │
+   │   stage:  self.plan.add(order) / self.plan.update(wallet)  │
+   │   return a result                                          │
    └────────────────────────────────────────────────────────────┘
                               │
-                              ▼
    ┌─── Phase 2 - persist     (one transaction per shard) ──────┐
-   │                                                            │
-   │   1. Group staged changes by shard                         │
-   │   2. In one transaction:                                   │
-   │        repositories write the domain rows                  │
-   │        the persister writes the outbox rows                │
-   │        commit  -or-  roll back                             │
-   │   3. On StaleRecordError, retry the whole action           │
-   │                                                            │
-   │   Everything lands together, or none of it does.           │
+   │   group staged changes by shard                            │
+   │   repositories write the domain rows                       │
+   │   the persister writes the outbox rows                     │
+   │   commit  -or-  roll back                                  │
+   │   on StaleRecordError, retry the whole action              │
    └────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                      the result reaches the caller
 ```
 
 Phase 1 is pure construction. Phase 2 is the only place a transaction is opened, and it always
 wraps every staged change together with the matching event rows.
+
+Three consequences follow from the split, and they are most of why it exists.
+
+**`perform()` cannot write, so it cannot half-write.** There is no flush, no `save()`, no
+connection to reach for. The worst an action can do is stage something the executor then refuses,
+and refusing costs nothing because nothing has been written.
+
+**A retry is cheap and correct.** When a version check fails, phase 2 rolls back and the executor
+re-runs phase 1 from the top with a **fresh plan** — re-reading the row it lost the race on, so
+the second attempt is computed from the winner's state rather than patched onto the loser's.
+An action that only reads, computes and stages is safe to re-run by construction; one that
+posted to an external API in `perform()` is not, which is the real reason for the rule.
+
+**Sharding stays out of the action.** The grouping step is in phase 2, so `perform()` stages
+objects without knowing which database each one lands on. The same action body works on one
+database and on eight.
+
+The cost is the one thing you have to hold in your head: **`self.plan.update(x)` has not written
+`x`.** It returns the row as it *will be* written — stamped, version already moved — so later
+code in the same `perform()` reads the new state. But the database has not seen it, and will not
+until `perform()` returns.
 
 ## Writing an action
 
@@ -93,7 +101,7 @@ Three rules:
   `perform()` see the increment.
 - **The plan is single-writer.** It is a plain dict; concurrent mutation is a data race.
 
-## Singletons, with per-call state in a ContextVar
+## Singletons + per-call state via a ContextVar
 
 One instance per class, for the life of the application, shared by every concurrent invocation.
 Its only state is what the constructor set.
@@ -112,21 +120,15 @@ outlived the unit of work while holding its connection is exactly the bug this p
 
 ## Plan is single-writer; forking is allowed but not encouraged
 
-Allowed, not encouraged, and the rule is the same as Java's.
+Deliberately. Internally it is a plain `dict` keyed by type, holding plain dicts keyed by id, and
+nothing guards them. Within `perform()`, `add`, `add_all`, `update` and `update_all` must all
+happen on the thread that entered it. If the action fans work out to a pool to gather data,
+**join the children first and only then stage from the thread that invoked `perform()`.**
 
-```python
-def perform(self, params: Params) -> Order:
-    with ThreadPoolExecutor() as pool:
-        customer, quote = pool.map(...)     # neither touches the plan
-    return self.plan.add(build_order(customer, quote))    # back on this thread
-```
-
-Fan out, **join**, and only then stage. Prefer doing parallel *reads* before
-`executor.execute(...)` entirely, at the caller, so they use ordinary pool connections rather
-than competing with the action's own.
-
-See [Concurrency](../runtime/concurrency.md) for what the threads actually cost here - they are
-not Java's virtual threads.
+The GIL is not the reprieve it looks like. A single dict assignment is atomic; the staging path
+is not — it checks whether the id is already staged, stamps the row, and then assigns, and two
+threads can both pass the check. The failure is a lost write with a correct-looking traceback,
+which is exactly the kind you find in production rather than in a test.
 
 ## No nested actions inside `perform()`
 

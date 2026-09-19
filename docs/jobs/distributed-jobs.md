@@ -112,7 +112,7 @@ starves the heartbeat, and an execution whose heartbeat stops is declared dead a
 somewhere else. db-scheduler warns at startup when the pool is short - and did, while these
 examples were being written, which is why the example default is 8 and not 3.
 
-### The three knobs
+### What the three knobs do
 
 | | default | what it controls |
 | --- | --- | --- |

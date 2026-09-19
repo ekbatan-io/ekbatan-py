@@ -85,6 +85,9 @@ lint: schema
 	# `docs/` is the canonical Markdown and the website renders the same knowledge. Prose
 	# written into one and never carried to the other is how the two stopped agreeing once.
 	$(UV) python scripts/docs-website-sync.py
+	# And the docs tree against the Java port's. Not fatal - the Java docs are only there if
+	# the sibling checkout is - so this reports and does not fail the build.
+	-$(UV) python scripts/docs-parity.py --sections 2>/dev/null | tail -1
 
 format:
 	$(UV) ruff format $(OURS)

@@ -33,5 +33,7 @@ Linked from the top-level [README](../README.md). Each section has its own index
   still open
 - **[JAVA-PARITY-LEDGER.md](JAVA-PARITY-LEDGER.md)** - every Java source file, and where it went
 - **[BEYOND-CODE-LEDGER.md](BEYOND-CODE-LEDGER.md)** - the same discipline for everything else
+- **[DOCS-PARITY.md](DOCS-PARITY.md)** - how far this tree has drifted from the Java port's docs,
+  and what is capped
 
 For conventions and how to work in this repository, see [AGENTS.md](../AGENTS.md).

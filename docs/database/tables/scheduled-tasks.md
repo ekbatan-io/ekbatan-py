@@ -107,7 +107,7 @@ That is why [Wiring](../../wiring.md) gives jobs their own pool, sized at **at l
 count**. A job body holding the last connection starves the heartbeat. db-scheduler warns at
 startup when the pool is too small, and it warned while the examples were being written.
 
-## How this compares with Java
+## Dialect types
 
 Columns, order, nullability and the primary key are **identical** - both ports follow
 db-scheduler's own schema. Two differences on PostgreSQL:

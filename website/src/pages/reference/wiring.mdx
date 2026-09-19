@@ -13,7 +13,7 @@ startup order to reason about beyond the order the lines are in.
 > which runs and is tested. The HTTP half is in [Wiring with FastAPI](/reference/wiring-fastapi/); this
 > page is the part that has nothing to do with HTTP.
 
-## The shape
+## What we're wiring
 
 One function that returns one object. Nothing above it knows which database, which handlers or
 which jobs; nothing below it does either.
@@ -40,6 +40,41 @@ class WalletService:
 
 Frozen and slotted because it is a value, not a service locator - it is built once and handed
 around. `start` and `close` are the only lifecycle there is.
+
+## The domain (unchanged whether you wire it by hand or not)
+
+Nothing here changes because of how you wire it. These are the classes the rest of the page
+assembles, and they are the same ones you would write with a container doing the assembling:
+
+```python
+class WalletId(Id["Wallet"]): ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+
+    def deposit(self, amount: Decimal) -> "Wallet": ...
+
+
+class WalletRepository(ModelRepository[Wallet, WalletId]):
+    def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry)
+
+
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository) -> None:
+        self.wallets = wallets
+
+    def perform(self, params: DepositParams) -> Wallet:
+        return self.plan.update(self.wallets.get(params.wallet_id).deposit(params.amount))
+```
+
+Four kinds of thing, and each takes what it needs through `__init__`. That is the only contract
+the wiring below has to satisfy: **construct them in dependency order and hand each one its
+collaborators.** There is nothing else a container would have been doing for you.
 
 ## 1. Settings
 
@@ -214,7 +249,7 @@ The jobs pool default is 8, not 3, for a reason worth repeating: a job body hold
 connection starves the heartbeat. db-scheduler warns at startup when the pool is too small for
 the worker count - and did, while the example was being written.
 
-## What to drop
+## What changes if you skip a feature
 
 Each block above is removable on its own:
 
