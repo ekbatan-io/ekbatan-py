@@ -30,6 +30,8 @@ class Entity[ID, S: Enum = GenericState](Persistable[ID, S]):
     def is_model(self) -> bool: ...        # always False on Entity
     @property
     def is_deleted(self) -> bool: ...
+    @classmethod
+    def builder(cls) -> EntityBuilder[Self, ID, S]: ...   # override both, or they refuse
     def copy(self) -> EntityBuilder[Self, ID, S]: ...
     def next_version(self) -> Self: ...
 ```
@@ -131,6 +133,19 @@ page is shorter: there is no event list and there are no timestamps to take part
 `id`, `state`, `version`, `with_initial_version()`, `increase_version()`, `copy_base(other)`
 and `set(**changes)`. `with_event` and the timestamp setters are **not** on it — so attaching an
 event to something that does not emit them is not expressible.
+
+`copy()` and `builder()` refuse until the entity overrides them, the same as on a
+[model](/reference/model/#builder-api) and for the same reason — an untyped builder is invisible
+to a checker, and there is no compile step here to make that an error:
+
+```python
+def copy(self) -> AlertBuilder:
+    return AlertBuilder().copy_base(self)
+```
+
+The refusal is per route and at the call, so an entity that is only ever built through a factory
+like `Alert.create(...)` and never copied needs neither override. `EntityBuilder(Alert)` stays
+reachable by name.
 
 ## See also
 

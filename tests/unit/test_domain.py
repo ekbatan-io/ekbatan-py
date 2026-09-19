@@ -10,12 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+from typing import Self
 from uuid import UUID, uuid4
 
 import pytest
 
-from ekbatan.domain import Entity, GenericState, Model
-from ekbatan.errors import ValidationError
+from ekbatan.domain import Entity, EntityBuilder, GenericState, Model, ModelBuilder
+from ekbatan.errors import EkbatanError, ValidationError
 from fixtures.domain import (
     NOW,
     Notification,
@@ -117,7 +118,11 @@ def test_an_entity_has_a_builder_too_and_no_timestamps():
         transfer_id: UUID
 
     step = TransferStep(id=uuid4(), state=Step.COMPLETE, transfer_id=uuid4())
-    moved = step.copy().state(Step.REFUND).increase_version().build()
+    # Defined inside a test, so there is nowhere to put a generated builder. `EntityBuilder`
+    # by name is the escape hatch `copy()` names when it refuses.
+    moved = (
+        EntityBuilder(TransferStep).copy_base(step).state(Step.REFUND).increase_version().build()
+    )
 
     assert moved.state is Step.REFUND
     assert moved.version == 2
@@ -283,7 +288,7 @@ def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():
         aliases=("main", "eu"),
         created_date=NOW,
     )
-    changed = wallet.copy().balance(Decimal("150.00")).build()
+    changed = ModelBuilder(ShardedWallet).copy_base(wallet).balance(Decimal("150.00")).build()
 
     assert changed.balance == Decimal("150.00")
     assert changed.aliases == ("main", "eu"), (
@@ -439,3 +444,50 @@ def test_is_model_separates_the_two_shapes():
         kind="email",
         recipient="someone@example.com",
     ).is_model
+
+
+# -- the builder a model hands back --------------------------------------------------------------
+#
+# Java's annotation processor runs on every compile, so `copy()` there returns a generated
+# builder or the class does not compile. There is no compile step here, so the refusal is at
+# the call. Generated or hand-written makes no difference: what is required is a builder a type
+# checker can read, and `ModelBuilder(X)` by name is the deliberate way out.
+
+
+def test_a_model_without_a_typed_builder_refuses_both_routes():
+    @dataclass(frozen=True, kw_only=True)
+    class Bare(Model[UUID, WalletState]):
+        note: str
+
+    row = Bare(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
+
+    for call in (lambda: row.copy(), lambda: Bare.builder()):
+        with pytest.raises(EkbatanError, match="needs a typed builder"):
+            call()
+
+
+def test_a_hand_written_builder_satisfies_it_as_well_as_a_generated_one():
+    @dataclass(frozen=True, kw_only=True)
+    class ByHand(Model[UUID, WalletState]):
+        note: str
+
+        def copy(self) -> NoteBuilder:
+            return NoteBuilder().copy_base(self)
+
+    class NoteBuilder(ModelBuilder[ByHand, UUID, WalletState]):
+        builds = ByHand
+
+        def note(self, value: str) -> Self:
+            return self.set(note=value)
+
+    row = ByHand(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
+    assert row.copy().note("y").build().note == "y"
+
+
+def test_the_escape_hatch_the_refusal_names_actually_works():
+    @dataclass(frozen=True, kw_only=True)
+    class Inline(Model[UUID, WalletState]):
+        note: str
+
+    row = Inline(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
+    assert ModelBuilder(Inline).copy_base(row).note("y").build().note == "y"

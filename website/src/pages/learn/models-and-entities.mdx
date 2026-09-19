@@ -215,7 +215,17 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
 - Validation. `deposit()` raising on a non-positive amount is business logic, not boilerplate.
 - Business methods, and the events they attach.
 - Factory methods like `Wallet.open(...)` that set up a fresh aggregate and its first event.
-- `copy()`, which the base already provides.
+- The two one-line overrides that point `copy()` and `builder()` at it. The generator writes a
+  separate file and never edits your model, so those stay yours:
+
+  ```python
+  def copy(self) -> WalletBuilder:
+      return WalletBuilder().copy_base(self)
+
+  @classmethod
+  def builder(cls) -> WalletBuilder:
+      return WalletBuilder()
+  ```
 - Any conditional default or computed field. If a builder needs one, write that builder by hand;
   the generator will not fight you for the name.
 
@@ -234,9 +244,26 @@ regenerates into memory, compares, and fails `make lint` on a builder that is mi
 its model. A builder without the generator's header is taken as hand-written, and only its
 existence is checked.
 
-Nothing at runtime depends on the generated file. Delete it and the application still works —
-you lose the checking, not the behaviour, which is the opposite of Java's arrangement, where the
-builder *is* how a model is constructed and a missing annotation processor is a compile error.
+**A model must hand back a typed builder.** `copy()` and `builder()` on the base refuse until
+the model overrides them:
+
+```
+Wallet.copy() needs a typed builder, and Wallet has not overridden it.
+  generated   python -m ekbatan.codegen myapp.model --out <pkg>/builders.py
+  by hand     class WalletBuilder(ModelBuilder[Wallet, ...]): ...
+```
+
+Java's `copy()` returns a generated builder or the class does not compile. There is no compile
+step here, so the refusal is **per route and at the call** — a model that only ever calls
+`copy()` needs only that override, and an entity built solely through a factory like
+`Alert.create(...)` and never copied needs neither.
+
+**Generated or hand-written makes no difference** — what is required is a builder a checker can
+read, and writing one by hand is better where a setter needs a conditional default or a computed
+field. `ModelBuilder(X)` is still reachable by name, for a model defined inside a test with
+nowhere to put a builder. What is closed is reaching the untyped builder *through a model*.
+
+`evolve()` is unaffected, and is still the right call for a one-field change.
 
 ## Soft deletion
 

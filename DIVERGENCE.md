@@ -135,9 +135,9 @@ its base class and Jackson serialises everything public. `ActionEvent` - which i
 contract - describes the payload as "raw JSON" for the consumer to deserialise as it likes, and
 reads `modelId` from the column.
 
-## The generated builder is optional here and load-bearing in Java
+## A typed builder is required in both ports, for different reasons
 
-> **chosen** - both ports generate a builder; what the generation *buys* differs, and a runtime builder that works with nothing generated is an addition. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **chosen** - both ports require a builder a checker can read; what the *generation* buys differs, and accepting a hand-written one is an addition. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 This section used to say "no builder is generated", which was true when it was written on
 3 September and false on 4 September, when `ekbatan.codegen` landed. It went a year unread. The
@@ -184,8 +184,8 @@ Java's processor runs on every compile, so its builder cannot be stale or missin
 is generated once and committed - friendlier, since there is no build step and the output is
 readable - and that leaves two failures Java does not have:
 
-- **Missing.** `copy()` falls back to the runtime builder and nothing complains. You have
-  quietly lost the checking the file existed to provide.
+- **Missing.** `copy()` used to fall back to the runtime builder and nothing complained - the
+  checking the file existed to provide was quietly gone. Closed by the first guard below.
 - **Stale.** A model gains a field and the builder does not. The setter call is **not** caught -
   `__getattr__` accepts any name - and `build()` then fails at runtime if the new field is
   required, or silently takes the default if it is not.
@@ -193,10 +193,30 @@ readable - and that leaves two failures Java does not have:
 `codegen`'s own docstring claimed a stale builder was "a type error rather than a silent wrong
 answer". Measured: it is a *runtime* error, and only for a required field.
 
-`scripts/check-builders.py` restores the guarantee, in `make lint`: it regenerates into memory
-and compares, so a missing or stale builder fails where `javac` would. A builder without the
-generator's header is taken as hand-written - the website tells you to write one when a field
-needs a conditional default - and only its existence is checked.
+Two guards restore it, because a lint check a developer never runs is not a guarantee:
+
+**`copy()` and `builder()` refuse** unless the model overrides them (`EKB-0196`). Java's
+`copy()` returns a generated builder or the class does not compile; there is no compile step
+here, so the refusal is at the call, with the message naming both ways to satisfy it:
+
+```
+Wallet.copy() needs a typed builder, and Wallet has not overridden it.
+  generated   python -m ekbatan.codegen myapp.model --out <pkg>/builders.py
+  by hand     class WalletBuilder(ModelBuilder[Wallet, ...]): ...
+```
+
+**Generated or hand-written makes no difference.** What is required is a builder a checker can
+read; a hand-written one does that as well, and better where a setter needs a conditional
+default. `ModelBuilder(X)` stays reachable by name - a model defined inside a test has nowhere
+to put a builder, and the framework's own internals use it - so the route that is closed is
+reaching the untyped builder *through a model*, which is the route an application takes.
+
+**`scripts/check-builders.py`** catches the other half, in `make lint`: a builder that exists
+but is behind its model. It regenerates into memory and compares. A file without the
+generator's header is taken as hand-written and only its existence is checked.
+
+`evolve()` is unaffected and is still the right call for a one-field change - it goes through
+`dataclasses.replace`, not the builder.
 
 ## `copy_base` takes every field, not only the framework's
 

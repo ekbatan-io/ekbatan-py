@@ -991,9 +991,11 @@ discipline: events are produced inside the model, staged inside an action's `per
 persisted by the framework. A balance cannot exist without the event that explains it, because
 there is no other way to change one.
 
-`copy()` returns a builder. `WalletBuilder` is generated — `python -m ekbatan.codegen` writes a
-typed one so a checker sees the field types, which is the one thing Python cannot work out for
-itself. Without it `copy()` still works; you just lose the checking.
+`copy()` returns a builder, and `Wallet` overrides it to return a `WalletBuilder` so a checker
+sees the field types — the one thing Python cannot work out for itself. The base `copy()`
+**refuses** until a model does that, so a missing builder is an error at the call rather than a
+checker quietly seeing `__getattr__`. `python -m ekbatan.codegen` writes the builder; writing
+one by hand satisfies it just as well.
 
 `balance` is `Decimal`, never `float`. It lands in a `NUMERIC` column, and a float that
 round-trips through JSON is no longer the balance.
