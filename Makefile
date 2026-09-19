@@ -82,6 +82,9 @@ lint: schema
 	# The website makes claims about this API in code a reader will copy. Checked here
 	# rather than in `npm run check`, which is the Node half and has no interpreter to ask.
 	$(UV) python website/scripts/check-api.py
+	# `docs/` is the canonical Markdown and the website renders the same knowledge. Prose
+	# written into one and never carried to the other is how the two stopped agreeing once.
+	$(UV) python scripts/docs-website-sync.py
 
 format:
 	$(UV) ruff format $(OURS)
