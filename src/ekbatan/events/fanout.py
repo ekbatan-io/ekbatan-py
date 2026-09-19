@@ -21,7 +21,7 @@ from sqlalchemy import Table, select, update
 from .._metrics import counter
 from ..clock import Clock, SystemClock, to_storage
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
-from ._across import across_shards
+from ._across import Concurrently
 from .handler import EventHandlerRegistry
 from .notification import EventNotificationState
 
@@ -52,6 +52,7 @@ class EventFanout:
         "_handlers",
         "_notifications",
         "_registry",
+        "_shards",
     )
 
     def __init__(
@@ -70,6 +71,7 @@ class EventFanout:
         self._notifications = notifications
         self._clock = clock or SystemClock()
         self._batch = batch_size
+        self._shards = Concurrently(len(registry.shards), name="ekbatan-fanout-shard")
 
     def drain_once(self) -> int:
         """One batch on every shard, the shards concurrently.
@@ -77,7 +79,11 @@ class EventFanout:
         Java forks a virtual thread per shard here and joins them. Returns how many events
         were fanned out. A single shard runs inline, with no pool.
         """
-        return sum(across_shards(self._registry.shards, self._drain_shard))
+        return sum(self._shards.run(self._registry.shards, self._drain_shard))
+
+    def close(self) -> None:
+        """Let the shard pool's threads go."""
+        self._shards.close()
 
     def drain_until_idle(self, *, limit: int = 1000) -> int:
         total = 0

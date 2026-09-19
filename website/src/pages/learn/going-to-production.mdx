@@ -33,12 +33,16 @@ one is safe with none of this.
 
 ### What is sequential here
 
-Three places where the Java port forks a virtual thread and this one does not:
+Two of the three places the Java port forks a virtual thread now fork a real one here; the
+third does not:
 
-- **fan-out across shards** — an eight-shard round takes eight batches' time, not one;
-- **dispatch** — one notification at a time, so a hundred rows is a hundred `UPDATE`s where the
-  Java port batches them into about four;
-- **the keyed-lock watchdog** — a `threading.Timer` per hold, which is a real OS thread. A
+- **fan-out across shards** — a round now drains every shard at once, one thread each. Eight
+  shards: 354 ms to 48 ms;
+- **dispatch** — a batch's handlers now run at once, one thread each, per shard. A hundred
+  notifications at 20 ms apiece: 2376 ms to 28 ms. **Your handlers therefore run concurrently**,
+  which they did not before. What is still behind is the statement count — a hundred rows is a
+  hundred `UPDATE`s where the Java port batches them into about four;
+- **the keyed-lock watchdog** — still a `threading.Timer` per hold, which is a real OS thread. A
   service holding a thousand locks holds a thousand threads.
 
 None has bitten, each fix is a pool rather than a redesign, and all three are written down in

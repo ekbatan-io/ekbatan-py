@@ -133,10 +133,14 @@ proportion to what it already has. A single shard builds no pool and runs inline
 The contract matches Java's: the whole round is submitted before any failure is raised, so one
 unreachable shard does not hold back its siblings, and results come back in shard order.
 
-**Per notification: not ported.** Within one shard a batch is still delivered in order, so a
-hundred due notifications are a hundred `UPDATE`s where Java batches them into about four. That
-half is a different trade - those handlers are application code running in process, not one
-bounded query per database - and it stays in [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).
+**Per notification: ported too.** A batch's handlers now run at once, one thread each, in a
+pool per shard bounded by the batch size - the same ceiling Java has. Measured at 20 ms per
+handler, a batch of 100 goes from 2376 ms to 28 ms. **Your handler code therefore runs
+concurrently with its siblings**, which it did not before; Java's always has.
+
+What is still behind is the **statement count**: a hundred rows is a hundred `UPDATE`s where
+Java buckets them into about four. That is not about threads, and it stays in
+[SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).
 ## Blocking is not free under asyncio
 
 This is the one that will actually hurt you.

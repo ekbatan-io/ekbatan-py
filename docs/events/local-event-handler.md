@@ -253,20 +253,36 @@ Each round:
 Backoff is capped exponential: `30s x 2^(attempts-1)`, capped at 5 minutes. So 30s, 1m, 2m, 4m,
 then 5m for ever, until the 7-day retention window closes.
 
-### This half is sequential, where Java is parallel
+### This half is parallel now too; the statement count is not
 
 Java invokes handlers **in parallel on virtual threads** and commits the outcomes in about four
-batched `UPDATE`s. Here a batch is delivered **one notification at a time**, and a hundred rows
-is a hundred `UPDATE`s. Fan-out is the same trade: Java forks a thread per shard, this visits
-them in turn.
+batched `UPDATE`s. Two halves, and only one of them ported.
 
-It has not bitten - the rounds are short because the work per round is one bounded batch - and
-the fix is a pool rather than a redesign. It is a real step down from Java and is recorded in
+**Handlers now run in parallel** — one thread per notification, per shard, bounded by
+`handling_batch_size` exactly as Java is bounded by its own batch size. There is no setting of
+its own, because Java has none. Measured with a handler modelled as 20 ms of waiting:
+
+| batch | in series | pooled | speed-up |
+| --- | --- | --- | --- |
+| 1 | 24 ms | 25 ms | 0.9x |
+| 10 | 234 ms | 28 ms | 8.3x |
+| 50 | 1142 ms | 27 ms | 41.9x |
+| 100 | 2376 ms | 28 ms | 83.9x |
+
+A single notification is delivered inline, on no thread at all.
+
+**Your handler now runs concurrently with its siblings.** It did not before. If yours keeps
+state between calls, or touches something that is not safe to share, that is the thing to look
+at — and it is the arrangement Java has always had.
+
+**The outcomes are still one `UPDATE` per row**, so a hundred rows is a hundred statements
+against Java's four. That half is not about threads; it is bucketing outcomes by state and
+attempt count before writing, and it is still owed. See
 [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 
-One consequence in your favour: **handlers subscribed to the same event do not run concurrently
-here.** Do not rely on that. Java runs them in parallel, and a handler written against this
-port's ordering will not survive the other one.
+This page used to say the opposite - that handlers subscribed to the same event never run
+concurrently here, and not to rely on it. They do now, as Java's always have. If you took the
+advice and did not rely on it, nothing changes for you.
 
 ## Handlers must be idempotent
 

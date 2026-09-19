@@ -844,19 +844,38 @@ are behaviour rather than assertion sugar. One addition - `VirtualClock(instant)
 at that instant, where Java's constructor takes a real clock and starts running. `VirtualClock()`
 still means what Java's does.
 
-## Dispatch delivers one notification at a time
+## Dispatch invokes a batch in parallel; its outcomes are still one UPDATE each
 
-> **forced** - No virtual threads. Recorded as a shortcoming, not a preference.
+> **forced** - the handler half ported in `EKB-0204`; the statement-count half has not. What is left is not about threads at all.
 
 Java invokes a batch's handlers in parallel on virtual threads and then commits the outcomes in
 one batch `UPDATE` per bucket - one for the successes, one for the pre-flight expiries, one for
-the post-failure expiries, and one per distinct `attempts` value among the retries. Here the
-batch is delivered in order and each outcome is a row in one transaction.
+the post-failure expiries, and one per distinct `attempts` value among the retries. Two halves,
+and only one of them ported.
 
-Both are safe: an outcome is recorded for every row or for none, and a delivery that dies takes
-nobody else's result with it. What differs is throughput on a large backlog with slow handlers,
-and statement count - a hundred rows is a hundred `UPDATE`s here and about four there. Neither
-has bitten yet, and the fix if it does is a thread pool plus bucketed updates, not a redesign.
+**The handlers now run in parallel** (`EKB-0204`), one thread per notification, bounded by the
+batch size exactly as Java's is - Java caps nothing of its own either, so there is no setting
+here. The pool is per shard, which is where Java's executor lives too, and it is built once and
+reused: a round happens every poll delay forever, and a `ThreadPoolExecutor` grows lazily, so
+declaring one the width of a batch costs nothing until a batch is actually that wide. Measured,
+a handler modelled as 20 ms of waiting:
+
+| batch | in series | pooled | speed-up | threads |
+|---|---|---|---|---|
+| 1 | 24 ms | 25 ms | 0.9x | 0 |
+| 10 | 234 ms | 28 ms | 8.3x | 10 |
+| 50 | 1142 ms | 27 ms | 41.9x | 50 |
+| 100 | 2376 ms | 28 ms | 83.9x | 100 |
+
+A single notification is delivered inline, on no thread at all. That threads earn their keep
+here at all is because a handler is application code waiting on something almost every time.
+
+**This changed a promise.** Handler code used to be guaranteed to run alone and now does not.
+Java's never had that guarantee, so Java's users never had it to lose; ours did.
+
+**The outcomes are still one `UPDATE` per row** - a hundred rows is a hundred statements here
+and about four there. That half is not about threads and is not forced by anything: it is
+bucketing the outcomes by state and attempt count before writing. Still owed.
 
 One behaviour does differ. Java treats "no handler is registered under this name" as a delivery
 failure, increments `attempts`, and lets the row expire through the retention window. Here the

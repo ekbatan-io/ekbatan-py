@@ -30,7 +30,7 @@ Each row links to where the detail lives. Nothing is recorded only here.
 | | Java | Here |
 | --- | --- | --- |
 | ~~**Fan-out across shards**~~ | one virtual thread per shard, in parallel | **Closed in `EKB-0203`.** Both event jobs drain their shards through a thread pool, one thread per shard, with no setting - Java has none either. Measured at one 40 ms round trip per shard: eight shards 354 ms -> 48 ms, thirty-two 1405 ms -> 47 ms. A single shard still runs inline |
-| **Event dispatch** | handlers invoked in parallel, outcomes committed in ~4 batched `UPDATE`s | one notification at a time; a hundred rows is a hundred `UPDATE`s |
+| **Event dispatch** | handlers invoked in parallel, outcomes committed in ~4 batched `UPDATE`s | **Handlers now parallel too** (`EKB-0204`) - one thread per notification, per shard, bounded by the batch size as Java's is. Measured at 20 ms per handler: a batch of 100 goes from 2376 ms to 28 ms. What remains is the statement count: a hundred rows is still a hundred `UPDATE`s against about four |
 | **Keyed-lock watchdog** | `Thread.ofVirtual()` per hold - effectively free | `threading.Timer`, a real OS thread. A thousand held locks is a thousand threads |
 | **Job workers** | unbounded virtual threads | a fixed `DaemonThreadPool`. `JobRegistryBuilder.workers(n)` sizes it - a knob Java needs no equivalent of |
 | **Blocking calls** | free, on virtual threads | **not free under asyncio.** Measured: a 0.5s call from an `async def` handler let a heartbeat tick 5 times where a free loop manages ~55. Safe under threaded servers and under FastAPI's plain `def` endpoints; an `async def` endpoint needs `asyncio.to_thread` |

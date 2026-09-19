@@ -19,20 +19,22 @@ import time
 
 import pytest
 
-from ekbatan.events._across import across_shards
+from ekbatan.events._across import Concurrently
 
 
 def test_a_single_shard_runs_inline_with_no_thread_at_all():
     """The unsharded case, which is most of them. A pool here would be pure cost."""
     ran_on = []
 
-    across_shards([0], lambda shard: ran_on.append(threading.current_thread().name))
+    Concurrently(8, name="test").run(
+        [0], lambda shard: ran_on.append(threading.current_thread().name)
+    )
 
     assert ran_on == [threading.current_thread().name]
 
 
 def test_no_shards_at_all_is_not_an_error():
-    assert across_shards([], lambda shard: 1) == []
+    assert Concurrently(8, name="test").run([], lambda shard: 1) == []
 
 
 def test_shards_run_at_the_same_time_rather_than_one_after_another():
@@ -40,7 +42,9 @@ def test_shards_run_at_the_same_time_rather_than_one_after_another():
     the barrier is what proves they are genuinely concurrent rather than merely fast."""
     together = threading.Barrier(4, timeout=5)
 
-    result = across_shards(list(range(4)), lambda shard: together.wait() is not None)
+    result = Concurrently(8, name="test").run(
+        list(range(4)), lambda shard: together.wait() is not None
+    )
 
     assert len(result) == 4
 
@@ -50,7 +54,7 @@ def test_results_come_back_in_shard_order_not_completion_order():
         time.sleep(0.02 if shard == 0 else 0)  # shard 0 finishes last
         return shard
 
-    assert across_shards([0, 1, 2, 3], work) == [0, 1, 2, 3]
+    assert Concurrently(8, name="test").run([0, 1, 2, 3], work) == [0, 1, 2, 3]
 
 
 def test_one_shard_failing_does_not_hold_back_the_rest_of_the_round():
@@ -65,18 +69,37 @@ def test_one_shard_failing_does_not_hold_back_the_rest_of_the_round():
         return shard
 
     with pytest.raises(RuntimeError, match="shard 1 is unreachable"):
-        across_shards([0, 1, 2, 3], work)
+        Concurrently(8, name="test").run([0, 1, 2, 3], work)
 
     assert sorted(visited) == [0, 1, 2, 3], "every shard was still given its turn"
 
 
-def test_the_pool_is_never_wider_than_the_shards_it_has():
-    """One thread per shard, as Java forks one virtual thread per shard - and not one more."""
-    names = set()
+def test_the_pool_grows_to_the_work_and_no_further():
+    """The size is a ceiling, not a reservation: a pool of 8 given 3 items makes 3 threads.
 
-    across_shards(
+    Which is why it can be built once, at the width of a full batch, and left alone. A quiet
+    round costs nothing for the capacity it does not use."""
+    names = set()
+    pool = Concurrently(8, name="test")
+
+    pool.run(
         list(range(3)),
         lambda shard: names.add(threading.current_thread().name) or time.sleep(0.01),
     )
 
     assert len(names) <= 3
+    pool.close()
+
+
+def test_the_same_pool_serves_round_after_round():
+    """A round happens every poll delay, forever. Building a pool per round would pay for the
+    threads again on each one."""
+    pool = Concurrently(4, name="test")
+    seen: set[str] = set()
+
+    for _ in range(5):
+        pool.run(list(range(4)), lambda i: seen.add(threading.current_thread().name))
+
+    assert len(seen) <= 4, "five rounds, at most four threads between them"
+    pool.close()
+    pool.close()  # and closing twice is not an error

@@ -1,14 +1,19 @@
-"""Running one bounded batch on every shard, at the same time rather than one after another.
+"""Doing a round's work at the same time rather than one item after another.
 
-Java forks a virtual thread per shard in both event jobs and joins them. This does the same
-with a thread pool, one thread per shard, and takes no configuration - because Java takes none
-either, and a knob this port has and that one does not is a divergence bought for nothing.
+Java forks a virtual thread per item in both event jobs - one per shard in a round, and one
+per notification in a batch - and joins them. This is the same shape with the only threads
+CPython has, and it takes no configuration, because Java takes none either: a knob this port
+has and that one does not is a divergence bought for nothing.
 
-The work is a database round trip per shard against a *different* database, so it is I/O the
-whole way down: the GIL is released for all of it, and this is one of the cases where threads
-in CPython buy real wall-clock. A deployment with many shards already holds a connection pool
-per shard, so a thread per shard for the length of a round is in proportion to what it already
-has - the same judgement Java makes by forking one virtual thread each.
+**The pool is built once and reused.** A round happens every poll delay, forever, and building
+a pool each time would pay for the threads again on every one. A `ThreadPoolExecutor` also
+grows lazily - declaring one of a hundred costs nothing until a hundred things are actually
+submitted, and a quiet round of three creates three threads - so the size is a ceiling rather
+than a reservation, and there is no reason to size it to the work in front of you.
+
+Threads earn their keep here for the reason they usually do not in CPython: a shard's batch is
+a round trip to a *different* database, and a handler is application code that is almost always
+waiting on something. The GIL is released for both.
 """
 
 from __future__ import annotations
@@ -20,31 +25,52 @@ from concurrent.futures import ThreadPoolExecutor
 LOG = logging.getLogger("ekbatan.events")
 
 
-def across_shards[S, T](shards: Sequence[S], work: Callable[[S], T]) -> list[T]:
-    """``work`` on every shard, concurrently, with the results in ``shards`` order.
+class Concurrently:
+    """A lazily built, reused pool, and a way to run one round through it."""
 
-    Runs inline - no pool, no thread - for a single shard, which is the unsharded case and
-    most deployments.
+    __slots__ = ("_name", "_pool", "_size")
 
-    Every shard is started before any failure is raised, as Java's version does: it submits
-    the whole round and only then walks the futures. A shard that fails therefore does not
-    hold back the rest of the round, and the first failure in shard order is what reaches the
-    caller.
-    """
-    if len(shards) <= 1:
-        return [work(shard) for shard in shards]
+    def __init__(self, size: int, *, name: str) -> None:
+        self._size = max(size, 1)
+        self._name = name
+        self._pool: ThreadPoolExecutor | None = None
 
-    with ThreadPoolExecutor(max_workers=len(shards), thread_name_prefix="ekbatan-shard") as pool:
-        futures = [pool.submit(work, shard) for shard in shards]
+    def run[I, T](self, items: Sequence[I], work: Callable[[I], T]) -> list[T]:
+        """``work`` on every item, concurrently, with the results in ``items`` order.
+
+        Runs inline - no pool, no thread - for a single item. That is the unsharded round and
+        the quiet batch, which between them are most of what a deployment does.
+
+        Every item is started before any failure is raised, as Java's version does: it submits
+        the whole round and only then walks the futures. One item that fails therefore does not
+        hold back the rest, and the first failure in order is what reaches the caller.
+        """
+        if len(items) <= 1:
+            return [work(item) for item in items]
+
+        pool = self._ensure()
+        futures = [pool.submit(work, item) for item in items]
         results: list[T] = []
         failure: BaseException | None = None
-        for shard, future in zip(shards, futures, strict=True):
+        for item, future in zip(items, futures, strict=True):
             try:
                 results.append(future.result())
             except BaseException as error:  # re-raised below, once the round has finished
-                LOG.warning("shard %s failed this round: %s", shard, error)
+                LOG.warning("%s: %r failed this round: %s", self._name, item, error)
                 if failure is None:
                     failure = error
         if failure is not None:
             raise failure
         return results
+
+    def _ensure(self) -> ThreadPoolExecutor:
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(max_workers=self._size, thread_name_prefix=self._name)
+        return self._pool
+
+    def close(self) -> None:
+        """Let the threads go. Safe to call twice, and safe never to call at all - an
+        executor left open is joined at interpreter exit."""
+        if self._pool is not None:
+            self._pool.shutdown(wait=True)
+            self._pool = None

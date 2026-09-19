@@ -28,7 +28,7 @@ from ..clock import Clock, SystemClock, to_storage
 from ..domain import ModelEvent
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
-from ._across import across_shards
+from ._across import Concurrently
 from .handler import EventEnvelope, EventHandler, EventHandlerRegistry
 from .notification import EventNotificationState, backoff
 
@@ -76,11 +76,13 @@ class EventDispatch:
     __slots__ = (
         "_batch",
         "_clock",
+        "_delivery",
         "_handlers",
         "_max_backoff",
         "_notifications",
         "_registry",
         "_retention",
+        "_shards",
     )
 
     def __init__(
@@ -101,6 +103,13 @@ class EventDispatch:
         self._batch = batch_size
         self._retention = retention
         self._max_backoff = max_backoff
+        self._shards = Concurrently(len(registry.shards), name="ekbatan-dispatch-shard")
+        # One pool per shard, each the width of a batch - which is the shape Java has, where
+        # the executor is created inside each shard's batch rather than around the round.
+        self._delivery = {
+            shard: Concurrently(batch_size, name=f"ekbatan-handler-{shard}")
+            for shard in registry.shards
+        }
 
     def drain_once(self) -> int:
         """One batch on every shard, the shards concurrently.
@@ -109,7 +118,13 @@ class EventDispatch:
         reached a new state. Within one shard a batch is still delivered in order - that
         half is its own divergence, under "Dispatch delivers one notification at a time".
         """
-        return sum(across_shards(self._registry.shards, self._drain_shard))
+        return sum(self._shards.run(self._registry.shards, self._drain_shard))
+
+    def close(self) -> None:
+        """Let the shard and handler pools' threads go."""
+        self._shards.close()
+        for pool in self._delivery.values():
+            pool.close()
 
     def drain_until_idle(self, *, limit: int = 1000) -> int:
         total = 0
@@ -146,7 +161,10 @@ class EventDispatch:
         if not due:
             return 0
 
-        outcomes = [self._deliver(row) for row in due]
+        # Java forks a virtual thread per notification here and joins them. A handler is
+        # application code that is almost always waiting on something, so this is time a
+        # batch spends blocked rather than computing - and the GIL is released for it.
+        outcomes = self._delivery[shard].run(due, self._deliver)
 
         # Written after the whole batch has been attempted, in one transaction. Every outcome
         # is recorded or none is - and no single delivery can take the others' results with it.
