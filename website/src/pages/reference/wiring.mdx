@@ -65,10 +65,11 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
 
 
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         return self.plan.update(self.wallets.get(params.wallet_id).deposit(params.amount))
 ```
 
@@ -170,10 +171,10 @@ executor = ActionExecutor(
     repositories=repositories,
     actions=(
         ActionRegistry.builder()
-        .with_action(OpenWalletAction())
-        .with_action(DepositMoneyAction(wallets))
-        .with_action(CloseWalletAction(wallets))
-        .with_action(RaiseAlertAction())
+        .with_action(OpenWalletAction(clock))
+        .with_action(DepositMoneyAction(wallets, clock))
+        .with_action(CloseWalletAction(wallets, clock))
+        .with_action(RaiseAlertAction(clock))
         .build()
     ),
     events=EVENTS,

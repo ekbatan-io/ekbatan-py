@@ -153,7 +153,7 @@ def test_concurrent_units_of_work_all_commit_and_none_interleave(registry, execu
 
     def create(i: int):
         return executor.execute(
-            CreateWalletAction(),
+            CreateWalletAction(executor.clock),
             CreateWalletParams(
                 owner_id=uuid4(), currency="EUR", initial_balance=Decimal(f"{i}.00")
             ),
@@ -194,7 +194,7 @@ def test_concurrent_updates_to_one_row_leave_exactly_one_winner_per_version(
     def deposit(_i: int) -> str:
         try:
             executor.execute(
-                DepositMoneyAction(wallets),
+                DepositMoneyAction(wallets, executor.clock),
                 DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="a@b"),
             )
             return "ok"

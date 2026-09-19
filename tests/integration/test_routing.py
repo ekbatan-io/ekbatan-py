@@ -256,11 +256,11 @@ class OpenWalletParams:
     currency: str
 
 
-def _open_wallet(currency):
+def _open_wallet(currency, clock):
     from ekbatan.action import Action
 
     class OpenWalletAction(Action[OpenWalletParams, Wallet]):
-        def perform(self, params):
+        def perform(self, principal: str | None, params):
             return self.plan.add(
                 Wallet.open(
                     id=WalletId.random(),
@@ -270,7 +270,7 @@ def _open_wallet(currency):
                 )
             )
 
-    return OpenWalletAction(), OpenWalletParams(currency=currency)
+    return OpenWalletAction(clock), OpenWalletParams(currency=currency)
 
 
 def test_a_strategy_that_cannot_route_by_id_alone_still_runs(sharded_registry, clock, outbox):
@@ -278,7 +278,7 @@ def test_a_strategy_that_cannot_route_by_id_alone_still_runs(sharded_registry, c
     repo = Repository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
     executor = _executor_over(sharded_registry, repo, clock)
 
-    action, params = _open_wallet("MXN")
+    action, params = _open_wallet("MXN", clock)
     wallet = executor.execute(action, params)
 
     assert repo.find_where(WALLETS.c.currency == "MXN", shard=MEXICO)[0].id == wallet.id
@@ -290,7 +290,7 @@ def test_state_and_its_events_land_on_one_shard(sharded_registry, clock):
     repo = Repository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
     executor = _executor_over(sharded_registry, repo, clock)
 
-    action, params = _open_wallet("MXN")
+    action, params = _open_wallet("MXN", clock)
     executor.execute(action, params)
 
     rows = {

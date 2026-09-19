@@ -143,10 +143,11 @@ What you add here are the questions your application actually asks:
 
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
@@ -166,7 +167,7 @@ executor = ActionExecutor(
     namespace="com.example.wallets",
     registry=registry,
     repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
-    actions=ActionRegistry.builder().with_action(DepositMoneyAction(wallets)).build(),
+    actions=ActionRegistry.builder().with_action(DepositMoneyAction(wallets, clock)).build(),
     events=EVENTS,
 )
 ```
@@ -187,7 +188,7 @@ One transaction. The wallet row, its version bump and the outbox row, or none of
 An action's logic needs no database at all:
 
 ```python
-staged = run_action(DepositMoneyAction(wallets), DepositParams(wallet_id=..., amount=Decimal("50.00")))
+staged = run_action(DepositMoneyAction(wallets, clock), DepositParams(wallet_id=..., amount=Decimal("50.00")))
 
 assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")

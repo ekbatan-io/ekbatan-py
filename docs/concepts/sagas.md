@@ -84,7 +84,7 @@ Delivery is at-least-once, so a handler can run twice. The example's shape is wo
 exactly:
 
 ```python
-def perform(self, params: CompleteTransferParams) -> Wallet | None:
+def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.
@@ -185,7 +185,7 @@ params to know what to do next. Put the identifiers and the amount in the event.
 The example's shape is worth copying exactly:
 
 ```python
-def perform(self, params: CompleteTransferParams) -> Wallet | None:
+def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.

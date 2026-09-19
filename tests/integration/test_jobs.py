@@ -33,7 +33,7 @@ SCHEDULER_EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 @pytest.fixture
 def wallet(executor):
     return executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")),
     )
 

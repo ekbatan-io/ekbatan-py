@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from ekbatan import Action, Repository
+from ekbatan import Action, Clock, Repository
 from ekbatan.errors import ValidationError
 
 from .domain import Notification, NotificationId, Wallet, WalletId
@@ -53,7 +53,7 @@ class NotifyParams:
 
 
 class CreateWalletAction(Action[CreateWalletParams, Wallet]):
-    def perform(self, params: CreateWalletParams) -> Wallet:
+    def perform(self, principal: str | None, params: CreateWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
                 id=params.wallet_id or WalletId.random(),
@@ -65,19 +65,21 @@ class CreateWalletAction(Action[CreateWalletParams, Wallet]):
 
 
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
+    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
 class CloseWalletAction(Action[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
+    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: WalletIdParams) -> Wallet:
+    def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         closed = wallet.close()
         # An already-closed wallet comes back unchanged, so there is nothing to stage - and
@@ -89,10 +91,11 @@ class TransferMoneyAction(Action[TransferParams, tuple[Wallet, Wallet]]):
     """Two models, one transaction. Both balances move or neither does, and nothing in here
     arranges that."""
 
-    def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
+    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: TransferParams) -> tuple[Wallet, Wallet]:
+    def perform(self, principal: str | None, params: TransferParams) -> tuple[Wallet, Wallet]:
         source = self.wallets.get(params.from_wallet_id)
         destination = self.wallets.get(params.to_wallet_id)
         if source.currency != destination.currency:
@@ -108,7 +111,7 @@ class TransferMoneyAction(Action[TransferParams, tuple[Wallet, Wallet]]):
 class NotifyAction(Action[NotifyParams, Notification]):
     """Writes an entity. Emits nothing - and is still recorded, as one sentinel row."""
 
-    def perform(self, params: NotifyParams) -> Notification:
+    def perform(self, principal: str | None, params: NotifyParams) -> Notification:
         return self.plan.add(
             Notification.create(
                 id=NotificationId.random(),
@@ -127,10 +130,11 @@ class DepositThenFailAction(Action[DepositParams, Wallet]):
     other way.
     """
 
-    def __init__(self, wallets: Repository[Wallet, WalletId]) -> None:
+    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         self.plan.update(wallet.deposit(params.amount))
         raise ValidationError("changed my mind")

@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from ekbatan import (
     Action,
     ActionExecutor,
+    Clock,
     ExecutionConfiguration,
     Repository,
     ShardIdentifier,
@@ -36,12 +37,13 @@ MEXICO = ShardIdentifier(1, 0)
 class FlakyDepositAction(Action[DepositParams, Wallet]):
     """Fails the first attempt the way a lost version race does, then behaves."""
 
-    def __init__(self, wallets: Repository[Wallet, UUID], failures: int = 1) -> None:
+    def __init__(self, wallets: Repository[Wallet, UUID], clock: Clock, failures: int = 1) -> None:
+        super().__init__(clock)
         self.wallets = wallets
         self.remaining = failures
         self.attempts = 0
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         self.attempts += 1
         wallet = self.wallets.get(params.wallet_id)
         staged = self.plan.update(wallet.deposit(params.amount))
@@ -53,14 +55,14 @@ class FlakyDepositAction(Action[DepositParams, Wallet]):
 
 def _new_wallet(executor, balance="0.00"):
     return executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
 
 
 def test_a_conflict_is_retried_once_by_default(executor, wallets, outbox):
     wallet = _new_wallet(executor)
-    action = FlakyDepositAction(wallets)
+    action = FlakyDepositAction(wallets, executor.clock)
 
     executor.execute(
         action, DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x")
@@ -73,7 +75,7 @@ def test_a_conflict_is_retried_once_by_default(executor, wallets, outbox):
 def test_a_retry_starts_from_an_empty_plan(executor, wallets, outbox):
     wallet = _new_wallet(executor)
     executor.execute(
-        FlakyDepositAction(wallets),
+        FlakyDepositAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x"),
     )
 
@@ -86,7 +88,7 @@ def test_a_retry_starts_from_an_empty_plan(executor, wallets, outbox):
 
 def test_retries_can_be_switched_off(executor, wallets, outbox):
     wallet = _new_wallet(executor)
-    action = FlakyDepositAction(wallets)
+    action = FlakyDepositAction(wallets, executor.clock)
     before = len(outbox())
 
     with pytest.raises(StaleRecordError):
@@ -108,7 +110,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     executor, wallets = sharded
 
     executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(
             wallet_id=WalletId.generate(GLOBAL),
             owner_id=uuid4(),
@@ -117,7 +119,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
         ),
     )
     there = executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(
             wallet_id=WalletId.generate(MEXICO),
             owner_id=uuid4(),
@@ -137,7 +139,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
 
 
 class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
-    def perform(self, params: None) -> tuple[Wallet, Wallet]:
+    def perform(self, principal: str | None, params: None) -> tuple[Wallet, Wallet]:
         return (
             self.plan.add(
                 Wallet.open(
@@ -164,7 +166,7 @@ def test_a_unit_of_work_spanning_shards_is_refused_before_anything_is_written(
     executor, wallets = sharded
 
     with pytest.raises(CrossShardError, match="no cross-shard transaction"):
-        executor.execute(CreateOnBothShardsAction(), None)
+        executor.execute(CreateOnBothShardsAction(executor.clock), None)
 
     assert wallets.count(shard=GLOBAL) == 0
     assert wallets.count(shard=MEXICO) == 0
@@ -176,7 +178,9 @@ def test_crossing_shards_can_be_opted_into(sharded, sharded_registry):
     executor, wallets = sharded
 
     executor.execute(
-        CreateOnBothShardsAction(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+        CreateOnBothShardsAction(executor.clock),
+        None,
+        config=ExecutionConfiguration(allow_cross_shard=True),
     )
 
     assert wallets.count(shard=GLOBAL) == 1
@@ -222,7 +226,7 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
     Impostor.__name__ = "WalletMoneyDepositedEvent"
 
     class EmitColliding(Action[None, None]):
-        def perform(self, params: None) -> None:
+        def perform(self, principal: str | None, params: None) -> None:
             wallet = wallets.all()[0]
             self.plan.update(
                 wallet.evolve(
@@ -237,7 +241,7 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
     before = len(outbox())
 
     with pytest.raises(ValidationError, match="collision"):
-        executor.execute(EmitColliding(), None)
+        executor.execute(EmitColliding(executor.clock), None)
 
     assert len(outbox()) == before
 
@@ -252,7 +256,7 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
     )
 
     class WritesAnUnknownThing(Action[None, None]):
-        def perform(self, params: None) -> None:
+        def perform(self, principal: str | None, params: None) -> None:
             from fixtures.domain import Notification
 
             self.plan.add(
@@ -265,7 +269,7 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
             )
 
     with pytest.raises(ValidationError, match="no repository is registered for Notification"):
-        executor.execute(WritesAnUnknownThing(), None)
+        executor.execute(WritesAnUnknownThing(executor.clock), None)
 
 
 # ----------------------------------------------------------------------- extension
@@ -290,7 +294,7 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
     )
     wallet = _new_wallet(executor)
     executor.execute(
-        DepositMoneyAction(wallets),
+        DepositMoneyAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("5"), recipient="ada@x"),
     )
 
@@ -328,7 +332,9 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(KeyboardInterrupt):
         executor.execute(
-            CreateOnBothShardsAction(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+            CreateOnBothShardsAction(executor.clock),
+            None,
+            config=ExecutionConfiguration(allow_cross_shard=True),
         )
 
     assert any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
@@ -356,7 +362,9 @@ def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(RuntimeError):
         executor.execute(
-            CreateOnBothShardsAction(), None, config=ExecutionConfiguration(allow_cross_shard=True)
+            CreateOnBothShardsAction(executor.clock),
+            None,
+            config=ExecutionConfiguration(allow_cross_shard=True),
         )
 
     assert not any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
@@ -378,10 +386,11 @@ class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
     realistic shape: the second shard's write is refused by the database, not by the action.
     """
 
-    def __init__(self, wallets) -> None:
+    def __init__(self, wallets, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: StaleOnMexico) -> None:
+    def perform(self, principal: str | None, params: StaleOnMexico) -> None:
         self.plan.add(
             Wallet.open(
                 id=WalletId.generate(GLOBAL),
@@ -430,7 +439,7 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(StaleRecordError):
         executor.execute(
-            CreateOnGlobalThenFailOnMexicoAction(wallets),
+            CreateOnGlobalThenFailOnMexicoAction(wallets, executor.clock),
             StaleOnMexico(wallet_id=on_mexico.id),
             config=config,
         )

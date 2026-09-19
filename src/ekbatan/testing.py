@@ -10,8 +10,9 @@ deposit emits one event is a slow test of the wrong thing.
     assert [type(e).__name__ for e in staged.events] == ["WalletMoneyDeposited"]
 
 This binds the plan through the same mechanism the executor uses, so the action sees exactly
-the lifetime it sees in production - ``self.plan``, ``self.clock`` and ``self.principal`` all
-work, and a plan reached from a thread the action started still fails the way it would live.
+the lifetime it sees in production - ``self.plan`` works, a plan reached from a thread the
+action started still fails the way it would live, and the clock is whichever one you built the
+action with.
 
 Nothing is written and nothing is committed. When you want to know that state and events land
 together, that is a test against a database, and no amount of test-support machinery is a
@@ -25,7 +26,7 @@ from typing import Any
 
 from .action.action import Action, _Binding
 from .action.plan import ActionPlan
-from .clock import Clock, SystemClock, VirtualClock
+from .clock import Clock, SystemClock
 from .domain import Model, ModelEvent, Persistable
 
 __all__ = ["StagedWork", "run_action"]
@@ -98,15 +99,16 @@ def run_action[P, R](
     params: P,
     *,
     principal: str | None = None,
-    clock: Clock | None = None,
 ) -> StagedWork[R]:
     """Run one unit of work against a bare plan and report what it staged.
 
-    ``clock`` defaults to a fixed one, because a test asserting on a timestamp against a moving
-    clock is a test that passes on the machine it was written on.
+    The plan stamps from **the action's own clock**, which is the one you handed its
+    constructor. There is no override here for the same reason the executor refuses a second
+    clock: a plan stamping from one instant while the action reads another is the bug this
+    arrangement exists to make unwritable. Pass a ``VirtualClock`` to the action if a test
+    needs a fixed instant.
     """
-    running = clock or VirtualClock(SystemClock().now())
-    plan = ActionPlan(running)
-    with _Binding(plan, principal, running):
-        result = action.perform(params)
-    return StagedWork(result=result, plan=plan, clock=running)
+    plan = ActionPlan(action.clock)
+    with _Binding(plan):
+        result = action.perform(principal, params)
+    return StagedWork(result=result, plan=plan, clock=action.clock)

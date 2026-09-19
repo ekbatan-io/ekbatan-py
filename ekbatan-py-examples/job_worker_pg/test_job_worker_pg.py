@@ -78,10 +78,10 @@ class Harness:
             ),
             actions=(
                 ActionRegistry.builder()
-                .with_action(OpenWalletAction())
-                .with_action(DepositMoneyAction(self.wallets))
-                .with_action(CloseWalletAction(self.wallets))
-                .with_action(RaiseAlertAction())
+                .with_action(OpenWalletAction(running))
+                .with_action(DepositMoneyAction(self.wallets, running))
+                .with_action(CloseWalletAction(self.wallets, running))
+                .with_action(RaiseAlertAction(running))
                 .build()
             ),
             events=EVENTS,

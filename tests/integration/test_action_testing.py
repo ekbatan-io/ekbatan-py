@@ -9,7 +9,7 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import uuid4
 
-from ekbatan import Action, Repository, run_action
+from ekbatan import Action, Clock, Repository, run_action
 from fixtures.actions import DepositParams
 from fixtures.domain import Wallet, WalletId
 from fixtures.schema import WALLETS
@@ -22,10 +22,11 @@ def a_wallet(balance: str = "100.00") -> Wallet:
 
 
 class DepositAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallet: Wallet) -> None:
+    def __init__(self, wallet: Wallet, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallet = wallet
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         return self.plan.update(self.wallet.deposit(params.amount))
 
 
@@ -37,7 +38,7 @@ def test_nothing_reaches_a_database(registry, clock):
     stored = wallets.add(a_wallet("100.00"))
 
     staged = run_action(
-        DepositAction(stored),
+        DepositAction(stored, clock),
         DepositParams(wallet_id=stored.id, amount=Decimal("50.00"), recipient="ada@x"),
     )
 

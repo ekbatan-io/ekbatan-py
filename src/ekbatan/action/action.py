@@ -1,21 +1,27 @@
 """A unit of work.
 
-Subclass :class:`Action`, take whatever it needs in ``__init__``, and write ``perform``. The
-plan is reachable as ``self.plan`` rather than passed in, so the body reads as domain work and
-nothing else::
+Subclass :class:`Action`, take whatever it needs in ``__init__``, and write ``perform``::
 
     class DepositMoney(Action[DepositParams, Wallet]):
-        def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
+        def __init__(self, wallets: Repository[Wallet, UUID], clock: Clock) -> None:
+            super().__init__(clock)
             self.wallets = wallets
 
-        def perform(self, params: DepositParams) -> Wallet:
+        def perform(self, principal: str | None, params: DepositParams) -> Wallet:
             wallet = self.wallets.get(params.wallet_id)
             return self.plan.update(wallet.deposit(params.amount))
 
+Three per-invocation values, and the same three mechanisms Java uses for them:
+
+- **the clock** is a constructor field. Injected once, and the same object the executor holds.
+- **the principal** is a parameter of ``perform``. A helper that needs it is passed it, like
+  any other value.
+- **the plan** is ambient, because it cannot be a parameter: it has to be reachable from a
+  repository call several frames down that never mentions it.
+
 An instance is shared across every concurrent invocation, so it must hold no mutable state
-beyond what its constructor sets. The per-invocation state - the plan - is not on the instance
-at all; it lives in a context variable the executor binds, which is per-thread and per-async
-task at once.
+beyond what its constructor sets. The plan is not on the instance at all; it lives in a context
+variable the executor binds, which is per-thread and per-async-task at once.
 """
 
 from __future__ import annotations
@@ -24,15 +30,13 @@ from contextvars import ContextVar, Token
 from datetime import datetime
 from typing import Any
 
-from ..clock import Clock, SystemClock
-from ..errors import EkbatanError
+from ..clock import Clock
+from ..errors import EkbatanError, ValidationError
 from .plan import ActionPlan
 
-__all__ = ["Action", "current_clock", "current_plan", "current_principal"]
+__all__ = ["Action", "current_plan"]
 
 _plan: ContextVar[ActionPlan | None] = ContextVar("ekbatan_plan", default=None)
-_principal: ContextVar[str | None] = ContextVar("ekbatan_principal", default=None)
-_clock: ContextVar[Clock | None] = ContextVar("ekbatan_clock", default=None)
 
 
 def current_plan() -> ActionPlan:
@@ -49,24 +53,26 @@ def current_plan() -> ActionPlan:
     return plan
 
 
-def current_principal() -> str | None:
-    """Who asked for this, if anyone said."""
-    return _principal.get()
-
-
-def current_clock() -> Clock:
-    """The clock this invocation is running against.
-
-    The executor's, so a frozen clock in a test freezes the whole unit of work - the model's
-    timestamps, the outbox row's, and anything the action reads for itself. An action calling
-    ``datetime.now()`` directly is an action that cannot be tested at a fixed instant.
-    """
-    clock = _clock.get()
-    return clock if clock is not None else SystemClock()
-
-
 class Action[P, R]:
     """One unit of business work."""
+
+    __slots__ = ("clock",)
+
+    def __init__(self, clock: Clock) -> None:
+        """Take the clock the executor was built with, and nothing else time-related.
+
+        Required rather than defaulted, and the reason is the mistake it prevents: an action
+        that quietly fell back to the system clock while the executor held a frozen one would
+        stamp its own values from a different instant than the row it stages, and the test
+        that froze the clock would pass anyway - on the machine it was written on.
+        """
+        if clock is None:
+            raise ValidationError(
+                f"{type(self).__name__} was built without a clock. Pass the one the "
+                f"ActionExecutor was built with: a unit of work reading a different clock "
+                f"than the one stamping its rows cannot be tested at a fixed instant."
+            )
+        self.clock = clock
 
     @property
     def name(self) -> str:
@@ -78,20 +84,11 @@ class Action[P, R]:
     def plan(self) -> ActionPlan:
         return current_plan()
 
-    @property
-    def principal(self) -> str | None:
-        return current_principal()
-
-    @property
-    def clock(self) -> Clock:
-        """The executor's clock. Use it rather than reaching for the wall clock."""
-        return current_clock()
-
     def now(self) -> datetime:
         """Shorthand for ``self.clock.now()``."""
         return self.clock.now()
 
-    def perform(self, params: P) -> R:
+    def perform(self, principal: str | None, params: P) -> R:
         raise NotImplementedError
 
     def __repr__(self) -> str:
@@ -99,25 +96,18 @@ class Action[P, R]:
 
 
 class _Binding:
-    """Binds the per-invocation state for the duration of one ``perform``."""
+    """Binds the plan for the duration of one ``perform``."""
 
-    __slots__ = ("_clock", "_plan", "_principal", "_tokens")
+    __slots__ = ("_plan", "_token")
 
-    def __init__(self, plan: ActionPlan, principal: str | None, clock: Clock) -> None:
+    def __init__(self, plan: ActionPlan) -> None:
         self._plan = plan
-        self._principal = principal
-        self._clock = clock
-        self._tokens: list[Token[Any]] = []
+        self._token: Token[Any] | None = None
 
     def __enter__(self) -> ActionPlan:
-        self._tokens = [
-            _plan.set(self._plan),
-            _principal.set(self._principal),
-            _clock.set(self._clock),
-        ]
+        self._token = _plan.set(self._plan)
         return self._plan
 
     def __exit__(self, *exc: object) -> None:
-        _clock.reset(self._tokens[2])
-        _principal.reset(self._tokens[1])
-        _plan.reset(self._tokens[0])
+        if self._token is not None:
+            _plan.reset(self._token)

@@ -94,10 +94,10 @@ def build(url: str, *, clock: Clock | None = None) -> SagaService:
         ),
         actions=(
             ActionRegistry.builder()
-            .with_action(OpenWalletAction())
-            .with_action(InitiateTransferAction(wallets))
-            .with_action(CompleteTransferAction(wallets))
-            .with_action(RefundTransferAction(wallets))
+            .with_action(OpenWalletAction(running))
+            .with_action(InitiateTransferAction(wallets, running))
+            .with_action(CompleteTransferAction(wallets, running))
+            .with_action(RefundTransferAction(wallets, running))
             .build()
         ),
         events=EVENTS,

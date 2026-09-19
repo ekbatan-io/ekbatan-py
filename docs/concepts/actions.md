@@ -58,10 +58,11 @@ until `perform()` returns.
 
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
@@ -83,36 +84,34 @@ the `MoneyDepositedEvent` row, commits. If anything raises, both roll back.
 
 ## ActionPlan
 
-An in-memory accumulator, reached through `self.plan`:
+The accumulator for this invocation. A property rather than a field: it resolves the
+`ContextVar` bound for the duration of `perform()`, so one shared action instance serves every
+concurrent invocation safely. See [ActionPlan](../concepts/actions.md).
 
-```python
-self.plan.add(entity)         # staged for INSERT
-self.plan.update(entity)      # staged for UPDATE; returns the next version
-self.plan.add_all(items)
-self.plan.update_all(items)
-```
-
-Three rules:
-
-- **One id may be staged at most once per action.** Re-staging the same id - `add` then `update`,
-  or `add` twice - raises. Two changes to one row in one action is almost always a bug you would
-  rather find here.
-- **`update()` returns the object at its next version**, so later reads inside the same
-  `perform()` see the increment.
-- **The plan is single-writer.** It is a plain dict; concurrent mutation is a data race.
+Ambient because it cannot be anything else. A repository call three frames down stages onto the
+same plan without ever mentioning it, and threading it through every signature between would put
+framework plumbing in the middle of domain code.
 
 ## Singletons + per-call state via a ContextVar
 
 One instance per class, for the life of the application, shared by every concurrent invocation.
 Its only state is what the constructor set.
 
-Per-execution state - the plan, the clock, the principal - is bound into a **`ContextVar`** for
-the duration of `perform()`. Java binds the same thing to a `ScopedValue`. So:
+Three per-invocation values, and the same three mechanisms Java uses for them: the **clock** is
+a constructor field, the **principal** is a parameter of `perform()`, and only the **plan** is
+ambient - bound into a **`ContextVar`** for the duration of `perform()`, where Java uses a
+`ScopedValue`.
+
+The plan is ambient because it cannot be anything else: a repository call three frames down
+stages onto the same plan without mentioning it. The other two can be passed, so they are. So:
 
 - **An action must not have mutable instance state.** Anything beyond the constructor breaks
   under concurrency.
 - **`self.plan` must be reached from the thread or task that is running `perform()`.** A
   `ContextVar` is per-context; work handed to a pool does not inherit the binding.
+- **The clock must be the executor's.** The executor checks every registered action at
+  construction and refuses one holding a different clock. Java cannot make that check - a
+  container hands the same bean to both - and here the two are wired by hand.
 
 That second point is not a limitation to work around - it is the design. A pool thread that
 outlived the unit of work while holding its connection is exactly the bug this prevents.

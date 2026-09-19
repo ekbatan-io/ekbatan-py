@@ -134,10 +134,11 @@ class DepositParams:
 
 
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
@@ -227,7 +228,7 @@ An action's logic needs none:
 
 ```python
 staged = run_action(
-    DepositMoneyAction(wallets),
+    DepositMoneyAction(wallets, clock),
     DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
 )
 

@@ -196,7 +196,7 @@ def test_the_pipeline_runs_from_the_job_table(registry, executor, handlers, reco
     assert rows == {FANOUT_JOB_NAME, HANDLING_JOB_NAME}, "both hold a row of their own"
 
     executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
 
@@ -214,7 +214,7 @@ def test_a_disabled_handling_job_holds_its_row_and_does_nothing(
     jobs.start()
 
     executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
     jobs.scheduler.run_any_due_executions()
@@ -237,7 +237,7 @@ def test_the_metrics_are_the_ones_the_java_implementation_emits(
     from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
     executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
 

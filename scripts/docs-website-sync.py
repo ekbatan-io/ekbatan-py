@@ -52,6 +52,8 @@ SECTION_OK = {
     "perform(principal, params) - here, perform(params)",
     "perform(principal, params) — here, perform(params)",
     "plan",
+    "clock",
+    "perform(principal, params)",
     "Cross-shard execution",
     "Retry semantics",
     "Actions are singletons",

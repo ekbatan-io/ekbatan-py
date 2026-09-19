@@ -30,6 +30,44 @@ defaulting to the primary" rather than Java's "the replica" - a judgement call a
 consistency is - and it was written up here as a neutral difference. It read like a fact about
 the language for weeks, and was caught by being asked about rather than by being reviewed.
 
+## An action reaches its three per-invocation values exactly as Java does
+
+> **parity** - clock in the constructor, principal as a parameter, plan ambient. The same three mechanisms Java uses, for the same three values.
+
+This was briefly not true, and the way it was found is the point: it was asked about rather than
+reviewed - the same failure the labels at the top of this file exist because of.
+
+For a while all three lived in `ContextVar`s, reached as `self.plan`, `self.principal` and
+`self.clock`, with `current_principal()` and `current_clock()` alongside. That is more
+*internally* consistent than Java, which uses a different mechanism for each - and it was the
+wrong trade, because the shape a reader recognises is worth more here than a tidier one.
+
+Now:
+
+| | Java | here |
+|---|---|---|
+| clock | `Action(Clock clock)`, a `public final` field | `super().__init__(clock)`, a field |
+| principal | `perform(Principal principal, PARAM params)` | `perform(self, principal, params)` |
+| plan | `ScopedValue` -> `plan()` | `ContextVar` -> `self.plan` |
+
+The plan stays ambient in both, and for the same reason: a repository call three frames down has
+to stage onto it without mentioning it. The other two can be passed, so they are.
+
+Two differences remain, and both are forced. The principal is a `str | None` rather than a
+`java.security.Principal`, because there is no such interface here and inventing one to hold a
+name would be a type for its own sake. And **this port checks that an action holds the
+executor's clock**, at construction, refusing one that does not:
+
+```
+DepositMoneyAction was built with a different clock than this ActionExecutor.
+```
+
+Java cannot make that check and does not need to: a DI container hands the same `Clock` bean to
+the action and to the executor. There is no container here - `build()` is a function you write -
+so the two are wired separately and can be wired differently. The failure that produces is a
+test that froze the executor's clock, asserted on a timestamp the action took from the system
+clock, and passed on the machine it was written on.
+
 ## An action runs by type or by instance
 
 > **chosen** - Java dispatches only on a class token; this accepts an instance too. An addition to the surface, not a fact about Python. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)

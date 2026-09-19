@@ -66,8 +66,8 @@ executor = ActionExecutor(
     repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
     actions=(
         ActionRegistry.builder()
-        .with_action(OpenWalletAction())
-        .with_action(DepositMoneyAction(wallets))
+        .with_action(OpenWalletAction(clock))
+        .with_action(DepositMoneyAction(wallets, clock))
         .build()
     ),
     events=EVENTS,

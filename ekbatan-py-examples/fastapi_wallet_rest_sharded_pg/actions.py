@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from ekbatan import Action, ShardIdentifier
+from ekbatan import Action, Clock, ShardIdentifier
 
 from .model import Wallet, WalletId
 from .repository import WalletRepository
@@ -46,7 +46,7 @@ class TransferParams:
 
 
 class OpenWalletAction(Action[OpenWalletParams, Wallet]):
-    def perform(self, params: OpenWalletParams) -> Wallet:
+    def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
         shard = BY_COUNTRY.get(params.country, GLOBAL)
         return self.plan.add(
             Wallet.open(
@@ -61,10 +61,11 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
 class DepositMoneyAction(Action[DepositParams, Wallet]):
     """Says nothing about shards. The id routes it."""
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
@@ -78,10 +79,11 @@ class TransferWithinShardAction(Action[TransferParams, tuple[Wallet, Wallet]]):
     example.
     """
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: TransferParams) -> tuple[Wallet, Wallet]:
+    def perform(self, principal: str | None, params: TransferParams) -> tuple[Wallet, Wallet]:
         source = self.wallets.get(params.from_wallet_id)
         destination = self.wallets.get(params.to_wallet_id)
         return (

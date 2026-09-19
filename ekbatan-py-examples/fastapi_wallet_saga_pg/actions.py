@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from ekbatan import Action
+from ekbatan import Action, Clock
 
 from .model import (
     StepName,
@@ -71,7 +71,7 @@ class TransferResult:
 
 
 class OpenWalletAction(Action[OpenWalletParams, Wallet]):
-    def perform(self, params: OpenWalletParams) -> Wallet:
+    def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
                 owner_id=params.owner_id,
@@ -89,10 +89,11 @@ class InitiateTransferAction(Action[TransferParams, TransferResult]):
     to be rewritten when they are.
     """
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: TransferParams) -> TransferResult:
+    def perform(self, principal: str | None, params: TransferParams) -> TransferResult:
         source = self.wallets.get(params.from_wallet_id)
         debited, transfer_id = source.initiate_transfer_out(
             to=params.to_wallet_id, amount=params.amount
@@ -108,10 +109,11 @@ class CompleteTransferAction(Action[CompleteTransferParams, Wallet | None]):
     wallet will never start working.
     """
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: CompleteTransferParams) -> Wallet | None:
+    def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
         # Staged *before* the credit, so the unique constraint decides whether this delivery is
         # the first one. A replay stages the same marker, the insert is refused, and the credit
         # beside it is rolled back with it - which is why the money cannot arrive twice.
@@ -147,10 +149,11 @@ class RefundTransferAction(Action[RefundTransferParams, Wallet]):
     transaction has ended, and the outbox is what makes it as durable as the debit was.
     """
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: RefundTransferParams) -> Wallet:
+    def perform(self, principal: str | None, params: RefundTransferParams) -> Wallet:
         self.plan.add(TransferStep.of(params.transfer_id, StepName.REFUND))
 
         source = self.wallets.get(params.from_wallet_id)

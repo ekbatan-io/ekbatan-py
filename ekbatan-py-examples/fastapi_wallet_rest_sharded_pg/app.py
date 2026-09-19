@@ -71,9 +71,9 @@ def build(urls: Mapping[ShardIdentifier, str], *, clock: Clock | None = None) ->
             repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
             actions=(
                 ActionRegistry.builder()
-                .with_action(OpenWalletAction())
-                .with_action(DepositMoneyAction(wallets))
-                .with_action(TransferWithinShardAction(wallets))
+                .with_action(OpenWalletAction(running))
+                .with_action(DepositMoneyAction(wallets, running))
+                .with_action(TransferWithinShardAction(wallets, running))
                 .build()
             ),
             events=EVENTS,

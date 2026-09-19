@@ -290,7 +290,7 @@ def test_a_unit_of_work_does_not_pay_to_read_its_own_writes_back(executor, walle
 
     sql.clear()
     executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
 

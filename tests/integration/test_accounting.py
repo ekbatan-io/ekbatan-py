@@ -25,7 +25,7 @@ from fixtures.domain import Wallet, WalletId
 
 def a_wallet(executor, balance="100.00"):
     return executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
 
@@ -35,7 +35,7 @@ def test_one_unit_of_work_is_one_transaction(executor, wallets, registry):
 
     with count_statements(registry) as cost:
         executor.execute(
-            DepositMoneyAction(wallets),
+            DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("1"), recipient="ada@x"),
         )
 
@@ -51,7 +51,7 @@ def test_two_models_still_cost_one_transaction(executor, wallets, registry):
 
     with count_statements(registry) as cost:
         executor.execute(
-            TransferMoneyAction(wallets),
+            TransferMoneyAction(wallets, executor.clock),
             TransferParams(
                 from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("5")
             ),
@@ -68,7 +68,7 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
         count: int
 
     class CreateMany(Action[HowMany, list[Wallet]]):
-        def perform(self, params: HowMany) -> list[Wallet]:
+        def perform(self, principal: str | None, params: HowMany) -> list[Wallet]:
             return self.plan.add_all(
                 Wallet.open(
                     id=WalletId.random(),
@@ -80,7 +80,7 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
             )
 
     with count_statements(registry) as cost:
-        executor.execute(CreateMany(), HowMany(count=25))
+        executor.execute(CreateMany(executor.clock), HowMany(count=25))
 
     assert cost.transactions == 1
     assert cost.writes["wallets"] == 1, "twenty-five rows is one statement, not twenty-five"
@@ -93,7 +93,7 @@ def test_a_failed_unit_of_work_rolls_back_rather_than_committing(executor, walle
 
     with count_statements(registry) as cost, contextlib.suppress(Exception):
         executor.execute(
-            DepositMoneyAction(wallets),
+            DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"),
         )
 

@@ -5,7 +5,7 @@ to a compiler and different things to everyone else. These wrap it so they are d
 too - and, when the id carries shard bits, so that routing can be read off the id without
 asking anything else.
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)      # Id[Wallet], not UUID
 
 Passing the wrong one is then a type error rather than an empty result at three in the morning.

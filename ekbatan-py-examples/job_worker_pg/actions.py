@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from ekbatan import Action
+from ekbatan import Action, Clock
 
 from .model import Alert, Wallet, WalletId
 from .repository import WalletRepository
@@ -46,7 +46,7 @@ class RaiseAlertParams:
 
 
 class OpenWalletAction(Action[OpenWalletParams, Wallet]):
-    def perform(self, params: OpenWalletParams) -> Wallet:
+    def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
                 owner_id=params.owner_id,
@@ -57,19 +57,21 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
 
 
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
 class CloseWalletAction(Action[WalletIdParams, Wallet]):
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: WalletIdParams) -> Wallet:
+    def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         closed = wallet.close()
         # Already closed: nothing to stage, and therefore nothing to emit. The invocation is
@@ -80,7 +82,7 @@ class CloseWalletAction(Action[WalletIdParams, Wallet]):
 class RaiseAlertAction(Action[RaiseAlertParams, Alert]):
     """Writes an entity. Emits nothing, and is still audited."""
 
-    def perform(self, params: RaiseAlertParams) -> Alert:
+    def perform(self, principal: str | None, params: RaiseAlertParams) -> Alert:
         return self.plan.add(
             Alert.create(
                 wallet_id=params.wallet_id,

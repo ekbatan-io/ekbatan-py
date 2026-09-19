@@ -28,9 +28,7 @@ from .action import (
     OutboxRecord,
     RetryConfig,
     SingleTableJsonEventPersister,
-    current_clock,
     current_plan,
-    current_principal,
 )
 from .clock import Clock, SystemClock, VirtualClock
 from .config import DataSourceConfig, ShardConfig, ShardingConfig
@@ -186,9 +184,7 @@ __all__ = [
     "VirtualClock",
     "__version__",
     "count_statements",
-    "current_clock",
     "current_plan",
-    "current_principal",
     "emit_ddl",
     "job_registry",
     "migrate",

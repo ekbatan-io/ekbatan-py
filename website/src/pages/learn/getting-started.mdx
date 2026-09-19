@@ -114,7 +114,7 @@ temporary list of objects the executor should persist after `perform()` finishes
 
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```

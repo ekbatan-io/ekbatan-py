@@ -93,8 +93,8 @@ def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
         registry=registry,
         repositories=RepositoryRegistry([wallets, notifications]),
         actions=ActionRegistry.builder()
-        .with_action(CreateWalletAction())
-        .with_action(DepositMoneyAction(wallets))
+        .with_action(CreateWalletAction(clock))
+        .with_action(DepositMoneyAction(wallets, clock))
         .build(),
         events=EVENTS,
         clock=clock,
@@ -116,7 +116,7 @@ def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
 def test_an_instance_still_works_with_no_registry(executor, wallets):
     """The registry is not compulsory - a test usually wants the instance it just built."""
     wallet = executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
     assert wallets.get(wallet.id) is not None
@@ -136,13 +136,13 @@ def test_registering_the_class_rather_than_an_instance_is_refused():
         ActionRegistry([CreateWalletAction])  # type: ignore[list-item]
 
 
-def test_two_instances_of_one_action_are_refused(wallets):
+def test_two_instances_of_one_action_are_refused(wallets, clock):
     with pytest.raises(ValidationError, match="two instances of DepositMoneyAction"):
-        ActionRegistry([DepositMoneyAction(wallets), DepositMoneyAction(wallets)])
+        ActionRegistry([DepositMoneyAction(wallets, clock), DepositMoneyAction(wallets, clock)])
 
 
-def test_the_same_instance_twice_is_not_a_conflict(wallets):
-    once = DepositMoneyAction(wallets)
+def test_the_same_instance_twice_is_not_a_conflict(wallets, clock):
+    once = DepositMoneyAction(wallets, clock)
     built = ActionRegistry([once, once])
 
     assert len(built) == 1

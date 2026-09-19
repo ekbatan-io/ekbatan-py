@@ -321,7 +321,7 @@ transaction that does the work**, not a check-then-act in application code. A ch
 a window. This has none:
 
 ```python
-def perform(self, params: CompleteTransferParams) -> Wallet | None:
+def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.

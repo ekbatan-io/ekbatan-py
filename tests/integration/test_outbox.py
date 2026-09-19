@@ -31,7 +31,7 @@ from fixtures.domain import WalletId, WalletState
 
 def a_wallet(executor, balance="100.00", currency="EUR"):
     return executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency=currency, initial_balance=Decimal(balance)),
     )
 
@@ -43,7 +43,7 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
     event.listen(registry.default.primary, "commit", lambda conn: commits.append("commit"))
 
     executor.execute(
-        DepositMoneyAction(wallets),
+        DepositMoneyAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"),
     )
 
@@ -79,7 +79,7 @@ def test_a_failed_unit_of_work_writes_neither(executor, wallets, outbox):
 
     with pytest.raises(ValidationError, match="amount"):
         executor.execute(
-            DepositMoneyAction(wallets),
+            DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-50"), recipient="ada@example.com"),
         )
 
@@ -94,7 +94,7 @@ def test_a_failure_after_staging_discards_the_plan(executor, wallets, outbox):
 
     with pytest.raises(ValidationError, match="changed my mind"):
         executor.execute(
-            DepositThenFailAction(wallets),
+            DepositThenFailAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("25"), recipient="ada@example.com"),
         )
 
@@ -107,7 +107,7 @@ def test_events_of_one_unit_of_work_share_an_action_id(executor, wallets, outbox
     destination = a_wallet(executor, "0.00")
 
     executor.execute(
-        TransferMoneyAction(wallets),
+        TransferMoneyAction(wallets, executor.clock),
         TransferParams(
             from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("25.00")
         ),
@@ -142,7 +142,7 @@ def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_orde
     source = a_wallet(executor, "100.00")
     destination = a_wallet(executor, "0.00")
     executor.execute(
-        TransferMoneyAction(wallets),
+        TransferMoneyAction(wallets, executor.clock),
         TransferParams(
             from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("10.00")
         ),
@@ -163,7 +163,7 @@ def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_orde
 
 def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, outbox, notifications):
     executor.execute(
-        NotifyAction(),
+        NotifyAction(executor.clock),
         NotifyParams(
             wallet_id=WalletId.random(), kind="MONEY_DEPOSITED", recipient="ada@example.com"
         ),
@@ -183,10 +183,14 @@ def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, out
 
 def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outbox):
     wallet = a_wallet(executor, "0.00")
-    closed = executor.execute(CloseWalletAction(wallets), WalletIdParams(wallet_id=wallet.id))
+    closed = executor.execute(
+        CloseWalletAction(wallets, executor.clock), WalletIdParams(wallet_id=wallet.id)
+    )
     before = {r["id"] for r in outbox()}
 
-    executor.execute(CloseWalletAction(wallets), WalletIdParams(wallet_id=wallet.id))
+    executor.execute(
+        CloseWalletAction(wallets, executor.clock), WalletIdParams(wallet_id=wallet.id)
+    )
 
     again = wallets.get(wallet.id)
     assert again.state is WalletState.CLOSED
@@ -201,7 +205,7 @@ def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outb
 def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
     wallet = a_wallet(executor, "0.00")
     executor.execute(
-        DepositMoneyAction(wallets),
+        DepositMoneyAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
 
@@ -216,7 +220,7 @@ def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
 def test_the_namespace_is_on_every_row_and_events_are_undelivered(executor, wallets, outbox):
     wallet = a_wallet(executor, "0.00")
     executor.execute(
-        DepositMoneyAction(wallets),
+        DepositMoneyAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
 
@@ -229,7 +233,7 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
     wallet = a_wallet(executor, "0.00")
     for amount in ("1.00", "2.00"):
         executor.execute(
-            DepositMoneyAction(wallets),
+            DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"),
         )
 
@@ -244,7 +248,7 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
 def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, clock):
     wallet = a_wallet(executor, "0.00")
     executor.execute(
-        DepositMoneyAction(wallets),
+        DepositMoneyAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
 

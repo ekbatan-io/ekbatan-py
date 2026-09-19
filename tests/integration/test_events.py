@@ -22,14 +22,14 @@ from fixtures.handlers import MoneyDepositedEventHandler, failing, fatal, on_clo
 
 def a_wallet(executor, balance="100.00"):
     return executor.execute(
-        CreateWalletAction(),
+        CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
 
 
 def deposit(executor, wallets, wallet, amount="10.00"):
     return executor.execute(
-        DepositMoneyAction(wallets),
+        DepositMoneyAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"),
     )
 
@@ -83,7 +83,7 @@ def test_an_event_nobody_subscribes_to_stays_available(executor, wallets, pipeli
 def test_a_sentinel_row_is_never_fanned_out(executor, pipeline, notifications_in):
     fanout, _ = pipeline(succeeding("email"))
     executor.execute(
-        NotifyAction(),
+        NotifyAction(executor.clock),
         NotifyParams(wallet_id=WalletId.random(), kind="X", recipient="ada@example.com"),
     )
     assert fanout.drain_once() == 0, "a row with no event type belongs on no topic"
@@ -219,7 +219,9 @@ def test_handlers_only_see_the_event_type_they_subscribed_to(
 
     wallet = a_wallet(executor)
     deposit(executor, wallets, wallet)
-    executor.execute(CloseWalletAction(wallets), WalletIdParams(wallet_id=wallet.id))
+    executor.execute(
+        CloseWalletAction(wallets, executor.clock), WalletIdParams(wallet_id=wallet.id)
+    )
 
     fanout.drain_until_idle()
     dispatch.drain_until_idle()
@@ -447,7 +449,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
         def handle(self, envelope) -> None:
             self.calls += 1
             executor.execute(
-                CreateWalletAction(),
+                CreateWalletAction(executor.clock),
                 CreateWalletParams(
                     owner_id=uuid4(), currency="USD", initial_balance=Decimal("0.00")
                 ),
@@ -469,7 +471,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
         def handle(self, envelope) -> None:
             self.received.append(envelope)
             executor.execute(
-                NotifyAction(),
+                NotifyAction(executor.clock),
                 NotifyParams(
                     wallet_id=WalletId.of(envelope.model_id or ""),
                     kind="WALLET_OPENED",

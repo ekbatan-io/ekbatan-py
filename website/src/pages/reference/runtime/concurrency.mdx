@@ -54,7 +54,7 @@ behaves identically. Work handed to a pool from inside a unit of work does **not
 ambient transaction.
 
 ```python
-def perform(self, params: Params) -> Result:
+def perform(self, principal: str | None, params: Params) -> Result:
     with ThreadPoolExecutor() as pool:
         prices = list(pool.map(self.fetch_price, params.symbols))  # no plan, no transaction
     return self.plan.update(portfolio.priced(prices))              # back on this thread

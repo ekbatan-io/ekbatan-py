@@ -171,6 +171,25 @@ class ActionExecutor:
             else RepositoryRegistry(repositories),
             self.outbox,
         )
+        self._refuse_a_second_clock()
+
+    def _refuse_a_second_clock(self) -> None:
+        """Every registered action reads the clock this executor stamps rows with.
+
+        The clock is a constructor field on the action, as it is in Java, where a container
+        hands the same bean to both. There is no container here, so the two are wired by hand
+        and can be wired differently - and the failure that produces is a test that froze the
+        executor's clock, asserted on a timestamp the action took from the system clock, and
+        passed on the machine it was written on. Checked once, here, where both are in hand.
+        """
+        wrong = [action for action in self.actions if action.clock is not self.clock]
+        if wrong:
+            named = ", ".join(sorted(type(a).__name__ for a in wrong))
+            raise ValidationError(
+                f"{named} was built with a different clock than this ActionExecutor. Pass the "
+                f"executor's clock to every action it runs - a unit of work reading one clock "
+                f"while its rows are stamped from another cannot be tested at a fixed instant."
+            )
 
     @property
     def repositories(self) -> RepositoryRegistry:
@@ -214,8 +233,8 @@ class ActionExecutor:
                 # call.
                 plan = ActionPlan(self.clock)
                 try:
-                    with span("ekbatan.action.perform"), _Binding(plan, principal, self.clock):
-                        result = running.perform(params)
+                    with span("ekbatan.action.perform"), _Binding(plan):
+                        result = running.perform(principal, params)
                     self._commit(name, plan, params, started, policy)
                 except BaseException as error:
                     # BaseException, not Exception. Something that is not an ordinary error -

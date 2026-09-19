@@ -148,10 +148,10 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         repositories=repositories,
         actions=(
             ActionRegistry.builder()
-            .with_action(OpenWalletAction())
-            .with_action(DepositMoneyAction(wallets))
-            .with_action(CloseWalletAction(wallets))
-            .with_action(RaiseAlertAction())
+            .with_action(OpenWalletAction(running))
+            .with_action(DepositMoneyAction(wallets, running))
+            .with_action(CloseWalletAction(wallets, running))
+            .with_action(RaiseAlertAction(running))
             .build()
         ),
         events=EVENTS,

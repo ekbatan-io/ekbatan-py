@@ -1068,8 +1068,8 @@ def build(config: Settings) -> WalletService:
         registry=registry,
         repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
         actions=(ActionRegistry.builder()
-                 .with_action(OpenWalletAction())
-                 .with_action(DepositMoneyAction(wallets))
+                 .with_action(OpenWalletAction(clock))
+                 .with_action(DepositMoneyAction(wallets, clock))
                  .build()),
         events=EVENTS,
     )
@@ -1170,10 +1170,11 @@ Three shapes, which between them cover almost everything you will write.
 class OpenWalletAction(Action[OpenWalletParams, Wallet]):
     """Creates. `plan.add` stages an INSERT and returns the stamped row."""
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: OpenWalletParams) -> Wallet:
+    def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
                 owner_id=params.owner_id,
@@ -1186,10 +1187,11 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
 class DepositMoneyAction(Action[DepositParams, Wallet]):
     """Changes. Read, mutate, stage - and the event goes along with the row."""
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
@@ -1198,10 +1200,11 @@ class CloseWalletAction(Action[WalletIdParams, Wallet]):
     """Changes, sometimes. Closing a closed wallet stages nothing and emits nothing -
     and the invocation is still recorded, as one sentinel row."""
 
-    def __init__(self, wallets: WalletRepository) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: WalletIdParams) -> Wallet:
+    def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         closed = wallet.close()
         return self.plan.update(closed) if closed is not wallet else wallet
