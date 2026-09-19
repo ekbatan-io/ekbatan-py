@@ -29,7 +29,7 @@ Each row links to where the detail lives. Nothing is recorded only here.
 
 | | Java | Here |
 | --- | --- | --- |
-| **Fan-out across shards** | one virtual thread per shard, in parallel | sequential. An eight-shard round takes eight batches' time. The fix is a pool around `_drain_shard`, not a redesign |
+| ~~**Fan-out across shards**~~ | one virtual thread per shard, in parallel | **Closed in `EKB-0203`.** Both event jobs drain their shards through a thread pool, one thread per shard, with no setting - Java has none either. Measured at one 40 ms round trip per shard: eight shards 354 ms -> 48 ms, thirty-two 1405 ms -> 47 ms. A single shard still runs inline |
 | **Event dispatch** | handlers invoked in parallel, outcomes committed in ~4 batched `UPDATE`s | one notification at a time; a hundred rows is a hundred `UPDATE`s |
 | **Keyed-lock watchdog** | `Thread.ofVirtual()` per hold - effectively free | `threading.Timer`, a real OS thread. A thousand held locks is a thousand threads |
 | **Job workers** | unbounded virtual threads | a fixed `DaemonThreadPool`. `JobRegistryBuilder.workers(n)` sizes it - a knob Java needs no equivalent of |

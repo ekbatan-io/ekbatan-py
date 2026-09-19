@@ -102,19 +102,39 @@ Two sizing rules, and the second has teeth:
 Give jobs their own pool, separate from the request pool, for the same reason: a traffic burst
 must not be able to starve that heartbeat.
 
-### 5. Fan-out and dispatch - sequential, where Java is parallel
+### 5. Fan-out and dispatch - across shards parallel, within a shard not
 
-Java forks one virtual thread per shard in `EventFanoutJob`, and one per due notification in
-`EventHandlingJob`. Both are sequential here.
+Java forks a virtual thread per shard in `EventFanoutJob` *and* in `EventHandlingJob`, and a
+further one per due notification inside a batch. Two different forks, and they ported
+differently.
 
-On an eight-shard deployment a fan-out round therefore takes eight batches' time rather than one,
-and a hundred due notifications are a hundred `UPDATE`s where Java batches them into about four.
+**Per shard: ported.** Both jobs drain their shards through a `ThreadPoolExecutor`, one thread
+per shard. This is one of the cases where threads in CPython buy real wall-clock, because a
+batch against a shard is a round trip to a *different* database - I/O the whole way, with the
+GIL released for all of it. Measured, one 40 ms round trip per shard:
 
-It has not bitten - rounds are short because the work per shard is one bounded batch - and the
-fix if it does is a pool around the existing `_drain_shard`, which is a change of one line and a
-pool to size. It is recorded in [SHORTCOMINGS.md](../SHORTCOMINGS.md) rather than left implicit,
-because it is a real step down from Java and not a matter of taste.
+| shards | sequential | concurrent | speed-up |
+| --- | --- | --- | --- |
+| 1 | 44 ms | 44 ms | 1.0x |
+| 4 | 177 ms | 46 ms | 3.9x |
+| 8 | 354 ms | 48 ms | 7.3x |
+| 16 | 694 ms | 48 ms | 14.6x |
+| 32 | 1405 ms | 47 ms | 29.6x |
 
+Flat, as Java's is: a round costs one shard's time however many shards there are.
+
+**There is no setting for it**, because Java has none. It forks one virtual thread per shard and
+joins them; this forks one thread per shard and joins them. A deployment with many shards
+already holds a connection pool per shard, so a thread per shard for the length of a round is in
+proportion to what it already has. A single shard builds no pool and runs inline.
+
+The contract matches Java's: the whole round is submitted before any failure is raised, so one
+unreachable shard does not hold back its siblings, and results come back in shard order.
+
+**Per notification: not ported.** Within one shard a batch is still delivered in order, so a
+hundred due notifications are a hundred `UPDATE`s where Java batches them into about four. That
+half is a different trade - those handlers are application code running in process, not one
+bounded query per database - and it stays in [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 ## Blocking is not free under asyncio
 
 This is the one that will actually hurt you.

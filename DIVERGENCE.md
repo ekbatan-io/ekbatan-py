@@ -991,14 +991,39 @@ deadlines, not a thread per hold.
 single row and so has at most one execution in flight. `JobRegistryBuilder.workers(n)` changes
 it, which Java has no need of and this port does.
 
-**Fan-out and dispatch - sequential, where Java is parallel.** Java forks one virtual thread per
-shard in `EventFanoutJob.drainOneRound`, and one per due notification in `EventHandlingJob`.
-Both are sequential here: a round visits each shard in turn, and a batch is delivered in order.
-The dispatch half and its consequences are under "Dispatch delivers one notification at a time";
-the fan-out half is the same trade for the same reason. On an eight-shard deployment a fan-out
-round therefore takes eight batches' time rather than one. It has not bitten, the rounds are
-short because the work per shard is one bounded batch, and the fix if it does is a pool around
-the existing `_drain_shard` - which is a change of one line and a pool to size, not a redesign.
+**Fan-out and dispatch - across shards now parallel, within a shard still not.** Java forks a
+virtual thread per shard in `EventFanoutJob.drainOneRound` *and* in `EventHandlingJob`, and a
+further one per due notification inside a batch. Two different forks, and they ported
+differently.
+
+The per-shard fork ported (`EKB-0203`). Both jobs drain their shards through a
+`ThreadPoolExecutor`, one thread per shard, which is worth it for the reason a thread in CPython
+usually is not: a batch against a shard is a round trip to a *different* database, so it is I/O
+the whole way and the GIL is released for all of it. Measured, one 40 ms round trip per shard:
+
+| shards | sequential | concurrent | speed-up |
+|---|---|---|---|
+| 1 | 44 ms | 44 ms | 1.0x |
+| 4 | 177 ms | 46 ms | 3.9x |
+| 8 | 354 ms | 48 ms | 7.3x |
+| 16 | 694 ms | 48 ms | 14.6x |
+| 32 | 1405 ms | 47 ms | 29.6x |
+
+Flat, as Java's is: a round costs one shard's time however many shards there are. There is no
+ceiling and no setting, because Java has neither - it forks one virtual thread per shard and
+joins them, and a knob this port has and that one does not is a divergence bought for nothing.
+A deployment with many shards already holds a connection pool per shard, so a thread per shard
+for the length of a round is in proportion to what it already has. A single shard builds no
+pool at all and runs inline, which is most deployments.
+
+The contract is Java's, not just the shape: the whole round is submitted before any failure is
+raised, so one unreachable shard does not hold back its siblings, and results come back in
+shard order rather than completion order.
+
+**The per-notification fork did not port.** Within one shard a batch is still delivered in
+order - that half is under "Dispatch delivers one notification at a time", and it is a different
+trade, because those handlers are application code running in process rather than one bounded
+query per database.
 
 ## The framework is synchronous, and blocking is not free here as it is in Java
 

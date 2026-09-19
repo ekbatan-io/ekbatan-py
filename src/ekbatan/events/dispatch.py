@@ -28,6 +28,7 @@ from ..clock import Clock, SystemClock, to_storage
 from ..domain import ModelEvent
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
+from ._across import across_shards
 from .handler import EventEnvelope, EventHandler, EventHandlerRegistry
 from .notification import EventNotificationState, backoff
 
@@ -102,8 +103,13 @@ class EventDispatch:
         self._max_backoff = max_backoff
 
     def drain_once(self) -> int:
-        """One batch on every shard. Returns how many notifications reached a new state."""
-        return sum(self._drain_shard(shard) for shard in self._registry.shards)
+        """One batch on every shard, the shards concurrently.
+
+        Java forks a virtual thread per shard here too. Returns how many notifications
+        reached a new state. Within one shard a batch is still delivered in order - that
+        half is its own divergence, under "Dispatch delivers one notification at a time".
+        """
+        return sum(across_shards(self._registry.shards, self._drain_shard))
 
     def drain_until_idle(self, *, limit: int = 1000) -> int:
         total = 0

@@ -21,6 +21,7 @@ from sqlalchemy import Table, select, update
 from .._metrics import counter
 from ..clock import Clock, SystemClock, to_storage
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
+from ._across import across_shards
 from .handler import EventHandlerRegistry
 from .notification import EventNotificationState
 
@@ -44,7 +45,14 @@ LOG = logging.getLogger("ekbatan.events")
 class EventFanout:
     """Materialises notifications from the outbox."""
 
-    __slots__ = ("_batch", "_clock", "_events", "_handlers", "_notifications", "_registry")
+    __slots__ = (
+        "_batch",
+        "_clock",
+        "_events",
+        "_handlers",
+        "_notifications",
+        "_registry",
+    )
 
     def __init__(
         self,
@@ -64,8 +72,12 @@ class EventFanout:
         self._batch = batch_size
 
     def drain_once(self) -> int:
-        """One batch on every shard. Returns how many events were fanned out."""
-        return sum(self._drain_shard(shard) for shard in self._registry.shards)
+        """One batch on every shard, the shards concurrently.
+
+        Java forks a virtual thread per shard here and joins them. Returns how many events
+        were fanned out. A single shard runs inline, with no pool.
+        """
+        return sum(across_shards(self._registry.shards, self._drain_shard))
 
     def drain_until_idle(self, *, limit: int = 1000) -> int:
         total = 0
