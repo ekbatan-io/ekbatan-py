@@ -66,15 +66,26 @@ rather than returning `None`, so getting it wrong is loud rather than subtle.
 That a worker does not inherit the transaction is correct, not a limitation - a pool thread
 outliving the unit of work and holding its connection is precisely the bug the design avoids.
 
-### 3. The keyed-lock watchdog - a real thread, and it costs
+### 3. The keyed-lock watchdog - one thread for all of them
 
-Java gives each outermost hold a `Thread.ofVirtual()` watchdog to force-release at `max_hold`.
-Here it is a `threading.Timer`, which is an OS thread.
+Java gives each outermost hold a `Thread.ofVirtual()` watchdog to force-release at `max_hold`,
+and that is right there: measured on a JDK 25 with ten cores, ten watchdogs fire 17 ms late and
+a hundred thousand fire 48 ms late. A sleeping virtual thread is unmounted and competes for
+nothing.
 
-Same behaviour, and fine at the scale a keyed lock is for. But **a service holding a thousand
-locks at once holds a thousand threads**, where Java holds a thousand virtual ones. If that ever
-becomes the constraint, the fix is one timer thread with a heap of deadlines rather than a thread
-per hold - a contained change, not a redesign.
+A `threading.Timer` is an OS thread, so the same shape does not translate. This port used one
+per hold until it was measured, and it was worse in every direction - not only heavier but
+**later**, because starting a thousand threads takes 70 ms before any of them can fire:
+
+| 1,000 held locks | register | median late | threads | memory |
+| --- | --- | --- | --- | --- |
+| a thread per hold | 70 ms | 48 ms | 1000 | 40 MB |
+| one watcher and a heap | 3 ms | 6 ms | 1 | ~0 |
+
+There is now one watchdog thread per lock provider, holding a heap of deadlines and waiting
+until the earliest is due - not polling on a cycle, which would have to pick an interval that is
+either burning a core or arriving late. On the real holder: 1,000 held locks register in 2 ms,
+10,000 in 18 ms, one thread either way.
 
 Size your lock pool for the maximum number of leases held at once, not for traffic: a lease holds
 its connection for as long as it is held, because that is what the lock *is*.

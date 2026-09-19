@@ -242,13 +242,12 @@ def test_a_failed_registration_gives_the_lock_back(monkeypatch):
     holder = KeyedReentrantHolder()
     returned: list[tuple] = []
 
-    real = threading.Timer
+    from ekbatan.locks._deadlines import Deadlines
 
-    class CannotStart(real):
-        def start(self):
-            raise OSError("cannot start a thread")
+    def cannot_start(self, delay, fire):
+        raise OSError("cannot start a thread")
 
-    monkeypatch.setattr(threading, "Timer", CannotStart)
+    monkeypatch.setattr(Deadlines, "after", cannot_start)
 
     with pytest.raises(OSError):
         holder.register("k", "payload", HOLD, lambda p, r: returned.append((p, r)))
@@ -267,13 +266,12 @@ def test_a_cleanup_that_also_fails_is_attached_rather_than_substituted(monkeypat
     def cleanup_also_fails(payload, reason):
         raise RuntimeError("returning the connection failed too")
 
-    real = threading.Timer
+    from ekbatan.locks._deadlines import Deadlines
 
-    class CannotStart(real):
-        def start(self):
-            raise OSError("the registration failure")
+    def cannot_start(self, delay, fire):
+        raise OSError("the registration failure")
 
-    monkeypatch.setattr(threading, "Timer", CannotStart)
+    monkeypatch.setattr(Deadlines, "after", cannot_start)
 
     with pytest.raises(OSError, match="the registration failure") as raised:
         holder.register("k", "payload", HOLD, cleanup_also_fails)
@@ -284,7 +282,7 @@ def test_a_cleanup_that_also_fails_is_attached_rather_than_substituted(monkeypat
 
 
 def test_a_watchdog_whose_release_fails_says_so_and_does_not_die_quietly(caplog):
-    """This runs on a timer thread. Anything that escapes reaches stderr through the threading
+    """This runs on the watchdog thread. Anything that escapes reaches stderr through the threading
     hook rather than the logger, and Java's comment records what that cost: a log line asserting
     the release had succeeded, and the real failure nowhere near it."""
     import logging

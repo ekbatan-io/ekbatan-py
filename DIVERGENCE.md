@@ -1010,12 +1010,33 @@ documentation tells you to fan out on virtual threads, *join*, and only then tou
 because a plain virtual thread does not inherit a `ScopedValue` binding. A `ContextVar` behaves
 identically, and `current_plan()` raises rather than returning `None` so the mistake is loud.
 
-**The keyed-lock watchdog - a real thread, and it costs.** Java gives each outermost hold a
-`Thread.ofVirtual()` watchdog to force-release at `maxHold`. Here it is a `threading.Timer`,
-which is an OS thread. Same behaviour, and fine at the scale a keyed lock is meant for - but a
-service holding a thousand locks at once holds a thousand threads, where Java holds a thousand
-virtual ones. If that ever becomes the constraint the fix is one timer thread with a heap of
-deadlines, not a thread per hold.
+**The keyed-lock watchdog - one thread for all of them, where Java has one each.** Java gives
+each outermost hold a `Thread.ofVirtual()` watchdog that sleeps until `maxHold` and then forces
+the release. That is the right answer there and measurably so: on a JDK 25 with ten cores, ten
+watchdogs fire 17 ms late and *a hundred thousand* fire 48 ms late, because a sleeping virtual
+thread is unmounted and is not competing for a carrier at all.
+
+A `threading.Timer` is an OS thread, so the shape does not survive translation. This port used
+one per hold until `EKB-0206` and it was worse in every direction at scale - not only heavier
+but **later**, because starting a thousand threads takes 70 ms before any of them can fire:
+
+| 1,000 held locks | register | median late | threads | memory |
+|---|---|---|---|---|
+| a thread per hold | 70 ms | 48 ms | 1000 | 40 MB |
+| one watcher and a heap | 3 ms | **6 ms** | **1** | ~0 |
+
+Measured on the real holder after the change: 1,000 held locks register in 2 ms on 1 watchdog
+thread and 1 MB; 10,000 in 18 ms, still 1 thread, 8 MB.
+
+It waits until the earliest deadline rather than polling on a cycle. A cycle has to pick an
+interval and every choice is wrong in one direction - short burns a core doing nothing, long is
+late by up to an interval. Cancelling is a tombstone rather than a search, with a compaction
+pass, because nearly every hold closes in time and a heap that only ever grew would be the
+whole cost back again.
+
+**This is not worth porting to Java.** The heap is a workaround for a limitation Java does not
+have: `Thread.ofVirtual().start(() -> { sleep; release; })` is simpler than a heap and a
+scheduler thread, and cancelling it is one interrupt rather than a tombstone to reconcile.
 
 **Job workers - a fixed pool, now with a knob.** Java hands db-scheduler
 `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is unbounded and

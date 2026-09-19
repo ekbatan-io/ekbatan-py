@@ -14,6 +14,7 @@ from datetime import timedelta
 from enum import Enum
 from typing import Any
 
+from ._deadlines import Deadline, Deadlines
 from .base import Lease
 
 __all__ = ["KeyedReentrantHolder", "ReleaseReason"]
@@ -29,7 +30,16 @@ class ReleaseReason(Enum):
 class _Holding:
     """One thread's hold on one key, however many times it has re-entered."""
 
-    __slots__ = ("_gate", "_holder", "count", "key", "payload", "release_cb", "released", "timer")
+    __slots__ = (
+        "_gate",
+        "_holder",
+        "count",
+        "deadline",
+        "key",
+        "payload",
+        "release_cb",
+        "released",
+    )
 
     def __init__(
         self,
@@ -45,7 +55,7 @@ class _Holding:
         self.release_cb = release_cb
         self.count = 1
         self.released = False
-        self.timer: threading.Timer | None = None
+        self.deadline: Deadline | None = None
 
     @property
     def held(self) -> bool:
@@ -69,10 +79,10 @@ class _Holding:
             if self.count > 0:
                 return
             self.released = True
-            timer, payload, callback = self.timer, self.payload, self.release_cb
+            deadline, payload, callback = self.deadline, self.payload, self.release_cb
 
-        if timer is not None:
-            timer.cancel()
+        if deadline is not None:
+            self._holder.deadlines.cancel(deadline)
         self._holder._forget(self)
         callback(payload, ReleaseReason.CLOSED)
 
@@ -88,10 +98,10 @@ class _Holding:
             callback(payload, ReleaseReason.EXPIRED)
             LOG.warning("released the lock on %r: its hold limit elapsed", self.key)
         except BaseException:
-            # BaseException, as Java catches `RuntimeException | Error` here. This runs on a
-            # timer thread: anything that escapes reaches stderr through the threading hook
-            # rather than the logger, and the operator is left with a lock that is held by
-            # nobody and no record of why.
+            # BaseException, as Java catches `RuntimeException | Error` here. This runs on the
+            # watchdog thread, which every other hold depends on: anything that escapes would
+            # reach stderr through the threading hook rather than the logger, and would take
+            # the watchdog down with it.
             # Reported against the key that caused it. The backend lock may stay held until its
             # own expiry - but the hold is already marked released, and putting that back would
             # strand the entry instead.
@@ -110,11 +120,14 @@ class KeyedReentrantHolder:
     straight through the exclusion, silently, exactly where it was introduced.
     """
 
-    __slots__ = ("_gate", "_held")
+    __slots__ = ("_gate", "_held", "deadlines")
 
     def __init__(self) -> None:
         self._gate = threading.Lock()
         self._held: dict[tuple[int, str], _Holding] = {}
+        #: One thread for every hold this holder is watching, rather than one each. Its
+        #: thread is not started until the first hold is registered.
+        self.deadlines = Deadlines()
 
     def reenter(self, key: str) -> Lease | None:
         with self._gate:
@@ -139,18 +152,15 @@ class KeyedReentrantHolder:
         try:
             with self._gate:
                 self._held[entry] = holding
-            timer = threading.Timer(max_hold.total_seconds(), holding.expire)
-            timer.daemon = True
-            holding.timer = timer
-            timer.start()
+            holding.deadline = self.deadlines.after(max_hold.total_seconds(), holding.expire)
             return Lease(holding)
         except BaseException as failure:
             # Registration failed after the backend lock was taken. Give it back, or it is held
             # by nobody until it expires.
             with self._gate:
                 self._held.pop(entry, None)
-            if holding.timer is not None:
-                holding.timer.cancel()
+            if holding.deadline is not None:
+                self.deadlines.cancel(holding.deadline)
             try:
                 release_cb(payload, ReleaseReason.CLOSED)
             except BaseException as cleanup:

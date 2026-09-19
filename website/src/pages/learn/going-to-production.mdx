@@ -42,8 +42,8 @@ third does not:
   notifications at 20 ms apiece: 2376 ms to 28 ms. **Your handlers therefore run concurrently**,
   which they did not before. Outcomes are written one `UPDATE` per bucket, so a batch of 100 is
   1 statement when they all succeed and 4 on a realistic mix — the Java port's number;
-- **the keyed-lock watchdog** — still a `threading.Timer` per hold, which is a real OS thread. A
-  service holding a thousand locks holds a thousand threads.
+- **the keyed-lock watchdog** — one thread holding a heap of deadlines, in place of a thread per
+  hold. A thousand held locks: 1 thread rather than 1000, and 6 ms late rather than 48.
 
 None has bitten, each fix is a pool rather than a redesign, and all three are written down in
 `SHORTCOMINGS.md` rather than left to be discovered.
