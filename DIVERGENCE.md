@@ -844,9 +844,9 @@ are behaviour rather than assertion sugar. One addition - `VirtualClock(instant)
 at that instant, where Java's constructor takes a real clock and starts running. `VirtualClock()`
 still means what Java's does.
 
-## Dispatch invokes a batch in parallel; its outcomes are still one UPDATE each
+## Dispatch matches Java, in parallel and in statement count
 
-> **forced** - the handler half ported in `EKB-0204`; the statement-count half has not. What is left is not about threads at all.
+> **parity** - handlers in parallel (`EKB-0204`) and outcomes in one `UPDATE` per bucket (`EKB-0205`). Both halves closed; only the thread kind still differs.
 
 Java invokes a batch's handlers in parallel on virtual threads and then commits the outcomes in
 one batch `UPDATE` per bucket - one for the successes, one for the pre-flight expiries, one for
@@ -873,9 +873,23 @@ here at all is because a handler is application code waiting on something almost
 **This changed a promise.** Handler code used to be guaranteed to run alone and now does not.
 Java's never had that guarantee, so Java's users never had it to lose; ours did.
 
-**The outcomes are still one `UPDATE` per row** - a hundred rows is a hundred statements here
-and about four there. That half is not about threads and is not forced by anything: it is
-bucketing the outcomes by state and attempt count before writing. Still owed.
+**The outcomes now go one `UPDATE` per bucket** (`EKB-0205`). Rows that decided the same
+thing - same state, same resolved attempt count, same retry delay - are one
+`UPDATE ... WHERE id IN (...)`, and retries group by attempt count exactly as Java's
+`failedRetryByAttempts` does. Counted:
+
+| batch | shape | before | after |
+|---|---|---|---|
+| 100 | all succeed, first attempt | 100 | **1** |
+| 100 | mostly ok, retries at two depths, one dead | 100 | **4** |
+
+Four is Java's number, and it falls out of the same four buckets: successes, pre-flight
+expiries, post-failure expiries, and one per distinct attempt count among the retries.
+
+Two things had to change for rows to be able to share a statement, and both moved toward Java
+rather than away. `_Outcome` carries a retry *delay* rather than a resolved timestamp - resolved
+per row it differs by microseconds and no two rows can ever agree. And the batch resolves one
+`now` for all of them, which is what Java's `postInvokeNow` already was.
 
 One behaviour does differ. Java treats "no handler is registered under this name" as a delivery
 failure, increments `attempts`, and lets the row expire through the retention window. Here the

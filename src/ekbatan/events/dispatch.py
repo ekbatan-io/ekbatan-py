@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -62,12 +63,19 @@ DEFAULT_RETENTION = timedelta(days=7)
 DEFAULT_MAX_BACKOFF = timedelta(minutes=5)
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class _Outcome:
+    """What one notification's delivery decided, in a form several rows can share.
+
+    ``retry_delay`` rather than a resolved timestamp, because the timestamp is what would stop
+    two identical outcomes from being one `UPDATE`: computed per row it differs by microseconds
+    and every row needs its own statement. Java resolves it once per batch for the same reason.
+    """
+
     notification_id: Any
     state: EventNotificationState
     attempts: int
-    next_retry_at: datetime
+    retry_delay: timedelta | None = None
 
 
 class EventDispatch:
@@ -168,16 +176,31 @@ class EventDispatch:
 
         # Written after the whole batch has been attempted, in one transaction. Every outcome
         # is recorded or none is - and no single delivery can take the others' results with it.
+        #
+        # One statement per *bucket* rather than per row, which is what Java does: rows that
+        # decided the same thing are one `UPDATE ... WHERE id IN (...)`. A batch of a hundred
+        # first attempts that all succeed is one statement, not a hundred. The buckets fall out
+        # of the outcome itself - state, resolved attempts, and the retry delay - so retries
+        # group by attempt count exactly as Java's `failedRetryByAttempts` does.
+        #
+        # One `now` for the whole batch, again as Java's `postInvokeNow` is. Resolved per row it
+        # would differ by microseconds and no two rows could ever share a statement.
+        now = to_storage(self._clock.now())
+        buckets: dict[tuple[str, int, timedelta | None], list[Any]] = defaultdict(list)
+        for outcome in outcomes:
+            key = (outcome.state.value, outcome.attempts, outcome.retry_delay)
+            buckets[key].append(outcome.notification_id)
+
         with manager.transaction() as tx:
-            for outcome in outcomes:
+            for (state, attempts, delay), ids in buckets.items():
                 tx.execute(
                     update(table)
-                    .where(table.c.id == outcome.notification_id)
+                    .where(table.c.id.in_(ids))
                     .values(
-                        state=outcome.state.value,
-                        attempts=outcome.attempts,
-                        next_retry_at=outcome.next_retry_at,
-                        updated_date=to_storage(self._clock.now()),
+                        state=state,
+                        attempts=attempts,
+                        next_retry_at=now if delay is None else now + delay,
+                        updated_date=now,
                     )
                 )
         return len(outcomes)
@@ -201,7 +224,7 @@ class EventDispatch:
                 row.event_type,
             )
             HANDLED.add(1, {"outcome": "expired_preflight", "handler": row.handler_name})
-            return _Outcome(row.id, EventNotificationState.EXPIRED, row.attempts, now)
+            return _Outcome(row.id, EventNotificationState.EXPIRED, row.attempts)
 
         handler = self._handlers.by_name(row.handler_name)
         if handler is None:
@@ -215,7 +238,7 @@ class EventDispatch:
                 row.id,
                 EventNotificationState.PENDING,
                 row.attempts,
-                now + backoff(attempts, self._max_backoff),
+                backoff(attempts, self._max_backoff),
             )
 
         started = time.monotonic()
@@ -244,7 +267,7 @@ class EventDispatch:
                     row.handler_name,
                 )
                 HANDLED.add(1, {"outcome": "expired_postfailure", "handler": row.handler_name})
-                return _Outcome(row.id, EventNotificationState.EXPIRED, attempts, after)
+                return _Outcome(row.id, EventNotificationState.EXPIRED, attempts)
             delay = backoff(attempts, self._max_backoff)
             LOG.warning(
                 "handler %r failed on attempt %d (%s: %s); retrying in %s",
@@ -255,7 +278,7 @@ class EventDispatch:
                 delay,
             )
             HANDLED.add(1, {"outcome": "failed_retry", "handler": row.handler_name})
-            return _Outcome(row.id, EventNotificationState.FAILED, attempts, after + delay)
+            return _Outcome(row.id, EventNotificationState.FAILED, attempts, delay)
 
         HANDLER_DURATION.record(
             time.monotonic() - started, {"handler": row.handler_name, "outcome": "succeeded"}
@@ -265,7 +288,7 @@ class EventDispatch:
             (to_storage(self._clock.now()) - row.event_date).total_seconds(),
             {"handler": row.handler_name},
         )
-        return _Outcome(row.id, EventNotificationState.SUCCEEDED, attempts, now)
+        return _Outcome(row.id, EventNotificationState.SUCCEEDED, attempts)
 
     def _expired(self, event_date: datetime, now: datetime) -> bool:
         return event_date + self._retention <= now

@@ -136,9 +136,8 @@ pool per shard bounded by the batch size - the same ceiling Java has. Measured a
 handler, a batch of 100 goes from 2376 ms to 28 ms. **Your handler code therefore runs
 concurrently with its siblings**, which it did not before; Java's always has.
 
-What is still behind is the **statement count**: a hundred rows is a hundred `UPDATE`s where
-Java buckets them into about four. That is not about threads, and it stays in
-[SHORTCOMINGS.md](../SHORTCOMINGS.md).
+The **statement count** matches too: outcomes are written one `UPDATE` per bucket, so a batch
+of 100 that all succeed is 1 statement and a realistic mix is 4 — which is Java's number.
 ## Blocking is not free under asyncio
 
 This is the one that will actually hurt you.

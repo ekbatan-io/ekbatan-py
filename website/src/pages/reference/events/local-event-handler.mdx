@@ -251,7 +251,7 @@ Each round:
 Backoff is capped exponential: `30s x 2^(attempts-1)`, capped at 5 minutes. So 30s, 1m, 2m, 4m,
 then 5m for ever, until the 7-day retention window closes.
 
-### This half is parallel now too; the statement count is not
+### This half matches Java now, in both respects
 
 Java invokes handlers **in parallel on virtual threads** and commits the outcomes in about four
 batched `UPDATE`s. Two halves, and only one of them ported.
@@ -273,10 +273,16 @@ A single notification is delivered inline, on no thread at all.
 state between calls, or touches something that is not safe to share, that is the thing to look
 at — and it is the arrangement Java has always had.
 
-**The outcomes are still one `UPDATE` per row**, so a hundred rows is a hundred statements
-against Java's four. That half is not about threads; it is bucketing outcomes by state and
-attempt count before writing, and it is still owed. See
-[SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).
+**Outcomes are written one `UPDATE` per bucket**, not one per row. Rows that decided the same
+thing — same state, same attempt count, same retry delay — share a statement:
+
+| batch | shape | before | after |
+| --- | --- | --- | --- |
+| 100 | all succeed, first attempt | 100 | 1 |
+| 100 | mostly ok, retries at two depths, one dead | 100 | 4 |
+
+Four is Java's number, from the same four buckets: successes, pre-flight expiries, post-failure
+expiries, and one per distinct attempt count among the retries.
 
 This page used to say the opposite - that handlers subscribed to the same event never run
 concurrently here, and not to rely on it. They do now, as Java's always have. If you took the

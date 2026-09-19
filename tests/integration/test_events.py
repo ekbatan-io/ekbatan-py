@@ -577,3 +577,63 @@ def test_one_notification_is_delivered_inline_with_no_thread(
 
     assert notifications_in() == {"SUCCEEDED": 1}
     assert ran_on == [threading.current_thread().name]
+
+
+def test_a_batch_of_outcomes_is_one_update_per_bucket_not_one_per_row(
+    executor, wallets, pipeline, notifications_in, registry
+):
+    """Java commits a batch in about four `UPDATE`s; this used to take one per row.
+
+    Rows that decided the same thing - same state, same attempt count, same retry delay - go in
+    one `UPDATE ... WHERE id IN (...)`. Twelve notifications that all succeed on their first
+    attempt is one statement.
+    """
+    from sqlalchemy import event
+
+    handlers = [succeeding(f"h{n}") for n in range(12)]
+    fanout, dispatch = pipeline(*handlers)
+    deposit(executor, wallets, a_wallet(executor))
+    assert fanout.drain_once() == 1
+
+    updates: list[str] = []
+
+    def count(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("UPDATE"):
+            updates.append(statement)
+
+    engine = registry.manager(registry.default_shard).primary
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        dispatch.drain_once()
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+
+    assert notifications_in() == {"SUCCEEDED": 12}
+    assert len(updates) == 1, f"twelve rows, one bucket, one statement - got {len(updates)}"
+
+
+def test_outcomes_that_differ_get_their_own_statement(
+    executor, wallets, pipeline, notifications_in, registry
+):
+    """The other half of the same rule: a bucket is per decision, not per batch."""
+    from sqlalchemy import event
+
+    fanout, dispatch = pipeline(succeeding("ok1"), succeeding("ok2"), failing("flaky"))
+    deposit(executor, wallets, a_wallet(executor))
+    fanout.drain_once()
+
+    updates: list[str] = []
+
+    def count(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("UPDATE"):
+            updates.append(statement)
+
+    engine = registry.manager(registry.default_shard).primary
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        dispatch.drain_once()
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+
+    assert notifications_in() == {"SUCCEEDED": 2, "FAILED": 1}
+    assert len(updates) == 2, "the two that succeeded share a statement; the failure is its own"
