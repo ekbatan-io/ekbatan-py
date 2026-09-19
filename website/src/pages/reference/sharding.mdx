@@ -234,8 +234,11 @@ the repository.
 
 The cost is that the id stops being self-describing: every read that starts from an id alone
 needs the strategy to locate the row first, which is a round trip you pay implicitly on each
-lookup. A repository whose strategy cannot resolve a shard from an id says so at construction
-rather than failing on the first read.
+lookup. A strategy that cannot resolve a shard from an id is fine in itself - it just has to
+route from something else - but the first id-only call on such a repository raises
+`UnsupportedError`, naming the strategy and telling you to override `shard_for()`. Refused rather
+than guessed at, because guessing here means reading the right row from the wrong database and
+finding nothing.
 
 
 The interface is small. A strategy answers one question — which shard does this key live on —

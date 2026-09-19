@@ -68,30 +68,121 @@ rather than by idleness. See [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 
 ## Routing
 
+A model that participates in sharding declares its id type as `ShardedId` instead of `Id`:
+
 ```python
-registry.manager(MEXICO)          # the manager for one shard
+class WalletId(ShardedId["Wallet"]):
+    pass
+
+
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[WalletId, WalletState]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+
+    @staticmethod
+    def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
+             opening_balance: Decimal) -> "Wallet":
+        return (
+            WalletBuilder()
+            .id(WalletId.generate(shard))        # the shard bits go into the UUID here
+            .state(WalletState.OPENED)
+            .owner_id(owner_id)
+            .currency(currency)
+            .balance(opening_balance)
+            .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
+                                          opening_balance=opening_balance))
+            .build()
+        )
+```
+
+**That is the whole of the model's participation.** One base class on the id, and one argument at
+the single point where a row is created. Nothing else on the model mentions a shard, because
+after `generate(shard)` the id carries it — the row is bonded to that database for its lifetime,
+and `WalletId.generate` is the only place that decision can be made.
+
+No field holds the shard, and deliberately so: a column would be a second copy of something the
+primary key already says, free to disagree with it after a bad backfill. Reading it out of the id
+cannot drift.
+
+The framework's own tables need no change at all. Each shard carries its own `events` and
+`event_notifications`, and an event is written to the database whose row it describes — so the
+outbox is sharded by construction rather than by configuration.
+
+### Reaching a specific shard
+
+```python
+registry.manager(MEXICO)          # the transaction manager for one shard
 registry.default                  # the default shard's
 registry.effective_shard(key)     # where this key lives
 registry.shards                   # every configured identifier
 ```
 
-A repository routes for you. Give it a strategy:
+You need these rarely. A repository routes for you; these are for the admin script, the
+reconciliation job, and the test that asserts placement.
+
+Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The bundled
+`EmbeddedBitsShardingStrategy` decodes the shard from the id's embedded bits:
 
 ```python
 class WalletRepository(ModelRepository[Wallet, WalletId]):
     def __init__(self, registry: DatabaseRegistry) -> None:
-        super().__init__(Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy())
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
+        )
 ```
 
-| strategy | routes by |
-| --- | --- |
-| `NoShardingStrategy` | everything to the default shard. The implicit default |
-| `EmbeddedBitsShardingStrategy` | the bits inside the id |
-| your own | anything. It takes a model or a key and returns a `ShardIdentifier` |
+That one keyword is the entire difference from an unsharded repository. There is no second line
+to change, because the mapping is by field name and the id type already carries the shard —
+where the Java port also has to widen `fromRecord` to rebuild a `ShardedId`.
 
-Key-based reads (`get`, `find`, `exists`) resolve one shard and go there. Predicate-based reads
-(`find_where`, `count`, `exists_where`) have no key to resolve, so they **scatter across every
-shard** - a predicate says nothing about where its rows are. Pass `shard=` to confine one.
+What it changes about the inherited reads and writes:
+
+| | routes by |
+| --- | --- |
+| `get`, `find`, `find_many`, `exists`, `update`, `delete` | the shard packed into the id |
+| `add` | the shard packed into the id the model was created with |
+| `find_where`, `find_one_where`, `exists_where`, `count` | **every shard** — a predicate says nothing about placement |
+| anything passed `shard=` | that shard, and only that one |
+
+`find_many(ids)` is the one worth calling out: it **groups the ids by shard and queries each
+shard once**, rather than one query per id. Duplicates are collapsed first, and an empty input
+returns an empty list without going near a database — never `IN ()`, and never an accidental
+full-table read.
+
+### Shard-aware accessors for custom queries
+
+When an inherited method does not cover the question, the accessors take the same routing
+information the inherited ones use — so a hand-written query lands on the right database without
+you working out which one that is:
+
+```python
+def find_all_by_owner_beside(self, wallet_id: WalletId, owner_id: UUID) -> list[Wallet]:
+    with self.readonly_db(key=wallet_id) as conn:          # that wallet's shard
+        return conn.rows(
+            select(WALLETS).where(WALLETS.c.owner_id == owner_id)
+        ).fetch(self.from_row)
+```
+
+| accessor | connection |
+|---|---|
+| `db(key=…)` / `db(model=…)` / `db(shard=…)` | the writer for that shard, outside any transaction |
+| `readonly_db(key=…)` / `readonly_db(shard=…)` | the **replica**, for a read that tolerates lag |
+| `tx_db(key=…)` | the transaction already open on that shard, or `None` |
+| `tx_db_else_db(key=…)` | that transaction, or no transaction at all |
+| `dbs()` / `readonly_dbs()` | **every** shard's, one at a time, as `(shard, conn)` pairs |
+
+All three are **keyword-only**, so a call always says which one it is routing by rather than
+leaving it to argument position. Passing more than one is not an error — `shard=` wins, then
+`model=`, then `key=` — and passing none routes to the default shard. Pass one.
+
+*Which accessor* you reach for is the explicit decision here. There is no implicit "join the
+transaction if there is one" default: `db()` is outside a transaction and `tx_db_else_db()` joins
+one, and you say which you meant. See [Repositories](../database/repositories.md).
+
+An **unsharded** repository's `dbs()` visits only the default shard, even when the registry holds
+several. A repository that opted out of routing should not silently acquire a scatter.
 
 ## The bit layout
 
@@ -118,6 +209,63 @@ wallet_id.minted_at                        # -> datetime, from the v7 timestamp
 `WalletId.random()` uses the default shard. Because the timestamp is the high bits, ids sort
 chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
 
+## Custom sharding strategies
+
+When the shard is not derivable from the id — you need to move rows between shards, or the key
+is something the id does not carry — implement `ShardingStrategy` and override `shard_for` on
+the repository.
+
+The cost is that the id stops being self-describing: every read that starts from an id alone
+needs the strategy to locate the row first, which is a round trip you pay implicitly on each
+lookup. A strategy that cannot resolve a shard from an id is fine in itself - it just has to
+route from something else - but the first id-only call on such a repository raises
+`UnsupportedError`, naming the strategy and telling you to override `shard_for()`. Refused rather
+than guessed at, because guessing here means reading the right row from the wrong database and
+finding nothing.
+
+
+The interface is small. A strategy answers one question — which shard does this key live on —
+and declares whether it can answer it from an id alone:
+
+```python
+class ShardingStrategy(Protocol):
+    @property
+    def uses_shard_aware_id(self) -> bool: ...
+
+    def shard_for_id(self, key: object) -> ShardIdentifier | None: ...
+```
+
+`shard_for_id` returns `None` to mean *use the default shard*, rather than guessing.
+
+`uses_shard_aware_id` is what the repository checks at construction. A strategy that cannot
+resolve a shard from an id, used by a repository whose reads start from ids, raises there
+rather than on the first lookup — the failure lands where somebody can fix it.
+
+Two cases justify writing one. **Re-sharding live data**, because embedded bits are bonded to
+the row for its lifetime and a move would invalidate the id. And **a key the id does not
+carry**, where placement follows something decided after creation.
+
+Both pay the same price: the id stops being self-describing, so a read starting from an id
+needs a lookup before it can route. That is a round trip on every such read, and it is why the
+embedded-bits strategy is the default despite being the less flexible one.
+
+## Unregistered shards are refused, not defaulted
+
+Asking the registry for a shard it does not hold **raises**, naming what is registered:
+
+```
+ValidationError: no database registered for shard 9:9; registered: ['0:0']
+```
+
+**This differs from the Java port,** which falls back to the default shard. That fallback makes
+one codebase run unsharded in development and sharded in production without branching — and it
+also makes a typo in a shard identifier silent, routing writes to the default where nobody looks
+for them. Refusing trades the convenience for the certainty.
+
+What does resolve to the default is a repository with `NoShardingStrategy`: every key maps
+there, and its scatter accessors visit only that shard. That is the supported way to run
+unsharded, rather than relying on a lookup miss.
+
 ## Cross-shard
 
 Refused by default. `CrossShardError` names the two shards involved.
@@ -131,8 +279,24 @@ With it on: one transaction per shard, each committing independently, and the ac
 written to **every** involved shard so each holds the full context. A failure rolls back only its
 own shard and the framework logs the partial commit, naming what stayed.
 
-Per call rather than per executor, so the risk is visible at the call site. See
-[Sagas](../concepts/sagas.md) for the shape that does not need it.
+The outbox row is duplicated to every involved shard **under the same id**, so a consumer
+reading any one of them sees the whole action, and a consumer reading all of them can tell it was
+one action rather than several.
+
+**This is not two-phase commit.** There is no such thing to have across separate databases. Each
+shard commits on its own, so a partial commit is not an edge case the framework failed to handle
+— it is the actual semantics, and the flag exists to make you say you accept them. The shards
+that already committed stay committed.
+
+Per call rather than per executor, so the risk is visible where the risk is taken. An executor
+default is for a dedicated executor whose actions are *all* designed for per-shard commits, and
+nothing else.
+
+Reach for it only when the operation is genuinely cross-region or cross-tenant and the domain is
+designed to be eventually consistent. If a partial commit would need compensating, you want a
+[saga](../concepts/sagas.md): one action per shard, chained through the outbox, with a compensating
+action when a later step fails. Slower to write, and the only version that recovers from a
+partial failure without a human.
 
 ## Migrating every shard
 
@@ -146,6 +310,12 @@ Ordered by the configuration rather than by the argument, and an unknown identif
 rather than skipped. See [Migrations](migrations.md).
 
 ## What is sequential here
+
+A scatter read and an event fan-out round visit shards **one at a time**; Java forks a virtual
+thread per shard. On eight shards a round takes eight batches' time rather than one. Recorded in
+[SHORTCOMINGS.md](../SHORTCOMINGS.md); the fix is a pool around the per-shard drain.
+
+## What sharding does not provide
 
 A scatter read and an event fan-out round visit shards **one at a time**; Java forks a virtual
 thread per shard. On eight shards a round takes eight batches' time rather than one. Recorded in

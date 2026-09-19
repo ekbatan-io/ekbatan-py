@@ -46,6 +46,40 @@ CREATE INDEX ix_event_notifications_due ON event_notifications (state, next_retr
 MySQL and MariaDB are the same with `JSON` for `JSONB`, `DATETIME(6)` for the timestamps and
 `CHAR(36)` for the uuids - exactly as in [`events`](events.md).
 
+### MySQL and MariaDB
+
+Generated from the same table definition, so the shape is identical and only the types differ -
+`CHAR(36)` for uuids, `DATETIME(6)` for the timestamps, `JSON` for the payloads:
+
+```sql
+CREATE TABLE event_notifications (
+    id               CHAR(36)     NOT NULL,
+    event_id         CHAR(36)     NOT NULL,
+    handler_name     VARCHAR(255) NOT NULL,
+    namespace        VARCHAR(255) NOT NULL,
+    action_id        CHAR(36)     NOT NULL,
+    action_name      VARCHAR(255) NOT NULL,
+    action_params    JSON         NOT NULL,
+    started_date     DATETIME(6)  NOT NULL,
+    completion_date  DATETIME(6)  NOT NULL,
+    model_id         VARCHAR(255),
+    model_type       VARCHAR(255),
+    event_type       VARCHAR(255) NOT NULL,
+    payload          JSON,
+    event_date       DATETIME(6)  NOT NULL,
+    state            VARCHAR(24)  NOT NULL,
+    attempts         INTEGER      NOT NULL,
+    next_retry_at    DATETIME(6)  NOT NULL,
+    created_date     DATETIME(6)  NOT NULL,
+    updated_date     DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
+);
+```
+
+`DATETIME(6)` rather than `DATETIME` is not cosmetic: a bare `DATETIME` truncates to whole
+seconds on MySQL, and `next_retry_at` is compared against instants that are not whole seconds.
+
 ## Columns
 
 The first fourteen are **copied from the source event row** at fan-out time: `event_id`,

@@ -37,6 +37,14 @@ def strip_code(text: str) -> str:
 
 
 def anchors(text: str) -> set[str]:
+    """The anchors a page offers.
+
+    Reads the **raw** text, not the code-stripped text. A heading may legitimately contain
+    inline code - ``### `execution_time` is `timestamptz` in Java`` - and stripping it first
+    turned that anchor into `is---------------in-java`, so every link to such a heading was
+    reported broken and no link to one could be written. The headings inside a fenced block
+    are the cost, and there are none.
+    """
     found = set()
     for line in text.splitlines():
         if line.startswith("#"):
@@ -52,7 +60,8 @@ def main() -> int:
     checked = 0
 
     for path in files:
-        text = strip_code(path.read_text())
+        raw = path.read_text()
+        text = strip_code(raw)
         for target in LINK.findall(text):
             if target.startswith(("http://", "https://", "mailto:")):
                 continue
@@ -60,7 +69,7 @@ def main() -> int:
             checked += 1
 
             if not file_part:  # same-page anchor
-                if anchor and anchor not in anchors(text):
+                if anchor and anchor not in anchors(raw):
                     broken.append(f"{path.relative_to(ROOT)}: #{anchor} - no such heading")
                 continue
 

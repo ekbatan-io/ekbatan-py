@@ -35,37 +35,120 @@ with lease:
 
 ## Where to take it
 
-**At the caller, around `executor.execute(...)`.** This is the default and almost always right.
-The lease has to span **both** `perform()` and the executor's commit, or the race it exists to
-prevent reopens in the gap between them - and only the caller can wrap both.
+### ✅ At the caller, around `executor.execute(...)` — the default
+
+```
+├─ acquire lock       ←─┐
+├─ executor.execute()   │
+│   ├─ Action.perform() │ lock held
+│   │   ├─ read state   │
+│   │   └─ plan.update  │
+│   └─ commit           │
+└─ release lock       ←─┘
+```
 
 ```python
 with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
     service.executor.execute(DepositMoneyAction, params)
 ```
 
-**Inside `perform()`** is narrower and usually wrong for exactly that reason: `perform()` returns
-before anything is written, so a lease taken and released inside it is gone before the commit.
-It is defensible only for serialising a read-and-compute that has no write of its own.
+The lease wraps **both** `perform()` and the executor's commit. A concurrent acquirer cannot
+enter until the previous commit is fully visible — so there is no race window, and no
+optimistic-locking conflict caused by writes that were supposed to be coordinated.
+
+**This is what most applications want.** Whenever the goal is "concurrent writes on the same key
+must produce a consistent result", the lock has to span the commit phase, and only the caller
+holds a scope that contains it.
+
+Size `LOCK_HOLD` as an honest upper bound on `perform()` plus the commit, not as a guess: it is
+the watchdog's deadline, and a lease that expires mid-commit hands the key to someone else while
+you are still writing.
+
+### ⚠️ Inside `Action.perform()` — narrower use case only
+
+Defensible only for serialising a read-and-compute that has no write of its own.
+
+```
+└─ executor.execute()
+    ├─ Action.perform()
+    │   ├─ acquire lock   ←─┐
+    │   ├─ read state       │ lock held
+    │   ├─ plan.update      │
+    │   └─ release lock   ←─┘  (the `with` block exits)
+    └─ commit                  ← race window: another acquirer reads pre-commit state
+```
+
+The lease closes *before* the framework's commit runs. Another acquirer takes the lock
+immediately, reads the still-pre-commit state, computes a stale-version update, and collides at
+its own commit. Optimistic locking catches it — `StaleRecordError`, and the executor re-runs
+phase one — so **no data is lost**. But calls fail and retry under contention that a
+caller-side lease would have prevented entirely. The Java port measured its own version of this:
+ten concurrent deposits, about six committing first time.
+
+This placement is for **side-effect coordination, not commit serialisation**:
+
+- An outbound webhook where you want at-most-one in flight per resource. The lock is held across
+  the external call; the database write is thin record-keeping.
+- A long external compute — PDF generation, an inference call — where you want to deduplicate
+  in-flight work per key.
+- Anywhere the write is idempotent (an upsert) and serialising it was never the goal.
+
+For **write-path serialisation**, which is the common case, acquire at the caller.
+
+### Why not just always lock inside `perform()`?
+
+Because `perform()` is the body of the action, not the transaction. The change plan is built
+there, but nothing is open yet: the executor opens the transaction *after* `perform()` returns
+the plan, and commits it before `execute(...)` returns to the caller. The transaction lifecycle
+belongs to the executor.
+
+So the action body has no way to "hold the lock until the executor commits" — the lease closes
+when the `with` block exits, and that is before the transaction it was meant to protect even
+begins. A lease taken and released inside `perform()` is gone exactly when it was needed.
+
+The caller-side pattern works for the mirror-image reason: the caller owns a boundary that
+*contains* the executor's whole lifecycle. Its lease closes after `execute(...)` returns, which
+is after the commit.
 
 ## Reentrancy
 
-Uniform across every backend: **the same key, taken again in the same context, re-enters.** It
-does not deadlock and it does not take a second connection. The lock is released when the
-outermost lease closes.
+**The same key, taken again in the same context, re-enters.** It does not deadlock and it does
+not take a second connection. The backend lock is released only when the **outermost** lease
+closes — or when its watchdog fires.
 
-Re-entry is per context, the same way the ambient transaction is - a thread you hand work to does
-not inherit your hold.
+**The first acquire's `max_hold` governs the watchdog; a re-entry's `max_hold` is ignored.** That
+is stricter than the last-call-wins convention some lock libraries use, and it is the only rule
+under which the outer region's reasoning stays true: it committed to a worst case, and an inner
+call cannot pull that commitment out from under it. The same is true in the Java port, and for
+the same reason.
+
+Re-entry is **per context, not per call stack** — the same way the ambient transaction is. A
+thread you hand work to is a different identity and will block on a key you hold. That is not a
+bug to work around: if the child could inherit the hold, "this key is held by one holder" would
+stop being true.
+
+One shared helper owns the per-`(context, key)` counter, the watchdog timer and the
+release arbitration, so each backend implements only a low-level acquire and release. That is
+what makes "uniform across all five" checkable rather than aspirational.
 
 ## The backends
 
-| backend | mechanism | scope |
-| --- | --- | --- |
-| `PostgresKeyedLockProvider` | `pg_advisory_lock` | the cluster |
-| `MySQLKeyedLockProvider` | `GET_LOCK` | the server |
-| `MariaDBKeyedLockProvider` | `GET_LOCK` | the server |
-| `RedisKeyedLockProvider` | Redis | the Redis deployment |
-| `InProcessKeyedLockProvider` | `threading.Lock` | **this process only** |
+| Provider | Scope | Mechanism | Hold | Notes |
+|---|---|---|---|---|
+| `PostgresKeyedLockProvider` | cross-process | `pg_advisory_lock` (session-scoped) | session + watchdog | Auto-released if the session ends — a crashed process or a dropped network connection releases the key without anyone intervening. One connection per lease |
+| `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | A sub-second `max_wait` is **not a wait** — see [below](#a-sub-second-wait-is-not-a-wait-on-mysql) |
+| `MariaDBKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | Same statements as the MySQL one, separate because MariaDB honours sub-second timeouts |
+| `RedisKeyedLockProvider` | the Redis deployment | `SET NX PX` | **TTL** + watchdog | Sub-millisecond hand-off. Single-master only — **not** Redlock |
+| `InProcessKeyedLockProvider` | **this process only** | `threading.Lock` | in-memory + watchdog | Tests and single-process deployments |
+
+The "Hold" column is the difference that matters operationally. The SQL backends hold a *session*
+— the lock exists because a connection is open, so losing the connection releases it. Redis holds
+a **TTL** — the key expires whether or not the holder is alive, so `max_hold` there has to be an
+honest upper bound on the work rather than a generous guess. A holder that dies releases nothing;
+the key simply expires and the next caller takes it.
+
+The Redis provider deliberately drives the expiry itself rather than letting a client library's
+own watchdog extend the lease, so the framework's first-acquire-wins rule holds there too.
 
 The four SQL and in-process providers come from `ekbatan.locks`. The Redis one is imported from
 `ekbatan.locks.redis` and needs the `redis` extra - it is deliberately *not* re-exported from the
@@ -79,13 +162,34 @@ Each key is hashed to a 64-bit integer, and the hash matches Java's exactly, **s
 service and a Java service contending for one key actually contend.** The MySQL lock name is
 `ekbatan:<unsigned hex>`, byte for byte what Java produces.
 
-### Wiring one
+### Wiring up a backend
 
 ```python
 locks = PostgresKeyedLockProvider(
     create_engine(url, pool_size=5, max_overflow=0)
 )
 ```
+
+A provider is a plain object you construct and hand to whatever needs it — there is no registry
+to declare it in and nothing discovers it. Close it when the service closes: `locks.close()`
+releases every lease still held, which for a SQL backend is what returns those connections. The
+engine is yours — you created it, so you dispose it — and the order matters: release the leases
+before disposing the pool they are holding connections from.
+
+Redis takes a client rather than an engine:
+
+```python
+from ekbatan.locks.redis import RedisKeyedLockProvider
+
+locks = RedisKeyedLockProvider(redis.Redis(host="localhost"))
+```
+
+Size the SQL pool by **concurrent leases**, not by request rate: a lease is a connection for as
+long as it is held. If twelve requests can hold twelve different keys at once, the pool needs
+twelve, and `max_overflow=0` so the thirteenth waits rather than opening a connection the
+database has not budgeted for.
+
+### Dedicated pool via its own engine
 
 **Give it its own pool.** A SQL keyed lock is *session*-scoped: each hold keeps a connection for
 as long as the lease lasts, because that is what the lock physically is. A lease taken during a
@@ -96,6 +200,17 @@ Size that pool for the **maximum number of leases held at once**, not for traffi
 
 That is also why `max_hold` is mandatory rather than optional: a connection held forever is a
 pool exhausted forever.
+
+
+Sizing it is a different exercise from sizing a request pool, and the number is usually much
+smaller than people expect. It is bounded by **how many leases are held at the same instant**,
+not by request rate: a hundred requests a second each holding a lease for 20 ms need two or
+three connections, while ten long imports holding one for a minute each need ten.
+
+`max_overflow=0` is deliberate on that engine. Overflow exists to absorb bursts, and a burst of
+lock holders is exactly the thing you want to refuse rather than absorb — a refused
+`try_acquire` is a 503 the caller can retry, while an absorbed one is an unbounded number of
+connections held for the length of a lease.
 
 ### How the SQL backends wait
 
