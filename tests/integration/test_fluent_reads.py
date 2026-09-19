@@ -18,7 +18,7 @@ from ekbatan.domain import DELETED
 from ekbatan.fetching import Db
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
-from fixtures.domain import Wallet, WalletId
+from fixtures.domain import NOW, Wallet, WalletId
 from fixtures.schema import WALLETS
 
 HERE = ShardIdentifier(0, 0)
@@ -90,6 +90,7 @@ def a_wallet(owner, currency="EUR", balance="100.00", shard=HERE):
         owner_id=owner,
         currency=currency,
         balance=Decimal(balance),
+        created_date=NOW,
     )
 
 

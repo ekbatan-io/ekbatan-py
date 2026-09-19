@@ -8,6 +8,7 @@ wrapper or the bare uuid, and that routing reads the shard off it with nothing e
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from uuid import UUID
@@ -34,6 +35,9 @@ PURSES = Table(
     Column("created_date", DateTime, nullable=False),
     Column("updated_date", DateTime, nullable=False),
 )
+
+
+NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
 class PurseState(Enum):
@@ -72,7 +76,9 @@ def sharded_purses(sharded_registry, clock):
 
 
 def a_purse(id: Id[Purse]) -> Purse:
-    return Purse(id=id, state=PurseState.OPEN, currency="EUR", balance=Decimal("100.00"))
+    return Purse(
+        id=id, state=PurseState.OPEN, currency="EUR", balance=Decimal("100.00"), created_date=NOW
+    )
 
 
 # --------------------------------------------------------------------------- the id itself

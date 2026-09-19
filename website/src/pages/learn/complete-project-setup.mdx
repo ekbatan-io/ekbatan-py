@@ -1168,7 +1168,7 @@ Three shapes, which between them cover almost everything you will write.
 
 ```python
 class OpenWalletAction(Action[OpenWalletParams, Wallet]):
-    """Creates. `plan.add` stages an INSERT and returns the stamped row."""
+    """Creates. `plan.add` stages an INSERT and hands back the row you gave it."""
 
     def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
         super().__init__(clock)

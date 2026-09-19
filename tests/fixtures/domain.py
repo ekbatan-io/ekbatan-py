@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from uuid import UUID
@@ -15,6 +16,10 @@ from uuid import UUID
 from ekbatan.domain import Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
+
+#: A fixed instant for a model built outside a unit of work. A test asserting on a
+#: timestamp against a moving clock passes on the machine it was written on.
+NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
 class WalletId(ShardedId["Wallet"]):
@@ -77,7 +82,15 @@ class Wallet(Model[WalletId, WalletState]):
     reward_points: int | None = None
 
     @classmethod
-    def open(cls, *, id: WalletId, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
+    def open(
+        cls,
+        *,
+        id: WalletId,
+        owner_id: UUID,
+        currency: str,
+        balance: Decimal,
+        created_date: datetime,
+    ) -> Wallet:
         return (
             cls.builder()
             .id(id)
@@ -86,6 +99,7 @@ class Wallet(Model[WalletId, WalletState]):
             .currency(currency)
             .balance(balance)
             .with_initial_version()
+            .created_date(created_date)
             .with_event(
                 WalletCreatedEvent(owner_id=owner_id, currency=currency, initial_balance=balance)
             )

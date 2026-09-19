@@ -55,12 +55,16 @@ class ActionPlan:
     # ------------------------------------------------------------------ staging
 
     def add[P: Persistable[Any, Any]](self, model: P) -> P:
-        """Stage an insert. Returns the row as it will be written, timestamps and all."""
+        """Stage an insert. Returns the row you passed, as Java's ``add`` does.
+
+        Nothing is filled in here any more. ``created_date`` is required at construction and
+        ``updated_date`` falls back to it, so the row handed over is already the row that will
+        be written - which is why this can hand back the same object rather than a copy.
+        """
         changes = self._changes(type(model))
         self._refuse_if_staged(changes, model)
-        stamped = self._stamp_new(model)
-        changes.additions[stamped.id] = stamped
-        return stamped
+        changes.additions[model.id] = model
+        return model
 
     def add_all[P: Persistable[Any, Any]](self, models: Iterable[P]) -> list[P]:
         return [self.add(m) for m in models]
@@ -135,18 +139,6 @@ class ActionPlan:
 
     def _changes(self, model_type: type) -> PersistableChanges:
         return self._by_type.setdefault(model_type, PersistableChanges())
-
-    def _stamp_new[P: Persistable[Any, Any]](self, model: P) -> P:
-        """Fill in the timestamps a model has. An entity has none - it is state, not history."""
-        if not isinstance(model, Model):
-            return model
-        now = to_storage(self._clock.now())
-        changes: dict[str, Any] = {}
-        if model.created_date is None:
-            changes["created_date"] = now
-        if model.updated_date is None:
-            changes["updated_date"] = changes.get("created_date", now)
-        return model.evolve(**changes) if changes else model
 
     def _stamp_updated[P: Persistable[Any, Any]](self, model: P) -> P:
         """Mark when the row changed. An entity has no timestamps, and neither has the version

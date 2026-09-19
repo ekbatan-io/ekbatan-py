@@ -11,13 +11,17 @@ from uuid import uuid4
 
 from ekbatan import Action, Clock, Repository, run_action
 from fixtures.actions import DepositParams
-from fixtures.domain import Wallet, WalletId
+from fixtures.domain import NOW, Wallet, WalletId
 from fixtures.schema import WALLETS
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal(balance),
+        created_date=NOW,
     ).without_events()
 
 

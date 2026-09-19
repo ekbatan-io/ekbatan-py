@@ -217,22 +217,41 @@ storage form. Override them when the shapes differ; most repositories never do.
 This is the largest single reduction in application code, and the one most at risk of being
 undone by a well-meant refactor - so it is stated here.
 
-## Timestamps are stamped when the change is staged
+## `created_date` is required, as Java requires it
 
-> **chosen** - Java leaves `createdDate`/`updatedDate` to the application. **Behavioural**, and the section says so. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - Java's constructor says `Validate.notNull(builder.createdDate)` and `build()` throws without it. So does this. Brought to parity in `EKB-0192`.
 
-Java leaves `createdDate` / `updatedDate` to the application. Here the plan stamps them from
-the executor's clock, so the value the action is holding is the value that will be written.
+Java's `Model` constructor:
 
-This is a behavioural divergence rather than an ergonomic one, and it is deliberate: the
-conformance scenario `time-and-types/timestamps_do_not_shift_with_the_session_zone` asserts the
-stamped behaviour. Two lines that are the same every time and wrong occasionally do not belong
-in application code.
+```java
+this.createdDate = Validate.notNull(builder.createdDate, "createdDate cannot be null")
+        .truncatedTo(MICROS);
+this.updatedDate = builder.updatedDate != null ? builder.updatedDate.truncatedTo(MICROS)
+                                               : this.createdDate;
+```
 
-A repository used on its own stamps the same way, so `repo.update(row)` and a staged update
-leave the same `updated_date`. The version is not stamped there and never was: like Java's, it
-moves inside the write, under `WHERE version = ?`, so a caller hands in the row as they read it
-and gets it back one version on.
+and its factories pass `clock.instant()` in. This port now does the same three things:
+`created_date` is required and refused when null, `updated_date` falls back to it, and both are
+normalised on the way in - `to_storage` is the analogue of `truncatedTo(MICROS)`, since an aware
+value stored as-is would not compare equal to the same instant read back.
+
+For a while this port left both unset and stamped them from the executor's clock when the change
+was staged, on the grounds that two lines which are the same every time and wrong occasionally do
+not belong in application code. That is a fair argument for a **default**; it was the wrong
+argument for dropping the **validation**, and it left one class with two standards for
+"required" - `id`, `state` and `version` refused at construction while the two timestamps were
+silently optional. Java gets both: a required field, and a factory that supplies it from the
+clock. Pass `self.clock.now()`, which is what `clock.instant()` is doing on the other side.
+
+`Entity` has no timestamps in either port. A row that needs to know when it last changed almost
+certainly has changes worth telling the rest of the system about, which makes it a `Model`.
+
+**One difference remains**, and it is the write path rather than the constructor: `plan.update`
+and `repository.update` refresh `updated_date` from the clock, and nothing in `ekbatan-core`
+ever writes `updatedDate` - `ModelRepository` only checks the column exists. Java's value is set
+once at construction and carried forward by `copy()` unless the application sets it again.
+Recorded rather than silently matched: a column named `updated_date` that never moves after
+insert is the other kind of surprise.
 
 ## The per-invocation plan lives in a `ContextVar`
 
@@ -620,17 +639,20 @@ What is still dialect-dependent, in both ports, is *scale*: a `Decimal("2.50")` 
 not. Java's `should_preserve_converted_values_when_updateAll_batches_multiple_rows` sidesteps this
 by re-reading rather than asserting on the return value, and the test here does the same.
 
-## `plan.add` hands back the stamped row, not the argument
+## `plan.add` hands back the row you passed, as Java's does
 
-> **chosen** - **Behavioural**: Java's test asserts `isSameAs` on the object you passed. Here it is a stamped copy. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - Java's `ActionPlanTest.add_returns_the_entity` asserts `isSameAs`, and so does this port's test. Brought to parity in `EKB-0192`.
 
-Java's `ActionPlanTest.add_returns_the_entity` asserts `isSameAs` - the very object you passed.
-Here it is the stamped copy, because the framework fills in `created_date` and `updated_date`
-and a caller holding the unstamped original is holding something that does not describe the row
-about to be written. `plan.update` matches Java exactly: the version has already moved, so the
-rest of the unit of work reads forward.
+This used to hand back a stamped copy, because the framework filled in `created_date` and
+`updated_date` and a caller holding the unstamped original was holding something that did not
+describe the row about to be written. That reasoning was sound and its premise is gone:
+`created_date` is required at construction now, so there is nothing left to fill in and `add`
+hands back the object it was given.
 
-`addAll(null)` differs for the same sort of reason. Java tolerates a null collection and returns
+`plan.update` matched Java already - `entity.nextVersion()` on both sides, so the version has
+moved and the rest of the unit of work reads forward.
+
+`add_all(None)` is the one difference left here. Java tolerates a null collection and returns
 empty; here it is a `TypeError`. `None` where an iterable belongs is a mistake at the call site,
 and returning empty lets it through to become "this unit of work staged nothing" - which commits
 a sentinel row and looks like success.

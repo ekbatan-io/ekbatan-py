@@ -564,8 +564,7 @@ class Repository[M: Persistable[Any, Any], K]:
         if not models:
             return []
         shard = self.shard_of_all(models)
-        now = to_storage(self.clock.now())
-        stamped = [self._stamp_new(m, now) for m in models]
+        stamped = list(models)
         rows = [self.to_row(m) for m in stamped]
 
         with self.tx_db_else_db(shard=shard) as conn:
@@ -594,8 +593,7 @@ class Repository[M: Persistable[Any, Any], K]:
             return
         with self._writing("BATCH_INSERT", len(models)):
             shard = self.shard_of_all(models)
-            now = to_storage(self.clock.now())
-            rows = [self.to_row(self._stamp_new(m, now)) for m in models]
+            rows = [self.to_row(m) for m in models]
             with self.tx_db_else_db(shard=shard) as conn:
                 conn.execute(insert(self.table), rows)
 
@@ -712,22 +710,6 @@ class Repository[M: Persistable[Any, Any], K]:
         return [self.from_row(by_id[self.to_row(m)[self.id_column.name]]) for m in stamped]
 
     # --------------------------------------------------------------- internals
-
-    def _stamp_new(self, model: M, now: datetime) -> M:
-        """Fill in the timestamps a model has and an entity does not.
-
-        The instant is read once per batch and passed in: a thousand rows written together
-        were written at one moment, and asking the clock a thousand times both costs more and
-        says something less true.
-        """
-        if not isinstance(model, Model):
-            return model
-        changes: dict[str, Any] = {}
-        if model.created_date is None:
-            changes["created_date"] = now
-        if model.updated_date is None:
-            changes["updated_date"] = changes.get("created_date", now)
-        return model.evolve(**changes) if changes else model
 
     def _stamp_updated(self, model: M, now: datetime) -> M:
         """Move the version on, and mark when the row changed.

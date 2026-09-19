@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy, ShardIdentifier
-from fixtures.domain import Wallet, WalletId
+from fixtures.domain import NOW, Wallet, WalletId
 from fixtures.schema import EVENTS, WALLETS
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -37,6 +37,7 @@ def a_wallet(shard: ShardIdentifier, currency: str = "EUR") -> Wallet:
         owner_id=uuid4(),
         currency=currency,
         balance=Decimal("1.00"),
+        created_date=NOW,
     )
 
 
@@ -117,7 +118,11 @@ def test_db_deliberately_does_not_join(registry, wallets):
 
 def test_a_write_inside_a_transaction_joins_it(registry, wallets):
     wallet = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("1.00"),
+        created_date=NOW,
     )
     try:
         with registry.default.transaction():
@@ -133,7 +138,11 @@ def test_a_write_inside_a_transaction_joins_it(registry, wallets):
 
 def test_readonly_db_inside_a_transaction_sees_its_writes(registry, wallets):
     wallet = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("7.00")
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("7.00"),
+        created_date=NOW,
     )
     with registry.default.transaction():
         wallets.add(wallet)
@@ -194,13 +203,23 @@ def test_column_refuses_a_name_the_table_does_not_have(wallets):
 
 def test_the_no_result_writes_write(wallets):
     one = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("1.00"),
+        created_date=NOW,
     )
     wallets.add_no_result(one)
     assert wallets.get(one.id).balance == Decimal("1.0000")
 
     many = [
-        Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("2.00"))
+        Wallet.open(
+            id=WalletId.random(),
+            owner_id=uuid4(),
+            currency="EUR",
+            balance=Decimal("2.00"),
+            created_date=NOW,
+        )
         for _ in range(3)
     ]
     wallets.add_all_no_result(many)
@@ -267,6 +286,7 @@ def _open_wallet(currency, clock):
                     owner_id=uuid4(),
                     currency=params.currency,
                     balance=Decimal("1.00"),
+                    created_date=self.clock.now(),
                 )
             )
 
@@ -358,7 +378,11 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
     seen = _statements(engine)
 
     wallet = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("1.00"),
+        created_date=NOW,
     )
     wallets.add(wallet)
 
@@ -379,7 +403,13 @@ def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
     seen = _statements(registry.default.primary)
 
     many = [
-        Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00"))
+        Wallet.open(
+            id=WalletId.random(),
+            owner_id=uuid4(),
+            currency="EUR",
+            balance=Decimal("1.00"),
+            created_date=NOW,
+        )
         for _ in range(250)
     ]
     stored = wallets.add_all(many)

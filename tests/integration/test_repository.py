@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -11,7 +10,7 @@ from ekbatan.errors import EntityNotFoundError, StaleRecordError
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
-from fixtures.domain import Notification, NotificationId, Wallet, WalletId, WalletState
+from fixtures.domain import NOW, Notification, NotificationId, Wallet, WalletId, WalletState
 from fixtures.schema import NOTIFICATIONS, WALLETS
 
 
@@ -22,7 +21,11 @@ def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Repository[Walle
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal(balance),
+        created_date=NOW,
     )
 
 
@@ -40,7 +43,10 @@ def test_an_inserted_row_reads_back_exactly(wallets, clock):
     assert found.currency == "EUR"
     assert found.state is WalletState.OPENED
     assert found.version == 1
-    assert found.created_date == datetime(2026, 1, 1, 10, 0, 0)
+    assert found.created_date == stored.created_date, (
+        "the instant the model was built with is the instant that was written - the "
+        "repository does not supply one, as Java's does not"
+    )
     assert found.created_date.tzinfo is None, "timestamps are stored zone-less, in UTC"
 
 
@@ -162,7 +168,13 @@ def test_a_deleted_row_is_invisible_to_every_read(wallets):
 def test_predicate_reads_apply_the_same_filter(wallets):
     _ada, grace, gone = (
         wallets.add(
-            Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency=c, balance=Decimal("1.00"))
+            Wallet.open(
+                id=WalletId.random(),
+                owner_id=uuid4(),
+                currency=c,
+                balance=Decimal("1.00"),
+                created_date=NOW,
+            )
         )
         for c in ("EUR", "USD", "EUR")
     )
@@ -200,12 +212,14 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
+        created_date=clock.now(),
     )
     there = Wallet.open(
         id=WalletId.generate(mexico),
         owner_id=uuid4(),
         currency="MXN",
         balance=Decimal("2.00"),
+        created_date=clock.now(),
     )
     # One call per shard: a batch spanning two databases would need a transaction that spans
     # them, and there isn't one.
@@ -535,7 +549,13 @@ def test_converted_values_survive_a_batch(wallets, clock):
     """
     made = wallets.add_all(
         [
-            Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency=c, balance=Decimal(b))
+            Wallet.open(
+                id=WalletId.random(),
+                owner_id=uuid4(),
+                currency=c,
+                balance=Decimal(b),
+                created_date=clock.now(),
+            )
             for c, b in [("EUR", "1.25"), ("USD", "2.50"), ("MXN", "3.75")]
         ]
     )
@@ -555,7 +575,11 @@ def test_batch_and_single_update_store_identical_timestamps(wallets, clock):
     a, b = wallets.add_all(
         [
             Wallet.open(
-                id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1")
+                id=WalletId.random(),
+                owner_id=uuid4(),
+                currency="EUR",
+                balance=Decimal("1"),
+                created_date=clock.now(),
             )
             for _ in range(2)
         ]

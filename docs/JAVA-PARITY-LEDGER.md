@@ -330,7 +330,7 @@ which means "use the default".
 | ActionExecutorNamespaceValidationTest.java | 119 | `tests/integration/test_registries.py` | done |
 | ActionExecutorTest.java | 519 | `tests/integration/test_actions.py` | done |
 | ActionExecutorTracingTest.java | 714 | `tests/integration/test_actions.py` | done |
-| ActionPlanTest.java | 223 | `tests/integration/test_actions.py` | done - `add` hands back the stamped row rather than the argument; see DIVERGENCE |
+| ActionPlanTest.java | 223 | `tests/integration/test_actions.py` | done - `add` hands back the argument, as Java's `isSameAs` asserts |
 | ActionRegistryBuilderTest.java | 61 | `tests/integration/test_registries.py` | done |
 | ActionRegistryTest.java | 112 | `tests/integration/test_registries.py` | done |
 | ActionSpecTest.java | 633 | `tests/unit/test_action_testing.py` | done - the cases testing the assertion DSL itself are n/a; `assert` needs no test |

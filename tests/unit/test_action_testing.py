@@ -23,6 +23,7 @@ from fixtures.actions import (
     NotifyParams,
 )
 from fixtures.domain import (
+    NOW,
     Notification,
     NotificationId,
     Wallet,
@@ -47,7 +48,11 @@ class DepositAction(Action[DepositParams, Wallet]):
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal(balance),
+        created_date=NOW,
     ).without_events()
 
 
@@ -197,7 +202,11 @@ class CreatesBothAction(Action[None, Wallet]):
     def perform(self, principal: str | None, params: None) -> Wallet:
         wallet = self.plan.add(
             Wallet.open(
-                id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+                id=WalletId.random(),
+                owner_id=uuid4(),
+                currency="EUR",
+                balance=Decimal("1.00"),
+                created_date=self.clock.now(),
             )
         )
         self.plan.add(

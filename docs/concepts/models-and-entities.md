@@ -6,7 +6,7 @@ that supports soft deletion. The difference is whether their changes are news.
 | | `Model` | `Entity` |
 | --- | :---: | :---: |
 | `id`, `state`, `version` | yes | yes |
-| `created_date` / `updated_date`, managed by the framework | yes | no |
+| `created_date` / `updated_date` | **required**, and typed on the base | neither |
 | Changes emit events | yes | no |
 
 Choose **`Model`** when a change should be recorded as an event - for downstream consumers, for

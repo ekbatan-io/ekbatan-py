@@ -34,8 +34,8 @@ class Model[ID, S: Enum](Persistable[ID, S]):
     id: ID
     state: S
     version: int = 1
-    created_date: datetime | None = None
-    updated_date: datetime | None = None
+    created_date: datetime                 # required
+    updated_date: datetime | None = None   # falls back to created_date
     events: tuple[ModelEvent, ...] = ()
 
     @property
@@ -46,9 +46,23 @@ class Model[ID, S: Enum](Persistable[ID, S]):
     def next_version(self) -> Self: ...
 ```
 
-`created_date` and `updated_date` are `None` until the change is staged — the framework stamps
-them from its own clock. Making the application supply them would put two lines in every unit of
-work that are the same every time and wrong occasionally.
+`created_date` is **required**, exactly as Java's is — its constructor says
+`Validate.notNull(builder.createdDate)` and `build()` throws without it. A model records
+something that happened, and when it happened is part of the record rather than a column the
+framework backfills afterwards. Pass `self.clock.now()` from the action, which is what Java's
+`clock.instant()` is doing:
+
+```python
+Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.now())
+```
+
+`updated_date` falls back to `created_date` — a row that has never changed was last updated when
+it was created. Both are normalised to zone-less UTC on the way in, the analogue of Java's
+`.truncatedTo(MICROS)`: an aware value stored as-is would not compare equal to the same instant
+read back.
+
+`Entity` has neither, in either port. Something that needs to know when it last changed almost
+certainly has changes worth telling the rest of the system about, which makes it a `Model`.
 
 `events` is excluded from equality. Two readers of one database row are looking at the same
 wallet whether or not one of them is mid-change.

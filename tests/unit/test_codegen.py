@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -102,6 +103,7 @@ def test_the_output_is_valid_python_that_actually_builds_a_model(tmp_path: Path)
         .currency("EUR")
         .balance(Decimal("10.00"))
         .with_initial_version()
+        .created_date(datetime(2026, 1, 1, 12, 0, tzinfo=UTC))
         .build()
     )
     assert isinstance(built, Wallet)

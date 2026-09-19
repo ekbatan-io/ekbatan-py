@@ -28,6 +28,7 @@ aggregate, which is what an audit query gets to rely on.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -125,7 +126,13 @@ class Wallet(Model[WalletId, WalletState]):
 
     @classmethod
     def open(
-        cls, *, owner_id: UUID, currency: str, balance: Decimal, id: WalletId | None = None
+        cls,
+        *,
+        owner_id: UUID,
+        currency: str,
+        balance: Decimal,
+        id: WalletId | None = None,
+        created_date: datetime,
     ) -> Wallet:
         from .builders import WalletBuilder
 
@@ -138,6 +145,7 @@ class Wallet(Model[WalletId, WalletState]):
             .currency(currency)
             .balance(balance)
             .with_initial_version()
+            .created_date(created_date)
             .with_event(
                 WalletOpenedEvent(owner_id=owner_id, currency=currency, opening_balance=balance)
             )

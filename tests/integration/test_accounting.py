@@ -75,6 +75,7 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("1.00"),
+                    created_date=self.clock.now(),
                 )
                 for _ in range(params.count)
             )

@@ -17,6 +17,7 @@ import pytest
 from ekbatan.domain import Entity, GenericState, Model
 from ekbatan.errors import ValidationError
 from fixtures.domain import (
+    NOW,
     Notification,
     NotificationId,
     Wallet,
@@ -29,7 +30,11 @@ from fixtures.domain import (
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal(balance)
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal(balance),
+        created_date=NOW,
     )
 
 
@@ -93,6 +98,7 @@ def test_a_builder_can_be_started_from_nothing():
         .currency("GBP")
         .balance(Decimal("5.00"))
         .with_initial_version()
+        .created_date(NOW)
         .build()
     )
     assert built.currency == "GBP"
@@ -275,6 +281,7 @@ def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():
         currency="EUR",
         balance=Decimal("100.00"),
         aliases=("main", "eu"),
+        created_date=NOW,
     )
     changed = wallet.copy().balance(Decimal("150.00")).build()
 
@@ -313,7 +320,7 @@ def test_a_model_refuses_to_be_built_without_its_invariants(field, value, messag
         field: value,
     }
     with pytest.raises(ValidationError, match=message):
-        Wallet(**fields)
+        Wallet(**fields, created_date=NOW)
 
 
 @pytest.mark.parametrize(
@@ -350,6 +357,7 @@ def test_a_row_refuses_a_null_event_list():
             currency="EUR",
             balance=Decimal("1.00"),
             events=None,
+            created_date=NOW,
         )
 
 
@@ -368,6 +376,7 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
         currency="EUR",
         balance=Decimal("1.00"),
         events=attached,
+        created_date=NOW,
     )
 
     attached.append(WalletMoneyDepositedEvent(amount=Decimal("999"), new_balance=Decimal("999")))

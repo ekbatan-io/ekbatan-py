@@ -60,6 +60,7 @@ class CreateWalletAction(Action[CreateWalletParams, Wallet]):
                 owner_id=params.owner_id,
                 currency=params.currency,
                 balance=params.initial_balance,
+                created_date=self.clock.now(),
             )
         )
 

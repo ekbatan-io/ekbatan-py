@@ -24,7 +24,7 @@ from fixtures.actions import (
     DepositMoneyAction,
     DepositParams,
 )
-from fixtures.domain import NotificationId, Wallet, WalletId, WalletMoneyDepositedEvent
+from fixtures.domain import NOW, NotificationId, Wallet, WalletId, WalletMoneyDepositedEvent
 from fixtures.schema import EVENTS
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -147,6 +147,7 @@ class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("1.00"),
+                    created_date=self.clock.now(),
                 )
             ),
             self.plan.add(
@@ -155,6 +156,7 @@ class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
                     owner_id=uuid4(),
                     currency="MXN",
                     balance=Decimal("2.00"),
+                    created_date=self.clock.now(),
                 )
             ),
         )
@@ -397,6 +399,7 @@ class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1.00"),
+                created_date=self.clock.now(),
             )
         )
         stale = self.wallets.get(params.wallet_id)
@@ -427,6 +430,7 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
             owner_id=uuid4(),
             currency="MXN",
             balance=Decimal("5.00"),
+            created_date=NOW,
         )
     )
     assert wallets.shard_of(on_mexico) == MEXICO

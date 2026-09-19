@@ -31,6 +31,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Self
 
+from .clock import to_storage
 from .errors import ValidationError
 
 __all__ = [
@@ -360,12 +361,17 @@ class Model[ID, S: Enum](Persistable[ID, S]):
     Events are excluded from equality: two readers of one database row are looking at the same
     wallet whether or not one of them is mid-change.
 
-    ``created_date`` and ``updated_date`` are left unset until the change is staged; the
-    framework stamps them from its own clock. Making the application supply them means every
-    unit of work carries two lines that are the same every time and wrong occasionally.
+    ``created_date`` is **required**, as Java's ``createdDate`` is: its constructor says
+    ``Validate.notNull(builder.createdDate)`` and ``build()`` throws without it. A model is
+    a record of something that happened, and when it happened is part of the record rather
+    than a column the framework backfills. Pass ``self.clock.now()`` from the action, which
+    is what Java's ``clock.instant()`` is doing.
+
+    ``updated_date`` falls back to ``created_date``, again as Java's does - a row that has
+    never changed was last updated when it was created.
     """
 
-    created_date: datetime | None = None
+    created_date: datetime
     updated_date: datetime | None = None
     events: tuple[ModelEvent, ...] = field(default=(), compare=False, repr=False)
 
@@ -384,6 +390,25 @@ class Model[ID, S: Enum](Persistable[ID, S]):
             raise ValidationError("events cannot be null")
         if not isinstance(self.events, tuple):
             object.__setattr__(self, "events", tuple(self.events))
+
+        # Java: `Validate.notNull(builder.createdDate, "createdDate cannot be null")`. A
+        # keyword-only dataclass would otherwise let `created_date=None` through, since the
+        # annotation is not checked at runtime.
+        if self.created_date is None:
+            raise ValidationError(
+                f"{type(self).__name__}.created_date cannot be null. A model records when it "
+                f"happened; pass self.clock.now() from the action that built it."
+            )
+        # Java: `.truncatedTo(MICROS)` on the way in, so what the row holds is what the column
+        # holds. Here that means UTC with the zone dropped - an aware value stored as-is would
+        # not compare equal to the same instant read back.
+        object.__setattr__(self, "created_date", to_storage(self.created_date))
+        # Java: `builder.updatedDate != null ? ... : this.createdDate`.
+        object.__setattr__(
+            self,
+            "updated_date",
+            self.created_date if self.updated_date is None else to_storage(self.updated_date),
+        )
 
     @property
     def is_model(self) -> bool:

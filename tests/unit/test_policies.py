@@ -32,7 +32,11 @@ def test_staging_the_same_row_twice_in_one_batch_is_refused(clock):
 
     plan = ActionPlan(clock)
     wallet = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("1.00"),
+        created_date=clock.now(),
     )
     with pytest.raises(ValidationError, match="already staged"):
         plan.add_all([wallet, wallet])
@@ -44,7 +48,11 @@ def test_a_plan_reports_what_it_is_holding(clock):
     assert not plan
 
     wallet = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00")
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("1.00"),
+        created_date=clock.now(),
     )
     plan.add(wallet)
 
@@ -83,33 +91,41 @@ def test_a_plan_outside_a_unit_of_work_says_so():
 # (`db-scheduler/tests/unit/test_schedules.py`, far more thoroughly than here).
 
 
-def test_staging_hands_back_the_row_as_it_will_be_written(clock):
-    """Where this differs from Java, and why.
+def test_staging_hands_back_the_row_you_passed(clock):
+    """Java's `ActionPlanTest.add_returns_the_entity` asserts `isSameAs`. So does this.
 
-    Java's `ActionPlanTest.add_returns_the_entity` asserts `isSameAs` - the very object you
-    passed. Here `add` hands back the stamped copy, because the framework fills in
-    `created_date` and `updated_date` and a caller holding the unstamped original is holding
-    something that does not match the row about to be written. `update` matches Java exactly:
-    the version has already moved, so the rest of the unit of work reads forward.
+    There is nothing left for `add` to fill in: `created_date` is required at construction and
+    `updated_date` falls back to it, so the row handed over is already the row that will be
+    written. `update` matches Java too - the version has already moved, so the rest of the unit
+    of work reads forward.
     """
     from ekbatan.action.plan import ActionPlan
     from fixtures.domain import Wallet, WalletId
 
     plan = ActionPlan(clock)
     fresh = Wallet.open(
-        id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1")
+        id=WalletId.random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("1"),
+        created_date=clock.now(),
     )
-    assert fresh.created_date is None
+    assert fresh.created_date == to_storage(clock.now())
+    assert fresh.updated_date == fresh.created_date, "unset, so it falls back to created_date"
 
     staged = plan.add(fresh)
 
-    assert staged is not fresh
-    assert staged.created_date == to_storage(clock.now())
-    assert staged.updated_date == staged.created_date
+    assert staged is fresh, "the very object, as Java hands back the very object"
     assert plan.additions(Wallet) == [staged], "and that is what gets written"
 
     changed = plan.update(
-        Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1"))
+        Wallet.open(
+            id=WalletId.random(),
+            owner_id=uuid4(),
+            currency="EUR",
+            balance=Decimal("1"),
+            created_date=clock.now(),
+        )
     )
     assert changed.version == 2, "Java's `update_returns_next_version`"
 

@@ -35,7 +35,7 @@ These are the **17 that somebody decided**. Each could have gone the other way.
 | [Equality compares the whole row](../DIVERGENCE.md) | **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. |
 | [A shard member carries one datasource pair, not a named map](../DIVERGENCE.md) | Java's `configFor(name)` map is dropped for a fixed pair. A surface removal somebody decided. |
 | [SQLite is a dialect here and is not one in Java](../DIVERGENCE.md) | An addition. Java refuses everything but the three. |
-| [`plan.add` hands back the stamped row, not the argument](../DIVERGENCE.md) | **Behavioural**: Java's test asserts `isSameAs` on the object you passed. Here it is a stamped copy. |
+| ~~[`plan.add` hands back the stamped row, not the argument](../DIVERGENCE.md)~~ | **Closed in `EKB-0192`.** `created_date` is required at construction now, so there is nothing to stamp and `add` hands back the object it was given - `isSameAs`, as Java does. |
 | [The test-support API is data, not an assertion DSL](../DIVERGENCE.md) | Java ships `ActionSpec`/`ActionAssert`. Returning data instead was a decision, and it is a smaller surface. |
 | [The scheduler has no shutdown hook, and the event jobs never see the shutdown](../DIVERGENCE.md) | Open and undecided rather than settled - `atexit` does not fire on SIGTERM, so matching Java means a process-wide signal handler. |
 | [Additions with no Java counterpart](../DIVERGENCE.md) | Additions by definition. Each one is something this port has and Java does not. |

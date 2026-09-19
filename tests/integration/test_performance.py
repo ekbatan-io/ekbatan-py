@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import event, select
 
 from ekbatan.repository import Repository
-from fixtures.domain import Wallet, WalletId
+from fixtures.domain import NOW, Wallet, WalletId
 from fixtures.schema import WALLETS
 
 
@@ -38,7 +38,13 @@ def kind(seen: Sequence[tuple[str, bool, int]], verb: str) -> list[tuple[str, bo
 
 def some_wallets(n: int) -> list[Wallet]:
     return [
-        Wallet.open(id=WalletId.random(), owner_id=uuid4(), currency="EUR", balance=Decimal("1.00"))
+        Wallet.open(
+            id=WalletId.random(),
+            owner_id=uuid4(),
+            currency="EUR",
+            balance=Decimal("1.00"),
+            created_date=NOW,
+        )
         for _ in range(n)
     ]
 
@@ -147,7 +153,11 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
     )
     mexico = ShardIdentifier(1, 0)
     wallet = Wallet.open(
-        id=WalletId.generate(mexico), owner_id=uuid4(), currency="MXN", balance=Decimal("1.00")
+        id=WalletId.generate(mexico),
+        owner_id=uuid4(),
+        currency="MXN",
+        balance=Decimal("1.00"),
+        created_date=clock.now(),
     )
     repo.add(wallet)
 

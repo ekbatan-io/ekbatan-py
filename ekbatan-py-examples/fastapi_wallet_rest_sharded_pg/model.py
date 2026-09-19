@@ -13,6 +13,7 @@ letting each port choose.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -70,7 +71,15 @@ class Wallet(Model[WalletId, WalletState]):
         return WalletBuilder().copy_base(self)
 
     @classmethod
-    def open(cls, *, id: WalletId, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
+    def open(
+        cls,
+        *,
+        id: WalletId,
+        owner_id: UUID,
+        currency: str,
+        balance: Decimal,
+        created_date: datetime,
+    ) -> Wallet:
         """Takes its id rather than minting one, because *which shard* is a decision the
         caller makes - usually from something the business knows, like a country."""
         from .builders import WalletBuilder
@@ -83,6 +92,7 @@ class Wallet(Model[WalletId, WalletState]):
             .currency(currency)
             .balance(balance)
             .with_initial_version()
+            .created_date(created_date)
             .with_event(
                 WalletOpenedEvent(owner_id=owner_id, currency=currency, opening_balance=balance)
             )
