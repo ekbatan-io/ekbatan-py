@@ -273,13 +273,15 @@ def test_a_shard_nobody_proposed_is_not_a_fallback_and_says_nothing(caplog):
         registry.close()
 
 
-def test_unknown_shard_refuse_raises_instead_of_routing_somewhere_else():
+def test_unknown_shard_policy_fail_raises_instead_of_routing_somewhere_else():
     """For a deployment that holds the whole layout, where an unregistered shard can only be a
     bug. Off by default, because turning it on where the layout *is* a subset breaks reads that
     Java would have served."""
-    registry = _two_shards(unknown_shard="refuse")
+    registry = _two_shards(unknown_shard_policy="fail")
     try:
-        with pytest.raises(ValidationError, match="not registered and unknown_shard is 'refuse'"):
+        with pytest.raises(
+            ValidationError, match="not registered and unknown_shard_policy is 'fail'"
+        ):
             registry.effective_shard(ShardIdentifier(9, 9))
 
         assert registry.effective_shard(ShardIdentifier(1, 0)) == ShardIdentifier(1, 0)

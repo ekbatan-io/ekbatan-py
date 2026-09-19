@@ -568,3 +568,60 @@ def test_a_batch_mixing_the_default_shard_with_an_unregistered_one_is_allowed(sh
 
     assert sharded_wallets.find(here.id) is not None
     assert sharded_wallets.find(stranger.id) is not None
+
+
+# -- unknown_shard_policy is about routing, so it covers reads and writes alike ------------------
+
+
+@pytest.fixture
+def strict_wallets(clock):
+    """Two sqlite shards that refuse a third, rather than quietly widening the default.
+
+    Its own registry rather than the shared fixture, because the policy is fixed when the
+    registry is built - which is the point of it: an operator decides once, per deployment.
+    """
+    from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
+    from ekbatan.persistence import DatabaseRegistry
+    from fixtures.schema import metadata
+
+    registry = DatabaseRegistry.from_config(
+        ShardingConfig(
+            shards=(
+                ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url="sqlite://"), name="global"),
+                ShardConfig(shard=MEXICO, primary=DataSourceConfig(url="sqlite://"), name="mexico"),
+            ),
+            default_shard=GLOBAL,
+            unknown_shard_policy="fail",
+        )
+    )
+    for shard in (GLOBAL, MEXICO):
+        with registry.manager(shard).primary.begin() as connection:
+            metadata.create_all(connection)
+    try:
+        yield Repository(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+        )
+    finally:
+        registry.close()
+
+
+def test_unknown_shard_policy_fail_refuses_a_write_to_an_unregistered_shard(strict_wallets):
+    with pytest.raises(ValidationError, match="shard 9:3 is not registered"):
+        strict_wallets.add(a_wallet(UNREGISTERED))
+
+
+def test_unknown_shard_policy_fail_refuses_a_read_of_an_unregistered_shard(strict_wallets):
+    """The half worth pinning. The policy is applied in `effective_shard`, which every routed
+    accessor calls - so it is not a write-side guard that a read can slip past.
+
+    It is also the reason not to turn this on where the deployment holds a *subset* of the
+    layout: the foreign-id read the fallback exists for is refused too, by design.
+    """
+    with pytest.raises(ValidationError, match="shard 9:3 is not registered"):
+        strict_wallets.find(WalletId.generate(UNREGISTERED))
+
+
+def test_a_registered_shard_is_untouched_by_the_policy(strict_wallets):
+    stored = strict_wallets.add(a_wallet(MEXICO))
+
+    assert strict_wallets.find(stored.id) is not None

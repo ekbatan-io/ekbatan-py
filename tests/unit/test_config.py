@@ -204,20 +204,20 @@ def test_a_blank_namespace_still_says_it_is_required(namespace):
 # -- the unregistered shard, and what a deployment wants done about it ---------------------------
 
 
-def test_unknown_shard_defaults_to_the_fallback_both_ports_have_always_had():
-    """`EKB-0200`. The default has to stay the fallback: Java's `effectiveShard` falls back, and
-    a deployment holding a subset of the layout reads the rest's ids because of it."""
+def test_unknown_shard_policy_defaults_to_use_default_shard_when_nobody_names_one():
+    """`EKB-0200`. Omitting it has to mean `use_default_shard`: Java's `effectiveShard` falls
+    back, and a deployment holding a subset of the layout reads the rest's ids because of it."""
     layout = ShardingConfig(
         shards=(ShardConfig(shard=GLOBAL, primary=a_source()),), default_shard=GLOBAL
     )
 
-    assert layout.unknown_shard == "default"
+    assert layout.unknown_shard_policy == "use_default_shard"
 
 
-def test_unknown_shard_refuses_a_value_that_is_neither():
-    with pytest.raises(ValidationError, match="must be 'default' or 'refuse'"):
+def test_unknown_shard_policy_refuses_a_value_that_is_neither():
+    with pytest.raises(ValidationError, match="must be 'use_default_shard' or 'fail'"):
         ShardingConfig(
             shards=(ShardConfig(shard=GLOBAL, primary=a_source()),),
             default_shard=GLOBAL,
-            unknown_shard="raise",  # type: ignore[arg-type]
+            unknown_shard_policy="raise",  # type: ignore[arg-type]
         )

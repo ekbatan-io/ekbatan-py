@@ -35,7 +35,7 @@ it is the shape the design assumes, and ignoring it makes scatter reads slower t
 
 A shard this deployment does not have routes to the default, in both ports, and **logs a warning
 saying so** - see [Unregistered shards](#unregistered-shards-fall-back-to-default-and-say-so)
-below, and `unknown_shard="refuse"` if you want it to be an error instead.
+below, and `unknown_shard_policy="fail"` if you want it to be an error instead.
 
 ## Declarative configuration
 
@@ -281,6 +281,8 @@ WARNING  ekbatan.persistence  shard 9:9 is not registered, routing to default 0:
 
 Until `EKB-0200` the fallback was silent, which is the part that made a typo expensive: the
 write succeeded, the row was in the wrong database, and nothing surfaced until somebody counted.
+The warning is unconditional — it fires under either policy, because it is the diagnosis, not the
+enforcement.
 
 A deployment that holds the **whole** layout can go further, because there an unregistered shard
 can only be a bug:
@@ -289,16 +291,18 @@ can only be a bug:
 ShardingConfig(
     shards=(...),
     default_shard=GLOBAL,
-    unknown_shard="refuse",   # default is "default" — fall back, and warn
+    unknown_shard_policy="fail",   # omitted -> "use_default_shard": fall back, and warn
 )
 ```
 
 ```
-ValidationError: shard 9:9 is not registered and unknown_shard is 'refuse'; registered: ['0:0', '1:0']
+ValidationError: shard 9:9 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
 ```
 
-Leave it alone if your deployment is a **subset** of the layout — turning it on there breaks the
-foreign-id reads the fallback exists for.
+It is applied where routing resolves, so it covers **reads and writes alike** — `find(id)` on an
+unregistered shard raises just as `add(model)` does. Leave it alone if your deployment is a
+**subset** of the layout: turning it on there refuses exactly the foreign-id reads the fallback
+exists for.
 
 `None` is a different thing and warns about nothing: it means no strategy proposed a shard, which
 is the ordinary unsharded path.

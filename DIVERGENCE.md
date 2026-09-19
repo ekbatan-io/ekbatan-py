@@ -495,8 +495,9 @@ scatter accessors visit only that shard.
 
 **Both ports gained a warning and a setting in `EKB-0200`**, written here and written for Java in
 the same session. The fallback was never the problem; its silence was. It now logs every time it
-fires, and `unknown_shard="refuse"` / `unknownShard: refuse` turns it into an error for a
-deployment that holds the whole layout. The default stays the fallback in both, so nothing
+fires, and `unknown_shard_policy="fail"` / `unknownShardPolicy: fail` turns it into an error for
+a deployment that holds the whole layout - on reads as well as writes, because the policy is
+applied where routing resolves. Omitting it selects `USE_DEFAULT_SHARD` in both, so nothing
 changes for anyone who does not ask.
 
 ### What this section used to say, and why it was wrong

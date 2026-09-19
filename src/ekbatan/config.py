@@ -106,23 +106,24 @@ class ShardingConfig:
     default_shard: ShardIdentifier
     #: What to do with a shard this deployment has not configured.
     #:
-    #: ``"default"`` routes it to :attr:`default_shard`, which is what both ports have always
-    #: done: a deployment holding a subset of the layout can read ids minted by one holding
-    #: more, instead of refusing them. It is also how a mistyped shard identifier writes to the
-    #: wrong database without saying so - which is why the fallback now logs a warning either
-    #: way, and why this setting exists.
+    #: ``"use_default_shard"`` routes it to :attr:`default_shard`, which is what both ports have
+    #: always done: a deployment holding a subset of the layout can read ids minted by one
+    #: holding more, instead of refusing them. It is also how a mistyped shard identifier writes
+    #: to the wrong database without saying so - which is why the fallback now logs a warning
+    #: either way, and why this setting exists.
     #:
-    #: ``"refuse"`` raises instead. For a deployment that holds the whole layout, where an
+    #: ``"fail"`` raises instead. For a deployment that holds the whole layout, where an
     #: unregistered shard can only be a bug.
-    unknown_shard: Literal["default", "refuse"] = "default"
+    unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
 
     def __post_init__(self) -> None:
         if not self.shards:
             raise ValidationError("at least one shard is required")
 
-        if self.unknown_shard not in ("default", "refuse"):
+        if self.unknown_shard_policy not in ("use_default_shard", "fail"):
             raise ValidationError(
-                f"unknown_shard must be 'default' or 'refuse', not {self.unknown_shard!r}"
+                "unknown_shard_policy must be 'use_default_shard' or 'fail', "
+                f"not {self.unknown_shard_policy!r}"
             )
 
         seen: set[ShardIdentifier] = set()

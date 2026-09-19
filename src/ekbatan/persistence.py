@@ -242,13 +242,13 @@ class TransactionManager:
 class DatabaseRegistry:
     """Every database the framework can reach, keyed by shard."""
 
-    __slots__ = ("_managers", "default_shard", "dialect", "unknown_shard")
+    __slots__ = ("_managers", "default_shard", "dialect", "unknown_shard_policy")
 
     def __init__(
         self,
         managers: Mapping[ShardIdentifier, TransactionManager],
         default_shard: ShardIdentifier | None = None,
-        unknown_shard: Literal["default", "refuse"] = "default",
+        unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard",
     ) -> None:
         if not managers:
             raise ValidationError("at least one database is required")
@@ -275,7 +275,7 @@ class DatabaseRegistry:
             raise ValidationError(f"a shard is registered under the wrong key: {listed}")
         self._managers = dict(managers)
         self.default_shard = default_shard
-        self.unknown_shard = unknown_shard
+        self.unknown_shard_policy = unknown_shard_policy
         self.dialect = self._managers[default_shard].dialect
 
     @classmethod
@@ -283,7 +283,7 @@ class DatabaseRegistry:
         """Build the registry. ``ShardingConfig`` has already refused a default shard that
         names nothing, so no engine is created for a layout that cannot work."""
         managers = {s.shard: cls._manager(s, config.dialect) for s in config.shards}
-        return cls(managers, config.default_shard, config.unknown_shard)
+        return cls(managers, config.default_shard, config.unknown_shard_policy)
 
     @staticmethod
     def _manager(shard: ShardConfig, dialect: str) -> TransactionManager:
@@ -313,16 +313,16 @@ class DatabaseRegistry:
         that one writes to the wrong database.
 
         Nothing can tell those two apart here, so this does not try. It says what it did, every
-        time, and `unknown_shard="refuse"` is for a deployment that holds the whole layout and
-        can therefore be sure the second case is the only one.
+        time, and `unknown_shard_policy="fail"` is for a deployment that holds the whole
+        layout and can therefore be sure the second case is the only one.
         """
         if shard is None:
             return self.default_shard
         if shard in self._managers:
             return shard
-        if self.unknown_shard == "refuse":
+        if self.unknown_shard_policy == "fail":
             raise ValidationError(
-                f"shard {shard} is not registered and unknown_shard is 'refuse'; "
+                f"shard {shard} is not registered and unknown_shard_policy is 'fail'; "
                 f"registered: {sorted(str(s) for s in self._managers)}"
             )
         LOG.warning(
