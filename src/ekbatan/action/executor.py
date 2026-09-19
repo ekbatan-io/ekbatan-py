@@ -64,7 +64,17 @@ class RetryConfig:
             raise ValidationError(f"delay cannot be negative, got {self.delay}")
 
     def matches(self, error: BaseException) -> bool:
-        return isinstance(error, self.on)
+        """The exact class, as Java's ``retryConfigs.get(current.getClass())`` is.
+
+        Not ``isinstance``, which is the reflex here and was this port's rule until
+        `EKB-0198`. Subclass matching retries strictly more than Java does for the same
+        configuration, and which failures retry is not a thing to differ on quietly.
+
+        The cost is real and worth naming: a policy `on` a class that is only ever raised as
+        one of its subclasses matches nothing, silently. Name the class that is thrown.
+        """
+        exact = self.on if isinstance(self.on, tuple) else (self.on,)
+        return type(error) in exact
 
 
 #: One quick retry on a lost version race, and nothing else. Enough to absorb ordinary
@@ -95,10 +105,13 @@ class ExecutionConfiguration:
     def policy_for(self, error: BaseException) -> tuple[RetryConfig, BaseException] | None:
         """The policy for this failure, looking through what it was raised from.
 
-        A driver wrapping a conflict, or a handler re-raising one, would otherwise be
-        unrecognisable - the retryable failure is there, one link down. Python's own traceback
-        walks the chain the same way: an explicit ``raise … from …`` first, then the error that
-        was being handled, unless that was deliberately suppressed.
+        A driver wrapping a conflict would otherwise be unrecognisable - the retryable failure
+        is there, one link down. ``__cause__`` only, which is exactly what Java's ``getCause()``
+        walk reaches: an explicit ``raise … from …`` and nothing else.
+
+        Until `EKB-0198` this also followed ``__context__`` - the error that happened to be
+        being handled when this one was raised. Python records that for free and Java has no
+        equivalent, so following it retried failures Java would not.
         """
         seen: set[int] = set()
         current: BaseException | None = error
@@ -107,10 +120,7 @@ class ExecutionConfiguration:
             for policy in self.retry_configs:
                 if policy.matches(current):
                     return policy, current
-            following = current.__cause__
-            if following is None and not current.__suppress_context__:
-                following = current.__context__
-            current = following
+            current = current.__cause__
         return None
 
 

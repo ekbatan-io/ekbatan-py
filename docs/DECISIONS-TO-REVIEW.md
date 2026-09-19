@@ -18,7 +18,7 @@ unlabelled or if a **chosen** one does not link here. That check exists because 
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **15 that somebody decided**. Each could have gone the other way. Two more were
+These are the **14 that somebody decided**. Each could have gone the other way. Three more were
 struck out after being asked about, and are kept struck rather than deleted - a decision that was
 reversed is worth more here than a tidy list.
 
@@ -33,7 +33,7 @@ reversed is worth more here than a tidy list.
 | [An unregistered shard is refused, not defaulted](../DIVERGENCE.md) | Java returns the default shard for a shard it does not hold; this raises. **Behavioural**, and it changes what a mistyped shard identifier does - silent writes to the default there, an error here. |
 | [The connection they hand back has a `rows()` on it](../DIVERGENCE.md) | jOOQ ends a query with `fetch(this::fromRecord)` and SQLAlchemy has no such verb. Adding `Db.rows(...).fetch(mapper)` is new surface; a comprehension after `execute` would have done. |
 | ~~[Timestamps are stamped when the change is staged](../DIVERGENCE.md)~~ | **Closed in `EKB-0192` and `EKB-0194`.** `created_date` is required at construction, as Java's `Validate.notNull(builder.createdDate)` requires it, and nothing writes `updated_date` but the application. |
-| [Retries match an exception the way `except` does](../DIVERGENCE.md) | Java matches the exact class and walks only `getCause()`. Matching subclasses and `__context__` is a decision that changes which failures retry. |
+| ~~[Retries match an exception the way `except` does](../DIVERGENCE.md)~~ | **Closed in `EKB-0198`.** The case it rested on - "`on=OperationalError` matches every driver subclass" - was checked and is not real: SQLAlchemy raises that exact class for every dialect and it has no subclasses. Matching is now exact and the walk is `__cause__` only, as Java's are. |
 | [Equality compares the whole row](../DIVERGENCE.md) | **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. |
 | [A shard member carries one datasource pair, not a named map](../DIVERGENCE.md) | Java's `configFor(name)` map is dropped for a fixed pair. A surface removal somebody decided. |
 | [SQLite is a dialect here and is not one in Java](../DIVERGENCE.md) | An addition. Java refuses everything but the three. |
@@ -43,7 +43,7 @@ reversed is worth more here than a tidy list.
 | [Additions with no Java counterpart](../DIVERGENCE.md) | Additions by definition. Each one is something this port has and Java does not. |
 
 The other 12 are **forced** - CPython has no `ScopedValue`, no virtual threads, no Flyway, no
-Redisson - and 10 are **parity**, recorded because the mechanism differs while the behaviour
+Redisson - and 11 are **parity**, recorded because the mechanism differs while the behaviour
 does not.
 
 ## Open - not decided, needs a call

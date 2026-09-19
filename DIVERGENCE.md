@@ -362,22 +362,40 @@ optimistic lock misses on one row raises, and the rows that did match are alread
 Inside a unit of work the executor's transaction takes the whole thing back; outside one there is
 nothing to take it back. Run a batch inside a unit of work when the pieces belong together.
 
-## Retries match an exception the way `except` does
+## Retries match an exception exactly as Java's do
 
-> **chosen** - Java matches the exact class and walks only `getCause()`. Matching subclasses and `__context__` is a decision that changes which failures retry. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - the exact class, and the `__cause__` chain only. Brought to parity in `EKB-0198`, after the reason for diverging was checked and did not hold.
 
-Java matches the thrown exception's exact class, and walks only `getCause()`. Here a policy
-matches subclasses, and the walk also follows `__context__` - the error that was being handled
-when this one was raised - unless it was deliberately suppressed.
+Both ports match the thrown exception's **exact class** and walk **only the explicit cause**:
+
+| | Java | here |
+|---|---|---|
+| which class matches | `retryConfigs.get(current.getClass())` - exact | `type(error) in exact` |
+| what the walk follows | `getCause()` | `__cause__` |
+
+This port did it differently until `EKB-0198`: `isinstance`, so subclasses matched, and the walk
+also followed `__context__` - the error that happened to be being handled when this one was
+raised, which Python records for free and Java has no equivalent of. Both widened retries, so
+the same configuration retried strictly more here than there.
+
+**The argument for diverging was checked and did not survive it.** It was this:
 
 ```python
-RetryConfig(on=OperationalError)  # matches every driver subclass of it, as `except` would
+RetryConfig(on=OperationalError)  # "matches every driver subclass of it, as `except` would"
 ```
 
-Exact-class matching is the surprising rule in a language whose `except` is subclass-based, and
-a policy naming a base class that then caught nothing would be a very quiet way to lose every
-retry. The consequence is that this port retries strictly more than Java does for the same
-configuration; the default policy is one class with no subclasses, so the default is identical.
+There are no driver subclasses. Measured: `sqlalchemy.exc.OperationalError.__subclasses__()` is
+empty - SQLAlchemy raises that exact class for every dialect and carries the driver's own error
+inside it as `orig`. The headline case for subclass matching was not a real case.
+
+What remains true is the cost, and it is Java's cost too: a policy `on` a class that is only
+ever raised as one of its subclasses - `EkbatanError`, `DatabaseError` - matches nothing, and
+says nothing about it. Name the class that is thrown.
+
+Two things made the divergence safe to close. Every documented example names `StaleRecordError`,
+which has no subclasses; and the switch was applied and the suite run before it was kept - 601
+of 603 tests passed untouched, the two failures being the tests that existed to assert the
+divergence. Nothing in the framework depended on the wider rule.
 
 ## The connection accessors are Java's, exactly
 

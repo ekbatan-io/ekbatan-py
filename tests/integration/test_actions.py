@@ -207,31 +207,47 @@ def test_when_the_retries_run_out_the_original_failure_is_what_escapes(executor)
     assert action.attempts == 3, "one run and two retries"
 
 
-def test_a_policy_matches_a_subclass_where_javas_matches_only_the_exact_class(executor):
-    """A deliberate difference, pinned here so it stays deliberate.
+def test_a_policy_on_a_superclass_does_not_catch_a_subclass_as_javas_does_not(executor):
+    """Java's `execute_does_not_retry_configured_superclass_when_only_subclass_is_thrown`.
 
-    Java looks the thrown class up in a `Map<Class, RetryConfig>`, so registering `EkbatanError`
-    does nothing for a `StaleRecordError` - its own test is called
-    `execute_does_not_retry_configured_superclass_when_only_subclass_is_thrown`. Here `on` is
-    matched with `isinstance`, so a policy covers a family the way an `except` clause does.
-    Registering a broad class therefore retries more here than it would there.
+    Java looks the thrown class up in a `Map<Class, RetryConfig>`, so a policy on `EkbatanError`
+    does nothing for a `StaleRecordError`. This port matched with `isinstance` until `EKB-0198`,
+    which retried strictly more than Java did for the same configuration.
+
+    The cost of matching Java is the case below: name a class that is only ever raised as one of
+    its subclasses and the policy is silently dead. That is Java's cost too.
     """
     config = ExecutionConfiguration(
         retry_configs=(RetryConfig(on=EkbatanError, max_retries=1, delay=0),)
     )
     action = FailsWithAction(StaleRecordError("a subclass of EkbatanError"), clock=executor.clock)
 
+    with pytest.raises(StaleRecordError):
+        executor.execute(action, None, config=config)
+    assert action.attempts == 1, "the superclass's policy did not cover its subclass"
+
+
+def test_a_policy_on_the_exact_class_catches_it(executor):
+    """The other side of the same rule: name the class that is thrown and it matches."""
+    config = ExecutionConfiguration(
+        retry_configs=(RetryConfig(on=StaleRecordError, max_retries=1, delay=0),)
+    )
+    action = FailsWithAction(StaleRecordError("moved"), clock=executor.clock)
+
     assert executor.execute(action, None, config=config) == "done"
-    assert action.attempts == 2, "the subclass matched its superclass's policy"
+    assert action.attempts == 2
 
 
 def test_a_cause_deliberately_suppressed_is_not_looked_through(executor):
     """`raise ... from None` says the earlier failure is not part of this one's story.
 
     Java's nearest case is `execute_does_not_retry_configured_exception_when_only_suppressed`,
-    which is about `addSuppressed` - a mechanism Python has no equivalent of. What Python has
-    instead is the implicit context an exception raised inside an `except` block carries, and
-    `from None` is how you say it should not count.
+    which is about `addSuppressed` - a mechanism Python has no equivalent of.
+
+    Since `EKB-0198` the walk follows `__cause__` only, so this is really the same assertion as
+    the implicit-context test above: `from None` leaves `__cause__` unset and there is nothing
+    to follow. Kept because it is the case a reader reaches for, and a test that says "still
+    no" is cheaper than working it out from the rule.
     """
     hidden = _raised_from_none()
     action = FailsWithAction(hidden, clock=executor.clock)
@@ -241,13 +257,24 @@ def test_a_cause_deliberately_suppressed_is_not_looked_through(executor):
     assert action.attempts == 1, "nothing looked past the suppression"
 
 
-def test_an_implicit_context_is_looked_through(executor):
-    """The other half: raised while handling a retryable failure, without `from None`.
+def test_an_implicit_context_is_not_looked_through_because_java_has_no_such_link(executor):
+    """Raised while handling a retryable failure, without `from`.
 
-    Python sets `__context__` automatically there, and its own traceback prints both - so the
-    retryable failure is genuinely part of this one's story and is treated as such.
+    Python sets `__context__` there for free and Java has no equivalent, so this port followed
+    a link Java cannot see - and retried failures Java would not. Since `EKB-0198` the walk is
+    `__cause__` only, which is what `getCause()` reaches. Write `raise ... from err` and it is
+    followed again; that is the same `raise` that makes Java's `getCause()` non-null.
     """
     action = FailsWithAction(_raised_while_handling(), clock=executor.clock)
+
+    with pytest.raises(ConnectivityError):
+        executor.execute(action, None)
+    assert action.attempts == 1, "nothing followed the implicit context"
+
+
+def test_an_explicit_cause_is_looked_through_as_javas_getcause_is(executor):
+    """`raise ... from err` is the link both ports follow."""
+    action = FailsWithAction(_raised_from_a_cause(), clock=executor.clock)
 
     assert executor.execute(action, None) == "done"
     assert action.attempts == 2
@@ -271,6 +298,16 @@ def _raised_while_handling() -> BaseException:
             # No `from`, deliberately: the implicit `__context__` Python sets here is exactly
             # what this pair of tests is about.
             raise ConnectivityError("the driver gave up")  # noqa: B904
+    except ConnectivityError as caught:
+        return caught
+
+
+def _raised_from_a_cause() -> BaseException:
+    try:
+        try:
+            raise StaleRecordError("moved")
+        except StaleRecordError as conflict:
+            raise ConnectivityError("the driver gave up") from conflict
     except ConnectivityError as caught:
         return caught
 

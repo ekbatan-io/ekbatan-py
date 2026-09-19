@@ -167,12 +167,14 @@ named for what it counts because `attempts=1` running twice is the sort of thing
 in review and everybody hits in production.
 
 **Matching looks through the cause chain,** so a driver wrapping a conflict is still recognised.
-It walks `__cause__` first and then `__context__`, the same order Python's own traceback does.
+It follows `__cause__` - what `raise ... from err` sets - and nothing else, which is exactly what
+Java's `getCause()` walk reaches. An error raised inside an `except` block *without* `from` is
+not followed: Python records that link as `__context__` for free, and Java has no equivalent.
 
-**Matching is by `isinstance`, so a subclass matches.** This is a real divergence: Java matches
-the exception class exactly, and a policy for `RuntimeException` there does *not* catch an
-`IllegalStateException`. Here a policy for `EkbatanError` catches every framework error. Order is
-the only precedence rule, so put narrow policies before broad ones.
+**Matching is by exact class, as Java's is.** A policy for `EkbatanError` does **not** catch a
+`StaleRecordError`. Name the class that is actually thrown - a policy on a class that is only
+ever raised as one of its subclasses matches nothing and says nothing about it. Order is the
+only precedence rule, so put narrow policies first.
 
 **The retry replays the whole action from phase 1, with a fresh plan.** Side effects in
 `perform()` that are outside the plan - logging, counters, an HTTP call - replay too. Keep

@@ -164,8 +164,11 @@ executor.execute(DepositMoneyAction, params, config=config)
 ```
 
 - **`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice.
-- **Matching looks through the cause chain**, so a driver wrapping a conflict still matches.
-- **Matching is by `isinstance`**, so a subclass matches. Order is the only precedence rule —
+- **Matching looks through the cause chain**, so a driver wrapping a conflict still matches —
+  `__cause__` only, which is what Java's `getCause()` reaches. An error raised inside an
+  `except` block without `from` is not followed.
+- **Matching is by exact class**, as Java's is. A policy for `EkbatanError` does not catch a
+  `StaleRecordError` — name the class that is thrown. Order is the only precedence rule —
   put narrow policies first.
 - **A retry replays the whole action from phase one, with a fresh plan.**
 
