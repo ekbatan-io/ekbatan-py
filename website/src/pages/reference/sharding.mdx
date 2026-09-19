@@ -266,22 +266,36 @@ Both pay the same price: the id stops being self-describing, so a read starting 
 needs a lookup before it can route. That is a round trip on every such read, and it is why the
 embedded-bits strategy is the default despite being the less flexible one.
 
-## Unregistered shards are refused, not defaulted
+## An unregistered shard routes to the default, as it does in Java
 
-Asking the registry for a shard it does not hold **raises**, naming what is registered:
+Routing resolves through `effective_shard`, which falls back:
+
+```python
+if shard is None or shard not in self._managers:
+    return self.default_shard
+```
+
+Java's is the same line: `transactionManagers.containsKey(shard) ? shard : defaultShard`. So an
+id naming a shard this deployment has not configured **lands on the default in both ports**,
+which is what lets a staging database with one shard read production's ids instead of refusing
+them.
+
+The cost is the same in both too: a mistyped shard identifier is silent, and the writes go to
+the default where nobody looks for them. There is no framework-level guard against it. If that
+matters to you, validate the identifier before you route on it.
+
+One thing does raise — the low-level `registry.manager(shard)`, which names what is registered:
 
 ```
 ValidationError: no database registered for shard 9:9; registered: ['0:0']
 ```
 
-**This differs from the Java port,** which falls back to the default shard. That fallback makes
-one codebase run unsharded in development and sharded in production without branching — and it
-also makes a typo in a shard identifier silent, routing writes to the default where nobody looks
-for them. Refusing trades the convenience for the certainty.
+Java's equivalent lookup returns `null` and fails later with a `NullPointerException`. But every
+routing path calls `effective_shard` first, so nothing reaches `manager()` with an unregistered
+shard — this is the message you get from asking the registry directly, not from a bad write.
 
-What does resolve to the default is a repository with `NoShardingStrategy`: every key maps
-there, and its scatter accessors visit only that shard. That is the supported way to run
-unsharded, rather than relying on a lookup miss.
+Running unsharded on purpose is `NoShardingStrategy`: every key maps to the default, and its
+scatter accessors visit only that shard.
 
 ## Cross-shard actions
 

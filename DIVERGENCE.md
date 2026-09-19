@@ -474,25 +474,51 @@ what you put in it, in both ports - which is why the example repositories write
 `WALLETS.c.state != WalletState.DELETED.name` out, exactly where the Java writes
 `.and(WALLETS.STATE.ne(...))`.
 
-## An unregistered shard is refused, not defaulted
+## An unregistered shard routes to the default, as Java's does
 
-> **chosen** - Java falls back to the default shard; this raises. A typo routing writes somewhere nobody looks is the failure that decided it. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - the same fallback, line for line. **This section claimed the opposite until `EKB-0199`, and was wrong.** It described a code path routing never takes.
 
-Asking the registry for a shard it does not hold raises, naming what is registered:
+Both ports fall back to the default shard for one they do not hold:
+
+| | |
+|---|---|
+| Java | `transactionManagers.containsKey(shard) ? shard : defaultShard` |
+| here | `if shard is None or shard not in self._managers: return self.default_shard` |
+
+The fallback has a real use - a staging database with one shard can read production's ids
+instead of refusing them - and a real cost, which is now equally the cost in both ports: a
+mistyped shard identifier is silent, and the writes land on the default where nobody thinks to
+look for them. The bug it produces is invisible until somebody counts rows.
+
+Running unsharded on purpose is `NoShardingStrategy`: every key resolves to the default and its
+scatter accessors visit only that shard.
+
+### What this section used to say, and why it was wrong
+
+It said the registry **refuses** an unregistered shard, quoting a real error message:
 
 ```
 ValidationError: no database registered for shard 9:9; registered: ['0:0']
 ```
 
-Java returns the default shard instead. That fallback has a real use - one codebase runs
-unsharded in development and sharded in production with no branching - and a real cost: a
-mistyped shard identifier is silent, and the writes land on the default where nobody thinks to
-look for them. The bug it produces is invisible until somebody counts rows.
+That message exists, and `DatabaseRegistry.manager()` really does raise it - where Java's
+`primary.get(shard)` returns `null` and fails later with a `NullPointerException`. The error is
+better. But it is not the routing behaviour, because every routing path resolves through
+`effective_shard` first (`repository.py:371-376`), which has already replaced an unregistered
+shard with the default. Nothing reaches `manager()` with one.
 
-Refusing gives up the convenience. What replaces it is explicit: a repository constructed with
-`NoShardingStrategy` resolves every key to the default shard, and its scatter accessors visit
-only that shard. That is the supported way to run unsharded, rather than relying on every
-lookup missing.
+So a true sentence about a real method was filed as the answer to a question it does not answer.
+Measured, on a two-shard registry:
+
+```
+effective_shard(9:9) -> 0:0                         <- routing: silently the default
+manager(9:9)         -> ValidationError: no database registered for shard 9:9
+```
+
+Found by being asked for a config example: the sharded example's own comment - *"where a row
+goes when its id names a shard this deployment has not configured"* - contradicted this section,
+and the comment was right. Same failure as `readonly_db` and the `OperationalError` subclasses:
+written once, argued convincingly, never run.
 
 ## Deleting
 
