@@ -95,8 +95,9 @@ not byte-comparable with the others'.
 Your tables are yours. The repository requires two columns on every one of them and refuses at
 construction if either is missing: **`version`**, the optimistic-locking counter, and
 **`state`**, the soft-delete discriminator. A `ModelRepository` additionally wants
-`created_date` and `updated_date`; an entity's table needs neither, because the framework does
-not track timestamps for entities.
+`created_date` and `updated_date`; an entity's table needs neither, because an entity is state
+rather than history. Neither is written by the framework: `created_date` is required when you
+build the row, and `updated_date` is yours to move on the changes where it means something.
 
 Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and increment it.
 
@@ -105,8 +106,8 @@ Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and i
 | `id` | `CHAR(32)` | primary key |
 | `version` | `BIGINT NOT NULL` | optimistic locking - required, no default |
 | `state` | `VARCHAR(24) NOT NULL` | soft-delete discriminator; `DELETED` rather than a `deleted_at` column |
-| `created_date` | `DATETIME NOT NULL` | written once, on insert |
-| `updated_date` | `DATETIME NOT NULL` | bumped on every update, alongside `version` |
+| `created_date` | `DATETIME NOT NULL` | **required** when you build the row |
+| `updated_date` | `DATETIME NOT NULL` | falls back to `created_date`; yours to move |
 
 ## What it is good for
 

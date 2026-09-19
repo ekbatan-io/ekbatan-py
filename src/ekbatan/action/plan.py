@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, cast
 
-from ..clock import Clock, to_storage
-from ..domain import Model, Persistable
+from ..clock import Clock
+from ..domain import Persistable
 from ..errors import ValidationError
 
 __all__ = ["ActionPlan", "PersistableChanges"]
@@ -77,12 +77,14 @@ class ActionPlan:
         """
         changes = self._changes(type(model))
         self._refuse_if_staged(changes, model)
-        stamped = self._stamp_updated(model)
         # Staged at the version it was read at; the repository moves it when it writes, under
         # `WHERE version = ?`. The caller gets the moved copy, so the rest of the unit of work
         # reads forward instead of reasoning about what the database will do later.
-        changes.updates[stamped.id] = stamped
-        return stamped.next_version()
+        #
+        # `updated_date` is untouched, as Java leaves it untouched. Set it yourself, on the
+        # changes where it means something: `self.copy().updated_date(self.clock.now())`.
+        changes.updates[model.id] = model
+        return model.next_version()
 
     def update_all[P: Persistable[Any, Any]](self, models: Iterable[P]) -> list[P]:
         return [self.update(m) for m in models]
@@ -140,9 +142,3 @@ class ActionPlan:
     def _changes(self, model_type: type) -> PersistableChanges:
         return self._by_type.setdefault(model_type, PersistableChanges())
 
-    def _stamp_updated[P: Persistable[Any, Any]](self, model: P) -> P:
-        """Mark when the row changed. An entity has no timestamps, and neither has the version
-        moved yet - the repository does that as it writes, under the optimistic lock."""
-        if not isinstance(model, Model):
-            return model
-        return model.evolve(updated_date=to_storage(self._clock.now()))

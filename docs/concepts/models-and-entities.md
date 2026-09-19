@@ -173,6 +173,48 @@ rebuilds a complete event here.
 
 Streaming-only consumers do not go through any of this: they read the JSON off the broker.
 
+`created_date` is **required**, exactly as Java's is — its constructor says
+`Validate.notNull(builder.createdDate)` and `build()` throws without it. A model records
+something that happened, and when it happened is part of the record rather than a column the
+framework backfills afterwards. Pass `self.clock.now()` from the action, which is what Java's
+`clock.instant()` is doing:
+
+```python
+Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.now())
+```
+
+`updated_date` falls back to `created_date` — a row that has never changed was last updated when
+it was created. Both are normalised to zone-less UTC on the way in, the analogue of Java's
+`.truncatedTo(MICROS)`: an aware value stored as-is would not compare equal to the same instant
+read back.
+
+**Nothing moves `updated_date` but you.** Neither the plan nor the repository touches it on a
+write, exactly as nothing in Java's `ekbatan-core` writes `updatedDate`. Move it on the changes
+where it means something:
+
+```python
+def deposit(self, amount: Decimal, at: datetime) -> Wallet:
+    return (
+        self.copy()
+        .with_event(MoneyDepositedEvent(amount=amount, new_balance=self.balance + amount))
+        .balance(self.balance + amount)
+        .updated_date(at)
+        .build()
+    )
+```
+
+The trade is worth knowing rather than discovering: a column named `updated_date` does not move
+on its own, and a row you never mark still reads as last-updated-when-created. That is the cost
+of a framework that will not rewrite a column your application set — which is the property that
+makes the column usable for recording when *your* change happened.
+
+The **version** is different, and does move on its own: the repository increments it inside the
+write, under `WHERE version = ?`, because that is the optimistic lock rather than a convenience.
+Java's `nextVersion()` does the same.
+
+`Entity` has neither, in either port. Something that needs to know when it last changed almost
+certainly has changes worth telling the rest of the system about, which makes it a `Model`.
+
 ## Required, and optional
 
 The base refuses `None` for any field whose annotation does not admit it — **including the ones

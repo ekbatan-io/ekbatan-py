@@ -731,8 +731,8 @@ def upgrade() -> None:
 </div>
 
 `version` and `state` are the two the framework insists on: `version` carries optimistic locking,
-and `state` is how a soft-deleted row stays readable. `created_date` and `updated_date` are
-written for you. A `balance` is `NUMERIC`/`DECIMAL` and never a float — see
+and `state` is how a soft-deleted row stays readable. `created_date` is required when you build
+the row - pass `self.clock.now()` - and `updated_date` falls back to it until you move it. A `balance` is `NUMERIC`/`DECIMAL` and never a float — see
 [Models and entities](/reference/model/).
 
 ### One statement per `op.execute`

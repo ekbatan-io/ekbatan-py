@@ -656,8 +656,7 @@ class Repository[M: Persistable[Any, Any], K]:
         if not models:
             return [] if read_back else None
         shard = self.shard_of_all(models)
-        now = to_storage(self.clock.now())
-        stamped = [self._stamp_updated(m, now) for m in models]
+        stamped = [self._next_version(m) for m in models]
 
         with self.tx_db_else_db(shard=shard) as conn:
             returning = read_back and conn.dialect.update_returning
@@ -711,17 +710,21 @@ class Repository[M: Persistable[Any, Any], K]:
 
     # --------------------------------------------------------------- internals
 
-    def _stamp_updated(self, model: M, now: datetime) -> M:
-        """Move the version on, and mark when the row changed.
+    def _next_version(self, model: M) -> M:
+        """Move the version on. Nothing else.
 
         The repository owns the optimistic lock, so the repository moves the version: a
         caller hands in the row as they read it and gets it back one version later. Asking
         them to move it first would mean the obvious call - ``update(wallet.deposit(10))`` -
         was the one that fails, and it would fail as a lost race, which it is not.
+
+        ``updated_date`` is **not** touched, as Java does not touch it: nothing in
+        ``ekbatan-core`` writes ``updatedDate``, and ``nextVersion()`` carries whatever the
+        row held forward. A framework that quietly rewrote a column the application set is a
+        framework you cannot use to record when *your* change happened - so it is yours to
+        set, through ``copy().updated_date(...)``, on the changes where it means something.
         """
-        if not isinstance(model, Model):
-            return model.next_version()
-        return model.evolve(version=model.version + 1, updated_date=now)
+        return model.next_version()
 
     def _single_update(self, *, returning: bool = False) -> Any:
         """``UPDATE … SET … WHERE id = ? AND version = ?``, built once and reused."""

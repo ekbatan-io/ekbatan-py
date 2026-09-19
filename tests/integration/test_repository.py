@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
 
-from ekbatan.clock import VirtualClock
+from ekbatan.clock import VirtualClock, to_storage
 from ekbatan.errors import EntityNotFoundError, StaleRecordError
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import Repository
@@ -570,7 +571,7 @@ def test_converted_values_survive_a_batch(wallets, clock):
     assert all(w.version == 2 for w in back)
 
 
-def test_batch_and_single_update_store_identical_timestamps(wallets, clock):
+def test_an_update_leaves_updated_date_alone(wallets, clock):
     """Java's `should_updateAll_and_update_store_identical_timestamps`."""
     a, b = wallets.add_all(
         [
@@ -584,10 +585,23 @@ def test_batch_and_single_update_store_identical_timestamps(wallets, clock):
             for _ in range(2)
         ]
     )
+    clock.advance(timedelta(hours=3))
+
     one = wallets.update(a.evolve(balance=Decimal("2")))
     many = wallets.update_all([b.evolve(balance=Decimal("2"))])
 
-    assert one.updated_date == many[0].updated_date, "one clock read per call, same instant"
+    # Java writes `updatedDate` nowhere in `ekbatan-core`, and neither does this. A framework
+    # that quietly rewrote a column the application set is one you cannot use to record when
+    # *your* change happened.
+    assert one.updated_date == a.updated_date, "the clock moved; the row's timestamp did not"
+    assert many[0].updated_date == b.updated_date
+    assert one.version == 2, "the version still moves - that is the optimistic lock"
+
+    # Setting it is the caller's, and it survives the write untouched.
+    at = clock.now()
+    marked = wallets.update(wallets.get(a.id).copy().updated_date(at).build())
+    assert wallets.get(a.id).updated_date == to_storage(at)
+    assert marked.updated_date == to_storage(at)
 
 
 # A value that only reaches the database through a type mapper. Java's `Dummy` carries an

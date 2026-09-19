@@ -246,12 +246,22 @@ clock. Pass `self.clock.now()`, which is what `clock.instant()` is doing on the 
 `Entity` has no timestamps in either port. A row that needs to know when it last changed almost
 certainly has changes worth telling the rest of the system about, which makes it a `Model`.
 
-**One difference remains**, and it is the write path rather than the constructor: `plan.update`
-and `repository.update` refresh `updated_date` from the clock, and nothing in `ekbatan-core`
-ever writes `updatedDate` - `ModelRepository` only checks the column exists. Java's value is set
-once at construction and carried forward by `copy()` unless the application sets it again.
-Recorded rather than silently matched: a column named `updated_date` that never moves after
-insert is the other kind of surprise.
+The write path matches too, as of `EKB-0194`. **Nothing writes `updated_date` but you.** Java
+writes `updatedDate` nowhere in `ekbatan-core` - `ModelRepository` only checks the column exists,
+and `nextVersion()` carries whatever the row held forward - and this port briefly refreshed it
+from the clock on every staged update. It no longer does:
+
+```python
+self.copy().updated_date(self.clock.now()).balance(new).build()
+```
+
+on the changes where it means something. The version still moves inside the write, under
+`WHERE version = ?`, because that is the optimistic lock rather than a convenience.
+
+The trade is stated plainly: a column named `updated_date` does not move on its own, and a row
+that has never been marked still reads as last-updated-when-created. That is the cost of a
+framework that does not rewrite a column the application set - which is the property that makes
+the column usable for recording when *your* change happened.
 
 ## The per-invocation plan lives in a `ContextVar`
 
