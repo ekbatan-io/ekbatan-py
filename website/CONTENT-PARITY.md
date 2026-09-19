@@ -108,6 +108,41 @@ transfer state column (its state is derived from step markers). One more - a thi
 PostgreSQL-only - was disproved by generating the DDL. The rule that keeps paying: write the
 claim, then run the thing.
 
+## What the parity numbers still cannot see
+
+Both views can be green while the site is wrong in ways neither measures. Four of those were
+found by looking instead of counting, and each one is now checked by something:
+
+| Found | Now checked by |
+|---|---|
+| 3 Python snippets that do not parse - one a method chain a reader would copy and get a `SyntaxError` from | `website/scripts/check-snippets.mjs`, in `npm run check` |
+| 13 relative links that resolve outside the site and 404 once deployed, plus 1 `See also` pointing at its own page | `website/scripts/check-links.mjs` |
+| Every claim the site makes about this API - each `from ekbatan... import X`, each `Class.attr` | `website/scripts/check-api.py`, in `make lint` |
+| The defaults the site tabulates - pool sizes, poll delays, the retry count | `tests/unit/test_documented_defaults.py` |
+
+And two the browser found, which no text comparison could:
+
+- **11 paragraphs across 8 pages scrolled the whole page sideways at phone width**, because a
+  fully-qualified name in inline code has nothing to break at. Fixed for the site at once with
+  `overflow-wrap: anywhere`, plus `box-decoration-break: clone` so a broken fragment keeps its
+  border.
+- **Wide tables were wrapped by a script at load**, one frame too late and never with JavaScript
+  off. `rehype-table-scroll` does it at build time now.
+
+## `docs/` fell behind while this was happening
+
+The website is not the source of truth; `docs/` is, and the drift ran one way. Measured after the
+Java-parity pass: `docs/events/event-streaming.md` held **19%** of its page - the whole transform
+manual existed only on the website - and five more sat between 37% and 72%.
+
+All nineteen pairs are level now, and `scripts/docs-website-sync.py` fails `make lint` when one
+drops below 80% of its counterpart. Word count is a crude proxy and a sufficient one: a page does
+not lose a third of its words to formatting.
+
+Porting them also exposed a bug in `scripts/links.py` - it computed a page's anchors from
+*code-stripped* text, so a heading containing inline code got a mangled anchor and no link to one
+could be written. It reads the raw text now.
+
 ## The matcher was too generous, once
 
 Heading matching was a free substring test in both directions: Java's `Five backends` counted as
