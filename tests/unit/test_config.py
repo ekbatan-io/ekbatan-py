@@ -199,3 +199,25 @@ def test_a_blank_namespace_still_says_it_is_required(namespace):
 
     with pytest.raises(ValidationError, match="namespace is required"):
         _valid_namespace(namespace)
+
+
+# -- the unregistered shard, and what a deployment wants done about it ---------------------------
+
+
+def test_unknown_shard_defaults_to_the_fallback_both_ports_have_always_had():
+    """`EKB-0200`. The default has to stay the fallback: Java's `effectiveShard` falls back, and
+    a deployment holding a subset of the layout reads the rest's ids because of it."""
+    layout = ShardingConfig(
+        shards=(ShardConfig(shard=GLOBAL, primary=a_source()),), default_shard=GLOBAL
+    )
+
+    assert layout.unknown_shard == "default"
+
+
+def test_unknown_shard_refuses_a_value_that_is_neither():
+    with pytest.raises(ValidationError, match="must be 'default' or 'refuse'"):
+        ShardingConfig(
+            shards=(ShardConfig(shard=GLOBAL, primary=a_source()),),
+            default_shard=GLOBAL,
+            unknown_shard="raise",  # type: ignore[arg-type]
+        )

@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
@@ -242,12 +242,13 @@ class TransactionManager:
 class DatabaseRegistry:
     """Every database the framework can reach, keyed by shard."""
 
-    __slots__ = ("_managers", "default_shard", "dialect")
+    __slots__ = ("_managers", "default_shard", "dialect", "unknown_shard")
 
     def __init__(
         self,
         managers: Mapping[ShardIdentifier, TransactionManager],
         default_shard: ShardIdentifier | None = None,
+        unknown_shard: Literal["default", "refuse"] = "default",
     ) -> None:
         if not managers:
             raise ValidationError("at least one database is required")
@@ -274,6 +275,7 @@ class DatabaseRegistry:
             raise ValidationError(f"a shard is registered under the wrong key: {listed}")
         self._managers = dict(managers)
         self.default_shard = default_shard
+        self.unknown_shard = unknown_shard
         self.dialect = self._managers[default_shard].dialect
 
     @classmethod
@@ -281,7 +283,7 @@ class DatabaseRegistry:
         """Build the registry. ``ShardingConfig`` has already refused a default shard that
         names nothing, so no engine is created for a layout that cannot work."""
         managers = {s.shard: cls._manager(s, config.dialect) for s in config.shards}
-        return cls(managers, config.default_shard)
+        return cls(managers, config.default_shard, config.unknown_shard)
 
     @staticmethod
     def _manager(shard: ShardConfig, dialect: str) -> TransactionManager:
@@ -301,13 +303,35 @@ class DatabaseRegistry:
     def effective_shard(self, shard: ShardIdentifier | None) -> ShardIdentifier:
         """The shard to actually use.
 
-        An id minted for a shard this deployment has not configured routes to the default
-        rather than failing. Shard layouts differ between environments and grow over time; a
-        staging database with one shard has to be able to read production's ids.
+        ``None`` means nothing proposed one - an unsharded repository - and takes the default
+        silently, which is not a fallback and not worth a word.
+
+        A shard this deployment has not configured is the interesting case. It routes to the
+        default, as Java's `effectiveShard` does, because layouts differ between environments
+        and grow over time: a staging database with one shard has to be able to read
+        production's ids. It is also exactly what a mistyped shard identifier looks like, and
+        that one writes to the wrong database.
+
+        Nothing can tell those two apart here, so this does not try. It says what it did, every
+        time, and `unknown_shard="refuse"` is for a deployment that holds the whole layout and
+        can therefore be sure the second case is the only one.
         """
-        if shard is None or shard not in self._managers:
+        if shard is None:
             return self.default_shard
-        return shard
+        if shard in self._managers:
+            return shard
+        if self.unknown_shard == "refuse":
+            raise ValidationError(
+                f"shard {shard} is not registered and unknown_shard is 'refuse'; "
+                f"registered: {sorted(str(s) for s in self._managers)}"
+            )
+        LOG.warning(
+            "shard %s is not registered, routing to default %s [registered=%s]",
+            shard,
+            self.default_shard,
+            sorted(str(s) for s in self._managers),
+        )
+        return self.default_shard
 
     @property
     def shards(self) -> tuple[ShardIdentifier, ...]:

@@ -15,6 +15,8 @@ pools being perfectly healthy, which is why it needs a test rather than an integ
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from sqlalchemy.exc import NoSuchModuleError
 
@@ -221,3 +223,66 @@ class TestDatabaseRegistryFromConfig:
 
         assert registry.default_shard == MEXICO
         assert registry.default is registry.manager(MEXICO)
+
+
+# -- an unregistered shard says so, and can be made to refuse -----------------------------------
+
+
+def _two_shards(**kw: object) -> DatabaseRegistry:
+    """Two sqlite shards. Nothing is queried here - only routing is under test."""
+    return DatabaseRegistry.from_config(
+        ShardingConfig(
+            shards=(
+                ShardConfig(shard=ShardIdentifier(0, 0), primary=DataSourceConfig(url="sqlite://")),
+                ShardConfig(shard=ShardIdentifier(1, 0), primary=DataSourceConfig(url="sqlite://")),
+            ),
+            default_shard=ShardIdentifier(0, 0),
+            **kw,  # type: ignore[arg-type]
+        )
+    )
+
+
+def test_an_unregistered_shard_falls_back_to_the_default_and_says_so(caplog):
+    """`EKB-0200`, the half that is not configurable.
+
+    The fallback matches Java and is staying. What was wrong with it is that it happened in
+    silence: a mistyped shard identifier and a legitimately foreign id look identical here, and
+    only one of them is a bug. Nothing can tell them apart, so this tells you it happened.
+    """
+    registry = _two_shards()
+    try:
+        with caplog.at_level(logging.WARNING, logger="ekbatan.persistence"):
+            assert registry.effective_shard(ShardIdentifier(9, 9)) == ShardIdentifier(0, 0)
+
+        assert "shard 9:9 is not registered, routing to default 0:0" in caplog.text
+        assert "'0:0', '1:0'" in caplog.text, "the message names what is registered"
+    finally:
+        registry.close()
+
+
+def test_a_shard_nobody_proposed_is_not_a_fallback_and_says_nothing(caplog):
+    """`None` is an unsharded repository taking the default, which is the ordinary path. A
+    warning on every read there would be noise, and noise is how a real warning gets ignored."""
+    registry = _two_shards()
+    try:
+        with caplog.at_level(logging.WARNING, logger="ekbatan.persistence"):
+            assert registry.effective_shard(None) == ShardIdentifier(0, 0)
+
+        assert caplog.text == ""
+    finally:
+        registry.close()
+
+
+def test_unknown_shard_refuse_raises_instead_of_routing_somewhere_else():
+    """For a deployment that holds the whole layout, where an unregistered shard can only be a
+    bug. Off by default, because turning it on where the layout *is* a subset breaks reads that
+    Java would have served."""
+    registry = _two_shards(unknown_shard="refuse")
+    try:
+        with pytest.raises(ValidationError, match="not registered and unknown_shard is 'refuse'"):
+            registry.effective_shard(ShardIdentifier(9, 9))
+
+        assert registry.effective_shard(ShardIdentifier(1, 0)) == ShardIdentifier(1, 0)
+        assert registry.effective_shard(None) == ShardIdentifier(0, 0)
+    finally:
+        registry.close()

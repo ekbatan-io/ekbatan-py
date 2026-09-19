@@ -9,6 +9,7 @@ that caused it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from .errors import ValidationError
 from .sharding import ShardIdentifier
@@ -103,10 +104,26 @@ class ShardingConfig:
 
     shards: tuple[ShardConfig, ...]
     default_shard: ShardIdentifier
+    #: What to do with a shard this deployment has not configured.
+    #:
+    #: ``"default"`` routes it to :attr:`default_shard`, which is what both ports have always
+    #: done: a deployment holding a subset of the layout can read ids minted by one holding
+    #: more, instead of refusing them. It is also how a mistyped shard identifier writes to the
+    #: wrong database without saying so - which is why the fallback now logs a warning either
+    #: way, and why this setting exists.
+    #:
+    #: ``"refuse"`` raises instead. For a deployment that holds the whole layout, where an
+    #: unregistered shard can only be a bug.
+    unknown_shard: Literal["default", "refuse"] = "default"
 
     def __post_init__(self) -> None:
         if not self.shards:
             raise ValidationError("at least one shard is required")
+
+        if self.unknown_shard not in ("default", "refuse"):
+            raise ValidationError(
+                f"unknown_shard must be 'default' or 'refuse', not {self.unknown_shard!r}"
+            )
 
         seen: set[ShardIdentifier] = set()
         for shard in self.shards:

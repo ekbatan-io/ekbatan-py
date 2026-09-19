@@ -33,8 +33,9 @@ of it, so intra-group latency is what that read costs. Names like `global-eu-1`,
 reflect the convention. Nothing enforces it - a connection url is opaque to the framework - but
 it is the shape the design assumes, and ignoring it makes scatter reads slower than they look.
 
-Unlike the Java port, a shard this deployment does not have is **refused rather than defaulted**
-- see [Unregistered shards](#unregistered-shards-are-refused-not-defaulted) below.
+A shard this deployment does not have routes to the default, in both ports, and **logs a warning
+saying so** - see [Unregistered shards](#unregistered-shards-fall-back-to-default-and-say-so)
+below, and `unknown_shard="refuse"` if you want it to be an error instead.
 
 ## Declarative configuration
 
@@ -265,33 +266,42 @@ Both pay the same price: the id stops being self-describing, so a read starting 
 needs a lookup before it can route. That is a round trip on every such read, and it is why the
 embedded-bits strategy is the default despite being the less flexible one.
 
-## An unregistered shard routes to the default, as it does in Java
+## Unregistered shards fall back to default, and say so
 
-Routing resolves through `effective_shard`, which falls back:
+An id naming a shard this deployment has not configured **lands on the default**, in both ports.
+That is what lets a staging database with one shard read ids minted where there are four.
+
+It is also exactly what a mistyped shard identifier does, and that one writes to the wrong
+database. Nothing at the call site can tell the two apart, so neither port tries to. **What both
+now do instead is say it happened:**
+
+```
+WARNING  ekbatan.persistence  shard 9:9 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+```
+
+Until `EKB-0200` the fallback was silent, which is the part that made a typo expensive: the
+write succeeded, the row was in the wrong database, and nothing surfaced until somebody counted.
+
+A deployment that holds the **whole** layout can go further, because there an unregistered shard
+can only be a bug:
 
 ```python
-if shard is None or shard not in self._managers:
-    return self.default_shard
+ShardingConfig(
+    shards=(...),
+    default_shard=GLOBAL,
+    unknown_shard="refuse",   # default is "default" — fall back, and warn
+)
 ```
 
-Java's is the same line: `transactionManagers.containsKey(shard) ? shard : defaultShard`. So an
-id naming a shard this deployment has not configured **lands on the default in both ports**,
-which is what lets a staging database with one shard read production's ids instead of refusing
-them.
-
-The cost is the same in both too: a mistyped shard identifier is silent, and the writes go to
-the default where nobody looks for them. There is no framework-level guard against it. If that
-matters to you, validate the identifier before you route on it.
-
-One thing does raise — the low-level `registry.manager(shard)`, which names what is registered:
-
 ```
-ValidationError: no database registered for shard 9:9; registered: ['0:0']
+ValidationError: shard 9:9 is not registered and unknown_shard is 'refuse'; registered: ['0:0', '1:0']
 ```
 
-Java's equivalent lookup returns `null` and fails later with a `NullPointerException`. But every
-routing path calls `effective_shard` first, so nothing reaches `manager()` with an unregistered
-shard — this is the message you get from asking the registry directly, not from a bad write.
+Leave it alone if your deployment is a **subset** of the layout — turning it on there breaks the
+foreign-id reads the fallback exists for.
+
+`None` is a different thing and warns about nothing: it means no strategy proposed a shard, which
+is the ordinary unsharded path.
 
 Running unsharded on purpose is `NoShardingStrategy`: every key maps to the default, and its
 scatter accessors visit only that shard.
