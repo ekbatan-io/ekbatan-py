@@ -158,7 +158,7 @@ change both your topic names and the `namespace` column on every outbox row with
 `{EventType}` is the event class's name. The persister rejects name collisions inside one service,
 so routing stays module-move friendly without silently merging two different event classes.
 
-## Partition by `model_id`
+## Output topics partitioned by `model_id`
 
 For the per-model and per-event topics, use `model_id` as the Kafka partition key. That gives
 **per-entity ordering** - every event for one wallet lands in one partition and is consumed in
@@ -492,7 +492,7 @@ The in-process pipeline and this one coexist on one outbox. Fan-out flips `deliv
 to true, producing `UPDATE` rows; the transforms drop non-insert operations, so those flips never
 become Kafka messages.
 
-## What neither port ships
+## What the framework does *not* publish
 
 - **Kafka client wiring** - consumer and producer configuration, retry, dead-letter queues. Too
   infrastructure-specific to be right for anyone.

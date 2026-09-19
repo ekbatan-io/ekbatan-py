@@ -12,7 +12,7 @@ startup order to reason about beyond the order the lines are in.
 > which runs and is tested. The HTTP half is in [Wiring with FastAPI](wiring-fastapi.md); this
 > page is the part that has nothing to do with HTTP.
 
-## The shape
+## What we're wiring
 
 One function that returns one object. Nothing above it knows which database, which handlers or
 which jobs; nothing below it does either.
@@ -213,7 +213,7 @@ The jobs pool default is 8, not 3, for a reason worth repeating: a job body hold
 connection starves the heartbeat. db-scheduler warns at startup when the pool is too small for
 the worker count - and did, while the example was being written.
 
-## What to drop
+## What changes if you skip a feature
 
 Each block above is removable on its own:
 

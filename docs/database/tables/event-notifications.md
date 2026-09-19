@@ -154,6 +154,62 @@ the same workaround: create the partial index yourself if the table is large.
 **`attempts` has no `DEFAULT 0` here.** Java's DDL declares one; this port always writes the
 column explicitly, so the default is never consulted. It matters only if you insert rows by hand.
 
+## Indexes
+
+### The unique constraint is the whole design
+
+`UNIQUE (event_id, handler_name)` is what makes fan-out idempotent per handler. If fan-out runs
+twice over the same event - after a crash, or because two instances raced - the second insert is
+refused and no duplicate work exists.
+
+This is the same shape the saga example uses for its step markers, and it is worth internalising:
+**idempotency is a unique constraint inside the transaction that does the work**, not a
+check-then-act in application code. A check-then-act has a window. This has none.
+
+## State transitions
+
+| state | meaning |
+| --- | --- |
+| `PENDING` | the initial state; not yet attempted, or attempted and not yet resolved |
+| `FAILED` | an attempt raised and another retry is still allowed |
+| `SUCCEEDED` | terminal. The handler returned normally |
+| `EXPIRED` | terminal. The retry window elapsed without success |
+
+`FAILED` is not terminal and `EXPIRED` is. A handler that will never succeed - a transfer into a
+closed wallet - should **not** raise; it should record a business outcome and return, or it will
+be retried until the window closes. See [Sagas](../../concepts/sagas.md).
+
+## Handler names are schema
+
+`handler_name` stores the handler's `name`, and old queued rows carry the old name. Renaming a
+handler without saying so makes every queued row invisible to it - they will sit until they
+expire.
+
+The way through is `aliases`:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    aliases = ("deposit-alerts",)      # what it used to be called
+    event_type = MoneyDepositedEvent
+```
+
+New rows are written with `name`; queued rows written under an alias still route. Drop the alias
+once they have drained.
+
+## Dialect types
+
+Columns, order, nullability and the unique constraint are **identical**. Two differences, both in
+the indexes:
+
+**Java's due index is partial on PostgreSQL** - `(next_retry_at) WHERE state IN ('PENDING',
+'FAILED')` - where this port emits `(state, next_retry_at)` on every dialect. The same
+consideration as the one on [`events`](events.md#the-undelivered-index-and-what-it-costs), and
+the same workaround: create the partial index yourself if the table is large.
+
+**`attempts` has no `DEFAULT 0` here.** Java's DDL declares one; this port always writes the
+column explicitly, so the default is never consulted. It matters only if you insert rows by hand.
+
 ## See also
 
 - [`events`](events.md) - the source rows

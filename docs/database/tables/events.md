@@ -105,7 +105,7 @@ clock that is fine. Under a **frozen** clock every row of a run ties and the ord
 a random uuid. The test suite fell into this more than once; assert on `action_name` or
 `action_id` rather than on position.
 
-## How this compares with Java
+## Dialect types
 
 Verified by generating both and comparing, rather than by reading:
 
@@ -162,6 +162,40 @@ partial one holds only the backlog. Every insert pays for it, on the hot path.
 If your outbox is large and PostgreSQL is your dialect, **drop the generated index and create the
 partial one in your own migration**. It is recorded in
 [SHORTCOMINGS.md](../../SHORTCOMINGS.md) as a real gap rather than a difference of taste.
+
+## Indexes
+
+### The undelivered index, and what it costs
+
+Java creates a **partial** index on PostgreSQL:
+
+```sql
+CREATE INDEX events_undelivered ON eventlog.events (event_type, event_date)
+    WHERE delivered = FALSE;
+```
+
+This port emits the MySQL-shaped composite index on every dialect, because the table factory
+builds one `Index` with no dialect variation:
+
+```sql
+CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+```
+
+Functionally the same queries are served. The cost is size and write amplification, and it is
+not small. Measured on PostgreSQL 17, 500,000 rows with a 1% backlog - a steady-state outbox that
+CDC is keeping up with:
+
+| index | size |
+| --- | --- |
+| `(delivered, event_type, event_date)` - this port | **3,528 kB** |
+| `(event_type, event_date) WHERE delivered = FALSE` - Java | **56 kB** |
+
+Sixty-three times larger, because the composite index holds every row ever written and the
+partial one holds only the backlog. Every insert pays for it, on the hot path.
+
+If your outbox is large and PostgreSQL is your dialect, **drop the generated index and create the
+partial one in your own migration**. It is recorded in
+[SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md) as a real gap rather than a difference of taste.
 
 ## See also
 

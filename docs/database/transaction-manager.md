@@ -9,7 +9,7 @@ For those, take a transaction manager directly. It is the same primitive the exe
 internally: one transaction, one connection, commit-or-roll-back, with the connection bound to
 the calling context so anything you call from inside joins it.
 
-## Getting one
+## What it owns
 
 You rarely construct one. Reach through the registry:
 
@@ -32,7 +32,7 @@ Each one owns four things, for exactly one shard:
   `tm.transaction()` block. A `ContextVar` rather than a thread local, so the binding follows an
   `await` and a `ThreadPoolExecutor` does not inherit one by accident.
 
-## `with tm.transaction()`
+## The `tm.transaction()` family
 
 ```python
 with tm.transaction() as tx:
@@ -50,7 +50,7 @@ Both writes commit together or neither does - the same atomicity an action gives
 of the action machinery: no plan, no outbox row, no retry on a lost version race.
 
 `tx.rows(statement)` is forwarded too, for a statement whose rows become objects - the same
-`fetch(mapper)` family a repository uses, described in [Repositories](repositories.md#turning-rows-into-objects).
+`fetch(mapper)` family a repository uses, described in [Repositories](repositories.md#examples).
 `tx.connection` is the `Db` underneath, for everything else SQLAlchemy offers.
 
 **One `with` block where Java has four overloads.** Java needs `inTransaction` and
@@ -76,7 +76,7 @@ same thread, which is a deadlock against yourself.
 So the Java rule "structure your code so all the work is in one outer block" is good advice
 there. Here it is not required.
 
-## What happens around your block
+## Direct usage - a worked example
 
 1. Borrow a connection from the **primary** pool.
 2. Bind it into the ambient context for this shard.
@@ -97,7 +97,7 @@ issues an explicit `COMMIT`; MySQL and MariaDB send `SET autocommit=1`, which th
 implicit commit. Restoring it after a failed rollback would commit the very transaction that just
 failed to roll back. Physically closing the connection makes the server discard what was pending.
 
-## Repository calls join automatically
+## Repository writes join automatically
 
 Because the connection is bound into the ambient context rather than passed around, a repository
 write inside the block uses it:
@@ -112,7 +112,7 @@ Reads are a choice. Inherited reads see committed state on the primary; if a rea
 block's own uncommitted writes, use `tx.execute` / `tx.rows` or a repository method built on
 `tx_db_else_db`. See [Repositories](repositories.md).
 
-## When not to reach for it
+## When NOT to use it directly
 
 If the operation changes a model and emits an event, **write an action instead.** The action path
 gets you the outbox row written atomically with the domain row - which is the entire point of the
@@ -129,7 +129,7 @@ fan-out into the event pipeline.
 If you find yourself reaching for it for ordinary business work, that is a signal the operation
 wants to be an action.
 
-## Reading without a transaction
+## Read-only access (no transaction needed)
 
 If you only read, you need no transaction:
 

@@ -148,6 +148,19 @@ Java's priority index is `(priority DESC, execution_time ASC)`; this port emits
 ordering is served either way; the cost is a backward scan rather than a forward one, which is
 not measurable at this table's size.
 
+## Indexes
+
+### Index names and the priority ordering
+
+Java names them `execution_time_idx`, `last_heartbeat_idx`, `priority_execution_time_idx`; this
+port prefixes each with the table name, which is what SQLAlchemy's convention produces and what
+keeps them unique when a schema holds two schedulers.
+
+Java's priority index is `(priority DESC, execution_time ASC)`; this port emits
+`(priority, execution_time)` with no direction. PostgreSQL can scan an index backwards, so the
+ordering is served either way; the cost is a backward scan rather than a forward one, which is
+not measurable at this table's size.
+
 ## See also
 
 - [Framework tables](../tables.md) - the map

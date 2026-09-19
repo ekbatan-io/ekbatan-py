@@ -33,7 +33,7 @@ with lease:
     ...
 ```
 
-## Where to take it
+## Where to acquire the lock
 
 ### ✅ At the caller, around `executor.execute(...)` — the default
 
@@ -131,7 +131,7 @@ One shared helper owns the per-`(context, key)` counter, the watchdog timer and 
 release arbitration, so each backend implements only a low-level acquire and release. That is
 what makes "uniform across all five" checkable rather than aspirational.
 
-## The backends
+## Five backends
 
 | Provider | Scope | Mechanism | Hold | Notes |
 |---|---|---|---|---|
@@ -269,7 +269,7 @@ locks at once holds a thousand threads.** If that becomes the constraint the fix
 thread with a heap of deadlines rather than a thread per hold - contained, not a redesign. It is
 recorded in [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 
-## Optimistic or pessimistic?
+## Optimistic vs pessimistic - picking one
 
 | | |
 | --- | --- |

@@ -21,6 +21,66 @@ uv add ekbatan[postgres]
 | `RETURNING` | yes |
 | tested against | `postgres:17-alpine` |
 
+## Migration order
+
+PostgreSQL has no separate "create the eventlog database" step: `eventlog`, if you want one at
+all, is a schema inside the connected database and the first revision creates it inline. This
+port defaults to no schema, so usually there is nothing to create.
+
+```
+migrations/versions/
+  0001_eventlog.py          # events + event_notifications + their indexes
+  0002_scheduled_tasks.py   # only if you run distributed jobs or in-process handlers
+  0003_wallets.py           # your domain tables
+```
+
+Three revisions rather than one because they change for different reasons: the first two move
+when you upgrade the framework, the third whenever your domain does.
+
+No init script. The connecting user normally has create-schema rights already, which is the
+whole of why PostgreSQL is the least work of the four.
+
+## Framework tables
+
+Three, and only the first is always required. The DDL is generated rather than transcribed -
+[Framework tables](tables.md) has it per dialect, and `emit_ddl(metadata, "postgresql")` prints it
+for your own revision.
+
+| Table | Needed when | Page |
+|---|---|---|
+| `events` | always | [`events`](tables/events.md) |
+| `event_notifications` | you handle events in-process | [`event_notifications`](tables/event-notifications.md) |
+| `scheduled_tasks` | you run distributed jobs, or in-process handlers | [`scheduled_tasks`](tables/scheduled-tasks.md) |
+
+What the column helpers render here:
+
+| helper | this dialect |
+|---|---|
+| `uuid_column()` | `UUID` |
+| `json_column()` | `JSONB` |
+| `timestamp_column()` | `TIMESTAMP WITHOUT TIME ZONE` |
+
+Partial indexes are the one thing this port does not emit and PostgreSQL would
+reward - see the gotcha below.
+
+## Domain tables
+
+Your tables are yours. The repository requires two columns on every one of them and refuses at
+construction if either is missing: **`version`**, the optimistic-locking counter, and
+**`state`**, the soft-delete discriminator. A `ModelRepository` additionally wants
+`created_date` and `updated_date`; an entity's table needs neither, because the framework does
+not track timestamps for entities.
+
+Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and increment it.
+
+| column | type | role |
+|---|---|---|
+| `id` | `UUID` | primary key |
+| `version` | `BIGINT NOT NULL` | optimistic locking - required, no default |
+| `state` | `VARCHAR(24) NOT NULL` | soft-delete discriminator; `DELETED` rather than a `deleted_at` column |
+| `created_date` | `TIMESTAMP WITHOUT TIME ZONE NOT NULL` | written once, on insert |
+| `updated_date` | `TIMESTAMP WITHOUT TIME ZONE NOT NULL` | bumped on every update, alongside `version` |
+
 ## Gotchas
 
 **`JSONB`, not `JSON`.** `json_column()` gives you `JSONB`. The binary form is indexable and
@@ -34,7 +94,7 @@ to no schema.
 
 **Plain `TIMESTAMP`, never `TIMESTAMPTZ`.** Run the server with `TZ=UTC`. CI runs this suite a
 second time under `TZ=America/New_York` because that is where a driver inferring a zoned type
-shows up. See [Multiple dialects](multi-database.md#always-utc-and-no-zone).
+shows up. See [Multiple dialects](multi-database.md#always-utc).
 
 **Partial indexes are the reason PostgreSQL suits this workload**, and this port does not emit
 them. The generated undelivered index is the portable composite one, which is

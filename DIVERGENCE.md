@@ -307,7 +307,7 @@ return conn.rows(statement).fetch(self.from_row)
 `conn.rows(statement)` returns a `FetchResult`, whose terminals each take the mapper:
 `fetch`, `fetch_first`, `fetch_one`, `fetch_one_or_none`, `each`, plus `yield_per`,
 `partitions` and `unique` for shaping. Full table in
-[`docs/database/repositories.md`](docs/database/repositories.md#turning-rows-into-objects).
+[`docs/database/repositories.md`](docs/database/repositories.md#examples).
 
 Three things about it are deliberate:
 

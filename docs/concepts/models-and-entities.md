@@ -19,7 +19,7 @@ a trail of their own.
 
 An entity may add its own timestamp columns; the framework simply will not populate them.
 
-## A model
+## A Model
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -82,7 +82,7 @@ ones. What is unusual is *what* is frozen here. The ecosystem freezes **value ob
 keys, config values, durations, markers. This framework freezes the **aggregate**.
 
 That is a deliberate stance rather than a Python convention, and the reason is
-[two-phase execution](actions.md#the-two-phases). The plan holds a *reference* to what you
+[two-phase execution](actions.md#the-two-phase-lifecycle). The plan holds a *reference* to what you
 staged, and the executor writes it later, inside a transaction. With a mutable model, anything
 touching that object between staging and commit would silently change what got written - a
 deposit of 100 committing as 0. Frozen makes that unwritable rather than merely discouraged.
@@ -106,7 +106,7 @@ field without one would otherwise be *"non-default argument follows default argu
 `evolve()` is the framework's own shorthand and exists because internal code needs it. Domain
 code should prefer `copy()`, so that every change in an application reads the same way.
 
-## Events
+## ModelEvent
 
 A `ModelEvent` is a frozen dataclass carrying whatever the domain needs:
 
@@ -127,6 +127,52 @@ Nothing to write, and nothing to forget.
 Events are written to `events.payload` as canonical JSON. See [The outbox](outbox.md) for the
 row, including why two identity keys are spelled in Java's style.
 
+### Deserialization (for in-process handlers)
+
+Events are stored as JSON in `events.payload` and read back into the same class when an
+in-process handler is invoked. **Nothing extra is needed for that round trip** — no annotation,
+no registered constructor, no per-handler mapping layer. The payload is rebuilt from the
+dataclass's own annotations, which is the one place the field types are already written down.
+
+That is the whole of the Python side of a problem Java spends a `@JsonCreator` constructor on.
+Java's Jackson cannot reconstruct an event with constructor parameters unless you write a second
+constructor annotating every parameter with its JSON name; forget it and the dispatch job fails
+to invoke the handler at all. Here the dataclass's `__init__` already takes keyword arguments
+named after its fields, so there is nothing to declare.
+
+What the decoder does with each field, driven by its annotation:
+
+| Annotation | Rebuilt from |
+|---|---|
+| `Decimal` | its **string**, at the scale it was written |
+| `datetime` | its ISO-8601 form, back to an aware UTC instant |
+| `UUID` | its canonical text |
+| an `Enum` | its **member name**, never its ordinal |
+| a nested frozen dataclass | recursively, the same way |
+| `list` / `tuple` / `set` / `frozenset` of any of the above | element by element |
+| `T \| None` | the non-`None` arm, when there is exactly one |
+
+Decimals travel as strings deliberately: a JSON number is a double, and a balance that
+round-trips through one is no longer the balance. Enums travel by name for the same class of
+reason — an ordinal changes meaning the moment somebody inserts a member in the middle, and
+nothing about that change looks dangerous at the time.
+
+Two limits worth knowing:
+
+- **A key the dataclass does not declare is dropped**, not an error. An additive change on the
+  producer cannot break a consumer that has not caught up — which is the same tolerance the
+  streaming path has, and for the same reason.
+- **A union with more than one non-`None` arm is left as raw JSON.** There is no discriminator in
+  the payload to pick an arm with, so the decoder does not guess. Model that as a nested
+  dataclass with a `kind` field rather than as a union if a handler needs it typed.
+
+`model_id` and `model_name` arrive under Java's spelling — `modelId`, `modelName` — because its
+local event handler deserialises the payload straight into the event class and refuses one
+without them. They are read back under this port's names, so a payload written by *either* side
+rebuilds a complete event here.
+
+Streaming-only consumers do not go through any of this: they read the JSON off the broker.
+
 ## Optimistic locking, always
 
 Every persistable carries a `version`, and every update carries it:
@@ -139,7 +185,7 @@ WHERE id = ? AND version = ?
 
 If another transaction got there first, zero rows match and `StaleRecordError` unwinds the
 action's transaction. The default policy retries the whole action once after 100 ms - see
-[Actions](actions.md#retries).
+[Actions](actions.md#retries-on-optimistic-lock-conflicts).
 
 **The write path takes no pessimistic row locks, ever.** Conflicts surface as an exception rather
 than as blocked threads. When you genuinely want a lock, take a keyed lock or issue
@@ -161,7 +207,7 @@ event already published about that aggregate. What leaves is the wallet, not its
 When a physical delete is genuinely required - an erasure request, purging expired data - issue
 the `DELETE` yourself through the repository's table.
 
-## Builders, and the one thing that is generated
+## Generated builders
 
 `wallet.copy().balance(...)` works for every model with nothing generated, and refuses an unknown
 field at the point of the call. What it cannot do is tell a *type checker* that `.balance(...)`
@@ -197,7 +243,27 @@ regenerate when a model changes. A stale one is a type error rather than a wrong
 Note the difference from `schemagen`, whose output is *gitignored*: a builder is derived from
 source you already have, a schema from a database you have to start.
 
-## Naming
+## Inherited builder methods
+
+Both builders carry a shared set on the base, typed `Self` so the return stays your builder:
+
+| | model | entity |
+| --- | :-: | :-: |
+| `id(...)` | yes | yes |
+| `state(...)` | yes | yes |
+| `version(...)` / `with_initial_version()` / `increase_version()` | yes | yes |
+| `copy_base(other)` | yes | yes |
+| `set(**changes)` | yes | yes |
+| `with_event(...)` / `events(...)` | yes | — |
+| `created_date(...)` / `updated_date(...)` | yes | — |
+
+`copy_base(other)` is what `model.copy()` returns first: the id, state, version, and for a model
+the events and timestamps, pre-populated — so domain code only names the fields that changed.
+
+The split is the whole difference between the two kinds. An entity has no events to attach and
+no timestamps to hold, so those methods are not on it to be called by mistake.
+
+## Naming conventions
 
 - **Model** - a singular noun: `Wallet`, `Order`, `Subscription`.
 - **State enum** - `<Model>State` with upper-snake values: `WalletState.OPENED`. `GenericState`

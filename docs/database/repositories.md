@@ -27,7 +27,7 @@ beyond what the column type does. Most repositories never do.
 That is the single largest ergonomic difference between the two ports, and it removes an entire
 class of bug: a field added to a model and forgotten in `toRecord` is not expressible here.
 
-## What you get for free
+## Inherited CRUD surface
 
 **Writes**
 
@@ -84,7 +84,7 @@ pagination does not work across shards - "rows 100 to 120" has no meaning when t
 four databases and each has its own ordering. Use keyset or temporal pagination, written on the
 concrete repository where you know the ordering key.
 
-## Dropping down to SQLAlchemy
+## Custom queries
 
 When the inherited surface is not enough, take a connection. The choice is about **consistency**,
 and picking wrongly is the mistake this section exists to prevent.
@@ -116,7 +116,31 @@ for shard, conn in self.readonly_dbs(): ...
 They are context managers because a connection has a lifetime. `tx_db` is the exception: it
 returns the transaction's connection or `None`, and the transaction owns it.
 
-### Turning rows into objects
+### Picking the right one
+
+| you want | use |
+| --- | --- |
+| the default read behaviour | the inherited reads - primary-consistent by design |
+| a custom read that must be current | `db(...)` or `dbs()` |
+| a custom read where lag is fine | `readonly_db(...)` or `readonly_dbs()` - these **are** the replica |
+| a read that must see this transaction's uncommitted writes | `tx_db_else_db(...)` |
+| an insert, update or delete | `tx_db_else_db(...)` - joins the open transaction, falls back to primary |
+| "we must already be in a transaction", loudly | `tx_db(...)`, and raise on `None` |
+| a scatter-gather | `dbs()` / `readonly_dbs()` |
+
+They are context managers because a connection has a lifetime. `tx_db` is the exception: it
+returns the transaction's connection or `None`, and the transaction owns it.
+
+> **`Action.perform()` itself is not transactional.** The executor opens the transaction *after*
+> `perform()` returns, and then persists the staged plan. So a custom `tx_db_else_db(...)` write
+> called from inside `perform()` does **not** join the action's commit — there is no transaction
+> bound yet, so it falls back to the primary and writes immediately, outside the atomicity the
+> action promises. Inside `perform()`, stage changes with `plan.add(...)` / `plan.update(...)`.
+>
+> The same call is right inside a handler, a job, or anything running under
+> `tm.transaction()` — it is only `perform()` where the transaction has not started yet.
+
+### Examples
 
 What comes back from any of them is a `Db` - a `sqlalchemy.Connection` with one method added.
 Everything SQLAlchemy documents is still there and still means what its documentation says;
@@ -185,7 +209,7 @@ return [
 > dual-write the framework exists to prevent, reintroduced by hand. Inside `perform()`, stage
 > with `self.plan.add(...)` and `self.plan.update(...)`.
 
-### Soft deletion is yours again down here
+### Soft delete in custom queries
 
 The inherited reads add the soft-delete predicate. A statement you build yourself does not - the
 filter is not a table property, it is something the repository applies on the way to a query it
@@ -201,7 +225,7 @@ select(WALLETS).where(
 The predicate helpers (`find_where`, `find_one_where`, `exists_where`, `count`) keep both the
 soft-delete filter and the shard routing, so reach for those before reaching for a connection.
 
-## Registration
+## Discovery via the registry
 
 There is no annotation and nothing scans for your repositories. They go in the registry, in the
 wiring, where you can see them:

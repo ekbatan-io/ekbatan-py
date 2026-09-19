@@ -44,7 +44,7 @@ cluster exclusivity, heartbeating and crash recovery are inherited. One instance
 one runs dispatch - the normal case rather than a guarantee, since a stalled instance can have
 its execution revived elsewhere, and both jobs are written to be safe under a repeat.
 
-## A handler
+## Defining a handler
 
 ```python
 class MoneyDepositedEventHandler:
@@ -71,7 +71,7 @@ allows several handlers per event class and **rejects two different event classe
 name**, because those are indistinguishable in the outbox. Handler names and aliases must be
 globally unique.
 
-### `name` is schema
+### Renaming a handler safely
 
 It is the durable subscription id written on every notification row. Rename the class freely;
 rename `name` and the queued rows under the old one become invisible to the handler and sit until
@@ -320,7 +320,58 @@ What it must **not** do is reach for a connection and write directly. A handler 
 outside an action writes without an outbox row, and the thing it changed then has no event
 explaining it — which is the failure this whole framework exists to make unexpressible.
 
-## Coexisting with the Kafka path
+## A realistic handler — calling external services
+
+Most handlers reach for something to do the useful part — send a notification, write an audit
+row, post to an external API. The shape is the same as any handler; the only difference is what
+the constructor takes:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited-notification"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, notifications: NotificationService) -> None:
+        self.notifications = notifications
+
+    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        self.notifications.deposit_received(
+            envelope.model_id, envelope.event.amount, envelope.event.new_balance
+        )
+```
+
+Nothing injects that service. You construct the handler in your wiring, where you can see what it
+took — the same place you register it. There is no scanning and no annotation, which is why this
+page has no "wiring via DI" section to match Java's three.
+
+**The external call is the part that makes idempotency hard.** A notification sent twice is a
+notification the user received twice, and the outbox cannot undo it. If the call has an
+idempotency key, pass the **event id** — it is stable across every retry of the same
+notification, and distinct for every other one. If it has none, keep a table of event ids you
+have acted on and check it in the same transaction as the work.
+
+If your handler cannot be made idempotent in any of those ways, you probably want the Kafka path
+with consumer-group offsets rather than this pipeline.
+
+### Listen-to-yourself
+
+A handler may instead take the executor and start another action:
+
+```python
+def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+    self.executor.execute(CompleteTransferAction, params)
+```
+
+This is the **only** legitimate place one action chains off another's effect. The source action
+has already committed by the time a handler runs, so the new action gets its own clean
+transaction, its own retry policy and its own outbox rows. It is what a [saga](../concepts/sagas.md)
+is built from.
+
+What it must **not** do is reach for a connection and write directly. A handler that writes
+outside an action writes without an outbox row, and the thing it changed then has no event
+explaining it — which is the failure this whole framework exists to make unexpressible.
+
+## Coexistence with the Kafka path
 
 Both can run against one outbox. The Debezium transforms drop non-insert operations, so the
 `UPDATE delivered = TRUE` that fan-out writes never becomes a Kafka message.

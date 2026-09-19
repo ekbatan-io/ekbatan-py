@@ -9,7 +9,7 @@ that does not want tracing, and the absence path is the one most of the test sui
 written in Java appear in one dashboard. Everything below was checked against Java's names rather
 than invented.
 
-## Installing an SDK
+## Bringing your own SDK
 
 ```
 uv add opentelemetry-sdk opentelemetry-exporter-otlp
@@ -24,7 +24,7 @@ that `uv sync --all-extras` does **not** install it - otherwise the test proving
 runs without a tracing stack would quietly stop testing anything. One CI job asks for the group
 and asserts the span names; every other job proves the absence path.
 
-## The span tree
+## Span hierarchy
 
 Each `executor.execute(...)` produces:
 
@@ -85,7 +85,7 @@ at its own. That is deliberate: the scope names the library that produced the sp
 versions are independent, and a dashboard filtering on span *names* - which are identical - sees
 both.
 
-## Retries
+## Retry events
 
 Each retry adds a span **event** named `retry` to the action span, with `retry.count` and
 `retry.exception` - the matched exception's class name, which may have come from the cause chain.
@@ -162,7 +162,60 @@ only fires a week later, once the events are gone.
 replica and non-zero lag, a round can re-read events it has already delivered, so the counter
 over-reports. Treat it as an upper bound.
 
-## Reads are not instrumented
+## Read-path tracing is not instrumented
+
+A repository's reads produce no spans of their own. They run inside `perform()`, which already has
+one, and instrumenting every lookup would be noise for an action that does several. Instrument
+them in your own repository method if you need it.
+
+## What each one answers
+
+**`handled`** is throughput and failure rate. The `handler` tag is what distinguishes one broken
+handler from a general problem.
+
+**`handler.duration`** is which handler is *slow*, as opposed to which is failing. A handler
+degrading from 5 ms to 5 s shows here long before it starts raising.
+
+**`delivery.lag`** is how far behind delivery is running, and it is the one to alert on: a shard
+falling behind still reports perfectly healthy success counts, so **no counter can reveal a
+growing backlog.** Recorded on success only, so it measures time-to-delivery rather than
+time-spent-failing.
+
+### `outcome` values
+
+| value | meaning |
+| --- | --- |
+| `succeeded` | the handler returned |
+| `failed_retry` | it raised; a retry is scheduled with backoff |
+| `expired_preflight` | the row was already past the retention window when claimed - the handler never ran |
+| `expired_postfailure` | it raised, and the next retry would land past the deadline |
+
+`handler.duration` uses a narrower `outcome` - just `succeeded` or `failed`. At the moment a
+handler returns, the only known fact is whether it raised; whether that becomes a retry or an
+expiry is decided afterwards, against the post-invocation clock. `expired_preflight` never appears
+in the histogram at all, because no handler ran.
+
+### What to alert on
+
+**`delivery.lag` rising steadily** is the one that matters most, for the reason above.
+
+**`handled{outcome="expired_postfailure"}` above zero means events were discarded.** A
+notification reaches that state only after failing for the whole retention window - seven days by
+default - so any occurrence is a delivery that was permanently given up on. Each is also logged at
+ERROR with the handler name and an example event id.
+
+**A steady stream of `failed_retry` on a single `handler`** usually means that handler cannot
+succeed at all - the classic case being an `ImportError` from a missing optional dependency, which
+no amount of retrying fixes. Alerting on that catches it in minutes, where the discard alert above
+only fires a week later, once the events are gone.
+
+### Known caveat
+
+`ekbatan.events.fanned_out` counts rows **read**, not rows written. On a deployment with a real
+replica and non-zero lag, a round can re-read events it has already delivered, so the counter
+over-reports. Treat it as an upper bound.
+
+## Read-path tracing is not instrumented
 
 A repository's reads produce no spans of their own. They run inside `perform()`, which already has
 one, and instrumenting every lookup would be noise for an action that does several. Instrument

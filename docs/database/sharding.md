@@ -4,7 +4,7 @@ The reference. For *why* there are two axes and when to reach for each strategy,
 [Concepts → Sharding](../concepts/sharding.md) first; this page is the configuration and the
 wire format.
 
-## `ShardIdentifier`
+## Two axes: group + member
 
 A `(group, member)` pair. Group is the policy axis, member the capacity axis.
 
@@ -22,7 +22,7 @@ MEXICO = ShardIdentifier(1, 0)
 
 So 16,384 addressable shards, and the numbers are part of the id rather than a lookup key.
 
-## Configuration
+## Declarative configuration
 
 ```python
 layout = ShardingConfig(
@@ -66,7 +66,7 @@ invisible as latency.
 There is no counterpart to Hikari's `idleTimeout` or `minimumIdle`; retirement here is by age
 rather than by idleness. See [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 
-## Routing
+## Sharded models and repositories
 
 A model that participates in sharding declares its id type as `ShardedId` instead of `Id`:
 
@@ -184,7 +184,7 @@ one, and you say which you meant. See [Repositories](../database/repositories.md
 An **unsharded** repository's `dbs()` visits only the default shard, even when the registry holds
 several. A repository that opted out of routing should not silently acquire a scatter.
 
-## The bit layout
+## Self-describing IDs: `ShardedId`
 
 The shard is packed into the `rand_b` region of a UUIDv7:
 
@@ -266,7 +266,7 @@ What does resolve to the default is a repository with `NoShardingStrategy`: ever
 there, and its scatter accessors visit only that shard. That is the supported way to run
 unsharded, rather than relying on a lookup miss.
 
-## Cross-shard
+## Cross-shard actions
 
 Refused by default. `CrossShardError` names the two shards involved.
 

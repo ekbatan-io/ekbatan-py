@@ -26,7 +26,7 @@ workflow records a failure event and runs a compensating action. The result is n
 all-or-nothing transaction. It is a durable, auditable workflow with explicit recovery - which is
 the honest thing to have, because the alternative was never actually available.
 
-## The worked example
+## Wallet transfer example
 
 [`ekbatan-py-examples/fastapi_wallet_saga_pg`](../../ekbatan-py-examples/fastapi_wallet_saga_pg)
 runs on one PostgreSQL database with the in-process handler, but the shape is what you would use
@@ -94,10 +94,10 @@ TransferInitiated -> TransferFailed -> TransferRefunded
 
 You can explain the system's behaviour after the fact, because every step was durable.
 
-## Where the next step starts
+## Where the next step is started
 
 **Not inside `perform()`.** That would hide a second transaction in the first action's business
-logic. See [Actions → no nesting](actions.md#no-nesting).
+logic. See [Actions → no nesting](actions.md#no-nested-actions-inside-perform).
 
 The boundary is: after the previous action has committed and its event is being consumed. That
 consumer can be an in-process handler, a broker consumer fed by Debezium, a worker polling the
@@ -167,7 +167,7 @@ new event.
 **Pick the consumer by deployment shape.** In-process when every step lives in one application; a
 broker when a later step belongs to another service. The action code does not change either way.
 
-## What you get, and what you do not
+## What this gives you
 
 You do not get global atomicity. A caller may observe intermediate state: the source is debited
 before the destination is credited, or before the refund runs. The 202 is what makes that

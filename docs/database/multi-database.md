@@ -7,7 +7,7 @@ Most of the framework is dialect-agnostic. The differences concentrate in one pl
 types in your migrations.** Get those right and the rest follows, which is why three helpers do
 all the work.
 
-## Three helpers instead of a converter table
+## Column-type cheatsheet
 
 Java's counterpart to this page is a grid of Java types against DDL types against
 `SQLDataType` expressions against jOOQ converters - seven converters, and which one you need
@@ -98,7 +98,7 @@ One `Table`, one repository, and the engine picks the rendering at statement-com
 is the whole of the difference, and it is why this page is a cheatsheet where Java's is a
 pattern.
 
-## Always UTC, and no zone
+## Always UTC
 
 Every timestamp this framework writes is UTC, and it is stored in a column with **no zone**.
 That is enforced across the project and is not negotiable per table.
@@ -115,7 +115,7 @@ That is enforced across the project and is not negotiable per table.
 `scheduled_tasks`, which is db-scheduler's own schema - see
 [that table's page](tables/scheduled-tasks.md) for the measured consequence of getting it wrong.
 
-## Schema or database
+## Schema vs database
 
 On PostgreSQL a schema is a namespace **inside** the connected database. `CREATE SCHEMA IF NOT
 EXISTS eventlog;` in your first migration is all it takes, and the connecting user normally has
@@ -135,7 +135,7 @@ outright and one fewer namespace is one fewer thing to configure. Pass `schema="
 you want Java's layout - which you do if a Java service shares the database. See
 [Framework tables](tables.md).
 
-## Partial indexes are PostgreSQL only
+## Partial indexes (PostgreSQL only)
 
 PostgreSQL can index a subset of a table:
 
@@ -154,7 +154,7 @@ because the table factory builds one index with no dialect variation. That costs
 large outbox - [measured at 63x](tables/events.md#the-undelivered-index-and-what-it-costs) - and
 is the one place you may want to replace a generated index with your own.
 
-## Where the dialects actually disagree
+## Why each dialect needs what it needs
 
 Everything below was found by running the suite against all four, not by reading documentation.
 
@@ -168,7 +168,7 @@ Everything below was found by running the suite against all four, not by reading
 | **Untyped `NULL` in a multi-row `VALUES`** | PostgreSQL infers `text` and then refuses to insert it into an integer column. The framework casts every NULL explicitly |
 | **Multi-statement scripts** | PyMySQL rejects them, so a migration is one statement per `op.execute()` |
 
-## Adding a dialect
+## Adding a new database
 
 The framework picks its lock provider and its dialect behaviour off
 `engine.dialect.name`, so a new dialect needs: a driver SQLAlchemy supports, a keyed-lock

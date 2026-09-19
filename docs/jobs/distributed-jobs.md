@@ -4,7 +4,7 @@ Background work that should run on **exactly one** instance across a cluster. A 
 [db-scheduler](https://github.com/kagkarlsson/db-scheduler), whose Python port this repository
 also publishes.
 
-## A job
+## Defining a job
 
 ```python
 class PayStipendJob(DistributedJob):
@@ -26,7 +26,7 @@ Nothing about being a job makes the work special. It goes through an ordinary ac
 outbox row it writes is indistinguishable from one a request produced - `action_name` says
 `DepositMoneyAction` either way, and nothing downstream can tell or needs to.
 
-## Coordination
+## Coordination semantics
 
 - Every instance polls the shared `scheduled_tasks` table.
 - When a slot comes due, **exactly one instance wins the atomic claim** and runs it.
@@ -98,7 +98,7 @@ jobs.stop()
 The event pipeline's two jobs are registered here too - they *are* distributed jobs. See
 [In-process event handlers](../events/local-event-handler.md#wiring).
 
-### `workers(n)` - a knob Java does not need
+### `workers(n)`, and sizing the pool
 
 Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
 unbounded and `threads(n)` only sizes the polling batch. Here the workers are a fixed pool of
@@ -156,7 +156,7 @@ is up to an hour, which is usually worth lowering in tests. An execution still r
 expires is abandoned, leaving its row picked with a frozen heartbeat, and is recovered later by
 the same path as a crash.
 
-### One thing Java has to do that this port does not
+### Database dialect
 
 db-scheduler detects its SQL dialect by **opening a connection and reading the database
 metadata**. If that connection fails it logs and keeps generic SQL *for the scheduler's lifetime* -
@@ -227,7 +227,7 @@ by the next live node when it polls.
 A task that raises is retried according to its `Schedule`, and the row's `consecutive_failures`
 increments — which is the column to alert on.
 
-## A dedicated pool
+## Use a dedicated connection pool
 
 Always. db-scheduler polls continuously and heartbeats from its own thread; sharing the request
 pool means a traffic burst can starve the heartbeat, and the consequence of a starved heartbeat is

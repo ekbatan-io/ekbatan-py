@@ -4,7 +4,7 @@ Opt-in, with zero overhead when it is off. When you do need it, this framework s
 reasons to shard - policy and capacity - and gives each its own axis. Your actions and models
 stay sharding-agnostic; routing happens at the edges.
 
-## Two reasons, two axes
+## Two reasons to shard, two axes
 
 Most sharding designs use one number for "which database does this row live on" and let it
 conflate everything. A `ShardIdentifier` here is a `(group, member)` pair, and the two answer
@@ -26,7 +26,7 @@ distributes load, usually a hash. Different concerns, different logic, different
 
 ## Three strategies, in order of weight
 
-### One database
+### Single-database (no sharding)
 
 Everything at `(group=0, member=0)` - `DEFAULT_SHARD`, which prints as `0:0`. You write actions
 exactly as you would if sharding did not exist: `Id[Wallet]` rather than `ShardedId[Wallet]`, no
@@ -39,7 +39,7 @@ resolves to the same database.
 The day you outgrow it, the action code does not change. The model's id type and the
 configuration do.
 
-### Shard bits in the id
+### Embedded-bits UUID (`ShardedId`)
 
 The `(group, member)` pair is encoded into 14 bits of the UUID itself, inside the `rand_b` field
 of a UUIDv7. The crucial property: **the shard is recoverable from the id, with no lookup.**
@@ -65,7 +65,7 @@ have their shard in the same bits, so either can route the other's rows.
 > Use it when each row's shard is decidable from what you know at creation time and you will
 > never move rows between shards. That covers most cases.
 
-### Your own strategy
+### Custom sharding strategy (full control)
 
 If embedded bits do not fit - you need to re-shard live data, or the shard is not knowable at
 creation but is derivable from the row - supply a `ShardingStrategy`. It takes a model or a query
@@ -76,7 +76,7 @@ The cost is that the id is no longer self-describing. Any read that starts from 
 the strategy to find the row first, which is a round trip you pay implicitly. Use embedded bits
 if you can; reach for this when you cannot.
 
-## Cross-shard: one transaction per shard, never atomic across
+## Cross-shard actions: one transaction per shard, never atomic across
 
 By default, an action's staged changes must all route to one shard. One transaction, everything
 written, commit. That is the only way the outbox guarantee survives, because atomic-across-
@@ -120,7 +120,7 @@ short - the work per shard is one bounded batch - so it has not bitten, and the 
 around the existing per-shard drain rather than a redesign. But it is a real difference from
 Java, and eight shards is where you would first feel it.
 
-## What sharding does not solve
+## What sharding doesn't solve
 
 It is a write-throughput-and-policy tool. It does not:
 

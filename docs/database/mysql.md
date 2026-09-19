@@ -21,6 +21,85 @@ uv add ekbatan[mysql]
 | `RETURNING` | **no** |
 | tested against | `mysql:8.4` |
 
+## Migration order
+
+MySQL has no schemas, so an `eventlog` namespace has to be its own **database**. The connecting
+user usually only has rights on the main one, so the cross-database `GRANT`s have to come from an
+init script that runs as root, before anything else connects.
+
+```
+mysql_init.sql              # root-only GRANTs, mounted into the container at startup
+migrations/versions/
+  0000_eventlog_database.py # CREATE DATABASE IF NOT EXISTS eventlog
+  0001_eventlog.py          # events + event_notifications + their indexes
+  0002_scheduled_tasks.py   # only if you run distributed jobs or in-process handlers
+  0003_wallets.py           # your domain tables
+```
+
+All of that is only needed if you want the framework's tables in a namespace of their own. This
+port defaults to the connected database, where none of it applies - see
+[Schema or database](multi-database.md#schema-vs-database).
+
+### `mysql_init.sql`
+
+The container runs every `.sql` in `/docker-entrypoint-initdb.d/` as root before it reports ready.
+That is the only place this can live: your application connects as the named user, and a user
+cannot grant itself anything.
+
+```sql
+GRANT ALL PRIVILEGES ON *.* TO 'wallet'@'%';
+FLUSH PRIVILEGES;
+```
+
+```yaml
+services:
+  wallet-db:
+    image: mysql:8.4
+    volumes:
+      - ./mysql_init.sql:/docker-entrypoint-initdb.d/mysql_init.sql:ro
+```
+
+## Framework tables
+
+Three, and only the first is always required. The DDL is generated rather than transcribed -
+[Framework tables](tables.md) has it per dialect, and `emit_ddl(metadata, "mysql")` prints it
+for your own revision.
+
+| Table | Needed when | Page |
+|---|---|---|
+| `events` | always | [`events`](tables/events.md) |
+| `event_notifications` | you handle events in-process | [`event_notifications`](tables/event-notifications.md) |
+| `scheduled_tasks` | you run distributed jobs, or in-process handlers | [`scheduled_tasks`](tables/scheduled-tasks.md) |
+
+What the column helpers render here:
+
+| helper | this dialect |
+|---|---|
+| `uuid_column()` | `CHAR(36)` |
+| `json_column()` | `JSON` |
+| `timestamp_column()` | `DATETIME(6)` |
+
+`DATETIME(6)`, never a bare `DATETIME`: the bare form truncates to whole seconds,
+and `event_date` is the outbox's only ordering key.
+
+## Domain tables
+
+Your tables are yours. The repository requires two columns on every one of them and refuses at
+construction if either is missing: **`version`**, the optimistic-locking counter, and
+**`state`**, the soft-delete discriminator. A `ModelRepository` additionally wants
+`created_date` and `updated_date`; an entity's table needs neither, because the framework does
+not track timestamps for entities.
+
+Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and increment it.
+
+| column | type | role |
+|---|---|---|
+| `id` | `CHAR(36)` | primary key |
+| `version` | `BIGINT NOT NULL` | optimistic locking - required, no default |
+| `state` | `VARCHAR(24) NOT NULL` | soft-delete discriminator; `DELETED` rather than a `deleted_at` column |
+| `created_date` | `DATETIME(6) NOT NULL` | written once, on insert |
+| `updated_date` | `DATETIME(6) NOT NULL` | bumped on every update, alongside `version` |
+
 ## Gotchas
 
 **No native UUID.** `uuid_column()` renders `CHAR(36)` - the hyphenated text form, chosen so ids

@@ -8,7 +8,7 @@ transaction, flush every staged change, write the outbox rows and commit.
 That split is what makes the outbox implicit: domain rows and event rows are written together,
 by the framework, never by your code.
 
-## The two phases
+## The two-phase lifecycle
 
 ```
         executor.execute(DepositMoneyAction, params)
@@ -46,7 +46,7 @@ by the framework, never by your code.
 Phase 1 is pure construction. Phase 2 is the only place a transaction is opened, and it always
 wraps every staged change together with the matching event rows.
 
-## Writing one
+## Writing an action
 
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
@@ -73,7 +73,7 @@ wallet = executor.execute(
 The executor opens one transaction, writes the wallet row with its incremented version, writes
 the `MoneyDepositedEvent` row, commits. If anything raises, both roll back.
 
-## The plan
+## ActionPlan
 
 An in-memory accumulator, reached through `self.plan`:
 
@@ -93,7 +93,7 @@ Three rules:
   `perform()` see the increment.
 - **The plan is single-writer.** It is a plain dict; concurrent mutation is a data race.
 
-## Actions are singletons
+## Singletons, with per-call state in a ContextVar
 
 One instance per class, for the life of the application, shared by every concurrent invocation.
 Its only state is what the constructor set.
@@ -110,7 +110,7 @@ That second point is not a limitation to work around - it is the design. A pool 
 outlived the unit of work while holding its connection is exactly the bug this prevents.
 `current_plan()` raises with a message saying so rather than returning `None`.
 
-## Forking work inside perform()
+## Plan is single-writer; forking is allowed but not encouraged
 
 Allowed, not encouraged, and the rule is the same as Java's.
 
@@ -128,7 +128,7 @@ than competing with the action's own.
 See [Concurrency](../runtime/concurrency.md) for what the threads actually cost here - they are
 not Java's virtual threads.
 
-## No nesting
+## No nested actions inside `perform()`
 
 An action must **not** execute another action inside `perform()`. There is no support for
 composition and that is deliberate: nesting blurs the transaction boundary, hides coupling, and
@@ -141,7 +141,7 @@ The exception is chaining *after* the commit: a handler, a consumer or a worker 
 committed event and starts the next action in its own transaction. That is what a
 [saga](sagas.md) is.
 
-## Retries
+## Retries on optimistic-lock conflicts
 
 Every persistable carries a `version`, and updates always include `WHERE version = ?`. If another
 transaction got there first, zero rows match and `StaleRecordError` unwinds the whole thing.
@@ -177,7 +177,7 @@ the only precedence rule, so put narrow policies before broad ones.
 `perform()` that are outside the plan - logging, counters, an HTTP call - replay too. Keep
 `perform()` pure.
 
-## Cross-shard actions are refused
+## Cross-shard actions
 
 An action whose changes span shards raises `CrossShardError`. Opt in per call:
 
