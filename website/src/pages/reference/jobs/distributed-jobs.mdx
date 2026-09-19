@@ -102,16 +102,27 @@ The event pipeline's two jobs are registered here too - they *are* distributed j
 ### `workers(n)`, and sizing the pool
 
 Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
-unbounded and `threads(n)` only sizes the polling batch. Here the workers are a fixed pool of
-**real OS threads**, defaulting to one per registered job.
+unbounded and `threads(n)` only sizes the polling batch. Here they are **real OS threads**, so
+`workers(n)` is a ceiling - defaulting to one per registered job.
 
 That default is right: a recurring job is a single row, so it has at most one execution in flight.
 Raise it when several jobs can be due at once.
 
-**The jobs pool needs at least twice the worker count.** A job body holding the last connection
-starves the heartbeat, and an execution whose heartbeat stops is declared dead and run again
-somewhere else. db-scheduler warns at startup when the pool is short - and did, while these
-examples were being written, which is why the example default is 8 and not 3.
+**A ceiling, not a reservation.** Threads start as work arrives and only when no worker is
+already waiting, so twenty registered jobs with nothing due hold no worker threads at all. They
+are not retired once started: CPython has no counterpart to `newCachedThreadPool()`'s idle
+timeout and neither does this.
+
+**On connections - a running job holds none by itself.** Measured: db-scheduler takes a
+connection to claim the row, releases it, runs your body with none open, then takes another to
+write the result. What holds one is your body's own database work, for as long as that takes. So
+a job that waits on an HTTP call needs no connection while it waits.
+
+**The jobs pool needs at least twice the worker count** *when your job bodies do use the
+database*, which most do. A body holding the last connection starves the heartbeat, and an
+execution whose heartbeat stops is declared dead and run again somewhere else. db-scheduler warns
+at startup when the pool is short - and did, while these examples were being written, which is
+why the example default is 8 and not 3.
 
 ### What the three knobs do
 

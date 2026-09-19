@@ -1038,12 +1038,29 @@ whole cost back again.
 have: `Thread.ofVirtual().start(() -> { sleep; release; })` is simpler than a heap and a
 scheduler thread, and cancelling it is one interrupt rather than a tombstone to reconcile.
 
-**Job workers - a fixed pool, now with a knob.** Java hands db-scheduler
+**Job workers - a ceiling rather than a pool, and a knob for it.** Java hands db-scheduler
 `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is unbounded and
-`threads(jobs.size())` only sizes the polling batch. Here the workers are a fixed
-`DaemonThreadPool`, defaulting to one per registered job - right, because a recurring task is a
-single row and so has at most one execution in flight. `JobRegistryBuilder.workers(n)` changes
-it, which Java has no need of and this port does.
+`threads(jobs.size())` only sizes the polling batch. Here they are real OS threads, so a ceiling
+has to be chosen: `DaemonThreadPool`, defaulting to one per registered job - right, because a
+recurring task is a single row and so has at most one execution in flight.
+`JobRegistryBuilder.workers(n)` changes it, which Java has no need of and this port does.
+
+The pool starts its workers **on demand** as of `EKB-0207`, which is the half of Java's
+`newCachedThreadPool()` that CPython gives for free. Twenty registered jobs with nothing due now
+hold no worker threads at all, where they used to hold twenty for the life of the process. The
+other half - retiring a thread that has been idle for a minute - is not here and is not in the
+standard library either: `ThreadPoolExecutor` grows and never shrinks, and nothing famous in the
+ecosystem does it as a thread pool. Checked rather than recalled: Celery's autoscaler shrinks
+worker *processes* after a `keepalive` of 30 s, and Twisted's `ThreadPool` has `shrink()` and
+`stopAWorker()` that nothing calls automatically.
+
+**A running job holds no connection by itself.** This section said the opposite until `EKB-0207`,
+and it was measured wrong rather than reasoned wrong: db-scheduler takes a connection to claim
+the row, releases it, runs the body with **none** open, then takes another to write the result -
+sampled twelve times during a sleeping job body, the count was zero every time. What holds a
+connection is the body's own database work, for as long as that work takes. db-scheduler's own
+warning says exactly this and says it conditionally - *"if task bodies hold connections"* - and
+the docstring here had dropped the condition.
 
 **Fan-out and dispatch - across shards now parallel, within a shard still not.** Java forks a
 virtual thread per shard in `EventFanoutJob.drainOneRound` *and* in `EventHandlingJob`, and a

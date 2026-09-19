@@ -343,3 +343,63 @@ class TestFork:
             return ran
 
         assert self._in_child(child) == 0
+
+
+def test_a_pool_starts_no_threads_until_work_arrives():
+    """`max_workers` is a ceiling, not a reservation.
+
+    A registry of twenty jobs that are rarely due used to hold twenty idle OS threads for the
+    life of the process. Java has the question too and answers it with
+    `newCachedThreadPool()`; CPython has nothing equivalent, so this is the half of that which
+    is free - growing on demand. It does not retire idle workers, and neither does
+    `ThreadPoolExecutor`.
+    """
+    before = threading.active_count()
+    pool = DaemonThreadPool(max_workers=20)
+    try:
+        assert threading.active_count() == before, "threads were started for work that never came"
+    finally:
+        pool.shutdown()
+
+
+def test_a_pool_grows_only_as_far_as_the_work_needs():
+    started = threading.Barrier(5, timeout=5)
+    pool = DaemonThreadPool(max_workers=20)
+    try:
+        before = threading.active_count()
+        for _ in range(5):
+            pool.submit(started.wait)
+        started.wait()
+
+        assert threading.active_count() - before <= 5, "more threads than there was work"
+    finally:
+        pool.shutdown()
+
+
+def test_a_waiting_worker_is_reused_rather_than_joined_by_another():
+    pool = DaemonThreadPool(max_workers=20)
+    try:
+        before = threading.active_count()
+        for _ in range(10):
+            done = threading.Event()
+            pool.submit(done.set)
+            assert done.wait(2)
+
+        assert threading.active_count() - before == 1, "ten jobs in series need one worker"
+    finally:
+        pool.shutdown()
+
+
+def test_the_ceiling_still_holds():
+    holding = threading.Event()
+    pool = DaemonThreadPool(max_workers=3)
+    try:
+        before = threading.active_count()
+        for _ in range(12):
+            pool.submit(holding.wait)
+        time.sleep(0.2)
+
+        assert threading.active_count() - before == 3, "twelve jobs, a ceiling of three"
+    finally:
+        holding.set()
+        pool.shutdown()

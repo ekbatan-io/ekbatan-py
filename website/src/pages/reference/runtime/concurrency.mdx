@@ -90,13 +90,20 @@ either burning a core or arriving late. On the real holder: 1,000 held locks reg
 Size your lock pool for the maximum number of leases held at once, not for traffic: a lease holds
 its connection for as long as it is held, because that is what the lock *is*.
 
-### 4. Job workers - a fixed pool, with a knob
+### 4. Job workers - a ceiling, with a knob
 
 Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
 unbounded and `threads(n)` only sizes the polling batch.
 
-Here the workers are a fixed pool of daemon threads, defaulting to one per registered job. That
-default is right: a recurring task is a single row, so it has at most one execution in flight.
+Here they are daemon OS threads, so there is a ceiling - defaulting to one per registered job.
+That default is right: a recurring task is a single row, so it has at most one execution in
+flight.
+
+**A ceiling, not a reservation.** Workers start as work arrives and only when none is already
+waiting, so twenty registered jobs with nothing due hold **no** worker threads. That is the half
+of Java's `newCachedThreadPool()` that CPython gives for free; the other half - retiring a thread
+idle for a minute - is in neither the standard library nor, as far as I could find, any
+well-known package.
 
 ```python
 job_registry().engine(engine).with_jobs(jobs).workers(3).build()

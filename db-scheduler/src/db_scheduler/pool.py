@@ -85,9 +85,11 @@ class DaemonThreadPool:
     __slots__ = (
         "__weakref__",
         "_forked",
+        "_idle",
         "_is_shutdown",
         "_lock",
         "_max_workers",
+        "_name",
         "_queue",
         "_threads",
     )
@@ -96,23 +98,33 @@ class DaemonThreadPool:
         if max_workers <= 0:
             raise ValueError("max_workers must be greater than 0")
         self._max_workers = max_workers
+        self._name = thread_name_prefix
         self._queue: queue.Queue[Callable[[], None] | _Stop] = queue.Queue()
         self._lock = threading.Lock()
         self._is_shutdown = False
         self._forked = False
-        self._threads = [
-            threading.Thread(
-                target=self._work, name=f"{thread_name_prefix}{n}", daemon=True
-            )
-            for n in range(max_workers)
-        ]
-        for thread in self._threads:
-            thread.start()
+        #: Workers blocked on the queue, waiting for something to do. A new one is started only
+        #: when there are none of these and the ceiling has not been reached.
+        self._idle = 0
+        #: Started on demand, not here. `max_workers` is a ceiling rather than a reservation:
+        #: a registry of twenty jobs that are rarely due held twenty idle OS threads for the
+        #: life of the process, and now holds as many as it has actually needed at once.
+        #:
+        #: Java's `newCachedThreadPool()` also *retires* a thread that has been idle for a
+        #: minute. Nothing in CPython does - a `ThreadPoolExecutor` grows and never shrinks -
+        #: and neither does this: what it costs to build is a race at the seam between the
+        #: last worker exiting and new work arriving, and what it buys is only a service that
+        #: bursts and then goes quiet for a long time.
+        self._threads: list[threading.Thread] = []
         _LIVE_POOLS.add(self)
 
     def _work(self) -> None:
         while True:
+            with self._lock:
+                self._idle += 1
             job = self._queue.get()
+            with self._lock:
+                self._idle -= 1
             if isinstance(job, _Stop):
                 return
             try:
@@ -134,6 +146,19 @@ class DaemonThreadPool:
         with self._lock:
             if self._is_shutdown:
                 raise RuntimeError("cannot schedule new futures after shutdown")
+            # `_idle` can be a moment stale - a worker that has taken a job but not yet
+            # decremented it reads as idle - so this occasionally starts one thread more than
+            # was strictly needed. Bounded by `max_workers`, and the other way round would be
+            # the expensive mistake: a job queued with nobody to run it waits for the next
+            # submission.
+            if self._idle == 0 and len(self._threads) < self._max_workers:
+                worker = threading.Thread(
+                    target=self._work,
+                    name=f"{self._name}{len(self._threads)}",
+                    daemon=True,
+                )
+                self._threads.append(worker)
+                worker.start()
             self._queue.put(fn)
 
     def shutdown(

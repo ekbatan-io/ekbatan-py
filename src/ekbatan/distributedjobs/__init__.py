@@ -330,13 +330,18 @@ class JobRegistryBuilder:
         return self
 
     def workers(self, count: int) -> Self:
-        """How many threads run job bodies. Defaults to one per registered job.
+        """The **ceiling** on how many threads run job bodies. Defaults to one per registered job.
 
         This knob exists because CPython has no virtual threads. Java hands db-scheduler an
         ``Executors.newVirtualThreadPerTaskExecutor()``, so its worker count is effectively
-        unbounded and ``threads(jobs.size())`` only sizes the polling batch. Here the workers
-        are a fixed pool of real OS threads, so the same number has to be chosen rather than
-        assumed.
+        unbounded and ``threads(jobs.size())`` only sizes the polling batch. Here the workers are
+        real OS threads, so a ceiling has to be chosen rather than assumed.
+
+        A ceiling, not a reservation: threads are started as work arrives and only when no
+        worker is already waiting, so a registry whose jobs are rarely due costs nothing for
+        the ones it never runs. Twenty registered jobs with nothing due hold **no** worker
+        threads. They are not retired once started, though - CPython has no counterpart to
+        `newCachedThreadPool()`'s idle timeout, and neither does this.
 
         One per job is the right default: a recurring task is a single row, so a job has at most
         one execution in flight at a time and N jobs need N workers. Raise it if you schedule the
@@ -344,9 +349,14 @@ class JobRegistryBuilder:
         :meth:`customize_scheduler`; below the job count, a slow job delays the others rather
         than only itself.
 
-        The pool must not be larger than the engine's - a worker that cannot get a connection
-        blocks holding a slot, and the scheduler's own heartbeat needs one too. db-scheduler
-        warns when the two are mismatched.
+        **On connections.** A running job holds none by itself - measured: db-scheduler takes a
+        connection to claim the row, releases it, runs the body with none open, then takes
+        another to write the result. What holds one is the body's *own* database work, for as
+        long as that work takes. So a job that waits on an HTTP call needs no connection while
+        it waits, and workers may outnumber connections safely; a registry whose jobs all run
+        actions at once wants a connection each at that moment, and db-scheduler warns when the
+        two are mismatched - its own wording says "if task bodies hold connections", and that
+        condition is the whole of it.
         """
         if count < 1:
             raise ValidationError(f"workers must be at least 1, got {count}")
