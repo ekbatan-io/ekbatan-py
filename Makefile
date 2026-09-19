@@ -79,9 +79,10 @@ lint: schema
 	# Every divergence from the Java port must say whether anybody chose it. A judgement
 	# call filed as a neutral difference is how one went unreviewed for weeks.
 	$(UV) python scripts/divergence.py
-	# The website makes claims about this API in code a reader will copy. Checked here
-	# rather than in `npm run check`, which is the Node half and has no interpreter to ask.
-	$(UV) python website/scripts/check-api.py
+	# Both trees make claims about this API in code a reader will copy: what they import,
+	# what they call on a class, and whether a snippet parses at all. Checked here rather
+	# than in `npm run check`, which is the Node half and has no interpreter to ask.
+	$(UV) python scripts/check-api.py
 	# `docs/` is the canonical Markdown and the website renders the same knowledge. Prose
 	# written into one and never carried to the other is how the two stopped agreeing once.
 	$(UV) python scripts/docs-website-sync.py

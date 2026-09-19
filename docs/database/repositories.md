@@ -32,8 +32,10 @@ class of bug: a field added to a model and forgotten in `toRecord` is not expres
 **Writes**
 
 ```python
-repo.add(model)              repo.add_all(models)
-repo.update(model)           repo.update_all(models)
+repo.add(model)          # -> M, stamped
+repo.add_all(models)     # -> list[M]
+repo.update(model)       # -> M, version already moved
+repo.update_all(models)  # -> list[M]
 ```
 
 Plus `add_no_result` / `update_no_result` and their `_all` forms, for when you are writing a

@@ -65,6 +65,19 @@ index - that it was not looking at at all.
 - **`database/tables/{event-notifications,scheduled-tasks}.md`** - one `MySQL and MariaDB` block,
   because the generated DDL is identical on both.
 
+## What the parity numbers cannot see
+
+Same as the website: both views go green while the tree is still wrong in ways neither counts.
+What that pass turned up here, and what checks it now:
+
+| Found | Now checked by |
+|---|---|
+| One snippet that does not parse - two columns of method names inside a `python` fence | `scripts/check-api.py`, which reads **both** trees |
+| `links.py` computed a page's anchors from *code-stripped* text, so a heading with inline code got a mangled anchor and no link to one could be written | fixed in `scripts/links.py` |
+| `<CodeBlock code={`...`} />` survived a website-to-docs port as raw JSX | the converter turns it into a fence |
+
+Zero self-links and zero stray absolute routes, checked the same way the site is.
+
 ## One thing the docs and the website disagree about on purpose
 
 Java's website calls a section `Events`; Java's docs call the same section `ModelEvent`. Each

@@ -115,9 +115,9 @@ found by looking instead of counting, and each one is now checked by something:
 
 | Found | Now checked by |
 |---|---|
-| 3 Python snippets that do not parse - one a method chain a reader would copy and get a `SyntaxError` from | `website/scripts/check-snippets.mjs`, in `npm run check` |
+| 3 Python snippets that do not parse - one a method chain a reader would copy and get a `SyntaxError` from | `scripts/check-api.py`, in `make lint` - both trees |
 | 13 relative links that resolve outside the site and 404 once deployed, plus 1 `See also` pointing at its own page | `website/scripts/check-links.mjs` |
-| Every claim the site makes about this API - each `from ekbatan... import X`, each `Class.attr` | `website/scripts/check-api.py`, in `make lint` |
+| Every claim the site makes about this API - each `from ekbatan... import X`, each `Class.attr` | `scripts/check-api.py`, in `make lint` |
 | The defaults the site tabulates - pool sizes, poll delays, the retry count | `tests/unit/test_documented_defaults.py` |
 
 And two the browser found, which no text comparison could:
