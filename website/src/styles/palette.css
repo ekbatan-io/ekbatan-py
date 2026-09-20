@@ -175,6 +175,21 @@ header.sticky.bg-paper {
     color: var(--paper);
 }
 
+/* Dragged text is a fill in the accent colour too, and was the one consumer this palette
+ * missed when `--brand-yellow` stopped being a light wash. The bundle sets
+ * `::selection { background: var(--brand-yellow); color: var(--ink) }`, which was right while
+ * the accent was pale and became dark-on-dark the day it was not: burgundy behind, near-black
+ * text on it. Measured: 1.26:1 before, 9.64:1 after. Selecting a paragraph made it harder to
+ * read than not selecting it.
+ *
+ * No `::-moz-selection` twin: Firefox has understood the standard spelling since 62, and the
+ * build rewrites the prefixed one to it anyway - which would leave two identical rules and a
+ * comment explaining a reason that had stopped being true. */
+::selection {
+    background-color: var(--brand-yellow);
+    color: var(--on-accent);
+}
+
 /* The star in the marquee and the full stop closing `framework.` - always on a light
  * ground. 5.4:1 on the bone, 4.6:1 on the marquee band. */
 .text-orange {
