@@ -220,7 +220,7 @@ generator's header is taken as hand-written and only its existence is checked.
 
 ## `copy_base` takes every field, not only the framework's
 
-> **forced** - A Java base class cannot enumerate a subclass's fields; a dataclass can. The behaviour follows from the language.
+> **forced** - A Java base class cannot enumerate a subclass's fields; a dataclass can. The behaviour follows from the language. **Settled, and nothing is owed**: this port's side is the better one and is staying. "Closing" it would mean typing your field names a second time so they could get out of step.
 
 The name is Java's. What it copies is not: Java's `copyBase` hands over the six fields the base
 class knows about and leaves the subclass's for the next lines, because a Java base class
