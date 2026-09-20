@@ -29,6 +29,7 @@ from db_scheduler.task.schedule import Schedule
 from sqlalchemy import Engine
 
 from ..errors import ValidationError
+from ._shutdown import ShutdownHook
 from .config import JobsConfig, JobsConfigBuilder
 
 if TYPE_CHECKING:
@@ -128,15 +129,19 @@ class JobRegistry:
     would starve the heartbeat and get its own execution declared dead.
     """
 
-    __slots__ = ("_job_names", "_names_requiring_registration", "_scheduler")
+    __slots__ = ("_hook", "_job_names", "_names_requiring_registration", "_scheduler")
 
     def __init__(
         self,
         scheduler: Scheduler,
         job_names: Sequence[str],
         names_requiring_registration: Sequence[str],
+        shutdown_hook: bool = False,
     ) -> None:
         self._scheduler = scheduler
+        #: Built here and installed in `start()`, because a registry that was built and never
+        #: started has no business holding the process's signals.
+        self._hook = ShutdownHook(self.stop) if shutdown_hook else None
         self._job_names = list(job_names)
         #: The subset of `job_names` that must have a row in `scheduled_tasks` once started.
         #: Jobs whose schedule is disabled are excluded: db-scheduler deliberately writes no
@@ -157,6 +162,10 @@ class JobRegistry:
         LOG.info("Starting JobRegistry with %d job(s): %s", len(self._job_names), self._job_names)
         self._scheduler.start()
         self._verify_every_job_registered()
+        # Last, and only once the jobs are known to be registered: a hook that drained a
+        # scheduler which had failed to start would be answering for nothing.
+        if self._hook is not None:
+            self._hook.install()
 
     def _verify_every_job_registered(self) -> None:
         """Confirm that starting actually registered the jobs, because nothing else will.
@@ -202,6 +211,11 @@ class JobRegistry:
         the same dead-execution path as a crash.
         """
         LOG.info("Stopping JobRegistry")
+        if self._hook is not None:
+            # Before draining, and unconditionally: a second signal while this one is winding
+            # down has to reach whatever was there before us, which for an impatient operator
+            # pressing Ctrl-C twice is the default handler and an immediate exit.
+            self._hook.remove()
         self._scheduler.stop()
         LOG.info("JobRegistry stopped")
 
@@ -249,6 +263,7 @@ class JobRegistryBuilder:
         "_jobs",
         "_poll_interval",
         "_scheduler_customizer",
+        "_shutdown_hook",
         "_shutdown_max_wait",
         "_workers",
     )
@@ -261,6 +276,7 @@ class JobRegistryBuilder:
         self._shutdown_max_wait: timedelta | None = None
         self._scheduler_customizer: Callable[[SchedulerBuilder], None] | None = None
         self._workers: int | None = None
+        self._shutdown_hook = False
 
     def engine(self, engine: Engine) -> Self:
         """The database db-scheduler will poll. Required.
@@ -361,6 +377,34 @@ class JobRegistryBuilder:
         if count < 1:
             raise ValidationError(f"workers must be at least 1, got {count}")
         self._workers = count
+        return self
+
+    def register_shutdown_hook(self, enabled: bool = True) -> Self:
+        """Drain on SIGTERM and SIGINT, instead of being cut off mid-execution. **Off by default.**
+
+        Java turns its equivalent on by default and nobody minds, because a JVM shutdown hook is
+        additive: any number can be registered and none displaces another. CPython has **one**
+        handler slot per signal, so installing one takes the application's SIGTERM away from it.
+        That is a thing to be asked for, not assumed, which is the whole of why this is a method
+        rather than the default.
+
+        Asked for, it behaves: the handler that was there is kept and called afterwards, and
+        where there was none the default is restored and the signal re-raised, so the process
+        still dies of it. A hook that drained cleanly and then left the process alive would be
+        worse than the gap it closes. :meth:`stop` removes it again, so a second Ctrl-C from an
+        impatient operator reaches the default handler and exits at once.
+
+        Without it, a container stop ends the process with executions still `picked` and their
+        heartbeats frozen; another instance can only take them after the dead-execution window,
+        which is 60 seconds on the framework's defaults. With it, they finish - bounded by
+        ``shutdown_max_wait``.
+
+        **It needs the main thread**, because CPython only allows a signal handler to be
+        installed there, and it raises rather than silently doing nothing if it has not got one.
+        A service that already has somewhere to call :meth:`JobRegistry.stop` - a FastAPI
+        lifespan, a Django shutdown - wants none of this and should keep it off.
+        """
+        self._shutdown_hook = enabled
         return self
 
     def customize_scheduler(self, customizer: Callable[[SchedulerBuilder], None]) -> Self:
@@ -499,7 +543,9 @@ class JobRegistryBuilder:
         if self._scheduler_customizer is not None:
             self._scheduler_customizer(builder)
 
-        return JobRegistry(builder.build(), names, names_requiring_registration)
+        return JobRegistry(
+            builder.build(), names, names_requiring_registration, self._shutdown_hook
+        )
 
 
 def _run_job(job: DistributedJob, name: str) -> Callable[[Any, ExecutionContext], None]:

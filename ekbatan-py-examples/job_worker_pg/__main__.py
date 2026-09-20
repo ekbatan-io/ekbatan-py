@@ -38,18 +38,42 @@ def main() -> None:
 def run(worker: Worker) -> None:
     """Start, wait, and stop cleanly on SIGINT or SIGTERM.
 
-    The handler is here rather than inside the framework on purpose. A library that installed
-    a process-wide `signal.signal` would overwrite whatever the application - or gunicorn, or
-    uvicorn - had already put there, and there is only one handler per signal per process. Java
-    can register a JVM shutdown hook without that problem, and its `JobRegistry` does so by
-    default; the equivalent here is six lines the application owns.
+    This is the half the framework will not do for you unless asked. Java's `JobRegistry`
+    registers a JVM shutdown hook by default and nobody minds, because those are additive: any
+    number can be registered and none displaces another. CPython has **one** handler slot per
+    signal, so installing one takes the application's SIGTERM away from it - which is why
+    `register_shutdown_hook()` exists and is off until you call it.
 
-    Without this, a container stop kills the process with executions still picked, and their
-    rows wait out the dead-execution window before another instance can take them.
+    A worker process like this one is the case it was written for, and the two ways are equal:
+
+        job_registry().engine(...).with_jobs(...).register_shutdown_hook().build()
+
+    would do all of the below, and correctly. It is spelled out here instead because an example
+    that hides the mechanism teaches nothing about it.
+
+    **Note what the previous handler does.** An earlier version of this function wrote::
+
+        signal.signal(received, lambda *_: stopping.set())
+
+    which is correct here - this is `__main__`, nothing had installed anything - and wrong the
+    moment it is copied into a gunicorn or uvicorn worker, where the server has handlers of its
+    own and they would be silently dropped. Keep what you find, and call it.
+
+    Without any of this, a container stop kills the process with executions still picked, and
+    their rows wait out the dead-execution window before another instance can take them.
     """
     stopping = threading.Event()
+    previous: dict[int, object] = {}
+
+    def wind_up(number: int, frame: object) -> None:
+        stopping.set()
+        before = previous.get(number)
+        if callable(before):
+            before(number, frame)
+
     for received in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(received, lambda *_: stopping.set())
+        previous[received] = signal.getsignal(received)
+        signal.signal(received, wind_up)
 
     worker.start()
     logging.getLogger("examples.job_worker_pg").info("worker started; ctrl-c to stop")

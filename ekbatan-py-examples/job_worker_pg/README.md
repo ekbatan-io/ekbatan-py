@@ -38,16 +38,18 @@ protects the row, not your method.
 it already topped up are no longer below it. A job that deposited unconditionally would
 double-pay on the replay that at-least-once delivery makes inevitable.
 
-**Shutdown is yours to arrange.** This port installs no signal handler and no `atexit` hook, so
-a SIGTERM ends the process with executions still picked and their rows waiting out the
-dead-execution window — 60 seconds on framework defaults. `__main__.py` catches the signal and
-calls `stop()`, which is what makes a rolling deploy clean rather than merely survivable.
+**Shutdown is yours to arrange, or the framework's if you ask.** By default no signal handler
+is installed, so a SIGTERM would end the process with executions still picked and their rows
+waiting out the dead-execution window - 60 seconds on framework defaults. `__main__.py` catches
+the signal and calls `stop()`, which is what makes a rolling deploy clean rather than merely
+survivable.
 
-That is six lines the application owns, and deliberately not something the framework does for
-you: there is one signal handler per signal per process, and a library that installed one would
-overwrite whatever gunicorn, uvicorn or the application had already put there. Java's
-`JobRegistry` registers a JVM shutdown hook by default and has no such problem — that divergence
-is written up in `DIVERGENCE.md`.
+`register_shutdown_hook()` on the builder does the same thing for you. It is off by default
+because CPython has **one** handler slot per signal, and a library that installed one uninvited
+would be taking the application's SIGTERM away from it - where a JVM shutdown hook is additive,
+which is why Java's `JobRegistry` can turn its own on without asking. Either way, keep whatever
+handler was already there and call it: dropping it is harmless in a `__main__` and silently
+wrong inside a gunicorn or uvicorn worker.
 
 ## The pools
 

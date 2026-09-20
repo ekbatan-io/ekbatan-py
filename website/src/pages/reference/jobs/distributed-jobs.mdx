@@ -183,23 +183,61 @@ dialect from the url when the engine is created, with no I/O** - so there is no 
 nothing to pin. Java also has to assume MySQL 8+ because a url cannot reveal a server version;
 that assumption does not arise here.
 
-## The missing shutdown hook
+## The shutdown hook, and why it is opt-in
 
 **Java installs a JVM shutdown hook by default** - `JobRegistry.Builder.registerShutdownHook`,
-on unless you turn it off - so a SIGTERM drains in-flight executions.
+on unless you turn it off - so a SIGTERM drains in-flight executions. It can afford to: a JVM
+shutdown hook is **additive**. Any number can be registered, they all run, and none displaces
+another.
 
-**This port has no counterpart, and it is an open decision.** A SIGTERM here kills the process
-mid-execution; the rows then wait out the dead-execution window, 60 seconds on these defaults,
-before another instance picks them up. Nothing is lost, and every job body already has to tolerate
-running twice - but the shutdown is abrupt where Java's is graceful.
+**CPython has one handler slot per signal.** `signal.signal()` replaces what is there and hands
+it back. So a library that installed one on your behalf would be taking your process's SIGTERM
+away from you - which is why here it is a sentence you write:
 
-It is not a straight port: `atexit` does not fire on SIGTERM, so matching Java means installing a
-process-wide signal handler, which is a far bigger imposition in a Python application than a
-shutdown hook is in a JVM. Call `jobs.stop()` from your own shutdown path meanwhile - the examples
-do, from a FastAPI lifespan.
+```python
+jobs = (
+    job_registry()
+    .engine(engine)
+    .with_jobs([...])
+    .register_shutdown_hook()     # off unless you say this
+    .build()
+)
+```
 
-Tracked in [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md) and
-[DECISIONS-TO-REVIEW.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/DECISIONS-TO-REVIEW.md).
+**What it does when you ask.** It drains on SIGTERM and SIGINT, then **calls the handler that
+was already there**. Where there was none, it restores the default and re-raises, so the process
+still dies of the signal - a hook that drained cleanly and left the process running would be
+worse than the gap it closes. `stop()` puts the original back, so a second Ctrl-C from an
+impatient operator reaches the default handler and exits at once.
+
+**It needs the main thread.** CPython only allows a signal handler to be installed there, and
+this raises rather than silently doing nothing if it has not got one.
+
+**Without it**, a SIGTERM kills the process mid-execution; the rows then wait out the
+dead-execution window, 60 seconds on these defaults, before another instance picks them up.
+Nothing is lost, and every job body already has to tolerate running twice - but the shutdown is
+abrupt where Java's is graceful.
+
+**When to leave it off.** A service that already has somewhere to call `jobs.stop()` - a FastAPI
+lifespan, a Django shutdown - wants none of this, and the REST examples are written that way.
+The case it exists for is a **standalone worker process**, which has no framework shutdown to
+hang off.
+
+**If you write the handler yourself, keep what you find:**
+
+```python
+previous = signal.getsignal(signal.SIGTERM)
+
+def wind_up(number, frame):
+    jobs.stop()
+    if callable(previous):
+        previous(number, frame)
+
+signal.signal(signal.SIGTERM, wind_up)
+```
+
+Dropping `previous` is the easy mistake, and harmless only in a `__main__` where nothing had
+installed anything. Inside a gunicorn or uvicorn worker it silently discards the server's own.
 
 ## The `scheduled_tasks` table
 

@@ -11,11 +11,15 @@ heartbeats from a housekeeping thread; a job body holding the last connection st
 execution whose heartbeat stops is declared dead and run again somewhere else. The framework
 warns at startup when the two are mismatched - listen to it.
 
-**Shutdown is explicit.** This port installs no signal handler and no `atexit` hook, so a
-SIGTERM ends the process with executions still picked and their rows waiting out the
-dead-execution window. `run()` below catches the interrupt and calls `stop()`, which is what
-makes a rolling deploy clean rather than merely survivable. (Java's `JobRegistry` registers a
-JVM shutdown hook by default; that divergence is recorded in `DIVERGENCE.md`.)
+**Shutdown is explicit unless you ask otherwise.** No signal handler is installed by default,
+so a SIGTERM would end the process with executions still picked and their rows waiting out the
+dead-execution window. `__main__.run()` catches the signal and calls `stop()`, which is what
+makes a rolling deploy clean rather than merely survivable.
+
+`JobRegistryBuilder.register_shutdown_hook()` does the same thing inside the framework, and
+correctly - it keeps the handler that was there and calls it afterwards. It is off by default
+because CPython has one handler slot per signal, where a JVM shutdown hook is additive and
+Java's `JobRegistry` can therefore turn its own on without asking.
 """
 
 from __future__ import annotations

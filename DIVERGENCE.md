@@ -1195,22 +1195,42 @@ away; both would have to be written. `leakDetectionThreshold` is the one worth a
 a connection leaked inside a unit of work is exactly the failure this framework's transaction
 handling exists to prevent, and Java gets a log line for it that this port does not.
 
-## The scheduler has no shutdown hook, and the event jobs never see the shutdown
+## The shutdown hook is opt-in here and on by default in Java, and the event jobs never see the shutdown
 
-> **chosen** - Open and undecided rather than settled - `atexit` does not fire on SIGTERM, so matching Java means a process-wide signal handler. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **chosen** - the hook exists as of `EKB-0213` and is off until asked for, because CPython has one handler slot per signal where a JVM hook is additive. The event-loop half is still open. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Two halves of one gap, found by re-reading `JobRegistry.java` whole after noticing its ledger row
 had been marked `done` at ledger-creation time rather than by a porting pass.
 
-**The hook.** db-scheduler's own `SchedulerBuilder.registerShutdownHook` defaults to `false`;
-Java's `JobRegistry.Builder` deliberately flips it to `true` and calls it in `build()`, so an
-ordinary SIGTERM runs `Scheduler.stop()` and in-flight executions drain. This port has no
-counterpart at either level - not on `JobRegistryBuilder`, and not on the vendored
-`SchedulerBuilder`. Verified by running: building a registry adds no `atexit` callback and leaves
-`SIGTERM` at `SIG_DFL`. So a container stop kills the process mid-execution; those rows stay
-`picked` with a frozen heartbeat and are only revived by the dead-execution path, 60 seconds
-later on framework defaults. `JobRegistry.stop()` and the `with` block do the right thing - the
-divergence is only in what happens when nobody calls them.
+**The hook - closed in `EKB-0213`, opt-in rather than default.** db-scheduler's own
+`SchedulerBuilder.registerShutdownHook` defaults to `false`; Java's `JobRegistry.Builder`
+deliberately flips it to `true` and calls it in `build()`, so an ordinary SIGTERM runs
+`Scheduler.stop()` and in-flight executions drain. This port had no counterpart at either level,
+and now has `JobRegistryBuilder.register_shutdown_hook()`.
+
+**Off by default, and that is the divergence that remains.** Java can turn its own on without
+asking because a JVM shutdown hook is *additive*: any number can be registered, they all run,
+none displaces another. CPython has **one** handler slot per signal and `signal.signal()`
+replaces what is there - measured, not assumed - so a library installing one uninvited would be
+taking the application's SIGTERM away from it.
+
+Asked for, it behaves. The handler that was there is kept and called afterwards; where there was
+none the default is restored and the signal re-raised, so the process still dies of it - a hook
+that drained cleanly and left the process alive would be worse than the gap it closed. `stop()`
+puts the original back, so a second Ctrl-C reaches the default and exits at once. It refuses off
+the main thread, where CPython will not install a handler at all, rather than quietly failing to
+install and being discovered during an outage.
+
+**The reason to have it rather than leave it to the application** was in this repository's own
+example. `job_worker_pg/__main__.py` carried the six lines an application was supposed to write,
+with a docstring arguing the framework should not do this - and those six lines **dropped the
+previous handler**. Correct where it stood, since `__main__` had nothing before it; silently
+wrong the moment it was copied into a gunicorn or uvicorn worker. If the worked example gets the
+subtle half wrong, "leave it to the application" is not a smaller risk than doing it once,
+carefully, behind a flag. The example now chains, and says why.
+
+`JobRegistry.stop()` and the `with` block always did the right thing - the gap was only ever
+what happens when nobody calls them, which is exactly the container-stop case.
 
 **The loop.** Java's `EventFanoutJob.execute` is `while (!shouldStop(ctx))` around
 `drainOneRound()`, sleeping `pollDelay` between idle rounds: one execution runs for the life of

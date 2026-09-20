@@ -434,3 +434,78 @@ class TestCustomizingTheScheduler:
         )
 
         assert built.scheduler._execute_due_waiter.duration == timedelta(seconds=10)
+
+
+class TestShutdownHook:
+    """`register_shutdown_hook()` - opt-in, because CPython has one handler slot per signal."""
+
+    @staticmethod
+    def _idle_registry(registry, **hook):
+        """A registry whose one job never becomes due, so nothing runs during these tests."""
+        from db_scheduler.task.schedule import DisabledSchedule
+
+        class NeverDue(DistributedJob):
+            def name(self) -> str:
+                return "never-due"
+
+            def schedule(self):
+                return DisabledSchedule()
+
+            def execute(self, ctx) -> None:  # pragma: no cover - never becomes due
+                raise AssertionError("a disabled job ran")
+
+        builder = (
+            job_registry()
+            .engine(registry.default.primary)
+            .with_jobs([NeverDue()])
+            .poll_interval(timedelta(seconds=1))
+        )
+        if hook.get("hooked"):
+            builder = builder.register_shutdown_hook()
+        return builder.build()
+
+    def test_it_is_off_unless_asked_for(self, registry):
+        import signal
+
+        before = signal.getsignal(signal.SIGTERM)
+        jobs = self._idle_registry(registry)
+        jobs.start()
+        try:
+            assert signal.getsignal(signal.SIGTERM) is before, "a registry took SIGTERM uninvited"
+        finally:
+            jobs.stop()
+
+    def test_asking_for_it_drains_the_scheduler_on_sigterm(self, registry):
+        """The whole point: a container stop finishes what is running instead of cutting it off.
+
+        Without it the execution's row stays `picked` with a frozen heartbeat, and another
+        instance can only take it after the dead-execution window - 60 seconds on defaults.
+        """
+        import os
+        import signal
+
+        original = signal.getsignal(signal.SIGTERM)
+        ran: list[str] = []
+        signal.signal(signal.SIGTERM, lambda *_: ran.append("the app's handler"))
+        jobs = self._idle_registry(registry, hooked=True)
+        try:
+            jobs.start()
+            assert signal.getsignal(signal.SIGTERM) is not original, "the hook did not install"
+
+            os.kill(os.getpid(), signal.SIGTERM)
+
+            assert ran == ["the app's handler"], "the application's handler was displaced"
+            assert jobs.scheduler.scheduler_state.is_shutting_down, "it was not drained"
+        finally:
+            signal.signal(signal.SIGTERM, original)
+
+    def test_stopping_hands_the_signal_back(self, registry):
+        """So a second Ctrl-C from an impatient operator reaches whatever was there before."""
+        import signal
+
+        original = signal.getsignal(signal.SIGTERM)
+        jobs = self._idle_registry(registry, hooked=True)
+        jobs.start()
+        jobs.stop()
+
+        assert signal.getsignal(signal.SIGTERM) is original
