@@ -112,10 +112,13 @@ job_registry().engine(engine).with_jobs(jobs).workers(3).build()
 Two sizing rules, and the second has teeth:
 
 - Workers run job **bodies**. Size for how many jobs can be due at once.
-- **The jobs pool needs at least twice the worker count.** db-scheduler writes a heartbeat from a
-  housekeeping thread; a job body holding the last connection starves it, and an execution whose
-  heartbeat stops is declared dead and **run again somewhere else**. db-scheduler warns at
-  startup when the pool is short for the worker count.
+- **The jobs pool needs `workers + 3` connections**, and this page said "twice the worker
+  count" until it was checked against the code. Three is not a margin: the scheduler's poll,
+  heartbeat and dead-execution loops each take a connection when they run, on top of the
+  workers. Twice is *more* than needed above three workers and **less** than needed below -
+  at two workers it gives four where five are wanted. A job body holding the last connection
+  starves the heartbeat, and an execution whose heartbeat stops is declared dead and **run
+  again somewhere else**. db-scheduler warns at startup with the number it wants.
 
 Give jobs their own pool, separate from the request pool, for the same reason: a traffic burst
 must not be able to starve that heartbeat.
@@ -198,6 +201,59 @@ It has not grown one and would not gain much from it: SQLAlchemy's async support
 over the same drivers, and this framework's value is in what it does *between* the queries. But
 an `async def` handler calling straight into it is a real mistake with a real cost, and nothing
 in the API stops you making it.
+
+## gevent: the closest thing to virtual threads, and it needs nothing from us
+
+Everything above is about a framework that blocks. **gevent removes the cost of blocking**,
+which is what virtual threads do for Java - and it does it for *every* blocking call, not only
+the ones a library knows about.
+
+```python
+from gevent import monkey; monkey.patch_all()   # the very first thing, before any other import
+import myapp
+```
+
+Then run it as you would any WSGI app - `gunicorn -k gevent myapp:app`.
+
+**Measured on this stack:**
+
+```
+50 x time.sleep(0.5)   ->  0.51s   (one after another would be 25s)
+20 x getaddrinfo       ->  0.47s
+patched: time, socket, select, threading, ssl
+```
+
+A plain `time.sleep` yielded. So did DNS. That is the property that matters: a `requests.get()`
+inside an action yields, and nothing has to be rewritten to make it so.
+
+**psycopg supports it deliberately.** From psycopg 3's own source:
+
+> Detect if some greenlet library has patched the select library. If this is the case, avoid to
+> use the wait_c function as it doesn't behave in a collaborative way. **Currently supported:
+> gevent.**
+
+Under gevent it switches from `wait_c`, which blocks inside C, to `wait_poll`, which yields.
+
+**This framework needs no change, and has none.** There is no gevent import in `src/`, no flag
+and no mode. The two mechanisms that could have made it unsafe were checked by running them:
+
+| | under gevent |
+| --- | --- |
+| the open transaction, held in a `ContextVar` | each greenlet keeps its own - no unit of work sees another's |
+| the keyed lock's holder key, `threading.get_ident()` | 20 greenlets, 20 distinct idents - the exclusion holds |
+
+And the test suite passes unchanged: **270 passed under gevent, 270 without.** `make lint` runs
+it both ways so that stays true rather than becoming another sentence nobody rechecked.
+
+**What it does not cover.** gevent serves **WSGI**. FastAPI, Litestar and anything else on an
+asyncio loop cannot use it - for those, the `to_thread` above is still the answer, and every
+example in this repository is FastAPI, so none of them demonstrates this. SQLite is local file
+I/O and will not yield, which costs nothing because it is local. And `patch_all()` must run
+before any other import, which is an application discipline nothing can check for you.
+
+**Sizing changes under it.** The advice on this page assumes an OS thread per worker. A greenlet
+is not one, so `workers(n)` and the pool guidance are conservative under gevent rather than
+wrong - the binding constraint becomes the database's connection limit, not the thread count.
 
 ## Processes, and where the pools live
 

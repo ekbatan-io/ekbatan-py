@@ -54,6 +54,10 @@ dev = [
     "psycopg[binary]>=3.2",
     "PyMySQL>=1.1",
     "redis>=6",
+    # `make test-gevent` runs the suite under monkey-patching. The framework has no gevent
+    # import of its own and needs none - this is here so "it works under gevent" stays a
+    # checked statement rather than one nobody reran.
+    "gevent>=25.4",
 ]
 
 # Deliberately its own group rather than part of `dev` or an extra: `uv sync --all-extras`

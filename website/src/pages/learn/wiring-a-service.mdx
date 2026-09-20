@@ -93,7 +93,7 @@ This is the part worth copying into a real deployment.
 | pool | sized for | why it is separate |
 |---|---|---|
 | **requests** | concurrent requests | the ordinary one |
-| **jobs** | at least twice the worker count | the scheduler heartbeats from a housekeeping thread. Share the request pool and a traffic burst can starve that heartbeat — and **an execution whose heartbeat stops is declared dead and run again somewhere else** |
+| **jobs** | `workers + 3` | the scheduler heartbeats from a housekeeping thread. Share the request pool and a traffic burst can starve that heartbeat — and **an execution whose heartbeat stops is declared dead and run again somewhere else** |
 | **locks** | maximum leases held at once | a keyed lock holds its connection for the life of the lease. That *is* the lock |
 
 The jobs pool default is 8, not 3, for a reason worth repeating: a job body holding the last

@@ -1096,9 +1096,9 @@ order - that half is under "Dispatch delivers one notification at a time", and i
 trade, because those handlers are application code running in process rather than one bounded
 query per database.
 
-## The framework is synchronous, and blocking is not free here as it is in Java
+## The framework is synchronous, and blocking is free under gevent and not under asyncio
 
-> **forced** - A blocking call on a virtual thread is cheap and on an event loop is not. A property of the runtimes.
+> **forced** - under asyncio, where a blocking call holds the loop. Under gevent it is as cheap as Java's, for the same reason and with no code here.
 
 Java is built on virtual threads, where a blocking call costs almost nothing: the carrier thread
 is released and picked up by other work. That is what lets its whole API be blocking without
@@ -1130,6 +1130,37 @@ It has not grown one, and would not gain much by it: SQLAlchemy's async support 
 over the same drivers, and the framework's value is in what it does between the queries. But an
 `async def` handler calling straight into it is a real mistake with a real cost, and nothing in
 the API stops you making it.
+
+### Under gevent this divergence does not exist
+
+This section used to end there, and it was only half the answer. **gevent is what Java's virtual
+threads are**, and the framework already runs under it unchanged - because being synchronous is
+exactly what makes that possible.
+
+```python
+from gevent import monkey; monkey.patch_all()   # before any other import
+```
+
+Measured: 50 concurrent `time.sleep(0.5)` finish in **0.51 s** rather than 25, and 20
+`getaddrinfo` calls in 0.47 s. `time`, `socket`, `select`, `threading` and `ssl` are all
+patched, so *every* blocking call yields - which is the property the greenlet-bridge answer
+cannot offer, where only SQLAlchemy's own I/O yields and a `requests.get()` in an action still
+freezes the loop while looking asynchronous.
+
+psycopg 3 supports it on purpose. Its `_is_select_patched()` says so - *"Currently supported:
+gevent"* - and switches from `wait_c`, which blocks inside C, to `wait_poll`, which does not.
+
+The two mechanisms that could have made this unsafe were run rather than reasoned about: an
+open transaction lives in a `ContextVar` and each greenlet keeps its own, and a keyed lock keys
+on `threading.get_ident()` which gives 20 greenlets 20 distinct idents. The suite passes
+unchanged - 270 against 270 - and `make test-gevent` is a CI job so that stays a measurement.
+
+**There is no gevent import in `src/` and there should not be.** The application patches at its
+entry point; the framework never knows. What the framework owes is the documentation and the
+job that keeps it honest.
+
+It does not reach everyone: gevent serves **WSGI**, so FastAPI and anything else on an asyncio
+loop are still on `to_thread` - and every example here is FastAPI, so none of them shows it.
 
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 

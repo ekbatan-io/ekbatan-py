@@ -27,7 +27,7 @@ GENERATED := \
 	ekbatan-py-examples/fastapi_wallet_saga_pg/schema.py \
 	ekbatan-py-examples/job_worker_pg/schema.py
 
-.PHONY: all lint format test test-all examples schema build clean help website website-dev
+.PHONY: all lint format test test-all test-gevent examples schema build clean help website website-dev
 .DEFAULT_GOAL := all
 
 all: lint test
@@ -103,6 +103,15 @@ test:
 
 test-all:
 	$(UV) pytest --dialects=all
+
+# The framework is synchronous, so under gevent it is concurrent for free - every blocking call
+# yields, not only the ones a library knows about, which is the one thing the asyncio answer
+# cannot give. It needs no code of ours, and this is what keeps that true. `schemagen` is left
+# out: it drives a Docker container, and testcontainers' HTTP client is what fails under
+# patching, not anything this framework runs.
+test-gevent:
+	$(UV) python -m gevent.monkey --module pytest tests/unit tests/integration \
+		--ignore=tests/integration/test_schemagen.py
 
 examples: schema
 	$(UV) pytest ekbatan-py-examples

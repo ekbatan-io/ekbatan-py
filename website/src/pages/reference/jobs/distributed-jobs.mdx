@@ -118,11 +118,12 @@ connection to claim the row, releases it, runs your body with none open, then ta
 write the result. What holds one is your body's own database work, for as long as that takes. So
 a job that waits on an HTTP call needs no connection while it waits.
 
-**The jobs pool needs at least twice the worker count** *when your job bodies do use the
-database*, which most do. A body holding the last connection starves the heartbeat, and an
-execution whose heartbeat stops is declared dead and run again somewhere else. db-scheduler warns
-at startup when the pool is short - and did, while these examples were being written, which is
-why the example default is 8 and not 3.
+**The jobs pool needs `workers + 3` connections** *when your job bodies use the database*,
+which most do. The three are the scheduler's own loops - poll, heartbeat, dead-execution
+detection - each of which takes a connection when it runs. A body holding the last connection
+starves the heartbeat, and an execution whose heartbeat stops is declared dead and run again
+somewhere else. db-scheduler warns at startup with the number it wants - and did, while these
+examples were being written, which is why the example default is 8 and not 3.
 
 ### What the three knobs do
 

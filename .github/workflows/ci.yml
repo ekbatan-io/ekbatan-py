@@ -35,6 +35,21 @@ jobs:
       - run: uv run pytest tests/unit
       - run: uv run pytest --dialects=sqlite
 
+  gevent:
+    name: tests (under gevent monkey-patching)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras
+      # The framework is synchronous and imports no gevent, so under monkey-patching it becomes
+      # concurrent for free - every blocking call yields, which is the thing the asyncio answer
+      # cannot offer. The docs say so; this is what stops that becoming a sentence nobody
+      # rechecked. `schemagen` is excluded because it drives a Docker container and it is
+      # testcontainers' HTTP client that dislikes patching, not anything this framework runs.
+      - run: make test-gevent
+
   examples:
     name: examples
     runs-on: ubuntu-latest
