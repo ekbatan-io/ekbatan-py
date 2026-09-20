@@ -106,12 +106,13 @@ test-all:
 
 # The framework is synchronous, so under gevent it is concurrent for free - every blocking call
 # yields, not only the ones a library knows about, which is the one thing the asyncio answer
-# cannot give. It needs no code of ours, and this is what keeps that true. `schemagen` is left
-# out: it drives a Docker container, and testcontainers' HTTP client is what fails under
-# patching, not anything this framework runs.
+# cannot give. It needs no code of ours, and this is what keeps that true.
+#
+# The whole suite, nothing excluded. An earlier version of this target skipped `schemagen` on
+# the belief that testcontainers disliked monkey-patching; it did not - Docker was not running
+# on the machine where that was concluded, and with it up the container tests pass patched too.
 test-gevent:
-	$(UV) python -m gevent.monkey --module pytest tests/unit tests/integration \
-		--ignore=tests/integration/test_schemagen.py
+	$(UV) python -m gevent.monkey --module pytest
 
 examples: schema
 	$(UV) pytest ekbatan-py-examples

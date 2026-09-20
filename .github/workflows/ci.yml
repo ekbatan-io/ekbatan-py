@@ -46,8 +46,7 @@ jobs:
       # The framework is synchronous and imports no gevent, so under monkey-patching it becomes
       # concurrent for free - every blocking call yields, which is the thing the asyncio answer
       # cannot offer. The docs say so; this is what stops that becoming a sentence nobody
-      # rechecked. `schemagen` is excluded because it drives a Docker container and it is
-      # testcontainers' HTTP client that dislikes patching, not anything this framework runs.
+      # rechecked. The whole suite runs, container tests included.
       - run: make test-gevent
 
   examples:

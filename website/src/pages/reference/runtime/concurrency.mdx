@@ -244,8 +244,9 @@ and no mode. The two mechanisms that could have made it unsafe were checked by r
 | the open transaction, held in a `ContextVar` | each greenlet keeps its own - no unit of work sees another's |
 | the keyed lock's holder key, `threading.get_ident()` | 20 greenlets, 20 distinct idents - the exclusion holds |
 
-And the test suite passes unchanged: **270 passed under gevent, 270 without.** `make lint` runs
-it both ways so that stays true rather than becoming another sentence nobody rechecked.
+And the whole test suite passes unchanged: **631 passed under gevent, 631 without** - container
+tests included. `make test-gevent` is a CI job, so that stays a measurement rather than becoming
+another sentence nobody rechecked.
 
 **What it does not cover.** gevent serves **WSGI**. FastAPI, Litestar and anything else on an
 asyncio loop cannot use it - for those, the `to_thread` above is still the answer, and every

@@ -1152,8 +1152,14 @@ gevent"* - and switches from `wait_c`, which blocks inside C, to `wait_poll`, wh
 
 The two mechanisms that could have made this unsafe were run rather than reasoned about: an
 open transaction lives in a `ContextVar` and each greenlet keeps its own, and a keyed lock keys
-on `threading.get_ident()` which gives 20 greenlets 20 distinct idents. The suite passes
-unchanged - 270 against 270 - and `make test-gevent` is a CI job so that stays a measurement.
+on `threading.get_ident()` which gives 20 greenlets 20 distinct idents. The whole suite passes
+unchanged - **631 against 631**, container tests included - and `make test-gevent` is a CI job
+so that stays a measurement.
+
+That number was 270 for an hour, because the machine it was first measured on had Docker
+stopped, and eleven container tests were written off as "testcontainers dislikes patching".
+They pass patched. A failure with an environmental cause is the easiest kind to attribute to
+whatever you are currently investigating.
 
 **There is no gevent import in `src/` and there should not be.** The application patches at its
 entry point; the framework never knows. What the framework owes is the documentation and the
