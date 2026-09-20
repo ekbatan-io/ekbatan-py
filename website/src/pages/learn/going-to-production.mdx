@@ -45,6 +45,13 @@ third does not:
 - **the keyed-lock watchdog** — one thread holding a heap of deadlines, in place of a thread per
   hold. A thousand held locks: 1 thread rather than 1000, and 6 ms late rather than 48.
 
+**And one place the gap closes entirely.** Under `gevent.monkey.patch_all()` a blocking call
+costs nothing — every one of them yields, which is what a virtual thread does and what the
+`asyncio` answer cannot manage. The framework needs no code for it: the suite passes patched,
+631 against 631, and a CI job keeps that true. The catch is that gevent serves **WSGI**, so
+Flask and Django can have it and FastAPI cannot — and every example here is FastAPI. See
+[Concurrency](/reference/runtime/concurrency/#gevent-the-closest-thing-to-virtual-threads-and-it-needs-nothing-from-us).
+
 None has bitten, each fix is a pool rather than a redesign, and all three are written down in
 `SHORTCOMINGS.md` rather than left to be discovered.
 

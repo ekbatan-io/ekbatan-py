@@ -89,7 +89,14 @@ wallet = await run_in_threadpool(service.wallets.get, wallet_id)
 ```
 
 The example service is written with plain `def` throughout, which is why it needs no
-`to_thread` anywhere. See [Concurrency](runtime/concurrency.md).
+`to_thread` anywhere.
+
+**None of this applies under gevent** - where a blocking call yields and costs nothing, the way
+a virtual thread's does. But gevent serves **WSGI**, and FastAPI is ASGI, so a FastAPI service
+cannot have it. If your front end is Flask or Django, see
+[Concurrency](runtime/concurrency.md#gevent-the-closest-thing-to-virtual-threads-and-it-needs-nothing-from-us).
+
+See [Concurrency](runtime/concurrency.md).
 
 ## Map the framework's errors once
 

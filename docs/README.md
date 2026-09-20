@@ -21,7 +21,7 @@ Linked from the top-level [README](../README.md). Each section has its own index
 
 **Running it**
 
-- **[Concurrency](runtime/concurrency.md)** - threads, the GIL, asyncio, and pool sizing
+- **[Concurrency](runtime/concurrency.md)** - threads, the GIL, asyncio, gevent, and pool sizing
 - **[Observability](runtime/observability.md)** - spans, attributes, metrics, what to alert on
 - **[Releasing](../RELEASE.md)** - how a release is cut
 
