@@ -182,13 +182,9 @@ def test_the_pipeline_runs_from_the_job_table(registry, executor, handlers, reco
     """End to end: an action commits an event, and the two jobs - claimed from the table -
     turn it into a delivered notification."""
     tuning = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
-    jobs = a_job_registry(
-        registry,
-        [
-            a_fanout(registry, handlers, clock, config=tuning),
-            a_handling(registry, handlers, clock, config=tuning),
-        ],
-    )
+    fanout_job = a_fanout(registry, handlers, clock, config=tuning)
+    handling_job = a_handling(registry, handlers, clock, config=tuning)
+    jobs = a_job_registry(registry, [fanout_job, handling_job])
     jobs.start()
 
     with registry.default.connection(readonly=True) as conn:
@@ -200,7 +196,12 @@ def test_the_pipeline_runs_from_the_job_table(registry, executor, handlers, reco
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
 
-    jobs.scheduler.run_any_due_executions()
+    # `drain_once()` rather than driving the scheduler, which is how Java's own integration
+    # tests exercise these two - `fanoutJob.drainOneRound()`. `execute()` never returns: it is
+    # one execution for the life of the process, so a test that ran it to completion would not
+    # finish either.
+    fanout_job.fanout.drain_once()
+    handling_job.dispatch.drain_once()
 
     assert len(recorder.received) == 1, "fan-out materialised it and handling delivered it"
 
@@ -208,16 +209,15 @@ def test_the_pipeline_runs_from_the_job_table(registry, executor, handlers, reco
 def test_a_disabled_handling_job_holds_its_row_and_does_nothing(
     registry, executor, handlers, recorder, clock
 ):
-    jobs = a_job_registry(
-        registry, [a_fanout(registry, handlers, clock), a_handling(registry, handlers, clock)]
-    )
+    fanout_job = a_fanout(registry, handlers, clock)
+    jobs = a_job_registry(registry, [fanout_job, a_handling(registry, handlers, clock)])
     jobs.start()
 
     executor.execute(
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
-    jobs.scheduler.run_any_due_executions()
+    fanout_job.fanout.drain_once()  # handling is switched off, so only this one runs
 
     assert recorder.received == [], "the notification is waiting; nothing in process took it"
     with registry.default.connection(readonly=True) as conn:

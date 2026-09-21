@@ -10,7 +10,11 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
+from db_scheduler.clock import SettableClock
 from sqlalchemy import select
+
+from ekbatan.clock import SystemClock
+from ekbatan.distributedjobs import job_registry
 
 from .actions import (
     CloseWalletAction,
@@ -21,6 +25,7 @@ from .actions import (
     WalletIdParams,
 )
 from .app import WalletService, build
+from .jobs import PayStipendJob
 from .schema import EVENTS
 
 
@@ -57,7 +62,19 @@ def run(service: WalletService) -> None:
 
     say("run the daily stipend, as one instance of a cluster would")
     service.jobs.start()
-    service.jobs.scheduler.run_any_due_executions()
+    # A registry of its own, holding only the stipend. The service registers three jobs and
+    # that is what a deployment looks like - but the two event jobs are each one execution
+    # that loops for the life of the process, as Java's are, so running one to completion on
+    # this thread would never return. Java's own tests never schedule them either; they call
+    # `fanoutJob.drainOneRound()`, which is what `deliver_pending_events()` above is.
+    stipend_only = (
+        job_registry()
+        .engine(service.registry.default.primary)
+        .with_jobs([PayStipendJob(service.executor, service.wallets)])
+        .build_manual(SettableClock(SystemClock().now()))
+    )
+    stipend_only.start()
+    stipend_only.scheduler.run_any_due_executions()
     print(f"   balance {service.wallets.get(wallet.id).balance}")
 
     say("close it")

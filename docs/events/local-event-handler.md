@@ -297,7 +297,7 @@ Delivery is **at-least-once** - never less, occasionally more. A handler runs tw
 - it succeeds and the process dies before the row is marked `SUCCEEDED`;
 - it partially succeeds - the email goes out, the follow-up write fails - and the row is marked
   `FAILED`;
-- it runs longer than the poll delay, the execution is declared dead, and the row is re-claimed.
+- it stops heartbeating for `heartbeat_interval x missed_heartbeats_limit` - 60 seconds on these defaults - the execution is declared dead, and the row is re-claimed. Running *long* is not what does it; the heartbeat is stamped from its own thread, so a slow handler keeps the execution alive.
 
 What works:
 

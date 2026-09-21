@@ -1195,9 +1195,9 @@ away; both would have to be written. `leakDetectionThreshold` is the one worth a
 a connection leaked inside a unit of work is exactly the failure this framework's transaction
 handling exists to prevent, and Java gets a log line for it that this port does not.
 
-## The shutdown hook is opt-in here and on by default in Java, and the event jobs never see the shutdown
+## The shutdown hook is opt-in here and on by default in Java
 
-> **chosen** - the hook exists as of `EKB-0213` and is off until asked for, because CPython has one handler slot per signal where a JVM hook is additive. The event-loop half is still open. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **chosen** - the hook exists as of `EKB-0213` and is off until asked for, because CPython has one handler slot per signal where a JVM hook is additive. The event-loop half was closed in `EKB-0214`. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Two halves of one gap, found by re-reading `JobRegistry.java` whole after noticing its ledger row
 had been marked `done` at ledger-creation time rather than by a porting pass.
@@ -1232,18 +1232,31 @@ carefully, behind a flag. The example now chains, and says why.
 `JobRegistry.stop()` and the `with` block always did the right thing - the gap was only ever
 what happens when nobody calls them, which is exactly the container-stop case.
 
-**The loop.** Java's `EventFanoutJob.execute` is `while (!shouldStop(ctx))` around
-`drainOneRound()`, sleeping `pollDelay` between idle rounds: one execution runs for the life of
-the process and checks `ctx.getSchedulerState().isShuttingDown()` each round. This port's
-`execute` calls `drain_until_idle()` and returns, letting the `FixedDelay` schedule bring it
-back - and ignores `ctx` entirely, so there is no counterpart to `shouldStop`.
+**The loop - closed in `EKB-0214`.** Java's `EventFanoutJob.execute` is
+`while (!shouldStop(ctx))` around `drainOneRound()`, sleeping `pollDelay` between idle rounds:
+one execution runs for the life of the process and checks
+`ctx.getSchedulerState().isShuttingDown()` each round. Both event jobs here now do the same.
 
-The restructure is defensible on its own: short executions free the worker thread, leave the row
-unpicked between rounds, and fail over faster because any instance can pick it up on the next
-poll rather than waiting out a dead-execution window. `drain_until_idle` also caps itself at
-1000 rounds and warns, where Java would spin indefinitely. What is not defensible is that it was
-never written down, and that it compounds with the missing hook: neither port half can currently
-be asked to stop early.
+**It was never a decision.** This port's `execute` called `drain_until_idle()` and returned,
+letting the `FixedDelay` schedule bring it back, and ignored `ctx` entirely. `git log -S` finds
+no commit that ever contained the loop: the commit that created these jobs wrote the
+return-and-reschedule form from the start. It was not a restructure of Java's design - Java's
+design was not read closely enough when the job was written.
+
+This section used to argue the other form was "defensible on its own", which is the pattern this
+file keeps catching: the reflex written first, the justification written afterwards, and nobody
+asked to choose. The argument was not even wrong - short executions do free the worker thread and
+do fail over in one poll rather than after a dead-execution window - but it was assembled to
+explain something that had already happened by accident.
+
+**What the port costs**, and it is the trade Java makes too: a running execution holds its row
+`picked` and its worker thread for the life of the process, so an instance that dies is taken
+over only after the dead-execution window rather than on the next poll.
+
+One thing is not a straight port. Java cuts its idle sleep short with `Thread.interrupt()`;
+CPython has no counterpart, so the sleep is cut into 100 ms slices and the shutdown flag checked
+between them. Without that a 30-second poll delay would be 30 seconds of a container waiting to
+stop.
 
 ## Additions with no Java counterpart
 

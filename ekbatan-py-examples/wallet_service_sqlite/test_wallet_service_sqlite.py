@@ -129,13 +129,32 @@ def test_closing_twice_changes_nothing_the_second_time(service):
 
 
 def test_the_stipend_job_pays_every_open_wallet(service):
-    wallet = a_wallet(service, "0.00")
-    service.jobs.start()
+    """Driven through a registry holding only the stipend.
 
-    # Three jobs share the table: fan-out, handling, and the stipend.
-    service.jobs.scheduler.run_any_due_executions()
+    The service registers three - fan-out, handling and the stipend - and that is what a
+    deployment looks like. But an event job is one execution that loops for the life of the
+    process, the same as Java's, so running one to completion on this thread would never
+    return. No Java test schedules them either; they call `fanoutJob.drainOneRound()`.
+    """
+    from db_scheduler.clock import SettableClock
+
+    from ekbatan.distributedjobs import job_registry
+
+    from .jobs import PayStipendJob
+
+    wallet = a_wallet(service, "0.00")
+    service.jobs.start()  # all three get their row
+    stipend_only = (
+        job_registry()
+        .engine(service.registry.default.primary)
+        .with_jobs([PayStipendJob(service.executor, service.wallets)])
+        .build_manual(SettableClock(SystemClock().now()))
+    )
+    stipend_only.start()
+
+    stipend_only.scheduler.run_any_due_executions()
     assert service.wallets.get(wallet.id).balance == Decimal("1.0000")
-    service.jobs.scheduler.run_any_due_executions()  # every slot rescheduled; nothing due
+    stipend_only.scheduler.run_any_due_executions()  # its slot rescheduled; nothing due
 
 
 def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
@@ -155,7 +174,7 @@ def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
     )
 
-    service.jobs.scheduler.run_any_due_executions()  # and running them delivers the deposit
+    service.deliver_pending_events()  # a round of each, as `drainOneRound()` is in Java's tests
     assert service.alerts.find_for_wallet(wallet.id), "the handler ran, driven by the job"
 
 

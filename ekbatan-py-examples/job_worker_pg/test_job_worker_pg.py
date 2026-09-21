@@ -93,37 +93,45 @@ class Harness:
         self.stipend = PayStipendJob(self.executor, self.wallets)
         self.report = WalletReportJob(self.wallets)
         self.clock = SettableClock(EPOCH)
+        self.fanout_job = EventFanoutJob(
+            self.registry,
+            handlers,
+            events=EVENTS,
+            notifications=EVENT_NOTIFICATIONS,
+            config=config,
+            clock=running,
+        )
+        self.handling_job = EventHandlingJob(
+            self.registry,
+            handlers,
+            notifications=EVENT_NOTIFICATIONS,
+            config=config,
+            clock=running,
+        )
+
+        # The two event jobs are built but **not scheduled**, which is how Java's own
+        # integration tests use them: `fanoutJob.drainOneRound()`, never a scheduler. Each is
+        # one execution that runs for the life of the process, so scheduling one here would
+        # never return - the manual scheduler runs everything on the calling thread. In the
+        # worker itself they are registered like any other job and loop on their own threads.
         self.jobs = (
             job_registry()
             .engine(self.registry.default.primary)
-            .with_jobs(
-                [
-                    EventFanoutJob(
-                        self.registry,
-                        handlers,
-                        events=EVENTS,
-                        notifications=EVENT_NOTIFICATIONS,
-                        config=config,
-                        clock=running,
-                    ),
-                    EventHandlingJob(
-                        self.registry,
-                        handlers,
-                        notifications=EVENT_NOTIFICATIONS,
-                        config=config,
-                        clock=running,
-                    ),
-                    self.stipend,
-                    self.report,
-                ]
-            )
+            .with_jobs([self.stipend, self.report])
             .build_manual(self.clock)
         )
 
     def tick(self, seconds: int = 3) -> None:
-        """Move the scheduler's clock on and run whatever that made due."""
+        """Move the scheduler's clock on, run whatever that made due, then drain the events.
+
+        The event pipeline is drained directly rather than scheduled, for the reason given
+        where the two registries are built: each event job is one execution that never returns.
+        In the running worker they loop on their own threads and none of this applies.
+        """
         self.clock.set(self.clock.now() + timedelta(seconds=seconds))
         self.jobs.scheduler.run_any_due_executions()
+        self.fanout_job.fanout.drain_once()
+        self.handling_job.dispatch.drain_once()
 
     def close(self) -> None:
         self.registry.close()
@@ -165,12 +173,34 @@ def a_wallet(worker: Harness, balance: str = "0.00") -> Wallet:
 
 
 def test_every_job_has_exactly_one_row_however_many_workers_run(worker: Harness) -> None:
-    """The whole basis of running once per slot across a cluster. Four jobs, four rows - and a
-    second worker registering the same four adds none."""
+    """The whole basis of running once per slot across a cluster: one row per job, and a second
+    worker registering the same jobs adds none.
+
+    Two here, not the worker's four: this harness schedules the stipend and the report, and
+    drains the two event jobs directly, as Java's integration tests do. `app.build()` registers
+    all four, and `test_the_worker_registers_all_four_jobs` is where that is asserted."""
     with worker.registry.default.connection(readonly=True) as conn:
         rows = conn.execute(select(func.count()).select_from(SCHEDULED_TASKS)).scalar_one()
 
-    assert rows == 4, "fanout, handling, stipend, report"
+    assert rows == 2, "stipend and report"
+
+
+def test_the_worker_registers_all_four_jobs(worker: Harness) -> None:
+    """What the running worker does: the event jobs are scheduled like any other, and claimed
+    from the same table as the stipend. Registered and not ticked - each is one execution that
+    runs for the life of the process, so there is nothing here that would return."""
+    all_four = (
+        job_registry()
+        .engine(worker.registry.default.primary)
+        .with_jobs([worker.fanout_job, worker.handling_job, worker.stipend, worker.report])
+        .build_manual(SettableClock(EPOCH))
+    )
+    all_four.start()
+
+    with worker.registry.default.connection(readonly=True) as conn:
+        names = {r[0] for r in conn.execute(select(SCHEDULED_TASKS.c.task_name))}
+
+    assert len(names) == 4, f"four jobs, four rows - got {sorted(names)}"
 
 
 def test_the_stipend_job_tops_up_a_low_wallet(worker: Harness) -> None:

@@ -17,6 +17,8 @@ recorded is retried rather than lost.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Self
 
@@ -48,13 +50,55 @@ DEFAULT_POLL_DELAY = timedelta(seconds=1)
 DEFAULT_FANOUT_BATCH_SIZE = 200
 DEFAULT_HANDLING_BATCH_SIZE = 100
 
+#: How finely the idle sleep is cut, so a shutdown is noticed promptly.
+_SLEEP_SLICE = timedelta(milliseconds=100)
+
+
+def _should_stop(ctx: ExecutionContext) -> bool:
+    """Java's `shouldStop(ctx)`: the scheduler is winding down, or this thread was interrupted.
+
+    Python has no `Thread.interrupt()`, so only the first half exists here - which is the half
+    db-scheduler actually uses. `stop()` sets this flag before it waits for workers, so a round
+    in progress sees it on its next check.
+    """
+    state = getattr(ctx, "scheduler_state", None)
+    return bool(getattr(state, "is_shutting_down", False))
+
+
+def _run_until_stopped(
+    ctx: ExecutionContext, drain: Callable[[], int], poll_delay: timedelta
+) -> None:
+    """One execution for the life of the process, as Java's event jobs are.
+
+    ``while (!shouldStop(ctx))`` around a round, sleeping ``poll_delay`` when a round found
+    nothing. The alternative - draining and returning, letting the schedule call back - is what
+    this port did until `EKB-0214`, and it is a different machine: the row is unpicked between
+    rounds, so a crashed instance is taken over in one poll rather than after the
+    dead-execution window. That was traded away deliberately here, to be the same machine Java
+    is.
+
+    The sleep is in slices so a shutdown is noticed within a slice rather than after a whole
+    poll delay. Java gets that for free from `Thread.interrupt()`, which CPython has no
+    counterpart to.
+    """
+    slice_seconds = min(_SLEEP_SLICE.total_seconds(), poll_delay.total_seconds())
+    while not _should_stop(ctx):
+        if drain() == 0 and not _should_stop(ctx):
+            remaining = poll_delay.total_seconds()
+            while remaining > 0 and not _should_stop(ctx):
+                time.sleep(min(slice_seconds, remaining))
+                remaining -= slice_seconds
+
 
 class EventFanoutJob(DistributedJob):
-    """Materialises notifications from the outbox, one round per slot.
+    """Materialises notifications from the outbox, in one long-running execution.
 
-    A round drains one batch from every shard and, if any of them had work, goes round again -
-    so a burst is cleared without waiting a poll delay per batch. When every shard comes back
-    empty the job returns and the schedule brings it back.
+    **One execution runs for the life of the process**, as Java's does: a round drains one
+    batch from every shard, and the loop goes straight round again while there is work, so a
+    burst is cleared without waiting a poll delay per batch. When every shard comes back empty
+    it sleeps the poll delay and looks again.
+
+    It leaves the loop when the scheduler starts shutting down, which is the only way out.
     """
 
     __slots__ = ("_enabled", "_fanout", "_name", "_poll_delay")
@@ -111,11 +155,12 @@ class EventFanoutJob(DistributedJob):
         return self._fanout
 
     def execute(self, ctx: ExecutionContext) -> None:
-        self._fanout.drain_until_idle()
+        """Runs for the life of the process, as Java's `EventFanoutJob.execute` does."""
+        _run_until_stopped(ctx, self._fanout.drain_once, self._poll_delay)
 
 
 class EventHandlingJob(DistributedJob):
-    """Delivers due notifications to their handlers, one round per slot.
+    """Delivers due notifications to their handlers, in one long-running execution.
 
     Off unless switched on. A deployment draining notifications through an external pipeline
     still registers its handlers - they are what decodes an event - and must not also run a
@@ -170,7 +215,8 @@ class EventHandlingJob(DistributedJob):
         return self._dispatch
 
     def execute(self, ctx: ExecutionContext) -> None:
-        self._dispatch.drain_until_idle()
+        """Runs for the life of the process, as Java's `EventHandlingJob.execute` does."""
+        _run_until_stopped(ctx, self._dispatch.drain_once, self._poll_delay)
 
 
 class _JobBuilder:
