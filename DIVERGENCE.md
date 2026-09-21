@@ -897,6 +897,43 @@ row is left `PENDING` with its attempt count untouched and its retry rescheduled
 removed by a bad deploy comes back, and its queue should still be there when it does. The row
 still expires on the same retention window either way.
 
+## The framework declares the shape of its tables and nothing about their physical design
+
+> **parity** - Java's framework ships no DDL either: `DSL.table(DSL.name(...))` references, and the indexes in the application's migrations. Brought to parity in `EKB-0215`, after being absent from this file entirely.
+
+`ekbatan.schema` gives `events`, `event_notifications` and `scheduled_tasks` as SQLAlchemy
+`Table` objects. That is not a divergence: SQLAlchemy needs a `Table` to build a query, the way
+jOOQ needs a `Table<?>`, and Java's framework hand-writes exactly the same references -
+
+```java
+private static final Table<?> NOTIFS = DSL.table(DSL.name(SCHEMA, TABLE_NAME));
+private static final Field<String> HANDLER_NAME =
+        DSL.field(DSL.name(SCHEMA, TABLE_NAME, "handler_name"), String.class);
+```
+
+Note what those are: *references*, not definitions. There is no `CREATE TABLE` and no
+`CREATE INDEX` anywhere in `ekbatan-core`, `ekbatan-events` or `ekbatan-distributed-jobs`. The
+tables are created by the application's Flyway migrations - `V0001__eventlog.sql`,
+`V0002__scheduled_tasks.sql` - and jOOQ generating the `eventlog` schema in the examples is for
+the *application's* code; the framework never touches the generated classes.
+
+**Until `EKB-0215` this port declared three indexes in `ekbatan.schema`, and that was the cause
+of a gap somebody had already measured and filed.** One declaration cannot be
+`WHERE delivered = FALSE` on PostgreSQL and a plain composite on MySQL, so it was the composite
+everywhere - 3,528 kB against Java's 56 kB on 500,000 rows with a 1% backlog. The fix filed at
+the time was "dialect-aware index construction in `ekbatan.schema`", which would have built more
+machinery on top of the mistake. The mistake was being there at all.
+
+They are gone. Every PostgreSQL migration in this repository now emits the partial form, MySQL
+and MariaDB get the predicate as a column, and the suite's own schema is built by an Alembic
+revision rather than `create_all` - which is what Java's integration tests do with Flyway, and
+is now the only way those indexes are exercised at all.
+
+**None of this was in this file.** `schemagen` is one of the larger design decisions in the port
+and had no entry; that the framework's own tables are *built* rather than reflected, where
+Java's jOOQ reflects them from the database like any other, had no entry either. Found by being
+asked what Java does about `scheduled_tasks`.
+
 ## Migrations run on Alembic, with the guard Alembic does not have
 
 > **forced** - There is no Flyway for Python. The checksum guard restores what Flyway has and Alembic lacks.

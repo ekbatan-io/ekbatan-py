@@ -47,7 +47,8 @@ def upgrade() -> None:
 
     op.execute(
         """
-        CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)
+        CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
+            WHERE delivered = FALSE
         """
     )
 

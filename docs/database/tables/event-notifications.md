@@ -158,10 +158,14 @@ once they have drained.
 Columns, order, nullability and the unique constraint are **identical**. Two differences, both in
 the indexes:
 
-**Java's due index is partial on PostgreSQL** - `(next_retry_at) WHERE state IN ('PENDING',
-'FAILED')` - where this port emits `(state, next_retry_at)` on every dialect. The same
-consideration as the one on [`events`](events.md#the-undelivered-index-and-what-it-costs), and
-the same workaround: create the partial index yourself if the table is large.
+**The due index is partial on PostgreSQL in both ports** - `(next_retry_at) WHERE state IN
+('PENDING', 'FAILED')` - and `(state, next_retry_at)` on MySQL and MariaDB, which have no
+partial indexes. `SUCCEEDED` and `EXPIRED` rows sit for the retention window and are never
+selected, so on PostgreSQL they stay out of the index entirely.
+
+It comes from your migration, not from `ekbatan.schema`, for the reason given on
+[`events`](events.md#the-undelivered-index-and-what-it-costs): the framework declares the
+table's shape and nothing about its physical design, exactly as Java's does.
 
 **`attempts` has no `DEFAULT 0` here.** Java's DDL declares one; this port always writes the
 column explicitly, so the default is never consulted. It matters only if you insert rows by hand.
@@ -214,10 +218,14 @@ once they have drained.
 Columns, order, nullability and the unique constraint are **identical**. Two differences, both in
 the indexes:
 
-**Java's due index is partial on PostgreSQL** - `(next_retry_at) WHERE state IN ('PENDING',
-'FAILED')` - where this port emits `(state, next_retry_at)` on every dialect. The same
-consideration as the one on [`events`](events.md#the-undelivered-index-and-what-it-costs), and
-the same workaround: create the partial index yourself if the table is large.
+**The due index is partial on PostgreSQL in both ports** - `(next_retry_at) WHERE state IN
+('PENDING', 'FAILED')` - and `(state, next_retry_at)` on MySQL and MariaDB, which have no
+partial indexes. `SUCCEEDED` and `EXPIRED` rows sit for the retention window and are never
+selected, so on PostgreSQL they stay out of the index entirely.
+
+It comes from your migration, not from `ekbatan.schema`, for the reason given on
+[`events`](events.md#the-undelivered-index-and-what-it-costs): the framework declares the
+table's shape and nothing about its physical design, exactly as Java's does.
 
 **`attempts` has no `DEFAULT 0` here.** Java's DDL declares one; this port always writes the
 column explicitly, so the default is never consulted. It matters only if you insert rows by hand.

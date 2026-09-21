@@ -147,21 +147,28 @@ builds one `Index` with no dialect variation:
 CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
 ```
 
-Functionally the same queries are served. The cost is size and write amplification, and it is
-not small. Measured on PostgreSQL 17, 500,000 rows with a 1% backlog - a steady-state outbox that
-CDC is keeping up with:
+That is what the MySQL and MariaDB migrations here create, because neither has partial indexes.
+**The PostgreSQL ones create the partial form**, as Java's `V0001__eventlog.sql` does. Measured
+on PostgreSQL 17, 500,000 rows with a 1% backlog - a steady-state outbox that CDC is keeping up
+with:
 
 | index | size |
 | --- | --- |
-| `(delivered, event_type, event_date)` - this port | **3,528 kB** |
-| `(event_type, event_date) WHERE delivered = FALSE` - Java | **56 kB** |
+| `(delivered, event_type, event_date)` - the portable form | **3,528 kB** |
+| `(event_type, event_date) WHERE delivered = FALSE` | **56 kB** |
 
-Sixty-three times larger, because the composite index holds every row ever written and the
-partial one holds only the backlog. Every insert pays for it, on the hot path.
+Sixty-three times, because the composite holds every row ever written and the partial one holds
+only the backlog. Every insert pays for it, on the hot path.
 
-If your outbox is large and PostgreSQL is your dialect, **drop the generated index and create the
-partial one in your own migration**. It is recorded in
-[SHORTCOMINGS.md](../../SHORTCOMINGS.md) as a real gap rather than a difference of taste.
+**The index is yours, not the framework's.** `ekbatan.schema` declares the table's *shape* - the
+contract a CDC connector binds to - and nothing about its physical design. It used to declare
+three indexes, and that was the whole reason PostgreSQL went without the partial form: one
+declaration cannot be `WHERE delivered = FALSE` on one dialect and a composite on another, so it
+was the composite everywhere. Java's framework has the same split and resolves it the same way:
+its repositories reach for the table through `DSL.table(DSL.name("eventlog", "events"))` and
+ship no DDL at all.
+
+So write it in your migration, the way every example here does.
 
 ## Indexes
 

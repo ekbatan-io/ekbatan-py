@@ -1,9 +1,21 @@
-"""The framework's own tables, as SQLAlchemy metadata.
+"""The framework's own tables, as SQLAlchemy metadata - **shape only, not physical design.**
 
 Both shapes are contracts, not implementation details: a Debezium connector, a CDC pipeline, or
-another language's Ekbatan service binds to these column names and types. Building them here
-rather than asking every application to transcribe DDL means there is one definition to be
+another language's Ekbatan service binds to these column names and types. Declaring them here
+rather than asking every application to transcribe them means there is one definition to be
 right about, and migrations can be generated from it.
+
+This is what Java's framework does, and it declares no more than this. Its repositories reach
+for the same tables through `DSL.table(DSL.name("eventlog", "events"))` and every column through
+`DSL.field(...)` - hand-written references, so a query can be built. There is no `CREATE TABLE`
+and no `CREATE INDEX` anywhere in `ekbatan-core`, `ekbatan-events` or `ekbatan-distributed-jobs`.
+
+**So there are no indexes here either, as of `EKB-0215`.** There used to be three, and they were
+the reason PostgreSQL went without the partial indexes Java gives it: one declaration cannot be
+`WHERE delivered = FALSE` on PostgreSQL and a plain composite on MySQL, so it was the composite
+everywhere - measured at 3,528 kB against Java's 56 kB on 500,000 rows with a 1% backlog.
+Indexes belong to whoever creates the table, which is the application's migrations, where Java
+puts them too: `V0001__eventlog.sql`.
 
 Two rules that outlive any one dialect:
 
@@ -23,7 +35,6 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Index,
     Integer,
     MetaData,
     String,
@@ -122,8 +133,6 @@ def outbox_table(metadata: MetaData, *, name: str = "events", schema: str | None
         # The outbox's only mutable column, and it belongs to the consumer. A producer that
         # flips it loses the event for every consumer that had not yet read it.
         Column("delivered", Boolean, nullable=False),
-        Index(f"ix_{name}_action_id", "action_id"),
-        Index(f"ix_{name}_undelivered", "delivered", "event_type", "event_date"),
         schema=schema,
     )
 
@@ -164,7 +173,6 @@ def notifications_table(
         Column("created_date", timestamp_column(), nullable=False),
         Column("updated_date", timestamp_column(), nullable=False),
         UniqueConstraint("event_id", "handler_name", name=f"uq_{name}_event_handler"),
-        Index(f"ix_{name}_due", "state", "next_retry_at"),
         schema=schema,
     )
 

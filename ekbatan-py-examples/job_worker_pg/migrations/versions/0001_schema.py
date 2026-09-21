@@ -62,7 +62,8 @@ def upgrade() -> None:
 
     op.execute(
         """
-        CREATE INDEX ix_event_notifications_due ON event_notifications (state, next_retry_at)
+        CREATE INDEX ix_event_notifications_due ON event_notifications (next_retry_at)
+            WHERE state IN ('PENDING', 'FAILED')
         """
     )
 
@@ -89,7 +90,8 @@ def upgrade() -> None:
 
     op.execute(
         """
-        CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)
+        CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
+            WHERE delivered = FALSE
         """
     )
 

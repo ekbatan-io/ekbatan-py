@@ -63,12 +63,22 @@ class Backend(ABC):
     def url(self, name: str) -> str:
         """A URL for a database of this name, created on first use."""
 
+    #: The suite's own Alembic revisions, applied per logical database.
+    MIGRATIONS = Path(__file__).resolve().parent / "migrations"
+
     def prepare(self, name: str, metadata: MetaData) -> None:
-        engine = create_engine(self.url(name))
-        try:
-            metadata.create_all(engine)
-        finally:
-            engine.dispose()
+        """Build the schema by migrating, not by `create_all`.
+
+        Java's integration tests run Flyway over the same SQL a deployment runs; this is that.
+        It is not fidelity for its own sake: the indexes are **not** in `ekbatan.schema` - a
+        single declaration cannot be `WHERE delivered = FALSE` on PostgreSQL and a plain
+        composite on MySQL - so `create_all` would build the tables with no indexes at all, and
+        the suite would stop covering the shape a deployment actually has.
+        """
+        from ekbatan.config import ShardingConfig
+        from ekbatan.migrations import migrate
+
+        migrate(ShardingConfig.single(self.url(name)), self.MIGRATIONS)
 
     def truncate(self, name: str, metadata: MetaData) -> None:
         """Empty every table, leaving the schema alone.
