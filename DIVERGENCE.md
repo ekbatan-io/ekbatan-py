@@ -279,16 +279,43 @@ the class works as it stands and calling it *Abstract* would be a lie -
 existed to keep `ChangePersister` off the full surface; nothing here needs that yet, and a
 Protocol added before anything wants it is a name to maintain for nobody.
 
-## Row mapping is by field name unless you say otherwise
+## Row mapping is written, as Java's is - but the bridge is not
 
-> **chosen** - Java requires `fromRecord`/`toRecord` on every repository. Defaulting them is this port's largest ergonomic decision. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - both ports require every repository to write the mapping. Brought to parity in `EKB-0217`; it defaulted to field name until then, which was the one piece of magic left in the read and write paths.
 
-Java requires `toRecord` / `fromRecord` on every repository. Here they default to mapping
-dataclass fields to columns of the same name, converting enums by name and timestamps to
-storage form. Override them when the shapes differ; most repositories never do.
+Java declares both halves abstract, so a repository that has not written them does not compile:
 
-This is the largest single reduction in application code, and the one most at risk of being
-undone by a well-meant refactor - so it is stated here.
+```java
+public abstract PERSISTABLE fromRecord(RECORD record);
+public abstract RECORD toRecord(PERSISTABLE domainObject);
+```
+
+`Repository.to_row` and `from_row` now refuse instead, there being no compile step here. Every
+repository in this repository writes both - the seven examples, the suite's fixtures, and the
+handful of tests that build one inline.
+
+**Why it changed.** The mapping used to default to field name, and the entry here called that
+"this port's largest ergonomic decision". It was also the one place left where something
+happened that nobody had written: rename a column without renaming the field and the mapping
+silently stopped matching, where Java gets a compile error. A default that is right almost
+always is the hardest kind of wrong to find.
+
+**What is still not written is the bridge.** Where the names line up - which is most of the
+time - the two methods are one line each:
+
+```python
+def to_row(self, wallet: Wallet) -> dict[str, Any]:
+    return self.columns_by_field_name(wallet)
+```
+
+Java lists every column twice because jOOQ hands it a *generated record type* and something has
+to carry values across. A dataclass knows its own fields, so `columns_by_field_name` is written
+once in the framework rather than once per repository. **Choosing the mapping is yours;
+implementing it is not** - which is the same split as `copy_base`, and for the same reason.
+
+So the divergence that remains is small and is in the other direction: Java writes N lines per
+repository where this writes two, and neither port guesses.
+
 
 ## `created_date` is required, as Java requires it
 

@@ -9,9 +9,10 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import uuid4
 
-from ekbatan import Action, Clock, Repository, run_action
+from ekbatan import Action, Clock, run_action
 from fixtures.actions import DepositParams
 from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
 
 
@@ -38,7 +39,7 @@ def test_nothing_reaches_a_database(registry, clock):
     """The point of the whole module: the action runs, the plan fills, and the row is not
     written anywhere."""
 
-    wallets = Repository(Wallet, WALLETS, registry, clock=clock)
+    wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
     stored = wallets.add(a_wallet("100.00"))
 
     staged = run_action(

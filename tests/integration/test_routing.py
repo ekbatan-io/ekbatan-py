@@ -7,17 +7,21 @@ are; the built-in reads and writes go through exactly the same four.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import Row, func, select
 
+from ekbatan.clock import to_storage
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy, ShardIdentifier
-from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.domain import NOW, Wallet, WalletId, WalletState
+from fixtures.repositories import WalletRepository
 from fixtures.schema import EVENTS, WALLETS
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -26,7 +30,7 @@ MEXICO = ShardIdentifier(1, 0)
 
 @pytest.fixture
 def sharded_wallets(sharded_registry, clock):
-    return Repository(
+    return WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
 
@@ -78,7 +82,9 @@ def test_a_strategy_that_cannot_route_from_an_id_says_so(sharded_registry, clock
         def shard_for(self, persistable: object) -> ShardIdentifier | None:
             return MEXICO
 
-    wallets = Repository(Wallet, WALLETS, sharded_registry, sharding=ByTenantColumn(), clock=clock)
+    wallets = WalletRepository(
+        Wallet, WALLETS, sharded_registry, sharding=ByTenantColumn(), clock=clock
+    )
 
     assert wallets.shard_of(a_wallet(GLOBAL)) == MEXICO, "the row still routes"
     with pytest.raises(UnsupportedError, match="override shard_for"):
@@ -86,7 +92,9 @@ def test_a_strategy_that_cannot_route_from_an_id_says_so(sharded_registry, clock
 
 
 def test_without_sharding_everything_is_the_default_shard(registry, clock):
-    wallets = Repository(Wallet, WALLETS, registry, sharding=NoShardingStrategy(), clock=clock)
+    wallets = WalletRepository(
+        Wallet, WALLETS, registry, sharding=NoShardingStrategy(), clock=clock
+    )
     assert wallets.shard_for(uuid4()) == registry.default_shard
     assert wallets.shard_of_all([a_wallet(GLOBAL), a_wallet(MEXICO)]) == registry.default_shard
 
@@ -168,6 +176,35 @@ def test_dbs_visits_every_shard(sharded_registry, sharded_wallets):
 
 def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
     class WalletRepository(Repository[Wallet, UUID]):
+        def to_row(self, wallet: Wallet) -> dict[str, Any]:
+            return {
+                "id": wallet.id.value,
+                "version": wallet.version,
+                "state": wallet.state.name,
+                "owner_id": wallet.owner_id,
+                "currency": wallet.currency,
+                "balance": wallet.balance,
+                "aliases": wallet.aliases,
+                "reward_points": wallet.reward_points,
+                "created_date": to_storage(wallet.created_date),
+                "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+            }
+
+        def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+            values = row._mapping if isinstance(row, Row) else row
+            return Wallet(
+                id=WalletId(values["id"]),
+                version=values["version"],
+                state=WalletState[values["state"]],
+                owner_id=values["owner_id"],
+                currency=values["currency"],
+                balance=values["balance"],
+                aliases=values["aliases"] or [],
+                reward_points=values["reward_points"],
+                created_date=values["created_date"],
+                updated_date=values["updated_date"],
+            )
+
         def total_balance_on(self, shard: ShardIdentifier) -> Decimal:
             with self.readonly_db(shard=shard) as conn:
                 return conn.execute(
@@ -295,7 +332,7 @@ def _open_wallet(currency, clock):
 
 def test_a_strategy_that_cannot_route_by_id_alone_still_runs(sharded_registry, clock, outbox):
     """The repository could always route these; only the executor could not."""
-    repo = Repository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
+    repo = WalletRepository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
     executor = _executor_over(sharded_registry, repo, clock)
 
     action, params = _open_wallet("MXN", clock)
@@ -307,7 +344,7 @@ def test_a_strategy_that_cannot_route_by_id_alone_still_runs(sharded_registry, c
 def test_state_and_its_events_land_on_one_shard(sharded_registry, clock):
     """The id and the row can name different shards. When they do, the state and the outbox
     row must still be one transaction on one database, or the whole promise is gone."""
-    repo = Repository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
+    repo = WalletRepository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
     executor = _executor_over(sharded_registry, repo, clock)
 
     action, params = _open_wallet("MXN", clock)
@@ -330,7 +367,7 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
     one-row lookup into one query per database for the whole life of the deployment."""
     from sqlalchemy import event
 
-    repo = Repository(
+    repo = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     repo.add(a_wallet(GLOBAL, "SEK"))  # the only match, on the first shard visited
@@ -429,7 +466,7 @@ def test_the_block_is_told_which_shard_it_is_on(sharded_registry, clock):
     is a Transaction, which says the same and can also be asked which shard that is."""
     from ekbatan import Transaction
 
-    repo = Repository(
+    repo = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
 
@@ -480,7 +517,7 @@ def test_no_sharding_says_it_resolves_nothing_from_an_id_and_still_reads_by_id(r
     assert strategy.shard_for_id(uuid4()) is None
     assert strategy.shard_for(a_wallet(MEXICO)) is None
 
-    wallets = Repository(Wallet, WALLETS, registry, sharding=strategy, clock=clock)
+    wallets = WalletRepository(Wallet, WALLETS, registry, sharding=strategy, clock=clock)
     stored = wallets.add(a_wallet(GLOBAL))
 
     assert wallets.get(stored.id).id == stored.id, "reads by id are not refused"
@@ -489,7 +526,7 @@ def test_no_sharding_says_it_resolves_nothing_from_an_id_and_still_reads_by_id(r
 def test_a_cross_shard_refusal_names_the_two_shards_that_disagreed(sharded_registry, clock):
     """Java's `CrossShardException` carries `activeShard` and `requestedShard` as fields, so a
     caller can branch on them rather than parse the message."""
-    wallets = Repository(
+    wallets = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
 
@@ -598,7 +635,7 @@ def strict_wallets(clock):
         with registry.manager(shard).primary.begin() as connection:
             metadata.create_all(connection)
     try:
-        yield Repository(
+        yield WalletRepository(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
         )
     finally:

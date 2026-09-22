@@ -12,12 +12,20 @@ from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Notification, NotificationId, Wallet, WalletId, WalletState
+from fixtures.repositories import (
+    NotificationEntityRepository,
+    NotificationModelRepository,
+    NotificationRepository,
+    WalletEntityRepository,
+    WalletModelRepository,
+    WalletRepository,
+)
 from fixtures.schema import NOTIFICATIONS, WALLETS
 
 
 @pytest.fixture
 def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Repository[Wallet, UUID]:
-    return Repository(Wallet, WALLETS, registry, clock=clock)
+    return WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
@@ -188,7 +196,7 @@ def test_predicate_reads_apply_the_same_filter(wallets):
 
 
 def test_an_entity_round_trips_without_events(registry, clock):
-    notes = Repository(Notification, NOTIFICATIONS, registry, clock=clock)
+    notes = NotificationRepository(Notification, NOTIFICATIONS, registry, clock=clock)
     stored = notes.add(
         Notification.create(
             id=NotificationId.random(),
@@ -204,7 +212,7 @@ def test_an_entity_round_trips_without_events(registry, clock):
 
 
 def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
-    wallets = Repository(
+    wallets = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     mexico = ShardIdentifier(1, 0)
@@ -253,40 +261,39 @@ def test_a_model_needs_a_table_that_can_hold_its_timestamps(registry):
     )
 
     with pytest.raises(ValidationError, match="created_date"):
-        Repository(Wallet, timeless, registry)
+        WalletRepository(Wallet, timeless, registry)
 
 
 def test_an_entity_needs_no_timestamps(registry, clock):
-    from ekbatan import EntityRepository
     from fixtures.domain import Notification
     from fixtures.schema import NOTIFICATIONS
 
-    notes = EntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
+    notes = NotificationEntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
     stored = notes.add(
-        Notification.create(wallet_id=uuid4(), kind="X", recipient="ada@x", id=uuid4())
+        Notification.create(
+            wallet_id=WalletId.random(), kind="X", recipient="ada@x", id=NotificationId.random()
+        )
     )
     assert notes.get(stored.id) == stored
 
 
 def test_declaring_the_wrong_kind_is_refused(registry):
-    from ekbatan import EntityRepository, ModelRepository
     from ekbatan.errors import ValidationError
     from fixtures.domain import Notification
     from fixtures.schema import NOTIFICATIONS
 
     with pytest.raises(ValidationError, match="is not a Model"):
-        ModelRepository(Notification, NOTIFICATIONS, registry)
+        NotificationModelRepository(Notification, NOTIFICATIONS, registry)
 
     with pytest.raises(ValidationError, match="is not an Entity"):
-        EntityRepository(Wallet, WALLETS, registry)
+        WalletEntityRepository(Wallet, WALLETS, registry)
 
 
 def test_the_declared_kinds_are_otherwise_the_same_repository(registry, clock):
     """They add a declaration, not behaviour. Everything is inherited."""
-    from ekbatan import ModelRepository
 
-    plain = Repository(Wallet, WALLETS, registry, clock=clock)
-    declared = ModelRepository(Wallet, WALLETS, registry, clock=clock)
+    plain = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+    declared = WalletModelRepository(Wallet, WALLETS, registry, clock=clock)
 
     stored = declared.add(a_wallet())
     assert plain.get(stored.id) == declared.get(stored.id)
@@ -317,10 +324,10 @@ def test_a_table_must_be_able_to_hold_the_row_it_is_given(registry):
         )
 
     with pytest.raises(ValidationError, match="no column named 'state'"):
-        Repository(Wallet, shaped("stateless", drop_state=True), registry)
+        WalletRepository(Wallet, shaped("stateless", drop_state=True), registry)
 
     with pytest.raises(ValidationError, match="optimistic lock"):
-        Repository(Wallet, shaped("wordy_version", version=String(32)), registry)
+        WalletRepository(Wallet, shaped("wordy_version", version=String(32)), registry)
 
 
 def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
@@ -342,7 +349,7 @@ def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
         shard, create_engine(backend.url(written)), create_engine(backend.url(lagging))
     )
     with DatabaseRegistry({shard: manager}, shard) as reg:
-        wallets = Repository(Wallet, WALLETS, reg, clock=clock)
+        wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
         stored = wallets.add(a_wallet())
 
         assert wallets.find(stored.id) is not None
@@ -383,7 +390,7 @@ def test_readonly_db_does_not_join_an_open_transaction(backend, clock):
         shard, create_engine(backend.url(written)), create_engine(backend.url(lagging))
     )
     with DatabaseRegistry({shard: manager}, shard) as reg:
-        wallets = Repository(Wallet, WALLETS, reg, clock=clock)
+        wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
         with manager.transaction():
             wallets.add(a_wallet())
             # The built-in read joins the transaction and sees the uncommitted row.
@@ -417,7 +424,9 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
         other: TransactionManager(other, create_engine(backend.url(elsewhere))),
     }
     with DatabaseRegistry(managers, default) as reg:
-        wallets = Repository(Wallet, WALLETS, reg, clock=clock)  # NoShardingStrategy by default
+        wallets = WalletRepository(
+            Wallet, WALLETS, reg, clock=clock
+        )  # NoShardingStrategy by default
         wallets.add(a_wallet())
 
         # Put a row on the other shard behind the repository's back. Stamped by hand because
@@ -517,10 +526,9 @@ def test_all_null_column_in_a_batch(registry, clock):
 
     A derived VALUES table whose column is NULL in every row has no inferable type.
     """
-    from ekbatan import EntityRepository
     from fixtures.schema import NOTIFICATIONS
 
-    notes = EntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
+    notes = NotificationEntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
     stored = notes.add_all(
         [
             Notification.create(

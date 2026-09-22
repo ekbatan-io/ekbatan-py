@@ -72,6 +72,41 @@ _PRIOR = "_prior_version"
 _NO_PAGING = 1_000_000
 
 
+def _no_row_mapping(target: type, route: str) -> EkbatanError:
+    """Java declares both halves abstract; this says the same thing at the call.
+
+    `AbstractRepository.fromRecord` and `toRecord` are abstract there, so a repository that has
+    not written them does not compile. There is no compile step here, so it refuses when the
+    row is read or written.
+
+    Until `EKB-0217` the mapping defaulted to field name unless a repository said otherwise,
+    which is the one piece of magic that was left in the read and write paths: rename a column
+    without renaming the field and it silently stops matching. The by-name mapping is still
+    here - it is one line and a dataclass already knows its fields - but now it is chosen
+    rather than inherited.
+    """
+    name = target.__name__
+    return EkbatanError(
+        f"{name}.{route}() has not been written, and the mapping between a row and a model is "
+        f"not guessed here.\n"
+        f"\n"
+        f"Java declares `fromRecord` and `toRecord` abstract on `AbstractRepository`, so every "
+        f"repository writes both. Write both here too:\n"
+        f"\n"
+        f"  class {name}(...):\n"
+        f"      def to_row(self, model) -> dict[str, Any]:\n"
+        f"          return self.columns_by_field_name(model)\n"
+        f"\n"
+        f"      def from_row(self, row) -> Model:\n"
+        f"          return self.model_by_field_name(row)\n"
+        f"\n"
+        f"`columns_by_field_name` and `model_by_field_name` map every declared field to the "
+        f"column of the same name - which is what this used to do without being asked. Writing "
+        f"the two lines is the difference between a mapping somebody chose and one nobody can "
+        f"find. Where a name or a shape differs, write the mapping out instead."
+    )
+
+
 class Repository[M: Persistable[Any, Any], K]:
     """Rows of one table, as models.
 
@@ -148,15 +183,46 @@ class Repository[M: Persistable[Any, Any], K]:
     # ---------------------------------------------------------------- mapping
 
     def to_row(self, model: M) -> dict[str, Any]:
-        """The model as column values. Override when names or shapes differ."""
-        return {name: write(getattr(model, name)) for name, write in self._to_col.items()}
+        """The model as column values. **Write this.**
+
+        Java's `AbstractRepository` declares `toRecord` abstract and every repository there
+        implements it. This did the mapping by field name unless you said otherwise, and that
+        was the one piece of magic in the write path: rename a column without renaming the
+        field and the mapping silently stops matching, where Java gets a compile error.
+
+        Where the names do line up, say so in a line rather than inheriting it in silence::
+
+            def to_row(self, wallet: Wallet) -> dict[str, Any]:
+                return self.columns_by_field_name(wallet)
+        """
+        raise _no_row_mapping(type(self), "to_row")
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> M:
-        """A row as a model. Override alongside :meth:`to_row`.
+        """A row as a model. **Write this**, alongside :meth:`to_row`.
 
-        Takes column values by name, from a result row or from a plain mapping - the latter is
-        how an insert with no ``RETURNING`` rebuilds what it just wrote.
+        The counterpart to Java's abstract `fromRecord`. It is handed a result row or a plain
+        mapping - the latter is how an insert with no ``RETURNING`` rebuilds what it wrote::
+
+            def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+                return self.model_by_field_name(row)
         """
+        raise _no_row_mapping(type(self), "from_row")
+
+    # ------------------------------------------- the by-name mapping, asked for rather than assumed
+
+    def columns_by_field_name(self, model: M) -> dict[str, Any]:
+        """Every declared field, under the column of the same name.
+
+        What `to_row` used to do without being asked. A dataclass knows its own fields, so this
+        needs writing once in the framework rather than once per repository - but *choosing* it
+        is a line in your repository, and a column that stops matching is then a line somebody
+        can find.
+        """
+        return {name: write(getattr(model, name)) for name, write in self._to_col.items()}
+
+    def model_by_field_name(self, row: Row[Any] | Mapping[str, Any]) -> M:
+        """Every column, into the field of the same name. The counterpart to
+        :meth:`columns_by_field_name`."""
         mapping = row._mapping if isinstance(row, Row) else row
         try:
             # The common case is a full row, and asking "is this column present?" once per

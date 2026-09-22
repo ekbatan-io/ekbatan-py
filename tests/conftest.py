@@ -36,6 +36,7 @@ from ekbatan.clock import VirtualClock
 from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import ShardIdentifier
+from fixtures.repositories import NotificationRepository, WalletRepository
 from fixtures.schema import metadata
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -107,20 +108,18 @@ def sharded_registry(backend: Backend) -> Iterator[DatabaseRegistry]:
 
 @pytest.fixture
 def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
-    from ekbatan.repository import Repository
     from fixtures.domain import Wallet
     from fixtures.schema import WALLETS
 
-    return Repository(Wallet, WALLETS, registry, clock=clock)
+    return WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
 
 @pytest.fixture
 def notifications(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
-    from ekbatan.repository import Repository
     from fixtures.domain import Notification
     from fixtures.schema import NOTIFICATIONS
 
-    return Repository(Notification, NOTIFICATIONS, registry, clock=clock)
+    return NotificationRepository(Notification, NOTIFICATIONS, registry, clock=clock)
 
 
 @pytest.fixture
@@ -143,12 +142,11 @@ def executor(
 def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock) -> Any:
     """An executor over two databases, routing by the shard encoded in each id."""
     from ekbatan.action import ActionExecutor
-    from ekbatan.repository import Repository
     from ekbatan.sharding import EmbeddedBitsShardingStrategy
     from fixtures.domain import Wallet
     from fixtures.schema import EVENTS, WALLETS
 
-    repo = Repository(
+    repo = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     executor = ActionExecutor(

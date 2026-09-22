@@ -290,13 +290,19 @@ def test_alerts_are_found_by_the_wallet_they_are_about(service):
     assert found[0].recipient == "ada@example.com"
 
 
-def test_the_repository_needs_no_row_mapping(service):
-    """Java's counterpart writes from_record and to_record, listing every column twice. Here
-    the mapping is by field name, so neither is written unless the names differ."""
+def test_the_repository_writes_its_row_mapping(service):
+    """Java declares `fromRecord` and `toRecord` abstract, so every repository implements both.
+    So does every repository here, as of `EKB-0217`.
+
+    This test used to assert the opposite - that neither was written, because the mapping was
+    by field name unless you said otherwise. That default was the one piece of magic left in
+    the read and write paths: rename a column without renaming the field and it silently
+    stopped matching, where Java gets a compile error.
+    """
     from .repository import WalletRepository
 
-    assert "from_row" not in vars(WalletRepository)
-    assert "to_row" not in vars(WalletRepository)
+    assert "from_row" in vars(WalletRepository), "the mapping is written, not inherited"
+    assert "to_row" in vars(WalletRepository)
 
     wallet = a_wallet(service, "3.00")
     assert service.wallets.get(wallet.id).balance == Decimal("3.0000")

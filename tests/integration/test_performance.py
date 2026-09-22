@@ -15,8 +15,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import event, select
 
-from ekbatan.repository import Repository
 from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
 
 
@@ -72,7 +72,7 @@ def test_a_large_batch_is_still_one_statement(registry, clock, sql):
     """The framework sends one statement, however many rows, and never splits a batch by
     itself - splitting one that exceeds the server's bind-parameter ceiling is the caller's,
     because only the caller knows what the pieces mean if one of them fails."""
-    repo = Repository(Wallet, WALLETS, registry, clock=clock)
+    repo = WalletRepository(Wallet, WALLETS, registry, clock=clock)
     stored = repo.add_all(some_wallets(35))
     sql.clear()
 
@@ -118,7 +118,7 @@ def test_a_lookup_collapses_duplicate_ids(wallets, sql):
 
 
 def test_a_lookup_of_many_ids_is_one_query_per_shard(registry, clock, sql):
-    repo = Repository(Wallet, WALLETS, registry, clock=clock)
+    repo = WalletRepository(Wallet, WALLETS, registry, clock=clock)
     stored = repo.add_all(some_wallets(25))
     sql.clear()
 
@@ -148,7 +148,7 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
     load for nothing."""
     from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 
-    repo = Repository(
+    repo = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     mexico = ShardIdentifier(1, 0)

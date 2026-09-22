@@ -18,7 +18,7 @@ from ekbatan import ChangePersister, RepositoryRegistry
 from ekbatan.action.outbox import SingleTableJsonEventPersister
 from ekbatan.action.plan import PersistableChanges
 from ekbatan.errors import ValidationError
-from fixtures.domain import Notification, Wallet, WalletId
+from fixtures.domain import Notification, NotificationId, Wallet, WalletId
 from fixtures.schema import EVENTS
 
 NOW = datetime(2026, 1, 1, 10, 0, 0)
@@ -102,7 +102,9 @@ def test_an_entity_is_written_and_emits_nothing(registry, notifications):
     persister = ChangePersister(
         RepositoryRegistry([notifications]), SingleTableJsonEventPersister(EVENTS)
     )
-    note = Notification.create(wallet_id=uuid4(), kind="X", recipient="ada@x", id=uuid4())
+    note = Notification.create(
+        wallet_id=WalletId.random(), kind="X", recipient="ada@x", id=NotificationId.random()
+    )
 
     write(
         persister,
@@ -118,7 +120,9 @@ def test_an_entity_is_written_and_emits_nothing(registry, notifications):
 
 
 def test_it_names_the_type_it_has_no_repository_for(persister, registry):
-    note = Notification.create(wallet_id=uuid4(), kind="X", recipient="ada@x", id=uuid4())
+    note = Notification.create(
+        wallet_id=WalletId.random(), kind="X", recipient="ada@x", id=NotificationId.random()
+    )
 
     with pytest.raises(ValidationError, match="no repository is registered for Notification"):
         write(

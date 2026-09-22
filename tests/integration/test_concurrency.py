@@ -39,6 +39,7 @@ from fixtures.actions import (
     DepositParams,
 )
 from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.repositories import WalletRepository
 
 WORKERS = 8
 
@@ -142,10 +143,9 @@ def test_a_pool_worker_does_not_carry_a_transaction_into_its_next_task(registry)
 
 
 def wallets_of(registry):
-    from ekbatan.repository import Repository
     from fixtures.schema import WALLETS
 
-    return Repository(Wallet, WALLETS, registry).all()
+    return WalletRepository(Wallet, WALLETS, registry).all()
 
 
 def test_concurrent_units_of_work_all_commit_and_none_interleave(registry, executor, dialect):

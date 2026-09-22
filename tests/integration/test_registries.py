@@ -15,7 +15,6 @@ import pytest
 from ekbatan import (
     ActionExecutor,
     ActionRegistry,
-    Repository,
     RepositoryRegistry,
 )
 from ekbatan.errors import ValidationError
@@ -26,6 +25,7 @@ from fixtures.actions import (
     DepositParams,
 )
 from fixtures.domain import Notification, Wallet
+from fixtures.repositories import WalletRepository
 from fixtures.schema import EVENTS
 
 # ------------------------------------------------------------------ repositories
@@ -66,7 +66,7 @@ def test_two_repositories_for_one_model_are_refused(registry, clock, wallets):
     other half has never heard of - different clock, different sharding, same table."""
     from fixtures.schema import WALLETS
 
-    other = Repository(Wallet, WALLETS, registry, clock=clock)
+    other = WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
     with pytest.raises(ValidationError, match="two repositories were given for Wallet"):
         RepositoryRegistry([wallets, other])

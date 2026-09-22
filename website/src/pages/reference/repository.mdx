@@ -15,18 +15,40 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         return self.find_where(WALLETS.c.owner_id == owner_id)
 ```
 
-## Mapping is by field name
+## Write the mapping
 
-Note what is **not** there: no `from_row`, no `to_row`. Java writes both by hand for the same
-repository, listing every column twice, because jOOQ hands it a generated record and something
-has to bridge the two. Here the dataclass already knows its fields and the table already knows
-its columns, so they are matched by name.
+Every repository writes `to_row` and `from_row`. Java declares `fromRecord` and `toRecord`
+abstract on `AbstractRepository`, so a repository that has not written them does not compile;
+there is no compile step here, so the base refuses when the row is read or written:
 
-Override `from_row` or `to_row` only when a name genuinely differs, or a value needs converting
-beyond what the column type does. Most repositories never do.
+```
+WalletRepository.from_row() has not been written, and the mapping between a row and a model is
+not guessed here.
+```
 
-That is the single largest ergonomic difference between the two ports, and it removes an entire
-class of bug: a field added to a model and forgotten in `toRecord` is not expressible here.
+Where the names line up - which is most of the time, because a dataclass already knows its own
+fields - that is two lines saying so:
+
+```python
+def to_row(self, wallet: Wallet) -> dict[str, Any]:
+    return self.columns_by_field_name(wallet)
+
+def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+    return self.model_by_field_name(row)
+```
+
+Where a name or a shape differs, write the mapping out instead.
+
+**This was the default until `EKB-0217`, and being the default is what made it wrong.** Rename a
+column without renaming the field and the mapping silently stopped matching - no error, no
+warning, a repository that had quietly stopped round-tripping. Java gets a compile error for the
+same mistake. The two lines are the difference between a mapping somebody chose and one nobody
+can find.
+
+What you still do not write is the *bridge*. Java lists every column twice because jOOQ hands it
+a generated record type; `columns_by_field_name` needs writing once in the framework rather than
+once per repository, because a dataclass knows its fields. Choosing it is yours; implementing it
+is not.
 
 ## Inherited CRUD surface
 

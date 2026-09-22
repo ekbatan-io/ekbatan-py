@@ -8,17 +8,20 @@ way Java's `readonlyDbs().stream().flatMap(...)` does.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import Row, func, select
 
+from ekbatan.clock import to_storage
 from ekbatan.domain import DELETED
 from ekbatan.fetching import Db
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
-from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.domain import NOW, Wallet, WalletId, WalletState
 from fixtures.schema import WALLETS
 
 HERE = ShardIdentifier(0, 0)
@@ -27,6 +30,35 @@ MEXICO = ShardIdentifier(1, 0)
 
 class WalletRepository(Repository[Wallet, WalletId]):
     """What a user writes when the built-in finders run out."""
+
+    def to_row(self, wallet: Wallet) -> dict[str, Any]:
+        return {
+            "id": wallet.id.value,
+            "version": wallet.version,
+            "state": wallet.state.name,
+            "owner_id": wallet.owner_id,
+            "currency": wallet.currency,
+            "balance": wallet.balance,
+            "aliases": wallet.aliases,
+            "reward_points": wallet.reward_points,
+            "created_date": to_storage(wallet.created_date),
+            "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+        }
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        values = row._mapping if isinstance(row, Row) else row
+        return Wallet(
+            id=WalletId(values["id"]),
+            version=values["version"],
+            state=WalletState[values["state"]],
+            owner_id=values["owner_id"],
+            currency=values["currency"],
+            balance=values["balance"],
+            aliases=values["aliases"] or [],
+            reward_points=values["reward_points"],
+            created_date=values["created_date"],
+            updated_date=values["updated_date"],
+        )
 
     def find_all_by_owner(self, owner_id):
         """Scatter, mapped and flattened - the shape of Java's `findAllByOwnerId`."""

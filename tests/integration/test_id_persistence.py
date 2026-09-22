@@ -7,16 +7,30 @@ wrapper or the bare uuid, and that routing reads the shard off it with nothing e
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Any
 from uuid import UUID
 
 import pytest
-from sqlalchemy import CHAR, BigInteger, Column, DateTime, MetaData, Numeric, String, Table, Uuid
+from sqlalchemy import (
+    CHAR,
+    BigInteger,
+    Column,
+    DateTime,
+    MetaData,
+    Numeric,
+    Row,
+    String,
+    Table,
+    Uuid,
+)
 
 from ekbatan import Model, Repository
+from ekbatan.clock import to_storage
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 
@@ -61,16 +75,47 @@ def _prepare(registry):
             conn.execute(PURSES.delete())
 
 
+class PurseRepository(Repository[Purse, Id[Purse]]):
+    """The mapping written out, as Java's `fromRecord` / `toRecord` are.
+
+    This file is about what a *typed id* does on the way to a column and back, so the two lines
+    that matter are the first of each: `purse.id.value` going out, `Id[Purse](...)` coming back.
+    """
+
+    def to_row(self, purse: Purse) -> dict[str, Any]:
+        return {
+            "id": purse.id.value,
+            "version": purse.version,
+            "state": purse.state.name,
+            "currency": purse.currency,
+            "balance": purse.balance,
+            "created_date": to_storage(purse.created_date),
+            "updated_date": to_storage(purse.updated_date or purse.created_date),
+        }
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Purse:
+        values = row._mapping if isinstance(row, Row) else row
+        return Purse(
+            id=Id[Purse](values["id"]),
+            version=values["version"],
+            state=PurseState[values["state"]],
+            currency=values["currency"],
+            balance=values["balance"],
+            created_date=values["created_date"],
+            updated_date=values["updated_date"],
+        )
+
+
 @pytest.fixture
 def purses(registry, clock):
     _prepare(registry)
-    return Repository(Purse, PURSES, registry, clock=clock)
+    return PurseRepository(Purse, PURSES, registry, clock=clock)
 
 
 @pytest.fixture
 def sharded_purses(sharded_registry, clock):
     _prepare(sharded_registry)
-    return Repository(
+    return PurseRepository(
         Purse, PURSES, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
 
