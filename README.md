@@ -120,7 +120,7 @@ library rather than from an `alembic.ini`, so one call migrates every shard.
 | **distributed jobs** | one slot, one execution, across the cluster |
 | **schema and migrations** | the framework's tables as metadata, DDL per dialect, Alembic across every shard |
 | **statement accounting** | so the cost claims are checkable rather than asserted |
-| **test support** | `run_action` runs a unit of work against a bare plan, with no database |
+| **test support** | `ActionSpec` / `ActionAssert` run a unit of work against a bare plan, with no database - Java's, method for method |
 | **typed builders** | `python -m ekbatan.codegen` - the one thing Python cannot infer |
 
 Only `event-streaming` is missing, and it is not planned: publishing runs inside Kafka Connect,
@@ -222,8 +222,18 @@ database.
 
 ## Testing
 
-An action's business logic needs no database. `run_action` runs one against a bare plan and
-reports what it staged:
+An action's business logic needs no database. `ActionSpec` runs one against a bare plan - Java's
+`ActionSpec` / `ActionAssert`, method for method:
+
+```python
+(ActionSpec.of(DepositMoneyAction(wallets))
+    .execute(DepositParams(amount=Decimal("50.00"), ...))
+    .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
+    .assert_emitted(MoneyDepositedEvent, 1)
+    .assert_no_additions())
+```
+
+Or, as plain data, with `run_action`:
 
 ```python
 staged = run_action(DepositMoneyAction(wallets), DepositParams(amount=Decimal("50.00"), ...))

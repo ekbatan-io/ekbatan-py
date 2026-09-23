@@ -102,7 +102,7 @@ from .sharding import (
     sharded_uuid,
     uuid_instant,
 )
-from .testing import StagedWork, run_action
+from .testing import ActionAssert, ActionSpec, StagedWork, run_action
 
 __version__ = "0.1.0.dev0"
 
@@ -110,10 +110,12 @@ __all__ = [
     "DEFAULT_RETRIES",
     "DEFAULT_SHARD",
     "Action",
+    "ActionAssert",
     "ActionExecutor",
     "ActionPlan",
     "ActionRegistry",
     "ActionRegistryBuilder",
+    "ActionSpec",
     "ChangePersister",
     "Clock",
     "ConnectivityError",

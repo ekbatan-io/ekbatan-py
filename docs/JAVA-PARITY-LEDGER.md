@@ -306,8 +306,8 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| ActionAssert.java | 439 | `testing.py` | done - `StagedWork`; data accessors rather than 24 assertion methods |
-| ActionSpec.java | 116 | `testing.py` | done - `run_action`; `assertThrows` is `pytest.raises` |
+| ActionAssert.java | 439 | `testing.py` | done - `ActionAssert`, method for method, Java's messages word for word (`EKB-0219`) |
+| ActionSpec.java | 116 | `testing.py` | done - `ActionSpec`, including `assert_throws` (`EKB-0219`) |
 
 #### `testsupport/testcontainers`
 
@@ -333,7 +333,7 @@ which means "use the default".
 | ActionPlanTest.java | 223 | `tests/integration/test_actions.py` | done - `add` hands back the argument, as Java's `isSameAs` asserts |
 | ActionRegistryBuilderTest.java | 61 | `tests/integration/test_registries.py` | done |
 | ActionRegistryTest.java | 112 | `tests/integration/test_registries.py` | done |
-| ActionSpecTest.java | 633 | `tests/unit/test_action_testing.py` | done - the cases testing the assertion DSL itself are n/a; `assert` needs no test |
+| ActionSpecTest.java | 633 | `tests/unit/test_action_spec.py` | done - all 38 cases, same names in snake case (`EKB-0219`) |
 | CreateAction.java | 17 | `tests/fixtures/actions.py` | done - `CreateWallet` |
 | CreateBothAction.java | 18 | `tests/unit/test_action_testing.py` | done - `CreatesBoth`, a model and an entity staged in one unit of work |
 | DeleteAction.java | 19 | `tests/fixtures/domain.py` | done - deletion is the model's own (`Wallet.delete()`) and reaches the database through `plan.update`, which `test_repository.py` covers; the action wrapper adds nothing |

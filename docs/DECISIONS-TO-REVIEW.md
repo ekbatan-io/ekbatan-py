@@ -18,7 +18,7 @@ unlabelled or if a **chosen** one does not link here. That check exists because 
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **11 that somebody decided**. Each could have gone the other way. Five more are
+These are the **10 that somebody decided**. Each could have gone the other way. Five more are
 struck out and kept struck rather than deleted - four reversed after being asked about, and one
 (`EKB-0199`) that described behaviour this port never had.
 
@@ -38,7 +38,7 @@ struck out and kept struck rather than deleted - four reversed after being asked
 | [A shard member carries one datasource pair, not a named map](../DIVERGENCE.md) | Java's `configFor(name)` map is dropped for a fixed pair. A surface removal somebody decided. |
 | [SQLite is a dialect here and is not one in Java](../DIVERGENCE.md) | An addition. Java refuses everything but the three. |
 | ~~[`plan.add` hands back the stamped row, not the argument](../DIVERGENCE.md)~~ | **Closed in `EKB-0192`.** `created_date` is required at construction now, so there is nothing to stamp and `add` hands back the object it was given - `isSameAs`, as Java does. |
-| [The test-support API is data, not an assertion DSL](../DIVERGENCE.md) | Java ships `ActionSpec`/`ActionAssert`. Returning data instead was a decision, and it is a smaller surface. |
+| ~~[The test-support API is data, not an assertion DSL](../DIVERGENCE.md)~~ | **Closed in `EKB-0219`.** `ActionSpec`/`ActionAssert` are ported method for method with Java's messages, and Java's 38 `ActionSpecTest` cases with them. A verifier's falsy return fails, because a Python lambda returns its verdict where Java's `Consumer` asserts. |
 | [The shutdown hook is opt-in here and on by default in Java](../DIVERGENCE.md) | **Half closed in `EKB-0213`.** `register_shutdown_hook()` exists and drains on SIGTERM, keeping and calling whatever handler was already there. It stays **off by default**, which is the decision: a JVM shutdown hook is additive and CPython has one handler slot per signal, so installing one uninvited would take the application's SIGTERM away from it. The event-loop half is **closed in `EKB-0214`**: both event jobs are now one long-running execution looping until the scheduler shuts down, as Java's are. That half was never a decision at all - `git log -S` finds no commit that ever contained the loop. |
 | [Additions with no Java counterpart](../DIVERGENCE.md) | Additions by definition. Each one is something this port has and Java does not. |
 

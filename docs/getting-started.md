@@ -185,7 +185,20 @@ One transaction. The wallet row, its version bump and the outbox row, or none of
 
 ## Testing before there is a database
 
-An action's logic needs no database at all:
+An action's logic needs no database at all. `ActionSpec` is Java's, method for method:
+
+```python
+(ActionSpec.of(DepositMoneyAction(wallets, clock))
+    .with_principal("alice")
+    .execute(DepositParams(wallet_id=..., amount=Decimal("50.00")))
+    .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
+    .assert_emitted(MoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
+    .assert_no_additions())
+```
+
+A verifier can be a `lambda` returning its verdict or a function that asserts inside itself; a
+falsy verdict fails, so neither can pass by accident. When plain `assert` reads better,
+`run_action` hands back the same information as data:
 
 ```python
 staged = run_action(DepositMoneyAction(wallets, clock), DepositParams(wallet_id=..., amount=Decimal("50.00")))
@@ -194,7 +207,7 @@ assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
 ```
 
-`run_action` binds the plan through the same mechanism the executor uses, so `self.plan`,
+Both bind the plan through the same mechanism the executor uses, so `self.plan`,
 `self.clock` and `self.principal` behave as they do in production. Nothing is written - which is
 also the limit of it: that state and events land *together* is a claim about a transaction, and
 only a test against a real database checks it.

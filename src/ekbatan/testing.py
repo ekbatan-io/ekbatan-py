@@ -4,12 +4,20 @@ An action's business logic is worth testing on its own: what it stages, what it 
 refuses. None of that needs a database, and a test that spins one up to find out whether a
 deposit emits one event is a slow test of the wrong thing.
 
+    (ActionSpec.of(DepositMoney(wallets))
+        .execute(DepositParams(...))
+        .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
+        .assert_emitted(WalletMoneyDeposited, 1))
+
+:class:`ActionSpec` and :class:`ActionAssert` are Java's, method for method. :func:`run_action`
+hands back the same information as data, for a test that reads better as plain ``assert``::
+
     staged = run_action(DepositMoney(wallets), DepositParams(...))
 
     assert staged.updated(Wallet)[0].balance == Decimal("150.00")
     assert [type(e).__name__ for e in staged.events] == ["WalletMoneyDeposited"]
 
-This binds the plan through the same mechanism the executor uses, so the action sees exactly
+Both bind the plan through the same mechanism the executor uses, so the action sees exactly
 the lifetime it sees in production - ``self.plan`` works, a plan reached from a thread the
 action started still fails the way it would live, and the clock is whichever one you built the
 action with.
@@ -21,24 +29,24 @@ substitute for it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self, overload
 
 from .action.action import Action, _Binding
 from .action.plan import ActionPlan
 from .clock import Clock, SystemClock
 from .domain import Model, ModelEvent, Persistable
 
-__all__ = ["StagedWork", "run_action"]
+__all__ = ["ActionAssert", "ActionSpec", "StagedWork", "run_action"]
 
 
 @dataclass(frozen=True, slots=True)
 class StagedWork[R]:
     """What one invocation staged, and what it returned.
 
-    Deliberately data rather than a wall of assertion methods: Java needs twenty-four of them
-    because plain assertions there say little when they fail. ``assert`` plus pytest already
-    reports both sides, so these are the four accessors worth having and the rest is your test.
+    The data underneath :class:`ActionAssert`. Use this directly when plain ``assert`` reads
+    better than a chain; use :class:`ActionSpec` for Java's chain, method for method.
     """
 
     result: R
@@ -112,3 +120,272 @@ def run_action[P, R](
     with _Binding(plan):
         result = action.perform(principal, params)
     return StagedWork(result=result, plan=plan, clock=action.clock)
+
+
+# -- Java's ActionSpec / ActionAssert, method for method ----------------------------------------
+
+
+def _check[T](verifier: Callable[[T], object], value: T, what: str) -> None:
+    """Run one verifier, and refuse to let it pass by accident.
+
+    Java's verifier is a ``Consumer``: it asserts inside itself and returns nothing, so there is
+    no return value to ignore. A Python ``lambda`` cannot contain an ``assert`` statement, so the
+    natural spelling - ``lambda w: w.balance == Decimal("150")`` - *computes* a verdict and
+    returns it. Ported literally, that verdict would be thrown away and the test would pass
+    whatever the balance was.
+
+    So a verifier may do either. One that asserts inside itself and returns ``None`` passes or
+    fails on its own assertions, as Java's does. One that returns a value fails if the value is
+    falsy - ``False``, but also ``0``, ``""`` or an empty list, because a verdict that is not
+    ``True`` is not a pass.
+    """
+    verdict = verifier(value)
+    if verdict is not None and not verdict:
+        raise AssertionError(
+            f"{what} did not satisfy the verifier (it returned {verdict!r}): {value!r}"
+        )
+
+
+class ActionAssert[R]:
+    """Java's ``ActionAssert``: chainable checks over what one invocation staged.
+
+    Every method has Java's name in snake case, Java's overloads as optional arguments, and
+    Java's failure message word for word. Additions and updates match the **exact** class, as
+    Java's ``plan.changes().get(type)`` does; events match subclasses too, as ``isInstance``
+    does.
+    """
+
+    __slots__ = ("_staged",)
+
+    def __init__(self, staged: StagedWork[R]) -> None:
+        self._staged = staged
+
+    # -- additions ------------------------------------------------------------------------------
+
+    @overload
+    def assert_added[E](self, model_type: type[E], verifier: Callable[[E], object], /) -> Self: ...
+    @overload
+    def assert_added[E](
+        self,
+        model_type: type[E],
+        count: int,
+        verifier: Callable[[list[E]], object] | None = None,
+        /,
+    ) -> Self: ...
+    def assert_added(self, model_type: type[Any], expected: Any, verifier: Any = None, /) -> Self:
+        """``(type, verifier)``: exactly one, handed to the verifier. ``(type, count)``: that
+        many. ``(type, count, verifier)``: that many, handed over as a list."""
+        return self._staged_as(
+            "addition", self.additions(model_type), model_type, expected, verifier
+        )
+
+    def assert_no_additions(self) -> Self:
+        total = len(self._staged.additions)
+        if total > 0:
+            raise AssertionError(f"Expected no additions but found {total}")
+        return self
+
+    def assert_no_additions_of(self, model_type: type[Any]) -> Self:
+        added = self.additions(model_type)
+        if added:
+            raise AssertionError(
+                f"Expected no additions of {model_type.__name__} but found {len(added)}"
+            )
+        return self
+
+    def assert_total_additions(self, count: int) -> Self:
+        total = len(self._staged.additions)
+        if total != count:
+            raise AssertionError(f"Expected {count} total addition(s) but found {total}")
+        return self
+
+    # -- updates --------------------------------------------------------------------------------
+
+    @overload
+    def assert_updated[E](
+        self, model_type: type[E], verifier: Callable[[E], object], /
+    ) -> Self: ...
+    @overload
+    def assert_updated[E](
+        self,
+        model_type: type[E],
+        count: int,
+        verifier: Callable[[list[E]], object] | None = None,
+        /,
+    ) -> Self: ...
+    def assert_updated(self, model_type: type[Any], expected: Any, verifier: Any = None, /) -> Self:
+        """As :meth:`assert_added`, for updates."""
+        return self._staged_as("update", self.updates(model_type), model_type, expected, verifier)
+
+    def assert_no_updates(self) -> Self:
+        total = len(self._staged.updates)
+        if total > 0:
+            raise AssertionError(f"Expected no updates but found {total}")
+        return self
+
+    def assert_no_updates_of(self, model_type: type[Any]) -> Self:
+        updated = self.updates(model_type)
+        if updated:
+            raise AssertionError(
+                f"Expected no updates of {model_type.__name__} but found {len(updated)}"
+            )
+        return self
+
+    def assert_total_updates(self, count: int) -> Self:
+        total = len(self._staged.updates)
+        if total != count:
+            raise AssertionError(f"Expected {count} total update(s) but found {total}")
+        return self
+
+    # -- events ---------------------------------------------------------------------------------
+
+    @overload
+    def assert_emitted[E: ModelEvent](self, event_type: type[E], /) -> Self: ...
+    @overload
+    def assert_emitted[E: ModelEvent](
+        self, event_type: type[E], verifier: Callable[[E], object], /
+    ) -> Self: ...
+    @overload
+    def assert_emitted[E: ModelEvent](
+        self,
+        event_type: type[E],
+        count: int,
+        verifier: Callable[[list[E]], object] | None = None,
+        /,
+    ) -> Self: ...
+    def assert_emitted(
+        self, event_type: type[Any], expected: Any = None, verifier: Any = None, /
+    ) -> Self:
+        """``(type)``: at least one. ``(type, verifier)``: exactly one, handed to the verifier.
+        ``(type, count)`` and ``(type, count, verifier)``: that many, as a list."""
+        events = self._staged.emitted(event_type)
+        name = event_type.__name__
+        if expected is None:
+            if not events:
+                raise AssertionError(f"Expected at least 1 event of {name} but none were emitted")
+            return self
+        if callable(expected):
+            if len(events) != 1:
+                raise AssertionError(f"Expected exactly 1 event of {name} but found {len(events)}")
+            _check(expected, events[0], f"the {name} emitted")
+            return self
+        if len(events) != expected:
+            raise AssertionError(f"Expected {expected} event(s) of {name} but found {len(events)}")
+        if verifier is not None:
+            _check(verifier, events, f"the {name} events emitted")
+        return self
+
+    def assert_not_emitted(self, event_type: type[ModelEvent]) -> Self:
+        events = self._staged.emitted(event_type)
+        if events:
+            raise AssertionError(
+                f"Expected no events of {event_type.__name__} but found {len(events)}"
+            )
+        return self
+
+    def assert_no_events(self) -> Self:
+        total = len(self._staged.events)
+        if total > 0:
+            raise AssertionError(f"Expected no events but found {total}")
+        return self
+
+    # -- no changes -----------------------------------------------------------------------------
+
+    def assert_no_changes(self) -> Self:
+        return self.assert_no_additions().assert_no_updates().assert_no_events()
+
+    def assert_no_changes_of(self, model_type: type[Any]) -> Self:
+        return self.assert_no_additions_of(model_type).assert_no_updates_of(model_type)
+
+    # -- result ---------------------------------------------------------------------------------
+
+    def assert_result(self, verifier: Callable[[R], object]) -> Self:
+        _check(verifier, self._staged.result, "the result")
+        return self
+
+    # -- raw accessors --------------------------------------------------------------------------
+
+    def result(self) -> R:
+        return self._staged.result
+
+    def additions[E](self, model_type: type[E]) -> list[E]:
+        return list(self._staged.plan.additions(model_type))  # type: ignore[type-var]
+
+    def updates[E](self, model_type: type[E]) -> list[E]:
+        return list(self._staged.plan.updates(model_type))  # type: ignore[type-var]
+
+    # -- shared ---------------------------------------------------------------------------------
+
+    def _staged_as(
+        self, kind: str, rows: list[Any], model_type: type[Any], expected: Any, verifier: Any
+    ) -> Self:
+        name = model_type.__name__
+        if callable(expected):
+            if len(rows) != 1:
+                raise AssertionError(f"Expected exactly 1 {kind} of {name} but found {len(rows)}")
+            _check(expected, rows[0], f"the {name} {kind}")
+            return self
+        if len(rows) != expected:
+            raise AssertionError(f"Expected {expected} {kind}(s) of {name} but found {len(rows)}")
+        if verifier is not None:
+            _check(verifier, rows, f"the {name} {kind}s")
+        return self
+
+
+class ActionSpec[P, R]:
+    """Java's ``ActionSpec``: run one action against a bare plan, then assert on it.
+
+    ::
+
+        (ActionSpec.of(DepositMoneyAction(wallets, clock))
+            .with_principal("alice")
+            .execute(DepositParams(wallet_id=wallet_id, amount=Decimal("50")))
+            .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
+            .assert_emitted(MoneyDepositedEvent, 1)
+            .assert_no_additions())
+
+    Runs exactly as :func:`run_action` does - the plan bound through the executor's own
+    mechanism, stamping from the action's clock - so nothing here behaves differently from
+    production except that nothing is written.
+    """
+
+    __slots__ = ("_action", "_principal")
+
+    def __init__(self, action: Action[P, R]) -> None:
+        self._action = action
+        self._principal: str | None = None
+
+    @classmethod
+    def of(cls, action: Action[P, R]) -> ActionSpec[P, R]:
+        return cls(action)
+
+    def with_principal(self, principal: str | None) -> Self:
+        self._principal = principal
+        return self
+
+    def execute(self, params: P) -> ActionAssert[R]:
+        return ActionAssert(run_action(self._action, params, principal=self._principal))
+
+    def assert_throws[E: Exception](
+        self,
+        exception_type: type[E],
+        params: P,
+        verifier: Callable[[E], object] | None = None,
+    ) -> Self:
+        """The action raises ``exception_type`` - or a subclass, as ``isInstance`` allows.
+
+        ``try`` / ``except`` / ``else`` rather than Java's shape, because in Python
+        ``AssertionError`` *is* an ``Exception``: raising "nothing was thrown" inside the ``try``
+        would be caught by the very ``except`` meant for the action's own error.
+        """
+        name = exception_type.__name__
+        try:
+            run_action(self._action, params, principal=self._principal)
+        except Exception as error:
+            if not isinstance(error, exception_type):
+                raise AssertionError(f"Expected {name} but got {type(error).__name__}") from error
+            if verifier is not None:
+                _check(verifier, error, f"the {name} raised")
+        else:
+            raise AssertionError(f"Expected {name} to be thrown but nothing was thrown")
+        return self

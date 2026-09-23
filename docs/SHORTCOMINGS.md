@@ -46,7 +46,6 @@ synchronous"*.
 | --- | --- | --- |
 | **Migration targeting** | `FlywayMigrator.migrate(Target...)` | `migrate(config, path, shards=[...])` - added in `EKB-0137`, so this one is closed |
 | **db-scheduler builder** | `registerShutdownHook`, `dueExecutor`, `housekeeperExecutor`, `commitWhenAutocommitDisabled` | none of the four on the vendored builder. The one that mattered is answered a level up, on `JobRegistryBuilder` - see the shutdown row above. `db-scheduler/docs/FILE-LEDGER.md` marks `SchedulerBuilder` **partial** for it |
-| **Assertion DSL** | `ActionSpec` and `ActionAssert`, 24 fluent methods with 38 tests of their own | `run_action` returns data and you use `assert`. Deliberate - pytest already prints both sides - but it is less to reach for |
 | **Examples** | 41 projects, including a full native-image grid and one per DI framework | 7. The database axis is mirrored; the DI and native axes have nothing to mirror |
 
 ---

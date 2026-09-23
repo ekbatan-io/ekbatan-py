@@ -865,20 +865,48 @@ empty; here it is a `TypeError`. `None` where an iterable belongs is a mistake a
 and returning empty lets it through to become "this unit of work staged nothing" - which commits
 a sentinel row and looks like success.
 
-## The test-support API is data, not an assertion DSL
+## The test-support API is Java's `ActionSpec` / `ActionAssert`, plus the data underneath
 
-> **chosen** - Java ships `ActionSpec`/`ActionAssert`. Returning data instead was a decision, and it is a smaller surface. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - `ActionSpec` and `ActionAssert` are ported method for method, with Java's failure messages word for word. Brought to parity in `EKB-0219`; until then only `run_action` existed.
 
-Java ships `ActionSpec` and `ActionAssert` - 24 fluent assertion methods, and 38 tests of those
-methods. `run_action` returns a `StagedWork` instead: `result`, `added(Type)`, `updated(Type)`,
-`additions`, `updates`, `staged`, `events`, `emitted(Type)`.
+```java
+ActionSpec.of(new DepositMoneyAction(wallets, clock))
+    .withPrincipal(alice)
+    .execute(new DepositParams(walletId, amount))
+    .assertUpdated(Wallet.class, w -> assertThat(w.balance).isEqualTo("150.00"))
+    .assertEmitted(MoneyDepositedEvent.class, 1)
+    .assertNoAdditions();
+```
 
-The reason is pytest. `assertAdded(Wallet.class, 2)` exists because a bare `assert` in Java
-reports "expected true, got false"; `assert len(staged.added(Wallet)) == 2` already prints both
-sides and the list. A DSL here would be a layer between the reader and what actually happened,
-and it would need its own 38 tests.
+```python
+(ActionSpec.of(DepositMoneyAction(wallets, clock))
+    .with_principal("alice")
+    .execute(DepositParams(wallet_id=wallet_id, amount=amount))
+    .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
+    .assert_emitted(MoneyDepositedEvent, 1)
+    .assert_no_additions())
+```
 
-`assertThrows` has no counterpart either - it is `pytest.raises`, which does more.
+Every method has Java's name in snake case, Java's overloads as optional arguments, and Java's
+semantics: additions and updates match the **exact** class (`plan.changes().get(type)`), events
+match subclasses (`isInstance`), and a plain `assert_emitted(type)` means *at least one* while
+every other form is exact. Java's 38 `ActionSpecTest` cases are ported case for case.
+
+Two differences in mechanism, both because Python would otherwise let a test pass by accident:
+
+- **A verifier's return value counts.** Java's is a `Consumer` that asserts inside itself and
+  returns nothing. A Python `lambda` cannot hold an `assert`, so it returns its verdict -
+  `lambda w: w.balance == x` - and a literal port would throw that verdict away and pass
+  whatever the balance was. So a verifier that returns a falsy value fails; one that returns
+  `None` must have asserted itself, as Java's does. Both spellings work and neither can pass
+  silently.
+- **`assert_throws` is `try` / `except` / `else`.** Java raises "nothing was thrown" inside the
+  `try`, which is safe there because `AssertionError` is an `Error`, not an `Exception`. In
+  Python it *is* an `Exception`, so Java's shape would catch its own report when the expected
+  type is `Exception` and pass. A test pins this.
+
+`run_action` and its `StagedWork` stay. They are the data `ActionAssert` reads, and a test that
+reads better as plain `assert` can use them directly.
 
 `VirtualClock` is the opposite case: it is ported in full, three modes and all, because those
 are behaviour rather than assertion sugar. One addition - `VirtualClock(instant)` starts frozen
