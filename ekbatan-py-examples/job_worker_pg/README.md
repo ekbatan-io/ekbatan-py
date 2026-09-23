@@ -38,9 +38,11 @@ protects the row, not your method.
 it already topped up are no longer below it. A job that deposited unconditionally would
 double-pay on the replay that at-least-once delivery makes inevitable.
 
-**Shutdown is yours to arrange, or the framework's if you ask.** By default no signal handler
-is installed, so a SIGTERM would end the process with executions still picked and their rows
-waiting out the dead-execution window - 60 seconds on framework defaults. `__main__.py` catches
+**SIGTERM is yours to arrange, or the framework's if you ask.** A started registry drains on a
+normal exit and on Ctrl-C by default, through `atexit`. SIGTERM does not run `atexit` in
+CPython, and by default no signal handler is installed, so a container stop would end the
+process with executions still picked and their rows waiting out the dead-execution window - 60
+seconds on framework defaults. `__main__.py` catches
 the signal and calls `stop()`, which is what makes a rolling deploy clean rather than merely
 survivable.
 

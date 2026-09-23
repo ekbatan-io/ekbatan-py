@@ -38,11 +38,11 @@ def main() -> None:
 def run(worker: Worker) -> None:
     """Start, wait, and stop cleanly on SIGINT or SIGTERM.
 
-    This is the half the framework will not do for you unless asked. Java's `JobRegistry`
-    registers a JVM shutdown hook by default and nobody minds, because those are additive: any
-    number can be registered and none displaces another. CPython has **one** handler slot per
-    signal, so installing one takes the application's SIGTERM away from it - which is why
-    `register_shutdown_hook()` exists and is off until you call it.
+    This is the half the framework will not do for you unless asked. A normal exit and Ctrl-C
+    already drain - a started registry is on `atexit`, which is additive, like Java's JVM
+    shutdown hook - but CPython does not run `atexit` on SIGTERM, and a container stop is a
+    SIGTERM. Catching it means taking the process's **one** handler slot for that signal, which
+    is why `register_shutdown_hook()` exists and is off until you call it.
 
     A worker process like this one is the case it was written for, and the two ways are equal:
 

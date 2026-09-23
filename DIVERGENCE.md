@@ -1301,9 +1301,26 @@ away; both would have to be written. `leakDetectionThreshold` is the one worth a
 a connection leaked inside a unit of work is exactly the failure this framework's transaction
 handling exists to prevent, and Java gets a log line for it that this port does not.
 
-## The shutdown hook is opt-in here and on by default in Java
+## The shutdown hook drains on exit by default, and catches SIGTERM only when asked
 
-> **chosen** - the hook exists as of `EKB-0213` and is off until asked for, because CPython has one handler slot per signal where a JVM hook is additive. The event-loop half was closed in `EKB-0214`. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **chosen** - the additive half is on by default as Java's is (`atexit`, `EKB-0221`); catching SIGTERM stays opt-in, because CPython has one handler slot per signal and does not run `atexit` on SIGTERM. The event-loop half was closed in `EKB-0214`. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
+**What Java's hook is, in two parts.** A JVM shutdown hook is added to a list, and the JVM runs
+that list on its way out - including on SIGTERM, which it turns into an orderly exit. Python has
+the first part, `atexit`, and not the second: SIGTERM kills the process and no `atexit` hook runs.
+Measured in a real process with a job two seconds into its body:
+
+| how the process ends | default | `stop_on_exit(False)` | `register_shutdown_hook()` |
+| --- | --- | --- | --- |
+| returns, or raises | **drains** | cut off | drains |
+| Ctrl-C | **drains**, exits 130 | cut off | drains |
+| SIGTERM | cut off, exits 143 | cut off | **drains**, exits 143 |
+
+So the first part is ported as Java has it - **on by default** since `EKB-0221`, the way
+OpenTelemetry's `shutdown_on_exit` and Sentry's flush are - and only the second is opt-in. Of the
+libraries read while deciding this, the ones that live in someone else's process (OpenTelemetry,
+Sentry, APScheduler) never touch signals, and the ones that do (gunicorn, uvicorn, the Celery, RQ,
+Dramatiq and Huey workers) are the process. None of them keeps the handler it replaced; this does.
 
 Two halves of one gap, found by re-reading `JobRegistry.java` whole after noticing its ledger row
 had been marked `done` at ledger-creation time rather than by a porting pass.
@@ -1314,7 +1331,7 @@ deliberately flips it to `true` and calls it in `build()`, so an ordinary SIGTER
 `Scheduler.stop()` and in-flight executions drain. This port had no counterpart at either level,
 and now has `JobRegistryBuilder.register_shutdown_hook()`.
 
-**Off by default, and that is the divergence that remains.** Java can turn its own on without
+**The SIGTERM half is off by default, and that is the divergence that remains.** Java can turn its own on without
 asking because a JVM shutdown hook is *additive*: any number can be registered, they all run,
 none displaces another. CPython has **one** handler slot per signal and `signal.signal()`
 replaces what is there - measured, not assumed - so a library installing one uninvited would be

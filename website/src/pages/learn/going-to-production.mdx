@@ -102,15 +102,17 @@ cannot succeed at all — the classic case being an `ImportError` from a missing
 dependency. Alerting on that catches it in minutes; the discard alert only fires a week later,
 once the events are gone.
 
-## Two things this port has not got
+## Two things that differ from the Java port
 
-Worth knowing before you deploy, and both open rather than decided.
+Worth knowing before you deploy.
 
-**No graceful shutdown on a signal.** The Java port installs a JVM shutdown hook by default. A
-SIGTERM here kills the process mid-execution; the rows then wait out the dead-execution window —
-60 seconds on framework defaults — before another instance picks them up. Nothing is lost, and
-every job body already has to tolerate running twice, but the shutdown is abrupt. Call
-`jobs.stop()` from your own shutdown path meanwhile; the examples do, from a FastAPI lifespan.
+**SIGTERM drains only if something catches it.** A started `JobRegistry` drains on any normal
+exit and on Ctrl-C by default, as Java's does. SIGTERM - a container stop - is the exception:
+CPython kills the process without running exit hooks. Under uvicorn or gunicorn that is covered,
+because the server turns SIGTERM into a lifespan shutdown and the lifespan calls `jobs.stop()`,
+as the examples do. A **standalone worker** has no server, so add `.register_shutdown_hook()`;
+without it the rows wait out the dead-execution window, 60 seconds on framework defaults, before
+another instance picks them up. [Details](/reference/jobs/distributed-jobs/).
 
 **No connection-pool leak detection.** Hikari's `leakDetectionThreshold` has no counterpart. A
 naive port would be worse than nothing — a handler raising on check-in *strands* the connection,

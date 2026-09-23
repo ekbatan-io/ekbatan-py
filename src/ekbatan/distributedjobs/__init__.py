@@ -13,6 +13,7 @@ not your function. **Write jobs so a repeat is harmless.**
 
 from __future__ import annotations
 
+import atexit
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
@@ -129,7 +130,13 @@ class JobRegistry:
     would starve the heartbeat and get its own execution declared dead.
     """
 
-    __slots__ = ("_hook", "_job_names", "_names_requiring_registration", "_scheduler")
+    __slots__ = (
+        "_hook",
+        "_job_names",
+        "_names_requiring_registration",
+        "_scheduler",
+        "_stop_on_exit",
+    )
 
     def __init__(
         self,
@@ -137,8 +144,10 @@ class JobRegistry:
         job_names: Sequence[str],
         names_requiring_registration: Sequence[str],
         shutdown_hook: bool = False,
+        stop_on_exit: bool = True,
     ) -> None:
         self._scheduler = scheduler
+        self._stop_on_exit = stop_on_exit
         #: Built here and installed in `start()`, because a registry that was built and never
         #: started has no business holding the process's signals.
         self._hook = ShutdownHook(self.stop) if shutdown_hook else None
@@ -164,6 +173,10 @@ class JobRegistry:
         self._verify_every_job_registered()
         # Last, and only once the jobs are known to be registered: a hook that drained a
         # scheduler which had failed to start would be answering for nothing.
+        if self._stop_on_exit:
+            # Unregistered first, so starting twice leaves one entry rather than two.
+            atexit.unregister(self._stop_at_exit)
+            atexit.register(self._stop_at_exit)
         if self._hook is not None:
             self._hook.install()
 
@@ -210,6 +223,13 @@ class JobRegistry:
         abandoned, leaving its row picked with a frozen heartbeat - so it is recovered later by
         the same dead-execution path as a crash.
         """
+        if self._stop_on_exit:
+            # A stopped registry has nothing left to drain, and the entry would otherwise keep
+            # it - and its engine - alive until the interpreter exits.
+            atexit.unregister(self._stop_at_exit)
+        self._drain()
+
+    def _drain(self) -> None:
         LOG.info("Stopping JobRegistry")
         if self._hook is not None:
             # Before draining, and unconditionally: a second signal while this one is winding
@@ -218,6 +238,17 @@ class JobRegistry:
             self._hook.remove()
         self._scheduler.stop()
         LOG.info("JobRegistry stopped")
+
+    def _stop_at_exit(self) -> None:
+        """What `atexit` runs: :meth:`stop`, without touching the `atexit` list mid-run.
+
+        Never raises. An exception here is printed by the interpreter and the exit carries on,
+        but a drain that failed is worth a line in the application's own log, and there it goes.
+        """
+        try:
+            self._drain()
+        except BaseException:
+            LOG.exception("draining the JobRegistry at exit failed")
 
     def __enter__(self) -> JobRegistry:
         self.start()
@@ -265,6 +296,7 @@ class JobRegistryBuilder:
         "_scheduler_customizer",
         "_shutdown_hook",
         "_shutdown_max_wait",
+        "_stop_on_exit",
         "_workers",
     )
 
@@ -277,6 +309,7 @@ class JobRegistryBuilder:
         self._scheduler_customizer: Callable[[SchedulerBuilder], None] | None = None
         self._workers: int | None = None
         self._shutdown_hook = False
+        self._stop_on_exit = True
 
     def engine(self, engine: Engine) -> Self:
         """The database db-scheduler will poll. Required.
@@ -379,14 +412,38 @@ class JobRegistryBuilder:
         self._workers = count
         return self
 
+    def stop_on_exit(self, enabled: bool = True) -> Self:
+        """Drain when the interpreter exits. **On by default.**
+
+        Java's ``registerShutdownHook`` defaults to on because a JVM shutdown hook only adds to
+        a list. So does ``atexit``, which is what this uses: a registry that was started and
+        never stopped is stopped as the process exits, alongside whatever else registered, and
+        displacing nothing. OpenTelemetry's ``TracerProvider(shutdown_on_exit=True)`` and
+        Sentry's flush work the same way, and for the same reason.
+
+        It covers a normal exit, an unhandled exception and **Ctrl-C**. It does **not** cover
+        SIGTERM on its own, measured: with SIGTERM's default disposition the process is killed
+        and no `atexit` hook runs - and under uvicorn neither, because uvicorn re-raises the
+        signal after its own shutdown. That is the JVM's other half, turning SIGTERM into an
+        orderly exit, and CPython does not do it. Under a server the lifespan's shutdown covers
+        SIGTERM; in a bare process :meth:`register_shutdown_hook` does.
+
+        :meth:`JobRegistry.stop` takes the entry off again, so a registry that was stopped is
+        not drained twice and is not kept alive by the list.
+        """
+        self._stop_on_exit = enabled
+        return self
+
     def register_shutdown_hook(self, enabled: bool = True) -> Self:
         """Drain on SIGTERM and SIGINT, instead of being cut off mid-execution. **Off by default.**
 
-        Java turns its equivalent on by default and nobody minds, because a JVM shutdown hook is
-        additive: any number can be registered and none displaces another. CPython has **one**
-        handler slot per signal, so installing one takes the application's SIGTERM away from it.
-        That is a thing to be asked for, not assumed, which is the whole of why this is a method
-        rather than the default.
+        The additive half of Java's hook is :meth:`stop_on_exit`, and it is on. This is the other
+        half - catching SIGTERM so the drain runs on a container stop - and it is off, because
+        CPython has **one** handler slot per signal and installing one takes the application's
+        SIGTERM away from it. Every library read while deciding this leaves signals to whatever
+        owns the process - OpenTelemetry, Sentry and APScheduler never touch them; gunicorn,
+        uvicorn and the Celery, RQ, Dramatiq and Huey workers take them because they *are* the
+        process. That is a thing to be asked for, not assumed.
 
         Asked for, it behaves: the handler that was there is kept and called afterwards, and
         where there was none the default is restored and the signal re-raised, so the process
@@ -455,7 +512,10 @@ class JobRegistryBuilder:
         )
         if self._scheduler_customizer is not None:
             self._scheduler_customizer(builder)
-        return ManualJobRegistry(builder.build(), names, requiring)
+        # Never registered with `atexit`: a test that starts a manual registry and forgets it
+        # should not have it drained, against a database the suite has already torn down, as
+        # the interpreter exits.
+        return ManualJobRegistry(builder.build(), names, requiring, stop_on_exit=False)
 
     def _prepare(self) -> tuple[list[str], list[Any], list[str]]:
         """Validate the jobs and turn them into recurring tasks. Shared by both build paths."""
@@ -544,7 +604,11 @@ class JobRegistryBuilder:
             self._scheduler_customizer(builder)
 
         return JobRegistry(
-            builder.build(), names, names_requiring_registration, self._shutdown_hook
+            builder.build(),
+            names,
+            names_requiring_registration,
+            self._shutdown_hook,
+            self._stop_on_exit,
         )
 
 

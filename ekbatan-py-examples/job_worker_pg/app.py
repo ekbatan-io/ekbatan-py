@@ -11,10 +11,12 @@ heartbeats from a housekeeping thread; a job body holding the last connection st
 execution whose heartbeat stops is declared dead and run again somewhere else. The framework
 warns at startup when the two are mismatched - listen to it.
 
-**Shutdown is explicit unless you ask otherwise.** No signal handler is installed by default,
-so a SIGTERM would end the process with executions still picked and their rows waiting out the
-dead-execution window. `__main__.run()` catches the signal and calls `stop()`, which is what
-makes a rolling deploy clean rather than merely survivable.
+**SIGTERM is the one exit that needs catching.** A started registry drains on any normal exit
+and on Ctrl-C by default - it registers with `atexit`, which is additive, like Java's hook. But
+CPython kills the process on SIGTERM without running `atexit`, so a container stop would end
+it with executions still picked and their rows waiting out the dead-execution window.
+`__main__.run()` catches the signal and calls `stop()`, which is what makes a rolling deploy
+clean rather than merely survivable.
 
 `JobRegistryBuilder.register_shutdown_hook()` does the same thing inside the framework, and
 correctly - it keeps the handler that was there and calls it afterwards. It is off by default

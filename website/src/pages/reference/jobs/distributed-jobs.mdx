@@ -183,23 +183,44 @@ dialect from the url when the engine is created, with no I/O** - so there is no 
 nothing to pin. Java also has to assume MySQL 8+ because a url cannot reveal a server version;
 that assumption does not arise here.
 
-## The shutdown hook, and why it is opt-in
+## Draining at exit: on by default, and the SIGTERM half opt-in
 
-**Java installs a JVM shutdown hook by default** - `JobRegistry.Builder.registerShutdownHook`,
-on unless you turn it off - so a SIGTERM drains in-flight executions. It can afford to: a JVM
-shutdown hook is **additive**. Any number can be registered, they all run, and none displaces
-another.
+**Java installs a JVM shutdown hook by default** - `JobRegistry.Builder.registerShutdownHook`, on
+unless you turn it off - so the process drains in-flight executions on its way out. It can
+afford to: a JVM shutdown hook is **additive**. Any number can be registered, they all run, and
+none displaces another. And the JVM runs that list on SIGTERM, because it turns SIGTERM into an
+orderly exit.
 
-**CPython has one handler slot per signal.** `signal.signal()` replaces what is there and hands
-it back. So a library that installed one on your behalf would be taking your process's SIGTERM
-away from you - which is why here it is a sentence you write:
+Python has the list and not the second part, so this port splits the hook in two.
+
+**The list is `atexit`, and a started registry is on it by default.** `start()` adds it and
+`stop()` takes it off, exactly as OpenTelemetry's `TracerProvider(shutdown_on_exit=True)` and
+Sentry do. It adds to whatever else is registered and displaces nothing, so it needs no asking.
+Turn it off with `.stop_on_exit(False)`.
+
+**SIGTERM does not run that list.** CPython kills the process and no `atexit` hook runs - not
+even under uvicorn, which handles SIGTERM itself and then re-raises it. Measured, with a job two
+seconds into its body when the process was ended:
+
+| how the process ends | default | `.stop_on_exit(False)` | `.register_shutdown_hook()` |
+| --- | --- | --- | --- |
+| it returns, or raises | **drains** | cut off | drains |
+| Ctrl-C | **drains**, still exits 130 | cut off | drains |
+| SIGTERM - a container stop | cut off, exits 143 | cut off | **drains**, still exits 143 |
+
+**Catching SIGTERM is the opt-in half**, because CPython has **one handler slot per signal**.
+`signal.signal()` replaces what is there, so a library that installed one on your behalf would be
+taking your process's SIGTERM away from you. Every library read while deciding this agrees:
+OpenTelemetry, Sentry and APScheduler never touch signals; gunicorn, uvicorn and the Celery, RQ,
+Dramatiq and Huey workers take them because they *are* the process. So here it is a sentence you
+write:
 
 ```python
 jobs = (
     job_registry()
     .engine(engine)
     .with_jobs([...])
-    .register_shutdown_hook()     # off unless you say this
+    .register_shutdown_hook()     # the SIGTERM half; off unless you say this
     .build()
 )
 ```
@@ -208,7 +229,8 @@ jobs = (
 was already there**. Where there was none, it restores the default and re-raises, so the process
 still dies of the signal - a hook that drained cleanly and left the process running would be
 worse than the gap it closes. `stop()` puts the original back, so a second Ctrl-C from an
-impatient operator reaches the default handler and exits at once.
+impatient operator reaches the default handler and exits at once. It also takes the `atexit`
+entry off, so the process is not drained twice.
 
 **It needs the main thread.** CPython only allows a signal handler to be installed there, and
 this raises rather than silently doing nothing if it has not got one.
@@ -219,9 +241,9 @@ Nothing is lost, and every job body already has to tolerate running twice - but 
 abrupt where Java's is graceful.
 
 **When to leave it off.** A service that already has somewhere to call `jobs.stop()` - a FastAPI
-lifespan, a Django shutdown - wants none of this, and the REST examples are written that way.
-The case it exists for is a **standalone worker process**, which has no framework shutdown to
-hang off.
+lifespan, a Django shutdown - wants none of this, and the REST examples are written that way:
+uvicorn turns SIGTERM into a lifespan shutdown, and the lifespan stops the jobs. The case it
+exists for is a **standalone worker process**, which has no framework shutdown to hang off.
 
 **If you write the handler yourself, keep what you find:**
 

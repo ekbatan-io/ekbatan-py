@@ -16,8 +16,10 @@ was none, the default is put back and the signal re-raised, so the process still
 it would have - a hook that drained cleanly and then left the process alive would be a worse bug
 than the one it fixes.
 
-`atexit` is not an option: it does not fire on SIGTERM at all, which is the case that matters -
-a container stop, a Kubernetes rollout, a `docker stop`.
+`atexit` cannot do this part: it does not fire on SIGTERM at all - measured, and not under
+uvicorn either - which is the case that matters: a container stop, a Kubernetes rollout, a
+`docker stop`. It does the other part. A started `JobRegistry` is on the `atexit` list by
+default, which covers a normal exit and Ctrl-C and, being additive, takes nothing from anyone.
 """
 
 from __future__ import annotations
