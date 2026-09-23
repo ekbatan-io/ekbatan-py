@@ -10,15 +10,16 @@ from decimal import Decimal
 from uuid import uuid4
 
 from ekbatan import Action, Clock, run_action
+from ekbatan.ids import ShardedId
 from fixtures.actions import DepositParams
-from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.domain import NOW, Wallet
 from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal(balance),

@@ -251,29 +251,56 @@ it is where the narrower return type goes. With the method gone, the type has no
 live but the class line (`EKB-0202`):
 
 ```python
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
 ```
 
 Leave it off and `copy()` refuses, for the reason the section on the builder gives. Override
 `copy()` only to make a copy that deliberately differs - dropping a cache, resetting a counter.
 
-## Identifiers get a named type, not a generic parameter
+## Identifiers are spelled as Java's: `ShardedId[Wallet]`, and a `ShardedId` is not an `Id`
 
-> **chosen** - Both languages erase, so `Id[Wallet]` would have worked. A named type per model is a convention this port adopted. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - the model is the type argument and there is no class per model, as Java's `Id` and `ShardedId` are `final`; and `ShardedId` stands beside `Id` rather than under it. Brought to parity in `EKB-0223`; until then this port gave each model a named subclass and made `ShardedId` an `Id`.
 
-Java writes `Id<Wallet>` and `ShardedId<Wallet>` and gets erasure at runtime, so
-`id.equals(otherId)` compares uuids and nothing else. Python erases the same way, so the same
-spelling has the same hole.
-
-The port therefore gives each model a one-line id type:
-
-```python
-class WalletId(ShardedId["Wallet"]): ...
+```java
+ShardedId<Wallet> id = ShardedId.generate(Wallet.class, shard);
 ```
 
-`WalletId(u) == NotificationId(u)` is then False with no checker involved, and they are two
-entries in a set rather than one. `Id[Wallet]` still works and still satisfies a checker; the
-named subclass is what makes the interpreter agree.
+```python
+id: ShardedId[Wallet] = ShardedId[Wallet].generate(shard)
+```
+
+The subscript does what Java's class argument does, and no more: it tells the checker which model
+the id is for. Java keeps nothing - `ShardedId.of(Wallet.class, u)` null-checks the class and
+discards it - so at runtime two models' ids holding one uuid are **equal**, measured on Java's own
+classes through `jshell`. They are here too. What keeps them apart is the checker: mypy refuses
+`ShardedId[Alert]` where `ShardedId[Wallet]` is expected, as javac refuses it, and a bare `UUID`
+likewise.
+
+A named subclass per model (`class WalletId(ShardedId["Wallet"])`) was this port's convention.
+It made two models' ids unequal at runtime, which is stricter than Java - but nothing in the
+framework relied on it, and it did not catch the mistake it looks like it would: the wrong
+model's id handed to a repository still ran the query and reported "not found", measured. It is
+gone; so is the test that advertised it.
+
+**A `ShardedId` is not an `Id`.** Java's `ShardedId` implements `ShardAwareId` and `ModelId` and
+extends neither `Id` nor `TypedValue`; `Id.equals` compares `getClass()` and `ShardedId.equals`
+requires another `ShardedId`, so an `Id` and a `ShardedId` of one uuid never compare equal.
+Measured the same way. This port had `ShardedId` subclass `Id` and equality span the two; it now
+matches. Nothing depended on the subclassing - routing reads the uuid off whatever id it is given.
+
+Mechanism, not behaviour:
+
+- **The model's own class line quotes it**: `class Wallet(Model[ShardedId["Wallet"], ...])`,
+  because the class does not exist yet there. Python never evaluates a type argument on a class
+  line, so the framework resolves that reference itself when it reads a model's types; left
+  unresolved, the builder generator wrote `ShardedId[Any]`, accepting every model's id.
+- **`isinstance(x, ShardedId[Wallet])` raises**, as Java refuses `instanceof ShardedId<Wallet>`.
+  `isinstance(x, ShardedId)` is the check both languages allow.
+- **Here `ShardedId` is still a `TypedValue`**, which is how the repository knows to unwrap it
+  for a column. Its equality keeps it apart from `Id` all the same.
+- **`ShardedId.shard` refuses a uuid that carries no shard.** Java reads shard bits out of any
+  uuid, a random version 4 one included, and routes it to a shard nobody chose - `(247, 28)` in
+  the run that checked it. Listed under "Noticed in the Java".
 
 ## `AbstractRepository` is just `Repository`, and is usable as it stands
 

@@ -18,13 +18,14 @@ from ekbatan import (
 from ekbatan.action.outbox import OutboxRecord
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, StaleRecordError, ValidationError
+from ekbatan.ids import Id, ShardedId
 from fixtures.actions import (
     CreateWalletAction,
     CreateWalletParams,
     DepositMoneyAction,
     DepositParams,
 )
-from fixtures.domain import NOW, NotificationId, Wallet, WalletId, WalletMoneyDepositedEvent
+from fixtures.domain import NOW, Notification, Wallet, WalletMoneyDepositedEvent
 from fixtures.schema import EVENTS
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -112,7 +113,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     executor.execute(
         CreateWalletAction(executor.clock),
         CreateWalletParams(
-            wallet_id=WalletId.generate(GLOBAL),
+            wallet_id=ShardedId[Wallet].generate(GLOBAL),
             owner_id=uuid4(),
             currency="EUR",
             initial_balance=Decimal("1.00"),
@@ -121,7 +122,7 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     there = executor.execute(
         CreateWalletAction(executor.clock),
         CreateWalletParams(
-            wallet_id=WalletId.generate(MEXICO),
+            wallet_id=ShardedId[Wallet].generate(MEXICO),
             owner_id=uuid4(),
             currency="MXN",
             initial_balance=Decimal("2.00"),
@@ -143,7 +144,7 @@ class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
         return (
             self.plan.add(
                 Wallet.open(
-                    id=WalletId.generate(GLOBAL),
+                    id=ShardedId[Wallet].generate(GLOBAL),
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("1.00"),
@@ -152,7 +153,7 @@ class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
             ),
             self.plan.add(
                 Wallet.open(
-                    id=WalletId.generate(MEXICO),
+                    id=ShardedId[Wallet].generate(MEXICO),
                     owner_id=uuid4(),
                     currency="MXN",
                     balance=Decimal("2.00"),
@@ -261,12 +262,11 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
 
     class WritesAnUnknownThing(Action[None, None]):
         def perform(self, principal: str | None, params: None) -> None:
-            from fixtures.domain import Notification
 
             self.plan.add(
                 Notification.create(
-                    id=NotificationId.random(),
-                    wallet_id=WalletId.random(),
+                    id=Id[Notification].random(),
+                    wallet_id=ShardedId[Wallet].random(),
                     kind="X",
                     recipient="ada@x",
                 )
@@ -380,7 +380,7 @@ def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
 class StaleOnMexico:
     """The id of a wallet on MEXICO, to be updated at a version it no longer has."""
 
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
 
 
 class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
@@ -397,7 +397,7 @@ class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
     def perform(self, principal: str | None, params: StaleOnMexico) -> None:
         self.plan.add(
             Wallet.open(
-                id=WalletId.generate(GLOBAL),
+                id=ShardedId[Wallet].generate(GLOBAL),
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1.00"),
@@ -425,10 +425,11 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
     executor, wallets = sharded
 
     # Placed directly rather than through an action: `CreateWalletAction` mints its id with
-    # `WalletId.random()`, which lands on the default shard, and this needs one that does not.
+    # `ShardedId[Wallet].random()`, which lands on the default shard, and this needs one that
+    # does not.
     on_mexico = wallets.add(
         Wallet.open(
-            id=WalletId.generate(MEXICO),
+            id=ShardedId[Wallet].generate(MEXICO),
             owner_id=uuid4(),
             currency="MXN",
             balance=Decimal("5.00"),

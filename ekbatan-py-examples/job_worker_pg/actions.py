@@ -12,8 +12,9 @@ from decimal import Decimal
 from uuid import UUID
 
 from ekbatan import Action, Clock
+from ekbatan.ids import ShardedId
 
-from .model import Alert, Wallet, WalletId
+from .model import Alert, Wallet
 from .repository import WalletRepository
 
 
@@ -26,7 +27,7 @@ class OpenWalletParams:
 
 @dataclass(frozen=True, kw_only=True)
 class DepositParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     amount: Decimal
     #: Not part of the event. A delivery address has no business inside a money-deposited
     #: event, so it travels as an action parameter and the handler reads it from the envelope.
@@ -35,12 +36,12 @@ class DepositParams:
 
 @dataclass(frozen=True, kw_only=True)
 class WalletIdParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
 
 
 @dataclass(frozen=True, kw_only=True)
 class RaiseAlertParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     recipient: str
     message: str
 

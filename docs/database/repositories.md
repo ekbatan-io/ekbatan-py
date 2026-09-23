@@ -5,7 +5,7 @@ supplies the whole read and write surface; what you add are the questions your b
 asks.
 
 ```python
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)

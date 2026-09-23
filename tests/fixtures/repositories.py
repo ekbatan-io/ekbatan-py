@@ -21,9 +21,10 @@ from sqlalchemy import Row
 
 from ekbatan.clock import to_storage
 from ekbatan.domain import GenericState
+from ekbatan.ids import Id, ShardedId
 from ekbatan.repository import EntityRepository, ModelRepository, Repository
 
-from .domain import Notification, NotificationId, Wallet, WalletId, WalletState
+from .domain import Notification, Wallet, WalletState
 
 
 class _WalletRows:
@@ -54,7 +55,7 @@ class _WalletRows:
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
-            id=WalletId(values["id"]),
+            id=ShardedId[Wallet](values["id"]),
             version=values["version"],
             state=WalletState[values["state"]],
             owner_id=values["owner_id"],
@@ -84,37 +85,39 @@ class _NotificationRows:
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Notification:
         values = row._mapping if isinstance(row, Row) else row
         return Notification(
-            id=NotificationId(values["id"]),
+            id=Id[Notification](values["id"]),
             version=values["version"],
             state=GenericState[values["state"]],
-            wallet_id=WalletId(values["wallet_id"]),
+            wallet_id=ShardedId[Wallet](values["wallet_id"]),
             kind=values["kind"],
             recipient=values["recipient"],
             message=values["message"],
         )
 
 
-class WalletRepository(_WalletRows, Repository[Wallet, WalletId]):
+class WalletRepository(_WalletRows, Repository[Wallet, ShardedId[Wallet]]):
     """Java's `DummyRepository`: a repository that exists so the suite has one."""
 
 
-class NotificationRepository(_NotificationRows, Repository[Notification, NotificationId]):
+class NotificationRepository(_NotificationRows, Repository[Notification, Id[Notification]]):
     pass
 
 
-class WalletModelRepository(_WalletRows, ModelRepository[Wallet, WalletId]):
+class WalletModelRepository(_WalletRows, ModelRepository[Wallet, ShardedId[Wallet]]):
     """For the checks that a `ModelRepository` refuses a table with no timestamps."""
 
 
-class NotificationModelRepository(_NotificationRows, ModelRepository[Notification, NotificationId]):
+class NotificationModelRepository(
+    _NotificationRows, ModelRepository[Notification, Id[Notification]]
+):
     pass
 
 
-class WalletEntityRepository(_WalletRows, EntityRepository[Wallet, WalletId]):
+class WalletEntityRepository(_WalletRows, EntityRepository[Wallet, ShardedId[Wallet]]):
     pass
 
 
 class NotificationEntityRepository(
-    _NotificationRows, EntityRepository[Notification, NotificationId]
+    _NotificationRows, EntityRepository[Notification, Id[Notification]]
 ):
     pass

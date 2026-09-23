@@ -11,13 +11,14 @@ from sqlalchemy import Row, select
 from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository
 from ekbatan.clock import Clock, to_storage
 from ekbatan.domain import GenericState
+from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
-from .model import StepName, TransferStep, TransferStepId, Wallet, WalletId, WalletState
+from .model import StepName, TransferStep, Wallet, WalletState
 from .schema import TRANSFER_STEPS, WALLETS
 
 
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
@@ -52,7 +53,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         """
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
-            id=WalletId(values["id"]),
+            id=ShardedId[Wallet](values["id"]),
             version=values["version"],
             state=WalletState[values["state"]],
             owner_id=values["owner_id"],
@@ -63,7 +64,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         )
 
 
-class TransferStepRepository(EntityRepository[TransferStep, TransferStepId]):
+class TransferStepRepository(EntityRepository[TransferStep, Id[TransferStep]]):
     """The idempotency markers.
 
     Nothing in the saga reads these - the unique constraint does the work, and a read would
@@ -84,7 +85,7 @@ class TransferStepRepository(EntityRepository[TransferStep, TransferStepId]):
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> TransferStep:
         values = row._mapping if isinstance(row, Row) else row
         return TransferStep(
-            id=TransferStepId(values["id"]),
+            id=Id[TransferStep](values["id"]),
             version=values["version"],
             state=GenericState[values["state"]],
             transfer_id=values["transfer_id"],

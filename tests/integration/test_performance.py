@@ -15,7 +15,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import event, select
 
-from fixtures.domain import NOW, Wallet, WalletId
+from ekbatan.ids import ShardedId
+from fixtures.domain import NOW, Wallet
 from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
 
@@ -39,7 +40,7 @@ def kind(seen: Sequence[tuple[str, bool, int]], verb: str) -> list[tuple[str, bo
 def some_wallets(n: int) -> list[Wallet]:
     return [
         Wallet.open(
-            id=WalletId.random(),
+            id=ShardedId[Wallet].random(),
             owner_id=uuid4(),
             currency="EUR",
             balance=Decimal("1.00"),
@@ -153,7 +154,7 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
     )
     mexico = ShardIdentifier(1, 0)
     wallet = Wallet.open(
-        id=WalletId.generate(mexico),
+        id=ShardedId[Wallet].generate(mexico),
         owner_id=uuid4(),
         currency="MXN",
         balance=Decimal("1.00"),

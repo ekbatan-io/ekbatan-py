@@ -18,7 +18,8 @@ from ekbatan.action import ActionPlan
 from ekbatan.clock import to_storage
 from ekbatan.errors import EkbatanError, ValidationError
 from ekbatan.events import backoff
-from fixtures.domain import Wallet, WalletId
+from ekbatan.ids import ShardedId
+from fixtures.domain import Wallet
 
 
 def test_a_policy_cannot_ask_for_negative_time():
@@ -32,7 +33,7 @@ def test_staging_the_same_row_twice_in_one_batch_is_refused(clock):
 
     plan = ActionPlan(clock)
     wallet = Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
@@ -48,7 +49,7 @@ def test_a_plan_reports_what_it_is_holding(clock):
     assert not plan
 
     wallet = Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
@@ -100,11 +101,11 @@ def test_staging_hands_back_the_row_you_passed(clock):
     of work reads forward.
     """
     from ekbatan.action.plan import ActionPlan
-    from fixtures.domain import Wallet, WalletId
+    from fixtures.domain import Wallet
 
     plan = ActionPlan(clock)
     fresh = Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1"),
@@ -120,7 +121,7 @@ def test_staging_hands_back_the_row_you_passed(clock):
 
     changed = plan.update(
         Wallet.open(
-            id=WalletId.random(),
+            id=ShardedId[Wallet].random(),
             owner_id=uuid4(),
             currency="EUR",
             balance=Decimal("1"),

@@ -148,13 +148,13 @@ which means "use the default".
 | --- | --- | --- | --- |
 | Entity.java | 193 | `domain.py` | done |
 | GenericState.java | 18 | `domain.py` | done |
-| Id.java | 77 | `ids.py` | done |
+| Id.java | 77 | `ids.py` | done - `Id[Wallet]`, the model as the type argument (`EKB-0223`) |
 | Identifiable.java | 16 | `domain.py` | done - `Persistable.id`; a marker interface naming a shape Python reads off the object |
 | Model.java | 290 | `domain.py` | done |
 | ModelEvent.java | 42 | `domain.py` | done |
 | ModelId.java | 26 | `ids.py` | done - `str(id)` is `stringValue()` |
 | Persistable.java | 35 | `domain.py` | done |
-| ShardedId.java | 98 | `ids.py` | done |
+| ShardedId.java | 98 | `ids.py` | done - `ShardedId[Wallet]`, and not a subclass of `Id`, as Java's is not (`EKB-0223`) |
 | TypedValue.java | 50 | `domain.py` | done |
 
 #### `core/internal`
@@ -229,7 +229,7 @@ which means "use the default".
 | DatabaseRegistry.java | 236 | `persistence.py` | done - `persistence.py`; jOOQ `DSLContext` maps have no counterpart |
 | EmbeddedBitsShardingStrategy.java | 54 | `sharding.py` | done |
 | NoShardingStrategy.java | 32 | `sharding.py` | done |
-| ShardAwareId.java | 18 | `ids.py` | done - `Id.shard`; an interface naming a shape Python reads off the object |
+| ShardAwareId.java | 18 | `ids.py` | done - `ShardedId.shard`; an interface naming a shape Python reads off the object |
 | ShardIdentifier.java | 77 | `sharding.py` | done |
 | ShardedUUID.java | 114 | `ids.py` | done - `sharded_uuid()`, `read_shard()`, `uuid_instant()` |
 | ShardingStrategy.java | 45 | `sharding.py` | done |

@@ -8,10 +8,11 @@ import pytest
 
 from ekbatan.clock import VirtualClock, to_storage
 from ekbatan.errors import EntityNotFoundError, StaleRecordError
+from ekbatan.ids import Id, ShardedId
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
-from fixtures.domain import NOW, Notification, NotificationId, Wallet, WalletId, WalletState
+from fixtures.domain import NOW, Notification, Wallet, WalletState
 from fixtures.repositories import (
     NotificationEntityRepository,
     NotificationModelRepository,
@@ -30,7 +31,7 @@ def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Repository[Walle
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal(balance),
@@ -178,7 +179,7 @@ def test_predicate_reads_apply_the_same_filter(wallets):
     _ada, grace, gone = (
         wallets.add(
             Wallet.open(
-                id=WalletId.random(),
+                id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
                 currency=c,
                 balance=Decimal("1.00"),
@@ -199,8 +200,8 @@ def test_an_entity_round_trips_without_events(registry, clock):
     notes = NotificationRepository(Notification, NOTIFICATIONS, registry, clock=clock)
     stored = notes.add(
         Notification.create(
-            id=NotificationId.random(),
-            wallet_id=WalletId.random(),
+            id=Id[Notification].random(),
+            wallet_id=ShardedId[Wallet].random(),
             kind="MONEY_DEPOSITED",
             recipient="ada@x",
         )
@@ -217,14 +218,14 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
     )
     mexico = ShardIdentifier(1, 0)
     here = Wallet.open(
-        id=WalletId.generate(ShardIdentifier(0, 0)),
+        id=ShardedId[Wallet].generate(ShardIdentifier(0, 0)),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
         created_date=clock.now(),
     )
     there = Wallet.open(
-        id=WalletId.generate(mexico),
+        id=ShardedId[Wallet].generate(mexico),
         owner_id=uuid4(),
         currency="MXN",
         balance=Decimal("2.00"),
@@ -271,7 +272,10 @@ def test_an_entity_needs_no_timestamps(registry, clock):
     notes = NotificationEntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
     stored = notes.add(
         Notification.create(
-            wallet_id=WalletId.random(), kind="X", recipient="ada@x", id=NotificationId.random()
+            wallet_id=ShardedId[Wallet].random(),
+            kind="X",
+            recipient="ada@x",
+            id=Id[Notification].random(),
         )
     )
     assert notes.get(stored.id) == stored
@@ -484,8 +488,8 @@ def test_a_write_hands_back_the_same_shape_on_every_dialect(wallets, registry):
     stored = wallets.add(a_wallet())
     updated = wallets.update(stored.deposit(Decimal("1.00")))
 
-    assert isinstance(stored.id, WalletId)
-    assert isinstance(updated.id, WalletId)
+    assert isinstance(stored.id, ShardedId)
+    assert isinstance(updated.id, ShardedId)
     assert type(stored) is type(updated) is Wallet
 
 
@@ -532,8 +536,8 @@ def test_all_null_column_in_a_batch(registry, clock):
     stored = notes.add_all(
         [
             Notification.create(
-                id=NotificationId.random(),
-                wallet_id=WalletId.random(),
+                id=Id[Notification].random(),
+                wallet_id=ShardedId[Wallet].random(),
                 kind="K",
                 recipient=f"a{n}@x",
                 message=None,
@@ -559,7 +563,7 @@ def test_converted_values_survive_a_batch(wallets, clock):
     made = wallets.add_all(
         [
             Wallet.open(
-                id=WalletId.random(),
+                id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
                 currency=c,
                 balance=Decimal(b),
@@ -574,7 +578,7 @@ def test_converted_values_survive_a_batch(wallets, clock):
 
     assert len(back) == 3
     assert sorted(str(w.balance) for w in back) == ["2.5000", "5.0000", "7.5000"]
-    assert all(isinstance(w.id, WalletId) for w in back)
+    assert all(isinstance(w.id, ShardedId) for w in back)
     assert sorted(w.currency for w in back) == ["EUR", "MXN", "USD"]
     assert all(w.version == 2 for w in back)
 
@@ -584,7 +588,7 @@ def test_an_update_leaves_updated_date_alone(wallets, clock):
     a, b = wallets.add_all(
         [
             Wallet.open(
-                id=WalletId.random(),
+                id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1"),

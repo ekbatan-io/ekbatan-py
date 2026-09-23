@@ -12,9 +12,10 @@ from typing import Any
 
 from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
+from ekbatan.ids import ShardedId
 
 from .actions import NotifyAction, NotifyParams
-from .domain import WalletClosedEvent, WalletId, WalletMoneyDepositedEvent
+from .domain import Wallet, WalletClosedEvent, WalletMoneyDepositedEvent
 
 
 class RecordingHandler:
@@ -97,7 +98,7 @@ class MoneyDepositedEventHandler:
         self.executor.execute(
             NotifyAction(self.executor.clock),
             NotifyParams(
-                wallet_id=WalletId.of(envelope.model_id or ""),
+                wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
                 kind="MONEY_DEPOSITED",
                 recipient=str(envelope.action_params.get("recipient", "")),
                 message=f"deposited {envelope.event.amount}, balance {envelope.event.new_balance}",

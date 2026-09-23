@@ -20,18 +20,6 @@ from ekbatan.ids import Id
 from .builders import WalletBuilder
 
 
-class WalletId(ShardedId["Wallet"]):
-    """A wallet's identity, and the database its row lives in.
-
-    Named rather than spelled `ShardedId[Wallet]` so the distinction survives into the running
-    program: `WalletId(u) == AlertId(u)` is False with no type checker involved.
-    """
-
-
-class AlertId(Id["Alert"]):
-    pass
-
-
 class WalletState(Enum):
     OPENED = "OPENED"
     CLOSED = "CLOSED"
@@ -72,7 +60,7 @@ class WalletDeletedEvent(ModelEvent["Wallet"]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -84,10 +72,10 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         owner_id: UUID,
         currency: str,
         balance: Decimal,
-        id: WalletId | None = None,
+        id: ShardedId[Wallet] | None = None,
         created_date: datetime,
     ) -> Wallet:
-        wallet_id = id or WalletId.random()
+        wallet_id = id or ShardedId[Wallet].random()
         return (
             WalletBuilder()
             .id(wallet_id)
@@ -166,21 +154,21 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Alert(Entity[AlertId]):
+class Alert(Entity[Id["Alert"]]):
     """An entity: the persistence layer tracks it, the event stream does not care.
 
     Writing one emits nothing - and the unit of work that wrote it is still recorded, because
     the audit trail is of units of work rather than of events.
     """
 
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     recipient: str
     message: str
 
     @classmethod
-    def create(cls, *, wallet_id: WalletId, recipient: str, message: str) -> Alert:
+    def create(cls, *, wallet_id: ShardedId[Wallet], recipient: str, message: str) -> Alert:
         return cls(
-            id=AlertId.random(),
+            id=Id[Alert].random(),
             state=GenericState.ACTIVE,
             wallet_id=wallet_id,
             recipient=recipient,

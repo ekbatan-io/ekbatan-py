@@ -55,7 +55,7 @@ A request arrives with a wallet id; the framework reads the shard bits out of it
 database, opens the transaction. No directory service, no sticky sessions at the load balancer.
 The id describes itself.
 
-The shard is chosen **at creation**: `WalletId.generate(shard)`, and from then on the id and its
+The shard is chosen **at creation**: `ShardedId[Wallet].generate(shard)`, and from then on the id and its
 shard are bonded for the row's life. Choosing it is your call - typically a small selector
 mapping tenant, region or regulatory class to a shard, inside the create action.
 

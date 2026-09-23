@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
+from ekbatan.ids import ShardedId
 
 from .actions import (
     CompleteTransferAction,
@@ -20,7 +21,7 @@ from .actions import (
     RefundTransferAction,
     RefundTransferParams,
 )
-from .model import TransferFailedEvent, TransferInitiatedEvent, WalletId
+from .model import TransferFailedEvent, TransferInitiatedEvent, Wallet
 
 
 class TransferInitiatedEventHandler:
@@ -38,8 +39,8 @@ class TransferInitiatedEventHandler:
             CompleteTransferAction,
             CompleteTransferParams(
                 transfer_id=event.transfer_id,
-                from_wallet_id=WalletId(event.from_wallet_id),
-                to_wallet_id=WalletId(event.to_wallet_id),
+                from_wallet_id=ShardedId[Wallet](event.from_wallet_id),
+                to_wallet_id=ShardedId[Wallet](event.to_wallet_id),
                 amount=event.amount,
                 currency=event.currency,
             ),
@@ -67,8 +68,8 @@ class TransferFailedEventHandler:
             RefundTransferAction,
             RefundTransferParams(
                 transfer_id=event.transfer_id,
-                from_wallet_id=WalletId(event.from_wallet_id),
-                to_wallet_id=WalletId(event.to_wallet_id),
+                from_wallet_id=ShardedId[Wallet](event.from_wallet_id),
+                to_wallet_id=ShardedId[Wallet](event.to_wallet_id),
                 amount=event.amount,
                 reason=event.reason,
             ),

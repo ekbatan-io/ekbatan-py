@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import select, text
 
 from ekbatan.clock import SystemClock
+from ekbatan.ids import ShardedId
 
 from .actions import (
     CompleteTransferAction,
@@ -27,7 +28,7 @@ from .actions import (
     TransferResult,
 )
 from .app import SagaService, build
-from .model import StepName, Wallet, WalletId
+from .model import StepName, Wallet
 from .schema import EVENTS
 
 
@@ -63,7 +64,9 @@ def a_wallet(service: SagaService, balance: str = "100.00", currency: str = "EUR
     )
 
 
-def transfer(service: SagaService, source: Wallet, target: WalletId, amount: str) -> TransferResult:
+def transfer(
+    service: SagaService, source: Wallet, target: ShardedId[Wallet], amount: str
+) -> TransferResult:
     result: TransferResult = service.executor.execute(
         InitiateTransferAction,
         TransferParams(from_wallet_id=source.id, to_wallet_id=target, amount=Decimal(amount)),
@@ -71,7 +74,7 @@ def transfer(service: SagaService, source: Wallet, target: WalletId, amount: str
     return result
 
 
-def events_on(service: SagaService, wallet_id: WalletId) -> list[str]:
+def events_on(service: SagaService, wallet_id: ShardedId[Wallet]) -> list[str]:
     """The event trail of one aggregate, in order - what an audit query would read."""
     with service.registry.default.connection(readonly=True) as conn:
         rows = conn.execute(
@@ -161,7 +164,7 @@ def test_a_destination_that_does_not_exist_is_refused_the_same_way(service: Saga
     goes on the source."""
     source = a_wallet(service, "100.00")
 
-    transfer(service, source, WalletId(uuid4()), "30.00")
+    transfer(service, source, ShardedId[Wallet](uuid4()), "30.00")
     service.deliver_pending_events()
 
     assert service.wallets.get(source.id).balance == Decimal("100.0000")

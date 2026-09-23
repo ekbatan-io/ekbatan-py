@@ -102,12 +102,9 @@ rather than by idleness. See [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 A model that participates in sharding declares its id type as `ShardedId` instead of `Id`:
 
 ```python
-class WalletId(ShardedId["Wallet"]):
-    pass
-
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -115,7 +112,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     @staticmethod
     def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
              opening_balance: Decimal) -> "Wallet":
-        wallet_id = WalletId.generate(shard)        # the shard bits go into the UUID here
+        wallet_id = ShardedId[Wallet].generate(shard)        # the shard bits go into the UUID here
         return (
             WalletBuilder()
             .id(wallet_id)
@@ -132,7 +129,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
 **That is the whole of the model's participation.** One base class on the id, and one argument at
 the single point where a row is created. Nothing else on the model mentions a shard, because
 after `generate(shard)` the id carries it — the row is bonded to that database for its lifetime,
-and `WalletId.generate` is the only place that decision can be made.
+and `ShardedId[Wallet].generate` is the only place that decision can be made.
 
 No field holds the shard, and deliberately so: a column would be a second copy of something the
 primary key already says, free to disagree with it after a bad backfill. Reading it out of the id
@@ -160,7 +157,7 @@ Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The b
 `EmbeddedBitsShardingStrategy` decodes the shard from the id's embedded bits:
 
 ```python
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
@@ -192,7 +189,7 @@ information the inherited ones use — so a hand-written query lands on the righ
 you working out which one that is:
 
 ```python
-def find_all_by_owner_beside(self, wallet_id: WalletId, owner_id: UUID) -> list[Wallet]:
+def find_all_by_owner_beside(self, wallet_id: ShardedId[Wallet], owner_id: UUID) -> list[Wallet]:
     with self.readonly_db(key=wallet_id) as conn:          # that wallet's shard
         return conn.rows(
             select(WALLETS).where(WALLETS.c.owner_id == owner_id)
@@ -235,12 +232,12 @@ carry the shard in the same bits, so either port can route the other's rows with
 Minting and reading:
 
 ```python
-wallet_id = WalletId.generate(MEXICO)      # bonded to that shard for the row's life
+wallet_id = ShardedId[Wallet].generate(MEXICO)      # bonded to that shard for the row's life
 wallet_id.shard                            # -> ShardIdentifier(1, 0)
 wallet_id.minted_at                        # -> datetime, from the v7 timestamp
 ```
 
-`WalletId.random()` uses the default shard. Because the timestamp is the high bits, ids sort
+`ShardedId[Wallet].random()` uses the default shard. Because the timestamp is the high bits, ids sort
 chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
 
 ## Custom sharding strategies

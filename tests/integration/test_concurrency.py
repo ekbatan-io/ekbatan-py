@@ -32,13 +32,14 @@ from uuid import uuid4
 
 import pytest
 
+from ekbatan.ids import ShardedId
 from fixtures.actions import (
     CreateWalletAction,
     CreateWalletParams,
     DepositMoneyAction,
     DepositParams,
 )
-from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.domain import NOW, Wallet
 from fixtures.repositories import WalletRepository
 
 WORKERS = 8
@@ -46,7 +47,7 @@ WORKERS = 8
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal(balance),

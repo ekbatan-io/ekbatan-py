@@ -12,9 +12,10 @@ from __future__ import annotations
 
 from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
+from ekbatan.ids import ShardedId
 
 from .actions import RaiseAlertAction, RaiseAlertParams
-from .model import MoneyDepositedEvent, WalletId
+from .model import MoneyDepositedEvent, Wallet
 
 
 class MoneyDepositedEventHandler:
@@ -30,7 +31,7 @@ class MoneyDepositedEventHandler:
         self.executor.execute(
             RaiseAlertAction,
             RaiseAlertParams(
-                wallet_id=WalletId.of(envelope.model_id or ""),
+                wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
                 # Off the producing action's parameters, not the event. The event says what
                 # happened to the wallet; where to send a message about it is this handler's
                 # business and nobody else's.

@@ -27,13 +27,14 @@ from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository, ShardId
 from ekbatan.clock import Clock, to_storage
 from ekbatan.domain import GenericState
 from ekbatan.errors import ValidationError
+from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
-from .model import Alert, AlertId, Wallet, WalletId, WalletState
+from .model import Alert, Wallet, WalletState
 from .schema import ALERTS, WALLETS
 
 
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     """Wallets, routed by the shard packed into each id.
 
     A ModelRepository, because a wallet's changes are events. Saying so is what lets the
@@ -74,7 +75,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         """
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
-            id=WalletId(values["id"]),
+            id=ShardedId[Wallet](values["id"]),
             version=values["version"],
             state=WalletState[values["state"]],
             owner_id=values["owner_id"],
@@ -104,7 +105,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         """Everything on one database - for a migration, or a per-shard report."""
         return self.all(shard=shard)
 
-    def exists_on_shard(self, shard: ShardIdentifier, wallet_id: WalletId) -> bool:
+    def exists_on_shard(self, shard: ShardIdentifier, wallet_id: ShardedId[Wallet]) -> bool:
         """Whether a particular database holds this row, rather than wherever its id says.
 
         Worth asking during a rebalance, when the two can legitimately disagree.
@@ -115,7 +116,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
                 is not None
             )
 
-    def erase(self, wallet_id: WalletId) -> bool:
+    def erase(self, wallet_id: ShardedId[Wallet]) -> bool:
         """Remove a wallet for real, and only if it holds nothing.
 
         The inherited `delete` is a soft delete - it moves the row to DELETED and every read
@@ -163,7 +164,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         )
 
 
-class AlertRepository(EntityRepository[Alert, AlertId]):
+class AlertRepository(EntityRepository[Alert, Id[Alert]]):
     """Alerts. Not sharded - they are looked up by wallet, not by their own id.
 
     An EntityRepository, because writing one is not news: no events, and no timestamps for the
@@ -184,10 +185,10 @@ class AlertRepository(EntityRepository[Alert, AlertId]):
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Alert:
         values = row._mapping if isinstance(row, Row) else row
         return Alert(
-            id=AlertId(values["id"]),
+            id=Id[Alert](values["id"]),
             version=values["version"],
             state=GenericState[values["state"]],
-            wallet_id=WalletId(values["wallet_id"]),
+            wallet_id=ShardedId[Wallet](values["wallet_id"]),
             recipient=values["recipient"],
             message=values["message"],
         )
@@ -195,5 +196,5 @@ class AlertRepository(EntityRepository[Alert, AlertId]):
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Alert, ALERTS, registry, clock=clock)
 
-    def find_for_wallet(self, wallet_id: WalletId) -> list[Alert]:
+    def find_for_wallet(self, wallet_id: ShardedId[Wallet]) -> list[Alert]:
         return self.find_where(ALERTS.c.wallet_id == wallet_id.value)

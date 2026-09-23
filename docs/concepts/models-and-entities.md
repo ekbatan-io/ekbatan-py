@@ -23,14 +23,14 @@ An entity may add its own timestamp columns; the framework simply will not popul
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
 
     @classmethod
     def open(cls, *, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
-        wallet_id = WalletId.random()
+        wallet_id = ShardedId[Wallet].random()
         return (
             WalletBuilder()
             .id(wallet_id)
@@ -293,7 +293,7 @@ It imports the modules you name, finds every `Model` and `Entity` in them, and w
 per class. For a `Wallet` with `owner_id: UUID`, `currency: str` and `balance: Decimal`:
 
 ```python
-class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+class WalletBuilder(ModelBuilder[Wallet, ShardedId[Wallet], WalletState]):
     """Builds a Wallet, with the field types a checker can see."""
 
     builds = Wallet
@@ -337,7 +337,7 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
   and never edits your model:
 
   ```python
-  class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+  class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
       balance: Decimal
   ```
 - Any conditional default or computed field. If a builder needs one, write that builder by hand;
@@ -361,7 +361,7 @@ existence is checked.
 **A model must name a typed builder**, on its class line:
 
 ```python
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     balance: Decimal
 ```
 

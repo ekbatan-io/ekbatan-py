@@ -6,6 +6,7 @@ from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+from ekbatan.ids import ShardedId
 from fixtures.actions import (
     CloseWalletAction,
     CreateWalletAction,
@@ -16,7 +17,7 @@ from fixtures.actions import (
     NotifyParams,
     WalletIdParams,
 )
-from fixtures.domain import WalletCreatedEvent, WalletId, WalletMoneyDepositedEvent
+from fixtures.domain import Wallet, WalletCreatedEvent, WalletMoneyDepositedEvent
 from fixtures.handlers import (
     MoneyDepositedEventHandler,
     RecordingHandler,
@@ -91,7 +92,7 @@ def test_a_sentinel_row_is_never_fanned_out(executor, pipeline, notifications_in
     fanout, _ = pipeline(succeeding("email"))
     executor.execute(
         NotifyAction(executor.clock),
-        NotifyParams(wallet_id=WalletId.random(), kind="X", recipient="ada@example.com"),
+        NotifyParams(wallet_id=ShardedId[Wallet].random(), kind="X", recipient="ada@example.com"),
     )
     assert fanout.drain_once() == 0, "a row with no event type belongs on no topic"
     assert notifications_in() == {}
@@ -480,7 +481,7 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
             executor.execute(
                 NotifyAction(executor.clock),
                 NotifyParams(
-                    wallet_id=WalletId.of(envelope.model_id or ""),
+                    wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
                     kind="WALLET_OPENED",
                     recipient="auditor@example.com",
                     message=f"opened in {envelope.event.currency}",

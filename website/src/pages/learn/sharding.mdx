@@ -18,8 +18,6 @@ is this page, running.
 ## 1. Change the model's ID type
 
 ```python
-class WalletId(ShardedId["Wallet"]):
-    pass
 ```
 
 `ShardedId` rather than `Id`. The `(group, member)` pair is packed into 14 bits of the UUID
@@ -40,7 +38,7 @@ This layout is a **cross-language contract** — an id minted by a Java service 
 in the same bits, so either port can route the other's rows.
 
 ```python
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy())
@@ -57,7 +55,7 @@ factory takes a `ShardIdentifier` and hands it to `generate`:
 @staticmethod
 def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
          opening_balance: Decimal) -> "Wallet":
-    wallet_id = WalletId.generate(shard)       # the shard bits live in the id forever
+    wallet_id = ShardedId[Wallet].generate(shard)       # the shard bits live in the id forever
     return (
         WalletBuilder()
         .id(wallet_id)

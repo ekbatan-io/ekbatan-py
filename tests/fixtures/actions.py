@@ -13,8 +13,9 @@ from uuid import UUID
 
 from ekbatan import Action, Clock, Repository
 from ekbatan.errors import ValidationError
+from ekbatan.ids import Id, ShardedId
 
-from .domain import Notification, NotificationId, Wallet, WalletId
+from .domain import Notification, Wallet
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -22,31 +23,31 @@ class CreateWalletParams:
     owner_id: UUID
     currency: str
     initial_balance: Decimal
-    wallet_id: WalletId | None = None
+    wallet_id: ShardedId[Wallet] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
 class DepositParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     amount: Decimal
     recipient: str
 
 
 @dataclass(frozen=True, kw_only=True)
 class TransferParams:
-    from_wallet_id: WalletId
-    to_wallet_id: WalletId
+    from_wallet_id: ShardedId[Wallet]
+    to_wallet_id: ShardedId[Wallet]
     amount: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
 class WalletIdParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
 
 
 @dataclass(frozen=True, kw_only=True)
 class NotifyParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     kind: str
     recipient: str
     message: str | None = None
@@ -56,7 +57,7 @@ class CreateWalletAction(Action[CreateWalletParams, Wallet]):
     def perform(self, principal: str | None, params: CreateWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
-                id=params.wallet_id or WalletId.random(),
+                id=params.wallet_id or ShardedId[Wallet].random(),
                 owner_id=params.owner_id,
                 currency=params.currency,
                 balance=params.initial_balance,
@@ -66,7 +67,7 @@ class CreateWalletAction(Action[CreateWalletParams, Wallet]):
 
 
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
         super().__init__(clock)
         self.wallets = wallets
 
@@ -76,7 +77,7 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
 
 
 class CloseWalletAction(Action[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
         super().__init__(clock)
         self.wallets = wallets
 
@@ -92,7 +93,7 @@ class TransferMoneyAction(Action[TransferParams, tuple[Wallet, Wallet]]):
     """Two models, one transaction. Both balances move or neither does, and nothing in here
     arranges that."""
 
-    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
         super().__init__(clock)
         self.wallets = wallets
 
@@ -115,7 +116,7 @@ class NotifyAction(Action[NotifyParams, Notification]):
     def perform(self, principal: str | None, params: NotifyParams) -> Notification:
         return self.plan.add(
             Notification.create(
-                id=NotificationId.random(),
+                id=Id[Notification].random(),
                 wallet_id=params.wallet_id,
                 kind=params.kind,
                 recipient=params.recipient,
@@ -131,7 +132,7 @@ class DepositThenFailAction(Action[DepositParams, Wallet]):
     other way.
     """
 
-    def __init__(self, wallets: Repository[Wallet, WalletId], clock: Clock) -> None:
+    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
         super().__init__(clock)
         self.wallets = wallets
 

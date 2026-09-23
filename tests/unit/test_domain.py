@@ -17,13 +17,12 @@ import pytest
 
 from ekbatan.domain import Entity, EntityBuilder, GenericState, Model, ModelBuilder, ModelEvent
 from ekbatan.errors import EkbatanError, ValidationError
+from ekbatan.ids import Id, ShardedId
 from fixtures.domain import (
     NOW,
     Notification,
-    NotificationId,
     Wallet,
     WalletClosedEvent,
-    WalletId,
     WalletMoneyDepositedEvent,
     WalletState,
 )
@@ -31,7 +30,7 @@ from fixtures.domain import (
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal(balance),
@@ -402,7 +401,7 @@ def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():
 )
 def test_a_model_refuses_to_be_built_without_its_invariants(field, value, message):
     fields = {
-        "id": WalletId.random(),
+        "id": ShardedId[Wallet].random(),
         "state": WalletState.OPENED,
         "owner_id": uuid4(),
         "currency": "EUR",
@@ -427,7 +426,7 @@ def test_an_optional_field_accepts_none_and_a_required_one_does_not():
         label: str = "unset"
 
     common = {
-        "id": WalletId.random(),
+        "id": ShardedId[Wallet].random(),
         "state": WalletState.OPENED,
         "created_date": NOW,
         "owner_id": uuid4(),
@@ -450,9 +449,9 @@ def test_an_optional_field_accepts_none_and_a_required_one_does_not():
 )
 def test_an_entity_refuses_the_same_invariants(field, value, message):
     fields = {
-        "id": NotificationId.random(),
+        "id": Id[Notification].random(),
         "state": GenericState.ACTIVE,
-        "wallet_id": WalletId.random(),
+        "wallet_id": ShardedId[Wallet].random(),
         "kind": "email",
         "recipient": "someone@example.com",
         field: value,
@@ -468,7 +467,7 @@ def test_the_version_a_row_starts_at_is_one():
 def test_a_row_refuses_a_null_event_list():
     with pytest.raises(ValidationError, match="events cannot be null"):
         Wallet(
-            id=WalletId.random(),
+            id=ShardedId[Wallet].random(),
             state=WalletState.OPENED,
             owner_id=uuid4(),
             currency="EUR",
@@ -491,7 +490,7 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
         )
     ]
     wallet = Wallet(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         state=WalletState.OPENED,
         owner_id=uuid4(),
         currency="EUR",
@@ -515,18 +514,18 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
 def test_a_typed_value_refuses_to_wrap_nothing():
     """Java's TypedValue constructor validates it too.
 
-    ``WalletId(None)`` compares equal to every other empty WalletId, hashes with them, and
-    reaches the database as a null in the primary key.
+    ``ShardedId[Wallet](None)`` would compare equal to every other empty ``ShardedId``, hash with
+    them, and reach the database as a null in the primary key.
     """
-    with pytest.raises(ValidationError, match="WalletId value cannot be null"):
-        WalletId(None)
+    with pytest.raises(ValidationError, match="ShardedId value cannot be null"):
+        ShardedId[Wallet](None)
 
 
 def test_is_model_separates_the_two_shapes():
     assert a_wallet().is_model
     assert not Notification.create(
-        id=NotificationId.random(),
-        wallet_id=WalletId.random(),
+        id=Id[Notification].random(),
+        wallet_id=ShardedId[Wallet].random(),
         kind="email",
         recipient="someone@example.com",
     ).is_model

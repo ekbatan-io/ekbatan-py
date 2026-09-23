@@ -13,10 +13,12 @@ from uuid import UUID
 from ekbatan.domain import ModelBuilder
 
 if TYPE_CHECKING:
-    from .model import Wallet, WalletId, WalletState  # noqa: F401
+    from ekbatan.ids import ShardedId  # noqa: F401
+
+    from .model import Wallet, WalletState  # noqa: F401
 
 
-class WalletBuilder(ModelBuilder["Wallet", "WalletId", "WalletState"]):
+class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
     """Builds a Wallet, with the field types a checker can see.
 
     id, state, version and the timestamps come from ModelBuilder, typed by the

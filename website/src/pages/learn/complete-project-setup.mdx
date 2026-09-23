@@ -964,14 +964,14 @@ Then the model. Frozen, version-tracked, and every state change returns a *new* 
 event already attached:
 
 <CodeBlock filename="wallet/model.py" language="python" shadow="yellow" code={`@dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
 
     @staticmethod
     def open(*, owner_id: UUID, currency: str, opening_balance: Decimal) -> "Wallet":
-        wallet_id = WalletId.generate()
+        wallet_id = ShardedId[Wallet].random()      # the default shard
         return (
             WalletBuilder()
             .id(wallet_id)
@@ -1001,29 +1001,28 @@ persisted by the framework. A balance cannot exist without the event that explai
 there is no other way to change one.
 
 `copy()` returns a builder. Which builder is the third argument on `Wallet`'s class line —
-`Model[WalletId, WalletState, WalletBuilder]` — so a checker sees the real field types, the one
-thing Python cannot work out for itself. Leave it out and `copy()` **refuses**, so a missing
+`Model[ShardedId["Wallet"], WalletState, WalletBuilder]` — so a checker sees the real field types,
+the one thing Python cannot work out for itself. Leave it out and `copy()` **refuses**, so a missing
 builder is an error at the call rather than a checker quietly seeing `__getattr__`.
 `python -m ekbatan.codegen` writes the builder; writing one by hand satisfies it just as well.
 
 `balance` is `Decimal`, never `float`. It lands in a `NUMERIC` column, and a float that
 round-trips through JSON is no longer the balance.
 
-The id type is one line:
+There is no id class to write. The id is `ShardedId[Wallet]`, spelled as Java spells
+`ShardedId<Wallet>`: the model is the type argument, so a checker refuses a `ShardedId[Wallet]`
+where an `Id[Order]` belongs. On `Wallet`'s own class line the name is quoted —
+`ShardedId["Wallet"]` — because the class does not exist yet at that point.
 
-```python
-class WalletId(Id["Wallet"]):
-    pass
-```
-
-A `UUID` subclass with the model's type in it, so a `WalletId` cannot be passed where an
-`OrderId` belongs. `ShardedId` is the same line when you add a second database — see
+At runtime the model is erased, as it is in Java: two models' ids holding one uuid compare
+equal. The checker is what keeps them apart, so run it. `ShardedId` carries the shard in the
+uuid itself, which is what lets you add a second database later — see
 [Adding a shard](/learn/sharding/).
 
 And the repository:
 
 ```python
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
@@ -1180,7 +1179,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return WalletResponse.of(
             service.executor.execute(
                 DepositMoneyAction,
-                DepositParams(wallet_id=WalletId(wallet_id), amount=body.amount),
+                DepositParams(wallet_id=ShardedId[Wallet](wallet_id), amount=body.amount),
             )
         )
 
@@ -1263,7 +1262,7 @@ class MoneyDepositedEventHandler:
         self.executor.execute(
             RaiseAlertAction,
             RaiseAlertParams(
-                wallet_id=WalletId(UUID(envelope.model_id)),
+                wallet_id=ShardedId[Wallet](UUID(envelope.model_id)),
                 recipient=envelope.action_params["recipient"],
                 message=f"deposited {envelope.event.amount}",
             ),

@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import event
 
 from ekbatan.errors import ValidationError
+from ekbatan.ids import ShardedId
 from fixtures.actions import (
     CloseWalletAction,
     CreateWalletAction,
@@ -26,7 +27,7 @@ from fixtures.actions import (
     TransferParams,
     WalletIdParams,
 )
-from fixtures.domain import WalletId, WalletState
+from fixtures.domain import Wallet, WalletState
 
 
 def a_wallet(executor, balance="100.00", currency="EUR"):
@@ -165,7 +166,9 @@ def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, out
     executor.execute(
         NotifyAction(executor.clock),
         NotifyParams(
-            wallet_id=WalletId.random(), kind="MONEY_DEPOSITED", recipient="ada@example.com"
+            wallet_id=ShardedId[Wallet].random(),
+            kind="MONEY_DEPOSITED",
+            recipient="ada@example.com",
         ),
     )
 

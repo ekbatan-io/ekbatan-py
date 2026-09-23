@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
+from ekbatan.ids import ShardedId
 
 from .actions import (
     CloseWalletAction,
@@ -33,7 +34,7 @@ from .actions import (
     WalletIdParams,
 )
 from .app import Settings, WalletService, build
-from .model import Wallet, WalletId
+from .model import Wallet
 
 #: How long a deposit may wait for the wallet's lock, and how long it may hold it.
 #:
@@ -169,7 +170,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/wallets/{wallet_id}", response_model=WalletResponse)
     def read_wallet(wallet_id: UUID, service: Service) -> WalletResponse:
-        return WalletResponse.of(service.wallets.get(WalletId(wallet_id)))
+        return WalletResponse.of(service.wallets.get(ShardedId[Wallet](wallet_id)))
 
     @app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
     def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
@@ -201,7 +202,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 service.executor.execute(
                     DepositMoneyAction,
                     DepositParams(
-                        wallet_id=WalletId(wallet_id),
+                        wallet_id=ShardedId[Wallet](wallet_id),
                         amount=body.amount,
                         recipient=body.recipient,
                     ),
@@ -212,7 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def close_wallet(wallet_id: UUID, service: Service) -> WalletResponse:
         return WalletResponse.of(
             service.executor.execute(
-                CloseWalletAction, WalletIdParams(wallet_id=WalletId(wallet_id))
+                CloseWalletAction, WalletIdParams(wallet_id=ShardedId[Wallet](wallet_id))
             )
         )
 
@@ -231,7 +232,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 recipient=alert.recipient,
                 message=alert.message,
             )
-            for alert in service.alerts.find_for_wallet(WalletId(wallet_id))
+            for alert in service.alerts.find_for_wallet(ShardedId[Wallet](wallet_id))
         ]
 
     @app.get("/health")

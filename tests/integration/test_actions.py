@@ -18,13 +18,14 @@ from ekbatan.errors import (
     StaleRecordError,
     ValidationError,
 )
+from ekbatan.ids import ShardedId
 from fixtures.actions import (
     CreateWalletAction,
     CreateWalletParams,
     DepositMoneyAction,
     DepositParams,
 )
-from fixtures.domain import NOW, Wallet, WalletId
+from fixtures.domain import NOW, Wallet
 
 
 def a_wallet(executor):
@@ -433,7 +434,7 @@ def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
         def perform(self, principal: str | None, params: None) -> Wallet:
             fresh = self.plan.add(
                 Wallet.open(
-                    id=WalletId.random(),
+                    id=ShardedId[Wallet].random(),
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("10.00"),
@@ -510,7 +511,7 @@ def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallets):
     with collecting_spans() as collected:
         wallet = wallets.add(
             Wallet.open(
-                id=WalletId.random(),
+                id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("100.00"),
@@ -585,7 +586,7 @@ def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets)
         importlib.reload(tracing)
         wallet = wallets.add(
             Wallet.open(
-                id=WalletId.random(),
+                id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("100.00"),

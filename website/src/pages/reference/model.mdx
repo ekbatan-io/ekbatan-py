@@ -9,7 +9,7 @@ lead: "A persistent aggregate that emits domain events. Every change worth telli
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -24,7 +24,7 @@ Two type parameters, where Java needs three:
 
 Java carries a third, the concrete subclass itself, so that its generated builder's setters
 return the subclass rather than the abstract parent. `Self` does that here without a parameter,
-which is why `Model[WalletId, WalletState]` reads the way it does and
+which is why `Model[ShardedId[Wallet], WalletState]` reads the way it does and
 `Model<Wallet, Id<Wallet>, WalletState>` does not.
 
 What the base contributes:
@@ -204,7 +204,7 @@ The runtime builder resolves setters by name, so a checker sees only `__getattr_
 `builder()` both return it:
 
 ```python
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     balance: Decimal
 ```
 

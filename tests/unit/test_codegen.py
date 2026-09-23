@@ -20,6 +20,7 @@ import pytest
 
 from ekbatan.codegen import generate, models_in
 from ekbatan.errors import ValidationError
+from ekbatan.ids import ShardedId
 
 MODULE = "fixtures.domain"
 
@@ -40,8 +41,10 @@ def test_a_model_gets_a_ModelBuilder_and_an_entity_a_Builder():
     """An entity has no timestamps and no events, so offering setters for them would be an
     error waiting for someone to call it."""
     source = generate([MODULE])
-    assert 'class WalletBuilder(ModelBuilder["Wallet", "WalletId", "WalletState"]):' in source
-    entity = 'class NotificationBuilder(EntityBuilder["Notification", "NotificationId", '
+    assert (
+        'class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):' in source
+    )
+    entity = 'class NotificationBuilder(EntityBuilder["Notification", "Id[Notification]", '
     assert entity + '"GenericState"]):' in source
     assert 'builds_ref = "fixtures.domain:Wallet"' in source, (
         "the builder can find its model even when imported before the model module is"
@@ -69,7 +72,7 @@ def test_the_setters_carry_the_field_s_real_type():
 
 def test_the_base_is_parameterised_so_id_and_state_are_typed_without_being_declared():
     source = generate([MODULE])
-    assert '["Wallet", "WalletId", "WalletState"]' in source, (
+    assert '["Wallet", "ShardedId[Wallet]", "WalletState"]' in source, (
         "an id resolved to the concrete type, not left as a type variable"
     )
 
@@ -93,11 +96,11 @@ def test_the_output_is_valid_python_that_actually_builds_a_model(tmp_path: Path)
         namespace,
     )
 
-    from fixtures.domain import Wallet, WalletId, WalletState
+    from fixtures.domain import Wallet, WalletState
 
     built = (
         namespace["wallet"]()  # type: ignore[operator]
-        .id(WalletId.random())
+        .id(ShardedId[Wallet].random())
         .state(WalletState.OPENED)
         .owner_id(UUID(int=1))
         .currency("EUR")
@@ -146,3 +149,43 @@ def test_the_command_line_writes_a_file(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     assert out.exists()
     assert "class WalletBuilder" in out.read_text()
+
+
+# -- the id type written on the class line ------------------------------------------------------
+
+
+def test_the_id_type_on_a_class_line_is_resolved_to_the_model_it_names():
+    """`class Wallet(Model[ShardedId["Wallet"], ...])` has to quote the name - the class does not
+    exist yet - and Python never evaluates a type argument on a class line. Until this was
+    resolved the generator rendered the leftover reference as `Any`, and wrote
+    `ModelBuilder["Wallet", "ShardedId[Any]", ...]`: a builder whose id a checker accepted for
+    every model, which is the one mistake Java's spelling of an id exists to catch."""
+    from ekbatan.ids import Id
+    from ekbatan.repository import _concrete_types
+    from fixtures.domain import Notification, Wallet
+
+    assert _concrete_types(Wallet)["id"] == ShardedId[Wallet]
+    assert _concrete_types(Notification)["id"] == Id[Notification]
+
+
+def test_a_name_that_cannot_be_looked_up_is_left_as_it_was():
+    """A model defined inside a function has no module-level name to resolve against. It keeps
+    the reference, which the repository never needed resolved: it rebuilds an id from the
+    class, not from the argument."""
+    import typing
+    from dataclasses import dataclass
+    from enum import Enum
+
+    from ekbatan.domain import Model
+    from ekbatan.repository import _concrete_types
+
+    class LocalState(Enum):
+        OPEN = "OPEN"
+
+    @dataclass(frozen=True, kw_only=True)
+    class Local(Model[ShardedId["Local"], LocalState]):
+        pass
+
+    hint = _concrete_types(Local)["id"]
+    assert typing.get_origin(hint) is ShardedId
+    assert typing.get_args(hint) == (typing.ForwardRef("Local"),)

@@ -47,11 +47,9 @@ Nothing here changes because of how you wire it. These are the classes the rest 
 assembles, and they are the same ones you would write with a container doing the assembling:
 
 ```python
-class WalletId(Id["Wallet"]): ...
-
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -59,7 +57,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     def deposit(self, amount: Decimal) -> "Wallet": ...
 
 
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 

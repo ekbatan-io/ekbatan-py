@@ -13,15 +13,9 @@ from decimal import Decimal
 from uuid import UUID
 
 from ekbatan import Action, Clock
+from ekbatan.ids import ShardedId
 
-from .model import (
-    StepName,
-    TransferFailedEvent,
-    TransferInitiatedEvent,
-    TransferStep,
-    Wallet,
-    WalletId,
-)
+from .model import StepName, TransferFailedEvent, TransferInitiatedEvent, TransferStep, Wallet
 from .repository import WalletRepository
 
 
@@ -34,8 +28,8 @@ class OpenWalletParams:
 
 @dataclass(frozen=True, kw_only=True)
 class TransferParams:
-    from_wallet_id: WalletId
-    to_wallet_id: WalletId
+    from_wallet_id: ShardedId[Wallet]
+    to_wallet_id: ShardedId[Wallet]
     amount: Decimal
 
 
@@ -49,8 +43,8 @@ class CompleteTransferParams:
     """
 
     transfer_id: UUID
-    from_wallet_id: WalletId
-    to_wallet_id: WalletId
+    from_wallet_id: ShardedId[Wallet]
+    to_wallet_id: ShardedId[Wallet]
     amount: Decimal
     currency: str
 
@@ -58,8 +52,8 @@ class CompleteTransferParams:
 @dataclass(frozen=True, kw_only=True)
 class RefundTransferParams:
     transfer_id: UUID
-    from_wallet_id: WalletId
-    to_wallet_id: WalletId
+    from_wallet_id: ShardedId[Wallet]
+    to_wallet_id: ShardedId[Wallet]
     amount: Decimal
     reason: str
 

@@ -14,11 +14,12 @@ from ekbatan.domain import EntityBuilder, ModelBuilder
 
 if TYPE_CHECKING:
     from ekbatan.domain import GenericState  # noqa: F401
+    from ekbatan.ids import Id, ShardedId  # noqa: F401
 
-    from .domain import Notification, NotificationId, Wallet, WalletId, WalletState  # noqa: F401
+    from .domain import Notification, Wallet, WalletState  # noqa: F401
 
 
-class WalletBuilder(ModelBuilder["Wallet", "WalletId", "WalletState"]):
+class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
     """Builds a Wallet, with the field types a checker can see.
 
     id, state, version and the timestamps come from ModelBuilder, typed by the
@@ -49,7 +50,7 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
     return made.copy_base(source) if source is not None else made
 
 
-class NotificationBuilder(EntityBuilder["Notification", "NotificationId", "GenericState"]):
+class NotificationBuilder(EntityBuilder["Notification", "Id[Notification]", "GenericState"]):
     """Builds a Notification, with the field types a checker can see.
 
     id, state and version come from EntityBuilder, typed by the
@@ -58,7 +59,7 @@ class NotificationBuilder(EntityBuilder["Notification", "NotificationId", "Gener
 
     builds_ref = "fixtures.domain:Notification"
 
-    def wallet_id(self, value: WalletId) -> Self:
+    def wallet_id(self, value: ShardedId[Wallet]) -> Self:
         return self.set(wallet_id=value)
 
     def kind(self, value: str) -> Self:

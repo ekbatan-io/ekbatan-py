@@ -19,16 +19,17 @@ from sqlalchemy import Row, func, select
 from ekbatan.clock import to_storage
 from ekbatan.domain import DELETED
 from ekbatan.fetching import Db
+from ekbatan.ids import ShardedId
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
-from fixtures.domain import NOW, Wallet, WalletId, WalletState
+from fixtures.domain import NOW, Wallet, WalletState
 from fixtures.schema import WALLETS
 
 HERE = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
 
 
-class WalletRepository(Repository[Wallet, WalletId]):
+class WalletRepository(Repository[Wallet, ShardedId[Wallet]]):
     """What a user writes when the built-in finders run out."""
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
@@ -48,7 +49,7 @@ class WalletRepository(Repository[Wallet, WalletId]):
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
-            id=WalletId(values["id"]),
+            id=ShardedId[Wallet](values["id"]),
             version=values["version"],
             state=WalletState[values["state"]],
             owner_id=values["owner_id"],
@@ -118,7 +119,7 @@ def sharded_wallets(sharded_registry, clock):
 
 def a_wallet(owner, currency="EUR", balance="100.00", shard=HERE):
     return Wallet.open(
-        id=WalletId.generate(shard),
+        id=ShardedId[Wallet].generate(shard),
         owner_id=owner,
         currency=currency,
         balance=Decimal(balance),

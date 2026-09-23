@@ -26,7 +26,7 @@ nothing scans for it.
 ```python
 @dataclass(frozen=True, kw_only=True)
 class DepositParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     amount: Decimal
 
 

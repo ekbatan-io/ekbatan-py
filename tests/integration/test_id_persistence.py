@@ -187,14 +187,3 @@ def test_an_id_for_an_unconfigured_shard_still_stores_and_reads(sharded_purses):
     assert stranger.id.shard == ShardIdentifier(7, 2), (
         "the id keeps saying what it always said; only this deployment differs"
     )
-
-
-# ---------------------------------------------------------- runtime discrimination
-
-
-class PurseId(ShardedId["Purse"]):
-    """A named id type: a real class, so the distinction survives into the running program."""
-
-
-class LedgerId(Id["Ledger"]):
-    pass

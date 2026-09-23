@@ -9,14 +9,14 @@ lead: "A persistent aggregate that does NOT emit events. Use an entity when you 
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Alert(Entity[AlertId, GenericState, AlertBuilder]):
-    wallet_id: WalletId
+class Alert(Entity[Id["Alert"], GenericState, AlertBuilder]):
+    wallet_id: ShardedId[Wallet]
     recipient: str
     message: str
 ```
 
 `Entity[ID, S]` takes the id type and, optionally, a state enum. `S` **defaults** —
-`Entity[AlertId]` is `Entity[AlertId, GenericState]`, and `GenericState` is `ACTIVE` /
+`Entity[Id[Alert]]` is `Entity[Id[Alert], GenericState]`, and `GenericState` is `ACTIVE` /
 `DELETED`, which is usually all an entity needs. A model has no such default, because a model
 with no lifecycle of its own is nearly always a model nobody has thought about yet.
 
@@ -111,7 +111,7 @@ The same builder shape as a model, minus the event and timestamp methods:
 @classmethod
 def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
     return cls(
-        id=TransferStepId.random(),
+        id=Id[TransferStep].random(),
         state=GenericState.ACTIVE,
         transfer_id=transfer_id,
         step=step,
@@ -141,7 +141,7 @@ Name the builder on the class line, the same as on a
 to a checker, and there is no compile step here to make that an error:
 
 ```python
-class Alert(Entity[AlertId, GenericState, AlertBuilder]):
+class Alert(Entity[Id["Alert"], GenericState, AlertBuilder]):
     message: str
 ```
 

@@ -29,22 +29,14 @@ class TestState(Enum):
     DELETED = "DELETED"
 
 
-class TestModelId(Id["TestModel"]):
-    __test__ = False
-
-
-class TestProductId(Id["TestProduct"]):
-    __test__ = False
-
-
-class TestModelBuilder(ModelBuilder["TestModel", TestModelId, TestState]):
+class TestModelBuilder(ModelBuilder["TestModel", Id["TestModel"], TestState]):
     __test__ = False
 
     def name(self, value: str) -> Self:
         return self.set(name=value)
 
 
-class TestProductBuilder(ModelBuilder["TestProduct", TestProductId, TestState]):
+class TestProductBuilder(ModelBuilder["TestProduct", Id["TestProduct"], TestState]):
     __test__ = False
 
     def sku(self, value: str) -> Self:
@@ -69,13 +61,13 @@ class TestProductCreatedEvent(ModelEvent["TestProduct"]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TestModel(Model[TestModelId, TestState, TestModelBuilder]):
+class TestModel(Model[Id["TestModel"], TestState, TestModelBuilder]):
     __test__ = False
     name: str
 
 
 @dataclass(frozen=True, kw_only=True)
-class TestProduct(Model[TestProductId, TestState, TestProductBuilder]):
+class TestProduct(Model[Id["TestProduct"], TestState, TestProductBuilder]):
     __test__ = False
     sku: str
 
@@ -84,7 +76,7 @@ def a_model(name: str, created: datetime) -> TestModel:
     """``testModel().id(Id.random(...)).state(ACTIVE)...withInitialVersion().build()``."""
     return (
         TestModelBuilder()
-        .id(TestModelId.random())
+        .id(Id[TestModel].random())
         .state(TestState.ACTIVE)
         .name(name)
         .created_date(created)
@@ -116,7 +108,7 @@ class FailingParams:
 
 class CreateAction(Action[CreateParams, TestModel]):
     def perform(self, principal: str | None, params: CreateParams) -> TestModel:
-        model_id = TestModelId.random()
+        model_id = Id[TestModel].random()
         return self.plan.add(
             TestModelBuilder()
             .id(model_id)
@@ -131,7 +123,7 @@ class CreateAction(Action[CreateParams, TestModel]):
 
 class CreateBothAction(Action[CreateBothParams, TestModel]):
     def perform(self, principal: str | None, params: CreateBothParams) -> TestModel:
-        product_id = TestProductId.random()
+        product_id = Id[TestProduct].random()
         self.plan.add(
             TestProductBuilder()
             .id(product_id)
@@ -142,7 +134,7 @@ class CreateBothAction(Action[CreateBothParams, TestModel]):
             .with_event(TestProductCreatedEvent(model_id=str(product_id), sku=params.sku))
             .build()
         )
-        model_id = TestModelId.random()
+        model_id = Id[TestModel].random()
         return self.plan.add(
             TestModelBuilder()
             .id(model_id)

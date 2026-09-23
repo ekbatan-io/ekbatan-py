@@ -12,6 +12,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from ekbatan import Action, count_statements
+from ekbatan.ids import ShardedId
 from fixtures.actions import (
     CreateWalletAction,
     CreateWalletParams,
@@ -20,7 +21,7 @@ from fixtures.actions import (
     TransferMoneyAction,
     TransferParams,
 )
-from fixtures.domain import Wallet, WalletId
+from fixtures.domain import Wallet
 
 
 def a_wallet(executor, balance="100.00"):
@@ -71,7 +72,7 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
         def perform(self, principal: str | None, params: HowMany) -> list[Wallet]:
             return self.plan.add_all(
                 Wallet.open(
-                    id=WalletId.random(),
+                    id=ShardedId[Wallet].random(),
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("1.00"),

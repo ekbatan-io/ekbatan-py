@@ -53,18 +53,15 @@ The shard pair is encoded into the UUID itself, so the shard is recoverable from
 lookup and no extra column. Chosen at creation, and bonded to the row for its life.
 
 ```python
-class WalletId(ShardedId["Wallet"]):
-    pass
 
-
-wallet_id = WalletId.generate(ShardIdentifier(group=1, member=0))
+wallet_id = ShardedId[Wallet].generate(ShardIdentifier(group=1, member=0))
 ```
 
 When a request arrives carrying a wallet id, the framework reads the shard bits out of it,
 finds the matching database in the registry, and opens the transaction there. No round trip to
 a directory service, and no sticky session at the load balancer — the id is self-describing.
 
-The shard is chosen **at creation time**: your create action calls `WalletId.generate(shard)`,
+The shard is chosen **at creation time**: your create action calls `ShardedId[Wallet].generate(shard)`,
 and from then on the id and its shard are bonded for the row's lifetime. Choosing it is your
 call — typically the create action maps something you already know (tenant, region, regulatory
 class) onto a shard.

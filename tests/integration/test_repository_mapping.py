@@ -14,8 +14,9 @@ from __future__ import annotations
 import pytest
 
 from ekbatan.errors import EkbatanError
+from ekbatan.ids import ShardedId
 from ekbatan.repository import Repository
-from fixtures.domain import Wallet, WalletId
+from fixtures.domain import Wallet
 from fixtures.schema import WALLETS
 
 
@@ -44,7 +45,7 @@ def test_the_refusal_names_both_halves_and_how_to_write_them(registry, clock):
 def test_asking_for_the_by_name_mapping_is_a_line_you_write(registry, clock):
     """What every repository in this repository now says, and what it used to inherit."""
 
-    class Written(Repository[Wallet, WalletId]):
+    class Written(Repository[Wallet, ShardedId[Wallet]]):
         def to_row(self, model):
             return self.columns_by_field_name(model)
 
@@ -64,7 +65,7 @@ def a_wallet() -> Wallet:
     from uuid import uuid4
 
     return Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),

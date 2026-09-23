@@ -13,6 +13,7 @@ stays with the caller rather than being decided here.
 from __future__ import annotations
 
 import dataclasses
+import sys
 import types
 import typing
 import uuid
@@ -624,7 +625,7 @@ class Repository[M: Persistable[Any, Any], K]:
         server-side default or trigger is visible. Java takes the same branch
         (``if MYSQL: insert.execute(); return List.copyOf(domainObjects)``) and does not need
         the rebuild, because there a typed id is the only thing that compiles. Here a raw
-        ``uuid4()`` passed where a ``NotificationId`` belongs would otherwise come back raw on
+        ``uuid4()`` passed where an ``Id[Notification]`` belongs would otherwise come back raw on
         MySQL and wrapped on every other database - the same call, two shapes.
         """
         if not models:
@@ -969,6 +970,7 @@ def _concrete_types(model_type: type) -> dict[str, Any]:
     # not `Model`'s S - the binding arrives one link at a time and resolving from the outside
     # in lets each link look up what the previous one already knew.
     for base in model_type.__mro__:
+        namespace = vars(sys.modules[base.__module__]) if base.__module__ in sys.modules else {}
         for orig in getattr(base, "__orig_bases__", ()):
             origin = typing.get_origin(orig)
             declared = getattr(origin, "__type_params__", None)
@@ -976,8 +978,35 @@ def _concrete_types(model_type: type) -> dict[str, Any]:
                 declared if declared else getattr(origin, "__parameters__", ())
             )
             for param, arg in zip(params, typing.get_args(orig), strict=False):
-                bindings[param] = bindings.get(arg, arg)
+                bound = bindings.get(arg, arg)
+                bindings[param] = _resolve_refs(bound, namespace)
     return {name: bindings.get(hint, hint) for name, hint in hints.items()}
+
+
+def _resolve_refs(hint: Any, namespace: Mapping[str, Any]) -> Any:
+    """``ShardedId["Wallet"]`` with the ``"Wallet"`` looked up, as a field annotation would be.
+
+    A type argument on a class line is never evaluated. ``class Wallet(Model[ShardedId["Wallet"],
+    ...])`` has to quote the name - the class does not exist yet - and the argument then stays a
+    ``ForwardRef`` for good, where ``get_type_hints`` resolves the same string in a field
+    annotation. Left alone, anything reading the id type sees a model it cannot name: the
+    builder generator wrote ``ShardedId[Any]`` for it, which a checker then accepts for every
+    model's id.
+
+    Resolved in the namespace of the module whose class line wrote it. A name that is not there
+    - a class defined inside a function - is left as it was, which is what this did before.
+    """
+    if isinstance(hint, typing.ForwardRef):
+        target = namespace.get(hint.__forward_arg__)
+        return target if target is not None else hint
+    args = typing.get_args(hint)
+    if not args:
+        return hint
+    resolved = tuple(_resolve_refs(arg, namespace) for arg in args)
+    if resolved == args:
+        return hint
+    copy_with = getattr(hint, "copy_with", None)
+    return copy_with(resolved) if copy_with is not None else hint
 
 
 #: Types the driver takes as they are. Nothing to convert, so nothing to check per row.

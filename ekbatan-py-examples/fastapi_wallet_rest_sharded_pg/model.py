@@ -2,8 +2,8 @@
 
 The whole of sharding, in this framework, is this: the shard is packed into the identifier, so
 anyone holding an id can be routed without a lookup table, without a tenant column, and without
-asking anything. `WalletId.random(shard)` mints an id that carries its coordinate; every read
-and write after that follows it.
+asking anything. `ShardedId[Wallet].generate(shard)` mints an id that carries its coordinate;
+every read and write after that follows it.
 
 The bit layout is a cross-language contract. A Java service and a Python service minting ids
 for the same layout produce ids each can route, which is the point of fixing it rather than
@@ -22,15 +22,6 @@ from ekbatan import Model, ModelEvent, ShardedId
 from ekbatan.errors import ValidationError
 
 from .builders import WalletBuilder
-
-
-class WalletId(ShardedId["Wallet"]):
-    """Carries the shard in its own bits.
-
-    `WalletId.generate(MEXICO)` mints one that lands in Mexico; `WalletId.random()` mints one
-    on the default shard, because an id with no shard named belongs somewhere rather than
-    nowhere.
-    """
 
 
 class WalletState(Enum):
@@ -58,7 +49,7 @@ class MoneyWithdrawnEvent(ModelEvent["Wallet"]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -67,7 +58,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     def open(
         cls,
         *,
-        id: WalletId,
+        id: ShardedId[Wallet],
         owner_id: UUID,
         currency: str,
         balance: Decimal,

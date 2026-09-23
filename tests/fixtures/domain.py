@@ -24,18 +24,6 @@ from .builders import NotificationBuilder, WalletBuilder
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
-class WalletId(ShardedId["Wallet"]):
-    """A wallet's identity, and the database its row lives in.
-
-    Named rather than spelled ``ShardedId[Wallet]`` so the distinction survives into the
-    running program: ``WalletId(u) == NotificationId(u)`` is False without a checker involved.
-    """
-
-
-class NotificationId(Id["Notification"]):
-    """A notification's identity. Not sharded - notifications are not routed by id here."""
-
-
 class WalletState(Enum):
     OPENED = "OPENED"
     CLOSED = "CLOSED"
@@ -72,7 +60,7 @@ class WalletDeletedEvent(ModelEvent["Wallet"]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -87,7 +75,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     def open(
         cls,
         *,
-        id: WalletId,
+        id: ShardedId[Wallet],
         owner_id: UUID,
         currency: str,
         balance: Decimal,
@@ -174,14 +162,14 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Notification(Entity[NotificationId, GenericState, NotificationBuilder]):
+class Notification(Entity[Id["Notification"], GenericState, NotificationBuilder]):
     """An entity: the persistence layer tracks it, the event stream does not care.
 
     No timestamps, because an entity is state rather than history - and nothing here is worth
     telling the rest of the system about, which is exactly what makes it an entity.
     """
 
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     kind: str
     recipient: str
     message: str | None = None
@@ -190,8 +178,8 @@ class Notification(Entity[NotificationId, GenericState, NotificationBuilder]):
     def create(
         cls,
         *,
-        id: NotificationId,
-        wallet_id: WalletId,
+        id: Id[Notification],
+        wallet_id: ShardedId[Wallet],
         kind: str,
         recipient: str,
         message: str | None = None,

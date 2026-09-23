@@ -34,12 +34,8 @@ class Purse(Model[Id["Purse"], PurseState]):
     balance: Decimal
 
 
-class PurseId(ShardedId["Purse"]):
-    """A named id type: a real class, so the distinction survives into the running program."""
-
-
-class LedgerId(Id["Ledger"]):
-    pass
+class Ledger:
+    """A second model, so two models' ids can be compared - Java's `OtherModel`."""
 
 
 def test_an_id_wraps_a_uuid_and_says_what_it_identifies():
@@ -100,53 +96,71 @@ def test_a_typed_value_can_wrap_anything():
     assert account == Iban("GB33BUKB20201555555555")
 
 
-def test_named_id_types_are_different_at_runtime_not_only_to_a_checker():
+# -- Java's rules, measured on Java's own classes through jshell ---------------------------------
+
+
+def test_two_models_ids_with_one_uuid_are_equal_as_they_are_in_java():
+    """The model is erased at runtime in both languages. Java's `Id.of(Wallet.class, u)` keeps no
+    class at all - `equals` compares the uuid - and so does `ShardedId`. Telling the two apart is
+    the checker's job, and mypy does it: `ShardedId[Ledger]` is rejected where
+    `ShardedId[Purse]` is expected."""
     raw = uuid4()
 
-    assert PurseId(raw) != LedgerId(raw), (
-        "a generic parameter is erased at runtime; a subclass is not"
-    )
-    assert PurseId(raw) == PurseId(raw)
-    assert len({PurseId(raw), LedgerId(raw)}) == 2, "and they do not collide in a set either"
-    assert PurseId(raw) != raw, "nor with the bare uuid"
+    assert Id[Purse](raw) == Id[Ledger](raw)
+    assert len({Id[Purse](raw), Id[Ledger](raw)}) == 1
+    routed = ShardedId[Purse].generate(MEXICO).value
+    assert ShardedId[Purse](routed) == ShardedId[Ledger](routed)
 
 
-def test_a_generic_alias_cannot_do_the_same():
-    """Stated so nobody is surprised by it later."""
+def test_a_sharded_id_is_not_an_id():
+    """Java's `ShardedId` implements `ShardAwareId` and `ModelId`; it does not extend `Id`."""
+    routed = ShardedId[Purse].generate(MEXICO)
+
+    assert not isinstance(routed, Id)
+    assert not issubclass(ShardedId, Id)
+
+
+def test_an_id_and_a_sharded_id_are_never_equal():
+    """Java: `Id.equals` compares `getClass()`, `ShardedId.equals` requires a `ShardedId` - so
+    neither direction matches, whatever the uuid."""
+    raw = ShardedId[Purse].generate(MEXICO).value
+
+    assert Id[Purse](raw) != ShardedId[Purse](raw)
+    assert ShardedId[Purse](raw) != Id[Purse](raw)
+    assert len({Id[Purse](raw), ShardedId[Purse](raw)}) == 2
+
+
+def test_an_id_is_not_its_bare_uuid():
     raw = uuid4()
 
-    class A:
+    assert Id[Purse](raw) != raw
+    assert ShardedId[Purse](raw) != raw
+
+
+def test_a_subclass_of_an_id_still_equals_it():
+    """So a value an application wrapped in its own subclass compares equal to the same value
+    read back from a column, which is rebuilt as the declared type."""
+
+    class Special(Id[Purse]):
         pass
 
-    class B:
-        pass
-
-    assert Id[A](raw) == Id[B](raw), (
-        "Python erases the parameter exactly as Java erases its own - use a named subclass "
-        "when you want the interpreter to check too"
-    )
+    raw = uuid4()
+    assert Special(raw) == Id[Purse](raw)
 
 
-def test_a_named_id_keeps_every_factory():
-    routed = PurseId.generate(MEXICO)
-    assert isinstance(routed, PurseId)
+def test_a_sharded_id_keeps_every_factory_through_the_subscript():
+    """`ShardedId[Purse].generate(shard)` is Java's `ShardedId.generate(Purse.class, shard)`."""
+    routed = ShardedId[Purse].generate(MEXICO)
+    assert type(routed) is ShardedId
     assert routed.shard == MEXICO
     assert routed.minted_at is not None
-    assert isinstance(PurseId.of(str(routed.value)), PurseId)
+    assert ShardedId[Purse].of(str(routed.value)) == routed
 
 
 def test_a_sharded_id_with_no_shard_named_goes_to_the_default():
-    """The inherited random() would mint a version 4 uuid, and .shard would then have to raise
-    on an id this class had just produced."""
-    assert PurseId.random().shard == GLOBAL
-
-
-def test_a_named_id_still_matches_its_base_class():
-    raw = uuid4()
-    assert PurseId(raw) == ShardedId["Purse"](raw), (
-        "a row read back is rebuilt as whatever its field declares, so the family has to agree"
-    )
-    assert isinstance(PurseId(raw), Id)
+    """`random()` has no Java counterpart; it is `generate(DEFAULT_SHARD)`, so `.shard` never
+    has to raise on an id this class produced itself."""
+    assert ShardedId[Purse].random().shard == GLOBAL
 
 
 # -- what Java's IdTest and TypedValueTest pin -------------------------------------------------
@@ -154,13 +168,13 @@ def test_a_named_id_still_matches_its_base_class():
 
 def test_an_id_can_be_parsed_from_its_string_form():
     """Java's `Id.of(Class, String)`, which is how an id comes back off the wire."""
-    original = PurseId.generate(MEXICO)
+    original = ShardedId[Purse].generate(MEXICO)
 
-    assert PurseId.of(str(original)) == original
-    assert PurseId.of(original.value) == original
+    assert ShardedId[Purse].of(str(original)) == original
+    assert ShardedId[Purse].of(original.value) == original
 
     with pytest.raises(ValidationError, match="is not a uuid"):
-        PurseId.of("not-a-uuid")
+        ShardedId[Purse].of("not-a-uuid")
 
 
 def test_an_id_prints_as_its_uuid_and_nothing_else():
@@ -169,7 +183,7 @@ def test_an_id_prints_as_its_uuid_and_nothing_else():
     The persister writes `str(model.id)` into the outbox's `model_id` column, so anything
     fancier here would change what a downstream consumer correlates on.
     """
-    wallet_id = PurseId.random()
+    wallet_id = ShardedId[Purse].random()
 
     assert str(wallet_id) == str(wallet_id.value)
     assert f"{wallet_id}" == str(wallet_id.value)
@@ -195,15 +209,15 @@ def test_a_typed_value_prints_bare_and_reprs_with_its_type():
 def test_equal_ids_hash_together_and_unequal_ones_do_not():
     shared = uuid4()
 
-    assert hash(PurseId(shared)) == hash(PurseId(shared))
-    assert PurseId(shared) != PurseId(uuid4())
-    assert len({PurseId(shared), PurseId(shared)}) == 1
+    assert hash(ShardedId[Purse](shared)) == hash(ShardedId[Purse](shared))
+    assert ShardedId[Purse](shared) != ShardedId[Purse](uuid4())
+    assert len({ShardedId[Purse](shared), ShardedId[Purse](shared)}) == 1
 
 
 def test_comparing_ids_delegates_to_the_uuid():
     """Java's `compareTo`, which is what orders a batched write."""
-    low = PurseId(UUID("00000000-0000-0000-0000-000000000001"))
-    high = PurseId(UUID("00000000-0000-0000-0000-000000000002"))
+    low = ShardedId[Purse](UUID("00000000-0000-0000-0000-000000000001"))
+    high = ShardedId[Purse](UUID("00000000-0000-0000-0000-000000000002"))
 
     assert low < high
     assert high > low

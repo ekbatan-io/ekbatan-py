@@ -12,8 +12,9 @@ from decimal import Decimal
 from uuid import UUID
 
 from ekbatan import Action, Clock, ShardIdentifier
+from ekbatan.ids import ShardedId
 
-from .model import Wallet, WalletId
+from .model import Wallet
 from .repository import WalletRepository
 
 #: Where each country's wallets live. The one piece of routing policy this application owns -
@@ -34,14 +35,14 @@ class OpenWalletParams:
 
 @dataclass(frozen=True, kw_only=True)
 class DepositParams:
-    wallet_id: WalletId
+    wallet_id: ShardedId[Wallet]
     amount: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
 class TransferParams:
-    from_wallet_id: WalletId
-    to_wallet_id: WalletId
+    from_wallet_id: ShardedId[Wallet]
+    to_wallet_id: ShardedId[Wallet]
     amount: Decimal
 
 
@@ -50,7 +51,7 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
         shard = BY_COUNTRY.get(params.country, GLOBAL)
         return self.plan.add(
             Wallet.open(
-                id=WalletId.generate(shard),
+                id=ShardedId[Wallet].generate(shard),
                 owner_id=params.owner_id,
                 currency=params.currency,
                 balance=params.opening_balance,

@@ -1,30 +1,28 @@
-"""Identifiers that know what they identify.
+"""Identifiers that know what they identify - Java's ``Id<Wallet>`` and ``ShardedId<Wallet>``.
 
 A ``UUID`` parameter accepts any UUID, so a wallet id and a notification id are the same type
 to a compiler and different things to everyone else. These wrap it so they are different types
 too - and, when the id carries shard bits, so that routing can be read off the id without
-asking anything else.
+asking anything else::
 
     def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)      # Id[Wallet], not UUID
+        wallet = self.wallets.get(params.wallet_id)      # ShardedId[Wallet], not UUID
 
-Passing the wrong one is then a type error rather than an empty result at three in the morning.
-Raw UUIDs keep working everywhere; this is an option, not a tax.
+Spelled as Java spells them, with the model as the type argument::
 
-**Give each model a named id type.** ``Id[Wallet]`` satisfies a type checker, but Python erases
-the parameter at runtime exactly as Java does, so ``Id[Wallet](u) == Id[Note](u)`` is true once
-the program is running. A one-line subclass is a real type and is therefore checked twice - by
-the checker, and by the interpreter::
+    ShardedId[Wallet].generate(shard)       # Java: ShardedId.generate(Wallet.class, shard)
+    Id[Alert].random()                      # Java: Id.random(Alert.class)
+    Id[Alert].of(value)                     # Java: Id.of(Alert.class, value)
 
-    class WalletId(ShardedId["Wallet"]): ...
-    class NoteId(Id["Note"]): ...
+The subscript does what Java's class argument does: it tells the checker which model this is,
+and nothing else. **Passing one model's id where another's is expected is a type error** - mypy
+rejects ``ShardedId[Alert]`` where ``ShardedId[Wallet]`` is wanted, as javac does. At runtime the
+model is erased in both languages, measured on Java's own classes: two models' ids with one uuid
+are equal, and are one entry in a set. The checker is what holds the line, here as there.
 
-    WalletId(u) == NoteId(u)        # False, at runtime, with no checker involved
-    {WalletId(u), NoteId(u)}        # two entries, not one
-
-The subclass keeps every factory - ``random()``, ``of()``, ``generate(shard)`` - and stays an
-``Id``, so nothing else has to know about it. Prefer it; ``Id[Wallet]`` is the shorthand for
-when you do not.
+**``ShardedId`` is not an ``Id``**, as it is not in Java: two classes, and an ``Id`` never equals
+a ``ShardedId`` even with the same uuid. Raw UUIDs keep working everywhere; this is an option,
+not a tax.
 """
 
 from __future__ import annotations
@@ -72,12 +70,12 @@ class TypedValue[T]:
             raise ValidationError(f"{type(self).__name__} value cannot be null")
 
     def __eq__(self, other: object) -> bool:
-        """Equal when the values match and the types are in the same family.
+        """Equal when the values match and one type is the other or a subclass of it.
 
-        ``ShardedId`` is an ``Id``, and a row read back is rebuilt as whatever its field
-        declares - so the one in memory and the one from the database have to compare equal or
-        a lookup stops matching what was asked for. Two *unrelated* wrappers of the same
-        primitive stay unequal, which is the point of wrapping them.
+        Two *unrelated* wrappers of the same primitive stay unequal, which is the point of
+        wrapping them - an ``Id`` and a ``ShardedId`` among them, as Java's ``equals`` keeps them
+        apart. A subclass of one of them still equals it, so a value an application wrapped in
+        its own subclass compares equal to the same value read back from the database.
 
         ``Id[Wallet] == Id[Note]`` is true at runtime, because Python erases the parameter just
         as Java does. That distinction is a checker's job, and a checker does make it.
@@ -110,7 +108,7 @@ class TypedValue[T]:
 
 @dataclass(frozen=True, eq=False)
 class Id[M](TypedValue[_uuid.UUID]):
-    """A UUID that identifies one kind of thing.
+    """A UUID that identifies one kind of thing - Java's ``Id<M>``.
 
     ``Id[Wallet]`` and ``Id[Notification]`` are different types to a checker and the same
     column to the database.
@@ -149,14 +147,28 @@ class Id[M](TypedValue[_uuid.UUID]):
 
 
 @dataclass(frozen=True, eq=False)
-class ShardedId[M](Id[M]):
-    """An id that says which database its row lives in.
+class ShardedId[M](TypedValue[_uuid.UUID]):
+    """An id that says which database its row lives in - Java's ``ShardedId<M>``.
 
     A version 7 UUID with the shard packed into its rand_b region, so routing needs no lookup
     table and no second column. The bit layout is part of the cross-language contract: a port
     that packs it differently reads another port's rows from the wrong database, and does not
     notice, because the query succeeds and returns nothing.
+
+    **Not an** :class:`Id`, as Java's is not: its own class beside it, never equal to an ``Id``
+    of the same uuid. What they share is being a typed uuid, which is :class:`TypedValue`'s job.
     """
+
+    value: _uuid.UUID
+
+    @classmethod
+    def of(cls, value: _uuid.UUID | str) -> Self:
+        if isinstance(value, str):
+            try:
+                value = _uuid.UUID(value)
+            except ValueError:
+                raise ValidationError(f"{value!r} is not a uuid") from None
+        return cls(value)
 
     @classmethod
     def generate(cls, shard: ShardIdentifier) -> Self:
@@ -164,17 +176,17 @@ class ShardedId[M](Id[M]):
 
     @classmethod
     def random(cls) -> Self:
-        """A fresh id on the default shard.
-
-        Overridden because the inherited version mints a version 4 uuid, which carries no
-        shard - and :attr:`shard` would then have to raise on an id this class had just
-        produced. A sharded id with no shard named belongs on the default one.
-        """
+        """A fresh id on the default shard. Java has no counterpart; it is
+        ``generate(DEFAULT_SHARD)``, for code that does not care which shard."""
         return cls.generate(DEFAULT_SHARD)
 
     @property
     def shard(self) -> ShardIdentifier:
-        """The shard, which one of these always has."""
+        """The shard, which one of these always has.
+
+        Java reads shard bits out of any uuid it is given, a random version 4 one included,
+        and so routes it to a shard nobody chose. This refuses instead.
+        """
         found = read_shard(self.value)
         if found is None:
             raise ValidationError(
@@ -182,6 +194,11 @@ class ShardedId[M](Id[M]):
                 f"Use Id for one that does not, or ShardedId.generate(shard) for one that does."
             )
         return found
+
+    @property
+    def minted_at(self) -> datetime | None:
+        """When it was created, read out of the id itself."""
+        return uuid_instant(self.value)
 
 
 def unwrap(value: Any) -> Any:

@@ -40,14 +40,6 @@ from ekbatan.ids import Id
 from .builders import WalletBuilder
 
 
-class WalletId(ShardedId["Wallet"]):
-    pass
-
-
-class TransferStepId(Id["TransferStep"]):
-    pass
-
-
 class WalletState(Enum):
     OPENED = "OPENED"
     CLOSED = "CLOSED"
@@ -112,7 +104,7 @@ class TransferRefundedEvent(ModelEvent["Wallet"]):
 
 
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
@@ -124,10 +116,10 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         owner_id: UUID,
         currency: str,
         balance: Decimal,
-        id: WalletId | None = None,
+        id: ShardedId[Wallet] | None = None,
         created_date: datetime,
     ) -> Wallet:
-        wallet_id = id or WalletId.random()
+        wallet_id = id or ShardedId[Wallet].random()
         return (
             WalletBuilder()
             .id(wallet_id)
@@ -155,7 +147,9 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
 
     # -- step one, on the source ----------------------------------------------------------------
 
-    def initiate_transfer_out(self, *, to: WalletId, amount: Decimal) -> tuple[Wallet, UUID]:
+    def initiate_transfer_out(
+        self, *, to: ShardedId[Wallet], amount: Decimal
+    ) -> tuple[Wallet, UUID]:
         """Debit now, and say so. The money has left; where it is going is the saga's problem.
 
         Returns the transfer's id alongside the wallet, because every later step is keyed by it
@@ -267,7 +261,7 @@ class StepName(Enum):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferStep(Entity[TransferStepId]):
+class TransferStep(Entity[Id["TransferStep"]]):
     """That one step of one transfer has already been done.
 
     Local delivery is **at least once**: a handler can be invoked twice for the same event, by
@@ -286,7 +280,7 @@ class TransferStep(Entity[TransferStepId]):
     @classmethod
     def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
         return cls(
-            id=TransferStepId.random(),
+            id=Id[TransferStep].random(),
             state=GenericState.ACTIVE,
             transfer_id=transfer_id,
             step=step,

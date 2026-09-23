@@ -14,11 +14,12 @@ from ekbatan.domain import EntityBuilder, ModelBuilder
 
 if TYPE_CHECKING:
     from ekbatan.domain import GenericState  # noqa: F401
+    from ekbatan.ids import Id, ShardedId  # noqa: F401
 
-    from .model import Alert, AlertId, Wallet, WalletId, WalletState  # noqa: F401
+    from .model import Alert, Wallet, WalletState  # noqa: F401
 
 
-class WalletBuilder(ModelBuilder["Wallet", "WalletId", "WalletState"]):
+class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
     """Builds a Wallet, with the field types a checker can see.
 
     id, state, version and the timestamps come from ModelBuilder, typed by the
@@ -43,7 +44,7 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
     return made.copy_base(source) if source is not None else made
 
 
-class AlertBuilder(EntityBuilder["Alert", "AlertId", "GenericState"]):
+class AlertBuilder(EntityBuilder["Alert", "Id[Alert]", "GenericState"]):
     """Builds an Alert, with the field types a checker can see.
 
     id, state and version come from EntityBuilder, typed by the
@@ -52,7 +53,7 @@ class AlertBuilder(EntityBuilder["Alert", "AlertId", "GenericState"]):
 
     builds_ref = "wallet_service_sqlite.model:Alert"
 
-    def wallet_id(self, value: WalletId) -> Self:
+    def wallet_id(self, value: ShardedId[Wallet]) -> Self:
         return self.set(wallet_id=value)
 
     def recipient(self, value: str) -> Self:

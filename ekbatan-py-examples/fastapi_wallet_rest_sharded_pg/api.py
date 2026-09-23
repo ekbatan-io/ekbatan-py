@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from ekbatan import ShardIdentifier
 from ekbatan.errors import CrossShardError, EntityNotFoundError, StaleRecordError, ValidationError
+from ekbatan.ids import ShardedId
 
 from .actions import (
     DepositMoneyAction,
@@ -32,7 +33,7 @@ from .actions import (
     TransferWithinShardAction,
 )
 from .app import ShardedWallets, build
-from .model import Wallet, WalletId
+from .model import Wallet
 
 MONEY = Decimal("0.01")
 
@@ -147,14 +148,14 @@ def create_app(urls: Mapping[ShardIdentifier, str] | None = None) -> FastAPI:
     @app.get("/wallets/{wallet_id}", response_model=WalletResponse)
     def read_wallet(wallet_id: UUID, service: Service) -> WalletResponse:
         """No shard argument, no lookup, no hint. The id says where the row is."""
-        return WalletResponse.of(service.wallets.get(WalletId(wallet_id)))
+        return WalletResponse.of(service.wallets.get(ShardedId[Wallet](wallet_id)))
 
     @app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
     def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
         return WalletResponse.of(
             service.executor.execute(
                 DepositMoneyAction,
-                DepositParams(wallet_id=WalletId(wallet_id), amount=body.amount),
+                DepositParams(wallet_id=ShardedId[Wallet](wallet_id), amount=body.amount),
             )
         )
 
@@ -167,8 +168,8 @@ def create_app(urls: Mapping[ShardIdentifier, str] | None = None) -> FastAPI:
         source, destination = service.executor.execute(
             TransferWithinShardAction,
             TransferParams(
-                from_wallet_id=WalletId(wallet_id),
-                to_wallet_id=WalletId(body.to_wallet_id),
+                from_wallet_id=ShardedId[Wallet](wallet_id),
+                to_wallet_id=ShardedId[Wallet](body.to_wallet_id),
                 amount=body.amount,
             ),
         )

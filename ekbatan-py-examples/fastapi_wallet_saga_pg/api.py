@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
+from ekbatan.ids import ShardedId
 
 from .actions import (
     InitiateTransferAction,
@@ -33,7 +34,7 @@ from .actions import (
     TransferResult,
 )
 from .app import SagaService, build
-from .model import StepName, Wallet, WalletId
+from .model import StepName, Wallet
 
 MONEY = Decimal("0.01")
 
@@ -131,7 +132,7 @@ def create_app(url: str) -> FastAPI:
 
     @app.get("/wallets/{wallet_id}", response_model=WalletResponse)
     def read_wallet(wallet_id: UUID, service: Service) -> WalletResponse:
-        return WalletResponse.of(service.wallets.get(WalletId(wallet_id)))
+        return WalletResponse.of(service.wallets.get(ShardedId[Wallet](wallet_id)))
 
     @app.post("/wallets/{wallet_id}/transfers", response_model=TransferAccepted, status_code=202)
     def transfer(wallet_id: UUID, body: TransferRequest, service: Service) -> TransferAccepted:
@@ -144,8 +145,8 @@ def create_app(url: str) -> FastAPI:
         result: TransferResult = service.executor.execute(
             InitiateTransferAction,
             TransferParams(
-                from_wallet_id=WalletId(wallet_id),
-                to_wallet_id=WalletId(body.to_wallet_id),
+                from_wallet_id=ShardedId[Wallet](wallet_id),
+                to_wallet_id=ShardedId[Wallet](body.to_wallet_id),
                 amount=body.amount,
             ),
         )

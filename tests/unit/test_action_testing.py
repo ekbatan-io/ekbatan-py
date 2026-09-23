@@ -15,6 +15,7 @@ import pytest
 
 from ekbatan import Action, Clock, VirtualClock, run_action
 from ekbatan.errors import EkbatanError, ValidationError
+from ekbatan.ids import Id, ShardedId
 from fixtures.actions import (
     CreateWalletAction,
     CreateWalletParams,
@@ -25,10 +26,8 @@ from fixtures.actions import (
 from fixtures.domain import (
     NOW,
     Notification,
-    NotificationId,
     Wallet,
     WalletCreatedEvent,
-    WalletId,
     WalletMoneyDepositedEvent,
     WalletMoneyWithdrawnEvent,
 )
@@ -48,7 +47,7 @@ class DepositAction(Action[DepositParams, Wallet]):
 
 def a_wallet(balance: str = "100.00") -> Wallet:
     return Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal(balance),
@@ -103,7 +102,7 @@ def test_an_insert_and_its_event_are_both_visible(clock):
 def test_an_entity_stages_without_emitting(clock):
     staged = run_action(
         NotifyAction(clock),
-        NotifyParams(wallet_id=WalletId.random(), kind="X", recipient="ada@x"),
+        NotifyParams(wallet_id=ShardedId[Wallet].random(), kind="X", recipient="ada@x"),
     )
 
     assert len(staged.added(Notification)) == 1
@@ -202,7 +201,7 @@ class CreatesBothAction(Action[None, Wallet]):
     def perform(self, principal: str | None, params: None) -> Wallet:
         wallet = self.plan.add(
             Wallet.open(
-                id=WalletId.random(),
+                id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1.00"),
@@ -211,7 +210,7 @@ class CreatesBothAction(Action[None, Wallet]):
         )
         self.plan.add(
             Notification.create(
-                id=NotificationId.random(),
+                id=Id[Notification].random(),
                 wallet_id=wallet.id,
                 kind="WALLET_CREATED",
                 recipient="ada@example.com",

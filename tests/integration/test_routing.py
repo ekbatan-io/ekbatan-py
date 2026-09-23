@@ -18,9 +18,10 @@ from sqlalchemy import Row, func, select
 
 from ekbatan.clock import to_storage
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
+from ekbatan.ids import ShardedId
 from ekbatan.repository import Repository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy, ShardIdentifier
-from fixtures.domain import NOW, Wallet, WalletId, WalletState
+from fixtures.domain import NOW, Wallet, WalletState
 from fixtures.repositories import WalletRepository
 from fixtures.schema import EVENTS, WALLETS
 
@@ -37,7 +38,7 @@ def sharded_wallets(sharded_registry, clock):
 
 def a_wallet(shard: ShardIdentifier, currency: str = "EUR") -> Wallet:
     return Wallet.open(
-        id=WalletId.generate(shard),
+        id=ShardedId[Wallet].generate(shard),
         owner_id=uuid4(),
         currency=currency,
         balance=Decimal("1.00"),
@@ -56,7 +57,7 @@ def test_a_shard_can_be_named_by_id_by_row_or_directly(sharded_wallets):
 
 
 def test_an_id_naming_an_unconfigured_shard_falls_back(sharded_wallets):
-    stranger = WalletId.generate(ShardIdentifier(9, 3))
+    stranger = ShardedId[Wallet].generate(ShardIdentifier(9, 3))
     assert sharded_wallets.shard_for(stranger) == GLOBAL, (
         "a staging database with one shard still has to read production's ids"
     )
@@ -126,7 +127,7 @@ def test_db_deliberately_does_not_join(registry, wallets):
 
 def test_a_write_inside_a_transaction_joins_it(registry, wallets):
     wallet = Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
@@ -146,7 +147,7 @@ def test_a_write_inside_a_transaction_joins_it(registry, wallets):
 
 def test_readonly_db_inside_a_transaction_sees_its_writes(registry, wallets):
     wallet = Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("7.00"),
@@ -193,7 +194,7 @@ def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
         def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
             values = row._mapping if isinstance(row, Row) else row
             return Wallet(
-                id=WalletId(values["id"]),
+                id=ShardedId[Wallet](values["id"]),
                 version=values["version"],
                 state=WalletState[values["state"]],
                 owner_id=values["owner_id"],
@@ -240,7 +241,7 @@ def test_column_refuses_a_name_the_table_does_not_have(wallets):
 
 def test_the_no_result_writes_write(wallets):
     one = Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
@@ -251,7 +252,7 @@ def test_the_no_result_writes_write(wallets):
 
     many = [
         Wallet.open(
-            id=WalletId.random(),
+            id=ShardedId[Wallet].random(),
             owner_id=uuid4(),
             currency="EUR",
             balance=Decimal("2.00"),
@@ -319,7 +320,7 @@ def _open_wallet(currency, clock):
         def perform(self, principal: str | None, params):
             return self.plan.add(
                 Wallet.open(
-                    id=WalletId.random(),
+                    id=ShardedId[Wallet].random(),
                     owner_id=uuid4(),
                     currency=params.currency,
                     balance=Decimal("1.00"),
@@ -415,7 +416,7 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
     seen = _statements(engine)
 
     wallet = Wallet.open(
-        id=WalletId.random(),
+        id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
@@ -441,7 +442,7 @@ def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
 
     many = [
         Wallet.open(
-            id=WalletId.random(),
+            id=ShardedId[Wallet].random(),
             owner_id=uuid4(),
             currency="EUR",
             balance=Decimal("1.00"),
@@ -656,7 +657,7 @@ def test_unknown_shard_policy_fail_refuses_a_read_of_an_unregistered_shard(stric
     layout: the foreign-id read the fallback exists for is refused too, by design.
     """
     with pytest.raises(ValidationError, match="shard 9:3 is not registered"):
-        strict_wallets.find(WalletId.generate(UNREGISTERED))
+        strict_wallets.find(ShardedId[Wallet].generate(UNREGISTERED))
 
 
 def test_a_registered_shard_is_untouched_by_the_policy(strict_wallets):

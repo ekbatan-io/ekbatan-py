@@ -84,7 +84,7 @@ new immutable wallet state and attaches a domain event that describes what happe
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Wallet(Model[WalletId, WalletState, WalletBuilder]):
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     ...
 
     def deposit(self, amount: Decimal) -> Wallet:

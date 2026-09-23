@@ -164,7 +164,7 @@ class EntityBuilder[T, ID = Any, S = Any]:
     ``state`` are typed here rather than re-declared by every subclass. A generated builder
     then only has to describe the fields its own model added::
 
-        class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+        class WalletBuilder(ModelBuilder[Wallet, ShardedId[Wallet], WalletState]):
             builds = Wallet
 
             def balance(self, value: Decimal) -> Self: ...
@@ -346,9 +346,9 @@ def _required(target: type) -> tuple[str, ...]:
 def _declared_builder(target: type) -> type[EntityBuilder[Any, Any, Any]] | None:
     """The builder named on the class line, or ``None`` if the model did not name one.
 
-    ``class Wallet(Model[WalletId, WalletState, WalletBuilder])`` puts the builder where a
-    checker can already see it - the return type of ``copy()`` is the third parameter - and
-    this is the other half: reading the same argument back so the base can build one.
+    ``class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder])`` puts the builder
+    where a checker can already see it - the return type of ``copy()`` is the third parameter -
+    and this is the other half: reading the same argument back so the base can build one.
 
     Java has no counterpart because it needs none. Its ``copy()`` is ``abstract``, so every
     model writes the method out, and writing it is where the narrower return type goes. Here
@@ -417,7 +417,7 @@ def _no_typed_builder(target: type, route: str) -> EkbatanError:
         f"\n"
         f"then name it on {name}'s class line, which is the whole of the wiring:\n"
         f"\n"
-        f"  class {name}({kind}[{name}Id, {name}State, {name}Builder]):\n"
+        f'  class {name}({kind}[ShardedId["{name}"], {name}State, {name}Builder]):\n'
         f"\n"
         f"`evolve()` needs none of this and is the right call for a one-field change. "
         f"{kind}Builder({name}) stays reachable by name, for a model with nowhere to put a "

@@ -16,13 +16,14 @@ from sqlalchemy import Row, func, select
 
 from ekbatan import DatabaseRegistry, ModelRepository, ShardIdentifier
 from ekbatan.clock import Clock, to_storage
+from ekbatan.ids import ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
-from .model import Wallet, WalletId, WalletState
+from .model import Wallet, WalletState
 from .schema import WALLETS
 
 
-class WalletRepository(ModelRepository[Wallet, WalletId]):
+class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
@@ -57,7 +58,7 @@ class WalletRepository(ModelRepository[Wallet, WalletId]):
         """
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
-            id=WalletId(values["id"]),
+            id=ShardedId[Wallet](values["id"]),
             version=values["version"],
             state=WalletState[values["state"]],
             owner_id=values["owner_id"],

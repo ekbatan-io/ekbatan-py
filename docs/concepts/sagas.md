@@ -151,8 +151,8 @@ class TransferInitiatedEventHandler:
             CompleteTransferAction,
             CompleteTransferParams(
                 transfer_id=event.transfer_id,
-                from_wallet_id=WalletId(event.from_wallet_id),
-                to_wallet_id=WalletId(event.to_wallet_id),
+                from_wallet_id=ShardedId[Wallet](event.from_wallet_id),
+                to_wallet_id=ShardedId[Wallet](event.to_wallet_id),
                 amount=event.amount,
                 currency=event.currency,
             ),

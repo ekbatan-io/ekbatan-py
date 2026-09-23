@@ -169,7 +169,7 @@ wallet(existing).balance("oops").build()
 A generated builder declares **only the fields its model added**:
 
 ```python
-class WalletBuilder(ModelBuilder[Wallet, WalletId, WalletState]):
+class WalletBuilder(ModelBuilder[Wallet, ShardedId[Wallet], WalletState]):
     builds = Wallet
 
     def owner_id(self, value: UUID) -> Self: ...
