@@ -105,41 +105,45 @@ def migrate(
     if not location.is_dir():
         raise ValidationError(f"no Alembic script directory at {location}")
 
-    targets = list(config.shards)
+    targets = list(config.members())
     if shards is not None:
         wanted = set(shards)
-        unknown = sorted(wanted - {t.shard for t in targets}, key=str)
+        unknown = sorted(wanted - {shard for shard, _ in targets}, key=str)
         if unknown:
             raise ValidationError(
                 f"cannot migrate {', '.join(str(s) for s in unknown)}: not in this layout, "
-                f"which has {', '.join(str(t.shard) for t in targets)}"
+                f"which has {', '.join(str(shard) for shard, _ in targets)}"
             )
         # Config order, not argument order: shards go in a defined sequence, so a run that
         # stops halfway leaves a state the operator can reason about.
-        targets = [t for t in targets if t.shard in wanted]
+        targets = [(shard, member) for shard, member in targets if shard in wanted]
 
     done: dict[ShardIdentifier, str] = {}
-    for shard in targets:
-        engine = create_engine(shard.primary.url)
+    for shard, member in targets:
+        # The primary, as Java's Flyway module migrates `primaryConfig`: the replica follows it,
+        # and any other named config on the member is a pool onto the same schema.
+        url = member.primary_config().url
+        label = member.name or str(shard)
+        engine = create_engine(url)
         try:
             checksum_table(MetaData()).create(engine, checkfirst=True)
             _verify(engine, location)
-            _upgrade(shard.primary.url, location, revision)
+            _upgrade(url, location, revision)
             _record(engine, location)
-            done[shard.shard] = _current(engine) or "base"
+            done[shard] = _current(engine) or "base"
         except MigrationError:
             raise
         except Exception as error:
             already = ", ".join(f"{s} ({r})" for s, r in done.items()) or "none"
             raise MigrationError(
-                f"migrating shard {shard.label} failed: {type(error).__name__}: {error}. "
+                f"migrating shard {label} failed: {type(error).__name__}: {error}. "
                 f"Already migrated: {already}. Migrations are applied one shard at a time, so "
                 f"the rest are untouched - fix this one and run again; the applied ones are "
                 f"skipped."
             ) from error
         finally:
             engine.dispose()
-        LOG.info("shard %s is at revision %s", shard.label, done[shard.shard])
+        LOG.info("shard %s is at revision %s", label, done[shard])
     return done
 
 

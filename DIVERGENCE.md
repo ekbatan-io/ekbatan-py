@@ -708,7 +708,6 @@ differs, not because the name was chosen freely:
 | `EventNotification`, `EventNotificationRepository` | - | the same |
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
 | `ShardedUUID`, `Backoff` | `sharded_uuid()`, `backoff()` | a class holding only static methods is a function here |
-| `ShardGroupConfig` + `ShardMemberConfig` | `ShardConfig` | one flat shard list rather than a group/member nesting |
 | `Transaction` (package-private) | - | the auto-commit dance SQLAlchemy already does; the public `Transaction` here is the counterpart to the `DSLContext` Java hands the block, not to this |
 | `ConnectionProvider` | - | `Engine` is pool, dialect and lifecycle in one |
 | `ActionSpec`, `ActionAssert` | `run_action`, `StagedWork` | see above |
@@ -726,7 +725,7 @@ differs, not because the name was chosen freely:
 | `Retry` (class) | folded into the executor's loop | it has one caller and no state beyond what that caller already holds |
 
 One place where matching Java costs something: `ExecutionConfiguration` sits next to
-`ShardingConfig`, `ShardConfig` and `DataSourceConfig`, because that is the inconsistency Java
+`ShardingConfig`, `ShardGroupConfig`, `ShardMemberConfig` and `DataSourceConfig`, because that is the inconsistency Java
 has and the name is the thing worth matching. `RetryConfig` follows Java rather than the
 `RetryPolicy` it was called here.
 
@@ -795,24 +794,46 @@ In practice the version moves whenever the content does, so the two agree on eve
 repository produces. Where they differ, this port is the stricter of the two, and a test
 asserting `loaded == expected` means here what it looks like it means.
 
-## A shard member carries one datasource pair, not a named map
+## The layout is Java's: groups, members, and a named map of datasources on each member
 
-> **chosen** - Java's `configFor(name)` map is dropped for a fixed pair. A surface removal somebody decided. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - `ShardingConfig` / `ShardGroupConfig` / `ShardMemberConfig`, level for level, with the `configs` map keyed exactly as Java's is. Brought to parity in `EKB-0222`; until then a shard had a fixed `primary` / `replica` pair and nothing else.
 
-Java's `ShardMemberConfig` holds a `configs` map with two reserved keys, `primaryConfig` and
-`secondaryConfig`, plus any number of user-named entries reached through `configFor(name)`. Its
-three DI modules use that to give the job scheduler a pool of its own -
-`member.configFor("jobsConfig")` - so the scheduler's polling does not compete with the
-application for connections.
+```java
+shardMemberConfig().member(0).name("global-eu-1")
+    .primaryConfig(primary).secondaryConfig(replica).withConfig("lockConfig", lock).build()
+```
 
-Here a shard has a `primary` and an optional `replica`, and nothing else. The map exists in
-Java because a DI container binds YAML into it and there is nowhere to hand an object; this
-port hands the object: `job_registry().engine(create_engine(...))` gives the scheduler its own
-pool directly, which is the same remedy with one less layer. Nothing binds configuration from a
-property file here, which is also why `PropertyKeyNormalizer` has no counterpart.
+```python
+ShardMemberConfig(member=0, name="global-eu-1", configs={
+    "primaryConfig": primary, "secondaryConfig": replica, "lockConfig": lock,
+})
+```
 
-Reopen it if configuration ever does come from a file: the named map is the right shape for
-that, and this is the wrong shape for it.
+Java's rules, each with Java's message: `"primaryConfig"` is required, `"secondaryConfig"` is
+optional, any other name is the application's and is read back with `config_for(name)`; a group
+needs a name and at least one member; a layout needs a default shard and at least one group. The
+map is copied and read-only, as `Map.copyOf` is. The keys are Java's spelling, so one layout
+describes both ports.
+
+The registry builds pools for the primary and secondary only, as `fromConfig` does. Anything else
+on the member is built by the application with `engine_for(config)` - Java's
+`ConnectionProvider.hikariConnectionProvider(config)` - and the examples now declare their
+scheduler and lock pools as `"jobsConfig"` and `"lockConfig"` exactly as Java's `application.yml`
+does, rather than calling `create_engine` beside the layout.
+
+Differences in mechanism, not behaviour:
+
+- **Constructors take keyword arguments, where Java has builders**, as every config class in this
+  port does. The builder's `primaryConfig(...)` / `withConfig(name, ...)` are entries in the
+  `configs` literal.
+- **`ShardingConfig.members()` and `member(shard)`** walk the layout. Java inlines that walk in
+  `fromConfig` and carries `findDefaultMember` in each DI module; four places need it here.
+- **Nothing binds the layout from a property file.** Java's `ShardingConfigYamlTest` and
+  `ShardingConfigJacksonBindingTest` bind it with Jackson; their assertions about the bound layout
+  are ported against a layout built directly. `PropertyKeyNormalizer` has no counterpart.
+- **Two checks Java does not make**: a `(group, member)` configured twice is refused - in Java the
+  second pool silently replaces the first in the registry and the first is left open - and every
+  member's primary must share a dialect.
 
 ## SQLite is a dialect here and is not one in Java
 

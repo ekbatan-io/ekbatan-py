@@ -23,7 +23,7 @@ from typing import Any, Literal
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
 from ._tracing import span
-from .config import ShardConfig, ShardingConfig
+from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from .errors import ValidationError
 from .fetching import Db, FetchResult
 from .sharding import ShardIdentifier
@@ -282,14 +282,23 @@ class DatabaseRegistry:
     def from_config(cls, config: ShardingConfig) -> DatabaseRegistry:
         """Build the registry. ``ShardingConfig`` has already refused a default shard that
         names nothing, so no engine is created for a layout that cannot work."""
-        managers = {s.shard: cls._manager(s, config.dialect) for s in config.shards}
+        managers = {
+            shard: cls._manager(shard, member, config.dialect) for shard, member in config.members()
+        }
         return cls(managers, config.default_shard, config.unknown_shard_policy)
 
     @staticmethod
-    def _manager(shard: ShardConfig, dialect: str) -> TransactionManager:
-        primary = _engine(shard.primary)
-        replica = _engine(shard.replica) if shard.replica is not None else None
-        return TransactionManager(shard.shard, primary, replica, dialect=dialect, label=shard.label)
+    def _manager(
+        shard: ShardIdentifier, member: ShardMemberConfig, dialect: str
+    ) -> TransactionManager:
+        """Java's loop body in ``fromConfig``: the primary's pool, and the secondary's if the
+        member has one. Any other named config on the member is the application's to build."""
+        primary = engine_for(member.primary_config())
+        secondary = member.secondary_config()
+        replica = engine_for(secondary) if secondary is not None else None
+        return TransactionManager(
+            shard, primary, replica, dialect=dialect, label=member.name or str(shard)
+        )
 
     def manager(self, shard: ShardIdentifier) -> TransactionManager:
         try:
@@ -363,10 +372,19 @@ class DatabaseRegistry:
         return f"DatabaseRegistry({len(self._managers)} shard(s), default={self.default_shard})"
 
 
-def _engine(config: object) -> Engine:
-    from .config import DataSourceConfig
+def engine_for(config: DataSourceConfig) -> Engine:
+    """A pool for one :class:`~ekbatan.config.DataSourceConfig` - Java's
+    ``ConnectionProvider.hikariConnectionProvider(config)``.
 
-    assert isinstance(config, DataSourceConfig)
+    What the registry builds a shard's pools with, and what an application builds any other
+    named config on a member with - a ``"jobsConfig"`` for the scheduler, a ``"lockConfig"`` for
+    the locks::
+
+        member = layout.groups[0].members[0]
+        jobs_engine = engine_for(member.config_for("jobsConfig"))
+
+    The engine is the caller's: dispose it when you are done with it.
+    """
     from ._json import dumps, loads
 
     kwargs: dict[str, object] = {

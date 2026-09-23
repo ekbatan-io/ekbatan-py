@@ -18,7 +18,7 @@ unlabelled or if a **chosen** one does not link here. That check exists because 
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **10 that somebody decided**. Each could have gone the other way. Five more are
+These are the **9 that somebody decided**. Each could have gone the other way. Five more are
 struck out and kept struck rather than deleted - four reversed after being asked about, and one
 (`EKB-0199`) that described behaviour this port never had.
 
@@ -35,7 +35,7 @@ struck out and kept struck rather than deleted - four reversed after being asked
 | ~~[Timestamps are stamped when the change is staged](../DIVERGENCE.md)~~ | **Closed in `EKB-0192` and `EKB-0194`.** `created_date` is required at construction, as Java's `Validate.notNull(builder.createdDate)` requires it, and nothing writes `updated_date` but the application. |
 | ~~[Retries match an exception the way `except` does](../DIVERGENCE.md)~~ | **Closed in `EKB-0198`.** The case it rested on - "`on=OperationalError` matches every driver subclass" - was checked and is not real: SQLAlchemy raises that exact class for every dialect and it has no subclasses. Matching is now exact and the walk is `__cause__` only, as Java's are. |
 | [Equality compares the whole row](../DIVERGENCE.md) | **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. |
-| [A shard member carries one datasource pair, not a named map](../DIVERGENCE.md) | Java's `configFor(name)` map is dropped for a fixed pair. A surface removal somebody decided. |
+| ~~[A shard member carries one datasource pair, not a named map](../DIVERGENCE.md)~~ | **Closed in `EKB-0222`.** The layout is Java's three levels - groups, members, and a `configs` map on each member keyed `"primaryConfig"` / `"secondaryConfig"` / anything else - with `config_for(name)`. The examples declare their jobs and lock pools as `"jobsConfig"` and `"lockConfig"`, as Java's `application.yml` does. |
 | [SQLite is a dialect here and is not one in Java](../DIVERGENCE.md) | An addition. Java refuses everything but the three. |
 | ~~[`plan.add` hands back the stamped row, not the argument](../DIVERGENCE.md)~~ | **Closed in `EKB-0192`.** `created_date` is required at construction now, so there is nothing to stamp and `add` hands back the object it was given - `isSameAs`, as Java does. |
 | ~~[The test-support API is data, not an assertion DSL](../DIVERGENCE.md)~~ | **Closed in `EKB-0219`.** `ActionSpec`/`ActionAssert` are ported method for method with Java's messages, and Java's 38 `ActionSpecTest` cases with them. A verifier's falsy return fails, because a Python lambda returns its verdict where Java's `Consumer` asserts. |

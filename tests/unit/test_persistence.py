@@ -20,10 +20,11 @@ import logging
 import pytest
 from sqlalchemy.exc import NoSuchModuleError
 
-from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
+from ekbatan.config import DataSourceConfig, ShardingConfig
 from ekbatan.errors import ValidationError
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import ShardIdentifier
+from fixtures.config import group, member
 
 PRIMARY = DataSourceConfig(url="postgresql+psycopg://user:pass@primary-9e3f:5432/db", pool_size=20)
 REPLICA = DataSourceConfig(url="postgresql+psycopg://user:pass@replica-9e3f:5432/db", pool_size=20)
@@ -34,8 +35,7 @@ SECOND = ShardIdentifier(0, 1)
 
 def config(replica: DataSourceConfig | None) -> ShardingConfig:
     return ShardingConfig(
-        shards=(ShardConfig(shard=FIRST, primary=PRIMARY, replica=replica, name="g0"),),
-        default_shard=FIRST,
+        default_shard=FIRST, groups=(group(0, "g0", member(0, PRIMARY, replica, name="g0")),)
     )
 
 
@@ -75,11 +75,8 @@ class TestDatabaseRegistrySecondaryPool:
     def test_separate_members_never_share_a_pool(self) -> None:
         """Every member gets its own primary - sharing is within a member, never across them."""
         layout = ShardingConfig(
-            shards=(
-                ShardConfig(shard=FIRST, primary=PRIMARY, name="g0"),
-                ShardConfig(shard=SECOND, primary=REPLICA, name="g0"),
-            ),
             default_shard=FIRST,
+            groups=(group(0, "g0", member(0, PRIMARY), member(1, REPLICA)),),
         )
 
         with DatabaseRegistry.from_config(layout) as registry:
@@ -103,13 +100,10 @@ class TestDatabaseRegistrySecondaryPool:
         this still fails if the check ever moves after the engine loop.
         """
         unloadable = DataSourceConfig(url="postgresql+nosuchdriver://u:p@primary-9e3f:5432/db")
-        shards = (
-            ShardConfig(shard=FIRST, primary=unloadable),
-            ShardConfig(shard=SECOND, primary=unloadable),
-        )
+        groups = (group(0, "g0", member(0, unloadable), member(1, unloadable)),)
 
         with pytest.raises(ValidationError) as refused:
-            ShardingConfig(shards=shards, default_shard=ShardIdentifier(9, 9))
+            ShardingConfig(default_shard=ShardIdentifier(9, 9), groups=groups)
 
         assert "default_shard" in str(refused.value)
         assert "Can't load plugin" not in str(refused.value)
@@ -117,7 +111,7 @@ class TestDatabaseRegistrySecondaryPool:
         # And the url really would have raised had an engine been built, so the assertion above
         # is evidence rather than an accident of ordering.
         with pytest.raises(NoSuchModuleError):
-            DatabaseRegistry.from_config(ShardingConfig(shards=shards, default_shard=FIRST))
+            DatabaseRegistry.from_config(ShardingConfig(default_shard=FIRST, groups=groups))
 
 
 G0_M0 = DataSourceConfig(url="postgresql+psycopg://user:pass@host-g0-m0:5432/db", pool_size=5)
@@ -130,22 +124,17 @@ MEXICO = ShardIdentifier(1, 0)
 
 
 class TestDatabaseRegistryFromConfig:
-    """Java's `DatabaseRegistryFromConfigTest`.
-
-    Java's layout nests groups inside the config and members inside groups; this port keeps a
-    flat tuple of `ShardConfig`, so the shapes below are the same layouts written the shorter
-    way. What is being tested - how many managers come out, which one is the default, and where
-    the dialect comes from - is unchanged.
-    """
+    """Java's `DatabaseRegistryFromConfigTest`, layout for layout: groups of members, each
+    member a named map of datasources."""
 
     def test_should_create_registry_with_two_shards_across_two_groups(self) -> None:
         registry = DatabaseRegistry.from_config(
             ShardingConfig(
-                shards=(
-                    ShardConfig(shard=GLOBAL, primary=G0_M0, replica=G0_M0, name="default"),
-                    ShardConfig(shard=MEXICO, primary=G1_M0, replica=G1_M0, name="mexico-1"),
-                ),
                 default_shard=GLOBAL,
+                groups=(
+                    group(0, "global", member(0, G0_M0, G0_M0, name="default")),
+                    group(1, "mexico", member(0, G1_M0, G1_M0, name="mexico-1")),
+                ),
             )
         )
 
@@ -158,8 +147,7 @@ class TestDatabaseRegistryFromConfig:
     def test_should_create_registry_with_single_shard(self) -> None:
         registry = DatabaseRegistry.from_config(
             ShardingConfig(
-                shards=(ShardConfig(shard=GLOBAL, primary=G0_M0, replica=G0_M0),),
-                default_shard=GLOBAL,
+                default_shard=GLOBAL, groups=(group(0, "global", member(0, G0_M0, G0_M0)),)
             )
         )
 
@@ -169,11 +157,8 @@ class TestDatabaseRegistryFromConfig:
     def test_should_create_registry_with_multiple_members_in_one_group(self) -> None:
         registry = DatabaseRegistry.from_config(
             ShardingConfig(
-                shards=(
-                    ShardConfig(shard=GLOBAL, primary=G0_M0, replica=G0_M0),
-                    ShardConfig(shard=GLOBAL_2, primary=G0_M1, replica=G0_M1),
-                ),
                 default_shard=GLOBAL,
+                groups=(group(0, "global", member(0, G0_M0, G0_M0), member(1, G0_M1, G0_M1)),),
             )
         )
 
@@ -184,8 +169,7 @@ class TestDatabaseRegistryFromConfig:
         """The dialect is read off the url, not declared beside it."""
         registry = DatabaseRegistry.from_config(
             ShardingConfig(
-                shards=(ShardConfig(shard=GLOBAL, primary=G0_M0, replica=G0_M0),),
-                default_shard=GLOBAL,
+                default_shard=GLOBAL, groups=(group(0, "global", member(0, G0_M0, G0_M0)),)
             )
         )
 
@@ -197,13 +181,13 @@ class TestDatabaseRegistryFromConfig:
         validation of its own."""
         with pytest.raises(ValidationError) as from_layout:
             ShardingConfig(
-                shards=(ShardConfig(shard=GLOBAL, primary=G0_M0, replica=G0_M0),),
                 default_shard=ShardIdentifier(9, 9),
+                groups=(group(0, "global", member(0, G0_M0, G0_M0)),),
             )
         assert "names no configured database" in str(from_layout.value)
 
         registry = DatabaseRegistry.from_config(
-            ShardingConfig(shards=(ShardConfig(shard=GLOBAL, primary=G0_M0),), default_shard=GLOBAL)
+            ShardingConfig(default_shard=GLOBAL, groups=(group(0, "global", member(0, G0_M0)),))
         )
         with pytest.raises(ValidationError) as direct:
             DatabaseRegistry({GLOBAL: registry.default}, ShardIdentifier(9, 9))
@@ -213,11 +197,11 @@ class TestDatabaseRegistryFromConfig:
         """The default is what the layout says, not the first shard registered."""
         registry = DatabaseRegistry.from_config(
             ShardingConfig(
-                shards=(
-                    ShardConfig(shard=GLOBAL, primary=G0_M0, replica=G0_M0),
-                    ShardConfig(shard=MEXICO, primary=G1_M0, replica=G1_M0),
-                ),
                 default_shard=MEXICO,
+                groups=(
+                    group(0, "global", member(0, G0_M0, G0_M0)),
+                    group(1, "mexico", member(0, G1_M0, G1_M0)),
+                ),
             )
         )
 
@@ -232,11 +216,11 @@ def _two_shards(**kw: object) -> DatabaseRegistry:
     """Two sqlite shards. Nothing is queried here - only routing is under test."""
     return DatabaseRegistry.from_config(
         ShardingConfig(
-            shards=(
-                ShardConfig(shard=ShardIdentifier(0, 0), primary=DataSourceConfig(url="sqlite://")),
-                ShardConfig(shard=ShardIdentifier(1, 0), primary=DataSourceConfig(url="sqlite://")),
-            ),
             default_shard=ShardIdentifier(0, 0),
+            groups=(
+                group(0, "global", member(0, DataSourceConfig(url="sqlite://"))),
+                group(1, "mexico", member(0, DataSourceConfig(url="sqlite://"))),
+            ),
             **kw,  # type: ignore[arg-type]
         )
     )
@@ -288,3 +272,59 @@ def test_unknown_shard_policy_fail_raises_instead_of_routing_somewhere_else():
         assert registry.effective_shard(None) == ShardIdentifier(0, 0)
     finally:
         registry.close()
+
+
+# -- the other named configs on a member are the application's --------------------------------
+
+
+def test_the_registry_builds_pools_for_the_primary_and_secondary_only():
+    """Java's `fromConfig` reads `primaryConfig()` and `secondaryConfig()` and nothing else. A
+    `jobsConfig` or `lockConfig` beside them is there for the application to build - the
+    scheduler and the lock provider own those pools, not the registry."""
+    from ekbatan.persistence import engine_for
+
+    jobs = DataSourceConfig(url="sqlite://", pool_size=3)
+    layout = ShardingConfig(
+        default_shard=FIRST,
+        groups=(group(0, "g0", member(0, DataSourceConfig(url="sqlite://"), jobsConfig=jobs)),),
+    )
+    created: list[DataSourceConfig] = []
+
+    import ekbatan.persistence as persistence
+
+    real = persistence.engine_for
+
+    def recording(config: DataSourceConfig):  # type: ignore[no-untyped-def]
+        created.append(config)
+        return real(config)
+
+    persistence.engine_for = recording  # type: ignore[assignment]
+    try:
+        with DatabaseRegistry.from_config(layout):
+            pass
+    finally:
+        persistence.engine_for = real  # type: ignore[assignment]
+
+    assert jobs not in created, "the registry built a pool for the application's jobsConfig"
+    assert created == [layout.member(FIRST).primary_config()]
+
+    # And the application builds it with the same function the registry uses.
+    engine = engine_for(layout.member(FIRST).config_for("jobsConfig"))  # type: ignore[arg-type]
+    try:
+        assert str(engine.url) == "sqlite://"
+    finally:
+        engine.dispose()
+
+
+def test_engine_for_honours_the_pool_it_is_given():
+    """Java's `hikariConnectionProvider(config)`: the settings on the config are the pool's."""
+    from ekbatan.persistence import engine_for
+
+    engine = engine_for(
+        DataSourceConfig(url="postgresql+psycopg://u:p@h-9e3f/db", pool_size=7, max_overflow=2)
+    )
+    try:
+        assert engine.pool.size() == 7  # type: ignore[attr-defined]
+        assert engine.pool._max_overflow == 2  # type: ignore[attr-defined]
+    finally:
+        engine.dispose()

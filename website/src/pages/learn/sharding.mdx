@@ -112,11 +112,15 @@ is the **capacity** axis - how many writes one database can take. See
 
 ```python
 layout = ShardingConfig(
-    shards=(
-        ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=global_url)),
-        ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=mexico_url), name="mexico"),
-    ),
     default_shard=GLOBAL,
+    groups=(
+        ShardGroupConfig(group=0, name="global", members=(
+            ShardMemberConfig(member=0, configs={"primaryConfig": DataSourceConfig(url=global_url)}),
+        )),
+        ShardGroupConfig(group=1, name="mexico", members=(
+            ShardMemberConfig(member=0, configs={"primaryConfig": DataSourceConfig(url=mexico_url)}),
+        )),
+    ),
 )
 registry = DatabaseRegistry.from_config(layout)
 ```

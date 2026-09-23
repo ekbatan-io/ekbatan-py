@@ -16,7 +16,11 @@ else. A pool of its own costs a handful of connections and removes the failure m
 **Locks** get a third. A keyed lock holds its connection for as long as the lease is held - that
 is what the lock *is* - so a lease taken during a request would otherwise sit on a request
 connection for the duration. Size it for the maximum number of leases held at once, not for
-traffic. Java's examples carry the same three, under a `lockConfig` slot in `application.yml`.
+traffic.
+
+All three are declared on the shard member, the way Java's `application.yml` declares them:
+`primaryConfig` for requests, and `jobsConfig` and `lockConfig` beside it. The registry builds
+the first; the other two are this file's to build with `engine_for`, and this file's to dispose.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine
 
 from ekbatan import (
     ActionExecutor,
@@ -33,9 +37,10 @@ from ekbatan import (
     DatabaseRegistry,
     RepositoryRegistry,
     ShardingConfig,
+    engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
-from ekbatan.config import DataSourceConfig, ShardConfig
+from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardMemberConfig
 from ekbatan.distributedjobs import JobRegistry, job_registry
 from ekbatan.events import (
     EventFanoutJob,
@@ -96,6 +101,10 @@ class WalletService:
     executor: ActionExecutor
     locks: KeyedLockProvider
     jobs: JobRegistry
+    #: The pools built from `lockConfig` and `jobsConfig`. The registry owns only the ones it
+    #: built, so these two are disposed here.
+    lock_engine: Engine
+    jobs_engine: Engine
 
     def start(self) -> None:
         """Begin polling for jobs. Fan-out and dispatch are two of them, so this is also what
@@ -106,6 +115,8 @@ class WalletService:
         # Order matters: stop taking work before closing what the work runs on.
         self.jobs.stop()
         self.locks.close()
+        self.lock_engine.dispose()
+        self.jobs_engine.dispose()
         self.registry.close()
 
 
@@ -115,13 +126,30 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
     running = clock or SystemClock()
 
     layout = ShardingConfig(
-        shards=(
-            ShardConfig(
-                shard=DEFAULT_SHARD,
-                primary=DataSourceConfig(url=config.url, pool_size=config.pool_size),
+        default_shard=DEFAULT_SHARD,
+        groups=(
+            ShardGroupConfig(
+                group=0,
+                name="global",
+                members=(
+                    ShardMemberConfig(
+                        member=0,
+                        name="global",
+                        configs={
+                            "primaryConfig": DataSourceConfig(
+                                url=config.url, pool_size=config.pool_size
+                            ),
+                            "jobsConfig": DataSourceConfig(
+                                url=config.url, pool_size=config.job_pool_size
+                            ),
+                            "lockConfig": DataSourceConfig(
+                                url=config.url, pool_size=config.lock_pool_size
+                            ),
+                        },
+                    ),
+                ),
             ),
         ),
-        default_shard=DEFAULT_SHARD,
     )
 
     if config.run_migrations:
@@ -158,6 +186,11 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         clock=running,
     )
 
+    # Java's `shardingConfig.groups.getFirst().members.getFirst().configFor("lockConfig")`.
+    member = layout.groups[0].members[0]
+    lock_engine = engine_for(_required(member, "lockConfig"))
+    jobs_engine = engine_for(_required(member, "jobsConfig"))
+
     handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
     events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
@@ -166,12 +199,12 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         wallets=wallets,
         alerts=alerts,
         executor=executor,
-        locks=PostgresKeyedLockProvider(
-            create_engine(config.url, pool_size=config.lock_pool_size, max_overflow=0)
-        ),
+        locks=PostgresKeyedLockProvider(lock_engine),
+        lock_engine=lock_engine,
+        jobs_engine=jobs_engine,
         jobs=(
             job_registry()
-            .engine(create_engine(config.url, pool_size=config.job_pool_size, max_overflow=0))
+            .engine(jobs_engine)
             .with_jobs(
                 [
                     EventFanoutJob(
@@ -196,3 +229,11 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
             .build()
         ),
     )
+
+
+def _required(member: ShardMemberConfig, name: str) -> DataSourceConfig:
+    """Java's `configFor(name).orElseThrow(...)`, naming where the setting goes."""
+    found = member.config_for(name)
+    if found is None:
+        raise ValueError(f"groups[0].members[0].configs.{name} is required")
+    return found

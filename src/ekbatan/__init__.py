@@ -31,7 +31,7 @@ from .action import (
     current_plan,
 )
 from .clock import Clock, SystemClock, VirtualClock
-from .config import DataSourceConfig, ShardConfig, ShardingConfig
+from .config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig
 from .distributedjobs import (
     DistributedJob,
     ExecutionContext,
@@ -83,7 +83,7 @@ from .locks import (
     PostgresKeyedLockProvider,
 )
 from .migrations import emit_ddl, migrate, migrate_registry
-from .persistence import DatabaseRegistry, Transaction, TransactionManager
+from .persistence import DatabaseRegistry, Transaction, TransactionManager, engine_for
 from .repository import (
     EntityRepository,
     ModelRepository,
@@ -168,8 +168,9 @@ __all__ = [
     "RepositoryRegistryBuilder",
     "RetryConfig",
     "Schedule",
-    "ShardConfig",
+    "ShardGroupConfig",
     "ShardIdentifier",
+    "ShardMemberConfig",
     "ShardedId",
     "ShardingConfig",
     "ShardingStrategy",
@@ -188,6 +189,7 @@ __all__ = [
     "count_statements",
     "current_plan",
     "emit_ddl",
+    "engine_for",
     "job_registry",
     "migrate",
     "migrate_registry",

@@ -39,25 +39,41 @@ below, and `unknown_shard_policy="fail"` if you want it to be an error instead.
 
 ## Declarative configuration
 
+Java's layout, level for level: **groups** of **members**, each member one shard and a named map
+of datasources.
+
 ```python
 layout = ShardingConfig(
-    shards=(
-        ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=global_url)),
-        ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=mexico_url), name="mexico"),
-    ),
     default_shard=GLOBAL,
+    groups=(
+        ShardGroupConfig(group=0, name="global", members=(
+            ShardMemberConfig(member=0, name="global-eu-1", configs={
+                "primaryConfig":   DataSourceConfig(url=global_url, pool_size=20),
+                "secondaryConfig": DataSourceConfig(url=global_replica_url),
+                "lockConfig":      DataSourceConfig(url=global_url, pool_size=50),
+            }),
+        )),
+        ShardGroupConfig(group=1, name="mexico", members=(
+            ShardMemberConfig(member=0, name="mexico-1", configs={
+                "primaryConfig": DataSourceConfig(url=mexico_url),
+            }),
+        )),
+    ),
 )
 registry = DatabaseRegistry.from_config(layout)
 ```
 
-`ShardConfig` takes:
+A member's `(group, member)` is its `ShardIdentifier`. Its `configs` map has two reserved names
+and room for any other:
 
-| | |
+| key | |
 | --- | --- |
-| `shard` | the identifier |
-| `primary` | the pool for writes and transactional reads |
-| `replica` | optional. A read replica for non-transactional reads; omit it and both go to the primary |
-| `name` | optional label, used in spans and log lines |
+| `"primaryConfig"` | **required.** The pool for writes and transactional reads |
+| `"secondaryConfig"` | optional. A read replica for non-transactional reads; omit it and both go to the primary |
+| anything else | yours - `"jobsConfig"`, `"lockConfig"`, `"analyticsConfig"`. Read back with `member.config_for(name)` and build with `engine_for(...)`; the registry builds only the two above |
+
+The key names are Java's, spelling included, so one layout describes both ports. A group needs a
+`name`; a member's `name` is optional and labels its spans and log lines.
 
 `DataSourceConfig` is the pool:
 
@@ -290,8 +306,8 @@ can only be a bug:
 
 ```python
 ShardingConfig(
-    shards=(...),
     default_shard=GLOBAL,
+    groups=(...),
     unknown_shard_policy="fail",   # omitted -> "use_default_shard": fall back, and warn
 )
 ```

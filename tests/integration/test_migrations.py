@@ -10,10 +10,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import MetaData, create_engine, inspect, select
 
-from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
+from ekbatan.config import DataSourceConfig, ShardingConfig
 from ekbatan.errors import ValidationError
 from ekbatan.migrations import CHECKSUM_TABLE, MigrationError, checksum_table, migrate
 from ekbatan.sharding import ShardIdentifier
+from fixtures.config import group, member
 
 pytest.importorskip("alembic")
 
@@ -175,11 +176,11 @@ def test_a_failure_names_the_shard_and_what_had_already_been_done(backend, scrip
     scripts.revision("broken", "0003", "0002", "CREATE TABLE ( THIS IS NOT SQL")
     name = "ekb_mig_fail_" + request.node.name.replace("[", "_").replace("]", "").lower()[:24]
     config = ShardingConfig(
-        shards=(
-            ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url=backend.url(name + "_a"))),
-            ShardConfig(shard=MEXICO, primary=DataSourceConfig(url=backend.url(name + "_b"))),
-        ),
         default_shard=GLOBAL,
+        groups=(
+            group(0, "global", member(0, DataSourceConfig(url=backend.url(name + "_a")))),
+            group(1, "mexico", member(0, DataSourceConfig(url=backend.url(name + "_b")))),
+        ),
     )
 
     with pytest.raises(MigrationError) as raised:
@@ -198,15 +199,11 @@ def test_a_failure_names_the_shard_and_what_had_already_been_done(backend, scrip
 def _two_shards(backend, request, suffix=""):
     name = "ekb_mig_sub_" + request.node.name.replace("[", "_").replace("]", "").lower()[:20]
     return ShardingConfig(
-        shards=(
-            ShardConfig(
-                shard=GLOBAL, primary=DataSourceConfig(url=backend.url(name + suffix + "_a"))
-            ),
-            ShardConfig(
-                shard=MEXICO, primary=DataSourceConfig(url=backend.url(name + suffix + "_b"))
-            ),
-        ),
         default_shard=GLOBAL,
+        groups=(
+            group(0, "global", member(0, DataSourceConfig(url=backend.url(name + suffix + "_a")))),
+            group(1, "mexico", member(0, DataSourceConfig(url=backend.url(name + suffix + "_b")))),
+        ),
     )
 
 
@@ -217,7 +214,7 @@ def test_a_named_subset_migrates_only_those_shards(backend, scripts, request):
 
     assert at == {MEXICO: "0002"}, "only the shard that was asked for"
 
-    untouched = create_engine(config.shards[0].primary.url)
+    untouched = create_engine(config.member(GLOBAL).primary_config().url)
     try:
         assert "widgets" not in set(inspect(untouched).get_table_names()), (
             "the shard nobody named must not have been migrated"

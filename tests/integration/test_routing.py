@@ -617,17 +617,18 @@ def strict_wallets(clock):
     Its own registry rather than the shared fixture, because the policy is fixed when the
     registry is built - which is the point of it: an operator decides once, per deployment.
     """
-    from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
+    from ekbatan.config import DataSourceConfig, ShardingConfig
     from ekbatan.persistence import DatabaseRegistry
+    from fixtures.config import group, member
     from fixtures.schema import metadata
 
     registry = DatabaseRegistry.from_config(
         ShardingConfig(
-            shards=(
-                ShardConfig(shard=GLOBAL, primary=DataSourceConfig(url="sqlite://"), name="global"),
-                ShardConfig(shard=MEXICO, primary=DataSourceConfig(url="sqlite://"), name="mexico"),
-            ),
             default_shard=GLOBAL,
+            groups=(
+                group(0, "global", member(0, DataSourceConfig(url="sqlite://"), name="global")),
+                group(1, "mexico", member(0, DataSourceConfig(url="sqlite://"), name="mexico")),
+            ),
             unknown_shard_policy="fail",
         )
     )

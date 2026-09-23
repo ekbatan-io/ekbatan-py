@@ -286,10 +286,9 @@ def generate(
     image: str = "postgres:17-alpine",
 ) -> str:
     """Run the whole pipeline and write the module. Returns what was written."""
-    from .config import DataSourceConfig, ShardConfig, ShardingConfig
+    from .config import ShardingConfig
     from .migrations import migrate
     from .persistence import DatabaseRegistry  # noqa: F401  (import cycle guard)
-    from .sharding import DEFAULT_SHARD
 
     if not migrations.is_dir():
         raise ValidationError(f"no migration directory at {migrations}")
@@ -299,13 +298,7 @@ def generate(
         container, url = _start(image)
 
     try:
-        migrate(
-            ShardingConfig(
-                shards=(ShardConfig(shard=DEFAULT_SHARD, primary=DataSourceConfig(url=url)),),
-                default_shard=DEFAULT_SHARD,
-            ),
-            migrations,
-        )
+        migrate(ShardingConfig.single(url), migrations)
         engine: Engine = create_engine(url)
         try:
             reflected = MetaData()

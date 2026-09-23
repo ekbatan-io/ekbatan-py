@@ -1,17 +1,19 @@
 """Configuration, and the mistakes it refuses to accept.
 
-Java's `DataSourceConfigDialectTest` and `DataSourceConfigValidationTest`. The Jackson- and
-YAML-binding tests beside them have no counterpart: nothing here binds configuration from a
-property file, because there is no DI container asking it to.
+Java's `DataSourceConfigDialectTest` and `DataSourceConfigValidationTest`, and what
+`ShardingConfigYamlTest` / `ShardingConfigJacksonBindingTest` assert about the layout once it is
+bound. The binding itself has no counterpart - nothing here reads a property file, because there
+is no DI container asking it to - so those cases build the same layout directly.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
+from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig
 from ekbatan.errors import ValidationError
 from ekbatan.sharding import ShardIdentifier
+from fixtures.config import group, member
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -107,15 +109,113 @@ def test_the_defaults_build():
 # -- the layout ---------------------------------------------------------------------------------
 
 
-def test_a_layout_needs_at_least_one_shard():
-    with pytest.raises(ValidationError, match="at least one shard"):
-        ShardingConfig(shards=(), default_shard=GLOBAL)
+def test_the_full_layout_reads_back_as_written():
+    """`should_deserialize_full_sharding_config_from_yaml`, less the YAML: two groups, a member
+    with a replica and a user-defined `lockConfig`, and one with a primary only."""
+    lock = a_source(pool_size=50)
+    config = ShardingConfig(
+        default_shard=GLOBAL,
+        groups=(
+            group(
+                0,
+                "global",
+                member(0, a_source(pool_size=20), a_source(), name="global-eu-1", lockConfig=lock),
+            ),
+            group(1, "mexico", member(0, a_source(), name="mexico-1")),
+        ),
+    )
+
+    assert [g.name for g in config.groups] == ["global", "mexico"]
+    global_member = config.groups[0].members[0]
+    assert (global_member.member, global_member.name) == (0, "global-eu-1")
+    assert global_member.primary_config().pool_size == 20
+    assert global_member.secondary_config() is not None
+    assert global_member.config_for("lockConfig") is lock
+    mexico_member = config.groups[1].members[0]
+    assert mexico_member.config_for("lockConfig") is None, "one member's configs are not another's"
+    assert config.default_shard == GLOBAL
+
+
+def test_a_member_with_only_a_primary_has_no_secondary():
+    """`should_handle_member_with_only_primary_config`."""
+    only = member(0, a_source())
+
+    assert only.secondary_config() is None
+    assert only.config_for("anything") is None
+
+
+def test_a_member_without_a_primary_is_refused():
+    """`should_throw_clear_error_when_member_omits_primary_config`, with Java's message."""
+    with pytest.raises(ValidationError, match=r"configs\.primaryConfig is required"):
+        ShardMemberConfig(member=0, configs={ShardMemberConfig.SECONDARY_CONFIG: a_source()})
+
+
+def test_the_reserved_names_are_javas_spelling():
+    """So one layout, and one YAML file, describes both ports."""
+    assert ShardMemberConfig.PRIMARY_CONFIG == "primaryConfig"
+    assert ShardMemberConfig.SECONDARY_CONFIG == "secondaryConfig"
+
+
+def test_config_for_answers_the_reserved_names_like_any_other():
+    primary, secondary = a_source(), a_source()
+    both = member(0, primary, secondary)
+
+    assert both.config_for("primaryConfig") is primary
+    assert both.config_for("secondaryConfig") is secondary
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_config_for_refuses_a_blank_name(blank):
+    """Java's `Validate.notBlank(name, "name cannot be blank")`."""
+    with pytest.raises(ValidationError, match="name cannot be blank"):
+        member(0, a_source()).config_for(blank)
+
+
+def test_a_blank_config_name_is_refused_when_it_is_configured():
+    """It could never be read back, since `config_for` refuses it."""
+    with pytest.raises(ValidationError, match="config name cannot be blank"):
+        member(0, a_source(), **{" ": a_source()})
+
+
+def test_the_configs_cannot_be_changed_afterwards():
+    """Java's `Map.copyOf`: neither the member nor the caller's dict can move it."""
+    configs = {ShardMemberConfig.PRIMARY_CONFIG: a_source()}
+    frozen = ShardMemberConfig(member=0, configs=configs)
+    configs["lockConfig"] = a_source()
+
+    assert frozen.config_for("lockConfig") is None
+    with pytest.raises(TypeError):
+        frozen.configs["lockConfig"] = a_source()  # type: ignore[index]
+
+
+def test_a_group_needs_a_name():
+    with pytest.raises(ValidationError, match="name is required"):
+        ShardGroupConfig(group=0, name=" ", members=(member(0, a_source()),))
+
+
+def test_a_group_needs_at_least_one_member():
+    with pytest.raises(ValidationError, match="at least one member is required"):
+        ShardGroupConfig(group=0, name="global", members=())
+
+
+def test_a_layout_needs_at_least_one_group():
+    with pytest.raises(ValidationError, match="at least one group is required"):
+        ShardingConfig(default_shard=GLOBAL, groups=())
+
+
+def test_a_layout_needs_a_default_shard():
+    with pytest.raises(ValidationError, match="default_shard is required"):
+        ShardingConfig(default_shard=None, groups=(group(0, "g", member(0, a_source())),))  # type: ignore[arg-type]
 
 
 def test_a_shard_cannot_be_configured_twice():
-    twice = ShardConfig(shard=GLOBAL, primary=a_source())
+    """Not a Java check. There a repeated (group, member) builds a second pool, overwrites the
+    first in the registry, and leaves the first open with nothing holding it."""
     with pytest.raises(ValidationError, match="configured twice"):
-        ShardingConfig(shards=(twice, twice), default_shard=GLOBAL)
+        ShardingConfig(
+            default_shard=GLOBAL,
+            groups=(group(0, "global", member(0, a_source()), member(0, a_source())),),
+        )
 
 
 def test_the_default_shard_has_to_name_one_of_them():
@@ -123,9 +223,7 @@ def test_the_default_shard_has_to_name_one_of_them():
     until `EKB-0000` moved it - the realistic mistake here opens every pool and then throws,
     and nothing holds a reference to them afterwards."""
     with pytest.raises(ValidationError, match="names no configured database"):
-        ShardingConfig(
-            shards=(ShardConfig(shard=GLOBAL, primary=a_source()),), default_shard=MEXICO
-        )
+        ShardingConfig(default_shard=MEXICO, groups=(group(0, "global", member(0, a_source())),))
 
 
 def test_every_shard_has_to_speak_the_same_dialect():
@@ -134,12 +232,31 @@ def test_every_shard_has_to_speak_the_same_dialect():
     one of them."""
     with pytest.raises(ValidationError, match="same dialect"):
         ShardingConfig(
-            shards=(
-                ShardConfig(shard=GLOBAL, primary=a_source("postgresql://u:p@h/db")),
-                ShardConfig(shard=MEXICO, primary=a_source("mysql+pymysql://u:p@h/db")),
-            ),
             default_shard=GLOBAL,
+            groups=(
+                group(0, "global", member(0, a_source("postgresql://u:p@h/db"))),
+                group(1, "mexico", member(0, a_source("mysql+pymysql://u:p@h/db"))),
+            ),
         )
+
+
+def test_members_walks_groups_then_members_in_the_order_configured():
+    config = ShardingConfig(
+        default_shard=GLOBAL,
+        groups=(
+            group(0, "global", member(0, a_source()), member(1, a_source())),
+            group(1, "mexico", member(0, a_source())),
+        ),
+    )
+
+    assert [str(shard) for shard, _ in config.members()] == [
+        str(ShardIdentifier(0, 0)),
+        str(ShardIdentifier(0, 1)),
+        str(ShardIdentifier(1, 0)),
+    ]
+    assert config.member(MEXICO) is config.groups[1].members[0]
+    with pytest.raises(ValidationError, match="no member is configured for shard"):
+        config.member(ShardIdentifier(9, 9))
 
 
 def test_the_single_database_shortcut_needs_nothing_else():
@@ -147,7 +264,7 @@ def test_the_single_database_shortcut_needs_nothing_else():
 
     assert config.default_shard == GLOBAL
     assert config.dialect == "sqlite"
-    assert len(config.shards) == 1
+    assert len(list(config.members())) == 1
 
 
 # -- the namespace, which is written into every row this executor ever produces ------------------
@@ -207,9 +324,7 @@ def test_a_blank_namespace_still_says_it_is_required(namespace):
 def test_unknown_shard_policy_defaults_to_use_default_shard_when_nobody_names_one():
     """`EKB-0200`. Omitting it has to mean `use_default_shard`: Java's `effectiveShard` falls
     back, and a deployment holding a subset of the layout reads the rest's ids because of it."""
-    layout = ShardingConfig(
-        shards=(ShardConfig(shard=GLOBAL, primary=a_source()),), default_shard=GLOBAL
-    )
+    layout = ShardingConfig(default_shard=GLOBAL, groups=(group(0, "g", member(0, a_source())),))
 
     assert layout.unknown_shard_policy == "use_default_shard"
 
@@ -217,7 +332,7 @@ def test_unknown_shard_policy_defaults_to_use_default_shard_when_nobody_names_on
 def test_unknown_shard_policy_refuses_a_value_that_is_neither():
     with pytest.raises(ValidationError, match="must be 'use_default_shard' or 'fail'"):
         ShardingConfig(
-            shards=(ShardConfig(shard=GLOBAL, primary=a_source()),),
             default_shard=GLOBAL,
+            groups=(group(0, "g", member(0, a_source())),),
             unknown_shard_policy="raise",  # type: ignore[arg-type]
         )

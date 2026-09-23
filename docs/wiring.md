@@ -101,21 +101,35 @@ real OS threads, so the number is a decision. See [Concurrency](runtime/concurre
 
 ```python
 layout = ShardingConfig(
-    shards=(
-        ShardConfig(
-            shard=DEFAULT_SHARD,
-            primary=DataSourceConfig(url=config.url, pool_size=config.pool_size),
-        ),
-    ),
     default_shard=DEFAULT_SHARD,
+    groups=(
+        ShardGroupConfig(group=0, name="global", members=(
+            ShardMemberConfig(member=0, name="global", configs={
+                "primaryConfig": DataSourceConfig(url=config.url, pool_size=config.pool_size),
+                "jobsConfig":    DataSourceConfig(url=config.url, pool_size=config.job_pool_size),
+                "lockConfig":    DataSourceConfig(url=config.url, pool_size=config.lock_pool_size),
+            }),
+        )),
+    ),
 )
 ```
 
-One shard is the ordinary case and costs nothing - the framework treats a single entry as the
-default and adds no indirection. Add `ShardConfig` entries to shard; see [Sharding](database/sharding.md).
+Java's layout, level for level - the same keys as its `application.yml`. One group with one member
+is the ordinary case and costs nothing. Add members or groups to shard; see
+[Sharding](database/sharding.md).
 
-A `ShardConfig` also takes a `replica` for non-transactional reads. Point it at a read replica in
-production, or leave it out and both go to the primary.
+`"primaryConfig"` is required. Add `"secondaryConfig"` for a read replica, or leave it out and both
+go to the primary. The registry builds those two; `"jobsConfig"` and `"lockConfig"` are for the
+scheduler and the locks, and this file builds them:
+
+```python
+member = layout.groups[0].members[0]
+jobs_engine = engine_for(member.config_for("jobsConfig"))
+lock_engine = engine_for(member.config_for("lockConfig"))
+```
+
+Java's `ConnectionProvider.hikariConnectionProvider(member.configFor("jobsConfig"))`. They are
+yours, so dispose them in `close()`, after the scheduler and the locks have stopped.
 
 ## 3. Migrations, before anything opens a pool
 
@@ -253,14 +267,14 @@ the worker count - and did, while the example was being written.
 
 Each block above is removable on its own:
 
-- **No replica?** Leave `replica` out of the `ShardConfig`. Both go to the primary.
+- **No replica?** Leave `"secondaryConfig"` out of the member's `configs`. Both go to the primary.
 - **No in-process handlers?** Drop block 7 and the two event jobs in block 8. Events still land
   in the outbox for an external consumer.
 - **No background jobs at all?** Drop block 8. Drop block 7 with it - without the jobs there is
   no dispatch.
 - **No keyed locks?** Drop the provider. Optimistic locking is still on, in every write.
 - **No sharding?** That is what is shown. One entry, no overhead.
-- **Sharding?** Add `ShardConfig` entries and give repositories an
+- **Sharding?** Add members or groups to the layout and give repositories an
   `EmbeddedBitsShardingStrategy`. See [Sharding](database/sharding.md).
 
 ## No annotations, and nothing is discovered

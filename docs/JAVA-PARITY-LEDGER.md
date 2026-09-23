@@ -138,8 +138,8 @@ which means "use the default".
 | --- | --- | --- | --- |
 | DataSourceConfig.java | 238 | `config.py` | done - credentials live in the url, as SQLAlchemy carries them |
 | PropertyKeyNormalizer.java | 49 | `config.py` | n/a - nothing binds configuration from a property file here |
-| ShardGroupConfig.java | 100 | `config.py` | done - folded into `ShardConfig`; one flat shard list, no group nesting |
-| ShardMemberConfig.java | 183 | `config.py` | done - `ShardConfig`; the named `configs` map is deliberately not ported |
+| ShardGroupConfig.java | 100 | `config.py` | done - `ShardGroupConfig`, level for level (`EKB-0222`) |
+| ShardMemberConfig.java | 183 | `config.py` | done - `ShardMemberConfig`, including the named `configs` map and `config_for` (`EKB-0222`) |
 | ShardingConfig.java | 91 | `config.py` | done |
 
 #### `core/domain`

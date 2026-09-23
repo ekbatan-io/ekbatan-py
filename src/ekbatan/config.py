@@ -8,13 +8,15 @@ that caused it.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from types import MappingProxyType
+from typing import ClassVar, Literal
 
 from .errors import ValidationError
 from .sharding import ShardIdentifier
 
-__all__ = ["DataSourceConfig", "ShardConfig", "ShardingConfig"]
+__all__ = ["DataSourceConfig", "ShardGroupConfig", "ShardMemberConfig", "ShardingConfig"]
 
 _DIALECTS = {"postgresql": "postgres", "mysql": "mysql", "mariadb": "mariadb", "sqlite": "sqlite"}
 
@@ -85,25 +87,93 @@ class DataSourceConfig:
 
 
 @dataclass(frozen=True, kw_only=True)
-class ShardConfig:
-    """One member of the layout: a writer, and optionally a reader beside it."""
+class ShardMemberConfig:
+    """One member of a shard group, and every database it has - Java's ``ShardMemberConfig``.
 
-    shard: ShardIdentifier
-    primary: DataSourceConfig
-    replica: DataSourceConfig | None = None
+    All of them live in one named map. ``"primaryConfig"`` is reserved and required,
+    ``"secondaryConfig"`` is reserved and optional, and any other name - ``"jobsConfig"``,
+    ``"lockConfig"``, ``"analyticsConfig"`` - is the application's, read back with
+    :meth:`config_for`. The keys are Java's, spelling included, so one layout describes both
+    ports::
+
+        ShardMemberConfig(
+            member=0,
+            name="global-eu-1",
+            configs={
+                "primaryConfig": DataSourceConfig(url=..., pool_size=20),
+                "secondaryConfig": DataSourceConfig(url=...),
+                "lockConfig": DataSourceConfig(url=..., pool_size=50),
+            },
+        )
+    """
+
+    #: Reserved key for the required primary datasource.
+    PRIMARY_CONFIG: ClassVar[str] = "primaryConfig"
+    #: Reserved key for the optional secondary (read-replica) datasource.
+    SECONDARY_CONFIG: ClassVar[str] = "secondaryConfig"
+
+    member: int
+    configs: Mapping[str, DataSourceConfig]
     name: str | None = None
 
-    @property
-    def label(self) -> str:
-        return self.name or str(self.shard)
+    def __post_init__(self) -> None:
+        if self.PRIMARY_CONFIG not in self.configs:
+            raise ValidationError(f"configs.{self.PRIMARY_CONFIG} is required")
+        for key, value in self.configs.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValidationError(f"a config name cannot be blank, got {key!r}")
+            if not isinstance(value, DataSourceConfig):
+                raise ValidationError(
+                    f"configs.{key} must be a DataSourceConfig, got {type(value).__name__}"
+                )
+        # A copy nobody else holds, read-only - Java's `Map.copyOf`.
+        object.__setattr__(self, "configs", MappingProxyType(dict(self.configs)))
+
+    def primary_config(self) -> DataSourceConfig:
+        """The writer. Always present - construction refused a member without one."""
+        return self.configs[self.PRIMARY_CONFIG]
+
+    def secondary_config(self) -> DataSourceConfig | None:
+        """The read replica, or ``None`` - in which case reads use :meth:`primary_config`."""
+        return self.configs.get(self.SECONDARY_CONFIG)
+
+    def config_for(self, name: str) -> DataSourceConfig | None:
+        """The datasource registered under ``name``, or ``None``.
+
+        The reserved names answer like any other, so this is one lookup over every config on
+        the member.
+        """
+        if not isinstance(name, str) or not name.strip():
+            raise ValidationError("name cannot be blank")
+        return self.configs.get(name)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ShardGroupConfig:
+    """A group of members - Java's ``ShardGroupConfig``. The ``group`` of a
+    :class:`~ekbatan.sharding.ShardIdentifier` is this group's number."""
+
+    group: int
+    name: str
+    members: tuple[ShardMemberConfig, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValidationError("name is required")
+        object.__setattr__(self, "members", tuple(self.members))
+        if not self.members:
+            raise ValidationError("at least one member is required")
 
 
 @dataclass(frozen=True, kw_only=True)
 class ShardingConfig:
-    """The whole layout, and which shard work goes to when nothing says otherwise."""
+    """The whole layout, and which shard work goes to when nothing says otherwise.
 
-    shards: tuple[ShardConfig, ...]
+    Java's ``ShardingConfig``: groups of members, each member one ``(group, member)`` shard.
+    """
+
     default_shard: ShardIdentifier
+    groups: tuple[ShardGroupConfig, ...]
     #: What to do with a shard this deployment has not configured.
     #:
     #: ``"use_default_shard"`` routes it to :attr:`default_shard`, which is what both ports have
@@ -117,8 +187,11 @@ class ShardingConfig:
     unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
 
     def __post_init__(self) -> None:
-        if not self.shards:
-            raise ValidationError("at least one shard is required")
+        if self.default_shard is None:
+            raise ValidationError("default_shard is required")
+        object.__setattr__(self, "groups", tuple(self.groups))
+        if not self.groups:
+            raise ValidationError("at least one group is required")
 
         if self.unknown_shard_policy not in ("use_default_shard", "fail"):
             raise ValidationError(
@@ -126,11 +199,13 @@ class ShardingConfig:
                 f"not {self.unknown_shard_policy!r}"
             )
 
+        # Java does not check this: a repeated (group, member) there builds a second pool,
+        # overwrites the first in the registry's map, and leaves it open with nothing holding it.
         seen: set[ShardIdentifier] = set()
-        for shard in self.shards:
-            if shard.shard in seen:
-                raise ValidationError(f"shard {shard.shard} is configured twice")
-            seen.add(shard.shard)
+        for identifier, _ in self.members():
+            if identifier in seen:
+                raise ValidationError(f"shard {identifier} is configured twice")
+            seen.add(identifier)
 
         # Checked before a single engine is built. Run afterwards, the realistic mistake here -
         # a mistyped default - opens every pool and then throws, and nothing holds a reference
@@ -141,21 +216,48 @@ class ShardingConfig:
                 f"configured: {sorted(str(s) for s in seen)}"
             )
 
-        dialects = {s.primary.dialect for s in self.shards}
+        dialects = {member.primary_config().dialect for _, member in self.members()}
         if len(dialects) > 1:
             raise ValidationError(
                 f"every shard must speak the same dialect, found {sorted(dialects)}"
             )
 
+    def members(self) -> Iterator[tuple[ShardIdentifier, ShardMemberConfig]]:
+        """Every member, with the shard it is - group by group, in the order configured.
+
+        Java walks ``groups`` and then ``members`` inline wherever it needs this; it is written
+        once here because four places in this port need it.
+        """
+        for group in self.groups:
+            for member in group.members:
+                yield ShardIdentifier(group.group, member.member), member
+
+    def member(self, shard: ShardIdentifier) -> ShardMemberConfig:
+        """The member that is ``shard``. Java's DI modules carry this as ``findDefaultMember``."""
+        for identifier, member in self.members():
+            if identifier == shard:
+                return member
+        raise ValidationError(f"no member is configured for shard {shard}")
+
     @property
     def dialect(self) -> str:
-        return self.shards[0].primary.dialect
+        return self.groups[0].members[0].primary_config().dialect
 
     @classmethod
     def single(cls, url: str, **pool: object) -> ShardingConfig:
         """The common case: one database, no sharding to think about."""
-        shard = ShardIdentifier(0, 0)
+        primary = DataSourceConfig(url=url, **pool)  # type: ignore[arg-type]
         return cls(
-            shards=(ShardConfig(shard=shard, primary=DataSourceConfig(url=url, **pool)),),  # type: ignore[arg-type]
-            default_shard=shard,
+            default_shard=ShardIdentifier(0, 0),
+            groups=(
+                ShardGroupConfig(
+                    group=0,
+                    name="default",
+                    members=(
+                        ShardMemberConfig(
+                            member=0, configs={ShardMemberConfig.PRIMARY_CONFIG: primary}
+                        ),
+                    ),
+                ),
+            ),
         )

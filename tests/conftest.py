@@ -33,9 +33,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from backends import Backend, requested_dialects, start
 from ekbatan.clock import VirtualClock
-from ekbatan.config import DataSourceConfig, ShardConfig, ShardingConfig
+from ekbatan.config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import ShardIdentifier
+from fixtures.config import group, member
 from fixtures.repositories import NotificationRepository, WalletRepository
 from fixtures.schema import metadata
 
@@ -78,16 +79,14 @@ def _registry(backend: Backend, names: dict[ShardIdentifier, str]) -> DatabaseRe
         backend.prepare(name, metadata)
         backend.truncate(name, metadata)
 
+    by_group: dict[int, list[ShardMemberConfig]] = {}
+    for shard, name in names.items():
+        by_group.setdefault(shard.group, []).append(
+            member(shard.member, DataSourceConfig(url=backend.url(name), pool_size=5), name=name)
+        )
     config = ShardingConfig(
-        shards=tuple(
-            ShardConfig(
-                shard=shard,
-                primary=DataSourceConfig(url=backend.url(name), pool_size=5),
-                name=name,
-            )
-            for shard, name in names.items()
-        ),
         default_shard=next(iter(names)),
+        groups=tuple(group(n, f"group-{n}", *members) for n, members in by_group.items()),
     )
     return DatabaseRegistry.from_config(config)
 

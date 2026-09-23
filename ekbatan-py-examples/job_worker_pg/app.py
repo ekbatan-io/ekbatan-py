@@ -30,7 +30,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine
 
 from ekbatan import (
     ActionExecutor,
@@ -38,8 +38,10 @@ from ekbatan import (
     DatabaseRegistry,
     RepositoryRegistry,
     ShardingConfig,
+    engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
+from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardMemberConfig
 from ekbatan.distributedjobs import JobRegistry, job_registry
 from ekbatan.events import (
     EventFanoutJob,
@@ -49,6 +51,7 @@ from ekbatan.events import (
     LocalEventHandlerConfig,
 )
 from ekbatan.migrations import migrate
+from ekbatan.sharding import DEFAULT_SHARD
 
 from .actions import (
     CloseWalletAction,
@@ -79,18 +82,42 @@ class Worker:
     executor: ActionExecutor
     report: WalletReportJob
     jobs: JobRegistry
+    #: Built from the member's `jobsConfig`. The registry owns only the pools it built, so this
+    #: one is disposed here.
+    jobs_engine: Engine
 
     def start(self) -> None:
         self.jobs.start()
 
     def close(self) -> None:
         self.jobs.stop()
+        self.jobs_engine.dispose()
         self.registry.close()
 
 
 def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 4) -> Worker:
     running = clock or SystemClock()
-    layout = ShardingConfig.single(url)
+    # Java's layout: one group, one member, and the scheduler's pool declared on the member as
+    # `jobsConfig` beside the primary - more connections than workers, see the module docstring.
+    layout = ShardingConfig(
+        default_shard=DEFAULT_SHARD,
+        groups=(
+            ShardGroupConfig(
+                group=0,
+                name="global",
+                members=(
+                    ShardMemberConfig(
+                        member=0,
+                        name="global",
+                        configs={
+                            "primaryConfig": DataSourceConfig(url=url),
+                            "jobsConfig": DataSourceConfig(url=url, pool_size=workers * 2),
+                        },
+                    ),
+                ),
+            ),
+        ),
+    )
     migrate(layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)
 
@@ -121,6 +148,10 @@ def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 
     handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
     events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
     report = WalletReportJob(wallets)
+    jobs_config = layout.groups[0].members[0].config_for("jobsConfig")
+    if jobs_config is None:
+        raise ValueError("groups[0].members[0].configs.jobsConfig is required")
+    jobs_engine = engine_for(jobs_config)
 
     return Worker(
         registry=registry,
@@ -128,10 +159,10 @@ def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 
         alerts=alerts,
         executor=executor,
         report=report,
+        jobs_engine=jobs_engine,
         jobs=(
             job_registry()
-            # Its own engine, and more connections than workers - see the module docstring.
-            .engine(create_engine(url, pool_size=workers * 2, max_overflow=0))
+            .engine(jobs_engine)
             .with_jobs(
                 [
                     # The event pipeline is two jobs like any other, claimed through the same
