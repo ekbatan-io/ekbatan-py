@@ -1134,8 +1134,10 @@ Use `MariaDBKeyedLockProvider`. It issues the same statements as the MySQL one a
 separately because MariaDB honours sub-second `GET_LOCK` timeouts where MySQL truncates them.
 </div>
 <div data-db="sqlite">
-Use `InProcessKeyedLockProvider`. It is a `threading.Lock`, not a distributed lock, and will not
-tell you so at runtime — two instances each get their own.
+SQLite has no advisory locks, so there is no SQLite provider — and no in-process one, as there is
+none in Java: a lock in one process's memory excludes nothing in the next worker. If a SQLite
+service needs keyed locks, use `RedisKeyedLockProvider`. Optimistic locking on every write needs
+nothing and is on regardless.
 </div>
 
 ## 10. The HTTP layer

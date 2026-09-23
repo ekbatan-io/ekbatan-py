@@ -75,7 +75,6 @@ from .events import (
 from .fetching import Db, FetchResult
 from .ids import Id, ShardedId, TypedValue, unwrap
 from .locks import (
-    InProcessKeyedLockProvider,
     KeyedLockProvider,
     Lease,
     MariaDBKeyedLockProvider,
@@ -145,7 +144,6 @@ __all__ = [
     "GenericState",
     "HandlingConfig",
     "Id",
-    "InProcessKeyedLockProvider",
     "JobRegistry",
     "JobRegistryBuilder",
     "JobsConfig",

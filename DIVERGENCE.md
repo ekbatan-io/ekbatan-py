@@ -1433,12 +1433,16 @@ stop.
 > **chosen** - Additions by definition. Each one is something this port has and Java does not. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
 
 Recorded because a reader comparing the two trees will find these and wonder what they map to.
+
+`locks/inprocess.py` was on this list - an `InProcessKeyedLockProvider` Java does not have - and
+was removed in `EKB-0225`. A lock in one process's memory excludes nothing in the next worker
+process, which is how Python services run, so it kept working and stopped excluding anything
+without saying so. The backends are now Java's four: Postgres, MySQL, MariaDB and Redis.
 Nothing in Java corresponds to any of them, confirmed by searching the Java for the concept
 rather than the name.
 
 | module | what | why there is no Java one |
 | --- | --- | --- |
-| `locks/inprocess.py` | `InProcessKeyedLockProvider`, on the same `KeyedReentrantHolder` as the SQL and Redis backends | Java ships only the three SQL providers and the Redis one; a single-instance deployment there is expected to take a SQL lock against the database it already has |
 | `accounting.py` | counts statements issued, so "one unit of work is one transaction, N staged rows is one statement" is checkable | Java asserts the same claims through jOOQ's execute listener in its own tests, not through a shipped module |
 | `schema.py` | the framework's tables as SQLAlchemy metadata | Java's DDL lives in the Flyway migration SQL; there is no programmatic table definition to port. This is the definition Alembic generates from, and the one the cross-compatibility scenarios check |
 | `codegen.py` | generates typed builders | Java's annotation processor does this at compile time; the processor itself is `n/a` in the ledger |

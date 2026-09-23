@@ -155,7 +155,11 @@ what makes "uniform across all five" checkable rather than aspirational.
 | `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | A sub-second `max_wait` is **not a wait** — see [below](#a-sub-second-wait-is-not-a-wait-on-mysql) |
 | `MariaDBKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | Same statements as the MySQL one, separate because MariaDB honours sub-second timeouts |
 | `RedisKeyedLockProvider` | the Redis deployment | `SET NX PX` | **TTL** + watchdog | Sub-millisecond hand-off. Single-master only — **not** Redlock |
-| `InProcessKeyedLockProvider` | **this process only** | `threading.Lock` | in-memory + watchdog | Tests and single-process deployments |
+
+There is **no in-process provider**, as there is none in Java. A lock held in one process's
+memory excludes nothing in another, and a Python service in production is several worker
+processes - so it would go on working and stop excluding anything, without saying so. Every
+backend above excludes across processes and machines alike.
 
 The "Hold" column is the difference that matters operationally. The SQL backends hold a *session*
 — the lock exists because a connection is open, so losing the connection releases it. Redis holds

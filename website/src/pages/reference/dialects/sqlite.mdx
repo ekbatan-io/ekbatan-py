@@ -17,7 +17,7 @@ lead: "It is supported here, it is what the test suite runs on by default, and i
 | uuid | `CHAR(32)` - hex, no hyphens |
 | json | `JSON` - text, with SQLAlchemy doing the encoding |
 | timestamps | `DATETIME` |
-| keyed lock | `InProcessKeyedLockProvider` only |
+| keyed lock | none of its own — use `RedisKeyedLockProvider` |
 | `SKIP LOCKED` | **no** |
 | `RETURNING` | yes, 3.35+ |
 
@@ -118,9 +118,11 @@ Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and i
   [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) is exactly that;
 - a single-process tool or an internal utility that will never have a second instance.
 
-For that last case it genuinely works. Use `InProcessKeyedLockProvider`, accept that the
-scheduler is not cluster-exclusive because there is no cluster, and you have a working
-event-sourced service in one file with no infrastructure.
+For that last case it genuinely works: accept that the scheduler is not cluster-exclusive
+because there is no cluster, and you have a working event-sourced service in one file with no
+infrastructure. Keyed locks are the one thing it cannot give you on its own - SQLite has no
+advisory locks, and there is no in-process provider, as there is none in Java - so use
+`RedisKeyedLockProvider` if you need them. Optimistic locking needs nothing and is always on.
 
 ## The claim this framework makes
 
