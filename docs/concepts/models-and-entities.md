@@ -39,8 +39,8 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             .currency(currency)
             .balance(balance)
             .with_initial_version()
-            .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
-                                          opening_balance=balance))
+            .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
+                                          currency=currency, opening_balance=balance))
             .build()
         )
 
@@ -50,7 +50,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -58,7 +58,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     def close(self) -> Wallet:
         if self.state is WalletState.CLOSED:
             return self
-        return self.copy().with_event(WalletClosedEvent()).state(WalletState.CLOSED).build()
+        return self.copy().with_event(WalletClosedEvent(model_id=str(self.id))).state(WalletState.CLOSED).build()
 ```
 
 Two patterns worth naming:
@@ -112,12 +112,19 @@ A `ModelEvent` is a frozen dataclass carrying whatever the domain needs:
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent):
+class MoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
 
-That is the whole declaration. **There is no deserialisation boilerplate**, and this is one of
+The class line names the model the event is about, and the constructor takes that model's id -
+`MoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`, which is Java's
+`new MoneyDepositedEvent(id, amount, newBalance)` with `super(id, Wallet.class)` inside it. The
+type argument stands in for `Wallet.class`: it fixes `model_name` once per class, so no call site
+passes it. Those two fill the outbox's `model_id` and `model_type` columns. A missing or blank id
+is refused when the event is made.
+
+**There is no deserialisation boilerplate**, and this is one of
 the few places this port is straightforwardly ahead of Java: Java needs a `@JsonCreator`
 constructor with a `@JsonProperty` for every field, or the dispatch job cannot rebuild the event
 and the handler is never invoked. Here the payload is rebuilt from the dataclass's own
@@ -196,7 +203,7 @@ where it means something:
 def deposit(self, amount: Decimal, at: datetime) -> Wallet:
     return (
         self.copy()
-        .with_event(MoneyDepositedEvent(amount=amount, new_balance=self.balance + amount))
+        .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=self.balance + amount))
         .balance(self.balance + amount)
         .updated_date(at)
         .build()

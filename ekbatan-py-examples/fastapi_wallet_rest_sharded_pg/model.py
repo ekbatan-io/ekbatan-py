@@ -39,20 +39,20 @@ class WalletState(Enum):
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletOpenedEvent(ModelEvent):
+class WalletOpenedEvent(ModelEvent["Wallet"]):
     owner_id: UUID
     currency: str
     opening_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent):
+class MoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class MoneyWithdrawnEvent(ModelEvent):
+class MoneyWithdrawnEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 
@@ -85,7 +85,9 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             .with_initial_version()
             .created_date(created_date)
             .with_event(
-                WalletOpenedEvent(owner_id=owner_id, currency=currency, opening_balance=balance)
+                WalletOpenedEvent(
+                    model_id=str(id), owner_id=owner_id, currency=currency, opening_balance=balance
+                )
             )
             .build()
         )
@@ -98,7 +100,9 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance - amount
         return (
             self.copy()
-            .with_event(MoneyWithdrawnEvent(amount=amount, new_balance=new_balance))
+            .with_event(
+                MoneyWithdrawnEvent(model_id=str(self.id), amount=amount, new_balance=new_balance)
+            )
             .balance(new_balance)
             .build()
         )
@@ -109,7 +113,9 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .with_event(
+                MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance)
+            )
             .balance(new_balance)
             .build()
         )

@@ -47,15 +47,16 @@ nothing else:
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent):
+class MoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
 
-That is the whole declaration. The event carries **no identity**: you do not pass it the
-wallet's id. The framework knows which model the event came off, because the event was attached
-to that model, and fills the outbox's `model_id` and `model_type` columns itself. A consumer
-correlates without opening the payload.
+The event says which model it is about, the way Java's does. `ModelEvent["Wallet"]` on the class
+line fixes the model's name once for every event of this class, and the wallet's id is passed when
+the event is made - `MoneyDepositedEvent(model_id=str(self.id), ...)`, which is Java's
+`new MoneyDepositedEvent(id, ...)`. Those two go into the outbox's `model_id` and `model_type`
+columns, so a consumer correlates without opening the payload.
 
 Notice what is *not* in it. The deposit endpoint also takes a `recipient`, and it is absent
 here: a delivery address has no business inside a money-deposited event. It travels as an action
@@ -79,7 +80,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )

@@ -935,19 +935,20 @@ class WalletState(StrEnum):
 state, it does not issue a `DELETE`, so the event that explains the deletion still has a row to
 point at.
 
-The events are pure data carriers, and carry **no identity**: the framework knows which model
-each came off and fills `model_id` and `model_type` itself.
+The events are pure data carriers that say which model they are about: the class line names the
+model (`ModelEvent["Wallet"]`), and each is constructed with that model's id. Those fill the
+outbox's `model_id` and `model_type` columns.
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class WalletOpenedEvent(ModelEvent):
+class WalletOpenedEvent(ModelEvent["Wallet"]):
     owner_id: UUID
     currency: str
     opening_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent):
+class MoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
@@ -963,15 +964,16 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
 
     @staticmethod
     def open(*, owner_id: UUID, currency: str, opening_balance: Decimal) -> "Wallet":
+        wallet_id = WalletId.generate()
         return (
             WalletBuilder()
-            .id(WalletId.generate())
+            .id(wallet_id)
             .state(WalletState.OPENED)
             .owner_id(owner_id)
             .currency(currency)
             .balance(opening_balance)
-            .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
-                                          opening_balance=opening_balance))
+            .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
+                                          currency=currency, opening_balance=opening_balance))
             .build()
         )
 
@@ -981,7 +983,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )`} />

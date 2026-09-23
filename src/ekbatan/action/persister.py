@@ -107,12 +107,13 @@ class ChangePersister:
 
 
 def _events_of(models: Iterable[Persistable[Any, Any]]) -> list[ModelEvent]:
-    """Every attached event, told which model it came off.
+    """Every attached event, as it was constructed.
 
-    Java's events are told in their constructor; these are told here, which is the only reason
-    an application never has to pass an id it already had in its hand.
+    Each already carries its model's id and name - its constructor required them - so nothing
+    is filled in here, as nothing is in Java's ``SingleTableJsonEventPersister``, which writes
+    ``event.modelId`` and ``event.modelName`` straight to their columns.
     """
-    return [event.about(model) for model in models for event in _attached(model)]
+    return [event for model in models for event in _attached(model)]
 
 
 def _attached(model: Persistable[Any, Any]) -> Sequence[Any]:

@@ -33,18 +33,18 @@ class Params:
 
 
 @dataclass(frozen=True, kw_only=True)
-class ItemCreated(ModelEvent):
+class ItemCreated(ModelEvent["Item"]):
     description: str
     amount: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, kw_only=True)
-class ItemRenamed(ModelEvent):
+class ItemRenamed(ModelEvent["Item"]):
     to: str
 
 
 @dataclass(frozen=True, kw_only=True)
-class ScalarPayload(ModelEvent):
+class ScalarPayload(ModelEvent["Item"]):
     """A handler's own `payload()` override gone wrong - Java's `ScalarPayloadEvent`."""
 
     def payload(self):  # type: ignore[override]
@@ -95,11 +95,9 @@ def rows(registry):
         ]
 
 
-def about(event: ModelEvent, model_id: str = "", model_type: str = "Item") -> ModelEvent:
-    """What `ChangePersister` does before handing an event over."""
-    from dataclasses import replace
-
-    return replace(event, model_id=model_id or str(uuid.uuid4()), model_name=model_type)
+def an_id() -> str:
+    """A model id, for events whose model does not matter to the case."""
+    return str(uuid.uuid4())
 
 
 # -- what it writes -----------------------------------------------------------------------------
@@ -109,7 +107,7 @@ def test_one_event_carries_the_whole_action_context(write, registry):
     """Java's `should_persist_single_event_with_denormalized_action_context`. One row is a
     complete audit record without a join - that is what the denormalisation buys."""
     model_id = str(uuid.uuid4())
-    record = write(about(ItemCreated(description="wallet created"), model_id))
+    record = write(ItemCreated(model_id=model_id, description="wallet created"))
 
     (row,) = rows(registry)
     assert row["namespace"] == "com.example.finance"
@@ -127,8 +125,8 @@ def test_several_events_share_one_action_context_and_get_their_own_rows(write, r
     """Java's `should_persist_multiple_events_with_shared_action_context`, asserted set-wise as
     Java asserts it - the rows of one invocation have no promised order."""
     record = write(
-        about(ItemCreated(description="event one")),
-        about(ItemCreated(description="event two")),
+        ItemCreated(model_id=an_id(), description="event one"),
+        ItemCreated(model_id=an_id(), description="event two"),
         action="BatchAction",
     )
 
@@ -144,8 +142,8 @@ def test_several_events_share_one_action_context_and_get_their_own_rows(write, r
 def test_different_event_types_in_one_invocation(write, registry):
     """Java's `should_persist_mixed_event_types`. Each row routes on its own `event_type`."""
     write(
-        about(ItemCreated(description="made")),
-        about(ItemRenamed(to="renamed")),
+        ItemCreated(model_id=an_id(), description="made"),
+        ItemRenamed(model_id=an_id(), to="renamed"),
         action="MixedAction",
     )
 
@@ -176,7 +174,10 @@ def test_an_invocation_with_no_events_still_writes_one_row(write, registry):
 def test_the_namespace_is_on_every_row(write, registry):
     """Java's `should_persist_namespace_on_every_row`. It is what lets two deployments share an
     eventlog table without either reading the other's traffic."""
-    write(about(ItemCreated(description="a")), about(ItemCreated(description="b")))
+    write(
+        ItemCreated(model_id=an_id(), description="a"),
+        ItemCreated(model_id=an_id(), description="b"),
+    )
     write(namespace="com.example.other")
 
     assert {r["namespace"] for r in rows(registry)} == {
@@ -187,8 +188,11 @@ def test_the_namespace_is_on_every_row(write, registry):
 
 def test_the_rows_of_one_invocation_can_be_found_by_its_action_id(write, registry):
     """Java's `should_find_events_by_action_id`. The correlation a consumer groups on."""
-    first = write(about(ItemCreated(description="a")), about(ItemCreated(description="b")))
-    write(about(ItemCreated(description="unrelated")))
+    first = write(
+        ItemCreated(model_id=an_id(), description="a"),
+        ItemCreated(model_id=an_id(), description="b"),
+    )
+    write(ItemCreated(model_id=an_id(), description="unrelated"))
 
     theirs = [r for r in rows(registry) if r["action_id"] == first.action_id]
 
@@ -197,7 +201,7 @@ def test_the_rows_of_one_invocation_can_be_found_by_its_action_id(write, registr
 
 
 def test_the_timestamps_are_the_ones_the_invocation_was_given(write, registry):
-    write(about(ItemCreated(description="a")))
+    write(ItemCreated(model_id=an_id(), description="a"))
 
     (row,) = rows(registry)
     assert row["started_date"] == STARTED.replace(tzinfo=None)
@@ -216,7 +220,7 @@ def test_action_params_that_are_not_an_object_are_refused(write, bad):
     the consumer, days later, doing `params["amount"]` on a string.
     """
     with pytest.raises(ValidationError, match="action_params must be a JSON object"):
-        write(about(ItemCreated(description="a")), params=bad)
+        write(ItemCreated(model_id=an_id(), description="a"), params=bad)
 
 
 def test_a_parameterless_action_writes_an_empty_object_not_a_null(write, registry):
@@ -227,7 +231,7 @@ def test_a_parameterless_action_writes_an_empty_object_not_a_null(write, registr
     so the column gets `{}` - which a reader typed against `Mapping` can still use. Written as
     JSON `null`, as it was, every parameterless action left a row a typed reader cannot read.
     """
-    write(about(ItemCreated(description="a")), params=None)
+    write(ItemCreated(model_id=an_id(), description="a"), params=None)
 
     (row,) = rows(registry)
     assert row["action_params"] == {}
@@ -238,7 +242,7 @@ def test_an_event_whose_payload_is_not_an_object_is_refused(write):
     says why it is a named error: it used to surface as a bare ClassCastException naming Jackson
     node classes, from inside the persister, with nothing pointing at the event."""
     with pytest.raises(ValidationError, match="payload\\(\\) must give a JSON object"):
-        write(about(ScalarPayload()))
+        write(ScalarPayload(model_id=an_id()))
 
 
 def test_two_event_classes_with_one_name_are_refused(write):
@@ -250,18 +254,18 @@ def test_two_event_classes_with_one_name_are_refused(write):
     """
 
     @dataclass(frozen=True, kw_only=True)
-    class Colliding(ModelEvent):
+    class Colliding(ModelEvent["Item"]):
         first: str = "a"
 
     other = Colliding
     del Colliding
 
     @dataclass(frozen=True, kw_only=True)
-    class Colliding(ModelEvent):
+    class Colliding(ModelEvent["Item"]):
         second: str = "b"
 
     with pytest.raises(ValidationError, match="event type name collision"):
-        write(about(other()), about(Colliding()))
+        write(other(model_id=an_id()), Colliding(model_id=an_id()))
 
 
 def test_a_table_missing_an_outbox_column_is_refused_at_construction():

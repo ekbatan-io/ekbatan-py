@@ -43,31 +43,31 @@ class WalletState(Enum):
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletCreatedEvent(ModelEvent):
+class WalletCreatedEvent(ModelEvent["Wallet"]):
     owner_id: UUID
     currency: str
     initial_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletMoneyDepositedEvent(ModelEvent):
+class WalletMoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletMoneyWithdrawnEvent(ModelEvent):
+class WalletMoneyWithdrawnEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletClosedEvent(ModelEvent):
+class WalletClosedEvent(ModelEvent["Wallet"]):
     pass
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletDeletedEvent(ModelEvent):
+class WalletDeletedEvent(ModelEvent["Wallet"]):
     """Deleting is a domain event; the row survives so the history still has its other side."""
 
 
@@ -103,7 +103,9 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             .with_initial_version()
             .created_date(created_date)
             .with_event(
-                WalletCreatedEvent(owner_id=owner_id, currency=currency, initial_balance=balance)
+                WalletCreatedEvent(
+                    model_id=str(id), owner_id=owner_id, currency=currency, initial_balance=balance
+                )
             )
             .build()
         )
@@ -120,7 +122,11 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(WalletMoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .with_event(
+                WalletMoneyDepositedEvent(
+                    model_id=str(self.id), amount=amount, new_balance=new_balance
+                )
+            )
             .balance(new_balance)
             .build()
         )
@@ -133,7 +139,11 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance - amount
         return (
             self.copy()
-            .with_event(WalletMoneyWithdrawnEvent(amount=amount, new_balance=new_balance))
+            .with_event(
+                WalletMoneyWithdrawnEvent(
+                    model_id=str(self.id), amount=amount, new_balance=new_balance
+                )
+            )
             .balance(new_balance)
             .build()
         )
@@ -143,14 +153,24 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         # emit nothing - the smallest case where "no events" and "no change" have to agree.
         if self.state is WalletState.CLOSED:
             return self
-        return self.copy().with_event(WalletClosedEvent()).state(WalletState.CLOSED).build()
+        return (
+            self.copy()
+            .with_event(WalletClosedEvent(model_id=str(self.id)))
+            .state(WalletState.CLOSED)
+            .build()
+        )
 
     def delete(self) -> Wallet:
         # Soft delete, written on the model because what deletion means is the model's to say.
         # The framework supplies the DELETED convention and the read filter, nothing else.
         if self.state is WalletState.DELETED:
             return self
-        return self.copy().with_event(WalletDeletedEvent()).state(WalletState.DELETED).build()
+        return (
+            self.copy()
+            .with_event(WalletDeletedEvent(model_id=str(self.id)))
+            .state(WalletState.DELETED)
+            .build()
+        )
 
 
 @dataclass(frozen=True, kw_only=True)

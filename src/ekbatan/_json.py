@@ -88,7 +88,10 @@ def decode[T](target: type[T], data: Mapping[str, Any]) -> T:
     import typing
 
     hints = typing.get_type_hints(target)
-    fields = {f.name for f in dataclasses.fields(target)}  # type: ignore[arg-type]
+    # Constructor fields only. `model_name` is in the payload but not in the constructor - it
+    # comes off the class line, as Java's `@JsonCreator` accepts `modelName` and ignores it in
+    # favour of `Wallet.class`.
+    fields = {f.name for f in dataclasses.fields(target) if f.init}  # type: ignore[arg-type]
     # `modelId` and `modelName` are in the payload under Java's spelling, because Java's local
     # event handler deserialises the payload straight into its event class and refuses one
     # without them. Read back under this port's names, so a payload written by either side

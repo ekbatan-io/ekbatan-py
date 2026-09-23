@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from ekbatan.domain import Entity, EntityBuilder, GenericState, Model, ModelBuilder
+from ekbatan.domain import Entity, EntityBuilder, GenericState, Model, ModelBuilder, ModelEvent
 from ekbatan.errors import EkbatanError, ValidationError
 from fixtures.domain import (
     NOW,
@@ -71,7 +71,9 @@ def test_versions_move_through_the_builder():
 
 def test_events_are_attached_through_the_builder():
     wallet = a_wallet()
-    deposited = WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("101"))
+    deposited = WalletMoneyDepositedEvent(
+        model_id="wallet-1", amount=Decimal("1"), new_balance=Decimal("101")
+    )
 
     changed = wallet.copy().balance(Decimal("101")).with_event(deposited).build()
 
@@ -142,7 +144,9 @@ def test_an_entity_defaults_its_lifecycle_but_a_model_does_not():
 
 def test_evolve_and_the_builder_agree():
     wallet = a_wallet()
-    event = WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("101"))
+    event = WalletMoneyDepositedEvent(
+        model_id="wallet-1", amount=Decimal("1"), new_balance=Decimal("101")
+    )
 
     short = wallet.evolve(balance=Decimal("101"), emit=event)
     long = wallet.copy().balance(Decimal("101")).with_event(event).build()
@@ -163,7 +167,11 @@ def test_events_stay_out_of_equality():
     wallet = a_wallet()
     with_event = (
         wallet.copy()
-        .with_event(WalletMoneyDepositedEvent(amount=Decimal("0"), new_balance=Decimal("100.00")))
+        .with_event(
+            WalletMoneyDepositedEvent(
+                model_id="wallet-1", amount=Decimal("0"), new_balance=Decimal("100.00")
+            )
+        )
         .build()
     )
 
@@ -172,20 +180,84 @@ def test_events_stay_out_of_equality():
     )
 
 
-def test_an_event_is_told_which_model_it_is_about_rather_than_asked():
-    """Java's `ModelEvent` takes `modelId` and `modelName` in its constructor; these are the
-    same two fields, filled in by the framework instead of by the application."""
-    event = WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110"))
+# -- ModelEvent: Java's ModelEventTest, case for case ---------------------------------------------
 
-    assert (event.model_id, event.model_name) == ("", ""), "unset until it is attached"
 
-    wallet = a_wallet()
-    told = event.about(wallet)
+@dataclass(frozen=True, kw_only=True)
+class _TestEvent(ModelEvent["String"]):
+    pass
 
-    assert told.model_id == str(wallet.id)
-    assert told.model_name == "Wallet"
-    assert told.amount == event.amount, "and nothing else about it changed"
-    assert event.model_id == "", "the original is untouched - these are frozen"
+
+class _Object:
+    pass
+
+
+@dataclass(frozen=True, kw_only=True)
+class _DetailedEvent(ModelEvent[_Object]):
+    detail: str
+
+
+def test_constructor_sets_model_id_and_model_name():
+    event = _TestEvent(model_id="model-123")
+
+    assert event.model_id == "model-123"
+    assert event.model_name == "String"
+
+
+def test_model_name_is_the_class_simple_name():
+    """``ModelEvent[_Object]`` gives the bare name, as ``getSimpleName()`` does - and a string
+    argument gives the same thing, because events are declared before their model."""
+    event = _DetailedEvent(model_id="id-1", detail="some detail")
+
+    assert event.model_name == "_Object"
+    assert event.detail == "some detail"
+
+
+def test_constructor_rejects_a_missing_model_id():
+    with pytest.raises(TypeError, match="model_id"):
+        _TestEvent()  # type: ignore[call-arg]
+
+
+def test_constructor_rejects_none_model_id():
+    with pytest.raises(ValidationError, match="model_id cannot be None or blank"):
+        _TestEvent(model_id=None)  # type: ignore[arg-type]
+
+
+def test_constructor_rejects_blank_model_id():
+    with pytest.raises(ValidationError, match="model_id cannot be None or blank"):
+        _TestEvent(model_id="")
+
+
+def test_constructor_rejects_whitespace_model_id():
+    with pytest.raises(ValidationError, match="model_id cannot be None or blank"):
+        _TestEvent(model_id="   ")
+
+
+def test_an_event_that_names_no_model_is_refused():
+    """Java's ``new ModelEvent<Object>("id", null) {}``. There it is the only constructor, so an
+    event that names no model does not compile; here it is refused on construction."""
+
+    @dataclass(frozen=True, kw_only=True)
+    class Unnamed(ModelEvent):  # type: ignore[type-arg]
+        pass
+
+    with pytest.raises(ValidationError, match="model class cannot be None"):
+        Unnamed(model_id="id")
+
+
+def test_model_name_cannot_be_passed():
+    """It comes off the class line, as Java's comes off ``Wallet.class`` - so there is no way to
+    pass one that disagrees with it."""
+    with pytest.raises(TypeError, match="model_name"):
+        _TestEvent(model_id="id", model_name="Other")  # type: ignore[call-arg]
+
+
+def test_a_subclass_inherits_the_model_it_names():
+    @dataclass(frozen=True, kw_only=True)
+    class MoreDetailed(_DetailedEvent):
+        more: int
+
+    assert MoreDetailed(model_id="id", detail="d", more=1).model_name == "_Object"
 
 
 def test_the_identity_fields_are_in_the_payload_under_javas_spelling():
@@ -199,43 +271,49 @@ def test_the_identity_fields_are_in_the_payload_under_javas_spelling():
 
     `modelId`, not `model_id`: the key is Java's, because Java is the one reading it.
     """
-    event = WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110"))
-    told = event.about(a_wallet())
+    wallet = a_wallet()
+    event = WalletMoneyDepositedEvent(
+        model_id=str(wallet.id), amount=Decimal("10"), new_balance=Decimal("110")
+    )
 
-    assert set(told.payload()) == {"amount", "new_balance", "modelId", "modelName"}
-    assert told.payload()["modelName"] == "Wallet"
-    assert told == event, "being told what it is about is not a different event"
+    assert set(event.payload()) == {"amount", "new_balance", "modelId", "modelName"}
+    assert event.payload()["modelId"] == str(wallet.id)
+    assert event.payload()["modelName"] == "Wallet"
 
 
 def test_a_payload_written_by_either_port_rebuilds_a_complete_event():
-    """The round trip that makes a shared eventlog work in both directions."""
+    """The round trip that makes a shared eventlog work in both directions.
+
+    ``modelName`` is in the payload and is not passed back in - Java's ``@JsonCreator`` accepts
+    it and ignores it in favour of ``Wallet.class``, and this does the same."""
     from ekbatan._json import canonical, decode
 
     wallet = a_wallet()
-    told = WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110")).about(wallet)
+    event = WalletMoneyDepositedEvent(
+        model_id=str(wallet.id), amount=Decimal("10"), new_balance=Decimal("110")
+    )
 
-    rebuilt = decode(WalletMoneyDepositedEvent, canonical(told.payload()))
+    rebuilt = decode(WalletMoneyDepositedEvent, canonical(event.payload()))
 
     assert rebuilt.amount == Decimal("10")
     assert rebuilt.model_id == str(wallet.id), "read back from Java's `modelId` key"
     assert rebuilt.model_name == "Wallet"
 
 
-def test_an_event_attached_to_a_model_with_no_usable_id_is_refused():
-    @dataclass(frozen=True, kw_only=True)
-    class Anonymous:
-        id: str = ""
-
-    with pytest.raises(ValidationError, match="model_id column"):
-        WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("1")).about(Anonymous())
-
-
 def test_with_event_can_be_called_as_many_times_as_the_change_needs():
     wallet = a_wallet()
     built = (
         wallet.copy()
-        .with_event(WalletMoneyDepositedEvent(amount=Decimal("10"), new_balance=Decimal("110")))
-        .with_event(WalletMoneyDepositedEvent(amount=Decimal("5"), new_balance=Decimal("115")))
+        .with_event(
+            WalletMoneyDepositedEvent(
+                model_id="wallet-1", amount=Decimal("10"), new_balance=Decimal("110")
+            )
+        )
+        .with_event(
+            WalletMoneyDepositedEvent(
+                model_id="wallet-1", amount=Decimal("5"), new_balance=Decimal("115")
+            )
+        )
         .balance(Decimal("115"))
         .build()
     )
@@ -407,7 +485,11 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
     the persister then writes - in a transaction that had already decided what it was writing.
     Java's constructor says ``List.copyOf(...)`` for this; here the tuple is the copy.
     """
-    attached = [WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("2"))]
+    attached = [
+        WalletMoneyDepositedEvent(
+            model_id="wallet-1", amount=Decimal("1"), new_balance=Decimal("2")
+        )
+    ]
     wallet = Wallet(
         id=WalletId.random(),
         state=WalletState.OPENED,
@@ -418,12 +500,16 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
         created_date=NOW,
     )
 
-    attached.append(WalletMoneyDepositedEvent(amount=Decimal("999"), new_balance=Decimal("999")))
+    attached.append(
+        WalletMoneyDepositedEvent(
+            model_id="wallet-1", amount=Decimal("999"), new_balance=Decimal("999")
+        )
+    )
 
     assert isinstance(wallet.events, tuple)
     assert len(wallet.events) == 1, "the model kept what it was built with"
     with pytest.raises(AttributeError):
-        wallet.events.append(WalletClosedEvent())
+        wallet.events.append(WalletClosedEvent(model_id="wallet-1"))
 
 
 def test_a_typed_value_refuses_to_wrap_nothing():

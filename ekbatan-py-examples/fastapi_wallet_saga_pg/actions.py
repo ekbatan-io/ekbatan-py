@@ -121,6 +121,7 @@ class CompleteTransferAction(Action[CompleteTransferParams, Wallet | None]):
         self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
 
         arriving = TransferInitiatedEvent(
+            model_id=str(params.from_wallet_id),
             transfer_id=params.transfer_id,
             from_wallet_id=params.from_wallet_id.value,
             to_wallet_id=params.to_wallet_id.value,
@@ -159,6 +160,7 @@ class RefundTransferAction(Action[RefundTransferParams, Wallet]):
 
         source = self.wallets.get(params.from_wallet_id)
         failure = TransferFailedEvent(
+            model_id=str(params.from_wallet_id),
             transfer_id=params.transfer_id,
             from_wallet_id=params.from_wallet_id.value,
             to_wallet_id=params.to_wallet_id.value,

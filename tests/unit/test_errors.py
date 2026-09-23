@@ -42,15 +42,8 @@ BLANK = ["", " ", "   \t\n"]
 
 
 @dataclass(frozen=True, kw_only=True)
-class SomethingHappenedEvent(ModelEvent):
+class SomethingHappenedEvent(ModelEvent["Something"]):
     pass
-
-
-class Idless:
-    """Stands in for a model whose id never got set."""
-
-    def __init__(self, id: object) -> None:
-        self.id = id
 
 
 class FakeRedis:
@@ -117,9 +110,9 @@ class TestEveryBlankCheckAgrees:
         with pytest.raises(ValidationError, match="blank name"):
             job_registry().engine(object()).with_job(Blank()).build()  # type: ignore[arg-type]
 
-    def test_a_model_id_an_event_is_attached_to(self, blank: str) -> None:
-        with pytest.raises(ValidationError, match="no id"):
-            SomethingHappenedEvent().about(Idless(blank))
+    def test_the_model_id_an_event_is_constructed_with(self, blank: str) -> None:
+        with pytest.raises(ValidationError, match="model_id cannot be None or blank"):
+            SomethingHappenedEvent(model_id=blank)
 
 
 def test_a_blank_check_that_only_tested_empty_would_pass_the_empty_case_alone() -> None:

@@ -104,36 +104,50 @@ to be wrong. And where Java's `repository(Class)` returns null for an unregister
 raises and names the type: the null is what surfaced as a NullPointerException inside the
 executor's shard grouping, which is `EKB-0076` on the Java side.
 
-## Events carry no identity
+## An event says which model it is about, as Java's does
 
-> **chosen** - Java's event constructors take the model id and this port's do not. A user-visible API difference somebody decided. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - the class line names the model and the constructor takes its id, as Java's `super(id, Wallet.class)` does. Brought to parity in `EKB-0218`; until then the persister filled both in from the model the event was attached to.
 
-In Java every event constructor takes the id of the model it is about:
+Java:
 
 ```java
-new WalletMoneyDepositedEvent(id, amount, newBalance)
+public class WalletMoneyDepositedEvent extends ModelEvent<Wallet> {
+    public WalletMoneyDepositedEvent(ShardedId<Wallet> walletId, BigDecimal amount, BigDecimal newBalance) {
+        super(walletId.getValue().toString(), Wallet.class);
+        ...
 ```
 
-Here it does not. The event is attached to the model, so the framework already knows which
-model and of what type, and fills those columns in at persist time:
+This port:
 
 ```python
-WalletMoneyDeposited(amount=amount, new_balance=new_balance)
+@dataclass(frozen=True, kw_only=True)
+class WalletMoneyDeposited(ModelEvent["Wallet"]):
+    amount: Decimal
+    new_balance: Decimal
+
+WalletMoneyDeposited(model_id=str(self.id), amount=amount, new_balance=new_balance)
 ```
 
-A parameter that can only ever be passed one correct value is a parameter that will one day be
-passed a different one. The stored row is identical.
+The type argument does what `Wallet.class` does: it fixes `model_name` once per event class, so
+no call site passes it, and `model_name` is not a constructor argument at all. It is a string
+because events are declared before the model that emits them - the same reason `ShardedId["Wallet"]`
+is one. Both refusals are Java's: a missing or blank `model_id` (`Validate.notBlank`), and an
+event class that names no model (Java's `modelClass cannot be null`, which there cannot compile).
 
-The two fields themselves are Java's, with Java's names: `ModelEvent` declares `model_id` and
-`model_name`, and `event.about(model)` is what fills them in. Only the moment differs - Java's
-constructor, this port's persister. There is no extra type in between; an earlier version of
-this port had an `EmittedEvent` pairing an event with its model, and it is gone.
+The persister writes `event.model_id` and `event.model_name` straight to their columns, as
+`SingleTableJsonEventPersister` writes `event.modelId` and `event.modelName`. It does not look at
+the model the event was attached to.
 
-One place they do not appear is `payload()`. They have columns of their own, which is where a
-consumer reads them; Java leaves them in the payload as well, because they are public fields of
-its base class and Jackson serialises everything public. `ActionEvent` - which is the wire
-contract - describes the payload as "raw JSON" for the consumer to deserialise as it likes, and
-reads `modelId` from the column.
+Two differences in mechanism, neither in behaviour:
+
+- Java's constructor parameter is typed `ShardedId<Wallet>` and stringified inside; here the
+  field is Java's `String modelId` and the caller passes `str(self.id)`. The stored value is the
+  same string.
+- Deserialising, Java's `@JsonCreator` takes `modelName` and ignores it for `Wallet.class`. This
+  port's decoder skips it for the same reason: it is not a constructor argument.
+
+The payload carries both under Java's names, `modelId` and `modelName`, so either port can read a
+row the other wrote.
 
 ## A typed builder is required in both ports, for different reasons
 

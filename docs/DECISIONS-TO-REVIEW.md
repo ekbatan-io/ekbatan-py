@@ -18,14 +18,14 @@ unlabelled or if a **chosen** one does not link here. That check exists because 
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **12 that somebody decided**. Each could have gone the other way. Five more are
+These are the **11 that somebody decided**. Each could have gone the other way. Five more are
 struck out and kept struck rather than deleted - four reversed after being asked about, and one
 (`EKB-0199`) that described behaviour this port never had.
 
 | divergence | why it is a decision, not a consequence |
 | --- | --- |
 | [An action runs by type or by instance](../DIVERGENCE.md) | Java dispatches only on a class token; this accepts an instance too. An addition to the surface, not a fact about Python. |
-| [Events carry no identity](../DIVERGENCE.md) | Java's event constructors take the model id and this port's do not. A user-visible API difference somebody decided. |
+| ~~[Events carry no identity](../DIVERGENCE.md)~~ | **Closed in `EKB-0218`.** The class line names the model (`ModelEvent["Wallet"]`, Java's `Wallet.class`) and the constructor takes its id, as Java's does. The persister writes both as the event carries them instead of filling them in from the model it was attached to. |
 | [A typed builder is required in both ports, for different reasons](../DIVERGENCE.md) | Both require a builder a checker can read - Java at compile time, here at the `copy()`/`builder()` call (`EKB-0196`). Accepting a **hand-written** one is the addition; Java has only the generated one. |
 | [Identifiers get a named type, not a generic parameter](../DIVERGENCE.md) | Both languages erase, so `Id[Wallet]` would have worked. A named type per model is a convention this port adopted. |
 | [`AbstractRepository` is just `Repository`, and is usable as it stands](../DIVERGENCE.md) | Java's four-name hierarchy collapses to fewer here. Structural, and could have been mirrored. |
@@ -189,7 +189,7 @@ These change behaviour Java does not have. Each is defensible and each is mine.
 | what | commit | the case for it | the case against |
 | --- | --- | --- | --- |
 | A write with no `RETURNING` rebuilds its rows through the read mappers instead of handing back the caller's objects | `EKB-0115`, `EKB-0116` | On MySQL, `update()` returned a model still carrying the event it had just persisted; feeding that into another update writes the deposit to the outbox twice. Proven by running | Java takes the plain branch (`return List.copyOf(domainObjects)`) and is safe only because its types make the raw-id half impossible and `nextVersion()` drops events. So this is a real fix for a real Python-only bug - but it is behaviour Java does not have, and it costs a `to_row`/`from_row` round trip per row |
-| `ModelEvent.payload()` excludes `model_id` and `model_name` | `EKB-0109` | They have columns of their own, which is where a consumer reads them. `ActionEvent` - the wire contract - calls the payload "raw JSON" | Java's payload *does* contain them, because they are public fields and Jackson serialises everything public. A consumer written against a Java producer and deserialising the payload with `@JsonCreator` will find them null. Verified that `TestModelEvent` accepts them "for protocol compatibility" |
+| ~~`ModelEvent.payload()` excludes `model_id` and `model_name`~~ **Reversed**: the payload carries both under Java's names, `modelId` and `modelName`, and `EKB-0218` added a test asserting it. | `EKB-0109` | They have columns of their own, which is where a consumer reads them. `ActionEvent` - the wire contract - calls the payload "raw JSON" | Java's payload *does* contain them, because they are public fields and Jackson serialises everything public. A consumer written against a Java producer and deserialising the payload with `@JsonCreator` will find them null. Verified that `TestModelEvent` accepts them "for protocol compatibility" |
 | A JDBC url gets its own error message | `EKB-0113` | It is the likeliest mistake anyone moving between the ports makes, and unqualified it reads as a missing driver | Invented here; Java has no equivalent. Harmless, but it is a message nobody asked for |
 | Every shard must speak the same dialect | pre-existing, confirmed `EKB-0113` | The framework picks its SQL, lock provider and upsert form from one dialect | Java does not check this. If a mixed layout is ever legitimate, this refuses it |
 

@@ -31,16 +31,17 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
 
     @classmethod
     def open(cls, *, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
+        wallet_id = WalletId.random()
         return (
             WalletBuilder()
-            .id(WalletId.random())
+            .id(wallet_id)
             .state(WalletState.OPENED)
             .owner_id(owner_id)
             .currency(currency)
             .balance(balance)
             .with_initial_version()
-            .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
-                                          opening_balance=balance))
+            .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
+                                          currency=currency, opening_balance=balance))
             .build()
         )
 
@@ -50,7 +51,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(amount=amount, new_balance=new_balance))
+            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -58,7 +59,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
     def close(self) -> Wallet:
         if self.state is WalletState.CLOSED:
             return self
-        return self.copy().with_event(WalletClosedEvent()).state(WalletState.CLOSED).build()`} />
+        return self.copy().with_event(WalletClosedEvent(model_id=str(self.id))).state(WalletState.CLOSED).build()`} />
 
 Two patterns worth naming. **A factory** (`open`) builds a *new* aggregate, calls
 `with_initial_version()` and attaches the creation event. **`copy()`** returns a builder
@@ -92,14 +93,15 @@ is no `session.commit()` working out what changed; you say what changed, through
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent):
+class MoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
 
-That is the whole declaration. The event carries **no identity** — you do not pass it the
-model's id. It was attached to a model, so the framework knows, and fills the outbox's
-`model_id` and `model_type` columns itself.
+The class line names the model the event is about, and the constructor takes that model's id —
+`MoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`. Those two fill the
+outbox's `model_id` and `model_type` columns, exactly as Java's `super(id, Wallet.class)` does.
+A blank id is refused when the event is made, not when it is written.
 
 ### Deserialization (for in-process handlers)
 
@@ -278,7 +280,7 @@ event like any other change, and every inherited read filters those rows out:
 def delete(self) -> Wallet:
     if self.state is WalletState.DELETED:
         return self
-    return self.copy().with_event(WalletDeletedEvent()).state(WalletState.DELETED).build()
+    return self.copy().with_event(WalletDeletedEvent(model_id=str(self.id))).state(WalletState.DELETED).build()
 ```
 
 then `repo.update(wallet.delete())`, or `plan.update(wallet.delete())` inside an action.

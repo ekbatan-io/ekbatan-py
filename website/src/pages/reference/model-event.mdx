@@ -9,13 +9,24 @@ lead: "A domain event emitted by a model. Subclasses describe transitions worth 
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent):
+class MoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
 
-That is the whole declaration. The event carries **no identity** — you do not pass it the
-model's id. It was attached to a model, so the framework knows.
+The class line names the model the event is about; the constructor takes that model's id:
+
+```python
+MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance)
+```
+
+That is Java's `new MoneyDepositedEvent(id, amount, newBalance)`, whose constructor calls
+`super(id.getValue().toString(), Wallet.class)`. The type argument plays the part of
+`Wallet.class`: it fixes `model_name` once per event class, so no call site passes it. It is a
+string because events are declared before the model that emits them, as in `ShardedId["Wallet"]`.
+
+A missing or blank `model_id` is refused when the event is made, and so is an event class that
+names no model.
 
 ## How events become outbox rows
 
@@ -28,8 +39,9 @@ the executor commits           one INSERT into events, per event
 ```
 
 The row's columns are filled from three places: the **action** supplies `action_id`,
-`action_name`, `action_params` and the timestamps; the **model** supplies `model_id` and
-`model_type`; the **event** supplies `event_type` and `payload`.
+`action_name`, `action_params` and the timestamps; the **event** supplies `model_id`,
+`model_type`, `event_type` and `payload`. The persister writes them as the event carries them,
+as Java's does - it does not look at the model the event was attached to.
 
 So a consumer correlates without opening the payload, and routes on `event_type` without
 parsing it.
@@ -40,7 +52,7 @@ Put in it what a consumer needs to act, and nothing else:
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class WalletOpenedEvent(ModelEvent):
+class WalletOpenedEvent(ModelEvent["Wallet"]):
     owner_id: UUID
     currency: str
     opening_balance: Decimal

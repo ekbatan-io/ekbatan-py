@@ -57,15 +57,16 @@ factory takes a `ShardIdentifier` and hands it to `generate`:
 @staticmethod
 def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
          opening_balance: Decimal) -> "Wallet":
+    wallet_id = WalletId.generate(shard)       # the shard bits live in the id forever
     return (
         WalletBuilder()
-        .id(WalletId.generate(shard))       # the shard bits live in the id forever
+        .id(wallet_id)
         .state(WalletState.OPENED)
         .owner_id(owner_id)
         .currency(currency)
         .balance(opening_balance)
-        .with_event(WalletOpenedEvent(owner_id=owner_id, currency=currency,
-                                      opening_balance=opening_balance))
+        .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
+                                      currency=currency, opening_balance=opening_balance))
         .build()
     )
 ```

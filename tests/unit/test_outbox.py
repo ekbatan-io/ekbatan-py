@@ -36,15 +36,10 @@ from ekbatan.sharding import DEFAULT_SHARD
 
 
 @dataclass(frozen=True, kw_only=True)
-class TestEvent(ModelEvent):
+class TestEvent(ModelEvent["Model"]):
     __test__ = False  # not a pytest class
 
     amount: int = 1
-
-
-class Model:
-    def __init__(self, id: str) -> None:
-        self.id = id
 
 
 @pytest.fixture
@@ -80,7 +75,7 @@ def written():
 def test_a_newly_persisted_event_row_is_not_marked_delivered(written) -> None:
     """The Debezium transforms treat `delivered = false` as the signal that a row is a new
     event; read this module's docstring before changing it."""
-    rows = written(TestEvent().about(Model("model-1")))
+    rows = written(TestEvent(model_id="model-1"))
 
     assert len(rows) == 1
     assert rows[0]["delivered"] is False
@@ -102,8 +97,8 @@ def test_the_sentinel_row_for_an_action_that_emitted_nothing_is_not_delivered_ei
 def test_every_row_of_a_multi_event_action_is_undelivered(written) -> None:
     """One row per event, and the invariant is per row rather than per action."""
     rows = written(
-        TestEvent(amount=1).about(Model("model-1")),
-        TestEvent(amount=2).about(Model("model-2")),
+        TestEvent(model_id="model-1", amount=1),
+        TestEvent(model_id="model-2", amount=2),
     )
 
     assert len(rows) == 2
@@ -130,7 +125,7 @@ def test_the_flag_is_still_settable_for_the_fanout_that_owns_it(written) -> None
                 action_params={},
                 started_date=now,
                 completion_date=now,
-                events=[TestEvent().about(Model("model-1"))],
+                events=[TestEvent(model_id="model-1")],
                 shard=DEFAULT_SHARD,
             ),
         )

@@ -59,48 +59,64 @@ class GenericState(Enum):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ModelEvent:
-    """Something that happened to a model.
+class ModelEvent[M = Any]:
+    """Something that happened to a model, and which model it happened to.
 
-    Carries no identity. Which model this is about, and of what type, is known by the model
-    the event was attached to - so the framework fills those columns in at persist time and
-    the event itself holds only what happened::
+    Declared the way Java declares one - the model it is about on the class line, its id in the
+    constructor::
 
         @dataclass(frozen=True, kw_only=True)
-        class WalletMoneyDeposited(ModelEvent):
+        class WalletMoneyDeposited(ModelEvent["Wallet"]):
             amount: Decimal
             new_balance: Decimal
 
-    Not ``WalletMoneyDeposited(wallet_id, amount, new_balance)``. The id is already known, and
-    a parameter that can only ever be passed one correct value is a parameter that will one day
-    be passed a different one.
+        WalletMoneyDeposited(model_id=str(self.id), amount=amount, new_balance=new_balance)
 
-    The two fields are Java's - its ``ModelEvent`` declares ``modelId`` and ``modelName``, and
-    every event constructor there takes them. The difference is only who fills them in: the
-    framework does, from the model the event was attached to, in :meth:`about`.
+    which is Java's ``new WalletMoneyDepositedEvent(id, amount, newBalance)`` with
+    ``super(id.getValue().toString(), Wallet.class)`` inside it. The type argument does what
+    ``Wallet.class`` does there: it fixes :attr:`model_name` once per event class, so no call
+    site passes it. A string, as ``ShardedId["Wallet"]`` is one, because events are declared
+    before the model that emits them.
+
+    The persister writes both fields to their columns exactly as the event carries them, as
+    Java's does - it does not look at the model the event was attached to.
     """
 
-    #: Set by the framework at persist time; the ``model_id`` column a consumer correlates on.
-    model_id: str = field(default="", compare=False)
+    #: The model's id, as a string - Java's ``modelId``, and the ``model_id`` column a consumer
+    #: correlates on. Required, and refused when blank, as ``Validate.notBlank`` refuses it.
+    model_id: str = field(compare=False)
 
-    #: Likewise, and the ``model_type`` column. Java's ``modelName``, and the same value - the
-    #: model class's bare name.
-    model_name: str = field(default="", compare=False)
+    #: The model class's bare name - Java's ``modelName``, and the ``model_type`` column. Never
+    #: passed: it comes off the class line, as Java's comes off ``Wallet.class``.
+    model_name: str = field(init=False, compare=False)
 
-    def about(self, model: Any) -> Self:
-        """This event, told which model it was attached to.
+    #: Resolved once per event class, from the type argument.
+    __model_name__: ClassVar[str | None] = None
 
-        Java's ``ModelEvent`` constructor does this, so it cannot be skipped; here the persister
-        calls it, so an application never writes the id it already had in its hand.
-        """
-        model_id = str(getattr(model, "id", ""))
-        model_name = type(model).__name__
-        if not model_id.strip():
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        named = _declared_model_name(cls)
+        if named is not None:
+            cls.__model_name__ = named
+
+    def __post_init__(self) -> None:
+        name = type(self).__model_name__
+        if not name:
+            # Java cannot get here: `super(modelId, Wallet.class)` is the only constructor, so
+            # an event that names no model does not compile.
             raise ValidationError(
-                f"{type(self).__name__} was attached to a {model_name} with no id; the "
-                f"model_id column is what a consumer correlates the event back on"
+                f"model class cannot be None: {type(self).__name__} does not say which model it "
+                f"is about; declare it as "
+                f'class {type(self).__name__}(ModelEvent["Wallet"]) - the name is what '
+                f"fills the model_type column"
             )
-        return dataclasses.replace(self, model_id=model_id, model_name=model_name)
+        if not isinstance(self.model_id, str) or not self.model_id.strip():
+            raise ValidationError(
+                f"model_id cannot be None or blank: {type(self).__name__} needs the id of the "
+                f"{name} it is about - pass model_id=str(self.id). The model_id column is what a "
+                f"consumer correlates the event back on"
+            )
+        object.__setattr__(self, "model_name", name)
 
     def payload(self) -> dict[str, Any]:
         """The event as it is stored. Override to control the wire shape.
@@ -350,6 +366,27 @@ def _declared_builder(target: type) -> type[EntityBuilder[Any, Any, Any]] | None
             # itself is being created, before the name exists to compare against.
             if len(args) >= 3 and isinstance(args[2], type) and issubclass(args[2], EntityBuilder):
                 return args[2]
+    return None
+
+
+def _declared_model_name(target: type) -> str | None:
+    """The model an event class names on its class line, or ``None`` if it names none.
+
+    ``ModelEvent["Wallet"]`` gives ``"Wallet"``; ``ModelEvent[Wallet]`` gives the class's bare
+    name, which is the same string - Java's ``getSimpleName()``. Only this class's own bases
+    are read: a subclass of an event that already named its model inherits the answer as a
+    class attribute, and one that names a different model overrides it.
+    """
+    for base in getattr(target, "__orig_bases__", ()):
+        if typing.get_origin(base) is not ModelEvent:
+            continue
+        (arg,) = typing.get_args(base) or (None,)
+        if isinstance(arg, str):
+            return arg
+        if isinstance(arg, typing.ForwardRef):
+            return arg.__forward_arg__
+        if isinstance(arg, type):
+            return arg.__name__
     return None
 
 

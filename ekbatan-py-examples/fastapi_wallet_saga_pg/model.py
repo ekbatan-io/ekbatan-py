@@ -62,14 +62,14 @@ class WalletState(Enum):
 
 
 @dataclass(frozen=True, kw_only=True)
-class WalletOpenedEvent(ModelEvent):
+class WalletOpenedEvent(ModelEvent["Wallet"]):
     owner_id: UUID
     currency: str
     opening_balance: Decimal
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferInitiatedEvent(ModelEvent):
+class TransferInitiatedEvent(ModelEvent["Wallet"]):
     transfer_id: UUID
     from_wallet_id: UUID
     to_wallet_id: UUID
@@ -78,7 +78,7 @@ class TransferInitiatedEvent(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferCompletedEvent(ModelEvent):
+class TransferCompletedEvent(ModelEvent["Wallet"]):
     transfer_id: UUID
     from_wallet_id: UUID
     to_wallet_id: UUID
@@ -86,7 +86,7 @@ class TransferCompletedEvent(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferFailedEvent(ModelEvent):
+class TransferFailedEvent(ModelEvent["Wallet"]):
     """Emitted on the **source** wallet, not the destination.
 
     The destination may be closed, or may not exist at all - there is no aggregate there to
@@ -102,7 +102,7 @@ class TransferFailedEvent(ModelEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
-class TransferRefundedEvent(ModelEvent):
+class TransferRefundedEvent(ModelEvent["Wallet"]):
     transfer_id: UUID
     from_wallet_id: UUID
     amount: Decimal
@@ -138,7 +138,12 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             .with_initial_version()
             .created_date(created_date)
             .with_event(
-                WalletOpenedEvent(owner_id=owner_id, currency=currency, opening_balance=balance)
+                WalletOpenedEvent(
+                    model_id=str(wallet_id),
+                    owner_id=owner_id,
+                    currency=currency,
+                    opening_balance=balance,
+                )
             )
             .build()
         )
@@ -169,6 +174,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             .balance(self.balance - amount)
             .with_event(
                 TransferInitiatedEvent(
+                    model_id=str(self.id),
                     transfer_id=transfer_id,
                     from_wallet_id=self.id.value,
                     to_wallet_id=to.value,
@@ -187,6 +193,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             .balance(self.balance + event.amount)
             .with_event(
                 TransferCompletedEvent(
+                    model_id=str(self.id),
                     transfer_id=event.transfer_id,
                     from_wallet_id=event.from_wallet_id,
                     to_wallet_id=event.to_wallet_id,
@@ -217,6 +224,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             self.copy()
             .with_event(
                 TransferFailedEvent(
+                    model_id=str(self.id),
                     transfer_id=event.transfer_id,
                     from_wallet_id=event.from_wallet_id,
                     to_wallet_id=event.to_wallet_id,
@@ -236,6 +244,7 @@ class Wallet(Model[WalletId, WalletState, WalletBuilder]):
             .balance(self.balance + event.amount)
             .with_event(
                 TransferRefundedEvent(
+                    model_id=str(self.id),
                     transfer_id=event.transfer_id,
                     from_wallet_id=event.from_wallet_id,
                     amount=event.amount,

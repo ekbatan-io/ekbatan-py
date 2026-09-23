@@ -222,7 +222,7 @@ def test_a_namespace_must_be_spellable_downstream(registry, wallets):
 
 def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
     @dataclass(frozen=True, kw_only=True)
-    class Impostor(ModelEvent):
+    class Impostor(ModelEvent["Wallet"]):
         pass
 
     Impostor.__name__ = "WalletMoneyDepositedEvent"
@@ -233,8 +233,10 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
             self.plan.update(
                 wallet.evolve(
                     emit=[
-                        WalletMoneyDepositedEvent(amount=Decimal("1"), new_balance=Decimal("1")),
-                        Impostor(),
+                        WalletMoneyDepositedEvent(
+                            model_id=str(wallet.id), amount=Decimal("1"), new_balance=Decimal("1")
+                        ),
+                        Impostor(model_id=str(wallet.id)),
                     ]
                 )
             )
