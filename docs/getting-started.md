@@ -208,7 +208,7 @@ assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
 ```
 
 Both bind the plan through the same mechanism the executor uses, so `self.plan`,
-`self.clock` and `self.principal` behave as they do in production. Nothing is written - which is
+`self.clock` and the `principal` argument behave as they do in production. Nothing is written - which is
 also the limit of it: that state and events land *together* is a claim about a transaction, and
 only a test against a real database checks it.
 

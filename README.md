@@ -244,7 +244,7 @@ assert staged.updated(Wallet) == [staged.result]
 ```
 
 It binds the plan through the same mechanism the executor uses, so `self.plan`, `self.clock`
-and `self.principal` behave exactly as they do in production. Nothing is written. Knowing that
+and the `principal` argument behave exactly as they do in production. Nothing is written. Knowing that
 state and events land *together* is a test against a database, and no test-support machinery
 substitutes for it.
 
