@@ -28,6 +28,7 @@ from ekbatan.events.jobs import (
     EventHandlingJob,
 )
 from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.executing import run
 from fixtures.handlers import RecordingHandler
 from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS
 
@@ -191,7 +192,8 @@ def test_the_pipeline_runs_from_the_job_table(registry, executor, handlers, reco
         rows = {r[0] for r in conn.execute(select(SCHEDULED_TASKS.c.task_name))}
     assert rows == {FANOUT_JOB_NAME, HANDLING_JOB_NAME}, "both hold a row of their own"
 
-    executor.execute(
+    run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
@@ -213,7 +215,8 @@ def test_a_disabled_handling_job_holds_its_row_and_does_nothing(
     jobs = a_job_registry(registry, [fanout_job, a_handling(registry, handlers, clock)])
     jobs.start()
 
-    executor.execute(
+    run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
@@ -236,7 +239,8 @@ def test_the_metrics_are_the_ones_the_java_implementation_emits(
     sdk = pytest.importorskip("opentelemetry.sdk.metrics")
     from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
-    executor.execute(
+    run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )

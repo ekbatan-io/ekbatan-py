@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from ekbatan.distributedjobs import DistributedJob, JobRegistry, job_registry
 from ekbatan.errors import ValidationError
 from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.executing import run
 from fixtures.jobs import CountWalletsJob, PayStipendJob
 from fixtures.schema import SCHEDULED_TASKS
 
@@ -32,7 +33,8 @@ SCHEDULER_EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 @pytest.fixture
 def wallet(executor):
-    return executor.execute(
+    return run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")),
     )

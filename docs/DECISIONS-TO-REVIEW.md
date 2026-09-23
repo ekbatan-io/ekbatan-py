@@ -18,13 +18,13 @@ unlabelled or if a **chosen** one does not link here. That check exists because 
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **8 that somebody decided**. Each could have gone the other way. Five more are
+These are the **7 that somebody decided**. Each could have gone the other way. Five more are
 struck out and kept struck rather than deleted - four reversed after being asked about, and one
 (`EKB-0199`) that described behaviour this port never had.
 
 | divergence | why it is a decision, not a consequence |
 | --- | --- |
-| [An action runs by type or by instance](../DIVERGENCE.md) | Java dispatches only on a class token; this accepts an instance too. An addition to the surface, not a fact about Python. |
+| ~~[An action runs by type or by instance](../DIVERGENCE.md)~~ | **Closed in `EKB-0224`.** The executor takes a type only, as Java's takes a class. The instance form was measured running an unregistered action, and one built with a different clock, past the clock check; both are refused now, and tests use `ActionSpec.of(action)` as Java's do. |
 | ~~[Events carry no identity](../DIVERGENCE.md)~~ | **Closed in `EKB-0218`.** The class line names the model (`ModelEvent["Wallet"]`, Java's `Wallet.class`) and the constructor takes its id, as Java's does. The persister writes both as the event carries them instead of filling them in from the model it was attached to. |
 | [A typed builder is required in both ports, for different reasons](../DIVERGENCE.md) | Both require a builder a checker can read - Java at compile time, here at the `copy()`/`builder()` call (`EKB-0196`). Accepting a **hand-written** one is the addition; Java has only the generated one. |
 | ~~[Identifiers get a named type, not a generic parameter](../DIVERGENCE.md)~~ | **Closed in `EKB-0223`.** Ids are spelled `ShardedId[Wallet]`, as Java's `ShardedId<Wallet>`, with no class per model; a checker keeps two models' ids apart and at runtime they compare by uuid, as Java's do. `ShardedId` no longer subclasses `Id`, matching Java, where an `Id` and a `ShardedId` of one uuid are never equal. |

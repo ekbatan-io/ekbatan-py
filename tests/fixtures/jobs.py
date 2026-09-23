@@ -44,7 +44,7 @@ class PayStipendJob(DistributedJob):
         for wallet in self.wallets.all():
             if wallet.state is WalletState.OPENED:
                 self.executor.execute(
-                    DepositMoneyAction(self.wallets, self.executor.clock),
+                    DepositMoneyAction,
                     DepositParams(
                         wallet_id=wallet.id, amount=self.amount, recipient="stipend@example.com"
                     ),

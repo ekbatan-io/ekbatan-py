@@ -126,12 +126,30 @@ def executor(
     registry: DatabaseRegistry, clock: VirtualClock, wallets: Any, notifications: Any
 ) -> Any:
     from ekbatan.action import ActionExecutor
+    from fixtures.actions import (
+        CloseWalletAction,
+        CreateWalletAction,
+        DepositMoneyAction,
+        NotifyAction,
+        TransferMoneyAction,
+    )
     from fixtures.schema import EVENTS
 
+    # The suite's application actions, registered as an application's build() registers its
+    # own: the executor runs an action by type, as Java's does, so the fixture handler and job
+    # reach these by name. An action a single test builds for itself goes through
+    # `fixtures.executing.run`, which registers it on an executor like this one.
     return ActionExecutor(
         namespace="example.wallet",
         registry=registry,
         repositories=[wallets, notifications],
+        actions=[
+            CreateWalletAction(clock),
+            DepositMoneyAction(wallets, clock),
+            CloseWalletAction(wallets, clock),
+            TransferMoneyAction(wallets, clock),
+            NotifyAction(clock),
+        ],
         events=EVENTS,
         clock=clock,
     )

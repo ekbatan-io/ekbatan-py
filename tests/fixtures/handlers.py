@@ -96,7 +96,7 @@ class MoneyDepositedEventHandler:
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.calls += 1
         self.executor.execute(
-            NotifyAction(self.executor.clock),
+            NotifyAction,
             NotifyParams(
                 wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
                 kind="MONEY_DEPOSITED",

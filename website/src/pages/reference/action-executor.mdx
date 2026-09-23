@@ -11,7 +11,7 @@ lead: "The framework's main entry point. Runs actions atomically against the con
 class ActionExecutor:
     def execute[P, R](
         self,
-        action: Action[P, R] | type[Action[P, R]],
+        action: type[Action[P, R]],
         params: P,
         *,
         principal: str | None = None,
@@ -19,9 +19,14 @@ class ActionExecutor:
     ) -> R: ...
 ```
 
-Takes the action **or its type** when one is registered. The type is the usual form: callers
-depend on a class, not on a constructed object with repositories hanging off it. Passing the
-instance needs no registry at all, which is what a test usually wants.
+Takes the action's **type**, and runs the instance registered for it — Java's
+`execute(principal, DepositMoneyAction.class, params)`. Callers depend on a class, not on a
+constructed object with repositories hanging off it, and everything a service can do is listed in
+its `ActionRegistry`.
+
+An instance is refused, with a message saying so: it would run whether it was registered or not,
+and past the check that it reads the executor's clock. To run an action you just built in a test,
+use `ActionSpec.of(action)` — see [Test it without a database](/learn/your-first-action/#test-it-without-a-database).
 
 Construction:
 

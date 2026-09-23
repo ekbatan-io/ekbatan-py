@@ -43,7 +43,7 @@ def service(tmp_path: Path) -> Iterator[WalletService]:
 
 def a_wallet(service: WalletService, balance: str = "100.00"):
     return service.executor.execute(
-        OpenWalletAction(service.executor.clock),
+        OpenWalletAction,
         OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal(balance)),
     )
 
@@ -57,7 +57,7 @@ def test_a_deposit_writes_the_balance_and_its_event_together(service):
     wallet = a_wallet(service)
 
     service.executor.execute(
-        DepositMoneyAction(service.wallets, service.executor.clock),
+        DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@example.com"),
     )
 
@@ -80,7 +80,7 @@ def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):
     """The README's claim: the recipient travels as an action parameter, not in the event."""
     wallet = a_wallet(service)
     service.executor.execute(
-        DepositMoneyAction(service.wallets, service.executor.clock),
+        DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@example.com"),
     )
 
@@ -99,7 +99,7 @@ def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):
 def test_writing_an_entity_emits_nothing_and_is_still_recorded(service):
     wallet = a_wallet(service)
     service.executor.execute(
-        DepositMoneyAction(service.wallets, service.executor.clock),
+        DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
     service.deliver_pending_events()
@@ -113,13 +113,13 @@ def test_writing_an_entity_emits_nothing_and_is_still_recorded(service):
 def test_closing_twice_changes_nothing_the_second_time(service):
     wallet = a_wallet(service, "0.00")
     service.executor.execute(
-        CloseWalletAction(service.wallets, service.executor.clock),
+        CloseWalletAction,
         WalletIdParams(wallet_id=wallet.id),
     )
     before = service.wallets.get(wallet.id)
 
     service.executor.execute(
-        CloseWalletAction(service.wallets, service.executor.clock),
+        CloseWalletAction,
         WalletIdParams(wallet_id=wallet.id),
     )
 
@@ -186,7 +186,7 @@ def test_a_rejected_deposit_leaves_nothing_behind(service):
 
     with pytest.raises(ValidationError, match="amount"):
         service.executor.execute(
-            DepositMoneyAction(service.wallets, service.executor.clock),
+            DepositMoneyAction,
             DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@example.com"),
         )
 
@@ -217,11 +217,11 @@ def test_wallets_are_found_by_owner_across_shards(service):
     owner = uuid4()
     for _ in range(2):
         service.executor.execute(
-            OpenWalletAction(service.executor.clock),
+            OpenWalletAction,
             OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
         )
     service.executor.execute(
-        OpenWalletAction(service.executor.clock),
+        OpenWalletAction,
         OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("1.00")),
     )
 
@@ -233,7 +233,7 @@ def test_a_domain_query_still_hides_deleted_rows(service):
     which is what stops a reporting query from disagreeing with the application's own screens."""
     owner = uuid4()
     wallet = service.executor.execute(
-        OpenWalletAction(service.executor.clock),
+        OpenWalletAction,
         OpenWalletParams(owner_id=owner, currency="EUR", opening_balance=Decimal("1.00")),
     )
     service.wallets.update(wallet.delete())
@@ -246,7 +246,7 @@ def test_open_wallets_running_low_can_be_listed(service):
     poor = a_wallet(service, "2.00")
     closed = a_wallet(service, "1.00")
     service.executor.execute(
-        CloseWalletAction(service.wallets, service.executor.clock),
+        CloseWalletAction,
         WalletIdParams(wallet_id=closed.id),
     )
 
@@ -280,7 +280,7 @@ def test_a_shard_can_be_asked_directly(service):
 def test_alerts_are_found_by_the_wallet_they_are_about(service):
     wallet = a_wallet(service)
     service.executor.execute(
-        DepositMoneyAction(service.wallets, service.executor.clock),
+        DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
     )
     service.deliver_pending_events()

@@ -6,12 +6,13 @@ so a caller holding the executor can run an action without also holding the wiri
 
     executor.execute(CloseWallet, WalletIdParams(wallet_id=id))
 
-rather than knowing what ``CloseWallet`` was constructed with:
+without knowing what ``CloseWallet`` was constructed with. That is the difference between an
+HTTP handler that depends on the executor and one that depends on every repository its actions
+happen to use.
 
-    executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=id))
-
-That is the whole of what it buys, and it is the difference between an HTTP handler that
-depends on the executor and one that depends on every repository its actions happen to use.
+It is also the only way in, as Java's is: the executor takes a type and runs the instance
+registered for it, so an action that was never registered cannot run, and every one that runs
+has been checked for reading the executor's clock.
 """
 
 from __future__ import annotations

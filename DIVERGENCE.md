@@ -68,34 +68,33 @@ so the two are wired separately and can be wired differently. The failure that p
 test that froze the executor's clock, asserted on a timestamp the action took from the system
 clock, and passed on the machine it was written on.
 
-## An action runs by type or by instance
+The check runs where actions are registered. Until `EKB-0224` the executor also accepted an
+instance, which went round the registry and so round the check - measured: an action built with a
+different clock ran. Now registration is the only way to run an action, and the check covers
+every one.
 
-> **chosen** - Java dispatches only on a class token; this accepts an instance too. An addition to the surface, not a fact about Python. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+## An action runs by its type, as Java's runs by its class
 
-Java dispatches on a class token, so `ActionRegistry` is the only way to reach an action:
+> **parity** - the executor takes a type and runs the instance registered for it; an instance is refused. Brought to parity in `EKB-0224`; until then an instance was accepted too.
 
 ```java
 executor.execute(principal, DepositMoneyAction.class, params);
 ```
 
-Both registries are here, with the same builders, and the class form works the same way:
-
 ```python
-executor.execute(DepositMoney, DepositParams(...))
+executor.execute(DepositMoneyAction, DepositParams(...), principal="alice")
 ```
 
-What the registry buys is the same in both ports: the wiring lives in one place, and a caller
-holding the executor runs an action without also holding what the action was built with. The
-example's handler and its job both reach for `DepositMoney` and know nothing about the wallet
-repository it needs.
+The registry is the only way in, in both ports: a caller holding the executor runs an action
+without holding what it was built with, and everything a service can do is listed in one place.
 
-The instance form stays, because it costs nothing and a test almost always wants the object it
-just built:
-
-```python
-run = DepositMoney(wallets)
-executor.execute(run, DepositParams(...))
-```
+This port used to accept an instance as well, for tests. Measured before removing it, that form
+ran an action that had never been registered, and ran one built with a different clock - the
+clock check lives where actions are registered, so an instance went past it. Both are refused
+now: an instance gets a message saying to pass the type, and to use `ActionSpec.of(action)` for
+the test that wanted it, which is what Java's tests use. The framework's own executor tests do
+what Java's `ActionExecutorTest` does - register the case's action on an executor, then run it by
+class (`fixtures.executing.run`).
 
 Two differences inside the builders, both for the same reason. Neither `with_action` nor
 `with_model_repository` takes the type alongside the object - `type(action)` and

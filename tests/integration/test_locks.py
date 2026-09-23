@@ -25,6 +25,7 @@ from ekbatan.locks.sql import (
     MySQLKeyedLockProvider,
     PostgresKeyedLockProvider,
 )
+from fixtures.executing import run
 
 HOLD = timedelta(seconds=30)
 NOW = timedelta(0)
@@ -387,13 +388,15 @@ def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallets, request
         DepositParams,
     )
 
-    wallet = executor.execute(
+    wallet = run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
     )
 
     with locks.acquire(f"wallet:{wallet.id}", timedelta(seconds=10)):
-        updated = executor.execute(
+        updated = run(
+            executor,
             DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@x"),
         )
@@ -421,7 +424,8 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
         DepositParams,
     )
 
-    wallet = executor.execute(
+    wallet = run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
     )
@@ -433,7 +437,8 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
     def deposit_under_the_same_lock() -> None:
         with locks.acquire(key, timedelta(seconds=30)):
             finished.append(
-                executor.execute(
+                run(
+                    executor,
                     DepositMoneyAction(wallets, executor.clock),
                     DepositParams(wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@x"),
                 )

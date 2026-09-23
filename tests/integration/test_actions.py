@@ -26,10 +26,12 @@ from fixtures.actions import (
     DepositParams,
 )
 from fixtures.domain import NOW, Wallet
+from fixtures.executing import run
 
 
 def a_wallet(executor):
-    return executor.execute(
+    return run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")),
     )
@@ -46,12 +48,12 @@ class ReadsTheClockAction(Action[None, datetime]):
 def test_an_action_reads_the_clock_it_was_built_with(executor, clock):
     """An action calling datetime.now() directly is one that cannot be tested at a fixed
     instant, and whose timestamps disagree with the row it is writing."""
-    assert executor.execute(ReadsTheClockAction(executor.clock), None) == datetime(
+    assert run(executor, ReadsTheClockAction(executor.clock), None) == datetime(
         2026, 1, 1, 10, 0, tzinfo=UTC
     )
 
     clock.advance(timedelta(hours=3))
-    assert executor.execute(ReadsTheClockAction(executor.clock), None) == datetime(
+    assert run(executor, ReadsTheClockAction(executor.clock), None) == datetime(
         2026, 1, 1, 13, 0, tzinfo=UTC
     )
 
@@ -62,12 +64,12 @@ class ReadsThePrincipalAction(Action[None, str | None]):
 
 
 def test_an_action_knows_who_asked(executor):
-    assert executor.execute(ReadsThePrincipalAction(executor.clock), None, principal="ada") == "ada"
-    assert executor.execute(ReadsThePrincipalAction(executor.clock), None) is None
+    assert run(executor, ReadsThePrincipalAction(executor.clock), None, principal="ada") == "ada"
+    assert run(executor, ReadsThePrincipalAction(executor.clock), None) is None
 
 
 def test_the_plan_is_gone_afterwards(executor, clock):
-    executor.execute(ReadsTheClockAction(clock), None)
+    run(executor, ReadsTheClockAction(clock), None)
     with pytest.raises(EkbatanError, match="no unit of work here"):
         current_plan()
 
@@ -123,18 +125,18 @@ def test_each_kind_of_failure_gets_its_own_policy(executor):
     )
 
     conflicted = FailsWithAction(StaleRecordError("moved"), clock=executor.clock)
-    assert executor.execute(conflicted, None, config=config) == "done"
+    assert run(executor, conflicted, None, config=config) == "done"
     assert conflicted.attempts == 2
 
     locked = FailsWithAction(
         *[LockAcquisitionError("k", "backend down") for _ in range(3)], clock=executor.clock
     )
-    assert executor.execute(locked, None, config=config) == "done"
+    assert run(executor, locked, None, config=config) == "done"
     assert locked.attempts == 4, "three retries, as its own policy allows"
 
     stubborn = FailsWithAction(*[StaleRecordError("moved") for _ in range(2)], clock=executor.clock)
     with pytest.raises(StaleRecordError):
-        executor.execute(stubborn, None, config=config)
+        run(executor, stubborn, None, config=config)
     assert stubborn.attempts == 2, "its policy allowed one retry, not three"
 
 
@@ -148,7 +150,7 @@ def test_the_first_matching_policy_wins(executor):
     action = FailsWithAction(StaleRecordError("moved"), clock=executor.clock)
 
     with pytest.raises(StaleRecordError):
-        executor.execute(action, None, config=config)
+        run(executor, action, None, config=config)
     assert action.attempts == 1, "the narrow policy came first and said no retries"
 
 
@@ -159,7 +161,7 @@ def test_a_failure_is_recognised_through_what_it_was_raised_from(executor):
     wrapped.__cause__ = StaleRecordError("moved")
 
     action = FailsWithAction(wrapped, clock=executor.clock)
-    assert executor.execute(action, None) == "done"
+    assert run(executor, action, None) == "done"
     assert action.attempts == 2
 
 
@@ -170,7 +172,7 @@ def test_a_cycle_in_the_cause_chain_does_not_hang(executor):
     second.__cause__ = first
 
     with pytest.raises(ValidationError):
-        executor.execute(FailsWithAction(first, clock=executor.clock), None)
+        run(executor, FailsWithAction(first, clock=executor.clock), None)
 
 
 def test_max_retries_counts_retries_and_not_attempts(executor):
@@ -188,7 +190,7 @@ def test_max_retries_counts_retries_and_not_attempts(executor):
             *[StaleRecordError("moved") for _ in range(allowed)], clock=executor.clock
         )
 
-        assert executor.execute(action, None, config=config) == "done"
+        assert run(executor, action, None, config=config) == "done"
         assert action.attempts == allowed + 1, f"{allowed} retries is {allowed + 1} runs"
 
 
@@ -203,7 +205,7 @@ def test_when_the_retries_run_out_the_original_failure_is_what_escapes(executor)
     )
 
     with pytest.raises(StaleRecordError, match="attempt 2"):
-        executor.execute(action, None, config=config)
+        run(executor, action, None, config=config)
 
     assert action.attempts == 3, "one run and two retries"
 
@@ -224,7 +226,7 @@ def test_a_policy_on_a_superclass_does_not_catch_a_subclass_as_javas_does_not(ex
     action = FailsWithAction(StaleRecordError("a subclass of EkbatanError"), clock=executor.clock)
 
     with pytest.raises(StaleRecordError):
-        executor.execute(action, None, config=config)
+        run(executor, action, None, config=config)
     assert action.attempts == 1, "the superclass's policy did not cover its subclass"
 
 
@@ -235,7 +237,7 @@ def test_a_policy_on_the_exact_class_catches_it(executor):
     )
     action = FailsWithAction(StaleRecordError("moved"), clock=executor.clock)
 
-    assert executor.execute(action, None, config=config) == "done"
+    assert run(executor, action, None, config=config) == "done"
     assert action.attempts == 2
 
 
@@ -254,7 +256,7 @@ def test_a_cause_deliberately_suppressed_is_not_looked_through(executor):
     action = FailsWithAction(hidden, clock=executor.clock)
 
     with pytest.raises(ConnectivityError):
-        executor.execute(action, None)
+        run(executor, action, None)
     assert action.attempts == 1, "nothing looked past the suppression"
 
 
@@ -269,7 +271,7 @@ def test_an_implicit_context_is_not_looked_through_because_java_has_no_such_link
     action = FailsWithAction(_raised_while_handling(), clock=executor.clock)
 
     with pytest.raises(ConnectivityError):
-        executor.execute(action, None)
+        run(executor, action, None)
     assert action.attempts == 1, "nothing followed the implicit context"
 
 
@@ -277,7 +279,7 @@ def test_an_explicit_cause_is_looked_through_as_javas_getcause_is(executor):
     """`raise ... from err` is the link both ports follow."""
     action = FailsWithAction(_raised_from_a_cause(), clock=executor.clock)
 
-    assert executor.execute(action, None) == "done"
+    assert run(executor, action, None) == "done"
     assert action.attempts == 2
 
 
@@ -316,7 +318,7 @@ def _raised_from_a_cause() -> BaseException:
 def test_retries_can_be_switched_off_entirely(executor):
     action = FailsWithAction(StaleRecordError("moved"), clock=executor.clock)
     with pytest.raises(StaleRecordError):
-        executor.execute(action, None, config=ExecutionConfiguration.no_retry())
+        run(executor, action, None, config=ExecutionConfiguration.no_retry())
     assert action.attempts == 1
 
 
@@ -332,7 +334,7 @@ def test_a_failure_that_is_not_an_ordinary_error_is_still_reported(executor, cap
     """Catching only Exception meant one of these was recorded as neither success nor failure:
     no log line, no span status, nothing - while the unit of work had certainly failed."""
     with caplog.at_level(logging.ERROR, logger="ekbatan.action"), pytest.raises(KeyboardInterrupt):
-        executor.execute(CollapsesAction(executor.clock), None)
+        run(executor, CollapsesAction(executor.clock), None)
 
     assert any("CollapsesAction failed" in r.getMessage() for r in caplog.records)
     assert outbox() == [], "and nothing was committed"
@@ -341,7 +343,8 @@ def test_a_failure_that_is_not_an_ordinary_error_is_still_reported(executor, cap
 def test_such_a_failure_is_never_retried(executor):
     action = FailsWithAction(KeyboardInterrupt("stop"), clock=executor.clock)
     with pytest.raises(KeyboardInterrupt):
-        executor.execute(
+        run(
+            executor,
             action,
             None,
             config=ExecutionConfiguration(
@@ -385,7 +388,8 @@ def test_staging_one_row_twice_is_refused(executor, wallets, outbox):
     before = len(outbox())
 
     with pytest.raises(ValidationError, match="already staged"):
-        executor.execute(
+        run(
+            executor,
             StagesTwiceAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
         )
@@ -397,7 +401,8 @@ def test_staging_one_row_twice_is_refused(executor, wallets, outbox):
 def test_the_error_says_what_to_do_instead(executor, wallets):
     wallet = a_wallet(executor)
     with pytest.raises(ValidationError) as raised:
-        executor.execute(
+        run(
+            executor,
             StagesTwiceAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
         )
@@ -411,7 +416,8 @@ def test_composing_first_then_staging_once_works(executor, wallets, outbox):
     wallet = a_wallet(executor)
     before = {r["id"] for r in outbox()}
 
-    result = executor.execute(
+    result = run(
+        executor,
         ComposesThenStagesAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
     )
@@ -444,7 +450,7 @@ def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
             return self.plan.update(fresh.deposit(Decimal("5.00")))
 
     with pytest.raises(ValidationError, match="already staged"):
-        executor.execute(CreateThenTopUp(executor.clock), None)
+        run(executor, CreateThenTopUp(executor.clock), None)
 
     assert wallets.count() == 0
 
@@ -462,7 +468,7 @@ def test_the_framework_runs_without_a_tracing_stack(executor):
         s.event("something", {"count": 1})
         s.failed(ValueError("boom"), outcome="ekbatan.action.outcome")
 
-    assert executor.execute(ReadsTheClockAction(executor.clock), None) is not None
+    assert run(executor, ReadsTheClockAction(executor.clock), None) is not None
     assert isinstance(tracing_enabled(), bool)
 
 
@@ -518,7 +524,8 @@ def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallets):
                 created_date=NOW,
             )
         )
-        executor.execute(
+        run(
+            executor,
             DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@x"),
         )
@@ -544,13 +551,16 @@ def test_the_retry_count_is_on_the_action_span_whether_or_not_it_retried(executo
     )
 
     with collecting_spans() as collected:
-        executor.execute(FailsWithAction(executor.clock), None, config=config)
+        run(executor, FailsWithAction(executor.clock), None, config=config)
     quiet = next(s for s in collected if s.name == "ekbatan.action.execute")
     assert quiet.attributes["ekbatan.action.retry.count"] == 0
 
     with collecting_spans() as collected:
-        executor.execute(
-            FailsWithAction(StaleRecordError("moved"), executor.clock), None, config=config
+        run(
+            executor,
+            FailsWithAction(StaleRecordError("moved"), executor.clock),
+            None,
+            config=config,
         )
     retried = next(s for s in collected if s.name == "ekbatan.action.execute")
     assert retried.attributes["ekbatan.action.retry.count"] == 1
@@ -593,7 +603,8 @@ def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets)
                 created_date=NOW,
             )
         )
-        executor.execute(
+        run(
+            executor,
             DepositMoneyAction(wallets, executor.clock),
             DepositParams(
                 wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"

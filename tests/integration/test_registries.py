@@ -113,21 +113,45 @@ def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
     assert wallets.get(wallet.id).balance == Decimal("15.0000")
 
 
-def test_an_instance_still_works_with_no_registry(executor, wallets):
-    """The registry is not compulsory - a test usually wants the instance it just built."""
-    wallet = executor.execute(
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
-    )
-    assert wallets.get(wallet.id) is not None
+def test_an_instance_is_refused_and_the_message_says_what_to_do(executor):
+    """Java's `execute` takes a class, so an unregistered action cannot run. Taking an instance
+    here let one run anyway - registered or not."""
+    with pytest.raises(ValidationError) as refused:
+        executor.execute(CreateWalletAction(executor.clock), None)  # type: ignore[arg-type]
+
+    message = str(refused.value)
+    assert "pass CreateWalletAction, not an instance of it" in message
+    assert "ActionSpec.of(action)" in message, "and where a test should go instead"
+
+
+def test_an_action_with_another_clock_cannot_reach_the_executor(registry, wallets, notifications):
+    """The instance form skipped the clock check - measured: an action built with a clock of its
+    own ran, reading one instant while its rows were stamped from another. With registration the
+    only way in, the check is the only way in too."""
+    from datetime import UTC, datetime
+
+    from ekbatan import VirtualClock
+
+    executor_clock = VirtualClock(datetime(2026, 1, 1, tzinfo=UTC))
+    elsewhere = VirtualClock(datetime(1999, 1, 1, tzinfo=UTC))
+
+    with pytest.raises(ValidationError, match="built with a different clock"):
+        ActionExecutor(
+            namespace="example.wallet",
+            registry=registry,
+            repositories=[wallets, notifications],
+            actions=[CreateWalletAction(elsewhere)],
+            events=EVENTS,
+            clock=executor_clock,
+        )
 
 
 def test_running_an_unregistered_type_names_it(executor):
-    with pytest.raises(ValidationError, match="no instance of CreateWalletAction is registered"):
-        executor.execute(
-            CreateWalletAction,
-            CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
-        )
+    """`DepositThenFailAction` is the one fixture action the executor fixture leaves out."""
+    from fixtures.actions import DepositThenFailAction
+
+    with pytest.raises(ValidationError, match="no instance of DepositThenFailAction is registered"):
+        executor.execute(DepositThenFailAction, None)  # type: ignore[arg-type]
 
 
 def test_registering_the_class_rather_than_an_instance_is_refused():
@@ -177,5 +201,5 @@ def test_running_nothing_says_so(executor):
     `'NoneType' object has no attribute 'name'`, from inside the executor."""
     from ekbatan.errors import ValidationError
 
-    with pytest.raises(ValidationError, match="an action is required"):
+    with pytest.raises(ValidationError, match="an action type is required"):
         executor.execute(None, None)

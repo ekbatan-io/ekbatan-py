@@ -26,6 +26,7 @@ from fixtures.actions import (
     DepositParams,
 )
 from fixtures.domain import NOW, Notification, Wallet, WalletMoneyDepositedEvent
+from fixtures.executing import run
 from fixtures.schema import EVENTS
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -55,7 +56,8 @@ class FlakyDepositAction(Action[DepositParams, Wallet]):
 
 
 def _new_wallet(executor, balance="0.00"):
-    return executor.execute(
+    return run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
@@ -65,8 +67,10 @@ def test_a_conflict_is_retried_once_by_default(executor, wallets, outbox):
     wallet = _new_wallet(executor)
     action = FlakyDepositAction(wallets, executor.clock)
 
-    executor.execute(
-        action, DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x")
+    run(
+        executor,
+        action,
+        DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x"),
     )
 
     assert action.attempts == 2
@@ -75,7 +79,8 @@ def test_a_conflict_is_retried_once_by_default(executor, wallets, outbox):
 
 def test_a_retry_starts_from_an_empty_plan(executor, wallets, outbox):
     wallet = _new_wallet(executor)
-    executor.execute(
+    run(
+        executor,
         FlakyDepositAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x"),
     )
@@ -93,7 +98,8 @@ def test_retries_can_be_switched_off(executor, wallets, outbox):
     before = len(outbox())
 
     with pytest.raises(StaleRecordError):
-        executor.execute(
+        run(
+            executor,
             action,
             DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@x"),
             config=ExecutionConfiguration.no_retry(),
@@ -110,7 +116,8 @@ def test_retries_can_be_switched_off(executor, wallets, outbox):
 def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
     executor, wallets = sharded
 
-    executor.execute(
+    run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(
             wallet_id=ShardedId[Wallet].generate(GLOBAL),
@@ -119,7 +126,8 @@ def test_a_row_goes_to_the_shard_its_id_names(sharded, sharded_registry):
             initial_balance=Decimal("1.00"),
         ),
     )
-    there = executor.execute(
+    there = run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(
             wallet_id=ShardedId[Wallet].generate(MEXICO),
@@ -169,7 +177,7 @@ def test_a_unit_of_work_spanning_shards_is_refused_before_anything_is_written(
     executor, wallets = sharded
 
     with pytest.raises(CrossShardError, match="no cross-shard transaction"):
-        executor.execute(CreateOnBothShardsAction(executor.clock), None)
+        run(executor, CreateOnBothShardsAction(executor.clock), None)
 
     assert wallets.count(shard=GLOBAL) == 0
     assert wallets.count(shard=MEXICO) == 0
@@ -180,7 +188,8 @@ def test_a_unit_of_work_spanning_shards_is_refused_before_anything_is_written(
 def test_crossing_shards_can_be_opted_into(sharded, sharded_registry):
     executor, wallets = sharded
 
-    executor.execute(
+    run(
+        executor,
         CreateOnBothShardsAction(executor.clock),
         None,
         config=ExecutionConfiguration(allow_cross_shard=True),
@@ -246,7 +255,7 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
     before = len(outbox())
 
     with pytest.raises(ValidationError, match="collision"):
-        executor.execute(EmitColliding(executor.clock), None)
+        run(executor, EmitColliding(executor.clock), None)
 
     assert len(outbox()) == before
 
@@ -273,7 +282,7 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
             )
 
     with pytest.raises(ValidationError, match="no repository is registered for Notification"):
-        executor.execute(WritesAnUnknownThing(executor.clock), None)
+        run(executor, WritesAnUnknownThing(executor.clock), None)
 
 
 # ----------------------------------------------------------------------- extension
@@ -297,7 +306,8 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
         clock=clock,
     )
     wallet = _new_wallet(executor)
-    executor.execute(
+    run(
+        executor,
         DepositMoneyAction(wallets, executor.clock),
         DepositParams(wallet_id=wallet.id, amount=Decimal("5"), recipient="ada@x"),
     )
@@ -335,7 +345,8 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
     monkeypatch.setattr(type(executor), "_commit_shard", second_shard_dies)
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(KeyboardInterrupt):
-        executor.execute(
+        run(
+            executor,
             CreateOnBothShardsAction(executor.clock),
             None,
             config=ExecutionConfiguration(allow_cross_shard=True),
@@ -365,7 +376,8 @@ def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
     monkeypatch.setattr(type(executor), "_commit_shard", first_shard_dies)
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(RuntimeError):
-        executor.execute(
+        run(
+            executor,
             CreateOnBothShardsAction(executor.clock),
             None,
             config=ExecutionConfiguration(allow_cross_shard=True),
@@ -445,7 +457,8 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
     config = ExecutionConfiguration(allow_cross_shard=True, retry_configs=())
 
     with caplog.at_level(logging.CRITICAL), pytest.raises(StaleRecordError):
-        executor.execute(
+        run(
+            executor,
             CreateOnGlobalThenFailOnMexicoAction(wallets, executor.clock),
             StaleOnMexico(wallet_id=on_mexico.id),
             config=config,

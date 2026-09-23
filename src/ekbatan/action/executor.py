@@ -130,15 +130,16 @@ DEFAULT = ExecutionConfiguration()
 class ActionExecutor:
     """Runs units of work.
 
-    An action can be given as the instance to run, or - when one is registered for it - as its
-    type::
+    An action is named by its type and found in the executor's
+    :class:`~ekbatan.action.registry.ActionRegistry`, as Java's is by its class::
 
         executor.execute(CloseWallet, WalletIdParams(wallet_id=id))
-        executor.execute(CloseWallet(wallets), WalletIdParams(wallet_id=id))
 
-    The first is what an :class:`~ekbatan.action.registry.ActionRegistry` is for: a caller
-    holding the executor runs an action without also holding what the action was built with.
-    The second needs no registry and is what a test usually wants.
+    So a caller holding the executor runs an action without holding what it was built with, and
+    everything a service can do is listed in one place. An instance is refused: it would run
+    whether it was registered or not, and past the check that it reads this executor's clock. A
+    test that wants to run the object it just built uses
+    :class:`~ekbatan.testing.ActionSpec`, as Java's tests do.
     """
 
     __slots__ = ("actions", "changes", "clock", "config", "namespace", "outbox", "registry")
@@ -210,7 +211,7 @@ class ActionExecutor:
 
     def execute[P, R](
         self,
-        action: Action[P, R] | type[Action[P, R]],
+        action: type[Action[P, R]],
         params: P,
         *,
         principal: str | None = None,
@@ -218,14 +219,20 @@ class ActionExecutor:
     ) -> R:
         """Run one unit of work and commit what it staged.
 
-        Takes the action to run, or its type when one is registered - see the class docstring.
+        Java's ``execute(principal, DepositMoneyAction.class, params)``: the action is named by
+        its type, and the registered instance is the one that runs.
         """
         if action is None:
+            raise ValidationError("an action type is required, registered with the executor")
+        if not isinstance(action, type):
             raise ValidationError(
-                "an action is required; pass the action itself or a type registered with the "
-                "executor"
+                f"execute takes the action's type, as Java's takes its class - pass "
+                f"{type(action).__name__}, not an instance of it, and register the instance with "
+                f"the executor's ActionRegistry. An instance would run unregistered, and past the "
+                f"check that it reads this executor's clock. To run one you just built in a test, "
+                f"use ActionSpec.of(action)."
             )
-        running = self.actions.get(action) if isinstance(action, type) else action
+        running = self.actions.get(action)
         policy = config or self.config
         name = running.name
         retried = 0

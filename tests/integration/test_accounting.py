@@ -22,10 +22,12 @@ from fixtures.actions import (
     TransferParams,
 )
 from fixtures.domain import Wallet
+from fixtures.executing import run
 
 
 def a_wallet(executor, balance="100.00"):
-    return executor.execute(
+    return run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
     )
@@ -35,7 +37,8 @@ def test_one_unit_of_work_is_one_transaction(executor, wallets, registry):
     wallet = a_wallet(executor)
 
     with count_statements(registry) as cost:
-        executor.execute(
+        run(
+            executor,
             DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("1"), recipient="ada@x"),
         )
@@ -51,7 +54,8 @@ def test_two_models_still_cost_one_transaction(executor, wallets, registry):
     source, destination = a_wallet(executor), a_wallet(executor, "0.00")
 
     with count_statements(registry) as cost:
-        executor.execute(
+        run(
+            executor,
             TransferMoneyAction(wallets, executor.clock),
             TransferParams(
                 from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("5")
@@ -82,7 +86,7 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
             )
 
     with count_statements(registry) as cost:
-        executor.execute(CreateMany(executor.clock), HowMany(count=25))
+        run(executor, CreateMany(executor.clock), HowMany(count=25))
 
     assert cost.transactions == 1
     assert cost.writes["wallets"] == 1, "twenty-five rows is one statement, not twenty-five"
@@ -94,7 +98,8 @@ def test_a_failed_unit_of_work_rolls_back_rather_than_committing(executor, walle
     wallet = a_wallet(executor)
 
     with count_statements(registry) as cost, contextlib.suppress(Exception):
-        executor.execute(
+        run(
+            executor,
             DepositMoneyAction(wallets, executor.clock),
             DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"),
         )

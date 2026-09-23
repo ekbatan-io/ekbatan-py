@@ -17,6 +17,7 @@ from sqlalchemy import event, select
 
 from ekbatan.ids import ShardedId
 from fixtures.domain import NOW, Wallet
+from fixtures.executing import run
 from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
 
@@ -300,7 +301,8 @@ def test_a_unit_of_work_does_not_pay_to_read_its_own_writes_back(executor, walle
     from fixtures.actions import CreateWalletAction, CreateWalletParams
 
     sql.clear()
-    executor.execute(
+    run(
+        executor,
         CreateWalletAction(executor.clock),
         CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
     )
