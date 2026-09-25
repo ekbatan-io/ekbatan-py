@@ -1,8 +1,13 @@
 """Reading and writing rows.
 
 A repository is bound to one model and one table. It routes by shard, enforces the optimistic
-lock, hides soft-deleted rows from every read path, and maps between rows and models - by field
-name, so that the common case needs no mapping code at all.
+lock, hides soft-deleted rows from every read path, and maps between rows and models through the
+``to_row`` / ``from_row`` every repository writes, as every Java one writes ``toRecord`` /
+``fromRecord``.
+
+The names are Java's. :class:`Repository` is the promise - what the framework asks of a
+repository, and all it asks. :class:`AbstractRepository` keeps that promise against a table, and
+:class:`ModelRepository` / :class:`EntityRepository` are what an application extends.
 
 It has no opinion about transactions, and opens none. If one is open on the shard it joins it;
 if not, each statement stands alone and commits itself. That is what lets the same call read
@@ -17,12 +22,13 @@ import sys
 import types
 import typing
 import uuid
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Self
+from typing import Any, Protocol, Self
 
 from sqlalchemy import (
     ColumnElement,
@@ -73,12 +79,12 @@ _PRIOR = "_prior_version"
 _NO_PAGING = 1_000_000
 
 
-def _no_row_mapping(target: type, route: str) -> EkbatanError:
-    """Java declares both halves abstract; this says the same thing at the call.
+def _no_row_mapping(target: type, missing: Sequence[str]) -> str:
+    """Java declares both halves abstract; this refuses the repository where it is created.
 
     `AbstractRepository.fromRecord` and `toRecord` are abstract there, so a repository that has
-    not written them does not compile. There is no compile step here, so it refuses when the
-    row is read or written.
+    not written them does not compile. There is no compile step here; the nearest thing is
+    refusing to create one, which is where Python's own abstract methods refuse too.
 
     Until `EKB-0217` the mapping defaulted to field name unless a repository said otherwise,
     which is the one piece of magic that was left in the read and write paths: rename a column
@@ -87,9 +93,11 @@ def _no_row_mapping(target: type, route: str) -> EkbatanError:
     rather than inherited.
     """
     name = target.__name__
-    return EkbatanError(
-        f"{name}.{route}() has not been written, and the mapping between a row and a model is "
-        f"not guessed here.\n"
+    written = " and ".join(f"{m}()" for m in missing)
+    verb = "has" if len(missing) == 1 else "have"
+    return (
+        f"{name} cannot be created: {written} {verb} not been written, and the mapping between "
+        f"a row and a model is not guessed here.\n"
         f"\n"
         f"Java declares `fromRecord` and `toRecord` abstract on `AbstractRepository`, so every "
         f"repository writes both. Write both here too:\n"
@@ -108,14 +116,93 @@ def _no_row_mapping(target: type, route: str) -> EkbatanError:
     )
 
 
-class Repository[M: Persistable[Any, Any], K]:
-    """Rows of one table, as models.
+class Repository[M: Persistable[Any, Any]](Protocol):
+    """What the framework asks of a repository - Java's ``Repository`` interface.
 
-    Subclass it, or instantiate it directly when the default field-to-column mapping is
-    enough::
+    The registry, the executor and the change persister depend on this and on nothing else, so
+    anything that has these members can be registered, as anything implementing Java's interface
+    can - a repository that is not backed by SQL at all among them.
 
-        wallets = Repository(Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy())
+    Java's ten methods, in snake case, with ``find_all`` spelled ``all``. Three more that this
+    port's plumbing reads where Java's reads something else: ``model_type``, because the registry
+    here learns the type from the repository rather than being handed it; ``sharding``, which is
+    Java's ``shardingStrategy()``; and ``shard_of``, where Java's executor asks the strategy
+    itself.
+
+    **Not a base class to extend for a table.** Extend :class:`AbstractRepository` - or, as an
+    application does, :class:`ModelRepository` / :class:`EntityRepository`. A class that
+    extends this one and does not write every method cannot be instantiated.
     """
+
+    model_type: type[M]
+    sharding: ShardingStrategy
+
+    def __class_getitem__(cls, params: Any) -> Any:
+        # `Repository[Wallet, WalletId]` was this port's base class, with two parameters. It is
+        # Java's one-parameter interface now, and the bare "too many arguments" Python would say
+        # does not tell anyone what moved where.
+        if cls is Repository and isinstance(params, tuple) and len(params) == 2:
+            raise TypeError(
+                "Repository takes one type argument now - it is Java's Repository interface, the "
+                "promise the framework asks of a repository. The two-argument class that "
+                "implements it is AbstractRepository[Model, Id]; an application extends "
+                "ModelRepository[Model, Id] or EntityRepository[Model, Id]."
+            )
+        return super().__class_getitem__(params)  # type: ignore[misc]
+
+    @abstractmethod
+    def shard_of(self, model: M) -> ShardIdentifier: ...
+
+    @abstractmethod
+    def add(self, model: M) -> M: ...
+
+    @abstractmethod
+    def add_no_result(self, model: M) -> None: ...
+
+    @abstractmethod
+    def add_all(self, models: Sequence[M]) -> list[M]: ...
+
+    @abstractmethod
+    def add_all_no_result(self, models: Sequence[M]) -> None: ...
+
+    @abstractmethod
+    def update(self, model: M) -> M: ...
+
+    @abstractmethod
+    def update_no_result(self, model: M) -> None: ...
+
+    @abstractmethod
+    def update_all(self, models: Sequence[M]) -> list[M]: ...
+
+    @abstractmethod
+    def update_all_no_result(self, models: Sequence[M]) -> None: ...
+
+    @abstractmethod
+    def all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
+
+
+class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
+    """Rows of one table, as models - Java's ``AbstractRepository``.
+
+    Abstract for Java's reason: ``to_row`` and ``from_row`` are the repository's to write, and a
+    repository without them cannot be created at all - the nearest this language comes to the
+    compile error Java gives. Applications extend :class:`ModelRepository` or
+    :class:`EntityRepository`, which say which kind of thing the table holds.
+    """
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        # Python's own refusal names the missing methods and stops there. This one names them and
+        # says what to write, which is the part a reader needs - still a TypeError, as Python's is.
+        missing = sorted(getattr(cls, "__abstractmethods__", ()))
+        if missing:
+            if set(missing) <= {"to_row", "from_row"}:
+                raise TypeError(_no_row_mapping(cls, missing))
+            raise TypeError(
+                f"{cls.__name__} cannot be created: it does not implement {', '.join(missing)}. "
+                f"Extend ModelRepository or EntityRepository, which implement everything but "
+                f"to_row and from_row."
+            )
+        return super().__new__(cls)
 
     def __init__(
         self,
@@ -183,6 +270,7 @@ class Repository[M: Persistable[Any, Any], K]:
 
     # ---------------------------------------------------------------- mapping
 
+    @abstractmethod
     def to_row(self, model: M) -> dict[str, Any]:
         """The model as column values. **Write this.**
 
@@ -196,8 +284,9 @@ class Repository[M: Persistable[Any, Any], K]:
             def to_row(self, wallet: Wallet) -> dict[str, Any]:
                 return self.columns_by_field_name(wallet)
         """
-        raise _no_row_mapping(type(self), "to_row")
+        raise NotImplementedError(_no_row_mapping(type(self), ["to_row"]))
 
+    @abstractmethod
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> M:
         """A row as a model. **Write this**, alongside :meth:`to_row`.
 
@@ -207,7 +296,7 @@ class Repository[M: Persistable[Any, Any], K]:
             def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
                 return self.model_by_field_name(row)
         """
-        raise _no_row_mapping(type(self), "from_row")
+        raise NotImplementedError(_no_row_mapping(type(self), ["from_row"]))
 
     # ------------------------------------------- the by-name mapping, asked for rather than assumed
 
@@ -1076,7 +1165,7 @@ def _from_column(value: Any, hint: Any) -> Any:
     return value
 
 
-class ModelRepository[M: Model[Any, Any], K](Repository[M, K]):
+class ModelRepository[M: Model[Any, Any], K](AbstractRepository[M, K]):
     """Rows of a :class:`~ekbatan.domain.Model` - state whose changes are events.
 
     Everything is inherited; what this adds is the declaration. Saying which of the two you
@@ -1094,7 +1183,7 @@ class ModelRepository[M: Model[Any, Any], K](Repository[M, K]):
         super().__init__(model_type, *args, **kwargs)
 
 
-class EntityRepository[M: Entity[Any, Any], K](Repository[M, K]):
+class EntityRepository[M: Entity[Any, Any], K](AbstractRepository[M, K]):
     """Rows of an :class:`~ekbatan.domain.Entity` - state whose changes are not events.
 
     The counterpart to :class:`ModelRepository`, and the same bargain: declare which one it is
@@ -1130,8 +1219,8 @@ class RepositoryRegistry:
 
     __slots__ = ("_by_model",)
 
-    def __init__(self, repositories: Iterable[Repository[Any, Any]] = ()) -> None:
-        self._by_model: dict[type, Repository[Any, Any]] = {}
+    def __init__(self, repositories: Iterable[Repository[Any]] = ()) -> None:
+        self._by_model: dict[type, Repository[Any]] = {}
         for repo in repositories:
             self._add(repo)
 
@@ -1140,7 +1229,7 @@ class RepositoryRegistry:
         """A builder, for registrations that declare what they are."""
         return RepositoryRegistryBuilder()
 
-    def _add(self, repo: Repository[Any, Any]) -> None:
+    def _add(self, repo: Repository[Any]) -> None:
         model_type = repo.model_type
         existing = self._by_model.get(model_type)
         if existing is not None and existing is not repo:
@@ -1154,7 +1243,7 @@ class RepositoryRegistry:
             )
         self._by_model[model_type] = repo
 
-    def repository(self, model_type: type) -> Repository[Any, Any]:
+    def repository(self, model_type: type) -> Repository[Any]:
         """The repository that writes this model, or a refusal naming it.
 
         Java's returns null here, which reaches the caller as a NullPointerException naming
@@ -1180,7 +1269,7 @@ class RepositoryRegistry:
     def __contains__(self, model_type: object) -> bool:
         return model_type in self._by_model
 
-    def __iter__(self) -> Iterator[Repository[Any, Any]]:
+    def __iter__(self) -> Iterator[Repository[Any]]:
         return iter(self._by_model.values())
 
     def __len__(self) -> int:
@@ -1197,9 +1286,9 @@ class RepositoryRegistryBuilder:
     __slots__ = ("_repositories",)
 
     def __init__(self) -> None:
-        self._repositories: list[Repository[Any, Any]] = []
+        self._repositories: list[Repository[Any]] = []
 
-    def with_model_repository(self, repository: Repository[Any, Any]) -> Self:
+    def with_model_repository(self, repository: Repository[Any]) -> Self:
         """Register a repository for a :class:`~ekbatan.domain.Model`.
 
         The model type is not passed alongside it - it is already on the repository, and two
@@ -1209,12 +1298,12 @@ class RepositoryRegistryBuilder:
         """
         return self._checked(repository, Model, "Model", "with_entity_repository")
 
-    def with_entity_repository(self, repository: Repository[Any, Any]) -> Self:
+    def with_entity_repository(self, repository: Repository[Any]) -> Self:
         """Register a repository for an :class:`~ekbatan.domain.Entity` - state whose changes
         are not events."""
         return self._checked(repository, Entity, "Entity", "with_model_repository")
 
-    def with_repositories(self, repositories: Iterable[Repository[Any, Any]]) -> Self:
+    def with_repositories(self, repositories: Iterable[Repository[Any]]) -> Self:
         """Register a collection, sorting each into model or entity by what it holds.
 
         For a container that has already collected them, where nobody is in a position to
@@ -1233,7 +1322,7 @@ class RepositoryRegistryBuilder:
 
     def _checked(
         self,
-        repository: Repository[Any, Any],
+        repository: Repository[Any],
         expected: type,
         named: str,
         instead: str,

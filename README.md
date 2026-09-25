@@ -34,10 +34,11 @@ class Wallet(Model[UUID, WalletState]):
 
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, UUID]) -> None:
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
         self.wallets = wallets
 
-    def perform(self, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```

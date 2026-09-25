@@ -13,28 +13,39 @@ from __future__ import annotations
 
 import pytest
 
-from ekbatan.errors import EkbatanError
 from ekbatan.ids import ShardedId
-from ekbatan.repository import Repository
+from ekbatan.repository import AbstractRepository
 from fixtures.domain import Wallet
 from fixtures.schema import WALLETS
 
 
-def test_a_repository_that_has_not_written_the_mapping_refuses(registry, clock):
-    wallets = Repository(Wallet, WALLETS, registry, clock=clock)
+def test_a_repository_that_has_not_written_the_mapping_cannot_be_created(registry, clock):
+    """Java declares `fromRecord` and `toRecord` abstract, so a repository without them does not
+    compile. The nearest thing here is refusing to create it - where the mistake is made, at
+    startup, rather than on the first row read or written."""
 
-    with pytest.raises(EkbatanError, match="has not been written"):
-        wallets.to_row(object())  # type: ignore[arg-type]
+    class Forgot(AbstractRepository[Wallet, ShardedId[Wallet]]):
+        pass
 
-    with pytest.raises(EkbatanError, match="has not been written"):
-        wallets.from_row({})
+    with pytest.raises(TypeError, match=r"from_row\(\) and to_row\(\) have not been written"):
+        Forgot(Wallet, WALLETS, registry, clock=clock)
 
 
-def test_the_refusal_names_both_halves_and_how_to_write_them(registry, clock):
-    wallets = Repository(Wallet, WALLETS, registry, clock=clock)
+def test_one_half_written_names_the_other(registry, clock):
+    class HalfDone(AbstractRepository[Wallet, ShardedId[Wallet]]):
+        def to_row(self, model):
+            return self.columns_by_field_name(model)
 
-    with pytest.raises(EkbatanError) as raised:
-        wallets.from_row({})
+    with pytest.raises(TypeError, match=r"from_row\(\) has not been written"):
+        HalfDone(Wallet, WALLETS, registry, clock=clock)
+
+
+def test_the_refusal_says_how_to_write_both_halves(registry, clock):
+    class Forgot(AbstractRepository[Wallet, ShardedId[Wallet]]):
+        pass
+
+    with pytest.raises(TypeError) as raised:
+        Forgot(Wallet, WALLETS, registry, clock=clock)
 
     message = str(raised.value)
     assert "columns_by_field_name" in message
@@ -42,10 +53,15 @@ def test_the_refusal_names_both_halves_and_how_to_write_them(registry, clock):
     assert "abstract" in message, "it should say what Java does"
 
 
+def test_the_abstract_base_itself_cannot_be_created(registry, clock):
+    with pytest.raises(TypeError, match="cannot be created"):
+        AbstractRepository(Wallet, WALLETS, registry, clock=clock)
+
+
 def test_asking_for_the_by_name_mapping_is_a_line_you_write(registry, clock):
     """What every repository in this repository now says, and what it used to inherit."""
 
-    class Written(Repository[Wallet, ShardedId[Wallet]]):
+    class Written(AbstractRepository[Wallet, ShardedId[Wallet]]):
         def to_row(self, model):
             return self.columns_by_field_name(model)
 

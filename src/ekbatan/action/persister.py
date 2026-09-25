@@ -43,7 +43,7 @@ class ChangePersister:
         self.repositories = repositories
         self.outbox = outbox
 
-    def repository_for(self, model_type: type) -> Repository[Any, Any]:
+    def repository_for(self, model_type: type) -> Repository[Any]:
         """The repository that writes this model, or a refusal naming it.
 
         Reached through here as well as directly, because the executor needs a repository to

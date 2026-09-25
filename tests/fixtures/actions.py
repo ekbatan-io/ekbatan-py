@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from ekbatan import Action, Clock, Repository
+from ekbatan import AbstractRepository, Action, Clock
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
 
@@ -67,7 +67,9 @@ class CreateWalletAction(Action[CreateWalletParams, Wallet]):
 
 
 class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
+    def __init__(
+        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+    ) -> None:
         super().__init__(clock)
         self.wallets = wallets
 
@@ -77,7 +79,9 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
 
 
 class CloseWalletAction(Action[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
+    def __init__(
+        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+    ) -> None:
         super().__init__(clock)
         self.wallets = wallets
 
@@ -93,7 +97,9 @@ class TransferMoneyAction(Action[TransferParams, tuple[Wallet, Wallet]]):
     """Two models, one transaction. Both balances move or neither does, and nothing in here
     arranges that."""
 
-    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
+    def __init__(
+        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+    ) -> None:
         super().__init__(clock)
         self.wallets = wallets
 
@@ -132,7 +138,9 @@ class DepositThenFailAction(Action[DepositParams, Wallet]):
     other way.
     """
 
-    def __init__(self, wallets: Repository[Wallet, ShardedId[Wallet]], clock: Clock) -> None:
+    def __init__(
+        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+    ) -> None:
         super().__init__(clock)
         self.wallets = wallets
 

@@ -20,7 +20,7 @@ from ekbatan.clock import to_storage
 from ekbatan.domain import DELETED
 from ekbatan.fetching import Db
 from ekbatan.ids import ShardedId
-from ekbatan.repository import Repository
+from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Wallet, WalletState
 from fixtures.schema import WALLETS
@@ -29,7 +29,7 @@ HERE = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
 
 
-class WalletRepository(Repository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AbstractRepository[Wallet, ShardedId[Wallet]]):
     """What a user writes when the built-in finders run out."""
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:

@@ -14,15 +14,29 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
         return self.find_where(WALLETS.c.owner_id == owner_id)
 ```
 
+## The four classes
+
+Java's names, and Java's layering:
+
+| class | what it is |
+| --- | --- |
+| `Repository[M]` | the promise: what the framework asks of a repository, and all it asks. A `Protocol`, as Java's is an interface - so anything that keeps it can be registered |
+| `AbstractRepository[M, K]` | the SQL implementation of that promise. Abstract: `to_row` and `from_row` are yours |
+| `ModelRepository[M, K]` | extend this for a model |
+| `EntityRepository[M, K]` | extend this for an entity |
+
+An application extends `ModelRepository` or `EntityRepository` and nothing else.
+
 ## Write the mapping
 
 Every repository writes `to_row` and `from_row`. Java declares `fromRecord` and `toRecord`
 abstract on `AbstractRepository`, so a repository that has not written them does not compile;
-there is no compile step here, so the base refuses when the row is read or written:
+there is no compile step here, so a repository without them **cannot be created** - the mistake
+shows at startup, not on the first request:
 
 ```
-WalletRepository.from_row() has not been written, and the mapping between a row and a model is
-not guessed here.
+WalletRepository cannot be created: from_row() and to_row() have not been written, and the
+mapping between a row and a model is not guessed here.
 ```
 
 Where the names line up - which is most of the time, because a dataclass already knows its own

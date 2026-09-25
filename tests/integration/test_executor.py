@@ -12,13 +12,13 @@ from ekbatan import (
     ActionExecutor,
     Clock,
     ExecutionConfiguration,
-    Repository,
     ShardIdentifier,
 )
 from ekbatan.action.outbox import OutboxRecord
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
+from ekbatan.repository import AbstractRepository
 from fixtures.actions import (
     CreateWalletAction,
     CreateWalletParams,
@@ -39,7 +39,9 @@ MEXICO = ShardIdentifier(1, 0)
 class FlakyDepositAction(Action[DepositParams, Wallet]):
     """Fails the first attempt the way a lost version race does, then behaves."""
 
-    def __init__(self, wallets: Repository[Wallet, UUID], clock: Clock, failures: int = 1) -> None:
+    def __init__(
+        self, wallets: AbstractRepository[Wallet, UUID], clock: Clock, failures: int = 1
+    ) -> None:
         super().__init__(clock)
         self.wallets = wallets
         self.remaining = failures

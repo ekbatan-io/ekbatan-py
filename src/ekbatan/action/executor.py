@@ -149,7 +149,7 @@ class ActionExecutor:
         *,
         namespace: str,
         registry: DatabaseRegistry,
-        repositories: RepositoryRegistry | Iterable[Repository[Any, Any]],
+        repositories: RepositoryRegistry | Iterable[Repository[Any]],
         actions: ActionRegistry | Iterable[Action[Any, Any]] = (),
         events: Table | None = None,
         outbox: EventPersister | None = None,
@@ -417,7 +417,7 @@ class ActionExecutor:
                     target[model.id] = model
         return grouped
 
-    def _repository(self, model_type: type) -> Repository[Any, Any]:
+    def _repository(self, model_type: type) -> Repository[Any]:
         return self.changes.repository_for(model_type)
 
 

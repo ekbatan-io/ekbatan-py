@@ -84,6 +84,7 @@ from .locks import (
 from .migrations import emit_ddl, migrate, migrate_registry
 from .persistence import DatabaseRegistry, Transaction, TransactionManager, engine_for
 from .repository import (
+    AbstractRepository,
     EntityRepository,
     ModelRepository,
     Repository,
@@ -108,6 +109,7 @@ __version__ = "0.1.0.dev0"
 __all__ = [
     "DEFAULT_RETRIES",
     "DEFAULT_SHARD",
+    "AbstractRepository",
     "Action",
     "ActionAssert",
     "ActionExecutor",

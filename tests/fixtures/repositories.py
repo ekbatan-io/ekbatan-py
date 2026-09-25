@@ -22,7 +22,7 @@ from sqlalchemy import Row
 from ekbatan.clock import to_storage
 from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
-from ekbatan.repository import EntityRepository, ModelRepository, Repository
+from ekbatan.repository import AbstractRepository, EntityRepository, ModelRepository
 
 from .domain import Notification, Wallet, WalletState
 
@@ -95,11 +95,11 @@ class _NotificationRows:
         )
 
 
-class WalletRepository(_WalletRows, Repository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(_WalletRows, AbstractRepository[Wallet, ShardedId[Wallet]]):
     """Java's `DummyRepository`: a repository that exists so the suite has one."""
 
 
-class NotificationRepository(_NotificationRows, Repository[Notification, Id[Notification]]):
+class NotificationRepository(_NotificationRows, AbstractRepository[Notification, Id[Notification]]):
     pass
 
 

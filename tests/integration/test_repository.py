@@ -10,7 +10,7 @@ from ekbatan.clock import VirtualClock, to_storage
 from ekbatan.errors import EntityNotFoundError, StaleRecordError
 from ekbatan.ids import Id, ShardedId
 from ekbatan.persistence import DatabaseRegistry
-from ekbatan.repository import Repository
+from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Notification, Wallet, WalletState
 from fixtures.repositories import (
@@ -25,7 +25,7 @@ from fixtures.schema import NOTIFICATIONS, WALLETS
 
 
 @pytest.fixture
-def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Repository[Wallet, UUID]:
+def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> AbstractRepository[Wallet, UUID]:
     return WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
 

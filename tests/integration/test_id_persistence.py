@@ -29,7 +29,7 @@ from sqlalchemy import (
     Uuid,
 )
 
-from ekbatan import Model, Repository
+from ekbatan import AbstractRepository, Model
 from ekbatan.clock import to_storage
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
@@ -75,7 +75,7 @@ def _prepare(registry):
             conn.execute(PURSES.delete())
 
 
-class PurseRepository(Repository[Purse, Id[Purse]]):
+class PurseRepository(AbstractRepository[Purse, Id[Purse]]):
     """The mapping written out, as Java's `fromRecord` / `toRecord` are.
 
     This file is about what a *typed id* does on the way to a column and back, so the two lines

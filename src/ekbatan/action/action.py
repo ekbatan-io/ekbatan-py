@@ -3,7 +3,7 @@
 Subclass :class:`Action`, take whatever it needs in ``__init__``, and write ``perform``::
 
     class DepositMoney(Action[DepositParams, Wallet]):
-        def __init__(self, wallets: Repository[Wallet, UUID], clock: Clock) -> None:
+        def __init__(self, wallets: ModelRepository[Wallet, UUID], clock: Clock) -> None:
             super().__init__(clock)
             self.wallets = wallets
 

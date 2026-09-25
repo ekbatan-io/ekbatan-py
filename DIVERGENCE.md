@@ -301,23 +301,41 @@ Mechanism, not behaviour:
   uuid, a random version 4 one included, and routes it to a shard nobody chose - `(247, 28)` in
   the run that checked it. Listed under "Noticed in the Java".
 
-## `AbstractRepository` is just `Repository`, and is usable as it stands
+## The repository classes are Java's four: `Repository`, `AbstractRepository`, `ModelRepository`, `EntityRepository`
 
-> **chosen** - Java's four-name hierarchy collapses to fewer here. Structural, and could have been mirrored. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - Java's names and layering, with the narrow `Repository` promise as a `Protocol` and `AbstractRepository` abstract. Brought to parity in `EKB-0226`; until then this port had no narrow interface and called the implementation `Repository`.
 
-Java's hierarchy is four names: a narrow `Repository` interface, an `AbstractRepository`
-holding the implementation, and `ModelRepository` / `EntityRepository` on top.
+```java
+public interface Repository<PERSISTABLE extends Persistable<?>>
+public abstract class AbstractRepository<...> implements Repository<PERSISTABLE>
+```
 
-`ModelRepository` and `EntityRepository` are here, and do what they do there: declare which
-kind of thing the table holds, and refuse a model whose table cannot hold the timestamps a
-model carries.
+```python
+class Repository[M: Persistable[Any, Any]](Protocol): ...
+class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC): ...
+```
 
-The other two collapse into one. `AbstractRepository` is abstract in Java because
-`fromRecord` and `toRecord` have to be supplied; here they default to mapping by field name, so
-the class works as it stands and calling it *Abstract* would be a lie -
-`Repository(Wallet, WALLETS, registry)` is a legitimate line. The narrow `Repository` interface
-existed to keep `ChangePersister` off the full surface; nothing here needs that yet, and a
-Protocol added before anything wants it is a name to maintain for nobody.
+`Repository` is the promise: what the registry, the executor and the change persister ask of a
+repository, and all they ask. They depend on it and on nothing else, so anything that keeps it
+can be registered - as anything implementing Java's interface can. `AbstractRepository` keeps it
+against a table, and is abstract for Java's reason: `to_row` and `from_row` are the repository's
+to write. An application extends `ModelRepository` or `EntityRepository`, as in Java.
+
+The reason this port had for merging the two - that its `Repository` "works as it stands",
+mapping by field name - stopped being true in `EKB-0217`, when the mapping became something
+every repository writes.
+
+Mechanism, not behaviour:
+
+- **The promise is a `Protocol`** - Python's interface. Java's ten methods in snake case, with
+  `find_all` spelled `all`, plus three the plumbing here reads where Java's reads something
+  else: `model_type` (this registry learns the type from the repository), `sharding` (Java's
+  `shardingStrategy()`) and `shard_of` (Java's executor asks the strategy directly).
+- **A repository without its mapping cannot be created**, where Java's does not compile - the
+  nearest a language without a compile step comes. The message names what is missing and shows
+  the two lines to write.
+- **`Repository[Wallet, WalletId]`, the old two-argument base, says what moved**, rather than
+  Python's bare "too many arguments".
 
 ## Row mapping is written, as Java's is - but the bridge is not
 

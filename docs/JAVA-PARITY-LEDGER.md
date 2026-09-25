@@ -208,10 +208,10 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| AbstractRepository.java | 939 | `repository.py` | done - `Repository`, concrete rather than abstract |
+| AbstractRepository.java | 939 | `repository.py` | done - `AbstractRepository`, abstract as Java's is (`EKB-0226`) |
 | EntityRepository.java | 63 | `repository.py` | done |
 | ModelRepository.java | 83 | `repository.py` | done |
-| Repository.java | 93 | `repository.py` | n/a - the narrow interface has no second implementation here |
+| Repository.java | 93 | `repository.py` | done - `Repository`, a `Protocol`; the registry, executor and persister depend on it alone (`EKB-0226`) |
 | RepositoryRegistry.java | 124 | `repository.py` | done - refuses a duplicate registration, and raises rather than returning null |
 
 #### `core/repository/exception`

@@ -8,7 +8,7 @@ from decimal import Decimal
 from db_scheduler.task import ExecutionContext
 from db_scheduler.task.schedule import FixedDelay, Schedule
 
-from ekbatan import ActionExecutor, Repository
+from ekbatan import AbstractRepository, ActionExecutor
 from ekbatan.distributedjobs import DistributedJob
 
 from .actions import DepositMoneyAction, DepositParams
@@ -25,7 +25,7 @@ class PayStipendJob(DistributedJob):
     def __init__(
         self,
         executor: ActionExecutor,
-        wallets: Repository[Wallet, object],
+        wallets: AbstractRepository[Wallet, object],
         amount: Decimal = Decimal("1.00"),
     ) -> None:
         self.executor = executor
@@ -54,7 +54,7 @@ class PayStipendJob(DistributedJob):
 class CountWalletsJob(DistributedJob):
     """Reads and writes nothing. The shape of a reporting job."""
 
-    def __init__(self, wallets: Repository[Wallet, object]) -> None:
+    def __init__(self, wallets: AbstractRepository[Wallet, object]) -> None:
         self.wallets = wallets
         self.last_count = 0
 
