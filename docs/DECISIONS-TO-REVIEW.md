@@ -18,7 +18,7 @@ unlabelled or if a **chosen** one does not link here. That check exists because 
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **6 that somebody decided**. Each could have gone the other way. Five more are
+These are the **5 that somebody decided**. Each could have gone the other way. Five more are
 struck out and kept struck rather than deleted - four reversed after being asked about, and one
 (`EKB-0199`) that described behaviour this port never had.
 
@@ -31,7 +31,7 @@ struck out and kept struck rather than deleted - four reversed after being asked
 | ~~[`AbstractRepository` is just `Repository`, and is usable as it stands](../DIVERGENCE.md)~~ | **Closed in `EKB-0226`.** Java's four names and layering: `Repository` is the narrow promise (a `Protocol`) that the registry, executor and persister depend on, and `AbstractRepository` is the abstract implementation. Its stated reason - that the class worked without a mapping - had stopped being true in `EKB-0217`. |
 | ~~[Row mapping is by field name unless you say otherwise](../DIVERGENCE.md)~~ | **Closed in `EKB-0217`.** Java declares `fromRecord`/`toRecord` abstract and every repository writes both; `to_row`/`from_row` now refuse until written, here too. The default was the one piece of magic left in the read and write paths - rename a column without renaming the field and it silently stopped matching. Where names line up it is two lines; the bridge is still written once in the framework rather than once per repository. |
 | ~~[An unregistered shard is refused, not defaulted](../DIVERGENCE.md)~~ | **Struck in `EKB-0199`: it was never true.** Both ports fall back to the default shard, line for line. The refusal quoted was `DatabaseRegistry.manager()`, which routing never reaches - every path resolves through `effective_shard` first. No decision was ever taken here, because there was nothing to decide. |
-| [The connection they hand back has a `rows()` on it](../DIVERGENCE.md) | jOOQ ends a query with `fetch(this::fromRecord)` and SQLAlchemy has no such verb. Adding `Db.rows(...).fetch(mapper)` is new surface; a comprehension after `execute` would have done. |
+| ~~[The connection they hand back has a `rows()` on it](../DIVERGENCE.md)~~ | **Relabelled parity in `EKB-0227`.** It is what keeps Java's shape - a query that ends with its mapping - where SQLAlchemy has no verb for that step. Dropping it would be the divergence. |
 | ~~[Timestamps are stamped when the change is staged](../DIVERGENCE.md)~~ | **Closed in `EKB-0192` and `EKB-0194`.** `created_date` is required at construction, as Java's `Validate.notNull(builder.createdDate)` requires it, and nothing writes `updated_date` but the application. |
 | ~~[Retries match an exception the way `except` does](../DIVERGENCE.md)~~ | **Closed in `EKB-0198`.** The case it rested on - "`on=OperationalError` matches every driver subclass" - was checked and is not real: SQLAlchemy raises that exact class for every dialect and it has no subclasses. Matching is now exact and the walk is `__cause__` only, as Java's are. |
 | [Equality compares the whole row](../DIVERGENCE.md) | **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. |

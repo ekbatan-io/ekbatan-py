@@ -518,9 +518,9 @@ recorded here as a neutral difference, which was the mistake: it is a judgement 
 job consistency is, and it belonged in `docs/DECISIONS-TO-REVIEW.md` where it would have been
 argued about rather than filed.
 
-## The connection they hand back has a `rows()` on it
+## A custom query ends with the mapping, as jOOQ's does
 
-> **chosen** - jOOQ ends a query with the mapping and SQLAlchemy has no such verb, so this port adds one. It could as easily have been left to a comprehension. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - both ports end a custom query with the mapping, in the same chain: jOOQ's `fetch(this::fromRecord)`, here `rows(statement).fetch(self.from_row)`. jOOQ has the verb built in; SQLAlchemy has none, so `Db` adds one. Leaving it out would be the divergence - the query in one place and the mapping in a loop afterwards. Relabelled in `EKB-0227`; it was filed as chosen.
 
 The accessors above mean exactly what Java's mean. What they *hand back* differs: a `Db`, which
 is a `sqlalchemy.Connection` with one method added.
