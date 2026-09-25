@@ -18,7 +18,7 @@ unlabelled or if a **chosen** one does not link here. That check exists because 
 `readonly_db` meaning "a read" rather than "the replica" sat in `DIVERGENCE.md` for weeks
 reading like a fact about the language, and was found by being asked about.
 
-These are the **5 that somebody decided**. Each could have gone the other way. Five more are
+These are the **4 that somebody decided**. Each could have gone the other way. Five more are
 struck out and kept struck rather than deleted - four reversed after being asked about, and one
 (`EKB-0199`) that described behaviour this port never had.
 
@@ -34,7 +34,7 @@ struck out and kept struck rather than deleted - four reversed after being asked
 | ~~[The connection they hand back has a `rows()` on it](../DIVERGENCE.md)~~ | **Relabelled parity in `EKB-0227`.** It is what keeps Java's shape - a query that ends with its mapping - where SQLAlchemy has no verb for that step. Dropping it would be the divergence. |
 | ~~[Timestamps are stamped when the change is staged](../DIVERGENCE.md)~~ | **Closed in `EKB-0192` and `EKB-0194`.** `created_date` is required at construction, as Java's `Validate.notNull(builder.createdDate)` requires it, and nothing writes `updated_date` but the application. |
 | ~~[Retries match an exception the way `except` does](../DIVERGENCE.md)~~ | **Closed in `EKB-0198`.** The case it rested on - "`on=OperationalError` matches every driver subclass" - was checked and is not real: SQLAlchemy raises that exact class for every dialect and it has no subclasses. Matching is now exact and the walk is `__cause__` only, as Java's are. |
-| [Equality compares the whole row](../DIVERGENCE.md) | **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. |
+| ~~[Equality compares the whole row](../DIVERGENCE.md)~~ | **Closed in `EKB-0228`.** Java's rule: the same row at the same version - class, id, state, version, and the timestamps on a model - with the hash by id. It is also Python's practice for saved records (Django, SQLAlchemy). Comparing every field had also made any model with a list field unhashable. |
 | ~~[A shard member carries one datasource pair, not a named map](../DIVERGENCE.md)~~ | **Closed in `EKB-0222`.** The layout is Java's three levels - groups, members, and a `configs` map on each member keyed `"primaryConfig"` / `"secondaryConfig"` / anything else - with `config_for(name)`. The examples declare their jobs and lock pools as `"jobsConfig"` and `"lockConfig"`, as Java's `application.yml` does. |
 | [SQLite is a dialect here and is not one in Java](../DIVERGENCE.md) | An addition. Java refuses everything but the three. |
 | ~~[`plan.add` hands back the stamped row, not the argument](../DIVERGENCE.md)~~ | **Closed in `EKB-0192`.** `created_date` is required at construction now, so there is nothing to stamp and `add` hands back the object it was given - `isSameAs`, as Java does. |

@@ -155,11 +155,15 @@ def test_evolve_and_the_builder_agree():
 
 
 def test_a_model_carries_timestamps_and_an_entity_does_not():
-    assert "created_date" in Model.__dataclass_fields__
-    assert "events" in Model.__dataclass_fields__
-    assert "created_date" not in Entity.__dataclass_fields__
-    assert "events" not in Entity.__dataclass_fields__
-    assert set(Entity.__dataclass_fields__) == {"id", "state", "version"}
+    import dataclasses
+
+    model_fields = {f.name for f in dataclasses.fields(Model)}
+    entity_fields = {f.name for f in dataclasses.fields(Entity)}
+    assert "created_date" in model_fields
+    assert "events" in model_fields
+    assert "created_date" not in entity_fields
+    assert "events" not in entity_fields
+    assert entity_fields == {"id", "state", "version"}
 
 
 def test_events_stay_out_of_equality():
@@ -588,3 +592,160 @@ def test_the_escape_hatch_the_refusal_names_actually_works():
 
     row = Inline(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
     assert ModelBuilder(Inline).copy_base(row).note("y").build().note == "y"
+
+
+# -- equality: the same row at the same version, as Java's ------------------------------------
+#
+# Java's ModelTest and EntityTest equality cases, then what only Python needs: the decorator on
+# every model would otherwise write a whole-row __eq__, and hashing every field made a model with
+# a list field unusable in a set.
+
+
+def a_notification(**overrides) -> Notification:
+    from ekbatan.ids import Id
+
+    values = dict(
+        id=Id[Notification].random(),
+        wallet_id=ShardedId[Wallet].random(),
+        kind="deposit",
+        recipient="ada@example.com",
+    )
+    values.update(overrides)
+    return Notification.create(**values)
+
+
+def test_model_equals_same_fields():
+    wallet = a_wallet()
+
+    assert wallet == wallet.copy().build()
+
+
+def test_model_equals_ignores_events():
+    wallet = a_wallet()
+    with_event = wallet.copy().with_event(WalletClosedEvent(model_id=str(wallet.id))).build()
+
+    assert with_event == wallet
+
+
+def test_model_not_equal_different_id():
+    wallet = a_wallet()
+
+    assert wallet.copy().id(ShardedId[Wallet].random()).build() != wallet
+
+
+def test_model_not_equal_different_version():
+    wallet = a_wallet()
+
+    assert wallet.copy().version(wallet.version + 1).build() != wallet
+
+
+def test_model_hash_code_based_on_id():
+    wallet = a_wallet()
+
+    assert hash(wallet) == hash(wallet.id)
+    assert hash(wallet.copy().balance(Decimal("1")).version(9).build()) == hash(wallet)
+
+
+def test_model_not_equal_different_timestamps():
+    """Java's `Model.equals` compares `createdDate` and `updatedDate` too."""
+    from datetime import timedelta
+
+    wallet = a_wallet()
+
+    later = wallet.updated_date + timedelta(seconds=1)  # type: ignore[operator]
+    assert wallet.copy().updated_date(later).build() != wallet
+
+
+def test_model_equality_ignores_the_business_fields():
+    """The difference from comparing every field: the same row at the same version is the same
+    wallet, whatever one copy of it says the balance is. Java's rule, and Django's."""
+    wallet = a_wallet("10.00")
+
+    assert wallet.copy().balance(Decimal("99.00")).build() == wallet
+
+
+def test_entity_equals_same_fields():
+    note = a_notification()
+
+    assert note == note.copy().build()
+
+
+def test_entity_not_equal_different_id():
+    from ekbatan.ids import Id
+
+    note = a_notification()
+
+    assert note.copy().id(Id[Notification].random()).build() != note
+
+
+def test_entity_not_equal_different_state():
+    note = a_notification()
+
+    assert note.copy().state(GenericState.DELETED).build() != note
+
+
+def test_entity_not_equal_different_version():
+    note = a_notification()
+
+    assert note.copy().version(note.version + 1).build() != note
+
+
+def test_entity_hash_code_based_on_id():
+    note = a_notification()
+
+    assert hash(note) == hash(note.id)
+
+
+def test_entity_equality_ignores_the_business_fields():
+    note = a_notification(recipient="ada@example.com")
+
+    assert note.copy().recipient("bob@example.com").build() == note
+
+
+def test_a_model_with_a_list_field_can_go_in_a_set():
+    """The fixture wallet carries `aliases: list[str]`. Hashed field by field, that raised
+    `unhashable type: 'list'` for every wallet; hashed by id, as Java's is, it cannot."""
+    wallet = a_wallet()
+    tagged = wallet.copy().aliases(["savings"]).build()
+
+    assert len({wallet, tagged}) == 1
+    assert {wallet: "x"}[tagged] == "x"
+
+
+def test_a_model_declared_with_its_own_dataclass_decorator_keeps_this_equality():
+    """`@dataclass(frozen=True)` writes a whole-row `__eq__` unless the class defines one, and a
+    base class's does not count - so every model is handed the rule as it is defined."""
+    assert Wallet.__eq__ is Model.__eq__
+    assert Wallet.__hash__ is Model.__hash__
+    assert Notification.__eq__ is Entity.__eq__
+
+
+def test_a_subclass_is_a_different_kind_of_row():
+    """Java's `getClass() != o.getClass()`."""
+
+    @dataclass(frozen=True, kw_only=True)
+    class SpecialWallet(Wallet):
+        pass
+
+    wallet = a_wallet()
+    import dataclasses
+
+    fields = {f.name: getattr(wallet, f.name) for f in dataclasses.fields(wallet) if f.init}
+    special = SpecialWallet(**fields)
+
+    assert special != wallet
+    assert wallet != special
+
+
+def test_a_model_that_writes_its_own_equality_keeps_it_and_so_do_its_subclasses():
+    class ByBalance(Wallet):
+        def __eq__(self, other):
+            return isinstance(other, Wallet) and self.balance == other.balance
+
+        __hash__ = Wallet.__hash__
+
+    class Child(ByBalance):
+        pass
+
+    assert ByBalance.__eq__ is not Model.__eq__
+    assert Child.__eq__ is ByBalance.__eq__, "the framework does not put its own back"

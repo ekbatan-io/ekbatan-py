@@ -106,6 +106,23 @@ field without one would otherwise be *"non-default argument follows default argu
 `evolve()` is the framework's own shorthand and exists because internal code needs it. Domain
 code should prefer `copy()`, so that every change in an application reads the same way.
 
+## Equality
+
+The same row at the same version is the same object, as in Java:
+
+| | equal when these match | hash |
+| --- | --- | --- |
+| `Model` | class, `id`, `state`, `version`, `created_date`, `updated_date` | `hash(id)` |
+| `Entity` | class, `id`, `state`, `version` | `hash(id)` |
+
+Business fields and events take no part, so two copies of one wallet at one version are equal
+whatever each says the balance is - and any model can go in a set or be a dict key, list and dict
+fields included. It is how Python compares saved records too (Django by primary key, SQLAlchemy by
+one object per row); comparing every field is for value objects.
+
+`@dataclass(frozen=True)` on a model would write a whole-row `==` of its own, so the framework
+gives each model this one as it is defined. A model that writes its own `__eq__` keeps it.
+
 ## ModelEvent
 
 A `ModelEvent` is a frozen dataclass carrying whatever the domain needs:

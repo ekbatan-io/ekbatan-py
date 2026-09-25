@@ -182,9 +182,18 @@ silently stopped existing would leave every published event with nothing on the 
 
 ## Equality
 
-A dataclass compares **every field**, so two wallets with the same id and version but different
-balances are not equal. `without_events()` gives the row-shaped view for comparing against what
-a read returned.
+Two models are equal when they are **the same row at the same version**: the same class, and the
+same `id`, `state`, `version`, `created_date` and `updated_date` — what Java's `equals` compares on `Model`, field
+for field. The business fields take no part, and neither do events, so two wallets with one id and
+version are equal even if one copy says the balance is different. The hash is the id's alone, so
+any model can go in a set or be a dict key, list and dict fields included.
+
+That is how Python compares a saved record too — Django by primary key, SQLAlchemy by one object
+per row. Comparing every field is for value objects, which have no identity of their own.
+
+It holds however the model is declared: `@dataclass(frozen=True)` would write a whole-row `==` of
+its own, so the framework hands each model this one as it is defined. A model that writes its own
+`__eq__` keeps it. To check what a read returned field by field, compare the fields.
 
 ## Builder API
 

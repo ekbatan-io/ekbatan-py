@@ -369,6 +369,30 @@ def _declared_builder(target: type) -> type[EntityBuilder[Any, Any, Any]] | None
     return None
 
 
+def _keep_row_equality(cls: type) -> None:
+    """Put the equality a row class inherits on the class itself, before its decorator runs.
+
+    ``@dataclass`` writes ``__eq__`` - and, when frozen, ``__hash__`` - from every field unless the
+    class defines them itself; a definition on a base class does not count. So without this, every
+    model declared the documented way would quietly compare whole rows. Copying the inherited pair
+    into the class's own namespace is what makes the decorator leave it alone.
+
+    A class that writes its own ``__eq__`` keeps it, with whatever hash it gives (Python makes a
+    class that defines ``__eq__`` alone unhashable, and that is left to the class). Its subclasses
+    inherit that choice rather than having the framework's put back.
+    """
+    if "__eq__" in vars(cls):
+        return
+    for klass in cls.__mro__[1:]:
+        if "__eq__" in vars(klass):
+            cls.__eq__ = vars(klass)["__eq__"]  # type: ignore[method-assign]
+            break
+    for klass in cls.__mro__[1:]:
+        if "__hash__" in vars(klass):
+            cls.__hash__ = vars(klass)["__hash__"]  # type: ignore[method-assign]
+            break
+
+
 def _declared_model_name(target: type) -> str | None:
     """The model an event class names on its class line, or ``None`` if it names none.
 
@@ -431,11 +455,41 @@ class Persistable[
     S: Enum,
     B: EntityBuilder[Any, Any, Any] = EntityBuilder[Any, Any, Any],
 ]:
-    """A row, in memory: an identity, a lifecycle state, and an optimistic-locking version."""
+    """A row, in memory: an identity, a lifecycle state, and an optimistic-locking version.
+
+    **Equal when it is the same row at the same version**, as Java's ``Entity.equals`` and
+    ``Model.equals`` say: the same class, and the same values for :attr:`_IDENTITY_FIELDS` - id,
+    state and version here, and the two timestamps as well on a :class:`Model`. The business
+    fields - a balance, a currency - take no part, and the hash is the id's alone. That is how
+    Python compares a saved record too: Django by primary key, SQLAlchemy by one object per row,
+    and *Architecture Patterns with Python* by the entity's identifier. Comparing every field is
+    for value objects, which have no identity of their own.
+
+    It holds however the model is declared. ``@dataclass(frozen=True)`` on a model would write a
+    whole-row ``__eq__`` of its own, so each model class is handed this one as it is defined,
+    before its decorator runs - and a decorator never overwrites a method the class already has.
+    A model that writes its own ``__eq__`` keeps it.
+    """
+
+    #: What makes two instances the same row at the same version.
+    _IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = ("id", "state", "version")
 
     id: ID
     state: S
     version: int = 1
+
+    def __eq__(self, other: object) -> bool:
+        if other is self:
+            return True
+        if type(other) is not type(self):
+            # Java's `getClass() != o.getClass()`: a subclass is a different kind of row.
+            return NotImplemented
+        return all(getattr(self, f) == getattr(other, f) for f in self._IDENTITY_FIELDS)
+
+    def __hash__(self) -> int:
+        # The id alone, as Java's `hashCode()` is. Hashing every field made any model with a
+        # list or dict field - a JSON column - unusable in a set or as a dict key.
+        return hash(self.id)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Tell the declared builder what it builds, at the moment the model is defined.
@@ -452,6 +506,7 @@ class Persistable[
         declared = _declared_builder(cls)
         if declared is not None and declared.builds is None:
             declared.builds = cls
+        _keep_row_equality(cls)
 
     def __post_init__(self) -> None:
         """Refuse a row that could not be written, where it was built.
@@ -560,6 +615,15 @@ class Model[
     ``updated_date`` falls back to ``created_date``, again as Java's does - a row that has
     never changed was last updated when it was created.
     """
+
+    #: Java's `Model.equals` adds the two timestamps to id, state and version.
+    _IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = (
+        "id",
+        "state",
+        "version",
+        "created_date",
+        "updated_date",
+    )
 
     created_date: datetime
     updated_date: datetime | None = None

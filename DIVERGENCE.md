@@ -824,19 +824,28 @@ until `EKB-0193`, because three lines Java writes by hand had not been written.
 Cached per class, since a dataclass's fields are fixed at definition: **1.6 us** per
 construction, measured over 200,000.
 
-## Equality compares the whole row
+## Equality is the same row at the same version, as Java's is
 
-> **chosen** - **Behavioural and easy to trip over**: two wallets with one id and version but different balances are equal in Java and not here. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - `Model` compares class, id, state, version and both timestamps; `Entity` compares class, id, state and version; both hash by id. Java's `equals` and `hashCode`, field for field. Brought to parity in `EKB-0228`; until then a frozen dataclass compared, and hashed, every field.
 
-Java's `Model.equals` compares `id`, `state`, `version`, `createdDate` and `updatedDate`, and
-its `hashCode` is the id's alone - so two wallets with the same id and version but different
-balances are equal in Java and not here, where a frozen dataclass compares every field. Events
-are excluded in both, which is the part that matters: two readers of one row are looking at the
-same wallet whether or not one of them is mid-change.
+Two wallets with the same id and version but different balances are equal, in both ports. That
+is also how Python compares a saved record - Django by primary key and class, SQLAlchemy by one
+object per row, *Architecture Patterns with Python* by the entity's identifier; comparing every
+field is what those use for value objects, which have no identity of their own.
 
-In practice the version moves whenever the content does, so the two agree on every row a
-repository produces. Where they differ, this port is the stricter of the two, and a test
-asserting `loaded == expected` means here what it looks like it means.
+Comparing every field had a second cost the old entry did not mention: it **hashed** every field
+too, so a model with a list or dict field - a JSON column - raised `unhashable type` the moment it
+went into a set or became a dict key. Hashing by id, as Java does, cannot.
+
+Mechanism, not behaviour:
+
+- **Each model class is handed the rule as it is defined.** `@dataclass(frozen=True)`, which every
+  model is declared with, writes a whole-row `__eq__` and `__hash__` unless the class defines them
+  itself, and a base class's do not count. So the framework copies the inherited pair onto each
+  class before its decorator runs - no model has to say anything.
+- **A model that writes its own `__eq__` keeps it**, and its subclasses inherit that choice.
+- **A different class is `NotImplemented`, not `False`**, which is how Python spells Java's
+  `getClass() != o.getClass()`; `==` still answers `False`.
 
 ## The layout is Java's: groups, members, and a named map of datasources on each member
 

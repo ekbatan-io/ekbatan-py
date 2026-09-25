@@ -120,15 +120,12 @@ def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
 
 ## Equality
 
-Every field is compared, because a dataclass compares every field. Two entities read from the
-same row at the same version are equal; two that differ in any column are not.
+Two entities are equal when they have the same class and the same `id`, `state` and `version` —
+what Java's `equals` compares on `Entity`. The business fields take no part: two currencies with one id and version
+are equal whatever display name each copy carries. The hash is the id's alone.
 
-That is **wider** than the Java port, where equality is `id`, `state` and `version` only - and
-the difference is easy to trip over if you move between them. Two currencies with one id and
-version but different display names are equal there and not here.
-
-It is narrower than a model's in one respect, though, and for the same reason the rest of this
-page is shorter: there is no event list and there are no timestamps to take part in it.
+A model compares its two timestamps as well; an entity has none. See
+[Model → Equality](/reference/model/#equality).
 
 ## Builder API
 
