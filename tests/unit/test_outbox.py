@@ -25,12 +25,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import MetaData, create_engine, select
 
-from ekbatan.action.outbox import OutboxRecord, SingleTableJsonEventPersister
+from ekbatan.action.outbox import EventEntity, SingleTableJsonEventPersister
 from ekbatan.domain import ModelEvent
+from ekbatan.errors import ValidationError
+from ekbatan.persistence import DatabaseRegistry, TransactionManager
 from ekbatan.schema import outbox_table
 from ekbatan.sharding import DEFAULT_SHARD
 
@@ -42,6 +45,20 @@ class TestEvent(ModelEvent["Model"]):
     amount: int = 1
 
 
+def persist(engine, table, *events: ModelEvent) -> None:
+    """One unit of work's events, written inside a transaction as the executor writes them."""
+    registry = (
+        DatabaseRegistry.builder()
+        .with_database(TransactionManager(DEFAULT_SHARD, engine, dialect="sqlite"))
+        .build()
+    )
+    now = datetime.now(UTC).replace(tzinfo=None)
+    with registry.default.transaction():
+        SingleTableJsonEventPersister(registry, table).persist_action_events(
+            "test_namespace", "TestAction", now, now, {}, list(events), DEFAULT_SHARD, uuid.uuid4()
+        )
+
+
 @pytest.fixture
 def written():
     """Persist a record and hand back the rows it wrote."""
@@ -51,21 +68,7 @@ def written():
     metadata.create_all(engine)
 
     def write(*events: ModelEvent):
-        now = datetime.now(UTC).replace(tzinfo=None)
-        with engine.begin() as conn:
-            SingleTableJsonEventPersister(table).persist(
-                conn,
-                OutboxRecord(
-                    namespace="test_namespace",
-                    action_id=uuid.uuid4(),
-                    action_name="TestAction",
-                    action_params={},
-                    started_date=now,
-                    completion_date=now,
-                    events=events,
-                    shard=DEFAULT_SHARD,
-                ),
-            )
+        persist(engine, table, *events)
         with engine.connect() as conn:
             return [row._mapping for row in conn.execute(select(table))]
 
@@ -114,22 +117,64 @@ def test_the_flag_is_still_settable_for_the_fanout_that_owns_it(written) -> None
     engine = create_engine("sqlite://")
     metadata.create_all(engine)
 
-    now = datetime.now(UTC).replace(tzinfo=None)
+    persist(engine, table, TestEvent(model_id="model-1"))
     with engine.begin() as conn:
-        SingleTableJsonEventPersister(table).persist(
-            conn,
-            OutboxRecord(
-                namespace="test_namespace",
-                action_id=uuid.uuid4(),
-                action_name="TestAction",
-                action_params={},
-                started_date=now,
-                completion_date=now,
-                events=[TestEvent(model_id="model-1")],
-                shard=DEFAULT_SHARD,
-            ),
-        )
         conn.execute(table.update().values(delivered=True))
 
     with engine.connect() as conn:
         assert conn.execute(select(table.c.delivered)).scalar() is True
+
+
+# -- Java's EventEntityDeliveredDefaultTest, on the entity itself --------------------------------
+
+
+def a_new_entity():
+    now = datetime.now(UTC).replace(tzinfo=None)
+    return EventEntity.create_event_entity(
+        id=uuid.uuid4(),
+        namespace="test-namespace",
+        action_id=uuid.uuid4(),
+        action_name="TestAction",
+        action_params={},
+        started_date=now,
+        completion_date=now,
+        model_id="model-1",
+        model_type="TestModel",
+        event_type="TestEvent",
+        payload={},
+        event_date=now,
+    )
+
+
+def test_a_new_event_entity_is_not_delivered() -> None:
+    assert a_new_entity().build().delivered is False
+
+
+def test_the_entity_builder_can_still_set_delivered() -> None:
+    assert a_new_entity().delivered(True).build().delivered is True
+
+
+def test_two_event_entities_are_equal_when_their_ids_are() -> None:
+    """By id alone, as Java's `equals` and `hashCode` are."""
+    entity = a_new_entity().build()
+    same_row = a_new_entity().id(entity.id).action_name("SomethingElse").build()
+
+    assert entity == same_row
+    assert hash(entity) == hash(same_row)
+    assert entity != a_new_entity().build()
+
+
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_an_event_entity_with_a_blank_namespace_is_refused(blank) -> None:
+    with pytest.raises(ValidationError, match="namespace cannot be blank"):
+        a_new_entity().namespace(blank).build()
+
+
+def test_an_event_entity_names_what_it_is_missing() -> None:
+    with pytest.raises(ValidationError, match="id, namespace, action_id"):
+        EventEntity.builder().build()
+
+
+def test_an_event_entity_round_trips_through_its_row() -> None:
+    entity = a_new_entity().build()
+    assert EventEntity.from_row(SimpleNamespace(**entity.to_row())).to_row() == entity.to_row()

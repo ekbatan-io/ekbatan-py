@@ -129,16 +129,28 @@ The default, `SingleTableJsonEventPersister`, writes one JSON row per event into
 table. Supply your own to write a different shape — a second table, a different column layout,
 encrypted payloads — while keeping the same transaction.
 
-The protocol is one method, and its signature is the whole contract:
+The protocol is one method, Java's `persistActionEvents`:
 
 ```python
 class EventPersister(Protocol):
-    def persist(self, conn: Connection, record: OutboxRecord) -> None: ...
+    def persist_action_events(
+        self,
+        namespace: str,
+        action_name: str,
+        started_date: datetime,
+        completion_date: datetime,
+        action_params: Any,
+        model_events: Sequence[ModelEvent],
+        shard: ShardIdentifier,
+        action_event_id: uuid.UUID,
+    ) -> None: ...
 ```
 
-Being handed the **connection** is the point. The seam is inside the transaction rather than
-around it, so a replacement cannot accidentally break the guarantee it is extending: whatever it
-writes, it writes where the domain rows are being written, or not at all.
+It is called inside the transaction the domain rows are being written in, and a write through
+the registry joins it: `registry.manager(shard).connection()` hands back the open transaction
+rather than a new one. So whatever a replacement writes, it writes where the domain rows are
+being written, or not at all. The default writes through `EventEntityRepository`, which does
+exactly that.
 
 The same persister is reachable from outside an action — a backfill job replaying historical
 state can reuse the configured one rather than assembling events by hand.

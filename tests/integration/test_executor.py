@@ -14,7 +14,6 @@ from ekbatan import (
     ExecutionConfiguration,
     ShardIdentifier,
 )
-from ekbatan.action.outbox import OutboxRecord
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
@@ -294,11 +293,21 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
     registry, wallets, clock, outbox
 ):
     """Rule 7: extension without forking. The seam is inside the transaction."""
-    written: list[OutboxRecord] = []
+    written: list[tuple[str, list[ModelEvent]]] = []
 
     class Recording:
-        def persist(self, conn, record: OutboxRecord) -> None:
-            written.append(record)
+        def persist_action_events(
+            self,
+            namespace,
+            action_name,
+            started_date,
+            completion_date,
+            action_params,
+            model_events,
+            shard,
+            action_event_id,
+        ) -> None:
+            written.append((action_name, list(model_events)))
 
     executor = ActionExecutor(
         namespace="example.wallet",
@@ -314,8 +323,8 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
         DepositParams(wallet_id=wallet.id, amount=Decimal("5"), recipient="ada@x"),
     )
 
-    assert [r.action_name for r in written] == ["CreateWalletAction", "DepositMoneyAction"]
-    assert [e.event_type for e in written[1].events] == ["WalletMoneyDepositedEvent"]
+    assert [name for name, _ in written] == ["CreateWalletAction", "DepositMoneyAction"]
+    assert [e.event_type for e in written[1][1]] == ["WalletMoneyDepositedEvent"]
     assert outbox() == [], "nothing reached the default table"
     assert wallets.get(wallet.id).balance == Decimal("5.0000"), "the state change still committed"
 

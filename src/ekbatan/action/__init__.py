@@ -9,7 +9,12 @@ from .executor import (
     ExecutionConfigurationBuilder,
     RetryConfig,
 )
-from .outbox import EventPersister, OutboxRecord, SingleTableJsonEventPersister
+from .outbox import (
+    EventEntity,
+    EventEntityBuilder,
+    EventPersister,
+    SingleTableJsonEventPersister,
+)
 from .persister import ChangePersister
 from .plan import ActionPlan, PersistableChanges
 from .registry import ActionRegistry, ActionRegistryBuilder
@@ -23,10 +28,11 @@ __all__ = [
     "ActionRegistry",
     "ActionRegistryBuilder",
     "ChangePersister",
+    "EventEntity",
+    "EventEntityBuilder",
     "EventPersister",
     "ExecutionConfiguration",
     "ExecutionConfigurationBuilder",
-    "OutboxRecord",
     "PersistableChanges",
     "RetryConfig",
     "SingleTableJsonEventPersister",

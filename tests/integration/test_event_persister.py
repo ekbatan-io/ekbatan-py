@@ -16,7 +16,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from ekbatan.action.outbox import OutboxRecord, SingleTableJsonEventPersister
+from ekbatan.action.outbox import EventEntityRepository, SingleTableJsonEventPersister
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import ValidationError
 from ekbatan.sharding import DEFAULT_SHARD
@@ -52,8 +52,15 @@ class ScalarPayload(ModelEvent["Item"]):
 
 
 @pytest.fixture
-def persister():
-    return SingleTableJsonEventPersister(EVENTS)
+def persister(registry):
+    return SingleTableJsonEventPersister(registry, EVENTS)
+
+
+@dataclass(frozen=True)
+class Written:
+    """What a test needs back from one write."""
+
+    action_id: uuid.UUID
 
 
 #: `None` is a value under test here, so it cannot double as "use the default".
@@ -71,19 +78,19 @@ def write(persister, registry):
         action_id=None,
         namespace="com.example.finance",
     ):
-        record = OutboxRecord(
-            namespace=namespace,
-            action_id=action_id or uuid.uuid4(),
-            action_name=action,
-            action_params=Params(action="create", priority=5) if params is _DEFAULT else params,
-            started_date=STARTED,
-            completion_date=COMPLETED,
-            events=list(events),
-            shard=DEFAULT_SHARD,
-        )
-        with registry.default.transaction() as tx:
-            persister.persist(tx.connection, record)
-        return record
+        written = Written(action_id or uuid.uuid4())
+        with registry.default.transaction():
+            persister.persist_action_events(
+                namespace,
+                action,
+                STARTED,
+                COMPLETED,
+                Params(action="create", priority=5) if params is _DEFAULT else params,
+                list(events),
+                DEFAULT_SHARD,
+                written.action_id,
+            )
+        return written
 
     return go
 
@@ -194,10 +201,28 @@ def test_the_rows_of_one_invocation_can_be_found_by_its_action_id(write, registr
     )
     write(ItemCreated(model_id=an_id(), description="unrelated"))
 
-    theirs = [r for r in rows(registry) if r["action_id"] == first.action_id]
+    theirs = EventEntityRepository(registry, EVENTS).find_by_action_id(
+        first.action_id, DEFAULT_SHARD
+    )
 
     assert len(theirs) == 2
-    assert {r["payload"]["description"] for r in theirs} == {"a", "b"}
+    assert {e.action_id for e in theirs} == {first.action_id}
+    assert {e.action_name for e in theirs} == {"CreateItemAction"}
+    assert {e.payload["description"] for e in theirs} == {"a", "b"}  # type: ignore[index]
+
+
+def test_the_repository_reads_back_every_row_the_persister_wrote(write, registry):
+    """`count` and `find_all`, the other two reads Java's repository offers its tests."""
+    write(ItemCreated(model_id=an_id(), description="a"))
+    write()
+
+    repository = EventEntityRepository(registry, EVENTS)
+
+    assert repository.count(DEFAULT_SHARD) == 2
+    assert sorted(e.event_type or "sentinel" for e in repository.find_all(DEFAULT_SHARD)) == [
+        "ItemCreated",
+        "sentinel",
+    ]
 
 
 def test_the_timestamps_are_the_ones_the_invocation_was_given(write, registry):
@@ -268,7 +293,7 @@ def test_two_event_classes_with_one_name_are_refused(write):
         write(other(model_id=an_id()), Colliding(model_id=an_id()))
 
 
-def test_a_table_missing_an_outbox_column_is_refused_at_construction():
+def test_a_table_missing_an_outbox_column_is_refused_at_construction(registry):
     """Not a Java case - its persister takes a jOOQ table it declares itself. Here the table is
     supplied, so it is checked once at construction rather than at the first write."""
     from sqlalchemy import Column, Integer, MetaData, Table
@@ -276,4 +301,4 @@ def test_a_table_missing_an_outbox_column_is_refused_at_construction():
     incomplete = Table("nearly", MetaData(), Column("id", Integer, primary_key=True))
 
     with pytest.raises(ValidationError, match="missing outbox column"):
-        SingleTableJsonEventPersister(incomplete)
+        SingleTableJsonEventPersister(registry, incomplete)

@@ -117,8 +117,8 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventEntity.java | 308 | `action/outbox.py` | done - rows are dicts through SQLAlchemy Core, not a mapped class |
-| EventEntityRepository.java | 238 | `action/outbox.py` | n/a - package-private jOOQ field typing plus insert/read helpers; SQLAlchemy Core writes the row and `schema.py` declares the column types once |
+| EventEntity.java | 308 | `action/outbox.py` | done - `EventEntity` and its builder, equal by id as Java's is (`EKB-0231`) |
+| EventEntityRepository.java | 238 | `action/outbox.py` | done - `count`, `find_all`, `find_by_action_id`, `add_all_no_result`; takes the table, since the schema differs by database (`EKB-0231`) |
 | SingleTableJsonEventPersister.java | 167 | `action/outbox.py` | done |
 
 #### `core/concurrent`
@@ -273,15 +273,15 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventNotification.java | 366 | `events/notification.py` | done - a row read through SQLAlchemy Core, not a mapped class |
+| EventNotification.java | 366 | `events/notification.py` | done - `EventNotification` and its builder, with Java's checks (`EKB-0231`) |
 | EventNotificationState.java | 30 | `events/notification.py` | done |
 
 #### `events/localeventhandler/repository`
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| EventEntityRepository.java | 208 | `events/fanout.py` | n/a - package-private jOOQ field typing plus insert/read helpers; SQLAlchemy Core writes the row and `schema.py` declares the column types once |
-| EventNotificationRepository.java | 376 | `events/notification.py` | done - the queries live in `dispatch.py` and `fanout.py` |
+| EventEntityRepository.java | 208 | `events/repository.py` | done - `find_undelivered`, `mark_delivered` (`EKB-0231`) |
+| EventNotificationRepository.java | 376 | `events/repository.py` | done - Java's six methods, plus `defer_pending_bucket` for this port's missing-handler rule (`EKB-0231`) |
 
 #### `events/streaming/actionevent/json`
 

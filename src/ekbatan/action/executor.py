@@ -230,7 +230,7 @@ class ActionExecutor:
         if outbox is not None:
             self.outbox: EventPersister = outbox
         elif events is not None:
-            self.outbox = SingleTableJsonEventPersister(events)
+            self.outbox = SingleTableJsonEventPersister(registry, events)
         else:
             raise ValidationError("pass either events=<Table> or outbox=<EventPersister>")
 

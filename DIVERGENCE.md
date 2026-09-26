@@ -746,15 +746,10 @@ differs, not because the name was chosen freely:
 
 | Java | here | why |
 | --- | --- | --- |
-| `AbstractRepository` | `Repository` | nothing is abstract; see above |
-| `Repository` (interface) | - | the narrow interface has no consumer here yet |
-| `EventEntity`, `EventEntityRepository` | - | rows are dicts through SQLAlchemy Core, not a mapped class |
-| `EventNotification`, `EventNotificationRepository` | - | the same |
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
 | `ShardedUUID`, `Backoff` | `sharded_uuid()`, `backoff()` | a class holding only static methods is a function here |
 | `Transaction` (package-private) | - | the auto-commit dance SQLAlchemy already does; the public `Transaction` here is the counterpart to the `DSLContext` Java hands the block, not to this |
 | `ConnectionProvider` | - | `Engine` is pool, dialect and lifecycle in one |
-| `ActionSpec`, `ActionAssert` | `run_action`, `StagedWork` | see above |
 | `Entity.Builder`, `Model.Builder` | `EntityBuilder`, `ModelBuilder` | same two builders, unnested - a nested class is not a Python idiom, and `ModelBuilder` can then inherit rather than repeat |
 | `resolveShardIdentifier()` | `.shard` | a property, because it reads a field of the id rather than doing work |
 | `ModelId.stringValue()` | `str(id)` | what `__str__` is for; `Id.toString()` in Java returns the same string |

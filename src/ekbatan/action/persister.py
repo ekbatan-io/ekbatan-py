@@ -24,7 +24,7 @@ from ..domain import Model, ModelEvent, Persistable
 from ..errors import ValidationError
 from ..persistence import Transaction
 from ..repository import Repository, RepositoryRegistry
-from .outbox import EventPersister, OutboxRecord
+from .outbox import EventPersister
 from .plan import PersistableChanges
 
 __all__ = ["ChangePersister"]
@@ -91,18 +91,15 @@ class ChangePersister:
             tx.shard,
         )
 
-        self.outbox.persist(
-            tx.connection,
-            OutboxRecord(
-                namespace=namespace,
-                action_id=action_id,
-                action_name=action_name,
-                action_params=params,
-                started_date=started,
-                completion_date=completed,
-                events=events,
-                shard=tx.shard,
-            ),
+        self.outbox.persist_action_events(
+            namespace,
+            action_name,
+            started,
+            completed,
+            params,
+            events,
+            tx.shard,
+            action_id,
         )
 
 

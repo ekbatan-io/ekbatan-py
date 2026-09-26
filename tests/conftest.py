@@ -172,7 +172,7 @@ def executor(
             .with_action(NotifyAction(clock))
             .build()
         )
-        .event_persister(SingleTableJsonEventPersister(EVENTS))
+        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
         .clock(clock)
         .build()
     )
