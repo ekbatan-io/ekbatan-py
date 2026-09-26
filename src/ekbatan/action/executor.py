@@ -14,7 +14,7 @@ import time
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 from sqlalchemy import Table
 
@@ -30,7 +30,13 @@ from .persister import ChangePersister
 from .plan import ActionPlan, PersistableChanges
 from .registry import ActionRegistry
 
-__all__ = ["ActionExecutor", "ExecutionConfiguration", "RetryConfig"]
+__all__ = [
+    "ActionExecutor",
+    "ActionExecutorBuilder",
+    "ExecutionConfiguration",
+    "ExecutionConfigurationBuilder",
+    "RetryConfig",
+]
 
 LOG = logging.getLogger("ekbatan.action")
 
@@ -102,6 +108,10 @@ class ExecutionConfiguration:
         """
         return cls(retry_configs=(), **kwargs)
 
+    @classmethod
+    def builder(cls) -> ExecutionConfigurationBuilder:
+        return ExecutionConfigurationBuilder()
+
     def policy_for(self, error: BaseException) -> tuple[RetryConfig, BaseException] | None:
         """The policy for this failure, looking through what it was raised from.
 
@@ -125,6 +135,54 @@ class ExecutionConfiguration:
 
 
 DEFAULT = ExecutionConfiguration()
+
+
+class ExecutionConfigurationBuilder:
+    """Fluent builder for :class:`ExecutionConfiguration`. Obtain via
+    :meth:`ExecutionConfiguration.builder`.
+
+    Starts from the same one retry on a lost version race that Java's builder starts from.
+    """
+
+    __slots__ = ("_allow_cross_shard", "_retry_configs")
+
+    def __init__(self) -> None:
+        self._retry_configs: list[RetryConfig] = list(DEFAULT_RETRIES)
+        self._allow_cross_shard = False
+
+    def with_retry(self, config: RetryConfig) -> Self:
+        """Add one policy, or replace the one already held for the same ``on``.
+
+        Java's ``withRetry(exceptionType, config)`` puts into a map keyed by the class, so a
+        second call for ``StaleRecordException`` replaces the default rather than sitting
+        behind it. The class is on the config here, and replacing by it keeps that rule - an
+        appended policy for the same class would never be reached, since the first match wins.
+        """
+        for i, held in enumerate(self._retry_configs):
+            if held.on == config.on:
+                self._retry_configs[i] = config
+                return self
+        self._retry_configs.append(config)
+        return self
+
+    def retry_configs(self, retry_configs: Iterable[RetryConfig]) -> Self:
+        """Replace every policy."""
+        self._retry_configs = list(retry_configs)
+        return self
+
+    def no_retry(self) -> Self:
+        """Drop every policy, the default included."""
+        self._retry_configs.clear()
+        return self
+
+    def allow_cross_shard(self, allow_cross_shard: bool) -> Self:
+        self._allow_cross_shard = allow_cross_shard
+        return self
+
+    def build(self) -> ExecutionConfiguration:
+        return ExecutionConfiguration(
+            retry_configs=tuple(self._retry_configs), allow_cross_shard=self._allow_cross_shard
+        )
 
 
 class ActionExecutor:
@@ -201,6 +259,10 @@ class ActionExecutor:
                 f"executor's clock to every action it runs - a unit of work reading one clock "
                 f"while its rows are stamped from another cannot be tested at a fixed instant."
             )
+
+    @classmethod
+    def builder(cls) -> ActionExecutorBuilder:
+        return ActionExecutorBuilder()
 
     @property
     def repositories(self) -> RepositoryRegistry:
@@ -439,3 +501,74 @@ def _valid_namespace(namespace: str) -> str:
             f"and this value is used as one - write 'my_service' rather than 'my-service'."
         )
     return namespace
+
+
+class ActionExecutorBuilder:
+    """Fluent builder for :class:`ActionExecutor`. Obtain via :meth:`ActionExecutor.builder`.
+
+    Java's setters, less ``objectMapper``: JSON here is the standard library's, and there is no
+    mapper object to hand over.
+    """
+
+    __slots__ = (
+        "_action_registry",
+        "_clock",
+        "_database_registry",
+        "_default_execution_configuration",
+        "_event_persister",
+        "_namespace",
+        "_repository_registry",
+    )
+
+    def __init__(self) -> None:
+        self._namespace: str | None = None
+        self._database_registry: DatabaseRegistry | None = None
+        self._repository_registry: RepositoryRegistry | None = None
+        self._action_registry: ActionRegistry | None = None
+        self._event_persister: EventPersister | None = None
+        self._clock: Clock | None = None
+        self._default_execution_configuration: ExecutionConfiguration = DEFAULT
+
+    def namespace(self, namespace: str) -> Self:
+        self._namespace = namespace
+        return self
+
+    def database_registry(self, database_registry: DatabaseRegistry) -> Self:
+        self._database_registry = database_registry
+        return self
+
+    def repository_registry(self, repository_registry: RepositoryRegistry) -> Self:
+        self._repository_registry = repository_registry
+        return self
+
+    def action_registry(self, action_registry: ActionRegistry) -> Self:
+        self._action_registry = action_registry
+        return self
+
+    def event_persister(self, event_persister: EventPersister) -> Self:
+        self._event_persister = event_persister
+        return self
+
+    def clock(self, clock: Clock) -> Self:
+        self._clock = clock
+        return self
+
+    def default_execution_configuration(
+        self, default_execution_configuration: ExecutionConfiguration
+    ) -> Self:
+        self._default_execution_configuration = default_execution_configuration
+        return self
+
+    def build(self) -> ActionExecutor:
+        """The executor. Each missing piece is refused by name, as the constructor refuses it."""
+        if self._event_persister is None:
+            raise ValidationError("event_persister is required")
+        return ActionExecutor(
+            namespace=self._namespace,  # type: ignore[arg-type]  # None is refused by name
+            registry=self._database_registry,  # type: ignore[arg-type]
+            repositories=self._repository_registry,  # type: ignore[arg-type]
+            actions=self._action_registry if self._action_registry is not None else (),
+            outbox=self._event_persister,
+            clock=self._clock,
+            config=self._default_execution_configuration,
+        )

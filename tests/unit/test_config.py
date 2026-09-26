@@ -174,7 +174,9 @@ def test_config_for_refuses_a_blank_name(blank):
 def test_a_blank_config_name_is_refused_when_it_is_configured():
     """It could never be read back, since `config_for` refuses it."""
     with pytest.raises(ValidationError, match="config name cannot be blank"):
-        member(0, a_source(), **{" ": a_source()})
+        ShardMemberConfig(
+            member=0, configs={ShardMemberConfig.PRIMARY_CONFIG: a_source(), " ": a_source()}
+        )
 
 
 def test_the_configs_cannot_be_changed_afterwards():

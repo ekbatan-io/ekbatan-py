@@ -8,15 +8,24 @@ that caused it.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal, Self
 
 from .errors import ValidationError
 from .sharding import ShardIdentifier
 
-__all__ = ["DataSourceConfig", "ShardGroupConfig", "ShardMemberConfig", "ShardingConfig"]
+__all__ = [
+    "DataSourceConfig",
+    "DataSourceConfigBuilder",
+    "ShardGroupConfig",
+    "ShardGroupConfigBuilder",
+    "ShardMemberConfig",
+    "ShardMemberConfigBuilder",
+    "ShardingConfig",
+    "ShardingConfigBuilder",
+]
 
 _DIALECTS = {"postgresql": "postgres", "mysql": "mysql", "mariadb": "mariadb", "sqlite": "sqlite"}
 
@@ -51,6 +60,10 @@ class DataSourceConfig:
         # Unlike some pool implementations this refuses rather than logging and carrying on.
         # A knob that silently disables itself is a knob an operator believes is set.
         self.dialect  # noqa: B018 - raises here if the URL names something unsupported
+
+    @classmethod
+    def builder(cls) -> DataSourceConfigBuilder:
+        return DataSourceConfigBuilder()
 
     @property
     def dialect(self) -> str:
@@ -129,6 +142,10 @@ class ShardMemberConfig:
         # A copy nobody else holds, read-only - Java's `Map.copyOf`.
         object.__setattr__(self, "configs", MappingProxyType(dict(self.configs)))
 
+    @classmethod
+    def builder(cls) -> ShardMemberConfigBuilder:
+        return ShardMemberConfigBuilder()
+
     def primary_config(self) -> DataSourceConfig:
         """The writer. Always present - construction refused a member without one."""
         return self.configs[self.PRIMARY_CONFIG]
@@ -163,6 +180,10 @@ class ShardGroupConfig:
         object.__setattr__(self, "members", tuple(self.members))
         if not self.members:
             raise ValidationError("at least one member is required")
+
+    @classmethod
+    def builder(cls) -> ShardGroupConfigBuilder:
+        return ShardGroupConfigBuilder()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -239,6 +260,10 @@ class ShardingConfig:
                 return member
         raise ValidationError(f"no member is configured for shard {shard}")
 
+    @classmethod
+    def builder(cls) -> ShardingConfigBuilder:
+        return ShardingConfigBuilder()
+
     @property
     def dialect(self) -> str:
         return self.groups[0].members[0].primary_config().dialect
@@ -260,4 +285,180 @@ class ShardingConfig:
                     ),
                 ),
             ),
+        )
+
+
+class DataSourceConfigBuilder:
+    """Fluent builder for :class:`DataSourceConfig`. Obtain via :meth:`DataSourceConfig.builder`.
+
+    The setters are the pool's own names - SQLAlchemy's, where Java's are Hikari's - and a
+    setter left uncalled leaves the dataclass default in place.
+    """
+
+    __slots__ = ("_given",)
+
+    def __init__(self) -> None:
+        self._given: dict[str, Any] = {}
+
+    def url(self, url: str) -> Self:
+        self._given["url"] = url
+        return self
+
+    def pool_size(self, pool_size: int) -> Self:
+        self._given["pool_size"] = pool_size
+        return self
+
+    def max_overflow(self, max_overflow: int) -> Self:
+        self._given["max_overflow"] = max_overflow
+        return self
+
+    def pool_timeout(self, pool_timeout: float) -> Self:
+        self._given["pool_timeout"] = pool_timeout
+        return self
+
+    def pool_recycle(self, pool_recycle: int) -> Self:
+        self._given["pool_recycle"] = pool_recycle
+        return self
+
+    def pool_pre_ping(self, pool_pre_ping: bool) -> Self:
+        self._given["pool_pre_ping"] = pool_pre_ping
+        return self
+
+    def connect_args(self, connect_args: Mapping[str, object]) -> Self:
+        self._given["connect_args"] = dict(connect_args)
+        return self
+
+    def echo(self, echo: bool) -> Self:
+        self._given["echo"] = echo
+        return self
+
+    def build(self) -> DataSourceConfig:
+        if "url" not in self._given:
+            raise ValidationError("url is required")
+        return DataSourceConfig(**self._given)
+
+
+class ShardMemberConfigBuilder:
+    """Fluent builder for :class:`ShardMemberConfig`. Obtain via :meth:`ShardMemberConfig.builder`.
+
+    ``primary_config``, ``secondary_config`` and ``with_config`` each put one entry in the
+    ``configs`` map; ``configs`` replaces the whole map. The same four as Java's.
+    """
+
+    __slots__ = ("_configs", "_member", "_name")
+
+    def __init__(self) -> None:
+        self._member: int | None = None
+        self._name: str | None = None
+        self._configs: dict[str, DataSourceConfig] = {}
+
+    def member(self, member: int) -> Self:
+        self._member = member
+        return self
+
+    def name(self, name: str) -> Self:
+        if name is None:
+            raise ValidationError("name cannot be None")
+        self._name = name
+        return self
+
+    def primary_config(self, primary_config: DataSourceConfig) -> Self:
+        self._configs[ShardMemberConfig.PRIMARY_CONFIG] = primary_config
+        return self
+
+    def secondary_config(self, secondary_config: DataSourceConfig) -> Self:
+        self._configs[ShardMemberConfig.SECONDARY_CONFIG] = secondary_config
+        return self
+
+    def with_config(self, name: str, config: DataSourceConfig) -> Self:
+        if not isinstance(name, str) or not name.strip():
+            raise ValidationError("name cannot be blank")
+        self._configs[name] = config
+        return self
+
+    def configs(self, configs: Mapping[str, DataSourceConfig]) -> Self:
+        self._configs = dict(configs)
+        return self
+
+    def build(self) -> ShardMemberConfig:
+        if self._member is None:
+            raise ValidationError("member is required")
+        return ShardMemberConfig(member=self._member, configs=self._configs, name=self._name)
+
+
+class ShardGroupConfigBuilder:
+    """Fluent builder for :class:`ShardGroupConfig`. Obtain via :meth:`ShardGroupConfig.builder`.
+
+    ``with_member`` appends one; ``members`` replaces the list.
+    """
+
+    __slots__ = ("_group", "_members", "_name")
+
+    def __init__(self) -> None:
+        self._group: int | None = None
+        self._name: str | None = None
+        self._members: list[ShardMemberConfig] = []
+
+    def group(self, group: int) -> Self:
+        self._group = group
+        return self
+
+    def name(self, name: str) -> Self:
+        self._name = name
+        return self
+
+    def members(self, members: Iterable[ShardMemberConfig]) -> Self:
+        self._members = list(members)
+        return self
+
+    def with_member(self, member: ShardMemberConfig) -> Self:
+        self._members.append(member)
+        return self
+
+    def build(self) -> ShardGroupConfig:
+        if self._group is None:
+            raise ValidationError("group is required")
+        return ShardGroupConfig(
+            group=self._group,
+            name=self._name,  # type: ignore[arg-type]  # None is refused by ShardGroupConfig
+            members=tuple(self._members),
+        )
+
+
+class ShardingConfigBuilder:
+    """Fluent builder for :class:`ShardingConfig`. Obtain via :meth:`ShardingConfig.builder`.
+
+    ``with_group`` appends one; ``groups`` replaces the list.
+    """
+
+    __slots__ = ("_default_shard", "_groups", "_unknown_shard_policy")
+
+    def __init__(self) -> None:
+        self._default_shard: ShardIdentifier | None = None
+        self._groups: list[ShardGroupConfig] = []
+        self._unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
+
+    def default_shard(self, default_shard: ShardIdentifier) -> Self:
+        self._default_shard = default_shard
+        return self
+
+    def groups(self, groups: Iterable[ShardGroupConfig]) -> Self:
+        self._groups = list(groups)
+        return self
+
+    def with_group(self, group: ShardGroupConfig) -> Self:
+        self._groups.append(group)
+        return self
+
+    def unknown_shard_policy(
+        self, unknown_shard_policy: Literal["use_default_shard", "fail"]
+    ) -> Self:
+        self._unknown_shard_policy = unknown_shard_policy
+        return self
+
+    def build(self) -> ShardingConfig:
+        return ShardingConfig(
+            default_shard=self._default_shard,  # type: ignore[arg-type]  # None is refused
+            groups=tuple(self._groups),
+            unknown_shard_policy=self._unknown_shard_policy,
         )

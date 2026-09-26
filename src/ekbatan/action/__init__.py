@@ -1,7 +1,14 @@
 """Units of work: what an application writes, and how the framework commits it."""
 
 from .action import Action, current_plan
-from .executor import DEFAULT_RETRIES, ActionExecutor, ExecutionConfiguration, RetryConfig
+from .executor import (
+    DEFAULT_RETRIES,
+    ActionExecutor,
+    ActionExecutorBuilder,
+    ExecutionConfiguration,
+    ExecutionConfigurationBuilder,
+    RetryConfig,
+)
 from .outbox import EventPersister, OutboxRecord, SingleTableJsonEventPersister
 from .persister import ChangePersister
 from .plan import ActionPlan, PersistableChanges
@@ -11,12 +18,14 @@ __all__ = [
     "DEFAULT_RETRIES",
     "Action",
     "ActionExecutor",
+    "ActionExecutorBuilder",
     "ActionPlan",
     "ActionRegistry",
     "ActionRegistryBuilder",
     "ChangePersister",
     "EventPersister",
     "ExecutionConfiguration",
+    "ExecutionConfigurationBuilder",
     "OutboxRecord",
     "PersistableChanges",
     "RetryConfig",

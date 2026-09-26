@@ -19,19 +19,30 @@ from .action import (
     DEFAULT_RETRIES,
     Action,
     ActionExecutor,
+    ActionExecutorBuilder,
     ActionPlan,
     ActionRegistry,
     ActionRegistryBuilder,
     ChangePersister,
     EventPersister,
     ExecutionConfiguration,
+    ExecutionConfigurationBuilder,
     OutboxRecord,
     RetryConfig,
     SingleTableJsonEventPersister,
     current_plan,
 )
 from .clock import Clock, SystemClock, VirtualClock
-from .config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig
+from .config import (
+    DataSourceConfig,
+    DataSourceConfigBuilder,
+    ShardGroupConfig,
+    ShardGroupConfigBuilder,
+    ShardingConfig,
+    ShardingConfigBuilder,
+    ShardMemberConfig,
+    ShardMemberConfigBuilder,
+)
 from .distributedjobs import (
     DistributedJob,
     ExecutionContext,
@@ -82,7 +93,13 @@ from .locks import (
     PostgresKeyedLockProvider,
 )
 from .migrations import emit_ddl, migrate, migrate_registry
-from .persistence import DatabaseRegistry, Transaction, TransactionManager, engine_for
+from .persistence import (
+    DatabaseRegistry,
+    DatabaseRegistryBuilder,
+    Transaction,
+    TransactionManager,
+    engine_for,
+)
 from .repository import (
     AbstractRepository,
     EntityRepository,
@@ -113,6 +130,7 @@ __all__ = [
     "Action",
     "ActionAssert",
     "ActionExecutor",
+    "ActionExecutorBuilder",
     "ActionPlan",
     "ActionRegistry",
     "ActionRegistryBuilder",
@@ -122,7 +140,9 @@ __all__ = [
     "ConnectivityError",
     "CrossShardError",
     "DataSourceConfig",
+    "DataSourceConfigBuilder",
     "DatabaseRegistry",
+    "DatabaseRegistryBuilder",
     "Db",
     "DistributedJob",
     "EkbatanError",
@@ -141,6 +161,7 @@ __all__ = [
     "EventNotificationState",
     "EventPersister",
     "ExecutionConfiguration",
+    "ExecutionConfigurationBuilder",
     "ExecutionContext",
     "FetchResult",
     "GenericState",
@@ -169,10 +190,13 @@ __all__ = [
     "RetryConfig",
     "Schedule",
     "ShardGroupConfig",
+    "ShardGroupConfigBuilder",
     "ShardIdentifier",
     "ShardMemberConfig",
+    "ShardMemberConfigBuilder",
     "ShardedId",
     "ShardingConfig",
+    "ShardingConfigBuilder",
     "ShardingStrategy",
     "SingleTableJsonEventPersister",
     "StagedWork",

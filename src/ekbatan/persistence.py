@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
@@ -30,6 +30,7 @@ from .sharding import ShardIdentifier
 
 __all__ = [
     "DatabaseRegistry",
+    "DatabaseRegistryBuilder",
     "Transaction",
     "TransactionManager",
     "insert_ignoring_duplicates",
@@ -279,6 +280,10 @@ class DatabaseRegistry:
         self.dialect = self._managers[default_shard].dialect
 
     @classmethod
+    def builder(cls) -> DatabaseRegistryBuilder:
+        return DatabaseRegistryBuilder()
+
+    @classmethod
     def from_config(cls, config: ShardingConfig) -> DatabaseRegistry:
         """Build the registry. ``ShardingConfig`` has already refused a default shard that
         names nothing, so no engine is created for a layout that cannot work."""
@@ -429,3 +434,37 @@ def insert_ignoring_duplicates(
         conn.execute(insert(table).prefix_with("IGNORE"), list(rows))
     else:  # pragma: no cover - every supported dialect is covered above
         conn.execute(insert(table), list(rows))
+
+
+class DatabaseRegistryBuilder:
+    """Fluent builder for :class:`DatabaseRegistry`. Obtain via :meth:`DatabaseRegistry.builder`.
+
+    Each manager is filed under the shard it says it is, so the key and the manager cannot
+    disagree - the mistake the constructor has to check for cannot be written here.
+    """
+
+    __slots__ = ("_default_shard", "_managers", "_unknown_shard_policy")
+
+    def __init__(self) -> None:
+        self._managers: dict[ShardIdentifier, TransactionManager] = {}
+        self._default_shard: ShardIdentifier | None = None
+        self._unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
+
+    def with_database(self, manager: TransactionManager) -> Self:
+        self._managers[manager.shard] = manager
+        return self
+
+    def with_default_database(self, manager: TransactionManager) -> Self:
+        self._managers[manager.shard] = manager
+        self._default_shard = manager.shard
+        return self
+
+    def with_unknown_shard_policy(
+        self, unknown_shard_policy: Literal["use_default_shard", "fail"] | None
+    ) -> Self:
+        """``None`` means the default, ``"use_default_shard"`` - as Java's null does."""
+        self._unknown_shard_policy = unknown_shard_policy or "use_default_shard"
+        return self
+
+    def build(self) -> DatabaseRegistry:
+        return DatabaseRegistry(self._managers, self._default_shard, self._unknown_shard_policy)

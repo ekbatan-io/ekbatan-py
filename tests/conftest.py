@@ -33,10 +33,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from backends import Backend, requested_dialects, start
 from ekbatan.clock import VirtualClock
-from ekbatan.config import DataSourceConfig, ShardingConfig, ShardMemberConfig
+from ekbatan.config import (
+    DataSourceConfig,
+    ShardGroupConfig,
+    ShardGroupConfigBuilder,
+    ShardingConfig,
+    ShardMemberConfig,
+)
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import ShardIdentifier
-from fixtures.config import group, member
 from fixtures.repositories import NotificationRepository, WalletRepository
 from fixtures.schema import metadata
 
@@ -79,14 +84,22 @@ def _registry(backend: Backend, names: dict[ShardIdentifier, str]) -> DatabaseRe
         backend.prepare(name, metadata)
         backend.truncate(name, metadata)
 
-    by_group: dict[int, list[ShardMemberConfig]] = {}
+    groups: dict[int, ShardGroupConfigBuilder] = {}
     for shard, name in names.items():
-        by_group.setdefault(shard.group, []).append(
-            member(shard.member, DataSourceConfig(url=backend.url(name), pool_size=5), name=name)
+        groups.setdefault(
+            shard.group, ShardGroupConfig.builder().group(shard.group).name(f"group-{shard.group}")
+        ).with_member(
+            ShardMemberConfig.builder()
+            .member(shard.member)
+            .name(name)
+            .primary_config(DataSourceConfig.builder().url(backend.url(name)).pool_size(5).build())
+            .build()
         )
-    config = ShardingConfig(
-        default_shard=next(iter(names)),
-        groups=tuple(group(n, f"group-{n}", *members) for n, members in by_group.items()),
+    config = (
+        ShardingConfig.builder()
+        .default_shard(next(iter(names)))
+        .groups(g.build() for g in groups.values())
+        .build()
     )
     return DatabaseRegistry.from_config(config)
 
@@ -125,7 +138,8 @@ def notifications(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
 def executor(
     registry: DatabaseRegistry, clock: VirtualClock, wallets: Any, notifications: Any
 ) -> Any:
-    from ekbatan.action import ActionExecutor
+    from ekbatan.action import ActionExecutor, ActionRegistry, SingleTableJsonEventPersister
+    from ekbatan.repository import RepositoryRegistry
     from fixtures.actions import (
         CloseWalletAction,
         CreateWalletAction,
@@ -139,19 +153,28 @@ def executor(
     # own: the executor runs an action by type, as Java's does, so the fixture handler and job
     # reach these by name. An action a single test builds for itself goes through
     # `fixtures.executing.run`, which registers it on an executor like this one.
-    return ActionExecutor(
-        namespace="example.wallet",
-        registry=registry,
-        repositories=[wallets, notifications],
-        actions=[
-            CreateWalletAction(clock),
-            DepositMoneyAction(wallets, clock),
-            CloseWalletAction(wallets, clock),
-            TransferMoneyAction(wallets, clock),
-            NotifyAction(clock),
-        ],
-        events=EVENTS,
-        clock=clock,
+    return (
+        ActionExecutor.builder()
+        .namespace("example.wallet")
+        .database_registry(registry)
+        .repository_registry(
+            RepositoryRegistry.builder()
+            .with_model_repository(wallets)
+            .with_entity_repository(notifications)
+            .build()
+        )
+        .action_registry(
+            ActionRegistry.builder()
+            .with_action(CreateWalletAction(clock))
+            .with_action(DepositMoneyAction(wallets, clock))
+            .with_action(CloseWalletAction(wallets, clock))
+            .with_action(TransferMoneyAction(wallets, clock))
+            .with_action(NotifyAction(clock))
+            .build()
+        )
+        .event_persister(SingleTableJsonEventPersister(EVENTS))
+        .clock(clock)
+        .build()
     )
 
 
