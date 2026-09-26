@@ -11,6 +11,7 @@ from .sql import (
     MySQLKeyedLockProvider,
     PostgresKeyedLockProvider,
     SqlKeyedLockProvider,
+    SqlKeyedLockProviderBuilder,
 )
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "MySQLKeyedLockProvider",
     "PostgresKeyedLockProvider",
     "SqlKeyedLockProvider",
+    "SqlKeyedLockProviderBuilder",
     "lock_key_hash",
 ]

@@ -8,14 +8,35 @@ setter leaves, and the few refusals that happen before the constructor is reache
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+
 import pytest
 from sqlalchemy import create_engine
 
 from ekbatan.action import ActionExecutor, ExecutionConfiguration, RetryConfig
 from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig
 from ekbatan.errors import StaleRecordError, ValidationError
+from ekbatan.events import (
+    EventEnvelope,
+    EventHandlerRegistry,
+    HandlingConfig,
+    LocalEventHandlerConfig,
+)
+from ekbatan.locks import (
+    MariaDBKeyedLockProvider,
+    MySQLKeyedLockProvider,
+    PostgresKeyedLockProvider,
+)
+from ekbatan.locks.redis import DEFAULT_NAMESPACE, RedisKeyedLockProvider
+from ekbatan.migrations import AlembicMigrator
 from ekbatan.persistence import DatabaseRegistry, TransactionManager
 from ekbatan.sharding import ShardIdentifier
+from ekbatan.streaming import ActionEvent
+from fixtures.domain import WalletMoneyDepositedEvent
+from fixtures.handlers import RecordingHandler
 
 URL = "postgresql+psycopg://u:p@h/db"
 OTHER_URL = "postgresql+psycopg://u:p@other/db"
@@ -261,3 +282,220 @@ def test_an_executor_without_a_database_registry_is_refused_by_name():
         ActionExecutor.builder().namespace("example.wallet").event_persister(
             object()  # type: ignore[arg-type]
         ).build()
+
+
+# -- the lock providers -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "provider", [PostgresKeyedLockProvider, MySQLKeyedLockProvider, MariaDBKeyedLockProvider]
+)
+def test_each_sql_lock_provider_builds_its_own_class(provider):
+    engine = create_engine("sqlite://")
+
+    built = provider.builder().engine(engine).build()
+
+    assert type(built) is provider
+    assert built._engine is engine
+
+
+def test_a_sql_lock_provider_without_an_engine_is_refused():
+    with pytest.raises(ValidationError, match="engine is required"):
+        PostgresKeyedLockProvider.builder().build()
+
+
+class FakeRedis:
+    def register_script(self, _script: str) -> object:
+        return object()
+
+
+def test_the_redis_lock_provider_keeps_javas_default_namespace():
+    built = RedisKeyedLockProvider.builder().client(FakeRedis()).build()
+    assert built._prefix == f"{DEFAULT_NAMESPACE}:"
+
+
+def test_the_redis_lock_provider_takes_a_namespace():
+    built = RedisKeyedLockProvider.builder().client(FakeRedis()).namespace("wallets").build()
+    assert built._prefix == "wallets:"
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_a_blank_redis_namespace_is_refused_when_it_is_set(blank):
+    with pytest.raises(ValidationError, match="namespace cannot be blank"):
+        RedisKeyedLockProvider.builder().namespace(blank)
+
+
+def test_a_redis_lock_provider_without_a_client_is_refused():
+    with pytest.raises(ValidationError, match="client is required"):
+        RedisKeyedLockProvider.builder().build()
+
+
+# -- the local event handler --------------------------------------------------------------------
+
+
+def test_with_handler_and_with_handlers_register_each_one():
+    first = RecordingHandler("first", WalletMoneyDepositedEvent)
+    second = RecordingHandler("second", WalletMoneyDepositedEvent)
+    third = RecordingHandler("third", WalletMoneyDepositedEvent)
+
+    built = (
+        EventHandlerRegistry.builder().with_handler(first).with_handlers([second, third]).build()
+    )
+
+    assert built.subscribers("WalletMoneyDepositedEvent") == [first, second, third]
+
+
+def test_a_duplicate_handler_name_is_refused_on_the_line_that_adds_it():
+    builder = EventHandlerRegistry.builder().with_handler(
+        RecordingHandler("same", WalletMoneyDepositedEvent)
+    )
+    with pytest.raises(ValidationError, match="both called 'same'"):
+        builder.with_handler(RecordingHandler("same", WalletMoneyDepositedEvent))
+
+
+def test_the_handler_registry_builder_can_build_more_than_once():
+    handler = RecordingHandler("only", WalletMoneyDepositedEvent)
+    builder = EventHandlerRegistry.builder().with_handler(handler)
+
+    assert len(builder.build()) == len(builder.build()) == 1
+
+
+def test_the_event_handler_config_built_with_every_setter_matches_the_constructor():
+    built = (
+        LocalEventHandlerConfig.builder()
+        .fanout_poll_delay(timedelta(seconds=1))
+        .fanout_batch_size(10)
+        .handling_poll_delay(timedelta(seconds=2))
+        .handling_batch_size(20)
+        .handling_max_backoff_cap(timedelta(minutes=5))
+        .handling_retention_window(timedelta(days=1))
+        .handling(HandlingConfig.builder().enabled(True).build())
+        .build()
+    )
+
+    assert built == LocalEventHandlerConfig(
+        fanout_poll_delay=timedelta(seconds=1),
+        fanout_batch_size=10,
+        handling_poll_delay=timedelta(seconds=2),
+        handling_batch_size=20,
+        handling_max_backoff_cap=timedelta(minutes=5),
+        handling_retention_window=timedelta(days=1),
+        handling=HandlingConfig(enabled=True),
+    )
+
+
+def test_an_empty_event_handler_config_builder_gives_the_defaults():
+    assert LocalEventHandlerConfig.builder().build() == LocalEventHandlerConfig.defaults()
+    assert HandlingConfig.builder().build() == HandlingConfig.defaults()
+
+
+def test_handling_none_means_the_default_handling_config():
+    built = LocalEventHandlerConfig.builder().handling(None).build()
+    assert built.handling == HandlingConfig.defaults()
+
+
+def test_the_event_handler_configs_checks_still_run():
+    with pytest.raises(ValidationError, match="fanout_batch_size must be at least 1"):
+        LocalEventHandlerConfig.builder().fanout_batch_size(0).build()
+
+
+NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_an_envelope_leaves_model_id_and_type_none_unless_set():
+    event = WalletMoneyDepositedEvent(model_id="w-1", amount=Decimal(1), new_balance=Decimal(1))
+    built = (
+        EventEnvelope.builder()
+        .event(event)
+        .event_id(uuid.UUID(int=1))
+        .namespace("example.wallet")
+        .action_id(uuid.UUID(int=2))
+        .action_name("DepositMoneyAction")
+        .action_params({"amount": "1"})
+        .started_date(NOW)
+        .completion_date(NOW)
+        .event_date(NOW)
+        .build()
+    )
+
+    assert built.event is event
+    assert built.model_id is None
+    assert built.model_type is None
+    assert built.attempt == 1
+
+
+def test_an_envelope_names_every_field_it_is_missing():
+    with pytest.raises(ValidationError, match="event_id, namespace, action_id"):
+        EventEnvelope.builder().event(object()).build()  # type: ignore[arg-type]
+
+
+def test_an_action_event_can_be_a_sentinel_row():
+    built = (
+        ActionEvent.builder()
+        .id(uuid.UUID(int=1))
+        .namespace("example.wallet")
+        .action_id(uuid.UUID(int=2))
+        .action_name("CloseWalletAction")
+        .action_params({})
+        .started_date(NOW)
+        .completion_date(NOW)
+        .event_date(NOW)
+        .build()
+    )
+
+    assert built.is_sentinel
+    assert not built.delivered
+
+
+def test_an_action_event_built_with_every_setter_matches_the_constructor():
+    fields = {
+        "id": uuid.UUID(int=1),
+        "namespace": "example.wallet",
+        "action_id": uuid.UUID(int=2),
+        "action_name": "DepositMoneyAction",
+        "action_params": {"amount": "1"},
+        "started_date": NOW,
+        "completion_date": NOW,
+        "model_id": "w-1",
+        "model_type": "Wallet",
+        "event_type": "WalletMoneyDepositedEvent",
+        "payload": {"amount": "1"},
+        "event_date": NOW,
+        "delivered": True,
+    }
+    builder = ActionEvent.builder()
+    for name, value in fields.items():
+        getattr(builder, name)(value)
+
+    assert builder.build() == ActionEvent(**fields)
+
+
+def test_an_action_event_without_an_id_is_refused():
+    with pytest.raises(ValidationError, match="id, namespace"):
+        ActionEvent.builder().build()
+
+
+# -- the migrator -------------------------------------------------------------------------------
+
+
+def test_the_migrator_needs_a_sharding_config():
+    with pytest.raises(ValidationError, match="with_sharding_config"):
+        AlembicMigrator.builder().script_location(Path(".")).migrate()
+
+
+def test_the_migrator_needs_a_script_location():
+    layout = ShardingConfig.builder().default_shard(FIRST).with_group(a_group()).build()
+    with pytest.raises(ValidationError, match="script_location is required"):
+        AlembicMigrator.builder().with_sharding_config(layout).migrate()
+
+
+def test_the_migrator_refuses_a_shard_the_layout_does_not_have(tmp_path):
+    layout = ShardingConfig.builder().default_shard(FIRST).with_group(a_group()).build()
+    with pytest.raises(ValidationError, match="not in this layout"):
+        (
+            AlembicMigrator.builder()
+            .with_sharding_config(layout)
+            .script_location(tmp_path)
+            .with_shard(SECOND)
+            .migrate()
+        )

@@ -29,20 +29,19 @@ from dataclasses import dataclass, fields
 from datetime import UTC, datetime
 from typing import Any, Self
 
+from ._builder import FieldBuilder
 from ._json import loads
 
-__all__ = ["ActionEvent"]
+__all__ = ["ActionEvent", "ActionEventBuilder"]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class ActionEvent:
     """A complete outbox row: the action's context, and the event it produced.
 
-    Keyword-only, which is the whole of what Java's builder is for. Its thirteen-argument
-    constructor put `model_type` next to `event_type` and `started_date` next to
-    `completion_date` - adjacent same-typed pairs that transpose silently and produce an event
-    routed to the wrong topic or carrying the wrong body. Keywords make that unwritable rather
-    than merely discouraged, so there is no builder here to remove the hazard.
+    Built with :meth:`builder`, as Java's is, or with keywords. Either way no two fields can be
+    transposed - the hazard Java's builder exists for, in a thirteen-argument constructor that
+    put `model_type` next to `event_type` and `started_date` next to `completion_date`.
     """
 
     #: Stable per-event identifier; the outbox row's primary key.
@@ -72,6 +71,10 @@ class ActionEvent:
     #: Whether the in-process fan-out has already turned this row into notifications. A CDC
     #: consumer has no use for it; it is here because it is a column and the row is the contract.
     delivered: bool = False
+
+    @classmethod
+    def builder(cls) -> ActionEventBuilder:
+        return ActionEventBuilder()
 
     @property
     def is_sentinel(self) -> bool:
@@ -131,3 +134,63 @@ class ActionEvent:
             if isinstance(value, str):
                 adjusted[column] = _uuid.UUID(value)
         return cls.from_row(adjusted)
+
+
+class ActionEventBuilder(FieldBuilder[ActionEvent]):
+    """Fluent builder for :class:`ActionEvent`. Obtain via :meth:`ActionEvent.builder`.
+
+    Validates nothing beyond what the dataclass requires, as the class itself validates nothing:
+    the four fields a sentinel row leaves null may be left unset.
+    """
+
+    __slots__ = ()
+    _target = ActionEvent
+    _required = (
+        "id",
+        "namespace",
+        "action_id",
+        "action_name",
+        "action_params",
+        "started_date",
+        "completion_date",
+        "event_date",
+    )
+
+    def id(self, id: _uuid.UUID) -> Self:
+        return self._set("id", id)
+
+    def namespace(self, namespace: str) -> Self:
+        return self._set("namespace", namespace)
+
+    def action_id(self, action_id: _uuid.UUID) -> Self:
+        return self._set("action_id", action_id)
+
+    def action_name(self, action_name: str) -> Self:
+        return self._set("action_name", action_name)
+
+    def action_params(self, action_params: Mapping[str, Any]) -> Self:
+        return self._set("action_params", action_params)
+
+    def started_date(self, started_date: datetime) -> Self:
+        return self._set("started_date", started_date)
+
+    def completion_date(self, completion_date: datetime) -> Self:
+        return self._set("completion_date", completion_date)
+
+    def model_id(self, model_id: str | None) -> Self:
+        return self._set("model_id", model_id)
+
+    def model_type(self, model_type: str | None) -> Self:
+        return self._set("model_type", model_type)
+
+    def event_type(self, event_type: str | None) -> Self:
+        return self._set("event_type", event_type)
+
+    def payload(self, payload: Mapping[str, Any] | None) -> Self:
+        return self._set("payload", payload)
+
+    def event_date(self, event_date: datetime) -> Self:
+        return self._set("event_date", event_date)
+
+    def delivered(self, delivered: bool) -> Self:
+        return self._set("delivered", delivered)

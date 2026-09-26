@@ -13,14 +13,22 @@ consumer, and it can only do that if everything it needed arrived in the envelop
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, Self, runtime_checkable
 
+from .._builder import FieldBuilder
 from ..domain import ModelEvent
 from ..errors import ValidationError
 
-__all__ = ["EventEnvelope", "EventHandler", "EventHandlerRegistry"]
+__all__ = [
+    "EventEnvelope",
+    "EventEnvelopeBuilder",
+    "EventHandler",
+    "EventHandlerRegistry",
+    "EventHandlerRegistryBuilder",
+]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -51,6 +59,10 @@ class EventEnvelope[E: ModelEvent]:
     #: Which attempt this is, starting at 1. Present so a handler can log it, not so it can
     #: decide to give up - that is the retention window's job.
     attempt: int = 1
+
+    @classmethod
+    def builder(cls) -> EventEnvelopeBuilder[E]:
+        return EventEnvelopeBuilder()
 
 
 @runtime_checkable
@@ -89,6 +101,10 @@ class EventHandlerRegistry:
         self._aliases: dict[str, str] = {}
         for handler in handlers:  # type: ignore[attr-defined]
             self.add(handler)
+
+    @classmethod
+    def builder(cls) -> EventHandlerRegistryBuilder:
+        return EventHandlerRegistryBuilder()
 
     def add(self, handler: EventHandler[Any]) -> EventHandlerRegistry:
         name = handler.name
@@ -129,3 +145,96 @@ class EventHandlerRegistry:
 
     def __repr__(self) -> str:
         return f"EventHandlerRegistry({len(self)} handler(s), {len(self._by_event)} event type(s))"
+
+
+class EventEnvelopeBuilder[E: ModelEvent](FieldBuilder[EventEnvelope[E]]):
+    """Fluent builder for :class:`EventEnvelope`. Obtain via :meth:`EventEnvelope.builder`.
+
+    The framework builds envelopes itself; this is for a test that hands one to a handler. The
+    fields Java refuses as null are refused here, and ``model_id`` / ``model_type`` default to
+    ``None`` as Java's do.
+    """
+
+    __slots__ = ()
+    _target = EventEnvelope
+    _required = (
+        "event",
+        "event_id",
+        "namespace",
+        "action_id",
+        "action_name",
+        "action_params",
+        "started_date",
+        "completion_date",
+        "event_date",
+    )
+    _defaults = {"model_id": None, "model_type": None}  # noqa: RUF012 - read, never mutated
+
+    def event(self, event: E) -> Self:
+        return self._set("event", event)
+
+    def event_id(self, event_id: uuid.UUID) -> Self:
+        return self._set("event_id", event_id)
+
+    def namespace(self, namespace: str) -> Self:
+        return self._set("namespace", namespace)
+
+    def action_id(self, action_id: uuid.UUID) -> Self:
+        return self._set("action_id", action_id)
+
+    def action_name(self, action_name: str) -> Self:
+        return self._set("action_name", action_name)
+
+    def action_params(self, action_params: dict[str, Any]) -> Self:
+        return self._set("action_params", action_params)
+
+    def started_date(self, started_date: datetime) -> Self:
+        return self._set("started_date", started_date)
+
+    def completion_date(self, completion_date: datetime) -> Self:
+        return self._set("completion_date", completion_date)
+
+    def event_date(self, event_date: datetime) -> Self:
+        return self._set("event_date", event_date)
+
+    def model_id(self, model_id: str | None) -> Self:
+        return self._set("model_id", model_id)
+
+    def model_type(self, model_type: str | None) -> Self:
+        return self._set("model_type", model_type)
+
+    def attempt(self, attempt: int) -> Self:
+        return self._set("attempt", attempt)
+
+
+class EventHandlerRegistryBuilder:
+    """Fluent builder for :class:`EventHandlerRegistry`. Obtain via
+    :meth:`EventHandlerRegistry.builder`.
+
+    Each handler is checked as it is added, as Java's ``withHandler`` checks it, so a refusal
+    points at the line that added the handler rather than at ``build()``.
+    """
+
+    __slots__ = ("_checked", "_handlers")
+
+    def __init__(self) -> None:
+        self._handlers: list[EventHandler[Any]] = []
+        # Added to as each handler arrives, only so it is refused on the line that added it.
+        self._checked = EventHandlerRegistry()
+
+    def with_handler(self, handler: EventHandler[Any]) -> Self:
+        if handler is None:
+            raise ValidationError("handler cannot be None")
+        self._checked.add(handler)
+        self._handlers.append(handler)
+        return self
+
+    def with_handlers(self, handlers: Iterable[EventHandler[Any]]) -> Self:
+        if handlers is None:
+            raise ValidationError("handlers cannot be None")
+        for handler in handlers:
+            self.with_handler(handler)
+        return self
+
+    def build(self) -> EventHandlerRegistry:
+        return EventHandlerRegistry(self._handlers)

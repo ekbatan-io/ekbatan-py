@@ -26,14 +26,14 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import timedelta
-from typing import Any
+from typing import Any, Self
 
 from .._metrics import counter
-from ..errors import LockAcquisitionError
+from ..errors import LockAcquisitionError, ValidationError
 from ._holder import KeyedReentrantHolder, ReleaseReason
 from .base import Lease, check
 
-__all__ = ["DEFAULT_NAMESPACE", "RedisKeyedLockProvider"]
+__all__ = ["DEFAULT_NAMESPACE", "RedisKeyedLockProvider", "RedisKeyedLockProviderBuilder"]
 
 LOG = logging.getLogger("ekbatan.locks")
 
@@ -91,6 +91,10 @@ class RedisKeyedLockProvider:
         self._prefix = f"{namespace}:"
         self._holder = KeyedReentrantHolder()
         self._release = client.register_script(_RELEASE)
+
+    @classmethod
+    def builder(cls) -> RedisKeyedLockProviderBuilder:
+        return RedisKeyedLockProviderBuilder()
 
     def acquire(self, key: str, max_hold: timedelta) -> Lease:
         """Take the lock, waiting as long as it takes."""
@@ -166,3 +170,33 @@ def _sleep(delay: timedelta) -> None:
     import time
 
     time.sleep(max(0.0, delay.total_seconds()))
+
+
+class RedisKeyedLockProviderBuilder:
+    """Fluent builder for :class:`RedisKeyedLockProvider`. Obtain via
+    :meth:`RedisKeyedLockProvider.builder`.
+
+    ``client`` is Java's ``redissonClient``: a ``redis.Redis`` here.
+    """
+
+    __slots__ = ("_client", "_namespace")
+
+    def __init__(self) -> None:
+        self._client: Any = None
+        self._namespace = DEFAULT_NAMESPACE
+
+    def client(self, client: Any) -> Self:
+        self._client = client
+        return self
+
+    def namespace(self, namespace: str) -> Self:
+        """Refused when it is set, as Java refuses it, rather than at ``build()``."""
+        if not namespace or not namespace.strip():
+            raise ValidationError("namespace cannot be blank")
+        self._namespace = namespace
+        return self
+
+    def build(self) -> RedisKeyedLockProvider:
+        if self._client is None:
+            raise ValidationError("client is required")
+        return RedisKeyedLockProvider(self._client, namespace=self._namespace)

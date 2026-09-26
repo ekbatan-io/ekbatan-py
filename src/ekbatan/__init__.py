@@ -74,14 +74,18 @@ from .errors import (
 from .events import (
     EventDispatch,
     EventEnvelope,
+    EventEnvelopeBuilder,
     EventFanout,
     EventFanoutJob,
     EventHandler,
     EventHandlerRegistry,
+    EventHandlerRegistryBuilder,
     EventHandlingJob,
     EventNotificationState,
     HandlingConfig,
+    HandlingConfigBuilder,
     LocalEventHandlerConfig,
+    LocalEventHandlerConfigBuilder,
 )
 from .fetching import Db, FetchResult
 from .ids import Id, ShardedId, TypedValue, unwrap
@@ -91,8 +95,15 @@ from .locks import (
     MariaDBKeyedLockProvider,
     MySQLKeyedLockProvider,
     PostgresKeyedLockProvider,
+    SqlKeyedLockProviderBuilder,
 )
-from .migrations import emit_ddl, migrate, migrate_registry
+from .migrations import (
+    AlembicMigrator,
+    AlembicMigratorBuilder,
+    emit_ddl,
+    migrate,
+    migrate_registry,
+)
 from .persistence import (
     DatabaseRegistry,
     DatabaseRegistryBuilder,
@@ -135,6 +146,8 @@ __all__ = [
     "ActionRegistry",
     "ActionRegistryBuilder",
     "ActionSpec",
+    "AlembicMigrator",
+    "AlembicMigratorBuilder",
     "ChangePersister",
     "Clock",
     "ConnectivityError",
@@ -153,10 +166,12 @@ __all__ = [
     "EntityRepository",
     "EventDispatch",
     "EventEnvelope",
+    "EventEnvelopeBuilder",
     "EventFanout",
     "EventFanoutJob",
     "EventHandler",
     "EventHandlerRegistry",
+    "EventHandlerRegistryBuilder",
     "EventHandlingJob",
     "EventNotificationState",
     "EventPersister",
@@ -166,6 +181,7 @@ __all__ = [
     "FetchResult",
     "GenericState",
     "HandlingConfig",
+    "HandlingConfigBuilder",
     "Id",
     "JobRegistry",
     "JobRegistryBuilder",
@@ -173,6 +189,7 @@ __all__ = [
     "KeyedLockProvider",
     "Lease",
     "LocalEventHandlerConfig",
+    "LocalEventHandlerConfigBuilder",
     "LockAcquisitionError",
     "MariaDBKeyedLockProvider",
     "Model",
@@ -199,6 +216,7 @@ __all__ = [
     "ShardingConfigBuilder",
     "ShardingStrategy",
     "SingleTableJsonEventPersister",
+    "SqlKeyedLockProviderBuilder",
     "StagedWork",
     "StaleRecordError",
     "StatementCount",

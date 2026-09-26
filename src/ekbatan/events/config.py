@@ -9,10 +9,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Self
 
+from .._builder import FieldBuilder
 from ..errors import ValidationError
 
-__all__ = ["HandlingConfig", "LocalEventHandlerConfig"]
+__all__ = [
+    "HandlingConfig",
+    "HandlingConfigBuilder",
+    "LocalEventHandlerConfig",
+    "LocalEventHandlerConfigBuilder",
+]
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -30,6 +37,10 @@ class HandlingConfig:
     @classmethod
     def defaults(cls) -> HandlingConfig:
         return cls()
+
+    @classmethod
+    def builder(cls) -> HandlingConfigBuilder:
+        return HandlingConfigBuilder()
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -69,3 +80,50 @@ class LocalEventHandlerConfig:
     def defaults(cls) -> LocalEventHandlerConfig:
         """Every knob at the framework default."""
         return cls()
+
+    @classmethod
+    def builder(cls) -> LocalEventHandlerConfigBuilder:
+        return LocalEventHandlerConfigBuilder()
+
+
+class HandlingConfigBuilder(FieldBuilder[HandlingConfig]):
+    """Fluent builder for :class:`HandlingConfig`. Obtain via :meth:`HandlingConfig.builder`."""
+
+    __slots__ = ()
+    _target = HandlingConfig
+
+    def enabled(self, enabled: bool) -> Self:
+        return self._set("enabled", enabled)
+
+
+class LocalEventHandlerConfigBuilder(FieldBuilder[LocalEventHandlerConfig]):
+    """Fluent builder for :class:`LocalEventHandlerConfig`. Obtain via
+    :meth:`LocalEventHandlerConfig.builder`.
+
+    ``None`` is accepted by every setter and means the framework default, as Java's
+    ``Optional.ofNullable`` does; ``handling(None)`` means :meth:`HandlingConfig.defaults`.
+    """
+
+    __slots__ = ()
+    _target = LocalEventHandlerConfig
+
+    def fanout_poll_delay(self, fanout_poll_delay: timedelta | None) -> Self:
+        return self._set("fanout_poll_delay", fanout_poll_delay)
+
+    def fanout_batch_size(self, fanout_batch_size: int | None) -> Self:
+        return self._set("fanout_batch_size", fanout_batch_size)
+
+    def handling_poll_delay(self, handling_poll_delay: timedelta | None) -> Self:
+        return self._set("handling_poll_delay", handling_poll_delay)
+
+    def handling_batch_size(self, handling_batch_size: int | None) -> Self:
+        return self._set("handling_batch_size", handling_batch_size)
+
+    def handling_max_backoff_cap(self, handling_max_backoff_cap: timedelta | None) -> Self:
+        return self._set("handling_max_backoff_cap", handling_max_backoff_cap)
+
+    def handling_retention_window(self, handling_retention_window: timedelta | None) -> Self:
+        return self._set("handling_retention_window", handling_retention_window)
+
+    def handling(self, handling: HandlingConfig | None) -> Self:
+        return self._set("handling", handling if handling is not None else HandlingConfig())

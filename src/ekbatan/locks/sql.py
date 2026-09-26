@@ -17,11 +17,11 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from datetime import timedelta
-from typing import Any
+from typing import Any, Self
 
 from sqlalchemy import Connection, Engine
 
-from ..errors import LockAcquisitionError
+from ..errors import LockAcquisitionError, ValidationError
 from ._holder import KeyedReentrantHolder, ReleaseReason
 from .base import Lease, check, lock_key_hash
 
@@ -30,6 +30,7 @@ __all__ = [
     "MySQLKeyedLockProvider",
     "PostgresKeyedLockProvider",
     "SqlKeyedLockProvider",
+    "SqlKeyedLockProviderBuilder",
 ]
 
 LOG = logging.getLogger("ekbatan.locks")
@@ -46,6 +47,12 @@ class SqlKeyedLockProvider(ABC):
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         self._holder = KeyedReentrantHolder()
+
+    @classmethod
+    def builder(cls) -> SqlKeyedLockProviderBuilder[Self]:
+        """Java's ``postgresKeyedLockProvider()`` / ``mySQLKeyedLockProvider()`` /
+        ``mariaDBKeyedLockProvider()``: one builder, building whichever class it was asked on."""
+        return SqlKeyedLockProviderBuilder(cls)
 
     # ------------------------------------------------------------ backend hooks
 
@@ -251,3 +258,26 @@ class MariaDBKeyedLockProvider(MySQLKeyedLockProvider):
     argument: MariaDB honours millisecond precision where MySQL rounds up to a second. Kept as
     its own class rather than a flag, because a flag is something to set wrongly.
     """
+
+
+class SqlKeyedLockProviderBuilder[P: SqlKeyedLockProvider]:
+    """Fluent builder for the SQL lock providers. Obtain via ``PostgresKeyedLockProvider.builder()``
+    or the MySQL / MariaDB one.
+
+    ``engine`` is Java's ``connectionProvider``: the pool the locks' sessions are borrowed from.
+    """
+
+    __slots__ = ("_engine", "_provider")
+
+    def __init__(self, provider: type[P]) -> None:
+        self._provider = provider
+        self._engine: Engine | None = None
+
+    def engine(self, engine: Engine) -> Self:
+        self._engine = engine
+        return self
+
+    def build(self) -> P:
+        if self._engine is None:
+            raise ValidationError("engine is required")
+        return self._provider(self._engine)

@@ -36,7 +36,7 @@ import hashlib
 import logging
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from sqlalchemy import Column, Engine, MetaData, String, Table, delete, insert, select
 from sqlalchemy.schema import CreateIndex, CreateTable
@@ -50,6 +50,8 @@ from .sharding import ShardIdentifier
 
 __all__ = [
     "CHECKSUM_TABLE",
+    "AlembicMigrator",
+    "AlembicMigratorBuilder",
     "MigrationError",
     "checksum_table",
     "emit_ddl",
@@ -145,6 +147,70 @@ def migrate(
             engine.dispose()
         LOG.info("shard %s is at revision %s", label, done[shard])
     return done
+
+
+class AlembicMigrator:
+    """Java's ``FlywayMigrator``, for Alembic: :func:`migrate` is its static ``migrate(...)``,
+    and :meth:`builder` its builder."""
+
+    @staticmethod
+    def builder() -> AlembicMigratorBuilder:
+        return AlembicMigratorBuilder()
+
+
+class AlembicMigratorBuilder:
+    """Fluent builder that runs :func:`migrate`. Obtain via :meth:`AlembicMigrator.builder`.
+
+    Java's ``withShardingConfig``, ``locations`` and ``migrate()``. Java's ``withTarget`` names a
+    datasource to migrate; here a target is a shard of the layout, named with ``with_shard``, since
+    :func:`migrate` migrates shards of a layout and nothing else. ``revision`` is Alembic's, and
+    has no Flyway counterpart - Flyway always migrates to the latest.
+    """
+
+    __slots__ = ("_config", "_revision", "_script_location", "_shards")
+
+    def __init__(self) -> None:
+        self._config: ShardingConfig | None = None
+        self._script_location: str | Path | None = None
+        self._revision = "head"
+        self._shards: list[ShardIdentifier] | None = None
+
+    def with_sharding_config(self, config: ShardingConfig) -> Self:
+        self._config = config
+        return self
+
+    def with_shard(self, shard: ShardIdentifier) -> Self:
+        """Migrate this shard. Unless one is named, every shard in the layout is migrated."""
+        if shard is None:
+            raise ValidationError("shard is required")
+        if self._shards is None:
+            self._shards = []
+        self._shards.append(shard)
+        return self
+
+    def with_shards(self, shards: Iterable[ShardIdentifier]) -> Self:
+        if shards is None:
+            raise ValidationError("shards is required")
+        for shard in shards:
+            self.with_shard(shard)
+        return self
+
+    def script_location(self, script_location: str | Path) -> Self:
+        self._script_location = script_location
+        return self
+
+    def revision(self, revision: str) -> Self:
+        self._revision = revision
+        return self
+
+    def migrate(self) -> Mapping[ShardIdentifier, str]:
+        if self._config is None:
+            raise ValidationError("a sharding config is required: call with_sharding_config")
+        if self._script_location is None:
+            raise ValidationError("script_location is required")
+        return migrate(
+            self._config, self._script_location, revision=self._revision, shards=self._shards
+        )
 
 
 def _config(url: str, location: Path) -> Any:
