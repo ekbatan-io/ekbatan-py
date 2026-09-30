@@ -361,7 +361,6 @@ partial failure without a human.
 ```python
 migrate(layout, MIGRATIONS)                        # all of them
 migrate(layout, MIGRATIONS, shards=[MEXICO])       # one
-migrate(layout, MIGRATIONS, revision="head")
 ```
 
 Ordered by the configuration rather than by the argument, and an unknown identifier is refused
@@ -382,5 +381,5 @@ thread per shard. On eight shards a round takes eight batches' time rather than 
 ## See also
 
 - [Concepts → Sharding](../concepts/sharding.md) - the reasoning
-- [Migrations](migrations.md) - applying revisions across shards
+- [Migrations](migrations.md) - applying migrations across shards
 - [`fastapi_wallet_rest_sharded_pg`](../../ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)

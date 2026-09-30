@@ -49,7 +49,7 @@ The smallest set, and the one with a real defect in it.
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
 | LICENSE | 201 | `LICENSE` | done - copied byte for byte. Verified in both distributions: the wheel carries `dist-info/licenses/LICENSE` and the sdist carries `LICENSE`. **`db-scheduler/` had the same defect and it was fixed with it** |
-| README.md | 512 | `README.md` | done - gained *Install*, *Versioning and support*, the full example list and a link to RELEASE.md. Four stale claims corrected on the way: it named yoyo rather than Alembic, and its test counts (175/56/118) were collected as 578/250/322 |
+| README.md | 512 | `README.md` | done - gained *Install*, *Versioning and support*, the full example list and a link to RELEASE.md. Four stale claims corrected on the way: it named yoyo rather than Alembic (true again since `EKB-0233`, when the migrator moved to yoyo), and its test counts (175/56/118) were collected as 578/250/322 |
 | AGENTS.md | 402 | `AGENTS.md` | done - Java's headings, with what this port learned in them: the traps the suite fell into, the ledger method, the ContextVar rule, and "do not commit in the Java repository" |
 | CLAUDE.md | 3 | `CLAUDE.md` | done - a pointer to AGENTS.md, as Java's is |
 | RELEASE.md | 120 | `RELEASE.md` | done - PyPI trusted publishing: no GPG, no Sonatype, no stored secret. Two distributions in dependency order, the TestPyPI rehearsal, and the warning Java has no counterpart to - **a PyPI filename is burned forever, deleting a release does not free the version** |
@@ -106,7 +106,7 @@ port's MySQL and MariaDB behaviour is not identical to Java's.
 | database/mysql.md | 267 | `docs/database/mysql.md` | done |
 | database/mariadb.md | 261 | `docs/database/mariadb.md` | done - leads with the scheme trap, because a url left as `mysql://` tests the wrong code path silently |
 | database/jooq-codegen.md | 315 | `docs/database/schemagen.md` | done - and the type-forcing section is indeed the part that matters |
-| - | - | `docs/database/migrations.md` | done - **no Java counterpart as a page**; Java documents Flyway inside getting-started and wiring. Needed here because Alembic is driven as a library, and because the checksum guard had to be added on top of it |
+| - | - | `docs/database/migrations.md` | done - **no Java counterpart as a page**; Java documents Flyway inside getting-started and wiring. Needed here because yoyo is driven as a library, and because the lock, the checks and the history had to be added on top of it |
 | - | - | `docs/database/sqlite.md` | done - **no Java counterpart.** Says plainly why it is supported and why it is not a production dialect: no `SKIP LOCKED`, and advisory types that let a mapping bug pass |
 
 ## Documentation - events and jobs

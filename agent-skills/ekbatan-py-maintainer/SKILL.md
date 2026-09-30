@@ -41,7 +41,8 @@ the Java while porting go in an openspec change, not a code change.
 - Nothing in `src/` may import a web framework. `tests/test_structure.py` enforces it.
 - The ambient transaction is a `ContextVar`. Work handed to a pool does not inherit it, and that
   is correct.
-- One statement per `op.execute()` in a migration - PyMySQL rejects multi-statement scripts.
+- Migrations are `V<version>__<description>.sql` files; `validate_scripts` checks them with no
+  database. On MySQL and MariaDB keep one schema change per file - each commits on its own.
 
 ## Workflow
 

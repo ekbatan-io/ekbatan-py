@@ -81,10 +81,12 @@ is what making it a setting is for.
 shard *and what had already succeeded*, because half a migrated cluster is a state an operator
 has to reason about.
 
-It also records a checksum of every applied revision and verifies it before upgrading. Alembic's
-own `alembic_version` holds a single row — the current head — with no record of what a revision
-*contained*, so editing an applied revision is otherwise silently accepted and the file and the
-database disagree with nothing to say so.
+It also records a checksum of every applied migration in `ekbatan_schema_history` and refuses to
+run when an applied file has been edited, renamed or deleted, so the files and the database never
+disagree with nothing to say so. Each database is locked while it is migrated - a lock the database
+drops if the migrating process dies - so replicas starting together cannot run a migration twice,
+and a replica or read-only server is refused rather than migrated. Migrate over a direct
+connection to each primary: session locks do not survive PgBouncer in transaction mode.
 
 ## What to alert on
 

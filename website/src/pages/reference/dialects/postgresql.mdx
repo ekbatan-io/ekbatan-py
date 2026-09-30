@@ -26,17 +26,17 @@ uv add ekbatan[postgres]
 ## Migration order
 
 PostgreSQL has no separate "create the eventlog database" step: `eventlog`, if you want one at
-all, is a schema inside the connected database and the first revision creates it inline. This
+all, is a schema inside the connected database and the first migration creates it inline. This
 port defaults to no schema, so usually there is nothing to create.
 
 ```
-migrations/versions/
-  0001_eventlog.py          # events + event_notifications + their indexes
-  0002_scheduled_tasks.py   # only if you run distributed jobs or in-process handlers
-  0003_wallets.py           # your domain tables
+migrations/
+  V0001__eventlog.sql           # events + event_notifications + their indexes
+  V0002__scheduled_tasks.sql    # only if you run distributed jobs or in-process handlers
+  V0003__wallets.sql            # your domain tables
 ```
 
-Three revisions rather than one because they change for different reasons: the first two move
+Three files rather than one because they change for different reasons: the first two move
 when you upgrade the framework, the third whenever your domain does.
 
 No init script. The connecting user normally has create-schema rights already, which is the
@@ -46,7 +46,7 @@ whole of why PostgreSQL is the least work of the four.
 
 Three, and only the first is always required. The DDL is generated rather than transcribed -
 [Framework tables](/reference/tables/) has it per dialect, and `emit_ddl(metadata, "postgresql")` prints it
-for your own revision.
+for your own migration.
 
 | Table | Needed when | Page |
 |---|---|---|

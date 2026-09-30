@@ -72,7 +72,8 @@ src/ekbatan/
   schema.py          the framework's own tables, and the column helpers
   errors.py          the exception hierarchy
   clock.py           Clock, SystemClock, VirtualClock
-  migrations.py      Alembic driven as a library, plus the checksum guard it lacks
+  migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
+  _yoyo.py           the yoyo backends: one connection, the session lock, the replica check
   schemagen.py       table definitions generated from a migrated database
   codegen.py         typed builders, generated per model
   streaming.py       ActionEvent - the consumer-side view of an outbox row

@@ -293,7 +293,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| FlywayMigrator.java | 371 | `migrations.py` | done - `migrations.py` drives Alembic per shard; see DIVERGENCE |
+| FlywayMigrator.java | 371 | `migrations.py`, `_yoyo.py` | done - `YoyoMigrator`: `migrate`, `targets`, `target`, `Target`, `Result`, the builder; SQL files on yoyo, per shard (`EKB-0233`); see DIVERGENCE |
 | NativeImageFlywayResourceProvider.java | 92 | - | n/a - GraalVM native-image resource provider |
 
 #### `keyedlock/redis`

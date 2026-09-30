@@ -1063,33 +1063,56 @@ the time was "dialect-aware index construction in `ekbatan.schema`", which would
 machinery on top of the mistake. The mistake was being there at all.
 
 They are gone. Every PostgreSQL migration in this repository now emits the partial form, MySQL
-and MariaDB get the predicate as a column, and the suite's own schema is built by an Alembic
-revision rather than `create_all` - which is what Java's integration tests do with Flyway, and
-is now the only way those indexes are exercised at all.
+and MariaDB get the predicate as a column, and the suite's own schema is built by migration
+files generated from the metadata rather than by `create_all` - which is what Java's integration
+tests do with Flyway, and is now the only way those indexes are exercised at all.
 
 **None of this was in this file.** `schemagen` is one of the larger design decisions in the port
 and had no entry; that the framework's own tables are *built* rather than reflected, where
 Java's jOOQ reflects them from the database like any other, had no entry either. Found by being
 asked what Java does about `scheduled_tasks`.
 
-## Migrations run on Alembic, with the guard Alembic does not have
+## Migrations run on yoyo, with the lock, checks and history yoyo does not have
 
-> **forced** - There is no Flyway for Python. The checksum guard restores what Flyway has and Alembic lacks.
+> **forced** - There is no Flyway for Python. yoyo runs the SQL; what Flyway has and yoyo lacks is built on top, and one thing Flyway gets wrong by default is not copied.
 
-Java uses Flyway. Here it is Alembic - SQLAlchemy's own migration tool, by the same author -
-driven as a library: a `Config` built in memory rather than an `alembic.ini`, so an application
-migrates itself with no external binary and no second copy of its connection settings.
+Java uses Flyway. Here it is [yoyo](https://ollycope.com/software/yoyo/), used as a library, over
+the same kind of files - plain SQL named `V<version>__<description>.sql`, run in the order of their
+version numbers. yoyo reads the files, splits them into statements and runs them, in a
+transaction or, for a file marked `-- transactional: false`, without one. Everything else is in
+`ekbatan.migrations`, because yoyo alone got each of these wrong - measured, one at a time:
 
-Two things sit on top, both because Alembic does not have them and a sharded deployment needs
-them. `migrate(config, location)` drives one `Config` per shard, sequentially and fail-fast,
-naming the shard that failed and the ones already done. And `ekbatan_revision_checksums` records
-a hash of every applied revision, verified before each upgrade.
+| yoyo alone | here |
+| --- | --- |
+| two files with one version both run - a migration's name is its whole file name | refused before any database is touched, by a check a CI test can run (`validate_scripts`) |
+| an edited, renamed or deleted applied migration, or a new one older than one applied, is accepted silently | refused before anything runs, as Flyway refuses it; a migration newer than every file is left alone with a warning, as Flyway leaves it |
+| file names sorted as text, so `V10` ran before `V2` | version numbers compared as numbers |
+| the lock is a table row: waiters give up after ten seconds, and a killed holder leaves every later deploy failing | a database session lock - advisory lock, `GET_LOCK`, an OS file lock for SQLite - that waiters wait on for as long as it takes and the database drops when its holder dies |
+| each migration runs on a second connection, apart from the lock's; when the lock's connection died a second process ran the migration at the same time | the lock, the migration and its history row share one connection and die together |
+| a migration is recorded in a separate step after it is applied | recorded in the same transaction wherever the database can roll back a schema change |
+| on MySQL and MariaDB, a `transactional: false` migration's statements were never committed, and a savepoint error replaced the real one | committed, and the real error reported |
+| query results printed to stdout | logged at `INFO`, switchable, as Flyway's `outputQueryResults` |
 
-That second one is not a refinement. Alembic's `alembic_version` holds a single row - the current
-head - with no per-migration history and no record of what a revision contained, so editing an
-applied revision is accepted in silence. Measured, not assumed: the upgrade ran again without
-complaint while the database kept the old columns and the file described new ones. Flyway refuses
-that; so does this.
+**Where it differs from Java's Flyway**, as distinct from yoyo:
+
+- **The history table** is `ekbatan_schema_history`, with a SHA-256 checksum rather than Flyway's
+  CRC32 - so a database cannot be migrated by the Java port's Flyway and this interchangeably.
+- **Locations are required.** Flyway defaults to `classpath:db/migration`; there is no classpath
+  here to default into.
+- **The lock waits for as long as it takes.** Flyway gives up after 50 one-second retries by
+  default (`lockRetryCount`), which crashes every replica waiting behind a longer migration.
+- **One connection.** Flyway on PostgreSQL, by default, holds its lock in a transaction on one
+  connection and runs the migration on another - so a migrator killed mid-statement has its lock
+  dropped at once while its statement runs on, and that transaction-held lock also makes
+  `CREATE INDEX CONCURRENTLY` wait on it forever. Both measured. Here neither can happen; and on
+  PostgreSQL 14 and later a killed migrator's statement is cancelled within a second
+  (`client_connection_check_interval`), so the next process does not wait for it to finish.
+- **A replica is refused** - `pg_is_in_recovery()`, `read_only`, `super_read_only` - before
+  anything else. Flyway migrates whatever the url reaches.
+- **A misnamed `.sql` file is refused.** Flyway skips it by default, and it never runs.
+- **`shards=`** picks a subset of the layout; Java does the same by passing some of `targets(...)`.
+- **Not here:** repeatable (`R__`) and undo migrations, a baseline, a target version,
+  placeholders, callbacks, migrations in code, and `customize`.
 
 ## The Redis lock is `SET NX PX` on redis-py, not Redisson
 
@@ -1466,7 +1489,7 @@ rather than the name.
 | module | what | why there is no Java one |
 | --- | --- | --- |
 | `accounting.py` | counts statements issued, so "one unit of work is one transaction, N staged rows is one statement" is checkable | Java asserts the same claims through jOOQ's execute listener in its own tests, not through a shipped module |
-| `schema.py` | the framework's tables as SQLAlchemy metadata | Java's DDL lives in the Flyway migration SQL; there is no programmatic table definition to port. This is the definition Alembic generates from, and the one the cross-compatibility scenarios check |
+| `schema.py` | the framework's tables as SQLAlchemy metadata | Java's DDL lives in the Flyway migration SQL; there is no programmatic table definition to port. This is the definition `emit_ddl` generates migrations from, and the one the cross-compatibility scenarios check |
 | `codegen.py` | generates typed builders | Java's annotation processor does this at compile time; the processor itself is `n/a` in the ledger |
 
 ## Not ported

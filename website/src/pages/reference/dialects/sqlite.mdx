@@ -60,20 +60,20 @@ user to grant anything to. `ATTACH` is the nearest thing to a second schema and 
 per-connection rather than per-database, so leave every table unqualified.
 
 ```
-migrations/versions/
-  0001_eventlog.py          # events + event_notifications
-  0002_scheduled_tasks.py   # only if you run distributed jobs or in-process handlers
-  0003_wallets.py           # your domain tables
+migrations/
+  V0001__eventlog.sql           # events + event_notifications
+  V0002__scheduled_tasks.sql    # only if you run distributed jobs or in-process handlers
+  V0003__wallets.sql            # your domain tables
 ```
 
-Keep the revisions split anyway. The reason is not this database - it is that the first two move
+Keep the files split anyway. The reason is not this database - it is that the first two move
 when you upgrade the framework and the third when your domain does, which is still true here.
 
 ## Framework tables
 
 Three, and only the first is always required. The DDL is generated rather than transcribed -
 [Framework tables](/reference/tables/) has it per dialect, and `emit_ddl(metadata, "sqlite")` prints it
-for your own revision.
+for your own migration.
 
 | Table | Needed when | Page |
 |---|---|---|

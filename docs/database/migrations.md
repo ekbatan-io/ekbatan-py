@@ -2,75 +2,181 @@
 
 How the schema gets into every database, including the shards, before anything opens a pool.
 
-The migrations themselves are **[Alembic](https://alembic.sqlalchemy.org)**'s - SQLAlchemy's own
-migration tool, by the same author. Nothing here reimplements ordering, the revision graph,
-transactional DDL, autogenerate or the CLI. What this framework adds is two things Alembic
-leaves to you: driving it as a library so one call migrates every shard, and a checksum guard
-so an edited migration is caught rather than skipped.
+Migrations are **plain SQL files**, named the way Flyway names them. They are run by
+**[yoyo](https://ollycope.com/software/yoyo/)**, used as a library, so an application migrates
+itself at startup with no external binary and no config file to find. What this framework adds on
+top is everything yoyo alone gets wrong for a service that runs in more than one process: a real
+lock, checks that the files match what each database has applied, and a history that is written
+in the same transaction as the migration. Java's counterpart is `FlywayMigrator`.
 
 ```
 uv add ekbatan[migrations]
 ```
 
-## Alembic as a library, not as a binary
+## One call, every shard
 
 ```python
 from ekbatan.migrations import migrate
 
-migrate(layout, "migrations")          # every shard, in order, fail-fast
+migrate(layout, "migrations")                     # every shard, in order, one at a time
+migrate(layout, MIGRATIONS, shards=[MEXICO])      # some
 ```
 
-There is **no `alembic.ini` and no `env.py`.** The `Config` is built in memory from the same
-`ShardingConfig` the framework routes from, so an application migrates itself at startup with no
-external binary and no config file to locate.
+Each shard's `primaryConfig` is migrated - the replica follows it, and any other named config on
+the member is a pool onto the same schema. Shards go **one at a time, in configuration order**,
+and the run stops at the first failure, naming the shard **and what had already been migrated** -
+half a migrated cluster is a state an operator has to reason about, and the database's own error
+only names a connection. A shard in `shards=` that the configuration does not have is **refused**,
+not skipped: a typo in a shard list should not quietly migrate nothing.
 
-That is not a stylistic preference. A config file that has to be found is a config file that is
-missing in the one environment you did not test, and `env.py` is where a project's database url
-usually gets hardcoded twice.
+It returns a `Result` per shard: the target, and what migrating it did - the version before, the
+version after, the files applied and any warnings.
+
+The rest of Java's `FlywayMigrator` is here too, under the same names:
 
 ```python
-migrate(layout, MIGRATIONS)                        # all shards
-migrate(layout, MIGRATIONS, shards=[MEXICO])       # some
-migrate(layout, MIGRATIONS, revision="head")       # a target; head is the default
+from ekbatan.migrations import YoyoMigrator
+
+YoyoMigrator.targets(layout)                              # a Target per member
+YoyoMigrator.migrate_data_source(config, "migrations")    # one database, outside a layout
+YoyoMigrator.builder().with_sharding_config(layout).locations("migrations").migrate()
 ```
 
-It returns the revision each shard is now at.
+## The files
 
-## Every shard, one at a time
+```
+migrations/
+  V0001__create_wallets.sql
+  V0002__add_owner_index.sql
+  V0003__backfill_currency.sql
+```
 
-Alembic upgrades one url per `Config`. `migrate` drives one per shard **sequentially**, stopping
-at the first failure and naming the shard **and what had already succeeded** - because half a
-migrated cluster is a state an operator has to reason about, and the underlying error only names
-a connection url.
+- **`V<version>__<description>.sql`.** The version is digits, optionally separated by `.` or `_`
+  (`V1.1__...` and `V1_1__...` are the same version). They run in the order of their version
+  **numbers**, so `V10` runs after `V2`, and `V1`, `V01` and `V1.0` are one version.
+- **Several statements per file** are fine: yoyo splits the file into statements itself, on every
+  database. (MySQL's `DELIMITER` is not understood, so a stored procedure body with semicolons
+  in it needs a file of its own and care.)
+- **`-- transactional: false`** as the first line runs the file outside a transaction, for a
+  statement that refuses to run inside one - PostgreSQL's `CREATE INDEX CONCURRENTLY`:
 
-Shards are visited in **configuration order**, not in the order of the `shards=` argument, so
-two callers asking for the same subset get the same sequence. An identifier that is not in the
-configuration is **refused**, not skipped: a typo in a shard list should not quietly migrate
-nothing.
+  ```sql
+  -- transactional: false
+  CREATE INDEX CONCURRENTLY ix_wallets_owner ON wallets (owner_id);
+  ```
 
-A shard added to the configuration and forgotten by the migrator is a database that accepts
-writes right up until the first one touches a column that is not there. Migrating from the same
-configuration the framework routes from is what keeps those two from drifting apart.
+- **One directory or several** - `migrate(layout, "migrations", "more_migrations")`. A
+  directory's subdirectories are not read, so a directory per dialect can sit beside another
+  without merging into it.
 
-## Checksums, which Alembic does not have
+Refused, before any database is touched:
 
-This is the one that matters, and it was measured rather than assumed.
+- a `.sql` file whose name does not match - Flyway skips one without a word, and it then never
+  runs
+- two files with the same version, in one directory or across several
+- a `.rollback.sql` file - to undo a migration that has run, add a new one that reverses it
+- a migration that is not SQL, such as `V2__backfill.py`
+- a `-- depends:` line - the order is the version order, and nothing else
 
-Alembic's `alembic_version` table holds **a single row**: the current head. There is no
-per-revision history and no record of what a revision *contained*. So editing a revision that has
-already been applied is silently accepted - the file and the database disagree, and nothing
-anywhere says so. The next environment you deploy to gets the edited version; the one already
-running does not; and the difference surfaces weeks later as a column that exists in staging and
-not in production.
+Other files - an `__init__.py` that makes the directory a package, a `README` - are left alone.
 
-Flyway refuses that outright. So does this. `migrate` records a hash of each applied revision in
-**`ekbatan_revision_checksums`** and verifies every one before it upgrades. An edited revision
-raises `MigrationError` naming the revision, rather than proceeding.
+### Checking them in CI
 
-If you *meant* to edit it - the revision has only ever run on your laptop - drop the row for that
-revision, or drop the table, and run again.
+None of that needs a database, so a test can do it:
 
-## Writing the first revision
+```python
+from ekbatan.migrations import validate_scripts
+
+
+def test_the_migration_files_pass_the_checks_a_deploy_runs():
+    validate_scripts("migrations")
+```
+
+Two files with one version, a file whose name would be skipped, a rollback file: each fails the
+build instead of the deploy. Every example has this test.
+
+## What each database has applied
+
+Each database keeps a history in **`ekbatan_schema_history`**: a row per applied migration, with
+its version, its file name, a checksum of what the file contained, when it was applied and how
+long it took. Before anything runs, the files are compared with it, and each of these is
+**refused, with nothing applied**:
+
+- **an applied migration that was edited.** The database was built by a different version of the
+  file, and nothing can know which of the two its rows match. A different line ending or a
+  byte-order mark is not an edit - a checkout that turns `\n` into `\r\n` changed nothing.
+- **an applied migration that was renamed.**
+- **an applied migration whose file is gone.**
+- **a new migration older than one already applied.** It would never run in the place its number
+  says; give it a version after the newest applied one.
+
+All of them are reported at once. One case is let through, with a warning, as Flyway lets it
+through: **a migration applied by a newer release** - newer than every file here - which is an
+older release starting against a database a newer one migrated. Refusing it would stop a rollback
+of the application from starting at all.
+
+If you *meant* to edit a migration - it has only ever run on your laptop - delete its row from
+`ekbatan_schema_history`, or drop the table, and run again.
+
+## Applying and recording
+
+**On PostgreSQL and SQLite a migration and its history row commit together.** A failure or a crash
+at any point leaves neither: the migration is rolled back as a whole, and the next run applies it
+from the start.
+
+**On MySQL and MariaDB every schema change commits on its own**, the moment it runs, whatever
+transaction it is in. No migration tool can change that - Flyway cannot either. So a migration that
+fails *after* a schema change leaves that change behind: the error says so, and the database has
+to be checked, and put right, before the migration runs again. The advice for those two databases
+is **one schema change per migration file**. A migration that only changes data is recorded
+atomically there too.
+
+A file marked `-- transactional: false` runs outside a transaction on every database, and is
+recorded once it has finished.
+
+## Several processes at once
+
+A service with several replicas, or several workers, starts several migrators at the same moment.
+Each database is locked while it is migrated, so one process migrates and the others wait, then
+find nothing left to do.
+
+- **PostgreSQL:** an advisory lock (`pg_try_advisory_lock`). Advisory locks are per database, so
+  two shards that are two databases on one server do not wait on each other.
+- **MySQL and MariaDB:** `GET_LOCK`, named with the database - their lock names are server-wide,
+  and without the database in the name two shards on one server would queue behind each other.
+- **SQLite:** an operating-system lock on a file beside the database,
+  `<database>-ekbatan-migrate.lock`. Not on Windows, where SQLite migrations are not protected
+  against each other.
+
+A waiting process **waits as long as it takes** and says so in the log every thirty seconds.
+There is no timeout to outlast: a migration that takes five minutes does not crash every replica
+waiting behind it.
+
+A migrator that dies holding the lock - killed, out of memory, its container stopped - **does
+not leave it behind**: the database drops a lock when its connection ends. On PostgreSQL 14 and
+later the server also notices within a second that the process behind a long statement has gone,
+cancels the statement and lets go of the lock, rather than finishing it first.
+
+**The lock, the migration and its history row all go through one connection**, so if that
+connection dies - a network blip, an idle-connection killer, a proxy - all three die together, and
+nothing can run a migration a second time while the first is still running. That is the failure
+this design exists to rule out; it happened, every time, when the lock was on a connection of its
+own.
+
+**Migrate over a direct connection to each shard's primary.** Session locks do not survive
+PgBouncer in transaction mode, and a proxy that sends plain `SELECT`s to replicas could send the
+lock somewhere the migration is not. Each database is checked to be a writable primary before
+anything else - `pg_is_in_recovery()` on PostgreSQL, `read_only` and `super_read_only` on MySQL
+and MariaDB - and a replica is refused rather than migrated.
+
+## What a migration's queries return
+
+A `SELECT` in a migration has its result **logged, at `INFO`, on the `ekbatan.migrations`
+logger** - as Flyway logs it - rather than printed. Turn it off with
+`migrate(..., output_query_results=False)`, or `.output_query_results(False)` on the builder: a
+migration that selects real rows logs them.
+
+## Writing the first migration
 
 The framework's own tables have to exist. You do not hand-write their DDL:
 
@@ -87,9 +193,10 @@ scheduled_tasks_table(metadata)
 print(emit_ddl(metadata, "postgresql"))
 ```
 
-Run it, read it, paste it into your first revision, **commit it**. Generated once and then owned
-by you, rather than regenerated behind your back on every deploy - which is the difference
-between a migration and a `create_all`.
+Run it, read it, save it as `V0001__schema.sql`, **commit it**. Generated once and then owned by
+you, rather than regenerated behind your back on every deploy - which is the difference between a
+migration and a `create_all`. The output is the same every time it is generated, so a diff of it
+means something.
 
 `create_all` has no answer for a column that changed, which is why the examples migrate from
 files even though they could create their schema in one line.
@@ -104,18 +211,12 @@ migrate_registry(registry, metadata)     # create_all, every shard
 
 For a throwaway database in a test. Not for anything you will have to change later.
 
-## Writing revisions by hand
+## Writing migrations by hand
 
-Ordinary Alembic revisions. Two things to know, both learned the hard way:
-
-**One statement per `op.execute()`.** PyMySQL rejects a multi-statement script, so a revision
-that works on PostgreSQL fails on MySQL with an error that names the syntax rather than the
-cause.
-
-**Use `ekbatan.schema`'s column helpers rather than raw types** - `uuid_column()`,
-`timestamp_column()`, `json_column()`. They are what make a revision portable, and they are what
-`schemagen` forces back when it reflects. `timestamp_column()` in particular pins microsecond
-precision, because MySQL's bare `DATETIME` truncates to whole seconds silently.
+Plain SQL. When you generate DDL, **use `ekbatan.schema`'s column helpers rather than raw types**
+- `uuid_column()`, `timestamp_column()`, `json_column()`. They are what make DDL portable, and they
+are what `schemagen` forces back when it reflects. `timestamp_column()` in particular pins
+microsecond precision, because MySQL's bare `DATETIME` truncates to whole seconds silently.
 
 ## Order at startup
 
@@ -128,9 +229,17 @@ if config.run_migrations:
 registry = DatabaseRegistry.from_config(layout)
 ```
 
-Whether an application migrates itself at startup or a deploy step does it first is your call.
-The examples do it at startup because it makes them runnable; a large deployment usually wants it
-as its own step, which is what `run_migrations` being a setting is for.
+Several replicas starting at once is safe - one migrates, the rest wait and find nothing to do.
+Whether an application migrates itself at startup or a deploy step does it first is still your
+call: the examples do it at startup because it makes them runnable, and a large deployment often
+runs it as its own step - a release phase, a job before the pods start - which is what
+`run_migrations` being a setting is for.
+
+## Not supported
+
+Flyway has more than this does: repeatable migrations (`R__`), undo migrations, a baseline, a
+target version, placeholders (`${...}`), callbacks, and migrations written in code. The files are
+the plain versioned kind, and that is all.
 
 ## See also
 

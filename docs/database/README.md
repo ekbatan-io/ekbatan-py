@@ -15,8 +15,8 @@ For the *concept* of the outbox - the atomic state-and-events story - see
 - **[The transaction manager](transaction-manager.md)** - transactional access outside an action
 - **[Keyed locks](keyed-locks.md)** - four backends, the reentrancy contract, and the watchdog
 - **[Sharding](sharding.md)** - configuration, the bit layout, strategies, cross-shard rules
-- **[Migrations](migrations.md)** - Alembic as a library, across every shard, with a guard
-  Flyway has and Alembic does not
+- **[Migrations](migrations.md)** - plain SQL files on yoyo, across every shard, with the lock,
+  checks and history yoyo alone does not have
 - **[Multiple dialects](multi-database.md)** - the cheatsheet, and where they disagree
   - **[PostgreSQL](postgresql.md)** · **[MySQL](mysql.md)** · **[MariaDB](mariadb.md)** ·
     **[SQLite](sqlite.md)**

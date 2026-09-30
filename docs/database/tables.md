@@ -57,7 +57,7 @@ EVENTS = outbox_table(metadata, schema="eventlog")
 ```
 
 In practice you do not write them by hand at all - `schemagen` emits them alongside your own
-tables, and `migrate()` creates them from your Alembic revisions. See
+tables, and `migrate()` creates them from your migration files. See
 [schemagen](../database/schemagen.md) and [Migrations](../database/migrations.md).
 
 On PostgreSQL a schema is a namespace inside the database. On MySQL and MariaDB "schema" and
@@ -65,7 +65,7 @@ On PostgreSQL a schema is a namespace inside the database. On MySQL and MariaDB 
 connecting user needs rights to it.
 
 In a sharded application every shard gets its own copy of all three. `migrate()` applies the same
-revisions to each.
+migration files to each.
 
 ## Getting them into your database
 
@@ -89,7 +89,7 @@ EVENTS = outbox_table(metadata, schema="eventlog")
 ```
 
 In practice you do not write them by hand at all - `schemagen` emits them alongside your own
-tables, and `migrate()` creates them from your Alembic revisions. See
+tables, and `migrate()` creates them from your migration files. See
 [schemagen](schemagen.md) and [Migrations](migrations.md).
 
 On PostgreSQL a schema is a namespace inside the database. On MySQL and MariaDB "schema" and
@@ -97,7 +97,7 @@ On PostgreSQL a schema is a namespace inside the database. On MySQL and MariaDB 
 connecting user needs rights to it.
 
 In a sharded application every shard gets its own copy of all three. `migrate()` applies the same
-revisions to each.
+migration files to each.
 
 ## See also
 

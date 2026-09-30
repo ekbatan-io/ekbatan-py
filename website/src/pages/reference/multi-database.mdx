@@ -168,7 +168,7 @@ Everything below was found by running the suite against all four, not by reading
 | **Native UUID** | PostgreSQL always; MariaDB 10.7+; MySQL never |
 | **Reflected type names** | MariaDB reports a bigint as `BIGINT(display_width=20)` and JSON as `LONGTEXT`. [`schemagen`](/reference/schemagen/) normalises both |
 | **Untyped `NULL` in a multi-row `VALUES`** | PostgreSQL infers `text` and then refuses to insert it into an integer column. The framework casts every NULL explicitly |
-| **Multi-statement scripts** | PyMySQL rejects them, so a migration is one statement per `op.execute()` |
+| **Schema changes in a transaction** | PostgreSQL and SQLite roll a failed migration back as a whole; MySQL and MariaDB commit each schema change on its own, so keep one per migration file |
 
 ## Adding a new database
 

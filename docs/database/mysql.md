@@ -29,11 +29,11 @@ init script that runs as root, before anything else connects.
 
 ```
 mysql_init.sql              # root-only GRANTs, mounted into the container at startup
-migrations/versions/
-  0000_eventlog_database.py # CREATE DATABASE IF NOT EXISTS eventlog
-  0001_eventlog.py          # events + event_notifications + their indexes
-  0002_scheduled_tasks.py   # only if you run distributed jobs or in-process handlers
-  0003_wallets.py           # your domain tables
+migrations/
+  V0000__eventlog_database.sql  # CREATE DATABASE IF NOT EXISTS eventlog
+  V0001__eventlog.sql           # events + event_notifications + their indexes
+  V0002__scheduled_tasks.sql    # only if you run distributed jobs or in-process handlers
+  V0003__wallets.sql            # your domain tables
 ```
 
 All of that is only needed if you want the framework's tables in a namespace of their own. This
@@ -63,7 +63,7 @@ services:
 
 Three, and only the first is always required. The DDL is generated rather than transcribed -
 [Framework tables](tables.md) has it per dialect, and `emit_ddl(metadata, "mysql")` prints it
-for your own revision.
+for your own migration.
 
 | Table | Needed when | Page |
 |---|---|---|
@@ -134,8 +134,10 @@ is not free here.
 to create it and an init script to grant rights - the grant cannot be in a migration, because the
 migrator connects as the user that needs granting.
 
-**One statement per `op.execute()`.** PyMySQL rejects a multi-statement script, so a revision
-that works on PostgreSQL fails here with an error naming the syntax rather than the cause.
+**One schema change per migration file.** MySQL commits every schema change on its own, the
+moment it runs, so a migration that fails after one leaves it behind, to be put right by hand
+before it runs again. One per file keeps a failure from leaving anything half-done. Several
+statements in one file are otherwise fine: the migrator splits a file itself.
 
 **Set the container timezone to UTC.** `TZ=UTC`, or `serverTimezone=UTC` on the url. Without it,
 `DATETIME` columns shift silently between write and read.

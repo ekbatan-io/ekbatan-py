@@ -78,7 +78,7 @@ honest proxy, and the status is about the *content* rather than the file.
 | learn/sharding.mdx | 242 | 9 | same | 203 | 12 | done - six steps including the cross-shard transfer |
 | learn/sharding-strategies.mdx | 100 | 8 | same | 116 | 8 | done - a subsection per strategy |
 | learn/sagas.mdx | 181 | 7 | same | 134 | 8 | done - design rules added |
-| learn/complete-project-setup.mdx | 3085 | 20 | same | 661 | 16 | done - Java's 20 sections in 16: its 5a-5d are Flyway file variants, one Alembic file here |
+| learn/complete-project-setup.mdx | 3085 | 20 | same | 661 | 16 | done - Java's 20 sections in 16: its 5a-5d are Flyway file variants, and so are these - `V0001`-`V0003` SQL files |
 | learn/native-image.mdx | 338 | - | - | - | - | n/a - GraalVM |
 | - | - | - | `learn/install.mdx` | 94 | 4 | done - no Java counterpart at this size; Java's install lives inside complete-project-setup |
 | - | - | - | `learn/wiring-a-service.mdx` | 140 | 5 | done |

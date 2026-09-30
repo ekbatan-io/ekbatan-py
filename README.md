@@ -60,7 +60,7 @@ uv add ekbatan[postgres]          # or [mysql], or [mariadb]
 ```
 
 The extras are the drivers and the optional pieces, and nothing you do not ask for is installed.
-`postgres` brings psycopg 3, `mysql` and `mariadb` bring PyMySQL, `migrations` brings Alembic,
+`postgres` brings psycopg 3, `mysql` and `mariadb` bring PyMySQL, `migrations` brings yoyo,
 `redis` brings the Redis-backed keyed lock, and `codegen` brings what `schemagen` needs to start
 a container at build time - a development dependency, not a runtime one:
 
@@ -104,8 +104,9 @@ transaction is the worst thing you could do to this design.
 
 Table definitions are generated with `python -m ekbatan.schemagen`, which starts a container,
 runs your migrations into it and reflects the result - the counterpart to Java's jOOQ step.
-Postgres via psycopg 3, MySQL and MariaDB via PyMySQL. Migrations with Alembic, driven as a
-library rather than from an `alembic.ini`, so one call migrates every shard.
+Postgres via psycopg 3, MySQL and MariaDB via PyMySQL. Migrations are plain SQL files run by yoyo
+as a library, with a database lock, checks and a history on top, so one call migrates every
+shard - safely, from any number of processes at once.
 
 ## What is here
 
@@ -119,7 +120,7 @@ library rather than from an `alembic.ini`, so one call migrates every shard.
 | **keyed locks** | in-process, Postgres advisory, MySQL and MariaDB `GET_LOCK`; reentrant, watchdogged |
 | **the local event handler** | fan-out and dispatch, at-least-once, capped backoff, retention |
 | **distributed jobs** | one slot, one execution, across the cluster |
-| **schema and migrations** | the framework's tables as metadata, DDL per dialect, Alembic across every shard |
+| **schema and migrations** | the framework's tables as metadata, DDL per dialect, SQL migrations across every shard |
 | **statement accounting** | so the cost claims are checkable rather than asserted |
 | **test support** | `ActionSpec` / `ActionAssert` run a unit of work against a bare plan, with no database - Java's, method for method |
 | **typed builders** | `python -m ekbatan.codegen` - the one thing Python cannot infer |

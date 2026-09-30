@@ -66,10 +66,10 @@ repository, HTTP layer. Four things differ, and each is a real difference rather
 That list is the answer to "why not one project with a different url". Three of the four are
 code, not configuration, and the fourth is a whole file.
 
-**One statement per `op.execute`** in the migration, for a reason worth knowing: PyMySQL
-executes a single statement per call and rejects a script, while psycopg accepts one. A
-migration written as one block works on PostgreSQL and fails on MySQL and MariaDB with a syntax
-error pointing at the second `CREATE TABLE`.
+**One schema change per migration file on MySQL and MariaDB**, for a reason worth knowing: they
+commit every schema change on its own, so a migration that fails after one leaves it behind, to
+be put right by hand before it runs again - where PostgreSQL rolls the whole file back. Several
+statements in one file are otherwise fine; the migrator splits a file itself.
 
 ## What to look at
 

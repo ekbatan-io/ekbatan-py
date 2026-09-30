@@ -137,13 +137,13 @@ if config.run_migrations:
     migrate(layout, MIGRATIONS)
 ```
 
-Every shard, one at a time, fail-fast. `migrate` drives Alembic as a **library** - there is no
-`alembic.ini` and no `env.py`, because a config file that has to be found is a config file that
-is missing in the one environment you did not test.
+Every shard, one at a time, fail-fast. `migrate` runs plain SQL files through yoyo as a
+**library** - there is no config file and no binary, because a config file that has to be found is
+a config file that is missing in the one environment you did not test.
 
-It also refuses to run if a revision that was already applied has since been edited. Alembic does
-not check that; Flyway does, and losing the check on the way across would have been a silent
-downgrade. See [Migrations](/reference/migrations/).
+It refuses to run if an applied migration has since been edited, renamed or deleted, or if a new
+one is older than one already applied - as Flyway refuses. Several replicas starting at once is
+safe: each database is locked while it is migrated, one process migrates and the rest wait. See [Migrations](/reference/migrations/).
 
 Ordering matters: run this before anything opens a pool against a schema that may not exist yet.
 

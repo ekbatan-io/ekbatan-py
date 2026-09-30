@@ -27,7 +27,7 @@ uv add ekbatan[mariadb]
 
 Three, and only the first is always required. The DDL is generated rather than transcribed -
 [Framework tables](/reference/tables/) has it per dialect, and `emit_ddl(metadata, "mariadb")` prints it
-for your own revision.
+for your own migration.
 
 | Table | Needed when | Page |
 |---|---|---|
@@ -89,11 +89,11 @@ init script that runs as root, before anything else connects.
 
 ```
 mariadb_init.sql              # root-only GRANTs, mounted into the container at startup
-migrations/versions/
-  0000_eventlog_database.py # CREATE DATABASE IF NOT EXISTS eventlog
-  0001_eventlog.py          # events + event_notifications + their indexes
-  0002_scheduled_tasks.py   # only if you run distributed jobs or in-process handlers
-  0003_wallets.py           # your domain tables
+migrations/
+  V0000__eventlog_database.sql  # CREATE DATABASE IF NOT EXISTS eventlog
+  V0001__eventlog.sql           # events + event_notifications + their indexes
+  V0002__scheduled_tasks.sql    # only if you run distributed jobs or in-process handlers
+  V0003__wallets.sql            # your domain tables
 ```
 
 All of that is only needed if you want the framework's tables in a namespace of their own. This
@@ -150,7 +150,7 @@ That is why there is a separate provider class for a backend that issues identic
 
 **`DATETIME(6)`, not `TIMESTAMP`**, and not bare `DATETIME`. Same reasoning as MySQL.
 
-**One statement per `op.execute()`**, and **`TZ=UTC` on the server**. Same as MySQL.
+**One schema change per migration file**, and **`TZ=UTC` on the server**. Same as MySQL.
 
 ## See also
 

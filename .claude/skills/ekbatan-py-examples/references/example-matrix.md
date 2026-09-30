@@ -29,7 +29,7 @@ actions.py        the units of work
 repository.py     the queries this application actually asks
 handlers.py       the in-process event handlers
 jobs.py           the distributed jobs
-migrations/       Alembic revisions - the input to schemagen
+migrations/       V<version>__<desc>.sql files - migrated at startup, and the input to schemagen
 schema.py         GENERATED, gitignored. Never commit or edit
 ```
 

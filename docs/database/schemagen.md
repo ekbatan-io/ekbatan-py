@@ -11,7 +11,7 @@ uv run python -m ekbatan.schemagen --migrations migrations --out myapp/schema.py
 
 | | |
 | --- | --- |
-| `--migrations` | your Alembic directory |
+| `--migrations` | your migrations directory - `V<version>__<description>.sql` files |
 | `--out` | the module to write |
 | `--url` | an existing database to migrate and reflect, instead of starting one |
 | `--image` | the container image; the family decides which container starts |
@@ -40,7 +40,7 @@ already have in the repository; a schema is derived from a database you have to 
 fills it:
 
 ```make
-schema.py: $(wildcard migrations/versions/*.py)
+schema.py: $(wildcard migrations/*.sql)
 	uv run python -m ekbatan.schemagen --migrations migrations --out schema.py --image $(IMAGE)
 
 test: schema.py

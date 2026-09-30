@@ -25,8 +25,9 @@ wallet/
 ├─ Makefile
 ├─ pyproject.toml
 ├─ migrations/
-│  ├─ env.py
-│  └─ versions/0001_initial.py
+│  ├─ V0001__eventlog.sql
+│  ├─ V0002__scheduled_tasks.sql
+│  └─ V0003__wallets.sql
 ├─ wallet/
 │  ├─ __init__.py
 │  ├─ model.py          the domain
@@ -337,9 +338,9 @@ transaction wrote.
 
 ## 5. Add a migration
 
-Alembic runs every revision in `migrations/versions/`, in `down_revision` order, and the schema
-generator (step 6) replays the same revisions against a throwaway container to discover the
-schema. **The framework does not ship its tables as a bundled migration** — you write them, or
+Migrations are plain SQL files in `migrations/`, named `V<version>__<description>.sql` and run in
+the order of their version numbers, and the schema generator (step 6) replays the same files
+against a throwaway container to discover the schema. **The framework does not ship its tables as a bundled migration** — you write them, or
 copy one verbatim out of any
 [`ekbatan-py-examples/*`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples).
 
@@ -348,15 +349,15 @@ connection decides your schema, your naming and your deploy order for you, and t
 the review that every other table goes through. These are your tables; the framework only tells
 you what shape they have to be.
 
-Revisions this guide ends up with:
+Files this guide ends up with:
 
-| Revision | What it is |
+| File | What it is |
 |---|---|
-| `0001_eventlog` | the framework's outbox tables — `events` and `event_notifications` |
-| `0002_scheduled_tasks` | the scheduler's table; the in-process event handlers depend on it |
-| `0003_wallets` | your domain tables |
+| `V0001__eventlog.sql` | the framework's outbox tables — `events` and `event_notifications` |
+| `V0002__scheduled_tasks.sql` | the scheduler's table; the in-process event handlers depend on it |
+| `V0003__wallets.sql` | your domain tables |
 
-Three revisions rather than one because they change for different reasons and at different
+Three files rather than one because they change for different reasons and at different
 times: the first two move when you upgrade the framework, the third moves whenever your domain
 does. Squashing them into one file works, and the first framework upgrade is where you find out
 why it was a bad idea.
@@ -406,7 +407,7 @@ rather than per-database. Leave the tables unqualified.
 The rest of this section shows them unqualified, which is what you want unless a DBA has told
 you otherwise.
 
-### 5b. `0001_eventlog` — the framework's outbox tables
+### 5b. `V0001__eventlog.sql` — the framework's outbox tables
 
 Two tables. `events` is the outbox itself; `event_notifications` holds one row per
 (event, handler) and is what the in-process dispatcher marks off as it goes. Generate both rather
@@ -426,30 +427,30 @@ print(emit_ddl(metadata, "postgresql"))    # or "mysql", "mariadb", "sqlite"
 
 <div data-db="pg">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE events (
-            id             UUID         NOT NULL,
-            namespace      VARCHAR(255) NOT NULL,
-            action_id      UUID         NOT NULL,
-            action_name    VARCHAR(255) NOT NULL,
-            action_params  JSONB        NOT NULL,
-            started_date   TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-            completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-            model_id       VARCHAR(255),
-            model_type     VARCHAR(255),
-            event_type     VARCHAR(255),
-            payload        JSONB,
-            event_date     TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-            delivered      BOOLEAN      NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
-    op.execute("CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)")
-    op.execute("CREATE INDEX ix_events_action_id ON events (action_id)")
-    # ... event_notifications, same shape plus event_id, handler_name, state, attempts,
-    #     next_retry_at, and a UNIQUE (event_id, handler_name)
+```sql
+CREATE TABLE events (
+    id             UUID         NOT NULL,
+    namespace      VARCHAR(255) NOT NULL,
+    action_id      UUID         NOT NULL,
+    action_name    VARCHAR(255) NOT NULL,
+    action_params  JSONB        NOT NULL,
+    started_date   TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    model_id       VARCHAR(255),
+    model_type     VARCHAR(255),
+    event_type     VARCHAR(255),
+    payload        JSONB,
+    event_date     TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    delivered      BOOLEAN      NOT NULL,
+    PRIMARY KEY (id)
+);
+
+CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+
+CREATE INDEX ix_events_action_id ON events (action_id);
+
+-- ... event_notifications, same shape plus event_id, handler_name, state, attempts,
+--     next_retry_at, and a UNIQUE (event_id, handler_name)
 ```
 
 `JSONB`, not `JSON`: a consumer binds to the column type, and jsonb is queryable where json is a
@@ -459,28 +460,27 @@ writes.
 </div>
 <div data-db="mysql">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE events (
-            id             CHAR(36)     NOT NULL,
-            namespace      VARCHAR(255) NOT NULL,
-            action_id      CHAR(36)     NOT NULL,
-            action_name    VARCHAR(255) NOT NULL,
-            action_params  JSON         NOT NULL,
-            started_date   DATETIME(6)  NOT NULL,
-            completion_date DATETIME(6) NOT NULL,
-            model_id       VARCHAR(255),
-            model_type     VARCHAR(255),
-            event_type     VARCHAR(255),
-            payload        JSON,
-            event_date     DATETIME(6)  NOT NULL,
-            delivered      BOOL         NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
-    op.execute("CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)")
-    op.execute("CREATE INDEX ix_events_action_id ON events (action_id)")
+```sql
+CREATE TABLE events (
+    id             CHAR(36)     NOT NULL,
+    namespace      VARCHAR(255) NOT NULL,
+    action_id      CHAR(36)     NOT NULL,
+    action_name    VARCHAR(255) NOT NULL,
+    action_params  JSON         NOT NULL,
+    started_date   DATETIME(6)  NOT NULL,
+    completion_date DATETIME(6) NOT NULL,
+    model_id       VARCHAR(255),
+    model_type     VARCHAR(255),
+    event_type     VARCHAR(255),
+    payload        JSON,
+    event_date     DATETIME(6)  NOT NULL,
+    delivered      BOOL         NOT NULL,
+    PRIMARY KEY (id)
+);
+
+CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+
+CREATE INDEX ix_events_action_id ON events (action_id);
 ```
 
 `DATETIME(6)` rather than `DATETIME`, and not for precision's sake: a bare `DATETIME` truncates
@@ -489,28 +489,27 @@ to whole seconds, and `event_date` orders the outbox.
 </div>
 <div data-db="mariadb">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE events (
-            id             CHAR(36)     NOT NULL,
-            namespace      VARCHAR(255) NOT NULL,
-            action_id      CHAR(36)     NOT NULL,
-            action_name    VARCHAR(255) NOT NULL,
-            action_params  JSON         NOT NULL,
-            started_date   DATETIME(6)  NOT NULL,
-            completion_date DATETIME(6) NOT NULL,
-            model_id       VARCHAR(255),
-            model_type     VARCHAR(255),
-            event_type     VARCHAR(255),
-            payload        JSON,
-            event_date     DATETIME(6)  NOT NULL,
-            delivered      BOOL         NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
-    op.execute("CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date)")
-    op.execute("CREATE INDEX ix_events_action_id ON events (action_id)")
+```sql
+CREATE TABLE events (
+    id             CHAR(36)     NOT NULL,
+    namespace      VARCHAR(255) NOT NULL,
+    action_id      CHAR(36)     NOT NULL,
+    action_name    VARCHAR(255) NOT NULL,
+    action_params  JSON         NOT NULL,
+    started_date   DATETIME(6)  NOT NULL,
+    completion_date DATETIME(6) NOT NULL,
+    model_id       VARCHAR(255),
+    model_type     VARCHAR(255),
+    event_type     VARCHAR(255),
+    payload        JSON,
+    event_date     DATETIME(6)  NOT NULL,
+    delivered      BOOL         NOT NULL,
+    PRIMARY KEY (id)
+);
+
+CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+
+CREATE INDEX ix_events_action_id ON events (action_id);
 ```
 
 On MariaDB `JSON` is an alias for `LONGTEXT` with a check constraint — it is stored as text and
@@ -519,26 +518,23 @@ reflects back as text, which is why step 6 forces the type rather than trusting 
 </div>
 <div data-db="sqlite">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE events (
-            id             CHAR(32)     NOT NULL,
-            namespace      VARCHAR(255) NOT NULL,
-            action_id      CHAR(32)     NOT NULL,
-            action_name    VARCHAR(255) NOT NULL,
-            action_params  JSON         NOT NULL,
-            started_date   DATETIME     NOT NULL,
-            completion_date DATETIME    NOT NULL,
-            model_id       VARCHAR(255),
-            model_type     VARCHAR(255),
-            event_type     VARCHAR(255),
-            payload        JSON,
-            event_date     DATETIME     NOT NULL,
-            delivered      BOOLEAN      NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
+```sql
+CREATE TABLE events (
+    id             CHAR(32)     NOT NULL,
+    namespace      VARCHAR(255) NOT NULL,
+    action_id      CHAR(32)     NOT NULL,
+    action_name    VARCHAR(255) NOT NULL,
+    action_params  JSON         NOT NULL,
+    started_date   DATETIME     NOT NULL,
+    completion_date DATETIME    NOT NULL,
+    model_id       VARCHAR(255),
+    model_type     VARCHAR(255),
+    event_type     VARCHAR(255),
+    payload        JSON,
+    event_date     DATETIME     NOT NULL,
+    delivered      BOOLEAN      NOT NULL,
+    PRIMARY KEY (id)
+);
 ```
 
 SQLite stores a uuid as 32 hex characters with no dashes, which is what SQLAlchemy's `Uuid` type
@@ -553,7 +549,7 @@ deliberately does not carry. And `delivered` is the outbox's only mutable column
 the consumer, and a producer that flips it loses the event for every consumer that had not read
 it yet. See [`events`](/reference/tables/events/) for every column.
 
-### 5c. `0002_scheduled_tasks` — the scheduler's table
+### 5c. `V0002__scheduled_tasks.sql` — the scheduler's table
 
 The distributed job scheduler needs one table, and the in-process event dispatcher is built on
 the scheduler, so you need it even if you never write a job of your own:
@@ -564,80 +560,78 @@ from ekbatan.schema import scheduled_tasks_table
 
 <div data-db="pg">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE scheduled_tasks (
-            task_name            VARCHAR(100) NOT NULL,
-            task_instance        VARCHAR(100) NOT NULL,
-            task_data            BYTEA,
-            execution_time       TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-            picked               BOOLEAN      NOT NULL,
-            picked_by            VARCHAR(50),
-            last_success         TIMESTAMP WITHOUT TIME ZONE,
-            last_failure         TIMESTAMP WITHOUT TIME ZONE,
-            consecutive_failures INTEGER,
-            last_heartbeat       TIMESTAMP WITHOUT TIME ZONE,
-            version              BIGINT       NOT NULL,
-            priority             SMALLINT,
-            PRIMARY KEY (task_name, task_instance)
-        )
-    """)
-    op.execute("CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)")
-    op.execute("CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)")
-    op.execute("CREATE INDEX scheduled_tasks_priority_execution_time_idx ON scheduled_tasks (priority, execution_time)")
+```sql
+CREATE TABLE scheduled_tasks (
+    task_name            VARCHAR(100) NOT NULL,
+    task_instance        VARCHAR(100) NOT NULL,
+    task_data            BYTEA,
+    execution_time       TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    picked               BOOLEAN      NOT NULL,
+    picked_by            VARCHAR(50),
+    last_success         TIMESTAMP WITHOUT TIME ZONE,
+    last_failure         TIMESTAMP WITHOUT TIME ZONE,
+    consecutive_failures INTEGER,
+    last_heartbeat       TIMESTAMP WITHOUT TIME ZONE,
+    version              BIGINT       NOT NULL,
+    priority             SMALLINT,
+    PRIMARY KEY (task_name, task_instance)
+);
+
+CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
+
+CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
+
+CREATE INDEX scheduled_tasks_priority_execution_time_idx ON scheduled_tasks (priority, execution_time);
 ```
 
 </div>
 <div data-db="mysql">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE scheduled_tasks (
-            task_name            VARCHAR(100) NOT NULL,
-            task_instance        VARCHAR(100) NOT NULL,
-            task_data            BLOB,
-            execution_time       DATETIME(6)  NOT NULL,
-            picked               BOOL         NOT NULL,
-            picked_by            VARCHAR(50),
-            last_success         DATETIME(6),
-            last_failure         DATETIME(6),
-            consecutive_failures INTEGER,
-            last_heartbeat       DATETIME(6),
-            version              BIGINT       NOT NULL,
-            priority             SMALLINT,
-            PRIMARY KEY (task_name, task_instance)
-        )
-    """)
-    op.execute("CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)")
-    op.execute("CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)")
+```sql
+CREATE TABLE scheduled_tasks (
+    task_name            VARCHAR(100) NOT NULL,
+    task_instance        VARCHAR(100) NOT NULL,
+    task_data            BLOB,
+    execution_time       DATETIME(6)  NOT NULL,
+    picked               BOOL         NOT NULL,
+    picked_by            VARCHAR(50),
+    last_success         DATETIME(6),
+    last_failure         DATETIME(6),
+    consecutive_failures INTEGER,
+    last_heartbeat       DATETIME(6),
+    version              BIGINT       NOT NULL,
+    priority             SMALLINT,
+    PRIMARY KEY (task_name, task_instance)
+);
+
+CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
+
+CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
 ```
 
 </div>
 <div data-db="mariadb">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE scheduled_tasks (
-            task_name            VARCHAR(100) NOT NULL,
-            task_instance        VARCHAR(100) NOT NULL,
-            task_data            BLOB,
-            execution_time       DATETIME(6)  NOT NULL,
-            picked               BOOL         NOT NULL,
-            picked_by            VARCHAR(50),
-            last_success         DATETIME(6),
-            last_failure         DATETIME(6),
-            consecutive_failures INTEGER,
-            last_heartbeat       DATETIME(6),
-            version              BIGINT       NOT NULL,
-            priority             SMALLINT,
-            PRIMARY KEY (task_name, task_instance)
-        )
-    """)
-    op.execute("CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)")
-    op.execute("CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)")
+```sql
+CREATE TABLE scheduled_tasks (
+    task_name            VARCHAR(100) NOT NULL,
+    task_instance        VARCHAR(100) NOT NULL,
+    task_data            BLOB,
+    execution_time       DATETIME(6)  NOT NULL,
+    picked               BOOL         NOT NULL,
+    picked_by            VARCHAR(50),
+    last_success         DATETIME(6),
+    last_failure         DATETIME(6),
+    consecutive_failures INTEGER,
+    last_heartbeat       DATETIME(6),
+    version              BIGINT       NOT NULL,
+    priority             SMALLINT,
+    PRIMARY KEY (task_name, task_instance)
+);
+
+CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
+
+CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
 ```
 
 </div>
@@ -652,87 +646,75 @@ SQLite can give you — see step 4.
 `VARCHAR(100)`, not 255, and `priority` is not optional. Both are the scheduler's own definition,
 and a hand-written second copy of this table has a way of drifting from it until an insert fails.
 
-### 5d. `0003_wallets` — your domain tables
+### 5d. `V0003__wallets.sql` — your domain tables
 
 Your tables are yours; the framework only requires the columns that make a model a model.
 
 <div data-db="pg">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE wallets (
-            id           UUID          NOT NULL,
-            version      BIGINT        NOT NULL,
-            state        VARCHAR(24)   NOT NULL,
-            owner_id     UUID          NOT NULL,
-            currency     VARCHAR(3)    NOT NULL,
-            balance      NUMERIC(19,4) NOT NULL,
-            created_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-            updated_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
+```sql
+CREATE TABLE wallets (
+    id           UUID          NOT NULL,
+    version      BIGINT        NOT NULL,
+    state        VARCHAR(24)   NOT NULL,
+    owner_id     UUID          NOT NULL,
+    currency     VARCHAR(3)    NOT NULL,
+    balance      NUMERIC(19,4) NOT NULL,
+    created_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    updated_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    PRIMARY KEY (id)
+);
 ```
 
 </div>
 <div data-db="mysql">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE wallets (
-            id           CHAR(36)      NOT NULL,
-            version      BIGINT        NOT NULL,
-            state        VARCHAR(24)   NOT NULL,
-            owner_id     CHAR(36)      NOT NULL,
-            currency     VARCHAR(3)    NOT NULL,
-            balance      DECIMAL(19,4) NOT NULL,
-            created_date DATETIME(6)   NOT NULL,
-            updated_date DATETIME(6)   NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
+```sql
+CREATE TABLE wallets (
+    id           CHAR(36)      NOT NULL,
+    version      BIGINT        NOT NULL,
+    state        VARCHAR(24)   NOT NULL,
+    owner_id     CHAR(36)      NOT NULL,
+    currency     VARCHAR(3)    NOT NULL,
+    balance      DECIMAL(19,4) NOT NULL,
+    created_date DATETIME(6)   NOT NULL,
+    updated_date DATETIME(6)   NOT NULL,
+    PRIMARY KEY (id)
+);
 ```
 
 </div>
 <div data-db="mariadb">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE wallets (
-            id           CHAR(36)      NOT NULL,
-            version      BIGINT        NOT NULL,
-            state        VARCHAR(24)   NOT NULL,
-            owner_id     CHAR(36)      NOT NULL,
-            currency     VARCHAR(3)    NOT NULL,
-            balance      DECIMAL(19,4) NOT NULL,
-            created_date DATETIME(6)   NOT NULL,
-            updated_date DATETIME(6)   NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
+```sql
+CREATE TABLE wallets (
+    id           CHAR(36)      NOT NULL,
+    version      BIGINT        NOT NULL,
+    state        VARCHAR(24)   NOT NULL,
+    owner_id     CHAR(36)      NOT NULL,
+    currency     VARCHAR(3)    NOT NULL,
+    balance      DECIMAL(19,4) NOT NULL,
+    created_date DATETIME(6)   NOT NULL,
+    updated_date DATETIME(6)   NOT NULL,
+    PRIMARY KEY (id)
+);
 ```
 
 </div>
 <div data-db="sqlite">
 
-```python
-def upgrade() -> None:
-    op.execute("""
-        CREATE TABLE wallets (
-            id           CHAR(32)      NOT NULL,
-            version      BIGINT        NOT NULL,
-            state        VARCHAR(24)   NOT NULL,
-            owner_id     CHAR(32)      NOT NULL,
-            currency     VARCHAR(3)    NOT NULL,
-            balance      NUMERIC(19,4) NOT NULL,
-            created_date DATETIME      NOT NULL,
-            updated_date DATETIME      NOT NULL,
-            PRIMARY KEY (id)
-        )
-    """)
+```sql
+CREATE TABLE wallets (
+    id           CHAR(32)      NOT NULL,
+    version      BIGINT        NOT NULL,
+    state        VARCHAR(24)   NOT NULL,
+    owner_id     CHAR(32)      NOT NULL,
+    currency     VARCHAR(3)    NOT NULL,
+    balance      NUMERIC(19,4) NOT NULL,
+    created_date DATETIME      NOT NULL,
+    updated_date DATETIME      NOT NULL,
+    PRIMARY KEY (id)
+);
 ```
 
 </div>
@@ -742,17 +724,31 @@ and `state` is how a soft-deleted row stays readable. `created_date` is required
 the row - pass `self.clock.now()` - and `updated_date` falls back to it until you move it. A `balance` is `NUMERIC`/`DECIMAL` and never a float — see
 [Models and entities](/reference/model/).
 
-### One statement per `op.execute`
+### What goes in a file
 
-Not for tidiness. PyMySQL executes a single statement per call and rejects a script; psycopg
-accepts one. A revision written as one multi-statement block therefore works on PostgreSQL and
-fails on MySQL and MariaDB with a syntax error pointing at the second `CREATE TABLE` — which is
-the kind of difference that makes these separate example projects rather than one project with a
-different url.
+Several statements per file are fine: the migrator splits a file into statements itself, on every
+database. A statement that refuses to run inside a transaction — PostgreSQL's
+`CREATE INDEX CONCURRENTLY` — goes in a file of its own that says so on its first line:
 
-Generate, paste, commit. Then edit `schema.py`, regenerate, and paste the *difference* into a new
-revision — never make a revision read today's `schema.py`, or it quietly changes meaning every
-time a column is added.
+```sql
+-- transactional: false
+CREATE INDEX CONCURRENTLY ix_wallets_owner ON wallets (owner_id);
+```
+
+Generate, save, commit. Then edit `schema.py`, regenerate, and put the *difference* in the next
+file — never edit a file that has already run, or make one read today's `schema.py`. The migrator
+records a checksum of every file it applies and refuses to run when an applied file has changed,
+been renamed or gone missing, or when a new file's version is older than one already applied;
+the same checks on the names run without a database, so a test can catch two files with one
+version in CI:
+
+```python
+from ekbatan.migrations import validate_scripts
+
+
+def test_the_migration_files_pass_the_checks_a_deploy_runs():
+    validate_scripts("migrations")
+```
 
 ### Running them
 
@@ -767,9 +763,10 @@ migrate(layout, MIGRATIONS)          # before anything opens a pool
 `migrate` takes the `ShardingConfig` itself rather than a url, so the coordinates are not copied
 into a second migration-specific block that can drift from the one the application reads. **This
 is the same shape for one database or many.** Here there is one shard, so it runs once; in a
-sharded application the same call runs the same revisions against every member's primary, one at
-a time and fail-fast — carrying on past a failure turns one broken database into several. It
-returns the revision each shard ended on.
+sharded application the same call runs the same files against every member's primary, one at a
+time and fail-fast — carrying on past a failure turns one broken database into several. It
+returns a result per shard: the version it was on, the version it is on now, and the files it
+applied.
 
 Rolling out to a subset is the deliberate act:
 
@@ -879,7 +876,7 @@ lint:  ; uv run mypy wallet && uv run ruff check .
 ```make
 IMAGE := postgres:17-alpine
 
-wallet/schema.py: $(wildcard migrations/versions/*.py)
+wallet/schema.py: $(wildcard migrations/*.sql)
 	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
 
 .PHONY: run test lint
@@ -894,7 +891,7 @@ lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
 ```make
 IMAGE := mysql:8.4
 
-wallet/schema.py: $(wildcard migrations/versions/*.py)
+wallet/schema.py: $(wildcard migrations/*.sql)
 	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
 
 .PHONY: run test lint
@@ -909,7 +906,7 @@ lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
 ```make
 IMAGE := mariadb:11.4
 
-wallet/schema.py: $(wildcard migrations/versions/*.py)
+wallet/schema.py: $(wildcard migrations/*.sql)
 	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
 
 .PHONY: run test lint

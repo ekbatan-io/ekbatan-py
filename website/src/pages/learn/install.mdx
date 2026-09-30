@@ -27,7 +27,7 @@ Everything optional is an extra, and nothing you do not name is installed:
 |---|---|---|
 | `postgres` | psycopg 3 | your dialect |
 | `mysql`, `mariadb` | PyMySQL | your dialect |
-| `migrations` | Alembic | you want migrations run across every shard |
+| `migrations` | yoyo | you want SQL migrations run across every shard |
 | `redis` | redis-py | the Redis keyed lock rather than the SQL one |
 | `codegen` | testcontainers | **development only** — see below |
 
@@ -77,7 +77,7 @@ gap against Gradle — is a **dependency graph**: something that knows `schema.p
 `migrations/` and rebuilds it when they change.
 
 ```make
-schema.py: $(wildcard migrations/versions/*.py)
+schema.py: $(wildcard migrations/*.sql)
 	uv run python -m ekbatan.schemagen --migrations migrations --out $@
 
 lint: schema.py

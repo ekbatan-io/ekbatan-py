@@ -22,7 +22,7 @@ The same application three times, differing only by database - the counterpart t
 | [`fastapi_wallet_rest_mysql/`](fastapi_wallet_rest_mysql/) | MySQL |
 | [`fastapi_wallet_rest_mariadb/`](fastapi_wallet_rest_mariadb/) | MariaDB |
 
-REST endpoints, Alembic migrations from files, three separate connection pools, and a keyed lock
+REST endpoints, SQL migrations from files, three separate connection pools, and a keyed lock
 around the deposit endpoint. The domain is byte-identical across all three; **four things
 differ** and each is a real difference rather than a setting:
 
@@ -31,9 +31,9 @@ differ** and each is a real difference rather than a setting:
 - the **migration DDL** - native `UUID`/`JSONB` against `CHAR(36)`/`JSON`
 - the **test container**
 
-And one that only shows up when you run it: PyMySQL executes a single statement per call and
-rejects a script, where psycopg accepts one. A migration written as one block passes on
-PostgreSQL and fails on the other two.
+And one that only shows up when a migration fails half-way: MySQL and MariaDB commit each schema
+change on its own, so a migration that fails after one leaves it behind, where PostgreSQL rolls
+the whole file back.
 
 ## Outside the matrix
 
