@@ -37,6 +37,7 @@ from ekbatan import (
     DatabaseRegistry,
     RepositoryRegistry,
     ShardingConfig,
+    SingleTableJsonEventPersister,
     engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
@@ -125,31 +126,39 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
     config = settings or Settings()
     running = clock or SystemClock()
 
-    layout = ShardingConfig(
-        default_shard=DEFAULT_SHARD,
-        groups=(
-            ShardGroupConfig(
-                group=0,
-                name="global",
-                members=(
-                    ShardMemberConfig(
-                        member=0,
-                        name="global",
-                        configs={
-                            "primaryConfig": DataSourceConfig(
-                                url=config.url, pool_size=config.pool_size
-                            ),
-                            "jobsConfig": DataSourceConfig(
-                                url=config.url, pool_size=config.job_pool_size
-                            ),
-                            "lockConfig": DataSourceConfig(
-                                url=config.url, pool_size=config.lock_pool_size
-                            ),
-                        },
-                    ),
-                ),
-            ),
-        ),
+    layout = (
+        ShardingConfig.builder()
+        .default_shard(DEFAULT_SHARD)
+        .with_group(
+            ShardGroupConfig.builder()
+            .group(0)
+            .name("global")
+            .with_member(
+                ShardMemberConfig.builder()
+                .member(0)
+                .name("global")
+                .primary_config(
+                    DataSourceConfig.builder().url(config.url).pool_size(config.pool_size).build()
+                )
+                .with_config(
+                    "jobsConfig",
+                    DataSourceConfig.builder()
+                    .url(config.url)
+                    .pool_size(config.job_pool_size)
+                    .build(),
+                )
+                .with_config(
+                    "lockConfig",
+                    DataSourceConfig.builder()
+                    .url(config.url)
+                    .pool_size(config.lock_pool_size)
+                    .build(),
+                )
+                .build()
+            )
+            .build()
+        )
+        .build()
     )
 
     if config.run_migrations:
@@ -170,20 +179,22 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         .build()
     )
 
-    executor = ActionExecutor(
-        namespace="example.fastapi_wallet_rest_pg",
-        registry=registry,
-        repositories=repositories,
-        actions=(
+    executor = (
+        ActionExecutor.builder()
+        .namespace("example.fastapi_wallet_rest_pg")
+        .database_registry(registry)
+        .repository_registry(repositories)
+        .action_registry(
             ActionRegistry.builder()
             .with_action(OpenWalletAction(running))
             .with_action(DepositMoneyAction(wallets, running))
             .with_action(CloseWalletAction(wallets, running))
             .with_action(RaiseAlertAction(running))
             .build()
-        ),
-        events=EVENTS,
-        clock=running,
+        )
+        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
+        .clock(running)
+        .build()
     )
 
     # Java's `shardingConfig.groups.getFirst().members.getFirst().configFor("lockConfig")`.
@@ -191,15 +202,21 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
     lock_engine = engine_for(_required(member, "lockConfig"))
     jobs_engine = engine_for(_required(member, "jobsConfig"))
 
-    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
-    events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+    handlers = (
+        EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
+    )
+    events_config = (
+        LocalEventHandlerConfig.builder()
+        .handling(HandlingConfig.builder().enabled(True).build())
+        .build()
+    )
 
     return WalletService(
         registry=registry,
         wallets=wallets,
         alerts=alerts,
         executor=executor,
-        locks=PostgresKeyedLockProvider(lock_engine),
+        locks=PostgresKeyedLockProvider.builder().engine(lock_engine).build(),
         lock_engine=lock_engine,
         jobs_engine=jobs_engine,
         jobs=(
@@ -207,21 +224,21 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
             .engine(jobs_engine)
             .with_jobs(
                 [
-                    EventFanoutJob(
-                        registry,
-                        handlers,
-                        events=EVENTS,
-                        notifications=EVENT_NOTIFICATIONS,
-                        config=events_config,
-                        clock=running,
-                    ),
-                    EventHandlingJob(
-                        registry,
-                        handlers,
-                        notifications=EVENT_NOTIFICATIONS,
-                        config=events_config,
-                        clock=running,
-                    ),
+                    EventFanoutJob.builder()
+                    .registry(registry)
+                    .handlers(handlers)
+                    .events(EVENTS)
+                    .notifications(EVENT_NOTIFICATIONS)
+                    .config(events_config)
+                    .clock(running)
+                    .build(),
+                    EventHandlingJob.builder()
+                    .registry(registry)
+                    .handlers(handlers)
+                    .notifications(EVENT_NOTIFICATIONS)
+                    .config(events_config)
+                    .clock(running)
+                    .build(),
                     PayStipendJob(executor, wallets),
                 ]
             )

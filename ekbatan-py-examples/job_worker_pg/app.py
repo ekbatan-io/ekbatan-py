@@ -38,6 +38,7 @@ from ekbatan import (
     DatabaseRegistry,
     RepositoryRegistry,
     ShardingConfig,
+    SingleTableJsonEventPersister,
     engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
@@ -99,24 +100,26 @@ def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 
     running = clock or SystemClock()
     # Java's layout: one group, one member, and the scheduler's pool declared on the member as
     # `jobsConfig` beside the primary - more connections than workers, see the module docstring.
-    layout = ShardingConfig(
-        default_shard=DEFAULT_SHARD,
-        groups=(
-            ShardGroupConfig(
-                group=0,
-                name="global",
-                members=(
-                    ShardMemberConfig(
-                        member=0,
-                        name="global",
-                        configs={
-                            "primaryConfig": DataSourceConfig(url=url),
-                            "jobsConfig": DataSourceConfig(url=url, pool_size=workers * 2),
-                        },
-                    ),
-                ),
-            ),
-        ),
+    layout = (
+        ShardingConfig.builder()
+        .default_shard(DEFAULT_SHARD)
+        .with_group(
+            ShardGroupConfig.builder()
+            .group(0)
+            .name("global")
+            .with_member(
+                ShardMemberConfig.builder()
+                .member(0)
+                .name("global")
+                .primary_config(DataSourceConfig.builder().url(url).build())
+                .with_config(
+                    "jobsConfig", DataSourceConfig.builder().url(url).pool_size(workers * 2).build()
+                )
+                .build()
+            )
+            .build()
+        )
+        .build()
     )
     migrate(layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)
@@ -124,29 +127,37 @@ def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 
     wallets = WalletRepository(registry, clock=running)
     alerts = AlertRepository(registry, clock=running)
 
-    executor = ActionExecutor(
-        namespace="example.job_worker_pg",
-        registry=registry,
-        repositories=(
+    executor = (
+        ActionExecutor.builder()
+        .namespace("example.job_worker_pg")
+        .database_registry(registry)
+        .repository_registry(
             RepositoryRegistry.builder()
             .with_model_repository(wallets)
             .with_entity_repository(alerts)
             .build()
-        ),
-        actions=(
+        )
+        .action_registry(
             ActionRegistry.builder()
             .with_action(OpenWalletAction(running))
             .with_action(DepositMoneyAction(wallets, running))
             .with_action(CloseWalletAction(wallets, running))
             .with_action(RaiseAlertAction(running))
             .build()
-        ),
-        events=EVENTS,
-        clock=running,
+        )
+        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
+        .clock(running)
+        .build()
     )
 
-    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
-    events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+    handlers = (
+        EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
+    )
+    events_config = (
+        LocalEventHandlerConfig.builder()
+        .handling(HandlingConfig.builder().enabled(True).build())
+        .build()
+    )
     report = WalletReportJob(wallets)
     jobs_config = layout.groups[0].members[0].config_for("jobsConfig")
     if jobs_config is None:
@@ -168,21 +179,21 @@ def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 
                     # The event pipeline is two jobs like any other, claimed through the same
                     # table - which is how a cluster fans out and dispatches once rather than
                     # once per replica.
-                    EventFanoutJob(
-                        registry,
-                        handlers,
-                        events=EVENTS,
-                        notifications=EVENT_NOTIFICATIONS,
-                        config=events_config,
-                        clock=running,
-                    ),
-                    EventHandlingJob(
-                        registry,
-                        handlers,
-                        notifications=EVENT_NOTIFICATIONS,
-                        config=events_config,
-                        clock=running,
-                    ),
+                    EventFanoutJob.builder()
+                    .registry(registry)
+                    .handlers(handlers)
+                    .events(EVENTS)
+                    .notifications(EVENT_NOTIFICATIONS)
+                    .config(events_config)
+                    .clock(running)
+                    .build(),
+                    EventHandlingJob.builder()
+                    .registry(registry)
+                    .handlers(handlers)
+                    .notifications(EVENT_NOTIFICATIONS)
+                    .config(events_config)
+                    .clock(running)
+                    .build(),
                     PayStipendJob(executor, wallets),
                     report,
                 ]

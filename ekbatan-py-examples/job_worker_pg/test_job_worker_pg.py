@@ -24,6 +24,7 @@ from ekbatan import (
     DatabaseRegistry,
     RepositoryRegistry,
     ShardingConfig,
+    SingleTableJsonEventPersister,
 )
 from ekbatan.clock import SystemClock
 from ekbatan.distributedjobs import job_registry
@@ -67,46 +68,60 @@ class Harness:
 
         self.wallets = WalletRepository(self.registry, clock=running)
         self.alerts = AlertRepository(self.registry, clock=running)
-        self.executor = ActionExecutor(
-            namespace="example.job_worker_pg",
-            registry=self.registry,
-            repositories=(
+        self.executor = (
+            ActionExecutor.builder()
+            .namespace("example.job_worker_pg")
+            .database_registry(self.registry)
+            .repository_registry(
                 RepositoryRegistry.builder()
                 .with_model_repository(self.wallets)
                 .with_entity_repository(self.alerts)
                 .build()
-            ),
-            actions=(
+            )
+            .action_registry(
                 ActionRegistry.builder()
                 .with_action(OpenWalletAction(running))
                 .with_action(DepositMoneyAction(self.wallets, running))
                 .with_action(CloseWalletAction(self.wallets, running))
                 .with_action(RaiseAlertAction(running))
                 .build()
-            ),
-            events=EVENTS,
-            clock=running,
+            )
+            .event_persister(SingleTableJsonEventPersister(self.registry, EVENTS))
+            .clock(running)
+            .build()
         )
-        handlers = EventHandlerRegistry([MoneyDepositedEventHandler(self.executor)])
-        config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+        handlers = (
+            EventHandlerRegistry.builder()
+            .with_handler(MoneyDepositedEventHandler(self.executor))
+            .build()
+        )
+        config = (
+            LocalEventHandlerConfig.builder()
+            .handling(HandlingConfig.builder().enabled(True).build())
+            .build()
+        )
 
         self.stipend = PayStipendJob(self.executor, self.wallets)
         self.report = WalletReportJob(self.wallets)
         self.clock = SettableClock(EPOCH)
-        self.fanout_job = EventFanoutJob(
-            self.registry,
-            handlers,
-            events=EVENTS,
-            notifications=EVENT_NOTIFICATIONS,
-            config=config,
-            clock=running,
+        self.fanout_job = (
+            EventFanoutJob.builder()
+            .registry(self.registry)
+            .handlers(handlers)
+            .events(EVENTS)
+            .notifications(EVENT_NOTIFICATIONS)
+            .config(config)
+            .clock(running)
+            .build()
         )
-        self.handling_job = EventHandlingJob(
-            self.registry,
-            handlers,
-            notifications=EVENT_NOTIFICATIONS,
-            config=config,
-            clock=running,
+        self.handling_job = (
+            EventHandlingJob.builder()
+            .registry(self.registry)
+            .handlers(handlers)
+            .notifications(EVENT_NOTIFICATIONS)
+            .config(config)
+            .clock(running)
+            .build()
         )
 
         # The two event jobs are built but **not scheduled**, which is how Java's own

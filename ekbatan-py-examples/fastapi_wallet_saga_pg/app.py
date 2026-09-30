@@ -21,6 +21,7 @@ from ekbatan import (
     DatabaseRegistry,
     RepositoryRegistry,
     ShardingConfig,
+    SingleTableJsonEventPersister,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.events import (
@@ -83,29 +84,34 @@ def build(url: str, *, clock: Clock | None = None) -> SagaService:
     wallets = WalletRepository(registry, clock=running)
     steps = TransferStepRepository(registry, clock=running)
 
-    executor = ActionExecutor(
-        namespace="example.fastapi_wallet_saga_pg",
-        registry=registry,
-        repositories=(
+    executor = (
+        ActionExecutor.builder()
+        .namespace("example.fastapi_wallet_saga_pg")
+        .database_registry(registry)
+        .repository_registry(
             RepositoryRegistry.builder()
             .with_model_repository(wallets)
             .with_entity_repository(steps)
             .build()
-        ),
-        actions=(
+        )
+        .action_registry(
             ActionRegistry.builder()
             .with_action(OpenWalletAction(running))
             .with_action(InitiateTransferAction(wallets, running))
             .with_action(CompleteTransferAction(wallets, running))
             .with_action(RefundTransferAction(wallets, running))
             .build()
-        ),
-        events=EVENTS,
-        clock=running,
+        )
+        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
+        .clock(running)
+        .build()
     )
 
-    handlers = EventHandlerRegistry(
-        [TransferInitiatedEventHandler(executor), TransferFailedEventHandler(executor)]
+    handlers = (
+        EventHandlerRegistry.builder()
+        .with_handler(TransferInitiatedEventHandler(executor))
+        .with_handler(TransferFailedEventHandler(executor))
+        .build()
     )
 
     return SagaService(

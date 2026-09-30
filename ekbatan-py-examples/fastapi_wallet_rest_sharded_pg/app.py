@@ -18,9 +18,15 @@ from ekbatan import (
     RepositoryRegistry,
     ShardIdentifier,
     ShardingConfig,
+    SingleTableJsonEventPersister,
 )
 from ekbatan.clock import Clock, SystemClock
-from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardMemberConfig
+from ekbatan.config import (
+    DataSourceConfig,
+    ShardGroupConfig,
+    ShardGroupConfigBuilder,
+    ShardMemberConfig,
+)
 from ekbatan.migrations import migrate
 
 from .actions import GLOBAL, MEXICO, DepositMoneyAction, OpenWalletAction, TransferWithinShardAction
@@ -51,25 +57,27 @@ def build(urls: Mapping[ShardIdentifier, str], *, clock: Clock | None = None) ->
     """Wire the layout. `urls` is the whole of it - two databases here, two hundred later."""
     running = clock or SystemClock()
 
-    members: dict[int, list[ShardMemberConfig]] = {}
+    groups: dict[int, ShardGroupConfigBuilder] = {}
     for shard, url in urls.items():
-        members.setdefault(shard.group, []).append(
-            ShardMemberConfig(
-                member=shard.member,
-                name=str(shard),
-                configs={"primaryConfig": DataSourceConfig(url=url)},
-            )
+        groups.setdefault(
+            shard.group,
+            ShardGroupConfig.builder()
+            .group(shard.group)
+            .name(GROUP_NAMES.get(shard.group, f"group-{shard.group}")),
+        ).with_member(
+            ShardMemberConfig.builder()
+            .member(shard.member)
+            .name(str(shard))
+            .primary_config(DataSourceConfig.builder().url(url).build())
+            .build()
         )
-    layout = ShardingConfig(
+    layout = (
+        ShardingConfig.builder()
         # Where a row goes when its id names a shard this deployment has not configured -
         # which is what lets one environment read another's ids instead of refusing them.
-        default_shard=GLOBAL,
-        groups=tuple(
-            ShardGroupConfig(
-                group=group, name=GROUP_NAMES.get(group, f"group-{group}"), members=tuple(m)
-            )
-            for group, m in members.items()
-        ),
+        .default_shard(GLOBAL)
+        .groups(group.build() for group in groups.values())
+        .build()
     )
 
     # Every shard, one at a time, fail-fast - and refused outright if a revision that was
@@ -81,19 +89,23 @@ def build(urls: Mapping[ShardIdentifier, str], *, clock: Clock | None = None) ->
     return ShardedWallets(
         registry=registry,
         wallets=wallets,
-        executor=ActionExecutor(
-            namespace="example.fastapi_wallet_rest_sharded_pg",
-            registry=registry,
-            repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
-            actions=(
+        executor=(
+            ActionExecutor.builder()
+            .namespace("example.fastapi_wallet_rest_sharded_pg")
+            .database_registry(registry)
+            .repository_registry(
+                RepositoryRegistry.builder().with_model_repository(wallets).build()
+            )
+            .action_registry(
                 ActionRegistry.builder()
                 .with_action(OpenWalletAction(running))
                 .with_action(DepositMoneyAction(wallets, running))
                 .with_action(TransferWithinShardAction(wallets, running))
                 .build()
-            ),
-            events=EVENTS,
-            clock=running,
+            )
+            .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
+            .clock(running)
+            .build()
         ),
     )
 

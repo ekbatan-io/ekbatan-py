@@ -16,6 +16,7 @@ from ekbatan import (
     DatabaseRegistry,
     RepositoryRegistry,
     ShardingConfig,
+    SingleTableJsonEventPersister,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.distributedjobs import ManualJobRegistry, job_registry
@@ -94,35 +95,47 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
         .build()
     )
 
-    executor = ActionExecutor(
-        namespace="example.wallet_service_sqlite",
-        registry=registry,
-        repositories=repositories,
-        actions=actions,
-        events=EVENTS,
-        clock=running,
+    executor = (
+        ActionExecutor.builder()
+        .namespace("example.wallet_service_sqlite")
+        .database_registry(registry)
+        .repository_registry(repositories)
+        .action_registry(actions)
+        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
+        .clock(running)
+        .build()
     )
 
-    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+    handlers = (
+        EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
+    )
 
     # Turning committed events into deliveries is work a cluster must do once, not once per
     # instance - so it is two distributed jobs, claimed through `scheduled_tasks` like any
     # other. Handling is off by default; a deployment draining through Kafka would leave it so.
-    events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
-    fanout = EventFanoutJob(
-        registry,
-        handlers,
-        events=EVENTS,
-        notifications=EVENT_NOTIFICATIONS,
-        config=events_config,
-        clock=running,
+    events_config = (
+        LocalEventHandlerConfig.builder()
+        .handling(HandlingConfig.builder().enabled(True).build())
+        .build()
     )
-    dispatch = EventHandlingJob(
-        registry,
-        handlers,
-        notifications=EVENT_NOTIFICATIONS,
-        config=events_config,
-        clock=running,
+    fanout = (
+        EventFanoutJob.builder()
+        .registry(registry)
+        .handlers(handlers)
+        .events(EVENTS)
+        .notifications(EVENT_NOTIFICATIONS)
+        .config(events_config)
+        .clock(running)
+        .build()
+    )
+    dispatch = (
+        EventHandlingJob.builder()
+        .registry(registry)
+        .handlers(handlers)
+        .notifications(EVENT_NOTIFICATIONS)
+        .config(events_config)
+        .clock(running)
+        .build()
     )
 
     return WalletService(
