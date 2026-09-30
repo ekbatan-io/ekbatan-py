@@ -25,71 +25,27 @@ from sqlalchemy.schema import CreateTable
 from ekbatan.errors import ValidationError
 from ekbatan.schemagen import check_fingerprint, fingerprint, generate, render
 
-pytest.importorskip("alembic")
-
-ENV = """
-from alembic import context
-from sqlalchemy import create_engine
-
-url = context.config.get_main_option("sqlalchemy.url")
-assert url is not None
-engine = create_engine(url)
-with engine.connect() as connection:
-    context.configure(connection=connection, target_metadata=None)
-    with context.begin_transaction():
-        context.run_migrations()
+APP = """
+CREATE TABLE widgets (
+    id UUID NOT NULL PRIMARY KEY,
+    version BIGINT NOT NULL,
+    state VARCHAR(24) NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    tags JSONB,
+    retired_at TIMESTAMP,
+    created_date TIMESTAMP NOT NULL,
+    updated_date TIMESTAMP NOT NULL,
+    CONSTRAINT uq_widgets_name UNIQUE (name)
+);
 """
-
-REVISION = '''
-"""{message}"""
-from alembic import op
-
-revision = "{revision}"
-down_revision = {down!r}
-
-
-def upgrade():
-{body}
-
-
-def downgrade():
-    pass
-'''
-
-
-def statements(*sql: str) -> str:
-    return "\n".join(f'    op.execute("""{s}""")' for s in sql)
 
 
 @pytest.fixture
 def migrations(tmp_path: Path) -> Path:
-    """An Alembic directory whose migrations create an application table and the framework's."""
+    """A migrations directory that creates an application table and the framework's."""
     root = tmp_path / "migrations"
-    (root / "versions").mkdir(parents=True)
-    (root / "env.py").write_text(ENV)
-    (root / "script.py.mako").write_text('"""${message}"""\n')
-    (root / "versions" / "0001_app.py").write_text(
-        REVISION.format(
-            message="app",
-            revision="0001",
-            down=None,
-            body=statements(
-                """
-                CREATE TABLE widgets (
-                    id UUID NOT NULL PRIMARY KEY,
-                    version BIGINT NOT NULL,
-                    state VARCHAR(24) NOT NULL,
-                    name VARCHAR(80) NOT NULL,
-                    tags JSONB,
-                    retired_at TIMESTAMP,
-                    created_date TIMESTAMP NOT NULL,
-                    updated_date TIMESTAMP NOT NULL,
-                    CONSTRAINT uq_widgets_name UNIQUE (name)
-                )
-                """
-            ),
-        )
-    )
+    root.mkdir()
+    (root / "V0001__app.sql").write_text(APP)
     # The framework's own tables, as a real application's migration would create them - which
     # is what gives the generator something to *decline* to reflect.
     from sqlalchemy import MetaData as _MetaData
@@ -101,16 +57,7 @@ def migrations(tmp_path: Path) -> Path:
     outbox_table(framework)
     notifications_table(framework)
     scheduled_tasks_table(framework)
-    (root / "versions" / "0002_framework.py").write_text(
-        REVISION.format(
-            message="framework",
-            revision="0002",
-            down="0001",
-            body=statements(
-                *[s.strip() for s in emit_ddl(framework, "postgresql").split(";") if s.strip()]
-            ),
-        )
-    )
+    (root / "V0002__framework.sql").write_text(emit_ddl(framework, "postgresql"))
     return root
 
 
@@ -148,8 +95,7 @@ def test_the_framework_s_own_tables_are_built_not_reflected(generated: Path) -> 
 def test_the_migration_bookkeeping_tables_are_left_out(generated: Path) -> None:
     text = generated.read_text()
 
-    assert "alembic_version" not in text
-    assert "ekbatan_revision_checksums" not in text
+    assert "ekbatan_schema_history" not in text
 
 
 def test_a_unique_constraint_survives(generated: Path) -> None:
@@ -225,25 +171,28 @@ def test_a_naive_reflection_would_have_got_that_wrong(generated: Path) -> None:
 
 def test_the_fingerprint_changes_when_a_migration_changes(migrations: Path) -> None:
     before = fingerprint(migrations)
-    (migrations / "versions" / "0002_more.py").write_text(
-        REVISION.format(
-            message="more",
-            revision="0002",
-            down="0001",
-            body=statements("CREATE TABLE gadgets (id UUID PRIMARY KEY)"),
-        )
-    )
+    (migrations / "V0003__more.sql").write_text("CREATE TABLE gadgets (id UUID PRIMARY KEY);")
 
     assert fingerprint(migrations) != before
 
 
-def test_the_fingerprint_ignores_env_and_caches(migrations: Path) -> None:
-    """`env.py` is machinery, not schema, and `__pycache__` would make the hash depend on
-    whether anything had been run."""
+def test_the_fingerprint_ignores_what_is_not_a_migration(migrations: Path) -> None:
+    """An `__init__.py` that makes the directory a package, a `README`, a cache: none is
+    schema, and a hash that moved with them would call a current module stale."""
     before = fingerprint(migrations)
-    (migrations / "env.py").write_text(ENV + "\n# a comment\n")
-    (migrations / "versions" / "__pycache__").mkdir()
-    (migrations / "versions" / "__pycache__" / "x.py").write_text("junk")
+    (migrations / "__init__.py").write_text("")
+    (migrations / "README.md").write_text("notes")
+    (migrations / "__pycache__").mkdir()
+    (migrations / "__pycache__" / "x.pyc").write_bytes(b"junk")
+
+    assert fingerprint(migrations) == before
+
+
+def test_the_fingerprint_ignores_line_endings(migrations: Path) -> None:
+    """As the migrator's checksums do: a checkout that turns \\n into \\r\\n changed nothing."""
+    before = fingerprint(migrations)
+    path = migrations / "V0001__app.sql"
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
 
     assert fingerprint(migrations) == before
 
@@ -251,14 +200,7 @@ def test_the_fingerprint_ignores_env_and_caches(migrations: Path) -> None:
 def test_importing_a_stale_module_fails_loudly(generated: Path, migrations: Path) -> None:
     """The guarantee Gradle gets for free. Nothing in Python runs before `python -m app`, so a
     stale schema would otherwise just disagree with the database in front of it."""
-    (migrations / "versions" / "0002_more.py").write_text(
-        REVISION.format(
-            message="more",
-            revision="0002",
-            down="0001",
-            body=statements("CREATE TABLE gadgets (id UUID PRIMARY KEY)"),
-        )
-    )
+    (migrations / "V0003__more.sql").write_text("CREATE TABLE gadgets (id UUID PRIMARY KEY);")
 
     sys.path.insert(0, str(generated.parent))
     try:
@@ -319,9 +261,7 @@ def test_migrations_that_create_no_application_tables_are_refused(tmp_path: Path
     """Silence would be worse: an empty generated module imports fine and every query then
     fails somewhere else."""
     root = tmp_path / "empty"
-    (root / "versions").mkdir(parents=True)
-    (root / "env.py").write_text(ENV)
-    (root / "script.py.mako").write_text('"""${message}"""\n')
+    root.mkdir()
 
     with pytest.raises(ValidationError, match="no application tables"):
         generate(root, tmp_path / "schema.py")

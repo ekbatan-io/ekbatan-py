@@ -71,8 +71,9 @@ FRAMEWORK_TABLES = {
     "scheduled_tasks": "scheduled_tasks_table",
 }
 
-#: Tables that belong to the migration machinery and to nobody else.
-BOOKKEEPING = frozenset({"alembic_version", "ekbatan_revision_checksums", "flyway_schema_history"})
+#: Tables that belong to the migration machinery and to nobody else - this framework's history,
+#: and Flyway's, for a database the Java port migrated.
+BOOKKEEPING = frozenset({"ekbatan_schema_history", "flyway_schema_history"})
 
 #: The `forcedTypes` equivalent: a reflected type, and the helper that carries its per-dialect
 #: variants. Everything not named here is emitted as SQLAlchemy reflected it.
@@ -90,16 +91,18 @@ FORCED = {
 def fingerprint(migrations: Path) -> str:
     """A hash of every migration file, so a stale module can say so.
 
-    Sorted by name and hashed whole - a rename counts as a change, which is right: Alembic
-    keys a revision by the id inside the file, so a rename that changed nothing else would
-    still be worth regenerating for.
+    Every ``.sql`` file in the directory, sorted by name and hashed with its name - a rename counts
+    as a change, which is right: the history records a migration by its file name. Line endings
+    are normalised as the migrator's own checksums normalise them, so a checkout that turns
+    ``\\n`` into ``\\r\\n`` does not make every generated module stale. Other files - an
+    ``__init__.py``, a ``README`` - are not schema and are not hashed.
     """
+    from .migrations import checksum
+
     digest = hashlib.sha256()
-    for path in sorted(migrations.rglob("*.py")):
-        if path.name == "env.py" or "__pycache__" in path.parts:
-            continue
+    for path in sorted(migrations.glob("*.sql")):
         digest.update(path.name.encode())
-        digest.update(path.read_bytes())
+        digest.update(checksum(path).encode())
     return digest.hexdigest()[:16]
 
 
@@ -396,7 +399,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         prog="python -m ekbatan.schemagen",
         description="Generate table definitions from the schema your migrations produce.",
     )
-    parser.add_argument("--migrations", type=Path, required=True, help="the Alembic directory")
+    parser.add_argument(
+        "--migrations",
+        type=Path,
+        required=True,
+        help="the migrations directory, V<version>__<description>.sql files",
+    )
     parser.add_argument("--out", type=Path, required=True, help="the module to write")
     parser.add_argument(
         "--url",

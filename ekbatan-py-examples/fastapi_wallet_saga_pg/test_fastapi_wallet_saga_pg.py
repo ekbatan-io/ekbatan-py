@@ -17,6 +17,7 @@ from sqlalchemy import select, text
 
 from ekbatan.clock import SystemClock
 from ekbatan.ids import ShardedId
+from ekbatan.migrations import validate_scripts
 
 from .actions import (
     CompleteTransferAction,
@@ -27,7 +28,7 @@ from .actions import (
     TransferParams,
     TransferResult,
 )
-from .app import SagaService, build
+from .app import MIGRATIONS, SagaService, build
 from .model import StepName, Wallet
 from .schema import EVENTS
 
@@ -320,3 +321,9 @@ def test_a_failed_transfer_reports_itself_refunded(client) -> None:
     assert status["state"] == "REFUNDED"
     assert status["steps"] == ["CREDIT", "REFUND"]
     assert client.get(f"/wallets/{source['id']}").json()["balance"] == "100.00", "made whole"
+
+
+def test_the_migration_files_pass_the_checks_a_deploy_runs():
+    """No database needed, so CI catches it: two files with one version, a file whose name would
+    be skipped without a word, a rollback file. Each is refused here rather than at startup."""
+    assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]

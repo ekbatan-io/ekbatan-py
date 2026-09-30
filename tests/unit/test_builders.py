@@ -31,7 +31,7 @@ from ekbatan.locks import (
     PostgresKeyedLockProvider,
 )
 from ekbatan.locks.redis import DEFAULT_NAMESPACE, RedisKeyedLockProvider
-from ekbatan.migrations import AlembicMigrator
+from ekbatan.migrations import YoyoMigrator
 from ekbatan.persistence import DatabaseRegistry, TransactionManager
 from ekbatan.sharding import ShardIdentifier
 from ekbatan.streaming import ActionEvent
@@ -476,26 +476,59 @@ def test_an_action_event_without_an_id_is_refused():
 
 
 # -- the migrator -------------------------------------------------------------------------------
+#
+# Only what the builder decides before any database is reached; migrating is in
+# tests/integration/test_migrations.py.
 
 
-def test_the_migrator_needs_a_sharding_config():
-    with pytest.raises(ValidationError, match="with_sharding_config"):
-        AlembicMigrator.builder().script_location(Path(".")).migrate()
+def test_the_migrator_needs_at_least_one_target():
+    """Java's `IllegalStateException("at least one Flyway migration target is required")`."""
+    with pytest.raises(ValidationError, match="at least one migration target is required"):
+        YoyoMigrator.builder().locations(Path(".")).migrate()
 
 
-def test_the_migrator_needs_a_script_location():
-    layout = ShardingConfig.builder().default_shard(FIRST).with_group(a_group()).build()
-    with pytest.raises(ValidationError, match="script_location is required"):
-        AlembicMigrator.builder().with_sharding_config(layout).migrate()
+def test_the_migrator_needs_at_least_one_location():
+    with pytest.raises(ValidationError, match="at least one migrations location is required"):
+        YoyoMigrator.builder().with_data_source(a_source()).migrate()
 
 
-def test_the_migrator_refuses_a_shard_the_layout_does_not_have(tmp_path):
-    layout = ShardingConfig.builder().default_shard(FIRST).with_group(a_group()).build()
-    with pytest.raises(ValidationError, match="not in this layout"):
-        (
-            AlembicMigrator.builder()
-            .with_sharding_config(layout)
-            .script_location(tmp_path)
-            .with_shard(SECOND)
-            .migrate()
+def test_a_missing_location_is_refused_before_any_database_is_reached(tmp_path):
+    with pytest.raises(ValidationError, match="no migrations directory"):
+        YoyoMigrator.builder().with_data_source(a_source()).locations(tmp_path / "nope").migrate()
+
+
+def test_with_data_source_is_javas_default_target():
+    built = YoyoMigrator.builder().with_data_source(a_source())
+    assert built._targets == [YoyoMigrator.Target(ShardIdentifier(0, 0), "default", a_source())]
+
+
+def test_with_sharding_config_adds_a_target_per_member_named_as_java_names_them():
+    layout = (
+        ShardingConfig.builder()
+        .default_shard(FIRST)
+        .with_group(
+            ShardGroupConfig.builder()
+            .group(0)
+            .name("global")
+            .with_member(
+                ShardMemberConfig.builder().member(0).name("eu").primary_config(a_source()).build()
+            )
+            .with_member(
+                ShardMemberConfig.builder().member(1).primary_config(a_source(OTHER_URL)).build()
+            )
+            .build()
         )
+        .build()
+    )
+
+    built = YoyoMigrator.builder().with_sharding_config(layout)
+
+    assert [(t.shard, t.name, t.data_source.url) for t in built._targets] == [
+        (FIRST, "global/eu", URL),
+        (SECOND, "global/member-1", OTHER_URL),
+    ]
+
+
+def test_a_none_target_is_refused_where_it_is_added():
+    with pytest.raises(ValidationError, match="target is required"):
+        YoyoMigrator.builder().with_target(None)  # type: ignore[arg-type]

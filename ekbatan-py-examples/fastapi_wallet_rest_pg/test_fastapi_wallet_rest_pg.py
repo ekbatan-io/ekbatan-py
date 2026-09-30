@@ -22,7 +22,9 @@ import pytest
 from fastapi.testclient import TestClient
 from testcontainers.postgres import PostgresContainer
 
-from .app import Settings
+from ekbatan.migrations import validate_scripts
+
+from .app import MIGRATIONS, Settings
 
 OWNER = "11111111-1111-1111-1111-111111111111"
 
@@ -187,3 +189,11 @@ def test_it_runs_on_the_database_this_example_is_named_for(client: TestClient) -
 
     assert service.registry.dialect == "postgres"
     assert type(service.locks).__name__ == "PostgresKeyedLockProvider"
+
+
+def test_the_migration_files_pass_the_checks_a_deploy_runs():
+    """No database needed, so CI catches it: two files with one version, a file whose name would
+    be skipped without a word, a rollback file. Each is refused here rather than at startup."""
+    assert [script.script for script in validate_scripts(MIGRATIONS)] == [
+        "V0001__wallet_schema.sql"
+    ]

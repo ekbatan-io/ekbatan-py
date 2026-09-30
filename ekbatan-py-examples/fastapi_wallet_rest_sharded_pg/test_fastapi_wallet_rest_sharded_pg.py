@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from ekbatan.errors import CrossShardError
+from ekbatan.migrations import validate_scripts
 
 from .actions import (
     GLOBAL,
@@ -33,7 +34,7 @@ from .actions import (
     TransferParams,
     TransferWithinShardAction,
 )
-from .app import ShardedWallets, build
+from .app import MIGRATIONS, ShardedWallets, build
 from .model import Wallet
 
 
@@ -304,3 +305,9 @@ def test_the_totals_endpoint_asks_every_database(client: TestClient) -> None:
     open_via_http(client, "GL", "25.00")
 
     assert client.get("/shards").json() == {"0:0": "25.0000", "1:0": "10.0000"}
+
+
+def test_the_migration_files_pass_the_checks_a_deploy_runs():
+    """No database needed, so CI catches it: two files with one version, a file whose name would
+    be skipped without a word, a rollback file. Each is refused here rather than at startup."""
+    assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]

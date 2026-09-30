@@ -99,11 +99,13 @@ from .locks import (
     SqlKeyedLockProviderBuilder,
 )
 from .migrations import (
-    AlembicMigrator,
-    AlembicMigratorBuilder,
+    MigrationError,
+    YoyoMigrator,
+    YoyoMigratorBuilder,
     emit_ddl,
     migrate,
     migrate_registry,
+    validate_scripts,
 )
 from .persistence import (
     DatabaseRegistry,
@@ -147,8 +149,6 @@ __all__ = [
     "ActionRegistry",
     "ActionRegistryBuilder",
     "ActionSpec",
-    "AlembicMigrator",
-    "AlembicMigratorBuilder",
     "ChangePersister",
     "Clock",
     "ConnectivityError",
@@ -195,6 +195,7 @@ __all__ = [
     "LocalEventHandlerConfigBuilder",
     "LockAcquisitionError",
     "MariaDBKeyedLockProvider",
+    "MigrationError",
     "Model",
     "ModelBuilder",
     "ModelEvent",
@@ -229,6 +230,8 @@ __all__ = [
     "UnsupportedError",
     "ValidationError",
     "VirtualClock",
+    "YoyoMigrator",
+    "YoyoMigratorBuilder",
     "__version__",
     "count_statements",
     "current_plan",
@@ -245,4 +248,5 @@ __all__ = [
     "sharded_uuid",
     "unwrap",
     "uuid_instant",
+    "validate_scripts",
 ]

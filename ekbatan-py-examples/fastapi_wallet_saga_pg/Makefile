@@ -24,7 +24,7 @@ all: test
 # The dependency on the migration files is what makes this bearable to have in front of every
 # other target: it starts a container when they change and does nothing at all when they have
 # not.
-schema.py: $(wildcard migrations/versions/*.py)
+schema.py: $(wildcard migrations/*.sql)
 	uv run python -m ekbatan.schemagen --migrations migrations --out schema.py --image $(IMAGE)
 
 schema: schema.py

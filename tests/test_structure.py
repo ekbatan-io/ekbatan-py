@@ -11,6 +11,7 @@ for clarity breaks the suite. So this is a rule rather than a habit, and it is c
 from __future__ import annotations
 
 import ast
+import os
 import pathlib
 import sys
 
@@ -97,9 +98,6 @@ EXAMPLE_DEPENDENCIES = {
     "starlette",
     "uvicorn",
     "httpx",
-    # Migrations from files, which is what makes the REST projects a deployment shape rather
-    # than a demo.
-    "alembic",
     # The example suites, which run against real servers for the same reason the framework's
     # do - and `testcontainers` is also the framework's own `codegen` extra, because
     # `schemagen` starts a throwaway database exactly as Java's build does.
@@ -132,17 +130,15 @@ def test_the_framework_itself_imports_none_of_an_example_s_extras():
     """The other half, and the one that matters: `src/` must not grow a web framework because
     an example has one."""
     # Minus the ones the framework legitimately has: `sqlalchemy` and `db_scheduler` are hard
-    # dependencies, and `alembic` is the framework's own `migrations` extra - imported inside a
-    # function precisely so it stays optional. What is left is the web stack, which `src/` must
-    # never acquire.
+    # dependencies. What is left is the web stack, which `src/` must never acquire. (yoyo, the
+    # `migrations` extra, is imported only by `ekbatan._yoyo`, which is imported only once
+    # something migrates - so it stays optional without being listed here.)
     forbidden = EXAMPLE_DEPENDENCIES - {
         "ekbatan",
         "sqlalchemy",
         "db_scheduler",
-        # Framework extras, each imported inside a function so it stays optional: `alembic`
-        # for migrations, `testcontainers` for `schemagen`, which starts a throwaway database
-        # exactly as Java's build does.
-        "alembic",
+        # A framework extra, imported inside a function so it stays optional: `testcontainers`
+        # for `schemagen`, which starts a throwaway database exactly as Java's build does.
         "testcontainers",
         "pytest",
     }
@@ -178,3 +174,25 @@ def test_the_layout_is_what_it_claims_to_be():
     )
     assert list((TESTS / "unit").glob("test_*.py")), "the unit suite is not empty"
     assert list((TESTS / "integration").glob("test_*.py")), "the integration suite is not empty"
+
+
+def test_importing_the_framework_does_not_load_yoyo():
+    """yoyo is the optional `migrations` extra. `ekbatan._yoyo` holds everything that touches
+    it and is imported only once something migrates - so an application that never migrates
+    from files, or migrates with another tool, never needs it installed."""
+    import subprocess
+
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, ekbatan, ekbatan.migrations, ekbatan.schemagen; "
+            "print(sorted(m for m in sys.modules if m.split('.')[0] == 'yoyo'))",
+        ],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "[]", f"yoyo was loaded by a plain import: {done.stdout}"

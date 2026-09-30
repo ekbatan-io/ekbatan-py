@@ -17,7 +17,7 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from sqlalchemy import MetaData, create_engine, text
@@ -63,8 +63,15 @@ class Backend(ABC):
     def url(self, name: str) -> str:
         """A URL for a database of this name, created on first use."""
 
-    #: The suite's own Alembic revisions, applied per logical database.
+    #: The suite's own migrations, a directory per dialect, applied per logical database.
     MIGRATIONS = Path(__file__).resolve().parent / "migrations"
+    #: Which directory each dialect migrates from - MariaDB shares MySQL's.
+    MIGRATION_DIRECTORIES: ClassVar[dict[str, str]] = {
+        "sqlite": "sqlite",
+        "postgres": "postgres",
+        "mysql": "mysql",
+        "mariadb": "mysql",
+    }
 
     def prepare(self, name: str, metadata: MetaData) -> None:
         """Build the schema by migrating, not by `create_all`.
@@ -78,7 +85,10 @@ class Backend(ABC):
         from ekbatan.config import ShardingConfig
         from ekbatan.migrations import migrate
 
-        migrate(ShardingConfig.single(self.url(name)), self.MIGRATIONS)
+        migrate(
+            ShardingConfig.single(self.url(name)),
+            self.MIGRATIONS / self.MIGRATION_DIRECTORIES[self.dialect],
+        )
 
     def truncate(self, name: str, metadata: MetaData) -> None:
         """Empty every table, leaving the schema alone.

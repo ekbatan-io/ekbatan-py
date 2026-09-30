@@ -35,7 +35,7 @@ from ekbatan.events import (
     HandlingConfig,
     LocalEventHandlerConfig,
 )
-from ekbatan.migrations import migrate_registry
+from ekbatan.migrations import migrate_registry, validate_scripts
 
 from .actions import (
     CloseWalletAction,
@@ -44,6 +44,7 @@ from .actions import (
     OpenWalletParams,
     RaiseAlertAction,
 )
+from .app import MIGRATIONS
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob, WalletReportJob
 from .model import Wallet
@@ -292,3 +293,9 @@ def test_the_read_only_job_writes_nothing(worker: Harness) -> None:
     with worker.registry.default.connection(readonly=True) as conn:
         after = conn.execute(select(func.count()).select_from(EVENTS)).scalar_one()
     assert after == before, "a read-only job writes no events"
+
+
+def test_the_migration_files_pass_the_checks_a_deploy_runs():
+    """No database needed, so CI catches it: two files with one version, a file whose name would
+    be skipped without a word, a rollback file. Each is refused here rather than at startup."""
+    assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]

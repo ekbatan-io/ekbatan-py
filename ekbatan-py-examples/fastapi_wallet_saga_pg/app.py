@@ -41,9 +41,9 @@ from .handlers import TransferFailedEventHandler, TransferInitiatedEventHandler
 from .repository import TransferStepRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS
 
-#: Where the Alembic revisions live. Migrations run from files, not from `create_all`, which is
-#: the difference between an example and something you could deploy: `create_all` has no answer
-#: for a column that changed.
+#: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
+#: rather than from `create_all`, which is the difference between an example and something you
+#: could deploy: `create_all` has no answer for a column that changed.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 

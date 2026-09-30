@@ -30,7 +30,10 @@ dependencies = ["SQLAlchemy>=2.0.30", "ekbatan-py-db-scheduler~=0.1.0.dev0"]
 postgres = ["psycopg[binary]>=3.2"]
 mysql = ["PyMySQL>=1.1"]
 mariadb = ["PyMySQL>=1.1"]
-migrations = ["alembic>=1.14"]
+# yoyo runs the SQL files; ekbatan.migrations adds the lock, the checks and the history on top.
+# Pinned to a major version: the migrator subclasses yoyo's backends and relies on a handful of
+# its methods, which tests/unit/test_yoyo_contract.py checks - a new major goes through that.
+migrations = ["yoyo-migrations>=9.0,<10"]
 # `schemagen` starts a throwaway database, migrates into it and reflects the result - Java
 # does the same in its build. `sqlacodegen` is deliberately not here: it cannot force the
 # per-dialect types, and a schema generated without that forcing corrupts data on MySQL.
@@ -58,6 +61,8 @@ dev = [
     # import of its own and needs none - this is here so "it works under gevent" stays a
     # checked statement rather than one nobody reran.
     "gevent>=25.4",
+    # The migrator's suite runs yoyo against every dialect.
+    "yoyo-migrations>=9.0,<10",
 ]
 
 # Deliberately its own group rather than part of `dev` or an extra: `uv sync --all-extras`
@@ -73,9 +78,9 @@ examples = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "httpx>=0.27",
-    # `wallet_api` migrates from files at startup, as a deployment does - so it needs the
+    # The REST examples migrate from files at startup, as a deployment does - so they need the
     # `migrations` extra, which the framework itself keeps optional.
-    "alembic>=1.14",
+    "yoyo-migrations>=9.0,<10",
 ]
 
 [project.urls]
@@ -117,10 +122,10 @@ exclude = "ekbatan-py-examples/.*/test_.*\\.py$"
 module = "opentelemetry.*"
 ignore_missing_imports = true
 
-# Alembic ships no stubs. Only the example's revision files import it directly; the framework
-# imports it inside functions, where the extra may legitimately be absent.
+# yoyo ships no type information. Only ekbatan._yoyo imports it, and only once something
+# migrates, since the extra may legitimately be absent.
 [[tool.mypy.overrides]]
-module = "alembic.*"
+module = "yoyo.*"
 ignore_missing_imports = true
 
 # Strictness in the library is a promise to its users; strictness in a test file is a tax on
