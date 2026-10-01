@@ -41,8 +41,11 @@ the Java while porting go in an openspec change, not a code change.
 - Nothing in `src/` may import a web framework. `tests/test_structure.py` enforces it.
 - The ambient transaction is a `ContextVar`. Work handed to a pool does not inherit it, and that
   is correct.
-- Migrations are `V<version>__<description>.sql` files; `validate_scripts` checks them with no
-  database. On MySQL and MariaDB keep one schema change per file - each commits on its own.
+- Migrations are `V<version>__<description>.sql` and `R__<description>.sql` files, run the way
+  Flyway runs them; `validate_scripts` checks them with no database. On MySQL and MariaDB keep
+  one schema change per file - each commits on its own, and a failure after one is recorded and
+  blocks until `repair()`. `docs/MIGRATOR-LEDGER.md` settles every behaviour against Flyway 12;
+  a change to the migrator updates it, and `scripts/flyway-parity.py` reruns the comparison.
 
 ## Workflow
 
