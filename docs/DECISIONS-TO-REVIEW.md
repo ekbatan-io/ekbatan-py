@@ -193,6 +193,27 @@ These change behaviour Java does not have. Each is defensible and each is mine.
 | A JDBC url gets its own error message | `EKB-0113` | It is the likeliest mistake anyone moving between the ports makes, and unqualified it reads as a missing driver | Invented here; Java has no equivalent. Harmless, but it is a message nobody asked for |
 | Every shard must speak the same dialect | pre-existing, confirmed `EKB-0113` | The framework picks its SQL, lock provider and upsert form from one dialect | Java does not check this. If a mixed layout is ever legitimate, this refuses it |
 
+## The migrator against Flyway - judgement calls
+
+`docs/MIGRATOR-LEDGER.md` settles every behaviour of a Flyway migrate against this migrator, each
+one run on Flyway 12 as well as read. Most rows copy Flyway. These are the ones where I chose - to
+differ, or to copy something of Flyway's that bites.
+
+| what | commit | the case for it | the case against |
+| --- | --- | --- | --- |
+| The lock is held for the whole run, and the files are checked against the history under it | `EKB-0235` | One lock rather than one per migration, and the checks never read a history another process is changing. The outcome was measured the same as Flyway's: four processes, each migration applied once, in order (parity C03) | Flyway's processes share out the work, one migration each; here one process does it all while the rest wait. They wait either way |
+| `post-apply` hooks run at the end of every migrate, not only when something was applied | `EKB-0235` | It is Flyway's `afterMigrate` timing, run and seen (parity F18). yoyo's timing means a hook that failed never runs again, since the next run has nothing to apply | A yoyo user expects yoyo's timing, and an expensive hook now runs, under the lock, on every start of every replica |
+| `baseline` refuses an empty database | `EKB-0235` | Flyway baselines it and then never runs its first migration; the next one failed on the missing table (parity X05c) | A deviation from Flyway, with no way round it for a schema whose objects the emptiness check does not see |
+| A description longer than 200 characters is refused | `EKB-0235` | Flyway cuts it to fit the history, and then cannot match a repeatable migration to its row: its next migrate failed (parity H07) | Flyway's versioned migrations survive the cut; this refuses those too |
+| A history table of the shape `EKB-0233` made is refused, not upgraded | `EKB-0235` | No release ever made one - the version is still `0.1.0.dev0` - so an upgrade would be code that runs once, on nobody's database | A developer database migrated in the day between the two commits has to have its table dropped by hand |
+| `installed_on` stays text, in UTC | `EKB-0233`, `EKB-0235` | It reads the same on every dialect, with no driver's idea of a date in between | Flyway's is a timestamp column; date functions over this one need a cast |
+| What yoyo cannot read as Flyway does is refused rather than misread: `DELIMITER`, a `.conf` file, a Flyway callback file, `R1__x.sql` | `EKB-0235` | yoyo glues `DELIMITER` onto the next statement, which fails after the statements before it have run; the rest would be skipped without a word | Flyway runs a file with `DELIMITER` in it; a Java project's procedures have to lose it to move over |
+| Subdirectories are read | `EKB-0235` | Flyway reads them (parity F04): a file Flyway would run must not be one this skips. `EKB-0233` read one level only | A directory holding one subdirectory per dialect now merges them - and is refused, loudly, as duplicate versions |
+| A schema is "not empty" with a materialized view, a partitioned or foreign table (PostgreSQL), or a view or trigger (SQLite) in it | `EKB-0235` | Each is something a migration made; Flyway's queries miss them | Not Flyway's exact rule |
+| `info`, `repair` and `baseline` are part of the migrator | `EKB-0235` | Java reaches them through Flyway itself. Without them a recorded failure, or a database that predates its migrations, means editing the history table by hand | Surface Java's `FlywayMigrator` does not have |
+| Copied although it bites: an older release re-applies its older repeatable migrations, and refuses to start when a newer release added one | `EKB-0235` | Flyway does both (parity R16, R23). A rule that tolerated the second cannot tell a file a newer release added from one a person deleted | During a rolling deploy a changed view flips back each time an old instance restarts; a rollback past a new repeatable migration needs `repair()` first |
+| `target_schema_version` is the highest version applied, whatever this run did | `EKB-0233` | It answers "what version is this database at" | Flyway's is the last version this run applied, and empty when it applied none |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

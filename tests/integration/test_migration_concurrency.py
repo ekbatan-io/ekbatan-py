@@ -248,3 +248,58 @@ def test_concurrent_index_builds_do_not_wait_on_the_waiters_forever(backend, req
         "V2__slow.sql",
         "V3__index.sql",
     ]
+
+
+# -- repeatable migrations and recorded failures, under the lock ------------------------------
+
+
+def test_four_processes_apply_a_changed_repeatable_once(backend, request, tmp_path):
+    """Parity C03: every process sees the file changed; the one that gets the lock applies it,
+    and the rest - reading the history under the lock - find it up to date."""
+    url = fresh(backend, request)
+    location = tmp_path / "m"
+    location.mkdir()
+    (location / "V1__runs.sql").write_text("CREATE TABLE runs (n INTEGER);")
+    (location / "R__x.sql").write_text("INSERT INTO runs VALUES (1);")
+    migrate(ShardingConfig.single(url), location)
+    (location / "R__x.sql").write_text(
+        f"{sleep_sql(backend.dialect, 2)}\nINSERT INTO runs VALUES (2);"
+    )
+    results, go = CONTEXT.Queue(), CONTEXT.Event()
+
+    processes = [start(url, location, results, f"p{i}", go) for i in range(4)]
+    go.set()
+    outcomes = collect(results, 4, timeout=90)
+    finish(processes)
+
+    assert [o[1] for o in outcomes] == ["ok"] * 4, outcomes
+    assert [o[2] for o in outcomes if o[2]] == [["R__x.sql"]], "one process applied it"
+    assert [r[0] for r in query(url, "SELECT n FROM runs ORDER BY n")] == [1, 2]
+    repeatable_rows = query(url, f"SELECT count(*) FROM {HISTORY_TABLE} WHERE version IS NULL")
+    assert int(repeatable_rows[0][0]) == 2
+
+
+def test_four_processes_and_a_recorded_failure_leave_one_failed_row(backend, request, tmp_path):
+    """Parity C04: one process fails and records it; the rest, finding the failed row under the
+    lock, refuse rather than run the half-applied migration again over what it did."""
+    url = fresh(backend, request)
+    location = tmp_path / "m"
+    location.mkdir()
+    (location / "V1__runs.sql").write_text("CREATE TABLE runs (n INTEGER);")
+    (location / "V2__half.sql").write_text(
+        f"-- transactional: false\n{sleep_sql(backend.dialect, 1)}\n"
+        "INSERT INTO runs VALUES (1);\nINSERT INTO nowhere VALUES (1);"
+    )
+    results, go = CONTEXT.Queue(), CONTEXT.Event()
+
+    processes = [start(url, location, results, f"p{i}", go) for i in range(4)]
+    go.set()
+    outcomes = collect(results, 4, timeout=90)
+    finish(processes)
+
+    assert [o[1] for o in outcomes] == ["failed"] * 4, outcomes
+    assert sum("failed in V2__half.sql" in o[2] for o in outcomes) == 1, "one process ran it"
+    assert sum("failed on an earlier run" in o[2] for o in outcomes) == 3, "the rest refused"
+    assert runs(url) == 1, "the half-applied migration ran once"
+    failed_rows = query(url, f"SELECT count(*) FROM {HISTORY_TABLE} WHERE NOT success")
+    assert int(failed_rows[0][0]) == 1

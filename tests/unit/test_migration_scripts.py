@@ -1,10 +1,9 @@
-"""Everything the migrator decides before it touches a database.
+"""Everything the migrator decides about its files before it touches a database.
 
-The migration files are checked here, the way a CI job would check them, and the comparison
-between the files and a database's history is checked as the pure function it is. What happens
-on a real database is `tests/integration/test_migrations.py`.
-
-Each group names the row of the migrator's shortcomings table it covers.
+The migration files are checked here, the way a CI job would check them. How the files compare
+with a database's history is `test_migration_model.py`; what happens on a real database is
+`tests/integration/test_migrations.py`. The Flyway behaviour each rule copies was run, not just
+read - `docs/MIGRATOR-LEDGER.md` names the scenario.
 """
 
 from __future__ import annotations
@@ -28,10 +27,11 @@ from ekbatan.migrations import (
     MigrationError,
     Target,
     YoyoMigrator,
-    _Applied,
     _failure,
-    _plan,
+    _scan,
+    baseline,
     checksum,
+    description_order,
     migrate,
     migrate_targets,
     target,
@@ -72,9 +72,9 @@ def test_two_files_with_the_same_version_are_refused(tmp_path):
         validate_scripts(tmp_path)
 
     message = str(raised.value)
-    assert "same version" in message
+    assert "two migrations are one migration" in message
     assert "V1__create_foo.sql" in message and "V1__create_bar.sql" in message, "both named"
-    assert "next free number" in message, "and what to do"
+    assert "next free version" in message, "and what to do"
 
 
 @pytest.mark.parametrize(
@@ -91,7 +91,7 @@ def test_one_version_spelled_two_ways_is_still_a_duplicate(tmp_path, first, seco
     write(tmp_path, first)
     write(tmp_path, second)
 
-    with pytest.raises(MigrationError, match="same version"):
+    with pytest.raises(MigrationError, match="two migrations are one migration"):
         validate_scripts(tmp_path)
 
 
@@ -99,7 +99,7 @@ def test_a_duplicate_across_two_locations_is_refused(tmp_path):
     write(tmp_path / "a", "V3__one.sql")
     write(tmp_path / "b", "V3__two.sql")
 
-    with pytest.raises(MigrationError, match="same version"):
+    with pytest.raises(MigrationError, match="two migrations are one migration"):
         validate_scripts(tmp_path / "a", tmp_path / "b")
 
 
@@ -160,13 +160,14 @@ def test_the_version_and_description_are_read_as_flyway_reads_them(tmp_path):
         "v1__create.sql",
         "1__create.sql",
         "create_wallets.sql",
-        "V1__.sql",
         "Vx__a.sql",
+        "r__lower.sql",
+        "R_one_underscore.sql",
     ],
 )
 def test_a_sql_file_with_the_wrong_name_is_refused(tmp_path, name):
-    """Flyway ignores a misnamed file by default, and it then never runs. A typo here should
-    fail the build instead."""
+    """Flyway skips a misnamed file, with one line in its log, and it then never runs. A typo
+    here should fail the build instead."""
     write(tmp_path, name)
 
     with pytest.raises(MigrationError, match=r"must be V<version>__<description>\.sql"):
@@ -189,16 +190,273 @@ def test_a_migration_that_is_not_sql_is_refused(tmp_path):
         validate_scripts(tmp_path)
 
 
-def test_other_files_and_subdirectories_are_left_alone(tmp_path):
-    """A migrations directory inside a package has an __init__.py; per-dialect directories sit
-    side by side. Neither is a migration."""
+def test_other_files_are_left_alone(tmp_path):
+    """A migrations directory inside a package has an __init__.py, and maybe a README."""
     write(tmp_path, "V1__one.sql")
     write(tmp_path, "__init__.py", "")
     write(tmp_path, "README.md", "notes")
-    write(tmp_path, ".V9__hidden.sql")
-    write(tmp_path / "postgres", "V2__elsewhere.sql")
 
     assert names(validate_scripts(tmp_path)) == ["V1__one.sql"]
+
+
+def test_subdirectories_are_read_at_any_depth_and_hidden_ones_are_not(tmp_path):
+    """As Flyway reads them (parity F04): a file in a subdirectory it would run cannot be one
+    this skips. What is recorded is the path inside the location, as Flyway records it."""
+    write(tmp_path, "V1__one.sql")
+    write(tmp_path / "2026", "V2__two.sql")
+    write(tmp_path / "2026" / "q4", "V3__three.sql")
+    write(tmp_path / "_under", "V4__four.sql")
+    write(tmp_path / ".hidden", "V5__five.sql")
+    write(tmp_path, ".V9__hidden.sql")
+
+    assert names(validate_scripts(tmp_path)) == [
+        "V1__one.sql",
+        "2026/V2__two.sql",
+        "2026/q4/V3__three.sql",
+        "_under/V4__four.sql",
+    ]
+
+
+def test_sql_in_capitals_is_read(tmp_path):
+    """Flyway runs `V2__x.SQL` (parity F02). Ignoring it would be a migration that silently never
+    runs - and yoyo, left to decide by the name, would have tried to import it as Python."""
+    write(tmp_path, "V2__caps.SQL", "SELECT 2;")
+    write(tmp_path, "R__caps.Sql", "SELECT 3;")
+
+    found = validate_scripts(tmp_path)
+
+    assert names(found) == ["V2__caps.SQL", "R__caps.Sql"]
+    assert all(len(script.load().steps) == 1 for script in found), "read as SQL"
+
+
+def test_an_empty_description_is_accepted(tmp_path):
+    """Flyway accepts `V2__.sql` and `R__.sql` (parity R20)."""
+    write(tmp_path, "V2__.sql")
+    write(tmp_path, "R__.sql")
+
+    versioned, repeatable = validate_scripts(tmp_path)
+
+    assert (versioned.version, versioned.description) == ("2", "")
+    assert (repeatable.version, repeatable.description) == (None, "")
+
+
+def test_a_description_longer_than_the_history_keeps_is_refused(tmp_path):
+    """Flyway cuts it to 200 characters, and then cannot find a repeatable migration's row by it:
+    its next migrate fails (parity H07). Refused here before it can be applied."""
+    write(tmp_path, f"R__{'a' * 201}.sql")
+
+    with pytest.raises(MigrationError, match="the description is 201 characters"):
+        validate_scripts(tmp_path)
+
+
+# -- repeatable migrations -------------------------------------------------------------------
+
+
+def test_a_repeatable_migration_has_a_description_and_no_version(tmp_path):
+    write(tmp_path, "R__wallet_totals_view.sql", "CREATE VIEW v AS SELECT 1;")
+
+    (script,) = validate_scripts(tmp_path)
+
+    assert script.version is None and script.repeatable
+    assert script.description == "wallet totals view"
+    assert script.category == "Repeatable"
+    with pytest.raises(ValueError, match="has no version"):
+        _ = script.key
+
+
+def test_repeatables_come_after_versioned_ones_in_javas_order(tmp_path):
+    """Flyway applies repeatables after every versioned migration, in the order Java's
+    `String.compareTo` gives their descriptions: capitals first, and `a` before `a b` before `a-b`
+    before `ab` (parity R01, on all three databases)."""
+    for name in [
+        "R__ab.sql",
+        "R__a-b.sql",
+        "R__a_b.sql",
+        "R__a.sql",
+        "R__Zeta.sql",
+        "R__C.sql",
+        "R__B.sql",
+        "V2__two.sql",
+        "V1__one.sql",
+    ]:
+        write(tmp_path, name)
+
+    assert [s.description for s in validate_scripts(tmp_path)] == [
+        "one",
+        "two",
+        "B",
+        "C",
+        "Zeta",
+        "a",
+        "a b",
+        "a-b",
+        "ab",
+    ]
+
+
+def test_descriptions_compare_by_utf16_unit_as_java_compares_them():
+    """Python compares code points; Java compares UTF-16 units. They disagree exactly where a
+    character outside the Basic Multilingual Plane meets one near its top."""
+    emoji, last_bmp = "\U0001f600", "\uffff"
+
+    assert emoji > last_bmp, "Python's own order"
+    assert description_order(emoji) < description_order(last_bmp), "Java's order, and Flyway's"
+
+
+def test_a_repeatable_with_a_version_is_refused(tmp_path):
+    """Flyway skips `R1__x.sql` as misnamed (parity R19)."""
+    write(tmp_path, "R1__x.sql")
+
+    with pytest.raises(MigrationError, match="a repeatable migration has no version"):
+        validate_scripts(tmp_path)
+
+
+def test_two_repeatables_with_one_description_are_refused(tmp_path):
+    """`R__a_b.sql` and `R__a b.sql` are one description, as Flyway reads them (parity R21)."""
+    write(tmp_path, "R__a_b.sql")
+    write(tmp_path, "R__a b.sql")
+
+    with pytest.raises(MigrationError) as raised:
+        validate_scripts(tmp_path)
+
+    assert "repeatable 'a b'" in str(raised.value)
+    assert "R__a_b.sql" in str(raised.value) and "R__a b.sql" in str(raised.value)
+
+
+def test_one_repeatable_in_two_locations_is_refused(tmp_path):
+    """Parity R22."""
+    write(tmp_path / "one", "R__x.sql")
+    write(tmp_path / "two", "R__x.sql")
+
+    with pytest.raises(MigrationError, match="repeatable 'x'"):
+        validate_scripts(tmp_path / "one", tmp_path / "two")
+
+
+# -- post-apply hooks ------------------------------------------------------------------------
+
+
+def test_post_apply_files_are_hooks_not_migrations(tmp_path):
+    """yoyo's hook, Flyway's afterMigrate: not versioned, not recorded, run every time."""
+    write(tmp_path / "a", "V1__one.sql")
+    write(tmp_path / "a", "post-apply-grants.sql", "SELECT 'grants';")
+    write(tmp_path / "b", "post-apply.sql", "SELECT 'views';")
+
+    scripts = _scan(tmp_path / "a", tmp_path / "b")
+
+    assert names(scripts.migrations) == ["V1__one.sql"]
+    assert [h.script for h in scripts.hooks] == ["post-apply-grants.sql", "post-apply.sql"]
+    assert names(validate_scripts(tmp_path / "a", tmp_path / "b")) == ["V1__one.sql"]
+
+
+def test_a_hook_that_is_not_sql_is_refused(tmp_path):
+    write(tmp_path, "post-apply.py", "")
+
+    with pytest.raises(MigrationError, match="only SQL migrations"):
+        validate_scripts(tmp_path)
+
+
+def test_a_hook_is_checked_like_a_migration(tmp_path):
+    (tmp_path / "post-apply.sql").write_bytes("SELECT 'caf\xe9';".encode("latin-1"))
+
+    with pytest.raises(MigrationError, match="is not UTF-8"):
+        validate_scripts(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "name", ["afterMigrate.sql", "beforeMigrate.sql", "afterEachMigrate__log.sql"]
+)
+def test_a_flyway_callback_is_refused_with_what_to_use_instead(tmp_path, name):
+    """It would otherwise be refused as misnamed, which is true but not helpful."""
+    write(tmp_path, name)
+
+    with pytest.raises(MigrationError, match="Flyway callbacks are not run here") as raised:
+        validate_scripts(tmp_path)
+
+    assert "post-apply.sql" in str(raised.value)
+
+
+# -- what yoyo would not read the way Flyway does --------------------------------------------
+
+
+def test_a_flyway_conf_file_is_refused(tmp_path):
+    """Flyway reads `V1__x.sql.conf` beside a migration; ignoring it would run the migration
+    in a transaction it asked not to be in (parity F10)."""
+    write(tmp_path, "V1__index.sql")
+    write(tmp_path, "V1__index.sql.conf", "executeInTransaction=false\n")
+
+    with pytest.raises(MigrationError, match="`-- transactional: false`"):
+        validate_scripts(tmp_path)
+
+
+def test_delimiter_is_refused(tmp_path):
+    """Flyway understands the mysql client's `DELIMITER`; yoyo glues it onto the next statement,
+    which the server then rejects - after the statements before it have run."""
+    write(
+        tmp_path,
+        "R__proc.sql",
+        "DROP PROCEDURE IF EXISTS p;\nDELIMITER //\nCREATE PROCEDURE p() BEGIN SELECT 1; END //\n"
+        "DELIMITER ;\n",
+    )
+
+    with pytest.raises(MigrationError, match="`DELIMITER` is a command of the mysql client"):
+        validate_scripts(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("body", "statements"),
+    [
+        (
+            "DROP PROCEDURE IF EXISTS p;\nCREATE PROCEDURE p() BEGIN\n  INSERT INTO t VALUES (1);"
+            "\n  INSERT INTO t VALUES (2);\nEND;\nCALL p();\n",
+            3,
+        ),
+        (
+            "CREATE TRIGGER t BEFORE INSERT ON w FOR EACH ROW\nBEGIN\n  IF NEW.n = 'x' THEN\n"
+            "    SET NEW.n = 'y';\n  END IF;\nEND;\n",
+            1,
+        ),
+        (
+            "CREATE OR REPLACE FUNCTION f() RETURNS void AS $$\nBEGIN\n  INSERT INTO t VALUES (1);"
+            "\n  INSERT INTO t VALUES (2);\nEND;\n$$ LANGUAGE plpgsql;\nSELECT f();\n"
+            "DO $body$ BEGIN INSERT INTO t VALUES (3); END $body$;\n",
+            3,
+        ),
+        (
+            "CREATE TRIGGER t AFTER INSERT ON log BEGIN\n  INSERT INTO t VALUES (1);\n"
+            "  INSERT INTO t VALUES (2);\nEND;\nINSERT INTO log VALUES ('x');\n",
+            2,
+        ),
+    ],
+    ids=["mysql procedure", "mysql trigger", "postgres functions", "sqlite trigger"],
+)
+def test_a_body_with_semicolons_inside_stays_one_statement(tmp_path, body, statements):
+    """What a repeatable migration usually holds. yoyo splits each of these as Flyway does
+    (parity F17) - without `DELIMITER`."""
+    write(tmp_path, "R__body.sql", body)
+
+    (script,) = validate_scripts(tmp_path)
+
+    assert len(script.load().steps) == statements
+
+
+def test_an_editors_backup_of_a_migration_is_refused(tmp_path):
+    write(tmp_path, "V1__one.sql")
+    write(tmp_path, "V1__one.sql.bak")
+
+    with pytest.raises(MigrationError, match="an editor's backup"):
+        validate_scripts(tmp_path)
+
+
+@pytest.mark.parametrize("version", ["", "v1", "1.x", "1..2", "-1"])
+def test_a_baseline_version_is_digits(version):
+    """Checked before any database is reached."""
+    with pytest.raises(ValidationError, match="a baseline version is digits"):
+        baseline(ShardingConfig.single(NOWHERE), version=version)
+
+
+def test_a_baseline_needs_a_description_that_fits():
+    with pytest.raises(ValidationError, match="a baseline needs a description"):
+        baseline(ShardingConfig.single(NOWHERE), description="x" * 201)
 
 
 def test_depends_is_refused(tmp_path):
@@ -264,100 +522,10 @@ def test_a_different_statement_is_an_edit(tmp_path):
     assert len(checksum(before)) == 64, "sha256, hex"
 
 
-# -- #2 #3 #4: the files against a database's history ----------------------------------------
-
-
 def scripts_in(tmp_path, *names_and_sql):
     for name in names_and_sql:
         write(tmp_path, name, f"-- {name}\nSELECT 1;")
     return validate_scripts(tmp_path)
-
-
-def applied(script) -> _Applied:
-    return _Applied(script.version, script.script, script.checksum)
-
-
-def test_nothing_applied_means_everything_is_pending_in_order(tmp_path):
-    found = scripts_in(tmp_path, "V2__b.sql", "V1__a.sql")
-
-    pending, warnings = _plan("shard", found, [])
-
-    assert names(pending) == ["V1__a.sql", "V2__b.sql"]
-    assert warnings == []
-
-
-def test_only_what_has_not_run_is_pending(tmp_path):
-    one, two, three = scripts_in(tmp_path, "V1__a.sql", "V2__b.sql", "V3__c.sql")
-
-    pending, _ = _plan("shard", (one, two, three), [applied(one), applied(two)])
-
-    assert names(pending) == ["V3__c.sql"]
-
-
-def test_an_edited_migration_is_refused(tmp_path):
-    """#2 - yoyo stores a hash of the file *name*, so an edit is invisible to it."""
-    (one,) = scripts_in(tmp_path, "V1__a.sql")
-    history = [_Applied(one.version, one.script, "0" * 64)]
-
-    with pytest.raises(MigrationError, match="has changed since it was applied"):
-        _plan("shard", (one,), history)
-
-
-def test_a_renamed_migration_is_refused(tmp_path):
-    (one,) = scripts_in(tmp_path, "V1__renamed.sql")
-    history = [_Applied("1", "V1__original.sql", one.checksum)]
-
-    with pytest.raises(MigrationError, match=r"is now named V1__renamed\.sql"):
-        _plan("shard", (one,), history)
-
-
-def test_an_older_applied_migration_whose_file_is_gone_is_refused(tmp_path):
-    """#4 - yoyo does not notice at all."""
-    one, two = scripts_in(tmp_path, "V1__a.sql", "V2__b.sql")
-    (tmp_path / "V1__a.sql").unlink()
-    remaining = validate_scripts(tmp_path)
-
-    with pytest.raises(MigrationError, match="its file is gone"):
-        _plan("shard", remaining, [applied(one), applied(two)])
-
-
-def test_an_applied_migration_newer_than_every_file_is_left_alone_with_a_warning(tmp_path):
-    """Flyway's default: an older release starting against a database a newer one migrated.
-    Refusing would stop a rollback of the application from starting at all."""
-    one, two = scripts_in(tmp_path, "V1__a.sql", "V2__b.sql")
-    (tmp_path / "V2__b.sql").unlink()
-    remaining = validate_scripts(tmp_path)
-
-    pending, warnings = _plan("shard", remaining, [applied(one), applied(two)])
-
-    assert pending == []
-    assert len(warnings) == 1 and "newer than every migration here" in warnings[0]
-
-
-def test_a_new_migration_older_than_one_already_applied_is_refused(tmp_path):
-    """#3 - yoyo runs it out of order without a word."""
-    one, three = scripts_in(tmp_path, "V1__a.sql", "V3__c.sql")
-    write(tmp_path, "V2__b.sql", "SELECT 2;")
-    now = validate_scripts(tmp_path)
-
-    with pytest.raises(MigrationError) as raised:
-        _plan("shard", now, [applied(one), applied(three)])
-
-    assert "V2__b.sql has not been applied, but version 3 already has" in str(raised.value)
-    assert "nothing was run" in str(raised.value)
-
-
-def test_every_problem_is_reported_at_once(tmp_path):
-    one, two, three = scripts_in(tmp_path, "V1__a.sql", "V2__b.sql", "V3__c.sql")
-    history = [_Applied("1", "V1__a.sql", "0" * 64), applied(three)]
-
-    with pytest.raises(MigrationError) as raised:
-        _plan("wallet (0:0)", (one, two, three), history)
-
-    message = str(raised.value)
-    assert message.startswith("wallet (0:0):"), "the database it is about"
-    assert "V1__a.sql has changed" in message
-    assert "V2__b.sql has not been applied" in message
 
 
 # -- targets, named as Java names them -------------------------------------------------------
@@ -421,7 +589,7 @@ def test_bad_files_are_refused_before_any_database_is_reached(tmp_path):
     write(tmp_path, "V1__a.sql")
     write(tmp_path, "V1__b.sql")
 
-    with pytest.raises(MigrationError, match="same version"):
+    with pytest.raises(MigrationError, match="two migrations are one migration"):
         migrate(ShardingConfig.single(NOWHERE), tmp_path)
 
 
@@ -553,6 +721,7 @@ def test_a_failure_names_the_target_the_migration_and_what_was_applied(tmp_path)
         two,
         [one],
         RuntimeError("relation missing"),
+        False,
     )
 
     assert (
@@ -562,21 +731,46 @@ def test_a_failure_names_the_target_the_migration_and_what_was_applied(tmp_path)
     assert "Nothing of V2__b.sql remains" in message
 
 
-def test_on_mysql_the_failure_says_the_schema_change_stays(tmp_path):
-    """#13 - no tool can undo a committed schema change on MySQL; the message says so."""
+def test_on_mysql_the_failure_says_the_schema_change_stays_and_is_recorded(tmp_path):
+    """No tool can undo a committed schema change on MySQL; the message says so, and says the
+    failure is recorded, so the next run will not apply it again over what it half did."""
     (one,) = scripts_in(tmp_path, "V1__a.sql")
 
-    message = _failure("s", failing_backend(transactional_ddl=False), one, [], RuntimeError("x"))
+    message = _failure(
+        "s", failing_backend(transactional_ddl=False), one, [], RuntimeError("x"), True
+    )
 
     assert "MySQL and MariaDB commit each one on its own" in message
-    assert "check the database before running it again" in message
+    assert "recorded as failed, so the next run stops here" in message
+    assert "repair()" in message
+
+
+def test_a_failure_that_could_not_be_recorded_says_the_next_run_would_repeat_it(tmp_path):
+    (one,) = scripts_in(tmp_path, "V1__a.sql")
+
+    message = _failure(
+        "s",
+        failing_backend(transactional_ddl=False),
+        one,
+        [],
+        RuntimeError("x"),
+        RuntimeError("gone"),
+    )
+
+    assert "Recording it as failed did not work either (gone)" in message
+    assert "the next run would apply it again" in message
 
 
 def test_a_lost_connection_is_said_out_loud(tmp_path):
     (one,) = scripts_in(tmp_path, "V1__a.sql")
 
     message = _failure(
-        "s", failing_backend(transactional_ddl=True, lost=True), one, [], RuntimeError("closed")
+        "s",
+        failing_backend(transactional_ddl=True, lost=True),
+        one,
+        [],
+        RuntimeError("closed"),
+        False,
     )
 
     assert "The connection to the database was lost." in message

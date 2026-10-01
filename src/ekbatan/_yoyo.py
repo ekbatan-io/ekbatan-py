@@ -28,13 +28,15 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from yoyo.backends.core.mysql import MySQLBackend
 from yoyo.backends.core.postgresql import PostgresqlPsycopgBackend
 from yoyo.backends.core.sqlite3 import SQLiteBackend
 from yoyo.connections import DatabaseURI
+from yoyo.migrations import Migration
 
 from .locks.base import lock_key_hash
 
@@ -179,6 +181,27 @@ class _Common(_SessionLock):
         """Whether the connection is gone, for saying so in the error rather than guessing."""
         return False
 
+    def table_exists(self, name: str) -> bool:
+        """Whether a table of this name is in the schema the connection works in."""
+        raise NotImplementedError
+
+    def columns(self, table: str) -> set[str]:
+        """The table's column names, read from an empty result so every dialect answers alike."""
+        cursor = self.execute(f"SELECT * FROM {table} WHERE 1 = 0")
+        names = {str(column[0]).lower() for column in cursor.description}
+        cursor.fetchall()
+        return names
+
+    def schema_objects(self) -> list[str]:
+        """A few of the things already in the schema, as Flyway looks for them before it will
+        create its history table: tables, views, sequences, types, functions, procedures and
+        triggers - anything a migration could have made. Empty for an empty schema."""
+        raise NotImplementedError
+
+    def current_user(self) -> str:
+        """Who is migrating, as the database knows them - Flyway's ``installed_by``."""
+        raise NotImplementedError
+
     def close(self) -> None:
         try:
             self.connection.close()
@@ -207,7 +230,39 @@ class PostgresMigrationBackend(_Common, PostgresqlPsycopgBackend):  # type: igno
             connection.execute("SET client_connection_check_interval = '1s'")
         except psycopg.Error:
             LOG.debug("%s: client_connection_check_interval is not available", self.label)
+        connection.add_notice_handler(self._notice)
         return connection
+
+    def _notice(self, diagnostic: Any) -> None:
+        """What the server says beside a statement - "does not exist, skipping" - to the log, as
+        Flyway logs it rather than dropping it."""
+        LOG.warning(
+            "%s: the database said: %s (SQL state %s)",
+            self.label,
+            diagnostic.message_primary,
+            diagnostic.sqlstate,
+        )
+
+    @contextmanager
+    def disable_transactions(self) -> Iterator[None]:
+        """yoyo's, less its opening ``ROLLBACK`` when no transaction is open.
+
+        yoyo rolls back before every file marked ``-- transactional: false``, open transaction or
+        not, and PostgreSQL answers a ``ROLLBACK`` with nothing to roll back with a warning -
+        which, now that the server's warnings reach the log, read as a problem with every such
+        migration. The connection is in autocommit throughout, as yoyo sets it.
+        """
+        import psycopg
+
+        if self.connection.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
+            self.rollback()
+        self._in_transaction = False
+        saved = self.connection.autocommit
+        self.connection.autocommit = True
+        try:
+            yield
+        finally:
+            self.connection.autocommit = saved
 
     def _try_lock(self) -> bool:
         cursor = self.execute("SELECT pg_try_advisory_lock(:key)", {"key": POSTGRES_LOCK_KEY})
@@ -227,6 +282,66 @@ class PostgresMigrationBackend(_Common, PostgresqlPsycopgBackend):  # type: igno
     def connection_lost(self) -> bool:
         return bool(getattr(self.connection, "closed", False) or self.connection.broken)
 
+    def table_exists(self, name: str) -> bool:
+        cursor = self.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = :name",
+            {"name": name},
+        )
+        return cursor.fetchone() is not None
+
+    def schema_objects(self) -> list[str]:
+        # Flyway's query, with materialized views, partitioned and foreign tables added: a schema
+        # holding only one of those is not empty either. Objects an extension owns are left out,
+        # as Flyway leaves them out - `CREATE EXTENSION` in a fresh database is not a migration.
+        owned = (
+            "LEFT JOIN pg_catalog.pg_depend d ON d.objid = {oid} AND d.deptype = 'e' "
+            "WHERE n.nspname = current_schema() AND d.objid IS NULL"
+        )
+        cursor = self.execute(
+            "SELECT c.relname FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+            + owned.format(oid="c.oid")
+            + " AND c.relkind IN ('r', 'v', 'S', 'm', 'p', 'f') "
+            "UNION ALL SELECT t.typname FROM pg_catalog.pg_type t "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace "
+            + owned.format(oid="t.oid")
+            + " AND t.typcategory NOT IN ('A', 'C') "
+            "UNION ALL SELECT p.proname FROM pg_catalog.pg_proc p "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+            + owned.format(oid="p.oid")
+            + " LIMIT 5"
+        )
+        return [str(row[0]) for row in cursor.fetchall()]
+
+    def current_user(self) -> str:
+        return str(self.execute("SELECT current_user").fetchone()[0])
+
+
+class _WarningCursor:
+    """A MySQL cursor that hands the server's warnings to the log after each statement.
+
+    MySQL and MariaDB answer some statements with warnings rather than errors - a table that did
+    not exist to be dropped, a value that did not fit where the server is not strict. Flyway logs
+    them; the driver only counts them. Every other attribute is the cursor's own.
+    """
+
+    def __init__(self, cursor: Any, backend: MySQLMigrationBackend) -> None:
+        self._cursor = cursor
+        self._backend = backend
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        result = self._cursor.execute(*args, **kwargs)
+        if getattr(self._cursor, "warning_count", 0):
+            for level, code, message in self._backend.connection.show_warnings() or ():
+                LOG.warning(
+                    "%s: the database said: %s (%s %s)", self._backend.label, message, level, code
+                )
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
 
 class MySQLMigrationBackend(_Common, MySQLBackend):  # type: ignore[misc]
     dialect = "mysql"
@@ -243,6 +358,9 @@ class MySQLMigrationBackend(_Common, MySQLBackend):  # type: ignore[misc]
         # on MySQL and MariaDB both.
         connection.autocommit(True)
         return connection
+
+    def cursor(self) -> Any:
+        return _WarningCursor(super().cursor(), self)
 
     def savepoint_rollback(self, id: str) -> None:
         """Let the real error through when MySQL has already dropped the savepoint.
@@ -295,6 +413,39 @@ class MySQLMigrationBackend(_Common, MySQLBackend):  # type: ignore[misc]
         except Exception:
             return True
         return False
+
+    def table_exists(self, name: str) -> bool:
+        cursor = self.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = DATABASE() AND table_name = :name",
+            {"name": name},
+        )
+        return cursor.fetchone() is not None
+
+    def schema_objects(self) -> list[str]:
+        # Flyway's query: tables and views, routines, triggers - and events where the server
+        # lets them be read, which MariaDB does not when its scheduler is off.
+        cursor = self.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() "
+            "UNION ALL SELECT routine_name FROM information_schema.routines "
+            "WHERE routine_schema = DATABASE() "
+            "UNION ALL SELECT trigger_name FROM information_schema.triggers "
+            "WHERE trigger_schema = DATABASE() LIMIT 5"
+        )
+        found = [str(row[0]) for row in cursor.fetchall()]
+        if not found:
+            try:
+                events = self.execute(
+                    "SELECT event_name FROM information_schema.events "
+                    "WHERE event_schema = DATABASE() LIMIT 5"
+                )
+                found = [str(row[0]) for row in events.fetchall()]
+            except self.DatabaseError:
+                LOG.debug("%s: events cannot be read here", self.label)
+        return found
+
+    def current_user(self) -> str:
+        return str(self.execute("SELECT SUBSTRING_INDEX(USER(), '@', 1)").fetchone()[0])
 
 
 class SQLiteMigrationBackend(_Common, SQLiteBackend):  # type: ignore[misc]
@@ -355,6 +506,47 @@ class SQLiteMigrationBackend(_Common, SQLiteBackend):  # type: ignore[misc]
         handle, self._lock_file = self._lock_file, None
         if handle is not None:
             handle.close()  # closing the file releases the lock
+
+    def table_exists(self, name: str) -> bool:
+        cursor = self.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :name", {"name": name}
+        )
+        return cursor.fetchone() is not None
+
+    def schema_objects(self) -> list[str]:
+        # Flyway counts tables only; a view or a trigger is something a migration made too.
+        cursor = self.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view', 'trigger') "
+            "AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name <> 'android_metadata' LIMIT 5"
+        )
+        return [str(row[0]) for row in cursor.fetchall()]
+
+    def current_user(self) -> str:
+        # SQLite has no users. Flyway records an empty string here too.
+        return ""
+
+
+class SqlMigration(Migration):  # type: ignore[misc]
+    """A yoyo migration that is SQL whatever its file is called.
+
+    yoyo tells SQL from Python by a case-sensitive ``.sql`` at the end of the name, so it would
+    hand ``V2__x.SQL`` - which Flyway runs as SQL - to Python's import machinery. Only SQL files
+    are ever loaded here; nothing else about yoyo's reading changes.
+    """
+
+    def is_raw_sql(self) -> bool:
+        return True
+
+
+def load_sql(path: str) -> Any:
+    """One SQL file as a yoyo migration: its statements split and its directives read."""
+    import os
+
+    migration = SqlMigration(
+        os.path.splitext(os.path.basename(path))[0], path, os.path.dirname(path)
+    )
+    migration.load()
+    return migration
 
 
 BACKENDS: dict[str, type[_Common]] = {

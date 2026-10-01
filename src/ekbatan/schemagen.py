@@ -91,17 +91,20 @@ FORCED = {
 def fingerprint(migrations: Path) -> str:
     """A hash of every migration file, so a stale module can say so.
 
-    Every ``.sql`` file in the directory, sorted by name and hashed with its name - a rename counts
-    as a change, which is right: the history records a migration by its file name. Line endings
-    are normalised as the migrator's own checksums normalise them, so a checkout that turns
-    ``\\n`` into ``\\r\\n`` does not make every generated module stale. Other files - an
-    ``__init__.py``, a ``README`` - are not schema and are not hashed.
+    Every SQL file the migrator reads - versioned, repeatable and ``post-apply`` alike, in any
+    directory under this one, hidden ones skipped - sorted by path and hashed with its path, so
+    moving one counts as a change. Line endings are normalised as the migrator's own checksums
+    normalise them, so a checkout that turns ``\\n`` into ``\\r\\n`` does not make every generated
+    module stale. Other files - an ``__init__.py``, a ``README`` - are not schema and are not
+    hashed. For a directory with no subdirectories this is the hash it always was.
     """
-    from .migrations import checksum
+    from .migrations import _files, checksum
 
     digest = hashlib.sha256()
-    for path in sorted(migrations.glob("*.sql")):
-        digest.update(path.name.encode())
+    for path in _files(migrations):
+        if path.suffix.lower() != ".sql":
+            continue
+        digest.update(path.relative_to(migrations).as_posix().encode())
         digest.update(checksum(path).encode())
     return digest.hexdigest()[:16]
 

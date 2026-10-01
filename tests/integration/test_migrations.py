@@ -1,10 +1,11 @@
 """The migrator against a real database - every dialect the run asks for.
 
 Java runs Flyway here. The migrator is yoyo underneath, with a lock, checks and a history of its
-own on top, because yoyo alone gets each of those wrong. Each group below names the row of the
-migrator's shortcomings table it covers; what several processes do at once is
-`test_migration_concurrency.py`, and everything decided before a database is reached is
-`tests/unit/test_migration_scripts.py`.
+own on top, because yoyo alone gets each of those wrong. The behaviour copied from Flyway was run
+on Flyway 12 first - `docs/MIGRATOR-LEDGER.md` says what each run showed, and
+`scripts/flyway-parity.py` runs it again. What several processes do at once is
+`test_migration_concurrency.py`; what is decided before a database is reached is
+`tests/unit/test_migration_scripts.py` and `tests/unit/test_migration_model.py`.
 """
 
 from __future__ import annotations
@@ -22,8 +23,12 @@ from ekbatan.config import DataSourceConfig, ShardingConfig
 from ekbatan.migrations import (
     HISTORY_TABLE,
     MigrationError,
+    MigrationState,
     YoyoMigrator,
+    baseline,
+    info,
     migrate,
+    repair,
     target,
 )
 from ekbatan.sharding import ShardIdentifier
@@ -37,11 +42,51 @@ MEXICO = ShardIdentifier(1, 0)
 # -- helpers ---------------------------------------------------------------------------------
 
 
-def history(url: str) -> list[tuple[str, str]]:
+def history(url: str) -> list[tuple[str | None, str]]:
+    """The rows of migrations that succeeded, in the order they were recorded."""
+    return [(version, script) for version, script, _, _, success in rows(url) if success]
+
+
+def rows(url: str) -> list[tuple[str | None, str, str, str, bool]]:
+    """Every row: version, script, description, type, success."""
     if HISTORY_TABLE not in tables(url):
         return []
-    rows = query(url, f"SELECT version, script FROM {HISTORY_TABLE}")
-    return sorted(((r[0], r[1]) for r in rows), key=lambda r: [int(p) for p in r[0].split(".")])
+    found = query(
+        url,
+        f"SELECT version, script, description, type, success FROM {HISTORY_TABLE} "
+        "ORDER BY installed_rank",
+    )
+    return [(r[0], r[1], r[2], r[3], bool(r[4])) for r in found]
+
+
+def failed(url: str) -> list[str]:
+    return [script for _, script, _, _, success in rows(url) if not success]
+
+
+RUNS = {
+    "postgres": "CREATE TABLE runs (id SERIAL PRIMARY KEY, name VARCHAR(100));",
+    "mysql": "CREATE TABLE runs (id INTEGER AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100));",
+    "mariadb": "CREATE TABLE runs (id INTEGER AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100));",
+    "sqlite": "CREATE TABLE runs (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);",
+}
+
+
+def ran(name: str) -> str:
+    """A migration that says it ran, so the order and the number of runs can be read back."""
+    return f"INSERT INTO runs (name) VALUES ('{name}');\n"
+
+
+def runs(url: str) -> list[str]:
+    return [r[0] for r in query(url, "SELECT name FROM runs ORDER BY id")]
+
+
+def transactional_ddl(backend) -> bool:
+    return backend.dialect in ("postgres", "sqlite")
+
+
+#: A schema change that commits on its own on MySQL and MariaDB, then a failure: half a
+#: migration, where one cannot be rolled back.
+HALF = "CREATE TABLE half (id INTEGER);\nINSERT INTO nowhere VALUES (1);\n"
 
 
 class Files:
@@ -52,7 +97,9 @@ class Files:
         path.mkdir(parents=True)
 
     def add(self, name: str, sql: str) -> Files:
-        (self.path / name).write_text(sql)
+        path = self.path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(sql)
         return self
 
     def drop(self, name: str) -> None:
@@ -131,14 +178,29 @@ def test_the_history_records_what_each_file_contained(backend, request, files):
 
     migrate(single(url), files.path)
 
-    ((version, description, script, checksum, installed_on, execution_time),) = query(
+    ((rank, version, description, kind, script, checksum, by, on, took, success),) = query(
         url,
-        "SELECT version, description, script, checksum, installed_on, execution_time "
-        f"FROM {HISTORY_TABLE}",
+        "SELECT installed_rank, version, description, type, script, checksum, installed_by, "
+        f"installed_on, execution_time, success FROM {HISTORY_TABLE}",
     )
-    assert (version, description, script) == ("1", "widgets", "V1__widgets.sql")
+    assert (rank, version, description, kind, script) == (
+        1,
+        "1",
+        "widgets",
+        "SQL",
+        "V1__widgets.sql",
+    )
     assert len(checksum) == 64, "sha256 of what the file contained"
-    assert installed_on.endswith("Z") and execution_time >= 0
+    assert on.endswith("Z") and took >= 0 and bool(success) is True
+    assert by == _user(url, backend.dialect), "the database user, as Flyway records it"
+
+
+def _user(url: str, dialect: str) -> str:
+    if dialect == "postgres":
+        return str(query(url, "SELECT current_user")[0][0])
+    if dialect in ("mysql", "mariadb"):
+        return str(query(url, "SELECT SUBSTRING_INDEX(USER(), '@', 1)")[0][0])
+    return ""  # SQLite has no users; Flyway records an empty string too
 
 
 # -- the files against the history (#1 #2 #3 #4) --------------------------------------------
@@ -150,7 +212,7 @@ def test_duplicate_versions_are_refused_and_the_database_is_not_touched(backend,
     files.add("V1__create_foo.sql", "CREATE TABLE foo (id INTEGER PRIMARY KEY);")
     files.add("V1__create_bar.sql", "CREATE TABLE bar (id INTEGER PRIMARY KEY);")
 
-    with pytest.raises(MigrationError, match="same version"):
+    with pytest.raises(MigrationError, match="two migrations are one migration"):
         migrate(single(url), files.path)
 
     assert tables(url) == set(), "not even the history table"
@@ -191,7 +253,7 @@ def test_a_renamed_migration_is_refused(backend, request, files):
 
     files.rename("V1__widgets.sql", "V1__things.sql")
 
-    with pytest.raises(MigrationError, match=r"is now named V1__things\.sql"):
+    with pytest.raises(MigrationError, match=r"was applied as 'widgets'.*now says 'things'"):
         migrate(single(url), files.path)
 
 
@@ -327,12 +389,16 @@ def test_a_failure_names_the_migration_and_what_ran_before_it(backend, request, 
     assert "Applied by this run before that: V1__ok.sql." in message
     assert "Already migrated: none" in message
     assert history(url) == [("1", "V1__ok.sql")], "what succeeded stays recorded"
+    if transactional_ddl(backend):
+        assert failed(url) == [], "rolled back as a whole, so there is nothing to record"
+    else:
+        assert failed(url) == ["V2__broken.sql"], "MySQL: recorded as failed, as Flyway records it"
 
 
 # -- running outside a transaction (#10) -----------------------------------------------------
 
 
-def test_a_postgres_index_can_be_built_concurrently(backend, request, files):
+def test_a_postgres_index_can_be_built_concurrently(backend, request, files, caplog):
     if backend.dialect != "postgres":
         pytest.skip("CREATE INDEX CONCURRENTLY is PostgreSQL's")
     url = fresh(backend, request)
@@ -341,11 +407,13 @@ def test_a_postgres_index_can_be_built_concurrently(backend, request, files):
         "V2__index.sql",
         "-- transactional: false\nCREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);",
     )
+    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
 
     migrate(single(url), files.path)
 
     indexes = {r[0] for r in query(url, "SELECT indexname FROM pg_indexes")}
     assert "ix_people_owner" in indexes
+    assert "no transaction in progress" not in caplog.text, "yoyo's stray ROLLBACK is not sent"
 
 
 def test_without_the_directive_postgres_refuses_it_and_says_why(backend, request, files):
@@ -390,7 +458,7 @@ def test_on_mysql_the_real_error_is_reported_not_a_savepoint_error(backend, requ
     assert "nope" in str(raised.value), "the statement that failed"
     assert "SAVEPOINT" not in str(raised.value)
     assert "half" in tables(url), "#13: the schema change stays - a database limit, documented"
-    assert history(url) == []
+    assert history(url) == [] and failed(url) == ["V1__half.sql"]
 
 
 # -- one connection, closed when done (#12, #15) ---------------------------------------------
@@ -605,6 +673,7 @@ def test_shards_go_in_layout_order_not_argument_order(backend, request, files):
 
 
 def test_a_failing_shard_stops_the_run_and_names_what_was_already_migrated(backend, request, files):
+    """Mexico already has a table and no history, which is refused as Flyway refuses it."""
     config = two_shards(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
     query(config.member(MEXICO).primary_config().url, "CREATE TABLE widgets (id INTEGER)")
@@ -650,3 +719,646 @@ def test_the_builder_migrates_its_targets_under_their_own_names(backend, request
 
     assert [r.target.name for r in results] == ["orders", "shard-3-1"]
     assert [r.migrate_result.migrations_executed for r in results] == [1, 1]
+
+
+# -- repeatable migrations (ledger section 3) ------------------------------------------------
+
+
+def test_repeatables_run_after_every_versioned_migration_in_description_order(
+    backend, request, files
+):
+    """Parity R01, on every dialect: capitals first, `a` before `a b` before `a-b` before `ab`."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    for name in ["ab", "a-b", "a b", "a", "Zeta", "C", "B"]:
+        files.add(f"R__{name.replace(' ', '_')}.sql", ran(name))
+    files.add("V2__second.sql", ran("V2"))
+
+    (result,) = migrate(single(url), files.path)
+
+    assert runs(url) == ["V2", "B", "C", "Zeta", "a", "a b", "a-b", "ab"]
+    assert result.migrate_result.migrations[:2] == ("V1__runs.sql", "V2__second.sql")
+    assert result.migrate_result.target_schema_version == "2", "a repeatable is not a version"
+    assert [version for version, *_ in rows(url)] == ["1", "2"] + [None] * 7
+
+
+def test_a_repeatable_runs_again_only_when_its_file_changes(backend, request, files):
+    """Parity R03, R04, R14: a new row each time it runs; the old rows stay."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("R__a.sql", ran("a1")).add("R__b.sql", ran("b1"))
+    migrate(single(url), files.path)
+
+    (unchanged,) = migrate(single(url), files.path)
+    files.add("R__b.sql", ran("b2"))
+    (changed,) = migrate(single(url), files.path)
+
+    assert unchanged.migrate_result.migrations == ()
+    assert changed.migrate_result.migrations == ("R__b.sql",)
+    assert runs(url) == ["a1", "b1", "b2"]
+    assert history(url) == [
+        ("1", "V1__runs.sql"),
+        (None, "R__a.sql"),
+        (None, "R__b.sql"),
+        (None, "R__b.sql"),
+    ]
+
+
+def test_a_repeatable_changed_back_runs_again(backend, request, files):
+    """Parity R06: only the newest row counts."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    for content in ("A", "B", "A"):
+        files.add("R__x.sql", ran(content))
+        migrate(single(url), files.path)
+
+    assert runs(url) == ["A", "B", "A"]
+
+
+def test_a_line_ending_change_does_not_run_a_repeatable_again(backend, request, files):
+    """Parity R05."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
+    migrate(single(url), files.path)
+
+    (files.path / "R__x.sql").write_bytes(ran("x").replace("\n", "\r\n").encode())
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == () and runs(url) == ["x"]
+
+
+def test_a_view_is_replaced_whole_each_time_its_file_changes(backend, request, files):
+    """What repeatable migrations are for."""
+    url = fresh(backend, request)
+    files.add("V1__wallets.sql", "CREATE TABLE wallets (id INTEGER PRIMARY KEY, balance INTEGER);")
+    files.add(
+        "V2__rows.sql", "INSERT INTO wallets VALUES (1, 10);\nINSERT INTO wallets VALUES (2, 30);"
+    )
+    drop = "DROP VIEW IF EXISTS totals;\n" if backend.dialect == "sqlite" else ""
+    create = "CREATE VIEW" if backend.dialect == "sqlite" else "CREATE OR REPLACE VIEW"
+    view = f"{drop}{create} totals AS SELECT SUM(balance) AS total FROM wallets"
+
+    files.add("R__totals.sql", f"{view};")
+    migrate(single(url), files.path)
+    assert query(url, "SELECT total FROM totals")[0][0] == 40
+
+    files.add("R__totals.sql", f"{view} WHERE id = 2;")
+    migrate(single(url), files.path)
+    assert query(url, "SELECT total FROM totals")[0][0] == 30
+
+
+def test_a_repeatable_whose_file_is_gone_is_refused_until_repair_marks_it_deleted(
+    backend, request, files
+):
+    """Parity R07 and R24: refused as Flyway refuses it; repair records the deletion; a file of
+    that description coming back later runs again."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
+    migrate(single(url), files.path)
+    files.drop("R__x.sql")
+
+    with pytest.raises(MigrationError, match=r"repeatable migration 'x' \(R__x\.sql\).*is gone"):
+        migrate(single(url), files.path)
+
+    (repaired,) = repair(single(url), files.path)
+    assert repaired.deleted == ("repeatable migration 'x' (R__x.sql)",)
+    assert migrate(single(url), files.path)[0].migrate_result.migrations == ()
+
+    files.add("R__x.sql", ran("x"))
+    (back,) = migrate(single(url), files.path)
+    assert back.migrate_result.migrations == ("R__x.sql",)
+    assert runs(url) == ["x", "x"]
+
+
+def test_a_failing_repeatable(backend, request, files):
+    """Parity R09 and R10: rolled back and simply tried again where DDL is transactional;
+    recorded as failed on MySQL and MariaDB, and refused - even fixed - until repaired."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x") + HALF)
+
+    with pytest.raises(MigrationError, match=r"failed in R__x\.sql"):
+        migrate(single(url), files.path)
+    files.add("R__x.sql", ran("x-fixed"))
+
+    if transactional_ddl(backend):
+        assert failed(url) == [] and runs(url) == []
+        (result,) = migrate(single(url), files.path)
+        assert result.migrate_result.migrations == ("R__x.sql",)
+        assert runs(url) == ["x-fixed"]
+        return
+
+    assert failed(url) == ["R__x.sql"]
+    assert runs(url) == ["x"], "the insert before the schema change was committed with it"
+    with pytest.raises(MigrationError, match=r"'x' \(R__x\.sql\) failed on an earlier run"):
+        migrate(single(url), files.path)
+    (repaired,) = repair(single(url), files.path)
+    assert repaired.removed == ("repeatable migration 'x' (R__x.sql)",)
+    query(url, "DROP TABLE half")  # the person putting the database right
+    (result,) = migrate(single(url), files.path)
+    assert result.migrate_result.migrations == ("R__x.sql",)
+    assert runs(url) == ["x", "x-fixed"] and failed(url) == []
+
+
+def test_a_repeatable_can_run_outside_a_transaction(backend, request, files):
+    """Parity R15."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("R__x.sql", "-- transactional: false\n" + ran("x"))
+
+    migrate(single(url), files.path)
+
+    assert runs(url) == ["x"] and history(url)[-1] == (None, "R__x.sql")
+
+
+def test_repeatables_do_not_run_when_a_versioned_migration_fails(backend, request, files):
+    """Parity R13."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
+    files.add("V2__bad.sql", "INSERT INTO nowhere VALUES (1);")
+
+    with pytest.raises(MigrationError, match=r"failed in V2__bad\.sql"):
+        migrate(single(url), files.path)
+
+    assert runs(url) == []
+
+
+def test_an_older_release_applies_its_own_repeatable_again(backend, request, files, caplog):
+    """Parity R16 - Flyway's behaviour, and the docs say so: whichever release migrates last
+    decides what a repeatable migration's object looks like."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("V2__two.sql", ran("V2"))
+    files.add("R__x.sql", ran("new"))
+    migrate(single(url), files.path)
+
+    files.drop("V2__two.sql")
+    files.add("R__x.sql", ran("old"))
+    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == ("R__x.sql",)
+    assert runs(url) == ["V2", "new", "old"]
+    assert "newer than every migration here" in caplog.text
+
+
+def test_bodies_with_semicolons_inside_run_whole(backend, request, files):
+    """Parity F17: a function, a procedure, a trigger - what repeatable migrations hold - each
+    without `DELIMITER`."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    both = "  INSERT INTO runs (name) VALUES ('one');\n  INSERT INTO runs (name) VALUES ('two');\n"
+    if backend.dialect == "postgres":
+        body = (
+            f"CREATE OR REPLACE FUNCTION two() RETURNS void AS $$\nBEGIN\n{both}END;\n"
+            "$$ LANGUAGE plpgsql;\nSELECT two();\n"
+        )
+    elif backend.dialect == "sqlite":
+        files.add("V2__log.sql", "CREATE TABLE log (n TEXT);")
+        body = (
+            f"DROP TRIGGER IF EXISTS two;\nCREATE TRIGGER two AFTER INSERT ON log BEGIN\n{both}"
+            "END;\nINSERT INTO log VALUES ('x');\n"
+        )
+    else:
+        body = (
+            f"DROP PROCEDURE IF EXISTS two;\nCREATE PROCEDURE two() BEGIN\n{both}END;\n"
+            "CALL two();\n"
+        )
+    files.add("R__body.sql", body)
+
+    migrate(single(url), files.path, output_query_results=False)
+
+    assert runs(url) == ["one", "two"]
+
+
+# -- a failure that cannot be rolled back (ledger section 4) ---------------------------------
+
+
+def test_a_half_applied_migration_is_recorded_and_blocks_until_repaired(backend, request, files):
+    """Parity X02, X03: on MySQL and MariaDB a failure after a schema change is recorded as
+    failed, and refused - even once the file is fixed - until repaired. Running it again over what
+    it half did is what the failed row prevents. Where DDL is transactional it rolls back and is
+    simply tried again."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("V2__half.sql", ran("V2") + HALF)
+
+    with pytest.raises(MigrationError) as first:
+        migrate(single(url), files.path)
+    files.add("V2__half.sql", "CREATE TABLE IF NOT EXISTS half (id INTEGER);\n")
+
+    if transactional_ddl(backend):
+        assert "rolled back as a whole" in str(first.value)
+        assert failed(url) == [] and "half" not in tables(url)
+        (result,) = migrate(single(url), files.path)
+        assert result.migrate_result.migrations == ("V2__half.sql",)
+        return
+
+    assert "It is recorded as failed" in str(first.value)
+    assert failed(url) == ["V2__half.sql"] and "half" in tables(url) and runs(url) == ["V2"]
+    with pytest.raises(MigrationError, match=r"version 2 \(V2__half\.sql\) failed on an ea") as no:
+        migrate(single(url), files.path)
+    assert "repair()" in str(no.value)
+    (status,) = info(single(url), files.path)
+    assert status.migrations[-1].state is MigrationState.FAILED
+
+    (repaired,) = repair(single(url), files.path)
+    assert repaired.removed == ("version 2 (V2__half.sql)",)
+    (result,) = migrate(single(url), files.path)
+    assert result.migrate_result.migrations == ("V2__half.sql",)
+    assert history(url)[-1] == ("2", "V2__half.sql") and failed(url) == []
+
+
+def test_a_failure_outside_a_transaction_is_recorded_on_every_dialect(backend, request, files):
+    """Parity X02b: `-- transactional: false` cannot be rolled back anywhere, so its failure is
+    recorded on PostgreSQL and SQLite too."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add(
+        "V2__loose.sql", "-- transactional: false\n" + ran("V2") + "INSERT INTO nowhere VALUES (1);"
+    )
+
+    with pytest.raises(MigrationError, match="It is recorded as failed"):
+        migrate(single(url), files.path)
+
+    assert runs(url) == ["V2"], "the statement before the failure stays"
+    assert failed(url) == ["V2__loose.sql"]
+    with pytest.raises(MigrationError, match="failed on an earlier run"):
+        migrate(single(url), files.path)
+
+
+def test_a_failure_a_newer_release_recorded_does_not_stop_an_older_one(
+    backend, request, files, caplog
+):
+    """Parity X02c: Flyway warns "contains a failed future migration" and carries on - the
+    rollback of an application whose new migration failed has to be able to start."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("V2__loose.sql", "-- transactional: false\nINSERT INTO nowhere VALUES (1);")
+    with pytest.raises(MigrationError):
+        migrate(single(url), files.path)
+
+    files.drop("V2__loose.sql")
+    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == ()
+    assert "failed when a newer release applied it" in caplog.text
+
+
+# -- repair (ledger X05) ---------------------------------------------------------------------
+
+
+def test_repair_records_what_an_edited_or_renamed_file_now_says(backend, request, files):
+    """Parity X04a, X04c: for a change a person has decided is not a change."""
+    url = fresh(backend, request)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+    files.add("V2__two.sql", "SELECT 2;")
+    migrate(single(url), files.path)
+    files.add("V1__widgets.sql", "-- a comment\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+    files.rename("V2__two.sql", "V2__deux.sql")
+
+    with pytest.raises(MigrationError):
+        migrate(single(url), files.path)
+    (repaired,) = repair(single(url), files.path)
+
+    assert repaired.aligned == ("version 1 (V1__widgets.sql)", "version 2 (V2__deux.sql)")
+    assert migrate(single(url), files.path)[0].migrate_result.migrations == ()
+    assert [description for _, _, description, _, _ in rows(url)] == ["widgets", "deux"]
+    assert history(url)[1] == ("2", "V2__two.sql"), (
+        "the path is left as it was, as Flyway leaves it"
+    )
+
+
+def test_repair_marks_a_gone_migration_deleted_and_it_cannot_come_back(backend, request, files):
+    """Parity X04b."""
+    url = fresh(backend, request)
+    files.add("V1__a.sql", "SELECT 1;").add("V2__b.sql", "SELECT 2;").add("V3__c.sql", "SELECT 3;")
+    migrate(single(url), files.path)
+    files.drop("V2__b.sql")
+
+    (repaired,) = repair(single(url), files.path)
+
+    assert repaired.deleted == ("version 2 (V2__b.sql)",)
+    assert rows(url)[-1][:4] == ("2", "V2__b.sql", "b", "DELETE")
+    (status,) = info(single(url), files.path)
+    assert ("2", MigrationState.DELETED) in [(m.version, m.state) for m in status.migrations]
+    assert migrate(single(url), files.path)[0].migrate_result.migrations == ()
+
+    files.add("V2__b.sql", "SELECT 2;")
+    with pytest.raises(MigrationError, match=r"V2__b\.sql has not been applied, but version 3"):
+        migrate(single(url), files.path)
+
+
+def test_repair_with_nothing_to_repair_changes_nothing(backend, request, files):
+    """Parity X04d."""
+    url = fresh(backend, request)
+    files.add("V1__a.sql", "SELECT 1;")
+    migrate(single(url), files.path)
+    before = rows(url)
+
+    (repaired,) = repair(single(url), files.path)
+
+    assert (repaired.removed, repaired.deleted, repaired.aligned) == ((), (), ())
+    assert rows(url) == before
+
+
+def test_repair_leaves_what_a_newer_release_applied_alone(backend, request, files):
+    """Flyway's repair marks deleted what is missing, not what is newer than every file."""
+    url = fresh(backend, request)
+    files.add("V1__a.sql", "SELECT 1;").add("V2__b.sql", "SELECT 2;")
+    migrate(single(url), files.path)
+    files.drop("V2__b.sql")
+
+    (repaired,) = repair(single(url), files.path)
+
+    assert repaired.deleted == ()
+
+
+def test_repair_on_a_database_with_no_history_does_nothing(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__a.sql", "SELECT 1;")
+
+    (repaired,) = repair(single(url), files.path)
+
+    assert (repaired.removed, repaired.deleted, repaired.aligned) == ((), (), ())
+    assert HISTORY_TABLE not in tables(url)
+
+
+# -- a database these migrations did not build (ledger M03, X06, X07) ------------------------
+
+
+def test_a_database_with_tables_but_no_history_is_refused(backend, request, files):
+    """Parity M03, on every dialect: Flyway refuses "non-empty schema(s) ... but no schema
+    history table" and points at baseline."""
+    url = fresh(backend, request)
+    query(url, "CREATE TABLE legacy (id INTEGER)")
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+
+    with pytest.raises(MigrationError, match=f"already has legacy but no {HISTORY_TABLE}") as no:
+        migrate(single(url), files.path)
+
+    assert "baseline(version=...)" in str(no.value)
+    assert tables(url) == {"legacy"}, "nothing created, not even the history table"
+
+
+def test_a_database_with_only_a_view_or_a_sequence_is_not_empty_either(backend, request, files):
+    """Parity M03b, M03c."""
+    url = fresh(backend, request)
+    if backend.dialect == "postgres":
+        query(url, "CREATE SEQUENCE numbers")
+    else:
+        query(url, "CREATE VIEW answer AS SELECT 42 AS n")
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+
+    with pytest.raises(MigrationError, match=f"but no {HISTORY_TABLE}"):
+        migrate(single(url), files.path)
+
+
+def test_baseline_records_what_is_there_and_migrate_carries_on_from_it(backend, request, files):
+    """Parity X05 and X05d: files at or below the baseline never run; the ones after do."""
+    url = fresh(backend, request)
+    query(url, RUNS[backend.dialect])
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("V2__two.sql", ran("V2"))
+    files.add("V3__three.sql", ran("V3"))
+
+    (done,) = baseline(single(url), version="2")
+    (result,) = migrate(single(url), files.path)
+
+    assert (done.version, done.created) == ("2", True)
+    assert result.migrate_result.migrations == ("V3__three.sql",)
+    assert result.migrate_result.initial_schema_version == "2"
+    assert runs(url) == ["V3"]
+    (status,) = info(single(url), files.path)
+    assert [(m.version, m.state) for m in status.migrations] == [
+        ("1", MigrationState.BELOW_BASELINE),
+        ("2", MigrationState.BASELINE_IGNORED),
+        ("2", MigrationState.BASELINE),
+        ("3", MigrationState.SUCCESS),
+    ]
+
+
+def test_baseline_is_refused_where_it_would_skip_or_rewrite_history(backend, request, files):
+    """Flyway refuses a baseline once anything is recorded (parity X05b), and a different one;
+    the same one again does nothing. An empty database is refused too, where Flyway would
+    baseline it and then never run its first migration (parity X05c)."""
+    empty, legacy = fresh(backend, request, "_e"), fresh(backend, request, "_l")
+    with pytest.raises(MigrationError, match="is empty, so there is nothing to baseline"):
+        baseline(single(empty))
+    assert HISTORY_TABLE not in tables(empty)
+
+    query(legacy, "CREATE TABLE legacy (id INTEGER)")
+    baseline(single(legacy), version="3")
+    (again,) = baseline(single(legacy), version="3")
+    assert again.created is False
+    with pytest.raises(MigrationError, match="already been baselined at version 3"):
+        baseline(single(legacy), version="4")
+
+    files.add("V1__a.sql", "SELECT 1;")
+    migrated = fresh(backend, request, "_m")
+    migrate(single(migrated), files.path)
+    with pytest.raises(MigrationError, match="already has migrations in its history"):
+        baseline(single(migrated))
+
+
+# -- info (ledger X08) -----------------------------------------------------------------------
+
+
+def test_info_says_where_each_migration_stands_and_changes_nothing(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x1"))
+
+    (before,) = info(single(url), files.path)
+    assert HISTORY_TABLE not in tables(url), "info creates nothing"
+    assert [m.script for m in before.pending] == ["V1__runs.sql", "R__x.sql"]
+
+    migrate(single(url), files.path)
+    files.add("R__x.sql", ran("x2")).add("V2__two.sql", ran("V2"))
+    (now,) = info(single(url), files.path)
+
+    assert now.schema_version == "1"
+    assert [(m.category, m.version, m.description, m.state) for m in now.migrations] == [
+        ("Versioned", "1", "runs", MigrationState.SUCCESS),
+        ("Repeatable", None, "x", MigrationState.OUTDATED),
+        ("Versioned", "2", "two", MigrationState.PENDING),
+        ("Repeatable", None, "x", MigrationState.PENDING),
+    ]
+    assert now.problems == ()
+
+
+# -- post-apply hooks (ledger F18) -----------------------------------------------------------
+
+
+def test_a_post_apply_hook_runs_at_the_end_of_every_migrate(backend, request, files):
+    """Parity F18: Flyway's afterMigrate runs at the end of every migrate, even with nothing
+    pending, after the repeatables. yoyo's own hook runs only when something was applied."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
+    files.add("post-apply.sql", ran("after"))
+
+    migrate(single(url), files.path)
+    migrate(single(url), files.path)
+
+    assert runs(url) == ["x", "after", "after"]
+    assert history(url) == [("1", "V1__runs.sql"), (None, "R__x.sql")], "a hook is not recorded"
+
+
+def test_a_failing_hook_fails_the_migrate_and_runs_again_next_time(backend, request, files):
+    """Parity F18b: what was applied stays recorded, and the fixed hook runs on the next start -
+    the retry yoyo's own timing would never give it."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("post-apply.sql", ran("after") + "INSERT INTO nowhere VALUES (1);\n")
+
+    with pytest.raises(MigrationError, match=r"post-apply hook post-apply\.sql failed") as raised:
+        migrate(single(url), files.path)
+    assert "(V1__runs.sql)" in str(raised.value) and "runs again" in str(raised.value)
+    assert history(url) == [("1", "V1__runs.sql")]
+
+    files.add("post-apply.sql", ran("after-fixed"))
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == ()
+    assert runs(url)[-1] == "after-fixed"
+
+
+# -- the history table (ledger section 6) ----------------------------------------------------
+
+
+def test_every_application_is_ranked_in_the_order_it_happened(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x1"))
+    migrate(single(url), files.path)
+    files.add("R__x.sql", ran("x2")).add("V2__two.sql", ran("V2"))
+    migrate(single(url), files.path)
+
+    ranked = query(
+        url, f"SELECT installed_rank, version, script FROM {HISTORY_TABLE} ORDER BY installed_rank"
+    )
+
+    assert [tuple(r) for r in ranked] == [
+        (1, "1", "V1__runs.sql"),
+        (2, None, "R__x.sql"),
+        (3, "2", "V2__two.sql"),
+        (4, None, "R__x.sql"),
+    ]
+
+
+def test_a_history_table_from_an_earlier_build_is_refused(backend, request, files):
+    url = fresh(backend, request)
+    query(url, f"CREATE TABLE {HISTORY_TABLE} (version VARCHAR(50) PRIMARY KEY, script TEXT)")
+    files.add("V1__a.sql", "SELECT 1;")
+
+    for command in (migrate, info, repair):
+        with pytest.raises(MigrationError, match="made by a development build of this migrator"):
+            command(single(url), files.path)
+    with pytest.raises(MigrationError, match="made by a development build of this migrator"):
+        baseline(single(url))
+
+
+# -- files as Flyway finds them (ledger F02, F04, M12) ---------------------------------------
+
+
+def test_migrations_in_subdirectories_and_in_capitals_run(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("2026/V2__two.SQL", ran("V2"))
+    files.add("2026/q4/R__view.sql", ran("R"))
+
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == (
+        "V1__runs.sql",
+        "2026/V2__two.SQL",
+        "2026/q4/R__view.sql",
+    )
+    assert history(url)[1] == ("2", "2026/V2__two.SQL"), "the path inside the location"
+
+
+def test_moving_or_respelling_an_applied_file_is_not_a_change(backend, request, files):
+    """Parity M12b, M12c."""
+    url = fresh(backend, request)
+    files.add("V1__a.sql", "SELECT 1;").add("V2__b.sql", "SELECT 2;")
+    migrate(single(url), files.path)
+
+    files.rename("V1__a.sql", "V0001__a.sql")
+    (files.path / "old").mkdir()
+    files.rename("V2__b.sql", "old/V2__b.sql")
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == ()
+
+
+def test_the_builder_runs_info_repair_and_baseline_too(backend, request, files):
+    files.add("V1__a.sql", "SELECT 1;")
+    url = fresh(backend, request)
+    builder = (
+        YoyoMigrator.builder().with_data_source(DataSourceConfig(url=url)).locations(files.path)
+    )
+
+    (status,) = builder.info()
+    assert [m.state for m in status.migrations] == [MigrationState.PENDING]
+    builder.migrate()
+    (repaired,) = builder.repair()
+    assert repaired.removed == ()
+
+    legacy = fresh(backend, request, "_l")
+    query(legacy, "CREATE TABLE legacy (id INTEGER)")
+    (done,) = YoyoMigrator.builder().with_data_source(DataSourceConfig(url=legacy)).baseline("5")
+    assert done.version == "5"
+
+
+def test_a_directory_of_only_repeatable_migrations(backend, request, files):
+    """Parity R11: applied, and there is no version to report."""
+    url = fresh(backend, request)
+    files.add("R__answer.sql", "CREATE VIEW answer AS SELECT 42 AS n;")
+
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == ("R__answer.sql",)
+    assert result.migrate_result.target_schema_version is None
+    assert query(url, "SELECT n FROM answer")[0][0] == 42
+
+
+def test_no_migration_files_at_all_is_a_warning(backend, request, files):
+    """Parity M16: Flyway warns "No migrations found" and carries on."""
+    url = fresh(backend, request)
+    files.add("README.md", "notes")
+
+    (result,) = migrate(single(url), files.path)
+
+    assert result.migrate_result.migrations == ()
+    assert result.migrate_result.warnings == ("no migrations found - are the locations right?",)
+
+
+def test_the_log_says_what_it_did(backend, request, files, caplog):
+    """Parity M15: what Flyway logs - the version it starts from, each migration, and a summary
+    - in this migrator's words."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
+    caplog.set_level(logging.INFO, logger="ekbatan.migrations")
+
+    migrate(single(url), files.path)
+    migrate(single(url), files.path)
+
+    for line in (
+        "current version << empty >>",
+        "migrating to version 1 - runs",
+        "applying repeatable migration 'x'",
+        "applied 2 migrations, now at version 1",
+        "current version 1",
+        "up to date, nothing to apply",
+    ):
+        assert line in caplog.text, line
+
+
+def test_the_databases_own_warnings_are_logged(backend, request, files, caplog):
+    """Flyway logs what the server says beside a statement (parity F16 showed MySQL's); the
+    driver alone would only count it. SQLite says nothing of the kind."""
+    if backend.dialect == "sqlite":
+        pytest.skip("SQLite has no warnings to report")
+    url = fresh(backend, request)
+    files.add("V1__tidy.sql", "DROP TABLE IF EXISTS nothing_here;")
+    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+
+    migrate(single(url), files.path)
+
+    assert "the database said:" in caplog.text
+    assert "nothing_here" in caplog.text

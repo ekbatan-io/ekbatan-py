@@ -176,6 +176,36 @@ def test_the_fingerprint_changes_when_a_migration_changes(migrations: Path) -> N
     assert fingerprint(migrations) != before
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["2026/V0003__more.sql", "R__totals.sql", "post-apply.sql", "V0004__caps.SQL"],
+    ids=["in a subdirectory", "repeatable", "post-apply hook", "in capitals"],
+)
+def test_the_fingerprint_covers_every_file_the_migrator_reads(migrations: Path, name: str) -> None:
+    """The migrator reads subdirectories, repeatable files, hooks and `.SQL` - a change to any of
+    them changes the schema, so it has to make the module stale."""
+    before = fingerprint(migrations)
+    path = migrations / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("CREATE TABLE gadgets (id UUID PRIMARY KEY);")
+
+    assert fingerprint(migrations) != before
+
+
+def test_the_fingerprint_of_a_flat_directory_is_what_it_always_was(migrations: Path) -> None:
+    """Every module generated before subdirectories were read stays current."""
+    import hashlib
+
+    from ekbatan.migrations import checksum
+
+    digest = hashlib.sha256()
+    for path in sorted(migrations.glob("*.sql")):
+        digest.update(path.name.encode())
+        digest.update(checksum(path).encode())
+
+    assert fingerprint(migrations) == digest.hexdigest()[:16]
+
+
 def test_the_fingerprint_ignores_what_is_not_a_migration(migrations: Path) -> None:
     """An `__init__.py` that makes the directory a package, a `README`, a cache: none is
     schema, and a hash that moved with them would call a current module stale."""
