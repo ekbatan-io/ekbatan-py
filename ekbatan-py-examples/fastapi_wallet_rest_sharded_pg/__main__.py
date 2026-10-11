@@ -26,7 +26,10 @@ import uvicorn
 
 from .actions import GLOBAL, MEXICO
 
-BASE = os.environ.get("WALLET_BASE_URL", "postgresql+psycopg://ekbatan:ekbatan@localhost:5432")
+BASE = os.environ.get("WALLET_BASE_URL", "postgresql+psycopg://localhost:5432")
+#: The login lives here, never in a url - a url is logged and repeated.
+USERNAME = os.environ.get("WALLET_DATABASE_USERNAME", "ekbatan")
+PASSWORD = os.environ.get("WALLET_DATABASE_PASSWORD", "ekbatan")
 
 #: The whole layout. Adding a shard is one more entry; nothing above this file changes.
 LAYOUT = {
@@ -39,7 +42,7 @@ def main() -> None:
     from .api import create_app
 
     uvicorn.run(
-        create_app(LAYOUT),
+        create_app(LAYOUT, username=USERNAME, password=PASSWORD),
         host=os.environ.get("WALLET_HOST", "127.0.0.1"),
         port=int(os.environ.get("WALLET_PORT", "8000")),
     )

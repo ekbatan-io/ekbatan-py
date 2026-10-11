@@ -20,16 +20,17 @@ import os
 
 import uvicorn
 
-URL = os.environ.get(
-    "WALLET_DATABASE_URL", "postgresql+psycopg://ekbatan:ekbatan@localhost:5432/wallet"
-)
+URL = os.environ.get("WALLET_DATABASE_URL", "postgresql+psycopg://localhost:5432/wallet")
+#: The login lives here, never in the url - a url is logged and repeated.
+USERNAME = os.environ.get("WALLET_DATABASE_USERNAME", "ekbatan")
+PASSWORD = os.environ.get("WALLET_DATABASE_PASSWORD", "ekbatan")
 
 
 def main() -> None:
     from .api import create_app
 
     uvicorn.run(
-        create_app(URL),
+        create_app(URL, username=USERNAME, password=PASSWORD),
         host=os.environ.get("WALLET_HOST", "127.0.0.1"),
         port=int(os.environ.get("WALLET_PORT", "8000")),
     )

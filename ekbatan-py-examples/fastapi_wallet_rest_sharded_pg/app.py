@@ -53,8 +53,15 @@ class ShardedWallets:
 GROUP_NAMES = {GLOBAL.group: "global", MEXICO.group: "mexico"}
 
 
-def build(urls: Mapping[ShardIdentifier, str], *, clock: Clock | None = None) -> ShardedWallets:
-    """Wire the layout. `urls` is the whole of it - two databases here, two hundred later."""
+def build(
+    urls: Mapping[ShardIdentifier, str],
+    *,
+    username: str | None = None,
+    password: str | None = None,
+    clock: Clock | None = None,
+) -> ShardedWallets:
+    """Wire the layout. `urls` is the whole of it - two databases here, two hundred later. Every
+    shard logs in as `username`; the login is never part of a url."""
     running = clock or SystemClock()
 
     groups: dict[int, ShardGroupConfigBuilder] = {}
@@ -68,7 +75,9 @@ def build(urls: Mapping[ShardIdentifier, str], *, clock: Clock | None = None) ->
             ShardMemberConfig.builder()
             .member(shard.member)
             .name(str(shard))
-            .primary_config(DataSourceConfig.builder().url(url).build())
+            .primary_config(
+                DataSourceConfig.builder().url(url).username(username).password(password).build()
+            )
             .build()
         )
     layout = (

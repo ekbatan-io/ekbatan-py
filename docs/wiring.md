@@ -80,6 +80,9 @@ collaborators.** There is nothing else a container would have been doing for you
 @dataclass(frozen=True, slots=True)
 class Settings:
     url: str = os.environ.get("WALLET_DATABASE_URL", DEFAULT_URL)
+    #: The login lives here, never in the url - a url is logged and repeated.
+    username: str | None = os.environ.get("WALLET_DATABASE_USERNAME")
+    password: str | None = os.environ.get("WALLET_DATABASE_PASSWORD")
     pool_size: int = int(os.environ.get("WALLET_POOL_SIZE", "10"))
     job_pool_size: int = int(os.environ.get("WALLET_JOB_POOL_SIZE", "8"))
     lock_pool_size: int = int(os.environ.get("WALLET_LOCK_POOL_SIZE", "5"))
@@ -98,14 +101,15 @@ real OS threads, so the number is a decision. See [Concurrency](runtime/concurre
 ## 2. The layout: which databases, and which is the default
 
 ```python
+login = {"username": config.username, "password": config.password}
 layout = ShardingConfig(
     default_shard=DEFAULT_SHARD,
     groups=(
         ShardGroupConfig(group=0, name="global", members=(
             ShardMemberConfig(member=0, name="global", configs={
-                "primaryConfig": DataSourceConfig(url=config.url, pool_size=config.pool_size),
-                "jobsConfig":    DataSourceConfig(url=config.url, pool_size=config.job_pool_size),
-                "lockConfig":    DataSourceConfig(url=config.url, pool_size=config.lock_pool_size),
+                "primaryConfig": DataSourceConfig(url=config.url, **login, pool_size=config.pool_size),
+                "jobsConfig":    DataSourceConfig(url=config.url, **login, pool_size=config.job_pool_size),
+                "lockConfig":    DataSourceConfig(url=config.url, **login, pool_size=config.lock_pool_size),
             }),
         )),
     ),

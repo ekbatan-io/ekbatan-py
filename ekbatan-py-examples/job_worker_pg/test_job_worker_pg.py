@@ -27,6 +27,7 @@ from ekbatan import (
     SingleTableJsonEventPersister,
 )
 from ekbatan.clock import SystemClock
+from ekbatan.config import split_login
 from ekbatan.distributedjobs import job_registry
 from ekbatan.events import (
     EventFanoutJob,
@@ -64,7 +65,11 @@ class Harness:
 
     def __init__(self, url: str) -> None:
         running = SystemClock()
-        self.registry = DatabaseRegistry.from_config(ShardingConfig.single(url))
+        # The container's url carries its login; the config keeps it apart.
+        plain, username, password = split_login(url)
+        self.registry = DatabaseRegistry.from_config(
+            ShardingConfig.single(plain, username=username, password=password)
+        )
         migrate_registry(self.registry, metadata)
 
         self.wallets = WalletRepository(self.registry, clock=running)

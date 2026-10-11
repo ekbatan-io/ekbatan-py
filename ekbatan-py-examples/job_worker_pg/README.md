@@ -69,6 +69,7 @@ is chosen rather than assumed.
 Start two of these against the same database and watch each slot run once rather than twice:
 
 ```
-WORKER_DATABASE_URL=postgresql+psycopg://ekbatan:ekbatan@localhost:5432/wallet \
+WORKER_DATABASE_URL=postgresql+psycopg://localhost:5432/wallet \
+WORKER_DATABASE_USERNAME=ekbatan WORKER_DATABASE_PASSWORD=ekbatan \
   cd ekbatan-py-examples && uv run python -m job_worker_pg
 ```

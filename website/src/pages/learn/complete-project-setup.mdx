@@ -216,7 +216,12 @@ layout = ShardingConfig(
     groups=(
         ShardGroupConfig(group=0, name="global", members=(
             ShardMemberConfig(member=0, name="global", configs={
-                "primaryConfig": DataSourceConfig(url=os.environ["DATABASE_URL"], pool_size=20),
+                "primaryConfig": DataSourceConfig(
+                    url=os.environ["DATABASE_URL"],
+                    username=os.environ["DATABASE_USERNAME"],
+                    password=os.environ["DATABASE_PASSWORD"],
+                    pool_size=20,
+                ),
             }),
         )),
     ),
@@ -230,10 +235,14 @@ first write.
 
 ### The url
 
+The url names the database and where it is - never the login. `username` and `password` are
+fields of their own, as in the Java port: a url is logged and repeated, and one carrying a
+password is refused.
+
 <div data-db="pg">
 
 ```
-postgresql+psycopg://user:pass@localhost:5432/wallet
+postgresql+psycopg://localhost:5432/wallet
 ```
 
 `psycopg`, not `psycopg2` — the `postgres` extra brings psycopg 3.
@@ -242,14 +251,14 @@ postgresql+psycopg://user:pass@localhost:5432/wallet
 <div data-db="mysql">
 
 ```
-mysql+pymysql://user:pass@localhost:3306/wallet
+mysql+pymysql://localhost:3306/wallet
 ```
 
 </div>
 <div data-db="mariadb">
 
 ```
-mariadb+pymysql://user:pass@localhost:3306/wallet
+mariadb+pymysql://localhost:3306/wallet
 ```
 
 **The scheme has to say `mariadb`.** A MariaDB container hands back a `mysql://` url, and
@@ -319,8 +328,8 @@ HTTP requests. Here you do the handing:
 
 ```python
 ShardMemberConfig(member=0, name="global", configs={
-    "primaryConfig": DataSourceConfig(url=url, pool_size=20),
-    "jobsConfig":    DataSourceConfig(url=url, pool_size=5),
+    "primaryConfig": DataSourceConfig(url=url, username=user, password=password, pool_size=20),
+    "jobsConfig":    DataSourceConfig(url=url, username=user, password=password, pool_size=5),
 })
 ...
 jobs_engine = engine_for(layout.groups[0].members[0].config_for("jobsConfig"))
@@ -1061,13 +1070,14 @@ class WalletService:
 
 
 def build(config: Settings) -> WalletService:
+    login = {"username": config.username, "password": config.password}
     layout = ShardingConfig(
         default_shard=DEFAULT_SHARD,
         groups=(ShardGroupConfig(group=0, name="global", members=(
             ShardMemberConfig(member=0, name="global", configs={
-                "primaryConfig": DataSourceConfig(url=config.url, pool_size=config.pool_size),
-                "jobsConfig":    DataSourceConfig(url=config.url, pool_size=config.job_pool_size),
-                "lockConfig":    DataSourceConfig(url=config.url, pool_size=config.lock_pool_size),
+                "primaryConfig": DataSourceConfig(url=config.url, **login, pool_size=config.pool_size),
+                "jobsConfig":    DataSourceConfig(url=config.url, **login, pool_size=config.job_pool_size),
+                "lockConfig":    DataSourceConfig(url=config.url, **login, pool_size=config.lock_pool_size),
             }),
         )),),
     )

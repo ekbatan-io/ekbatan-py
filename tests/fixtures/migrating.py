@@ -59,14 +59,14 @@ def sleep_sql(dialect: str, seconds: float) -> str:
 
 def run(url: str, location: str, results: Any, name: str, go: Any = None) -> None:
     """Migrate one database and report what happened on `results`, whatever happened."""
-    from ekbatan.config import ShardingConfig
     from ekbatan.migrations import migrate
+    from fixtures.logins import single
 
     if go is not None:
         go.wait()
     began = time.monotonic()
     try:
-        (outcome,) = migrate(ShardingConfig.single(url), Path(location))
+        (outcome,) = migrate(single(url), Path(location))
         results.put((name, "ok", list(outcome.migrate_result.migrations), time.monotonic() - began))
     except BaseException as error:  # reported, never raised: the parent decides
         results.put((name, "failed", f"{type(error).__name__}: {error}", time.monotonic() - began))

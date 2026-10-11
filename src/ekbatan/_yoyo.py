@@ -41,6 +41,9 @@ from yoyo.migrations import Migration
 from ._redact import redact
 from .locks.base import lock_key_hash
 
+if TYPE_CHECKING:
+    from sqlalchemy.engine import URL
+
 LOG = logging.getLogger("ekbatan.migrations")
 
 #: How long a process waiting for another's migration sleeps between attempts. Every attempt is
@@ -125,7 +128,7 @@ class _Common(_SessionLock):
 
     ``connect`` ignores yoyo's ``DatabaseURI`` and uses the arguments SQLAlchemy derives from
     the same url the application's engine is built from - so the migration connects exactly as
-    the application does, decoding, query options and ``connect_args`` included.
+    the application does, the login, query options and ``data_source_properties`` included.
     """
 
     #: Which database this is, in the framework's own names.
@@ -582,7 +585,7 @@ class ConnectionArguments(NamedTuple):
 
 
 def connection_arguments(
-    label: str, url: str, connect_args: Mapping[str, Any]
+    label: str, url: str | URL, connect_args: Mapping[str, Any]
 ) -> ConnectionArguments:
     """What the driver is handed for this url - exactly what SQLAlchemy would hand it.
 
@@ -608,7 +611,7 @@ def connection_arguments(
     return ConnectionArguments(family, tuple(args), merged, database)
 
 
-def open_backend(label: str, url: str, connect_args: Mapping[str, Any]) -> _Common:
+def open_backend(label: str, url: str | URL, connect_args: Mapping[str, Any]) -> _Common:
     """Connect to one database the way the application's engine would, and nothing more."""
     arguments = connection_arguments(label, url, connect_args)
     return BACKENDS[arguments.family](label, arguments.args, arguments.kwargs, arguments.database)

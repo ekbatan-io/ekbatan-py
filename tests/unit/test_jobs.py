@@ -28,9 +28,9 @@ from sqlalchemy import create_engine, select
 from ekbatan.distributedjobs import DistributedJob, JobsConfig, job_registry
 from ekbatan.errors import ValidationError
 
-PG = "postgresql+psycopg://u:p@nowhere-9e3f:5432/db"
-MYSQL = "mysql+pymysql://u:p@nowhere-9e3f:3306/db"
-MARIADB = "mariadb+pymysql://u:p@nowhere-9e3f:3306/db"
+PG = "postgresql+psycopg://nowhere-9e3f:5432/db"
+MYSQL = "mysql+pymysql://nowhere-9e3f:3306/db"
+MARIADB = "mariadb+pymysql://nowhere-9e3f:3306/db"
 
 
 class NoOpJob(DistributedJob):

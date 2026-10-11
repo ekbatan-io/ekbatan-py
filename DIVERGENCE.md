@@ -1399,7 +1399,8 @@ at all, and an operator moving across should know which:
 
 | Java (Hikari) | here | note |
 | --- | --- | --- |
-| `jdbcUrl` | `url` | credentials live in the url here, so `username` / `password` are gone with it |
+| `jdbcUrl` | `url` | a SQLAlchemy url; as in Java it may not carry the login, which goes in `username` / `password` |
+| `dataSourceProperties` | `data_source_properties` | values reach the driver as given rather than as text, and groups and lists are allowed - see below |
 | `driverClassName` | the url's `+driver` | `postgresql+psycopg`, not a separate class name |
 | `maximumPoolSize` | `pool_size` + `max_overflow` | SQLAlchemy splits the ceiling in two and this port leaves the split visible, because an operator tuning a pool needs to see the knobs their own tooling reports on |
 | `minimumIdle` | **none** | `QueuePool` keeps `pool_size` connections and has no separate floor; there is nothing to set |
@@ -1521,3 +1522,21 @@ a routing transform, running inside Kafka Connect, in a JVM, regardless of which
 the row. A Python service does not need a Python connector; it needs the same connector pointed
 at its database. What it does owe is the schema that connector reads, which is
 `ekbatan.schema` and is checked by the conformance suite's cross-compatibility scenarios.
+
+## Driver settings: `data_source_properties` (`EKB-0239`)
+
+> **chosen** - decided with the user on 2026-10-11 after a driver survey: typed values and groups follow how Python drivers take their settings. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
+Java's rules carried over: `user` and `password` are refused in any case, an empty value is
+refused, every value is a secret and never printed, and a url carrying a login or a secret is
+refused with a message saying where each goes. Where this port differs, and why:
+
+| Java | here | why |
+| --- | --- | --- |
+| every value turned into text | values handed to the driver as given | JDBC drivers read text; PyMySQL fails on `connect_timeout="10"` and reads `autocommit="false"` as true |
+| a nested block or a list refused | allowed | some Python driver settings take one (PyMySQL's `ssl`, `auth_plugin_map`); Java refuses them because Spring splits dotted names into groups, and Python's YAML reader keeps them whole |
+| `user`, `password` refused | `user`, `password`, `passwd` refused | PyMySQL reads `passwd` as the password |
+| the url's raw text is read | SQLAlchemy's parser, falling back to the text | a SQLAlchemy url comes in one form, and reading it as SQLAlchemy does refuses a setting exactly when it would reach the driver |
+| no SQLite | a login on a SQLite config refused | SQLite has none; it would be silently ignored |
+| `driver-settings.tsv`, 1,500 settings of every JDBC driver | `tests/driver_settings.tsv`, every setting of psycopg (libpq), PyMySQL and sqlite3 | the drivers this port connects through; see `docs/DRIVER-SURVEY.md` |
+

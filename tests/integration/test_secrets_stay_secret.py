@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
-from ekbatan.config import ShardingConfig
+from ekbatan.config import ShardingConfig, split_login
 from ekbatan.migrations import MigrationError, info, migrate, repair
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import DEFAULT_SHARD
@@ -26,7 +26,8 @@ USER = "ekbatan_secret_user"
 
 
 def with_secret_user(admin_url: str, dialect: str) -> str:
-    """The same database, reached as a user whose password is `SECRET`."""
+    """The same database, for a user whose password is `SECRET` - its url, with no login in it:
+    the login goes in `username` and `password`."""
     database = make_url(admin_url).database
     if dialect == "postgres":
         query(
@@ -38,7 +39,7 @@ def with_secret_user(admin_url: str, dialect: str) -> str:
     else:
         query(admin_url, f"CREATE USER IF NOT EXISTS '{USER}'@'%' IDENTIFIED BY '{SECRET}'")
         query(admin_url, f"GRANT ALL PRIVILEGES ON `{database}`.* TO '{USER}'@'%'")
-    return make_url(admin_url).set(username=USER, password=SECRET).render_as_string(False)
+    return split_login(admin_url)[0]
 
 
 def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
@@ -56,7 +57,7 @@ def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
     )
     (migrations / "post-apply.sql").write_text("SELECT count(*) FROM runs;")
     caplog.set_level(logging.DEBUG)  # every logger, everything it says
-    layout = ShardingConfig.single(url, echo=True)
+    layout = ShardingConfig.single(url, username=USER, password=SECRET, echo=True)
     written: list[str] = [repr(layout), str(layout)]
 
     written.append(repr(migrate(layout, migrations)))
@@ -76,9 +77,8 @@ def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
         migrate(layout, migrations)
     written += [str(failed.value), repr(failed.value)]
 
-    wrong = make_url(url).set(password=WRONG).render_as_string(False)
     with pytest.raises(MigrationError) as denied:
-        migrate(ShardingConfig.single(wrong), migrations)
+        migrate(ShardingConfig.single(url, username=USER, password=WRONG), migrations)
     written += [str(denied.value), repr(denied.value)]
 
     printed = capsys.readouterr()

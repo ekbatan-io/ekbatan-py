@@ -80,13 +80,15 @@ The key names are Java's, spelling included, so one layout describes both ports.
 
 | | default | |
 | --- | --- | --- |
-| `url` | - | a SQLAlchemy url; the dialect is read from it |
+| `url` | - | a SQLAlchemy url; the dialect is read from it. No login in it |
+| `username` | None | the user to log in as; never blank |
+| `password` | None | the login password; the empty string is valid |
 | `pool_size` | 10 | connections kept |
 | `max_overflow` | 0 | connections beyond `pool_size`. Zero is deliberate - see below |
 | `pool_timeout` | 30.0 | seconds to wait for one |
 | `pool_recycle` | 1800 | retire a connection after this many seconds |
 | `pool_pre_ping` | True | check a connection is alive before handing it out |
-| `connect_args` | `{}` | passed to the driver |
+| `data_source_properties` | `{}` | extra driver settings, handed over as given |
 | `echo` | False | log every statement |
 
 **`max_overflow=0` by default**, where SQLAlchemy's own default is 10. An overflow connection is
@@ -95,11 +97,48 @@ burst of connection *establishment* against the database - which is the expensiv
 exactly when you can least afford it. A fixed pool makes the limit visible as waiting rather than
 invisible as latency.
 
-**It never prints the password.** The credentials live in the url, so printing a
-`DataSourceConfig` - or anything that holds one: a layout, a member, a migration result - shows
-the url with `***` where the password is, as SQLAlchemy shows its own urls and engines. A
-`connect_args` value under a key like `password` or `sslpassword` is hidden the same way, and an
-error about a url it cannot use never repeats the url. `log.info(layout)` is safe to write.
+**The login lives in `username` and `password`, never in the url** - as in the Java port. A url
+is logged and repeated, so one that carries a user name or a secret is refused, and the message
+says where each goes instead, without repeating the url:
+
+```python
+DataSourceConfig(
+    url="postgresql+psycopg://db:5432/wallet",
+    username="app",
+    password=os.environ["DB_PASSWORD"],
+)
+```
+
+Both are optional: leave `username` out only when the driver supplies the user, and `password` for
+a login that has none. A url SQLAlchemy cannot parse - two hosts written `h1:3306,h2:3306` - is
+read from its text instead, the way Java reads every url. `split_login(url)` takes the login out of
+a url that arrives with one, such as a test container's.
+
+**`data_source_properties` are handed to the driver as given** - a number stays a number, a group
+stays a group, an object stays an object:
+
+```python
+DataSourceConfig(
+    url="mariadb+pymysql://db:3306/wallet",
+    username="app",
+    password=password,
+    data_source_properties={
+        "connect_timeout": 10,
+        "ssl": {"capath": "/etc/ssl/certs"},
+    },
+)
+```
+
+`user`, `password` and PyMySQL's `passwd` are refused there, in any letter case, because they would
+silently win over `username` and `password`. Other secrets that have no field of their own - a
+client key's `sslpassword`, PyMySQL's `ssl_key_password` - belong here. An empty value (`None`) is
+refused. Which setting names hold a login or a secret, for every setting of psycopg, PyMySQL and
+sqlite3, is decided in the ledger `tests/driver_settings.tsv`. The pool and the migrator both
+connect with the same login and the same settings.
+
+**It never prints the password**, nor any `data_source_properties` value - every one of those is
+treated as a secret. Printing a `DataSourceConfig`, or anything that holds one - a layout, a member,
+a migration result - shows `***` in their place. `log.info(layout)` is safe to write.
 
 There is no counterpart to Hikari's `idleTimeout` or `minimumIdle`; retirement here is by age
 rather than by idleness. See [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).

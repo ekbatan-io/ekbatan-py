@@ -21,6 +21,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
+from ekbatan.config import split_login
 from ekbatan.errors import CrossShardError
 from ekbatan.migrations import validate_scripts
 
@@ -53,13 +54,13 @@ def urls() -> Iterator[dict[object, str]]:
         finally:
             admin.dispose()
 
-        head, _, _ = base.rpartition("/")
+        head, _, _ = split_login(base)[0].rpartition("/")
         yield {GLOBAL: f"{head}/shard_global", MEXICO: f"{head}/shard_mexico"}
 
 
 @pytest.fixture
 def service(urls: dict[object, str]) -> Iterator[ShardedWallets]:
-    built = build(urls)  # type: ignore[arg-type]
+    built = build(urls, username="test", password="test")  # type: ignore[arg-type]
     try:
         for shard in built.registry.shards:
             with built.registry.manager(shard).connection() as conn:
@@ -226,7 +227,7 @@ def client(urls: dict[object, str]) -> Iterator[TestClient]:
 
     from .api import create_app
 
-    with TestClient(create_app(urls)) as running:  # type: ignore[arg-type]
+    with TestClient(create_app(urls, username="test", password="test")) as running:  # type: ignore[arg-type]
         for shard in running.app.state.service.registry.shards:
             with running.app.state.service.registry.manager(shard).connection() as conn:
                 conn.execute(text("DELETE FROM wallets"))

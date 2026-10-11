@@ -214,6 +214,25 @@ differ, or to copy something of Flyway's that bites.
 | Copied although it bites: an older release re-applies its older repeatable migrations, and refuses to start when a newer release added one | `EKB-0235` | Flyway does both (parity R16, R23). A rule that tolerated the second cannot tell a file a newer release added from one a person deleted | During a rolling deploy a changed view flips back each time an old instance restarts; a rollback past a new repeatable migration needs `repair()` first |
 | `target_schema_version` is the highest version applied, whatever this run did | `EKB-0233` | It answers "what version is this database at" | Flyway's is the last version this run applied, and empty when it applied none |
 
+## Login fields and driver settings (`EKB-0239`)
+
+Decided with the user on 2026-10-11, after `docs/DRIVER-SURVEY.md`; the calls made while building
+it are below the first table.
+
+| decision | why | who |
+| --- | --- | --- |
+| The login moves out of the url into `username` / `password`, and a url carrying one is refused | Java's rule: a url is logged and repeated | the user |
+| `data_source_properties` replaces `connect_args`, no old name kept | unreleased (`0.1.0.dev0`); one name for one thing | the user |
+| `user`, `password`, `passwd` refused in it, in any case; login-file keys (`passfile`, `service`, `conninfo`, `read_default_file`) are not | exactly Java's rule, with PyMySQL's alias; a wider refusal was offered and declined. May be relaxed one day in both ports together | the user |
+| `autocommit` and `client_flag` are not refused | although they change transactions and row counts | the user |
+| groups and lists allowed (option B) | some driver settings take one; Java's reason (Spring splitting dotted names) does not apply | the user |
+| values handed over as given, not as text | Python drivers take typed arguments | the user |
+| a url SQLAlchemy cannot parse is read from its text, not refused | two hosts written `h1:3306,h2:3306` were accepted before; Java reads every url's text | built |
+| a login on a SQLite config is refused | SQLite has none, so it would be silently ignored | built |
+| every `data_source_properties` value prints as `***`, the names shown | Java treats every value as a secret | built |
+| `split_login(url)` is public | a url from a container or a command line has to become a config somewhere; schemagen and the tests need it, and so will an application | built |
+| `schemagen --url` still accepts a url with a login | a development tool against a throwaway database; it splits the login out before migrating | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

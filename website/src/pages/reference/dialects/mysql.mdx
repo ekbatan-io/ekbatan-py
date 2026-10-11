@@ -14,7 +14,8 @@ uv add ekbatan[mysql]
 | | |
 | --- | --- |
 | driver | PyMySQL |
-| url | `mysql+pymysql://user:pass@host:3306/db` |
+| url | `mysql+pymysql://host:3306/db` |
+| login | `username=` and `password=`, never in the url |
 | uuid | `CHAR(36)` |
 | json | `JSON` |
 | timestamps | `DATETIME(6)`, UTC |

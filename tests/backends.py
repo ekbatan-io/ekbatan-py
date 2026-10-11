@@ -82,11 +82,11 @@ class Backend(ABC):
         composite on MySQL - so `create_all` would build the tables with no indexes at all, and
         the suite would stop covering the shape a deployment actually has.
         """
-        from ekbatan.config import ShardingConfig
         from ekbatan.migrations import migrate
+        from fixtures.logins import single
 
         migrate(
-            ShardingConfig.single(self.url(name)),
+            single(self.url(name)),
             self.MIGRATIONS / self.MIGRATION_DIRECTORIES[self.dialect],
         )
 

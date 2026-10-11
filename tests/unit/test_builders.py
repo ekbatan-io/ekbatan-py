@@ -38,8 +38,8 @@ from ekbatan.streaming import ActionEvent
 from fixtures.domain import WalletMoneyDepositedEvent
 from fixtures.handlers import RecordingHandler
 
-URL = "postgresql+psycopg://u:p@h/db"
-OTHER_URL = "postgresql+psycopg://u:p@other/db"
+URL = "postgresql+psycopg://h/db"
+OTHER_URL = "postgresql+psycopg://other/db"
 FIRST = ShardIdentifier(0, 0)
 SECOND = ShardIdentifier(0, 1)
 
@@ -70,7 +70,7 @@ def test_a_data_source_built_with_every_setter_matches_the_constructor():
         .pool_timeout(3.0)
         .pool_recycle(60)
         .pool_pre_ping(False)
-        .connect_args({"connect_timeout": 2})
+        .data_source_properties({"connect_timeout": 2})
         .echo(True)
         .build()
     )
@@ -82,7 +82,7 @@ def test_a_data_source_built_with_every_setter_matches_the_constructor():
         pool_timeout=3.0,
         pool_recycle=60,
         pool_pre_ping=False,
-        connect_args={"connect_timeout": 2},
+        data_source_properties={"connect_timeout": 2},
         echo=True,
     )
 

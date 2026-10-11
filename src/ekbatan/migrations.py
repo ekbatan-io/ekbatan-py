@@ -1171,7 +1171,9 @@ class _HookFailed(Exception):
 def _open(each: Target) -> _Common:
     from ._yoyo import open_backend
 
-    return open_backend(each.label, each.data_source.url, each.data_source.connect_args)
+    return open_backend(
+        each.label, each.data_source.sqlalchemy_url(), each.data_source.data_source_properties
+    )
 
 
 def _migrate(each: Target, scripts: Scripts, output_query_results: bool) -> MigrateResult:

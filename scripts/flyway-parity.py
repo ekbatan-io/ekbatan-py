@@ -946,10 +946,11 @@ def run_flyway(db: Database, handle: str, root: Path, step: Step) -> Outcome:
 
 def run_ours(db: Database, handle: str, root: Path, step: Step) -> Outcome:
     from ekbatan import migrations
-    from ekbatan.config import ShardingConfig
+    from ekbatan.config import ShardingConfig, split_login
 
     locations = [root / loc for loc in step.locations] or [root]
-    config = ShardingConfig.single(db.url(handle))
+    plain, username, password = split_login(db.url(handle))
+    config = ShardingConfig.single(plain, username=username, password=password)
     captured: list[str] = []
     handler = _Capture(captured)
     logger = logging.getLogger("ekbatan.migrations")
@@ -1030,9 +1031,11 @@ def concurrently(
     code = (
         "import json, sys\n"
         "from ekbatan.migrations import migrate\n"
-        "from ekbatan.config import ShardingConfig\n"
+        "from ekbatan.config import ShardingConfig, split_login\n"
         "try:\n"
-        f"    (r,) = migrate(ShardingConfig.single({db.url(handle)!r}), *{locations!r})\n"
+        f"    url, user, pw = split_login({db.url(handle)!r})\n"
+        "    config = ShardingConfig.single(url, username=user, password=pw)\n"
+        f"    (r,) = migrate(config, *{locations!r})\n"
         "    print(json.dumps([True, [f'applied {list(r.migrate_result.migrations)}']]))\n"
         "except Exception as e:\n"
         "    print(json.dumps([False, [f'{type(e).__name__}: {e}']]))\n"

@@ -12,7 +12,8 @@ uv add ekbatan[postgres]
 | | |
 | --- | --- |
 | driver | psycopg 3 |
-| url | `postgresql+psycopg://user:pass@host:5432/db` |
+| url | `postgresql+psycopg://host:5432/db` |
+| login | `username=` and `password=`, never in the url |
 | uuid | `UUID`, native |
 | json | `JSONB` |
 | timestamps | `TIMESTAMP WITHOUT TIME ZONE`, UTC |

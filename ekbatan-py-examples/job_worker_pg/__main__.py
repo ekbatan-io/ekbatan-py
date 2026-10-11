@@ -5,7 +5,8 @@
 Defaults to a local SQLite file so it runs with nothing set up. Point it at Postgres to see the
 part that only matters in a cluster - start two of these and watch each slot run once:
 
-    WORKER_DATABASE_URL=postgresql+psycopg://ekbatan:ekbatan@localhost:5432/wallet \\
+    WORKER_DATABASE_URL=postgresql+psycopg://localhost:5432/wallet \\
+    WORKER_DATABASE_USERNAME=ekbatan WORKER_DATABASE_PASSWORD=ekbatan \\
       cd ekbatan-py-examples && uv run python -m job_worker_pg
 """
 

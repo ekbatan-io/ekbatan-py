@@ -136,7 +136,8 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| DataSourceConfig.java | 238 | `config.py` | done - credentials live in the url, as SQLAlchemy carries them; never printed, as Java's never prints them (`EKB-0237`) |
+| DataSourceConfig.java | 323 | `config.py` | done - optional `username` / `password`, `data_source_properties` with Java's refusals (plus PyMySQL's `passwd`); values kept as given and groups allowed, see DIVERGENCE.md; never printed (`EKB-0237`, `EKB-0239`) |
+| JdbcUrlCredentials.java | 484 | `_credentials.py` | done - a url carrying a login or a secret is refused; read through SQLAlchemy's parser, falling back to the text as Java reads it; the refused names come from `tests/driver_settings.tsv` (`EKB-0239`) |
 | PropertyKeyNormalizer.java | 49 | `config.py` | n/a - nothing binds configuration from a property file here |
 | ShardGroupConfig.java | 100 | `config.py` | done - `ShardGroupConfig`, level for level (`EKB-0222`) |
 | ShardMemberConfig.java | 183 | `config.py` | done - `ShardMemberConfig`, including the named `configs` map and `config_for` (`EKB-0222`) |
@@ -373,6 +374,12 @@ which means "use the default".
 | --- | --- | --- | --- |
 | DataSourceConfigDialectTest.java | 69 | `tests/unit/test_config.py` | done |
 | DataSourceConfigValidationTest.java | 106 | `tests/unit/test_config.py` | done |
+| DataSourceConfigCredentialsTest.java | 147 | `tests/unit/test_data_source_login.py` | done - every case that applies; the nested-block refusal is inverted, groups are allowed here |
+| DataSourceConfigUrlCredentialsTest.java | 215 | `tests/unit/test_data_source_login.py` | done |
+| JdbcUrlCredentialsTest.java | 621 | `tests/unit/test_data_source_login.py` | done - the JDBC-only url forms (CData, DataDirect, MySQL host lists in parentheses) have no SQLAlchemy counterpart |
+| JdbcUrlCredentialsDriverTest.java | 235 | `tests/integration/test_data_source_properties.py`, `tests/integration/test_secrets_stay_secret.py` | done - real logins and settings through the pool and the migrator |
+| DriverSettingsLedger.java | 102 | `tests/unit/test_data_source_login.py` | done - reads `tests/driver_settings.tsv` |
+| DriverSettingsLedgerTest.java | 86 | `tests/unit/test_data_source_login.py` | done - the ledger checked against the installed psycopg, libpq, PyMySQL and sqlite3 |
 | PropertyKeyNormalizerTest.java | 72 | `tests/unit/test_config.py` | n/a - tests a normaliser that is not ported |
 | ShardingConfigJacksonBindingTest.java | 170 | `tests/unit/test_config.py` | n/a - Jackson binding |
 | ShardingConfigYamlTest.java | 236 | `tests/unit/test_config.py` | n/a - YAML binding, as above |

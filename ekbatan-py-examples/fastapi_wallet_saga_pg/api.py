@@ -93,10 +93,10 @@ def service_of(request: Request) -> SagaService:
 Service = Annotated[SagaService, Depends(service_of)]
 
 
-def create_app(url: str) -> FastAPI:
+def create_app(url: str, *, username: str | None = None, password: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build(url)
+        service = build(url, username=username, password=password)
         app.state.service = service
         try:
             yield

@@ -75,9 +75,16 @@ class SagaService:
         self.registry.close()
 
 
-def build(url: str, *, clock: Clock | None = None) -> SagaService:
+def build(
+    url: str,
+    *,
+    username: str | None = None,
+    password: str | None = None,
+    clock: Clock | None = None,
+) -> SagaService:
     running = clock or SystemClock()
-    layout = ShardingConfig.single(url)
+    # The login is kept apart from the url, which is logged and repeated.
+    layout = ShardingConfig.single(url, username=username, password=password)
     migrate(layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)
 

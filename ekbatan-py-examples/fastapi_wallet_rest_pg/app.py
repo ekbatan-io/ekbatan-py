@@ -65,7 +65,7 @@ from .schema import EVENT_NOTIFICATIONS, EVENTS
 #: could deploy: `create_all` has no answer for a column that changed.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
-DEFAULT_URL = "postgresql+psycopg://ekbatan:ekbatan@localhost:5432/wallet"
+DEFAULT_URL = "postgresql+psycopg://localhost:5432/wallet"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +77,9 @@ class Settings:
     """
 
     url: str = os.environ.get("WALLET_DATABASE_URL", DEFAULT_URL)
+    #: The login lives here, never in the url - a url is logged and repeated.
+    username: str | None = os.environ.get("WALLET_DATABASE_USERNAME", "ekbatan")
+    password: str | None = os.environ.get("WALLET_DATABASE_PASSWORD", "ekbatan")
     #: Connections for serving requests.
     pool_size: int = int(os.environ.get("WALLET_POOL_SIZE", "10"))
     #: Connections for the scheduler. At least twice `job_workers`: a job body holding the
@@ -138,12 +141,19 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                 .member(0)
                 .name("global")
                 .primary_config(
-                    DataSourceConfig.builder().url(config.url).pool_size(config.pool_size).build()
+                    DataSourceConfig.builder()
+                    .url(config.url)
+                    .username(config.username)
+                    .password(config.password)
+                    .pool_size(config.pool_size)
+                    .build()
                 )
                 .with_config(
                     "jobsConfig",
                     DataSourceConfig.builder()
                     .url(config.url)
+                    .username(config.username)
+                    .password(config.password)
                     .pool_size(config.job_pool_size)
                     .build(),
                 )
@@ -151,6 +161,8 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                     "lockConfig",
                     DataSourceConfig.builder()
                     .url(config.url)
+                    .username(config.username)
+                    .password(config.password)
                     .pool_size(config.lock_pool_size)
                     .build(),
                 )

@@ -65,9 +65,10 @@ from .jobs import PayStipendJob, WalletReportJob
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS
 
-DEFAULT_URL = os.environ.get(
-    "WORKER_DATABASE_URL", "postgresql+psycopg://ekbatan:ekbatan@localhost:5432/wallet"
-)
+DEFAULT_URL = os.environ.get("WORKER_DATABASE_URL", "postgresql+psycopg://localhost:5432/wallet")
+#: The login lives here, never in the url - a url is logged and repeated.
+DEFAULT_USERNAME = os.environ.get("WORKER_DATABASE_USERNAME", "ekbatan")
+DEFAULT_PASSWORD = os.environ.get("WORKER_DATABASE_PASSWORD", "ekbatan")
 
 #: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
 #: rather than from `create_all`, which is the difference between an example and something you
@@ -96,7 +97,14 @@ class Worker:
         self.registry.close()
 
 
-def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 4) -> Worker:
+def build(
+    url: str = DEFAULT_URL,
+    *,
+    username: str | None = DEFAULT_USERNAME,
+    password: str | None = DEFAULT_PASSWORD,
+    clock: Clock | None = None,
+    workers: int = 4,
+) -> Worker:
     running = clock or SystemClock()
     # Java's layout: one group, one member, and the scheduler's pool declared on the member as
     # `jobsConfig` beside the primary - more connections than workers, see the module docstring.
@@ -111,9 +119,21 @@ def build(url: str = DEFAULT_URL, *, clock: Clock | None = None, workers: int = 
                 ShardMemberConfig.builder()
                 .member(0)
                 .name("global")
-                .primary_config(DataSourceConfig.builder().url(url).build())
+                .primary_config(
+                    DataSourceConfig.builder()
+                    .url(url)
+                    .username(username)
+                    .password(password)
+                    .build()
+                )
                 .with_config(
-                    "jobsConfig", DataSourceConfig.builder().url(url).pool_size(workers * 2).build()
+                    "jobsConfig",
+                    DataSourceConfig.builder()
+                    .url(url)
+                    .username(username)
+                    .password(password)
+                    .pool_size(workers * 2)
+                    .build(),
                 )
                 .build()
             )

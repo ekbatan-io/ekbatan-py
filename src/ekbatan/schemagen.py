@@ -292,7 +292,7 @@ def generate(
     image: str = "postgres:17-alpine",
 ) -> str:
     """Run the whole pipeline and write the module. Returns what was written."""
-    from .config import ShardingConfig
+    from .config import ShardingConfig, split_login
     from .migrations import migrate
     from .persistence import DatabaseRegistry  # noqa: F401  (import cycle guard)
 
@@ -304,7 +304,9 @@ def generate(
         container, url = _start(image)
 
     try:
-        migrate(ShardingConfig.single(url), migrations)
+        # A container's url carries its login; the config wants it in username and password.
+        plain, username, password = split_login(url)
+        migrate(ShardingConfig.single(plain, username=username, password=password), migrations)
         engine: Engine = create_engine(url)
         try:
             reflected = MetaData()

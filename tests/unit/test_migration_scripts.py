@@ -43,9 +43,9 @@ from ekbatan.sharding import ShardIdentifier
 from fixtures.config import group, member
 
 #: Nothing listens here: a test that reaches a database by mistake fails to connect, loudly.
-NOWHERE = "postgresql+psycopg://u:p@nowhere.invalid:1/db"
-REPLICA = "postgresql+psycopg://u:p@replica.invalid:1/db"
-MEXICO = "postgresql+psycopg://u:p@mexico.invalid:1/db"
+NOWHERE = "postgresql+psycopg://nowhere.invalid:1/db"
+REPLICA = "postgresql+psycopg://replica.invalid:1/db"
+MEXICO = "postgresql+psycopg://mexico.invalid:1/db"
 
 
 def write(directory: Path, name: str, sql: str = "SELECT 1;") -> Path:

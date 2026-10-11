@@ -19,7 +19,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from ekbatan._yoyo import POSTGRES_LOCK_KEY, mysql_lock_name, open_backend
-from ekbatan.config import DataSourceConfig, ShardingConfig
+from ekbatan.config import ShardingConfig
 from ekbatan.migrations import (
     HISTORY_TABLE,
     MigrationError,
@@ -33,6 +33,8 @@ from ekbatan.migrations import (
 )
 from ekbatan.sharding import ShardIdentifier
 from fixtures.config import group, member
+from fixtures.logins import data_source
+from fixtures.logins import single as single_with_login
 from fixtures.migrating import fresh, query, tables
 
 GLOBAL = ShardIdentifier(0, 0)
@@ -115,7 +117,7 @@ def files(tmp_path) -> Files:
 
 
 def single(url: str) -> ShardingConfig:
-    return ShardingConfig.single(url)
+    return single_with_login(url)
 
 
 # -- applying, in version order (#5) ---------------------------------------------------------
@@ -634,8 +636,8 @@ def two_shards(backend, request) -> ShardingConfig:
     return ShardingConfig(
         default_shard=GLOBAL,
         groups=(
-            group(0, "global", member(0, DataSourceConfig(url=fresh(backend, request, "_a")))),
-            group(1, "mexico", member(0, DataSourceConfig(url=fresh(backend, request, "_b")))),
+            group(0, "global", member(0, data_source(fresh(backend, request, "_a")))),
+            group(1, "mexico", member(0, data_source(fresh(backend, request, "_b")))),
         ),
     )
 
@@ -657,7 +659,7 @@ def test_a_subset_migrates_only_those_shards_and_the_rest_later(backend, request
 
     (only,) = migrate(config, files.path, shards=[MEXICO])
     assert only.target.shard == MEXICO
-    assert "widgets" not in tables(config.member(GLOBAL).primary_config().url)
+    assert "widgets" not in tables(config.member(GLOBAL).primary_config().sqlalchemy_url())
 
     later = migrate(config, files.path)
     assert [r.migrate_result.migrations_executed for r in later] == [1, 0]
@@ -676,7 +678,7 @@ def test_a_failing_shard_stops_the_run_and_names_what_was_already_migrated(backe
     """Mexico already has a table and no history, which is refused as Flyway refuses it."""
     config = two_shards(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-    query(config.member(MEXICO).primary_config().url, "CREATE TABLE widgets (id INTEGER)")
+    query(config.member(MEXICO).primary_config().sqlalchemy_url(), "CREATE TABLE widgets (id INTEGER)")
 
     with pytest.raises(MigrationError) as raised:
         migrate(config, files.path)
@@ -694,19 +696,15 @@ def test_one_database_outside_a_layout(backend, request, files):
     """Java's `FlywayMigrator.migrate(DataSourceConfig, locations...)`."""
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
 
-    result = YoyoMigrator.migrate_data_source(
-        DataSourceConfig(url=fresh(backend, request)), files.path
-    )
+    result = YoyoMigrator.migrate_data_source(data_source(fresh(backend, request)), files.path)
 
     assert result.migrations == ("V1__widgets.sql",)
 
 
 def test_the_builder_migrates_its_targets_under_their_own_names(backend, request, files):
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-    orders = target(DataSourceConfig(url=fresh(backend, request, "_o")), name="orders")
-    ledger = target(
-        DataSourceConfig(url=fresh(backend, request, "_l")), shard=ShardIdentifier(3, 1)
-    )
+    orders = target(data_source(fresh(backend, request, "_o")), name="orders")
+    ledger = target(data_source(fresh(backend, request, "_l")), shard=ShardIdentifier(3, 1))
 
     results = (
         YoyoMigrator.builder()
@@ -1289,9 +1287,7 @@ def test_moving_or_respelling_an_applied_file_is_not_a_change(backend, request, 
 def test_the_builder_runs_info_repair_and_baseline_too(backend, request, files):
     files.add("V1__a.sql", "SELECT 1;")
     url = fresh(backend, request)
-    builder = (
-        YoyoMigrator.builder().with_data_source(DataSourceConfig(url=url)).locations(files.path)
-    )
+    builder = YoyoMigrator.builder().with_data_source(data_source(url)).locations(files.path)
 
     (status,) = builder.info()
     assert [m.state for m in status.migrations] == [MigrationState.PENDING]
@@ -1301,7 +1297,7 @@ def test_the_builder_runs_info_repair_and_baseline_too(backend, request, files):
 
     legacy = fresh(backend, request, "_l")
     query(legacy, "CREATE TABLE legacy (id INTEGER)")
-    (done,) = YoyoMigrator.builder().with_data_source(DataSourceConfig(url=legacy)).baseline("5")
+    (done,) = YoyoMigrator.builder().with_data_source(data_source(legacy)).baseline("5")
     assert done.version == "5"
 
 

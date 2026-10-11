@@ -25,8 +25,8 @@ from queue import Empty
 import pytest
 
 from ekbatan._yoyo import POSTGRES_LOCK_KEY, mysql_lock_name
-from ekbatan.config import ShardingConfig
 from ekbatan.migrations import HISTORY_TABLE, migrate
+from fixtures.logins import single
 from fixtures.migrating import CONTEXT, fresh, query, sleep_sql, start
 
 SERVERS = ("postgres", "mysql", "mariadb")
@@ -149,7 +149,7 @@ def test_a_process_killed_mid_migration_does_not_block_the_next(backend, request
 
     fast = slow_migrations(tmp_path / "fast", backend.dialect, 0)
     began = time.monotonic()
-    (result,) = migrate(ShardingConfig.single(url), fast)
+    (result,) = migrate(single(url), fast)
 
     assert time.monotonic() - began < 10, "the lock was let go when the process died"
     assert result.migrate_result.migrations[-1] == "V2__slow.sql"
@@ -261,7 +261,7 @@ def test_four_processes_apply_a_changed_repeatable_once(backend, request, tmp_pa
     location.mkdir()
     (location / "V1__runs.sql").write_text("CREATE TABLE runs (n INTEGER);")
     (location / "R__x.sql").write_text("INSERT INTO runs VALUES (1);")
-    migrate(ShardingConfig.single(url), location)
+    migrate(single(url), location)
     (location / "R__x.sql").write_text(
         f"{sleep_sql(backend.dialect, 2)}\nINSERT INTO runs VALUES (2);"
     )

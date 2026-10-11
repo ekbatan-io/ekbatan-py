@@ -395,7 +395,7 @@ def engine_for(config: DataSourceConfig) -> Engine:
     kwargs: dict[str, object] = {
         "echo": config.echo,
         "future": True,
-        "connect_args": dict(config.connect_args),
+        "connect_args": dict(config.data_source_properties),
         # Canonical form is not a preference: decimals as strings at their stored scale,
         # timestamps zone-less UTC to the microsecond, keys sorted. Two ports must produce
         # byte-identical JSON for the same event or a consumer cannot join them.
@@ -410,7 +410,7 @@ def engine_for(config: DataSourceConfig) -> Engine:
             "pool_recycle": config.pool_recycle,
             "pool_pre_ping": config.pool_pre_ping,
         }
-    return create_engine(config.url, **kwargs)
+    return create_engine(config.sqlalchemy_url(), **kwargs)
 
 
 def insert_ignoring_duplicates(

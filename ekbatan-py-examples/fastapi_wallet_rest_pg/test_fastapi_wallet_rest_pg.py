@@ -22,6 +22,7 @@ import pytest
 from fastapi.testclient import TestClient
 from testcontainers.postgres import PostgresContainer
 
+from ekbatan.config import split_login
 from ekbatan.migrations import validate_scripts
 
 from .app import MIGRATIONS, Settings
@@ -41,7 +42,9 @@ def database() -> Iterator[str]:
 def client(database: str) -> Iterator[TestClient]:
     from .api import create_app
 
-    app = create_app(Settings(url=database, job_workers=3))
+    # The container's url carries its login; the settings keep it apart, as a deployment does.
+    url, username, password = split_login(database)
+    app = create_app(Settings(url=url, username=username, password=password, job_workers=3))
     # `with TestClient(...)` is what runs the lifespan - and therefore the migrations, the
     # pools and the scheduler. Without the `with`, none of that happens and every test here
     # would fail against an empty database.

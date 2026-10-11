@@ -14,7 +14,8 @@ uv add ekbatan[mariadb]
 | | |
 | --- | --- |
 | driver | PyMySQL |
-| url | `mariadb+pymysql://user:pass@host:3306/db` |
+| url | `mariadb+pymysql://host:3306/db` |
+| login | `username=` and `password=`, never in the url |
 | uuid | `CHAR(36)` here; MariaDB also has a native `UUID` |
 | json | `JSON` - stored as `LONGTEXT` internally |
 | timestamps | `DATETIME(6)`, UTC |

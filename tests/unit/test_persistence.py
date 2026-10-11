@@ -26,8 +26,8 @@ from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import ShardIdentifier
 from fixtures.config import group, member
 
-PRIMARY = DataSourceConfig(url="postgresql+psycopg://user:pass@primary-9e3f:5432/db", pool_size=20)
-REPLICA = DataSourceConfig(url="postgresql+psycopg://user:pass@replica-9e3f:5432/db", pool_size=20)
+PRIMARY = DataSourceConfig(url="postgresql+psycopg://primary-9e3f:5432/db", pool_size=20)
+REPLICA = DataSourceConfig(url="postgresql+psycopg://replica-9e3f:5432/db", pool_size=20)
 
 FIRST = ShardIdentifier(0, 0)
 SECOND = ShardIdentifier(0, 1)
@@ -99,7 +99,7 @@ class TestDatabaseRegistrySecondaryPool:
         construction, so `from_config` is never reached at all. Both orderings are asserted, so
         this still fails if the check ever moves after the engine loop.
         """
-        unloadable = DataSourceConfig(url="postgresql+nosuchdriver://u:p@primary-9e3f:5432/db")
+        unloadable = DataSourceConfig(url="postgresql+nosuchdriver://primary-9e3f:5432/db")
         groups = (group(0, "g0", member(0, unloadable), member(1, unloadable)),)
 
         with pytest.raises(ValidationError) as refused:
@@ -114,9 +114,9 @@ class TestDatabaseRegistrySecondaryPool:
             DatabaseRegistry.from_config(ShardingConfig(default_shard=FIRST, groups=groups))
 
 
-G0_M0 = DataSourceConfig(url="postgresql+psycopg://user:pass@host-g0-m0:5432/db", pool_size=5)
-G0_M1 = DataSourceConfig(url="postgresql+psycopg://user:pass@host-g0-m1:5432/db", pool_size=5)
-G1_M0 = DataSourceConfig(url="postgresql+psycopg://user:pass@host-g1-m0:5432/db", pool_size=5)
+G0_M0 = DataSourceConfig(url="postgresql+psycopg://host-g0-m0:5432/db", pool_size=5)
+G0_M1 = DataSourceConfig(url="postgresql+psycopg://host-g0-m1:5432/db", pool_size=5)
+G1_M0 = DataSourceConfig(url="postgresql+psycopg://host-g1-m0:5432/db", pool_size=5)
 
 GLOBAL = ShardIdentifier(0, 0)
 GLOBAL_2 = ShardIdentifier(0, 1)
@@ -321,7 +321,7 @@ def test_engine_for_honours_the_pool_it_is_given():
     from ekbatan.persistence import engine_for
 
     engine = engine_for(
-        DataSourceConfig(url="postgresql+psycopg://u:p@h-9e3f/db", pool_size=7, max_overflow=2)
+        DataSourceConfig(url="postgresql+psycopg://h-9e3f/db", pool_size=7, max_overflow=2)
     )
     try:
         assert engine.pool.size() == 7  # type: ignore[attr-defined]

@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import select, text
 
 from ekbatan.clock import SystemClock
+from ekbatan.config import split_login
 from ekbatan.ids import ShardedId
 from ekbatan.migrations import validate_scripts
 
@@ -51,7 +52,8 @@ def service(database: str) -> Iterator[SagaService]:
     # order falls back to a random uuid. Each saga step is a separate unit of work at a
     # different instant, which is exactly what makes the trail readable; freezing time would
     # be testing an order neither port promises.
-    built = build(database, clock=SystemClock())
+    url, username, password = split_login(database)
+    built = build(url, username=username, password=password, clock=SystemClock())
     try:
         yield built
     finally:
@@ -256,7 +258,8 @@ def client(database: str):
 
     from .api import create_app
 
-    with TestClient(create_app(database)) as running:
+    url, username, password = split_login(database)
+    with TestClient(create_app(url, username=username, password=password)) as running:
         with running.app.state.service.registry.default.connection() as conn:
             for table in ("event_notifications", "events", "transfer_steps", "wallets"):
                 conn.execute(text(f"TRUNCATE TABLE {table}"))

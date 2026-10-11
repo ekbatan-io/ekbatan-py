@@ -86,11 +86,16 @@ def service_of(request: Request) -> ShardedWallets:
 Service = Annotated[ShardedWallets, Depends(service_of)]
 
 
-def create_app(urls: Mapping[ShardIdentifier, str] | None = None) -> FastAPI:
+def create_app(
+    urls: Mapping[ShardIdentifier, str] | None = None,
+    *,
+    username: str | None = None,
+    password: str | None = None,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         assert urls is not None, "this example has no single-database default; pass the layout"
-        service = build(urls)
+        service = build(urls, username=username, password=password)
         app.state.service = service
         try:
             yield

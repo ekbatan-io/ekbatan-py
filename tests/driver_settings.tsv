@@ -1,0 +1,106 @@
+driver	versions	setting	kind	note
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	service	other	Database-Service
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	user	login-user	the user to log in as
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	password	login-password	the login password
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	passfile	other	Database-Password-File
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	channel_binding	other	Channel-Binding
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	connect_timeout	other	Connect-timeout
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	dbname	other	Database-Name
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	host	other	Database-Host
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	hostaddr	other	Database-Host-IP-Address
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	port	other	Database-Port
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	client_encoding	other	Client-Encoding
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	options	other	Backend-Options
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	application_name	other	Application-Name
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	fallback_application_name	other	Fallback-Application-Name
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	keepalives	other	TCP-Keepalives
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	keepalives_idle	other	TCP-Keepalives-Idle
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	keepalives_interval	other	TCP-Keepalives-Interval
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	keepalives_count	other	TCP-Keepalives-Count
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	tcp_user_timeout	other	TCP-User-Timeout
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslmode	other	SSL-Mode
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslnegotiation	other	SSL-Negotiation
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslcompression	other	SSL-Compression
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslcert	other	SSL-Client-Cert
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslkey	other	SSL-Client-Key
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslcertmode	other	SSL-Client-Cert-Mode
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslpassword	secret	the password of the client certificate's key
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslrootcert	other	SSL-Root-Certificate
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslcrl	other	SSL-Revocation-List
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslcrldir	other	SSL-Revocation-List-Dir
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslsni	other	SSL-SNI
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	requirepeer	other	Require-Peer
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	require_auth	other	Require-Auth
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	min_protocol_version	other	Min-Protocol-Version
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	max_protocol_version	other	Max-Protocol-Version
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	ssl_min_protocol_version	other	SSL-Minimum-Protocol-Version
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	ssl_max_protocol_version	other	SSL-Maximum-Protocol-Version
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	gssencmode	other	GSSENC-Mode
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	krbsrvname	other	Kerberos-service-name
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	gsslib	other	GSS-library
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	gssdelegation	other	GSS-delegation
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	replication	other	Replication
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	target_session_attrs	other	Target-Session-Attrs
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	load_balance_hosts	other	Load-Balance-Hosts
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	scram_client_key	secret	a SCRAM client key: logs in like a password
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	scram_server_key	secret	a SCRAM server key: logs in like a password
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	oauth_issuer	other	OAuth-Issuer
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	oauth_client_id	other	OAuth-Client-ID
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	oauth_client_secret	secret	the OAuth client's secret
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	oauth_scope	other	OAuth-Scope
+psycopg (libpq)	psycopg 3.3.5, libpq 180006	sslkeylogfile	other	SSL-Key-Log-File
+psycopg	psycopg 3.3.5	conninfo	other	a whole connection string; can hold a user and a password
+psycopg	psycopg 3.3.5	autocommit	other	psycopg's own setting
+psycopg	psycopg 3.3.5	prepare_threshold	other	psycopg's own setting
+psycopg	psycopg 3.3.5	context	other	psycopg's own setting
+psycopg	psycopg 3.3.5	row_factory	other	psycopg's own setting
+psycopg	psycopg 3.3.5	cursor_factory	other	psycopg's own setting
+pymysql	PyMySQL 1.2.0	user	login-user	the user to log in as
+pymysql	PyMySQL 1.2.0	password	login-password	the login password
+pymysql	PyMySQL 1.2.0	host	other	default None
+pymysql	PyMySQL 1.2.0	database	other	default None
+pymysql	PyMySQL 1.2.0	unix_socket	other	default None
+pymysql	PyMySQL 1.2.0	port	other	default 0
+pymysql	PyMySQL 1.2.0	charset	other	default ''
+pymysql	PyMySQL 1.2.0	collation	other	default None
+pymysql	PyMySQL 1.2.0	sql_mode	other	default None
+pymysql	PyMySQL 1.2.0	read_default_file	other	default None
+pymysql	PyMySQL 1.2.0	conv	other	default None
+pymysql	PyMySQL 1.2.0	use_unicode	other	default True
+pymysql	PyMySQL 1.2.0	client_flag	other	default 0
+pymysql	PyMySQL 1.2.0	cursorclass	other	default <class 'pymysql.cursors.Cursor'>
+pymysql	PyMySQL 1.2.0	init_command	other	default None
+pymysql	PyMySQL 1.2.0	connect_timeout	other	default 10
+pymysql	PyMySQL 1.2.0	read_default_group	other	default None
+pymysql	PyMySQL 1.2.0	autocommit	other	default False
+pymysql	PyMySQL 1.2.0	local_infile	other	default False
+pymysql	PyMySQL 1.2.0	max_allowed_packet	other	default 16777216
+pymysql	PyMySQL 1.2.0	defer_connect	other	default False
+pymysql	PyMySQL 1.2.0	auth_plugin_map	other	default None
+pymysql	PyMySQL 1.2.0	read_timeout	other	default None
+pymysql	PyMySQL 1.2.0	write_timeout	other	default None
+pymysql	PyMySQL 1.2.0	bind_address	other	default None
+pymysql	PyMySQL 1.2.0	binary_prefix	other	default False
+pymysql	PyMySQL 1.2.0	program_name	other	default None
+pymysql	PyMySQL 1.2.0	server_public_key	other	default None
+pymysql	PyMySQL 1.2.0	ssl	other	default None
+pymysql	PyMySQL 1.2.0	ssl_ca	other	default None
+pymysql	PyMySQL 1.2.0	ssl_cert	other	default None
+pymysql	PyMySQL 1.2.0	ssl_disabled	other	default None
+pymysql	PyMySQL 1.2.0	ssl_key	other	default None
+pymysql	PyMySQL 1.2.0	ssl_key_password	secret	the password of the client certificate's key
+pymysql	PyMySQL 1.2.0	ssl_verify_cert	other	default None
+pymysql	PyMySQL 1.2.0	ssl_verify_identity	other	default None
+pymysql	PyMySQL 1.2.0	compress	other	default None
+pymysql	PyMySQL 1.2.0	named_pipe	other	default None
+pymysql	PyMySQL 1.2.0	passwd	login-password	old name for password, read when password is empty
+pymysql	PyMySQL 1.2.0	db	other	default None
+sqlite3	Python 3.14	database	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	timeout	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	detect_types	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	isolation_level	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	check_same_thread	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	factory	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	cached_statements	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	uri	other	sqlite3.connect() setting; SQLite has no login
+sqlite3	Python 3.14	autocommit	other	sqlite3.connect() setting; SQLite has no login

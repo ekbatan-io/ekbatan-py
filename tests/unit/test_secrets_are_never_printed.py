@@ -1,10 +1,11 @@
 """A database password is never printed - not by an object, not in an error.
 
-The url carries the credentials in this port, so every way a url, a config holding one, or the
-arguments handed to a driver can turn into text is a way for a password to reach a log line, a
-traceback, a test report or an exception tracker. Each is checked here, against every shape a
-password can take in a url. What the framework writes while it runs, with a real password
-against a real database, is `tests/integration/test_secrets_stay_secret.py`.
+The login lives in `username` and `password`, and a url carrying one is refused - but the
+password still sits in a config, in every layout and result that holds one, and in the arguments
+handed to a driver. Every way those can turn into text is a way for it to reach a log line, a
+traceback, a test report or an exception tracker. Each is checked here. What the framework writes
+while it runs, with a real password against a real database, is
+`tests/integration/test_secrets_stay_secret.py`.
 """
 
 from __future__ import annotations
@@ -33,13 +34,23 @@ from ekbatan.migrations import (
 
 SECRET = "Zq7-s3cret-pw"
 
-URLS = [
+#: Urls as they are written now: no login in them.
+PLAIN_URLS = [
+    "postgresql+psycopg://db1:5432/orders",
+    "postgresql://db1/orders?sslmode=require",
+    "mysql+pymysql://db1:3306/orders",
+    "mariadb+pymysql://db1/orders",
+]
+
+#: Every place a url can carry a password - each one refused, and never repeated.
+URLS_WITH_A_SECRET = [
     f"postgresql+psycopg://app:{SECRET}@db1:5432/orders",
     f"postgresql://app:{SECRET}@db1/orders?sslmode=require",
     f"mysql+pymysql://root:{SECRET}@db1:3306/orders",
     f"mariadb+pymysql://root:{SECRET}@db1/orders",
-    f"postgresql+psycopg://app@db1/orders?password={SECRET}",
-    f"postgresql+psycopg://app@db1/orders?application_name=svc&sslpassword={SECRET}",
+    f"postgresql+psycopg://db1/orders?password={SECRET}",
+    f"postgresql+psycopg://db1/orders?application_name=svc&sslpassword={SECRET}",
+    f"mysql+pymysql://db1/orders?passwd={SECRET}",
 ]
 
 
@@ -56,35 +67,43 @@ def every_text(value: object) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize("url", URLS)
+def configured(url: str, **settings: object) -> DataSourceConfig:
+    return DataSourceConfig(url=url, username="app", password=SECRET, **settings)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("url", PLAIN_URLS)
 def test_a_data_source_config_never_prints_its_password(url):
-    config = DataSourceConfig(url=url)
+    config = configured(url)
 
     for text in every_text(config):
         assert SECRET not in text, text
-    assert "***" in repr(config)
+    assert "password='***'" in repr(config)
     assert "db1" in repr(config), "still says which database - only the password is hidden"
+    assert "username='app'" in repr(config), "a user name is not a secret"
 
 
-def test_a_password_with_escaped_characters_is_hidden_in_either_form():
-    config = DataSourceConfig(url="postgresql+psycopg://app:p%40ss%3Aw0rd%2Fx@db1/orders")
+def test_a_password_with_special_characters_is_hidden():
+    config = DataSourceConfig(url=PLAIN_URLS[0], username="app", password="p@ss:w0rd/x%40")
 
-    assert "p%40ss" not in repr(config)
-    assert "p@ss:w0rd" not in repr(config)
-
-
-def test_the_url_itself_is_unchanged():
-    """Hidden when printed, not when used: the engine still connects with the real password."""
-    url = URLS[0]
-
-    assert DataSourceConfig(url=url).url == url
+    assert "p@ss" not in repr(config)
+    assert "w0rd" not in repr(config)
 
 
-def test_secrets_in_connect_args_are_hidden_and_the_rest_shown():
-    config = DataSourceConfig(
-        url="postgresql+psycopg://app@db1/orders",
-        connect_args={
-            "password": SECRET,
+def test_the_password_is_hidden_when_printed_not_when_used():
+    """The engine and the migrator connect with the url the config builds: the real password is
+    on it, and it prints as `***`."""
+    url = configured(PLAIN_URLS[0]).sqlalchemy_url()
+
+    assert url.password == SECRET
+    for text in every_text(url):
+        assert SECRET not in text, text
+
+
+def test_every_data_source_properties_value_is_hidden_and_every_name_shown():
+    config = configured(
+        PLAIN_URLS[0],
+        data_source_properties={
+            "sslpassword": SECRET,
             "ssl": {"key": "/etc/client.key", "password": SECRET},
             "options": f"-c search_path=app password={SECRET}",
             "dsn": f"postgresql://app:{SECRET}@db1/orders",
@@ -94,12 +113,22 @@ def test_secrets_in_connect_args_are_hidden_and_the_rest_shown():
 
     for text in every_text(config):
         assert SECRET not in text, text
-    assert "'connect_timeout': 5" in repr(config)
+    assert "'connect_timeout': '***'" in repr(config), "every value is a secret, as in Java"
+    assert "'sslpassword'" in repr(config), "the names are shown"
 
 
-@pytest.mark.parametrize("url", URLS[:3])
+@pytest.mark.parametrize("url", URLS_WITH_A_SECRET)
+def test_a_url_with_a_secret_is_refused_and_the_secret_never_repeated(url):
+    with pytest.raises(ValidationError) as refused:
+        DataSourceConfig(url=url)
+
+    assert SECRET not in str(refused.value)
+    assert SECRET not in repr(refused.value)
+
+
+@pytest.mark.parametrize("url", PLAIN_URLS[:3])
 def test_nothing_that_holds_a_config_prints_its_password(url):
-    layout = ShardingConfig.single(url)
+    layout = ShardingConfig.single(url, username="app", password=SECRET)
     member = layout.groups[0].members[0]
     each = target(member.primary_config())
     holders = [
@@ -156,7 +185,9 @@ def test_the_refusals_still_say_what_is_wrong():
 
 
 def test_the_arguments_a_driver_is_given_never_print_the_password():
-    found = connection_arguments("orders", URLS[0], {"sslpassword": SECRET})
+    found = connection_arguments(
+        "orders", configured(PLAIN_URLS[0]).sqlalchemy_url(), {"sslpassword": SECRET}
+    )
 
     for text in every_text(found):
         assert SECRET not in text, text
@@ -197,7 +228,15 @@ def test_text_that_carries_a_password_is_cleaned():
 
 # -- the guard -------------------------------------------------------------------------------
 
-SENSITIVE_FIELDS = {"url", "password", "dsn", "connect_args", "secret", "token", "credentials"}
+SENSITIVE_FIELDS = {
+    "url",
+    "password",
+    "dsn",
+    "data_source_properties",
+    "secret",
+    "token",
+    "credentials",
+}
 
 
 def _modules() -> list[str]:

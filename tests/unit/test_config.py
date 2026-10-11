@@ -19,7 +19,7 @@ GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
 
 
-def a_source(url: str = "postgresql+psycopg://u:p@h/db", **kw: object) -> DataSourceConfig:
+def a_source(url: str = "postgresql+psycopg://h/db", **kw: object) -> DataSourceConfig:
     return DataSourceConfig(url=url, **kw)  # type: ignore[arg-type]
 
 
@@ -60,7 +60,7 @@ def test_a_recognised_but_unsupported_database_gets_a_different_message():
     """Java draws the same line: "could not tell" and "told, but unsupported" are different
     mistakes, and one message covering both sends the reader to the wrong place."""
     with pytest.raises(ValidationError, match="unsupported database 'oracle'"):
-        a_source("oracle://u:p@h/db")
+        a_source("oracle://h/db")
 
 
 def test_a_jdbc_url_is_named_for_what_it_is():
@@ -236,8 +236,8 @@ def test_every_shard_has_to_speak_the_same_dialect():
         ShardingConfig(
             default_shard=GLOBAL,
             groups=(
-                group(0, "global", member(0, a_source("postgresql://u:p@h/db"))),
-                group(1, "mexico", member(0, a_source("mysql+pymysql://u:p@h/db"))),
+                group(0, "global", member(0, a_source("postgresql://h/db"))),
+                group(1, "mexico", member(0, a_source("mysql+pymysql://h/db"))),
             ),
         )
 
