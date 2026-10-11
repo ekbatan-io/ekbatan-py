@@ -8,11 +8,13 @@ that caused it.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from types import MappingProxyType
 from typing import Any, ClassVar, Literal, Self
 
+from ._redact import redact, redact_url
 from .errors import ValidationError
 from .sharding import ShardIdentifier
 
@@ -30,13 +32,19 @@ __all__ = [
 _DIALECTS = {"postgresql": "postgres", "mysql": "mysql", "mariadb": "mariadb", "sqlite": "sqlite"}
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True, kw_only=True, repr=False)
 class DataSourceConfig:
     """One connection pool.
 
     ``pool_size`` and ``max_overflow`` together are what Hikari calls a maximum pool size; the
     split is SQLAlchemy's and is left visible rather than papered over, because an operator
     tuning a pool needs to see the knobs their own tooling reports on.
+
+    **It never prints its password.** The url carries the credentials here, where Java keeps
+    them in fields of their own, so the printed form - and the printed form of everything that
+    holds one, a layout, a migration result - shows the url with ``***`` where the password is,
+    as SQLAlchemy shows it, and hides any ``connect_args`` value under a key like ``password``.
+    Java's prints no fields at all.
     """
 
     url: str
@@ -61,6 +69,17 @@ class DataSourceConfig:
         # A knob that silently disables itself is a knob an operator believes is set.
         self.dialect  # noqa: B018 - raises here if the URL names something unsupported
 
+    def __repr__(self) -> str:
+        shown = []
+        for each in fields(self):
+            value = getattr(self, each.name)
+            if each.name == "url":
+                value = redact_url(value)
+            elif each.name == "connect_args":
+                value = redact(value)
+            shown.append(f"{each.name}={value!r}")
+        return f"DataSourceConfig({', '.join(shown)})"
+
     @classmethod
     def builder(cls) -> DataSourceConfigBuilder:
         return DataSourceConfigBuilder()
@@ -74,27 +93,33 @@ class DataSourceConfig:
         want different fixes, and one message covering both sends the reader looking in the
         wrong place.
         """
+        # Neither refusal repeats the url: one that cannot be read may hold its password
+        # anywhere, and the scheme in front of `://` is all a reader needs to find the mistake.
         head, separator, _ = self.url.partition("://")
         if not separator:
             raise ValidationError(
-                f"cannot tell which database {self.url!r} names; a url looks like "
-                f"'postgresql+psycopg://user:pass@host/db'"
+                "cannot tell which database the url names: it has no '://'. A url looks like "
+                "'postgresql+psycopg://user:pass@host/db'"
             )
         scheme = head.split("+", 1)[0].strip().lower()
         if scheme.startswith("jdbc:"):
             # The likeliest mistake anyone moving between the two ports makes, and left alone
             # it reports as "unsupported database 'jdbc:postgresql'", which sends the reader to
             # look for a driver rather than at the string.
+            shown = f" ({scheme}://...)" if re.fullmatch(r"jdbc:[a-z0-9]+", scheme) else ""
             raise ValidationError(
-                f"{self.url!r} is a JDBC url, which is the Java port's form. Here a url looks "
-                f"like 'postgresql+psycopg://user:pass@host/db' - the credentials live in the "
-                f"url rather than in separate username and password settings."
+                f"the url is a JDBC url{shown}, which is the Java port's form. Here a url looks "
+                f"like 'postgresql+psycopg://user:pass@host/db' - the credentials live in the url "
+                f"rather than in separate username and password settings."
             )
         try:
             return _DIALECTS[scheme]
         except KeyError:
+            # Shown only when it is a plain scheme name: garbled text in front of `://` could
+            # be a password.
+            named = f" {scheme!r}" if re.fullmatch(r"[a-z][a-z0-9_.-]*", scheme) else ""
             raise ValidationError(
-                f"unsupported database {scheme!r}; this framework speaks "
+                f"unsupported database{named}; this framework speaks "
                 f"{', '.join(sorted(set(_DIALECTS.values())))}"
             ) from None
 

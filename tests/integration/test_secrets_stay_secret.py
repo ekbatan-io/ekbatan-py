@@ -1,0 +1,89 @@
+"""A real password, against a real database, and everything the framework writes while it runs.
+
+The unit tests prove each object prints without its password. This proves the sum: a user with a
+password nobody else has, every logger at DEBUG, the migrator through migrate, info, repair and a
+failure, the engine with SQLAlchemy's echo on - and then the password is looked for in all of it:
+the log, stdout, stderr, every result and every error. SQLite has no passwords to leak.
+"""
+
+from __future__ import annotations
+
+import logging
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+
+from ekbatan.config import ShardingConfig
+from ekbatan.migrations import MigrationError, info, migrate, repair
+from ekbatan.persistence import DatabaseRegistry
+from ekbatan.sharding import DEFAULT_SHARD
+from fixtures.migrating import fresh, query
+
+SECRET = "Zq7-s3cret-pw-for-tests"
+WRONG = "Wr0ng-Zq7-pw-for-tests"
+USER = "ekbatan_secret_user"
+
+
+def with_secret_user(admin_url: str, dialect: str) -> str:
+    """The same database, reached as a user whose password is `SECRET`."""
+    database = make_url(admin_url).database
+    if dialect == "postgres":
+        query(
+            admin_url,
+            f"DO $$ BEGIN CREATE ROLE {USER} LOGIN PASSWORD '{SECRET}'; "
+            "EXCEPTION WHEN duplicate_object THEN NULL; END $$",
+        )
+        query(admin_url, f"ALTER DATABASE {database} OWNER TO {USER}")
+    else:
+        query(admin_url, f"CREATE USER IF NOT EXISTS '{USER}'@'%' IDENTIFIED BY '{SECRET}'")
+        query(admin_url, f"GRANT ALL PRIVILEGES ON `{database}`.* TO '{USER}'@'%'")
+    return make_url(admin_url).set(username=USER, password=SECRET).render_as_string(False)
+
+
+def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
+    backend, request, tmp_path, caplog, capsys
+):
+    if backend.dialect == "sqlite":
+        pytest.skip("SQLite has no passwords")
+    url = with_secret_user(fresh(backend, request), backend.dialect)
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "V1__runs.sql").write_text("CREATE TABLE runs (name VARCHAR(20));")
+    (migrations / "V2__look.sql").write_text("SELECT 'looked' AS seen;")
+    (migrations / "R__view.sql").write_text(
+        "DROP VIEW IF EXISTS seen;\nCREATE VIEW seen AS SELECT 1 AS n;"
+    )
+    (migrations / "post-apply.sql").write_text("SELECT count(*) FROM runs;")
+    caplog.set_level(logging.DEBUG)  # every logger, everything it says
+    layout = ShardingConfig.single(url, echo=True)
+    written: list[str] = [repr(layout), str(layout)]
+
+    written.append(repr(migrate(layout, migrations)))
+    written.append(repr(info(layout, migrations)))
+    written.append(repr(repair(layout, migrations)))
+
+    registry = DatabaseRegistry.from_config(layout)
+    try:
+        with registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+            written.append(repr(connection.execute(text("SELECT name FROM runs")).all()))
+        written.append(repr(registry))
+    finally:
+        registry.close()
+
+    (migrations / "V3__broken.sql").write_text("INSERT INTO nowhere VALUES (1);")
+    with pytest.raises(MigrationError) as failed:
+        migrate(layout, migrations)
+    written += [str(failed.value), repr(failed.value)]
+
+    wrong = make_url(url).set(password=WRONG).render_as_string(False)
+    with pytest.raises(MigrationError) as denied:
+        migrate(ShardingConfig.single(wrong), migrations)
+    written += [str(denied.value), repr(denied.value)]
+
+    printed = capsys.readouterr()
+    everything = "\n".join([caplog.text, printed.out, printed.err, *written])
+    assert "looked" in caplog.text, "the log was captured: a migration's query output is in it"
+    assert "V3__broken.sql" in str(failed.value), "and the failure was the migration's"
+    assert SECRET not in everything
+    assert WRONG not in everything, "nor a wrong password a login was refused with"

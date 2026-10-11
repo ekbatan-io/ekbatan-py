@@ -136,7 +136,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| DataSourceConfig.java | 238 | `config.py` | done - credentials live in the url, as SQLAlchemy carries them |
+| DataSourceConfig.java | 238 | `config.py` | done - credentials live in the url, as SQLAlchemy carries them; never printed, as Java's never prints them (`EKB-0237`) |
 | PropertyKeyNormalizer.java | 49 | `config.py` | n/a - nothing binds configuration from a property file here |
 | ShardGroupConfig.java | 100 | `config.py` | done - `ShardGroupConfig`, level for level (`EKB-0222`) |
 | ShardMemberConfig.java | 183 | `config.py` | done - `ShardMemberConfig`, including the named `configs` map and `config_for` (`EKB-0222`) |

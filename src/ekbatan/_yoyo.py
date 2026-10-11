@@ -38,6 +38,7 @@ from yoyo.backends.core.sqlite3 import SQLiteBackend
 from yoyo.connections import DatabaseURI
 from yoyo.migrations import Migration
 
+from ._redact import redact
 from .locks.base import lock_key_hash
 
 LOG = logging.getLogger("ekbatan.migrations")
@@ -571,6 +572,13 @@ class ConnectionArguments(NamedTuple):
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
     database: str | None
+
+    def __repr__(self) -> str:
+        # The driver's keyword arguments hold the password; the printed form never does.
+        return (
+            f"ConnectionArguments(family={self.family!r}, args={redact(self.args)!r}, "
+            f"kwargs={redact(self.kwargs)!r}, database={self.database!r})"
+        )
 
 
 def connection_arguments(

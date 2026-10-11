@@ -221,6 +221,7 @@ without it.
 
 | what | commit |
 | --- | --- |
+| A `DataSourceConfig` never prints its password - nor does anything holding one (a layout, a migration result), nor an error about a url. Java's prints no fields at all; here the password is inside the url and a dataclass printed every field, so `log.info(result)` wrote it out. Now `***`, as SQLAlchemy prints its own urls; secret-looking `connect_args` hidden too; and a test refuses any later dataclass whose url or password field would print by default. Proven with a real user and password on PostgreSQL, MySQL and MariaDB, every logger at DEBUG | `EKB-0237` |
 | `Model` / `Entity` / `TypedValue` reject null id, null state, null/absent version, `version < 1`, null events | `EKB-0108` |
 | A model's events tuple is copied, so a "frozen" model cannot change underneath it | `EKB-0108` |
 | A connection whose rollback failed is invalidated rather than returned to the pool | `EKB-0113` |

@@ -94,6 +94,12 @@ burst of connection *establishment* against the database - which is the expensiv
 exactly when you can least afford it. A fixed pool makes the limit visible as waiting rather than
 invisible as latency.
 
+**It never prints the password.** The credentials live in the url, so printing a
+`DataSourceConfig` - or anything that holds one: a layout, a member, a migration result - shows
+the url with `***` where the password is, as SQLAlchemy shows its own urls and engines. A
+`connect_args` value under a key like `password` or `sslpassword` is hidden the same way, and an
+error about a url it cannot use never repeats the url. `log.info(layout)` is safe to write.
+
 There is no counterpart to Hikari's `idleTimeout` or `minimumIdle`; retirement here is by age
 rather than by idleness. See [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 
