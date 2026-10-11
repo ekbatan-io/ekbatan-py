@@ -24,7 +24,7 @@ classifiers = [
 # never notices, because [tool.uv.sources] below replaces the requirement with a path. A user
 # installing from PyPI would be the first to find out. Drop the suffix at the first real
 # release, and move the pin with every minor bump - the release workflow checks it.
-dependencies = ["SQLAlchemy>=2.0.30", "ekbatan-py-db-scheduler~=0.1.0.dev0"]
+dependencies = ["SQLAlchemy>=2.0.30", "ekbatan-py-db-scheduler~=0.1.0.dev0", "PyYAML>=6.0"]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2"]
@@ -51,6 +51,8 @@ ekbatan-py-db-scheduler = { path = "db-scheduler", editable = true }
 dev = [
     "pytest>=8.0",
     "mypy>=1.11",
+    # PyYAML ships no types of its own; the stubs keep `mypy --strict` checking the loader.
+    "types-PyYAML>=6.0",
     "ruff>=0.6",
     # The suite runs on SQLite by default and against real servers with --dialects=all.
     "testcontainers[postgres,mysql]>=4.15",

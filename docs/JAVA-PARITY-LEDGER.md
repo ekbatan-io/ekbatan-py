@@ -138,7 +138,7 @@ which means "use the default".
 | --- | --- | --- | --- |
 | DataSourceConfig.java | 323 | `config.py` | done - optional `username` / `password`, `data_source_properties` with Java's refusals (plus PyMySQL's `passwd`); values kept as given and groups allowed, see DIVERGENCE.md; never printed (`EKB-0237`, `EKB-0239`) |
 | JdbcUrlCredentials.java | 484 | `_credentials.py` | done - a url carrying a login or a secret is refused; read through SQLAlchemy's parser, falling back to the text as Java reads it; the refused names come from `tests/driver_settings.tsv` (`EKB-0239`) |
-| PropertyKeyNormalizer.java | 49 | `config.py` | n/a - nothing binds configuration from a property file here |
+| PropertyKeyNormalizer.java | 155 | `config_files.py` | done - kebab-case and camelCase keys read alike, `data-source-properties` names kept as written (`EKB-0240`) |
 | ShardGroupConfig.java | 100 | `config.py` | done - `ShardGroupConfig`, level for level (`EKB-0222`) |
 | ShardMemberConfig.java | 183 | `config.py` | done - `ShardMemberConfig`, including the named `configs` map and `config_for` (`EKB-0222`) |
 | ShardingConfig.java | 91 | `config.py` | done |
@@ -380,9 +380,9 @@ which means "use the default".
 | JdbcUrlCredentialsDriverTest.java | 235 | `tests/integration/test_data_source_properties.py`, `tests/integration/test_secrets_stay_secret.py` | done - real logins and settings through the pool and the migrator |
 | DriverSettingsLedger.java | 102 | `tests/unit/test_data_source_login.py` | done - reads `tests/driver_settings.tsv` |
 | DriverSettingsLedgerTest.java | 86 | `tests/unit/test_data_source_login.py` | done - the ledger checked against the installed psycopg, libpq, PyMySQL and sqlite3 |
-| PropertyKeyNormalizerTest.java | 72 | `tests/unit/test_config.py` | n/a - tests a normaliser that is not ported |
+| PropertyKeyNormalizerTest.java | 163 | `tests/unit/test_config_files.py` | done - the spellings, driver names kept as written |
 | ShardingConfigJacksonBindingTest.java | 170 | `tests/unit/test_config.py` | n/a - Jackson binding |
-| ShardingConfigYamlTest.java | 236 | `tests/unit/test_config.py` | n/a - YAML binding, as above |
+| ShardingConfigYamlTest.java | 236 | `tests/unit/test_config_files.py` | done - the layout from YAML, TOML, JSON and INI equals the one code builds (`EKB-0240`) |
 
 #### `core/domain`
 

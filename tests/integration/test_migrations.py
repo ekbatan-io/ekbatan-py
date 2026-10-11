@@ -678,7 +678,9 @@ def test_a_failing_shard_stops_the_run_and_names_what_was_already_migrated(backe
     """Mexico already has a table and no history, which is refused as Flyway refuses it."""
     config = two_shards(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-    query(config.member(MEXICO).primary_config().sqlalchemy_url(), "CREATE TABLE widgets (id INTEGER)")
+    query(
+        config.member(MEXICO).primary_config().sqlalchemy_url(), "CREATE TABLE widgets (id INTEGER)"
+    )
 
     with pytest.raises(MigrationError) as raised:
         migrate(config, files.path)

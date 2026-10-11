@@ -96,6 +96,8 @@ burst of connection *establishment* against the database - which is the expensiv
 exactly when you can least afford it. A fixed pool makes the limit visible as waiting rather than
 invisible as latency.
 
+The same layout can be read from a YAML, TOML, JSON or INI file: see [Config files](config-files.md).
+
 **The login lives in `username` and `password`, never in the url** - as in the Java port. A url
 is logged and repeated, so one that carries a user name or a secret is refused, and the message
 says where each goes instead, without repeating the url:

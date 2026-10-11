@@ -99,6 +99,7 @@ PAIRS: dict[str, tuple[str, ...]] = {
     "database/migrations.md": ("reference/migrations.mdx",),
     "database/multi-database.md": ("reference/multi-database.mdx",),
     "database/repositories.md": ("reference/repository.mdx",),
+    "database/config-files.md": ("reference/config-files.mdx",),
     "database/schemagen.md": ("reference/schemagen.mdx",),
     "database/sharding.md": ("reference/sharding.mdx",),
     "database/tables/event-notifications.md": ("reference/tables/event-notifications.mdx",),

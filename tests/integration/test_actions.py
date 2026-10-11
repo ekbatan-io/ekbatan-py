@@ -551,14 +551,14 @@ def test_the_retry_count_is_on_the_action_span_whether_or_not_it_retried(executo
     )
 
     with collecting_spans() as collected:
-        run(executor, FailsWithAction(executor.clock), None, config=config)
+        run(executor, FailsWithAction(clock=executor.clock), None, config=config)
     quiet = next(s for s in collected if s.name == "ekbatan.action.execute")
     assert quiet.attributes["ekbatan.action.retry.count"] == 0
 
     with collecting_spans() as collected:
         run(
             executor,
-            FailsWithAction(StaleRecordError("moved"), executor.clock),
+            FailsWithAction(StaleRecordError("moved"), clock=executor.clock),
             None,
             config=config,
         )

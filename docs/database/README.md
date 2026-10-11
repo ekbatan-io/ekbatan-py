@@ -20,6 +20,8 @@ For the *concept* of the outbox - the atomic state-and-events story - see
 - **[Multiple dialects](multi-database.md)** - the cheatsheet, and where they disagree
   - **[PostgreSQL](postgresql.md)** · **[MySQL](mysql.md)** · **[MariaDB](mariadb.md)** ·
     **[SQLite](sqlite.md)**
+- **[Config files](config-files.md)** - the layout read from a YAML, TOML, JSON or INI file, with
+  environment variables filled in.
 - **[schemagen](schemagen.md)** - table definitions generated from a migrated database, and the
   type forcing that makes them portable
 

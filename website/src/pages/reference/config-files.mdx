@@ -1,0 +1,153 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: Config files
+activeSection: reference
+lead: "The layout read from a YAML, TOML, JSON or INI file - the same ShardingConfig code builds, with environment variables filled in and no error ever showing a value."
+---
+
+`load_sharding_config` reads the layout from a file and builds the same `ShardingConfig` that code
+builds. Every check stays in the config classes - a url with a login in it, a blank username, a
+driver setting named `password` are refused exactly as they are in code.
+
+```python
+from ekbatan.config_files import load_sharding_config
+from ekbatan.persistence import DatabaseRegistry
+
+layout = load_sharding_config("ekbatan.yaml")
+registry = DatabaseRegistry.from_config(layout)
+```
+
+The format comes from the file's extension: `.yaml` or `.yml`, `.toml`, `.json`, or `.ini`. No
+library beyond PyYAML is involved: TOML, JSON and INI are read by Python's own `tomllib`, `json` and
+`configparser`.
+
+## The layout
+
+It is the Java port's, under `ekbatan.sharding`, so one file reads the same in both:
+
+```yaml
+ekbatan:
+  sharding:
+    default-shard: {group: 0, member: 0}
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            configs:
+              primary-config:
+                url: postgresql+psycopg://db:5432/wallet
+                username: app
+                password: ${DB_PASSWORD}
+                pool-size: 20
+                data-source-properties:
+                  sslmode: require
+              jobs-config:
+                url: postgresql+psycopg://db:5432/wallet
+                username: app
+                password: ${DB_PASSWORD}
+                pool-size: 8
+```
+
+- Keys may be kebab-case or camelCase, as Java accepts: `default-shard` or `defaultShard`,
+  `primary-config` or `primaryConfig`. A datasource's own keys may also be snake_case, its names
+  in code: `pool_size`.
+- Names inside `data-source-properties` are a driver's and are kept exactly as written.
+- Anything outside `ekbatan.sharding` is left alone, so the file can hold your own settings too.
+  A key under it that means nothing is refused, with its path.
+
+The same layout in TOML, JSON and INI:
+
+```toml
+[ekbatan.sharding]
+default-shard = { group = 0, member = 0 }
+
+[[ekbatan.sharding.groups]]
+group = 0
+name = "global"
+
+[[ekbatan.sharding.groups.members]]
+member = 0
+
+[ekbatan.sharding.groups.members.configs.primary-config]
+url = "postgresql+psycopg://db:5432/wallet"
+username = "app"
+password = "${DB_PASSWORD}"
+pool-size = 20
+```
+
+```json
+{"ekbatan": {"sharding": {
+  "defaultShard": {"group": 0, "member": 0},
+  "groups": [{"group": 0, "name": "global", "members": [{"member": 0, "configs": {
+    "primaryConfig": {"url": "postgresql+psycopg://db:5432/wallet", "username": "app",
+                      "password": "${DB_PASSWORD}", "poolSize": 20}}}]}]}}}
+```
+
+```ini
+[ekbatan.sharding.default-shard]
+group = 0
+member = 0
+
+[ekbatan.sharding.groups.0]
+group = 0
+name = global
+
+[ekbatan.sharding.groups.0.members.0]
+member = 0
+
+[ekbatan.sharding.groups.0.members.0.configs.primaryConfig]
+url = postgresql+psycopg://db:5432/wallet
+username = app
+password = %(ENV_DB_PASSWORD)s
+pool_size = 20
+
+[ekbatan.sharding.groups.0.members.0.configs.primaryConfig.data-source-properties]
+sslmode = require
+```
+
+INI has one level of sections, so a group is a dotted section name and a list item a numbered one
+(`groups.0`, `groups.1`), numbered from 0 with no gaps. Keys keep their case, and an INI
+`[DEFAULT]` section is not copied into the others.
+
+## Environment variables
+
+Each format uses its own style:
+
+| Format | Placeholder | With a default |
+|---|---|---|
+| YAML, TOML, JSON | `${DB_PASSWORD}` - Spring's syntax | `${DB_PORT:5432}`; `${DB_PASSWORD:}` for an empty one |
+| INI | `%(ENV_DB_PASSWORD)s` - Supervisor's convention | none - INI's syntax has no default |
+
+- **A variable that is not set, with no default, stops the load**, naming the variable - as Spring
+  does. Nothing quietly becomes the empty string.
+- **A variable that is set but empty is used as given**: an empty password is a valid one.
+- **A filled-in value is inserted as it is** and never read again, so a password holding `%` or `$`
+  works.
+- In INI, `%(name)s` keeps its standard meaning - another key in the same section - and `%%` is a
+  literal `%`. In YAML, TOML and JSON, `$${` is a literal `${`.
+- The other format's style is refused with a hint, since it would otherwise be taken as a literal
+  password: `${DB_PASSWORD}` in an INI file, `%(ENV_DB_PASSWORD)s` in a YAML one.
+
+## Types
+
+YAML, TOML and JSON say what each value is, and a value of the wrong kind is refused rather than
+guessed at: `pool-size: "20"` is text, not a number, and `username: 1234` must be quoted.
+
+INI holds only text, so:
+
+- a datasource's own keys become their declared types: `pool_size = 20` is the number 20,
+  `pool_pre_ping = false` is false - and `pool_pre_ping = yes` is refused;
+- inside `data-source-properties`, a quoted value is text, while an unquoted number or
+  `true`/`false` becomes one: `connect_timeout = 10` is a number, `application_name = "10"` text,
+  `sslmode = require` text. Only lowercase `true` and `false` count; `yes` stays text.
+
+A value filled in from an environment variable is text inside `data-source-properties`, in every
+format; a datasource's own keys still turn it into their type (`pool-size: ${POOL:10}`).
+
+## Errors
+
+Every error names the key's path - `ekbatan.yaml: ekbatan.sharding.groups[0].members[0].configs.primary-config.pool-size: must be a whole number`
+- or the variable, and never a value. The YAML, INI and JSON readers quote the offending line in
+their own messages, which may hold a secret, so a broken file is reported by its line and column
+only.

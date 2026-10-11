@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -398,6 +398,7 @@ version = "0.1.0.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "ekbatan-py-db-scheduler" },
+    { name = "pyyaml" },
     { name = "sqlalchemy" },
 ]
 
@@ -432,6 +433,7 @@ dev = [
     { name = "redis" },
     { name = "ruff" },
     { name = "testcontainers", extra = ["mysql"] },
+    { name = "types-pyyaml" },
     { name = "yoyo-migrations" },
 ]
 examples = [
@@ -451,6 +453,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pymysql", marker = "extra == 'mariadb'", specifier = ">=1.1" },
     { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=6" },
     { name = "sqlalchemy", specifier = ">=2.0.30" },
     { name = "testcontainers", extras = ["postgres"], marker = "extra == 'codegen'", specifier = ">=4.15" },
@@ -468,6 +471,7 @@ dev = [
     { name = "redis", specifier = ">=6" },
     { name = "ruff", specifier = ">=0.6" },
     { name = "testcontainers", extras = ["postgres", "mysql"], specifier = ">=4.15" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
     { name = "yoyo-migrations", specifier = ">=9.0,<10" },
 ]
 examples = [
@@ -1300,6 +1304,15 @@ wheels = [
 mysql = [
     { name = "pymysql", extra = ["rsa"] },
     { name = "sqlalchemy" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260906"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/6e/abec85b9013db5b934b0280a6dd104904d84f7bcbaab2e2f3def87ac7463/types_pyyaml-6.0.12.20260906.tar.gz", hash = "sha256:f59c1cc05010b833d2d72287bbaa72610106b28d42d89a907313117faba85212", size = 18649, upload-time = "2026-09-06T06:35:35.362Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/c0/fc0644b7ddcfb969e95845837143cb5173ddd6e06ee4ba5fc493cd9329b7/types_pyyaml-6.0.12.20260906-py3-none-any.whl", hash = "sha256:bca893ff0d51df5c9053137d5d0e6ccd36e939a196356f1d5c16372422f5137b", size = 21282, upload-time = "2026-09-06T06:35:34.372Z" },
 ]
 
 [[package]]

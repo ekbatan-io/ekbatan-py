@@ -233,6 +233,26 @@ it are below the first table.
 | `split_login(url)` is public | a url from a container or a command line has to become a config somewhere; schemagen and the tests need it, and so will an application | built |
 | `schemagen --url` still accepts a url with a login | a development tool against a throwaway database; it splits the login out before migrating | built |
 
+## Config files (`EKB-0240`)
+
+Decided with the user on 2026-10-11 (see `docs/CONFIG-FILES-LEDGER.md`); the calls made while
+building it are below the first rows.
+
+| decision | why | who |
+| --- | --- | --- |
+| No config library: `tomllib`, `json`, `configparser`, and PyYAML for YAML | only option covering every format with placeholders; libraries compared by running them | the user |
+| PyYAML is a normal dependency | YAML just works | the user |
+| `${NAME}` / `${NAME:default}` in YAML, TOML, JSON; `%(ENV_NAME)s` in INI | each format's own style; Spring's and Supervisor's | the user |
+| a missing variable with no default fails; one set but empty is used | Spring's behaviour; an empty password is valid | the user |
+| INI typing: declared types for the datasource's keys, the quote rule in `data-source-properties` | no driver-specific knowledge needed | the user |
+| a value filled from an environment variable is text in `data-source-properties` | the main use is secrets; a password like `1234` must not become a number | built |
+| `$${` is a literal `${` in YAML, TOML, JSON | a way to write one at all | built |
+| the other format's placeholder style is refused with a hint | `${X}` in INI would otherwise be a literal password | built |
+| unknown keys under `ekbatan.sharding` are refused, also in INI - so a helper key for `%(name)s` must be an existing key | a typo should not pass silently | built |
+| INI's `[DEFAULT]` section is not copied into other sections | its keys would otherwise appear as settings everywhere | built |
+| a text field refuses a number from YAML (`username: 1234`) instead of converting it | YAML reads `0123` as 83; converting would hide that | built |
+| everything outside `ekbatan.sharding` is ignored | the file may hold the application's own settings | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

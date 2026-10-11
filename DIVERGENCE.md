@@ -1540,3 +1540,20 @@ refused with a message saying where each goes. Where this port differs, and why:
 | no SQLite | a login on a SQLite config refused | SQLite has none; it would be silently ignored |
 | `driver-settings.tsv`, 1,500 settings of every JDBC driver | `tests/driver_settings.tsv`, every setting of psycopg (libpq), PyMySQL and sqlite3 | the drivers this port connects through; see `docs/DRIVER-SURVEY.md` |
 
+## Config files (`EKB-0240`)
+
+> **chosen** - decided with the user on 2026-10-11: no config library, Python's own readers plus PyYAML, each format with its own placeholder style. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+
+Java binds the layout through each DI framework - Spring, Quarkus, Micronaut - and gets their
+placeholder handling with it. This port has no such framework, so `ekbatan.config_files` reads the
+file itself. The layout and its keys are Java's; where it differs:
+
+| Java | here | why |
+| --- | --- | --- |
+| YAML and `.properties`, through the DI framework | YAML, TOML, JSON and INI, read directly | the formats Python projects use; Python's own readers plus PyYAML |
+| `${DB_PASSWORD}`, `${DB_PORT:5432}` | the same in YAML, TOML and JSON; `%(ENV_DB_PASSWORD)s` in INI | INI's own `%(...)s` style, as Supervisor uses it; INI has no default syntax |
+| a missing variable fails startup | the same | Spring's fail-fast |
+| `jdbc-url` | `url` | a SQLAlchemy url |
+| datasource keys `maximum-pool-size`, ... | `pool-size`, ... (`pool_size` too) | the Python pool's own knobs |
+| values typed by Jackson | INI text typed by the declared field; in `data-source-properties` by the quote rule | INI holds only text |
+
