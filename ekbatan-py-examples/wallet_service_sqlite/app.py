@@ -1,12 +1,16 @@
 """The wiring, all of it in one place.
 
 Which database, which shard, which pool, which handler: configuration, expressed once, away
-from the code that expresses domain behaviour. Nothing above this file knows any of it.
+from the code that expresses domain behaviour. Nothing above this file knows any of it. The
+database, the namespace and the handling switch are in `ekbatan.yaml`, in the same keys as the
+Java examples' `application.yml`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from db_scheduler.clock import SettableClock
 
@@ -15,24 +19,21 @@ from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    ShardingConfig,
     SingleTableJsonEventPersister,
 )
 from ekbatan.clock import Clock, SystemClock
+from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import ManualJobRegistry, job_registry
-from ekbatan.events import (
-    EventFanoutJob,
-    EventHandlerRegistry,
-    EventHandlingJob,
-    HandlingConfig,
-    LocalEventHandlerConfig,
-)
+from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob
 
 from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
+
+#: The service's Ekbatan settings, in the same keys as the Java examples' `application.yml`.
+CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,10 +61,17 @@ class WalletService:
         self.registry.close()
 
 
-def build(url: str, *, clock: Clock | None = None) -> WalletService:
-    """Wire the service against one database."""
+def build(
+    environ: Mapping[str, str] | None = None,
+    *,
+    config_file: Path = CONFIG_FILE,
+    clock: Clock | None = None,
+) -> WalletService:
+    """Wire the service on `config_file`; `environ` fills its `${...}` placeholders, `os.environ`
+    when left out."""
     running = clock or SystemClock()
-    registry = DatabaseRegistry.from_config(ShardingConfig.single(url))
+    ekbatan = load_ekbatan_config(config_file, environ=environ)
+    registry = DatabaseRegistry.from_config(ekbatan.sharding)
 
     # Development only. A real deployment migrates from files - `ekbatan.migrations.migrate` -
     # because create_all has no answer for a column that changed.
@@ -97,7 +105,7 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
 
     executor = (
         ActionExecutor.builder()
-        .namespace("example.wallet_service_sqlite")
+        .namespace(ekbatan.namespace)
         .database_registry(registry)
         .repository_registry(repositories)
         .action_registry(actions)
@@ -112,12 +120,8 @@ def build(url: str, *, clock: Clock | None = None) -> WalletService:
 
     # Turning committed events into deliveries is work a cluster must do once, not once per
     # instance - so it is two distributed jobs, claimed through `scheduled_tasks` like any
-    # other. Handling is off by default; a deployment draining through Kafka would leave it so.
-    events_config = (
-        LocalEventHandlerConfig.builder()
-        .handling(HandlingConfig.builder().enabled(True).build())
-        .build()
-    )
+    # other. `ekbatan.yaml` switches handling on.
+    events_config = ekbatan.local_event_handler
     fanout = (
         EventFanoutJob.builder()
         .registry(registry)

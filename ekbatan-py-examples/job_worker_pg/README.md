@@ -8,6 +8,11 @@ cd ekbatan-py-examples && uv run python -m job_worker_pg     # PostgreSQL, ctrl-
 uv run pytest ekbatan-py-examples/job_worker_pg
 ```
 
+The settings are in `ekbatan.yaml`, in the same keys as Java's `application.yml`: the layout
+with the scheduler's own `jobsConfig` pool, the namespace, `jobs.pollingInterval: PT10S` and
+`local-event-handler.handling.enabled`. Durations are ISO-8601, as Java's `Duration.parse` reads
+them.
+
 ## What it shows
 
 **Two jobs, and the two shapes a job comes in.** `PayStipendJob` writes, through the same

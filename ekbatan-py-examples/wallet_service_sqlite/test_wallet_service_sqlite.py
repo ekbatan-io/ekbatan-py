@@ -34,7 +34,10 @@ from .schema import EVENTS, SCHEDULED_TASKS, WALLETS
 
 @pytest.fixture
 def service(tmp_path: Path) -> Iterator[WalletService]:
-    built = build(f"sqlite:///{tmp_path / 'wallet.db'}", clock=VirtualClock(SystemClock().now()))
+    built = build(
+        {"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'wallet.db'}"},
+        clock=VirtualClock(SystemClock().now()),
+    )
     try:
         yield built
     finally:
@@ -198,7 +201,7 @@ def test_the_script_runs(tmp_path, capsys):
     """The README promises the module runs as a script. This is that promise."""
     from .__main__ import run
 
-    built = build(f"sqlite:///{tmp_path / 'script.db'}")
+    built = build({"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'script.db'}"})
     try:
         run(built)
     finally:
@@ -343,3 +346,11 @@ def test_erasing_joins_a_transaction_the_caller_opened(service):
         pass
 
     assert service.wallets.find(wallet.id) is not None, "the rollback took the erase with it"
+
+
+def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service) -> None:
+    """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: the
+    database, the namespace and the handling job switched on all come from it."""
+    assert service.executor.namespace == "example.wallet_service_sqlite"
+    assert service.dispatch.enabled is True
+    assert service.registry.default.primary.url.database.endswith("wallet.db")

@@ -76,23 +76,49 @@ collaborators.** There is nothing else a container would have been doing for you
 
 ## 1. Settings
 
+The Ekbatan settings live in `ekbatan.yaml`, in the same keys as Java's `application.yml` - see
+[Config files](database/config-files.md):
+
+```yaml
+ekbatan:
+  namespace: example.fastapi_wallet_rest_pg
+  sharding:
+    defaultShard: {group: 0, member: 0}
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            name: global
+            configs:
+              primaryConfig:
+                url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+              jobsConfig:   # the same url and login
+                poolSize: 8
+              lockConfig:   # the same url and login
+                poolSize: 5
+  local-event-handler:
+    handling:
+      enabled: true
+```
+
+The url and login are placeholders with defaults, so one file runs everywhere and running the
+module works against a local server with no setup. What Java has no key for stays in a small
+`Settings`:
+
 ```python
 @dataclass(frozen=True, slots=True)
 class Settings:
-    url: str = os.environ.get("WALLET_DATABASE_URL", DEFAULT_URL)
-    #: The login lives here, never in the url - a url is logged and repeated.
-    username: str | None = os.environ.get("WALLET_DATABASE_USERNAME")
-    password: str | None = os.environ.get("WALLET_DATABASE_PASSWORD")
-    pool_size: int = int(os.environ.get("WALLET_POOL_SIZE", "10"))
-    job_pool_size: int = int(os.environ.get("WALLET_JOB_POOL_SIZE", "8"))
-    lock_pool_size: int = int(os.environ.get("WALLET_LOCK_POOL_SIZE", "5"))
+    config_file: Path = Path(os.environ.get("WALLET_CONFIG_FILE", CONFIG_FILE))
+    #: Where the file's `${...}` placeholders are looked up.
+    environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
     job_workers: int = int(os.environ.get("WALLET_JOB_WORKERS", "3"))
     run_migrations: bool = os.environ.get("WALLET_MIGRATE", "1") != "0"
 ```
-
-Read from the environment, so one image runs everywhere; defaulted, so running the module works
-against a local server with no setup. Java's examples put the same values in an
-`application.yml`.
 
 `job_workers` has no Java counterpart at all. There, db-scheduler is handed
 `Executors.newVirtualThreadPerTaskExecutor()` and the worker count is unbounded. Here they are
@@ -101,22 +127,13 @@ real OS threads, so the number is a decision. See [Concurrency](runtime/concurre
 ## 2. The layout: which databases, and which is the default
 
 ```python
-login = {"username": config.username, "password": config.password}
-layout = ShardingConfig(
-    default_shard=DEFAULT_SHARD,
-    groups=(
-        ShardGroupConfig(group=0, name="global", members=(
-            ShardMemberConfig(member=0, name="global", configs={
-                "primaryConfig": DataSourceConfig(url=config.url, **login, pool_size=config.pool_size),
-                "jobsConfig":    DataSourceConfig(url=config.url, **login, pool_size=config.job_pool_size),
-                "lockConfig":    DataSourceConfig(url=config.url, **login, pool_size=config.lock_pool_size),
-            }),
-        )),
-    ),
-)
+ekbatan = load_ekbatan_config(config.config_file, environ=config.environ)
+layout = ekbatan.sharding
 ```
 
-Java's layout, level for level - the same keys as its `application.yml`. One group with one member
+Java's layout, level for level - the same keys as its `application.yml`. The same
+`ShardingConfig` can be built in code instead, with `ShardingConfig.builder()`; the file is what
+the examples use. One group with one member
 is the ordinary case and costs nothing. Add members or groups to shard; see
 [Sharding](database/sharding.md).
 
@@ -181,7 +198,7 @@ entity's are not - and the registry checks that the table can hold what the type
 
 ```python
 executor = ActionExecutor(
-    namespace="example.fastapi_wallet_rest_pg",
+    namespace=ekbatan.namespace,
     registry=registry,
     repositories=repositories,
     actions=(
@@ -211,7 +228,7 @@ example does.
 
 ```python
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
-events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+events_config = ekbatan.local_event_handler  # `local-event-handler` in the file
 ```
 
 Optional. Without it the executor still writes every event with `delivered=false`, which is
@@ -226,13 +243,11 @@ and gone by the time a handler runs.
 ## 8. Locks and jobs
 
 ```python
-locks = PostgresKeyedLockProvider(
-    create_engine(config.url, pool_size=config.lock_pool_size, max_overflow=0)
-)
+locks = PostgresKeyedLockProvider(lock_engine)
 
 jobs = (
     job_registry()
-    .engine(create_engine(config.url, pool_size=config.job_pool_size, max_overflow=0))
+    .engine(jobs_engine)
     .with_jobs([
         EventFanoutJob(registry, handlers, events=EVENTS,
                        notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
@@ -240,6 +255,7 @@ jobs = (
                          notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
         PayStipendJob(executor, wallets),
     ])
+    .with_config(ekbatan.jobs)  # `jobs` in the file, if any
     .workers(config.job_workers)
     .build()
 )

@@ -51,12 +51,18 @@ name a unit of work, hand it parameters, shape the reply.
 connection starves the heartbeat), and held lock leases a third (a lease *is* a held
 connection).
 
+**`ekbatan.yaml`** - what the Java examples keep in `application.yml`, in the same keys: the
+three pools as `primaryConfig`, `jobsConfig` and `lockConfig`, a driver setting under
+`dataSourceProperties`, the namespace, and `local-event-handler.handling.enabled`. The url and
+login are `${NAME:default}` placeholders, so the file runs as it is against a local server and
+the test fills them from its container.
+
 ## Its test
 
 ```
 uv run pytest ekbatan-py-examples/fastapi_wallet_rest_mysql
 ```
 
-Nine cases against a real MySQL in Testcontainers, including one that asserts this project is
+Eleven cases against a real MySQL in Testcontainers, including one that asserts this project is
 actually running on MySQL - three projects differing only by url makes a wrong one invisible,
 and every other test would still pass.

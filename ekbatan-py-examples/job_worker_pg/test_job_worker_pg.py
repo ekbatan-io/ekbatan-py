@@ -12,29 +12,28 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from db_scheduler.clock import SettableClock
-from sqlalchemy import func, select, text
+from sqlalchemy import create_engine, func, select, text
 
 from ekbatan import (
     ActionExecutor,
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    ShardingConfig,
     SingleTableJsonEventPersister,
 )
 from ekbatan.clock import SystemClock
 from ekbatan.config import split_login
+from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import job_registry
 from ekbatan.events import (
     EventFanoutJob,
     EventHandlerRegistry,
     EventHandlingJob,
-    HandlingConfig,
-    LocalEventHandlerConfig,
 )
 from ekbatan.migrations import migrate_registry, validate_scripts
 
@@ -45,7 +44,7 @@ from .actions import (
     OpenWalletParams,
     RaiseAlertAction,
 )
-from .app import MIGRATIONS
+from .app import CONFIG_FILE, MIGRATIONS, build
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob, WalletReportJob
 from .model import Wallet
@@ -53,6 +52,16 @@ from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
 
 EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+
+def environ_for(url: str) -> dict[str, str]:
+    """What fills `ekbatan.yaml`'s placeholders: the container's url, its login kept apart."""
+    plain, username, password = split_login(url)
+    return {
+        "WORKER_DATABASE_URL": plain,
+        "WORKER_DATABASE_USERNAME": username or "",
+        "WORKER_DATABASE_PASSWORD": password or "",
+    }
 
 
 class Harness:
@@ -65,18 +74,16 @@ class Harness:
 
     def __init__(self, url: str) -> None:
         running = SystemClock()
-        # The container's url carries its login; the config keeps it apart.
-        plain, username, password = split_login(url)
-        self.registry = DatabaseRegistry.from_config(
-            ShardingConfig.single(plain, username=username, password=password)
-        )
+        # The same `ekbatan.yaml` the worker reads, its placeholders filled from the container.
+        ekbatan = load_ekbatan_config(CONFIG_FILE, environ=environ_for(url))
+        self.registry = DatabaseRegistry.from_config(ekbatan.sharding)
         migrate_registry(self.registry, metadata)
 
         self.wallets = WalletRepository(self.registry, clock=running)
         self.alerts = AlertRepository(self.registry, clock=running)
         self.executor = (
             ActionExecutor.builder()
-            .namespace("example.job_worker_pg")
+            .namespace(ekbatan.namespace)
             .database_registry(self.registry)
             .repository_registry(
                 RepositoryRegistry.builder()
@@ -101,11 +108,7 @@ class Harness:
             .with_handler(MoneyDepositedEventHandler(self.executor))
             .build()
         )
-        config = (
-            LocalEventHandlerConfig.builder()
-            .handling(HandlingConfig.builder().enabled(True).build())
-            .build()
-        )
+        config = ekbatan.local_event_handler
 
         self.stipend = PayStipendJob(self.executor, self.wallets)
         self.report = WalletReportJob(self.wallets)
@@ -304,3 +307,40 @@ def test_the_migration_files_pass_the_checks_a_deploy_runs():
     """No database needed, so CI catches it: two files with one version, a file whose name would
     be skipped without a word, a rollback file. Each is refused here rather than at startup."""
     assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]
+
+
+def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(database: str, tmp_path: Path) -> None:
+    """`app.build()` itself, unstarted: everything Java's job worker keeps in `application.yml`
+    comes from `ekbatan.yaml` - the namespace, the scheduler's pool, the polling interval, the
+    handling job switched on, and a driver setting reaching the server.
+
+    A database of its own: the harness builds its tables without migration history, and
+    `build()` migrates from the files, so it refuses one the harness has touched."""
+    admin = create_engine(database, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            conn.execute(text("DROP DATABASE IF EXISTS worker_build"))
+            conn.execute(text("CREATE DATABASE worker_build"))
+    finally:
+        admin.dispose()
+    head, _, _ = database.rpartition("/")
+    # The shipped `PT10S` is also db-scheduler's default, so it cannot show the file was read; a
+    # copy with another interval can.
+    shipped = CONFIG_FILE.read_text()
+    assert "pollingInterval: PT10S" in shipped, "the interval Java's job worker ships with"
+    config_file = tmp_path / "ekbatan.yaml"
+    config_file.write_text(shipped.replace("pollingInterval: PT10S", "pollingInterval: PT7S"))
+    worker = build(environ_for(f"{head}/worker_build"), config_file=config_file)
+    try:
+        assert worker.executor.namespace == "example.job_worker_pg"
+        assert worker.jobs_engine.pool.size() == 8
+        # db-scheduler keeps the interval on the waiter it polls with; nothing public reads it.
+        assert worker.jobs.scheduler._execute_due_waiter.duration == timedelta(seconds=7)
+        # A switched-off job is registered but never scheduled, so it is left out of the jobs
+        # that must have a row once started.
+        assert "ekbatan-event-handling" in worker.jobs._names_requiring_registration
+        with worker.registry.default.primary.connect() as conn:
+            reported = conn.execute(text("SELECT current_setting('application_name')"))
+            assert reported.scalar() == "wallet-worker"
+    finally:
+        worker.close()

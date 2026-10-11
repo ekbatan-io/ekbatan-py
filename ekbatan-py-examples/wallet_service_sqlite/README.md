@@ -36,6 +36,10 @@ builder does needs no generation.
 
 **`app.py`** - the wiring, all of it in one place, away from everything above.
 
+**`ekbatan.yaml`** - the database, the namespace and the handling switch, in the same keys as
+the Java examples' `application.yml`. The url is `${WALLET_DATABASE_URL:...}`; the script and
+the test point it at a temporary file.
+
 ## What it does not show
 
 That state and its events commit together even when the process dies mid-write. That is the

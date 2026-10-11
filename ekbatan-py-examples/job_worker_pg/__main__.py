@@ -2,8 +2,9 @@
 
     cd ekbatan-py-examples && uv run python -m job_worker_pg
 
-Defaults to a local SQLite file so it runs with nothing set up. Point it at Postgres to see the
-part that only matters in a cluster - start two of these and watch each slot run once:
+The settings are in `ekbatan.yaml`, defaulted to a local Postgres. Point it elsewhere through
+the variables its placeholders read - and start two of these to see the part that only matters
+in a cluster, each slot running once:
 
     WORKER_DATABASE_URL=postgresql+psycopg://localhost:5432/wallet \\
     WORKER_DATABASE_USERNAME=ekbatan WORKER_DATABASE_PASSWORD=ekbatan \\

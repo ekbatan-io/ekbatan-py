@@ -1,8 +1,9 @@
 """The wiring - and the only file that knows how many databases there are.
 
-Add a shard by adding a member to a group - or a group - in the layout below. Nothing above this
-file changes: the repository already routes by id, and the actions already never name a database.
-The layout is Java's: groups of members, each member a named map of datasources.
+Add a shard by adding a member to a group - or a group - in `ekbatan.yaml`. No code changes: the
+repository already routes by id, and the actions already never name a database. The layout is
+Java's, in the same keys as its `application.yml`: groups of members, each member a named map of
+datasources.
 """
 
 from __future__ import annotations
@@ -16,17 +17,10 @@ from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    ShardIdentifier,
-    ShardingConfig,
     SingleTableJsonEventPersister,
 )
 from ekbatan.clock import Clock, SystemClock
-from ekbatan.config import (
-    DataSourceConfig,
-    ShardGroupConfig,
-    ShardGroupConfigBuilder,
-    ShardMemberConfig,
-)
+from ekbatan.config_files import load_ekbatan_config
 from ekbatan.migrations import migrate
 
 from .actions import GLOBAL, MEXICO, DepositMoneyAction, OpenWalletAction, TransferWithinShardAction
@@ -37,6 +31,10 @@ from .schema import EVENTS
 #: rather than from `create_all`, which is the difference between an example and something you
 #: could deploy: `create_all` has no answer for a column that changed.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
+
+#: The service's Ekbatan settings - the shard layout and the namespace - in the same keys as the
+#: Java examples' `application.yml`.
+CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,45 +47,17 @@ class ShardedWallets:
         self.registry.close()
 
 
-#: What each group is called - Java's `ShardGroupConfig.name`, which is required.
-GROUP_NAMES = {GLOBAL.group: "global", MEXICO.group: "mexico"}
-
-
 def build(
-    urls: Mapping[ShardIdentifier, str],
+    environ: Mapping[str, str] | None = None,
     *,
-    username: str | None = None,
-    password: str | None = None,
+    config_file: Path = CONFIG_FILE,
     clock: Clock | None = None,
 ) -> ShardedWallets:
-    """Wire the layout. `urls` is the whole of it - two databases here, two hundred later. Every
-    shard logs in as `username`; the login is never part of a url."""
+    """Wire the layout `config_file` describes - two databases here, two hundred later.
+    `environ` fills its `${...}` placeholders, `os.environ` when left out."""
     running = clock or SystemClock()
-
-    groups: dict[int, ShardGroupConfigBuilder] = {}
-    for shard, url in urls.items():
-        groups.setdefault(
-            shard.group,
-            ShardGroupConfig.builder()
-            .group(shard.group)
-            .name(GROUP_NAMES.get(shard.group, f"group-{shard.group}")),
-        ).with_member(
-            ShardMemberConfig.builder()
-            .member(shard.member)
-            .name(str(shard))
-            .primary_config(
-                DataSourceConfig.builder().url(url).username(username).password(password).build()
-            )
-            .build()
-        )
-    layout = (
-        ShardingConfig.builder()
-        # Where a row goes when its id names a shard this deployment has not configured -
-        # which is what lets one environment read another's ids instead of refusing them.
-        .default_shard(GLOBAL)
-        .groups(group.build() for group in groups.values())
-        .build()
-    )
+    ekbatan = load_ekbatan_config(config_file, environ=environ)
+    layout = ekbatan.sharding
 
     # Every shard, one at a time, fail-fast - and refused outright if a revision that was
     # already applied has since been edited.
@@ -100,7 +70,7 @@ def build(
         wallets=wallets,
         executor=(
             ActionExecutor.builder()
-            .namespace("example.fastapi_wallet_rest_sharded_pg")
+            .namespace(ekbatan.namespace)
             .database_registry(registry)
             .repository_registry(
                 RepositoryRegistry.builder().with_model_repository(wallets).build()

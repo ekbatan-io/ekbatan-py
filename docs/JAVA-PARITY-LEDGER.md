@@ -246,7 +246,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| JobsConfig.java | 141 | `distributedjobs/config.py` | done - re-read in the pre-method audit |
+| JobsConfig.java | 141 | `distributedjobs/config.py` | done - re-read in the pre-method audit; read from `ekbatan.jobs` by `config_files.load_ekbatan_config` |
 
 #### `events/localeventhandler`
 
@@ -260,7 +260,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| LocalEventHandlerConfig.java | 211 | `events/config.py` | done - `events/config.py` |
+| LocalEventHandlerConfig.java | 211 | `events/config.py` | done - `events/config.py`; read from `ekbatan.local-event-handler` by `config_files.load_ekbatan_config` |
 
 #### `events/localeventhandler/job`
 

@@ -8,12 +8,19 @@ hands the result over::
 
     layout = load_sharding_config("ekbatan.yaml")
 
+    config = load_ekbatan_config("ekbatan.yaml")  # namespace, sharding, jobs, local-event-handler
+
 **The layout is Java's**, under ``ekbatan.sharding``, so one file reads the same in both ports.
 Keys may be written kebab-case or camelCase, as Java's ``PropertyKeyNormalizer`` accepts
 (``default-shard`` or ``defaultShard``, ``primary-config`` or ``primaryConfig``); a datasource's
 own keys also snake_case (``pool_size``). Names inside ``data-source-properties`` are a driver's
 and are never changed. Anything else in the file is left alone; a key under ``ekbatan.sharding``
 that means nothing is refused, with its path.
+
+**The rest of Java's section** - ``ekbatan.namespace``, ``ekbatan.jobs`` and
+``ekbatan.local-event-handler`` - is read by :func:`load_ekbatan_config`, which refuses any key
+under ``ekbatan`` that means nothing. Durations there are ISO-8601 text, as Java's
+``Duration.parse`` reads them (``PT10S``, ``PT0.5S``); a bare number or ``10s`` is refused.
 
 **Environment variables** use each format's own style:
 
@@ -43,6 +50,7 @@ import re
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, get_type_hints
 
@@ -52,15 +60,66 @@ from .config import (
     ShardingConfig,
     ShardMemberConfig,
 )
+from .distributedjobs.config import JobsConfig
 from .errors import ValidationError
+from .events.config import HandlingConfig, LocalEventHandlerConfig
 from .sharding import ShardIdentifier
 
-__all__ = ["load_sharding_config"]
+__all__ = ["EkbatanConfig", "load_ekbatan_config", "load_sharding_config"]
 
-
-_PREFIX = ("ekbatan", "sharding")
 
 _READERS = {".yaml": "yaml", ".yml": "yaml", ".toml": "toml", ".json": "json", ".ini": "ini"}
+
+
+@dataclass(frozen=True, slots=True)
+class EkbatanConfig:
+    """Everything under ``ekbatan`` in a config file: Java's ``ekbatan.*`` keys, one object."""
+
+    #: ``ekbatan.namespace`` - the naming root events and topics are filed under. Java's default.
+    namespace: str
+    #: ``ekbatan.sharding``.
+    sharding: ShardingConfig
+    #: ``ekbatan.jobs``; every knob at the framework default when the file has none.
+    jobs: JobsConfig
+    #: ``ekbatan.local-event-handler``; every knob at the framework default when the file has none.
+    local_event_handler: LocalEventHandlerConfig
+
+
+def load_ekbatan_config(
+    path: str | os.PathLike[str], *, environ: Mapping[str, str] | None = None
+) -> EkbatanConfig:
+    """The whole ``ekbatan`` section of the file at ``path``: namespace, sharding, jobs and
+    local-event-handler, as Java's ``application.yml`` holds them.
+
+    ``ekbatan.sharding`` is required; the rest falls back to the framework defaults. A key under
+    ``ekbatan`` that means nothing is refused, with its path. Durations are ISO-8601 text, as
+    Java's ``Duration.parse`` reads them: ``PT10S``, ``PT0.5S``, ``P1DT2H``.
+    """
+    tree, name = _read_file(path, environ)
+    node = _section(tree, name, ("ekbatan",))
+    where = f"{name}: ekbatan"
+    entries = _entries(node, where, {"namespace", "sharding", "jobs", "local_event_handler"})
+    if "sharding" not in entries:
+        raise ValidationError(f"{where}: sharding is required")
+    namespace = "default"
+    if "namespace" in entries:
+        key, value = entries["namespace"]
+        namespace = _text(value, f"{where}.{key}")
+    jobs = JobsConfig.defaults()
+    if "jobs" in entries:
+        key, value = entries["jobs"]
+        jobs = _jobs(value, f"{where}.{key}")
+    events = LocalEventHandlerConfig.defaults()
+    if "local_event_handler" in entries:
+        key, value = entries["local_event_handler"]
+        events = _local_event_handler(value, f"{where}.{key}")
+    key, value = entries["sharding"]
+    return EkbatanConfig(
+        namespace=namespace,
+        sharding=_sharding(value, f"{where}.{key}"),
+        jobs=jobs,
+        local_event_handler=events,
+    )
 
 
 def load_sharding_config(
@@ -71,6 +130,12 @@ def load_sharding_config(
     The reader is chosen by the file's extension: ``.yaml``/``.yml``, ``.toml``, ``.json`` or
     ``.ini``. ``environ`` is where variables are looked up, ``os.environ`` when left out.
     """
+    tree, name = _read_file(path, environ)
+    return _sharding(_section(tree, name, ("ekbatan", "sharding")), f"{name}: ekbatan.sharding")
+
+
+def _read_file(path: str | os.PathLike[str], environ: Mapping[str, str] | None) -> tuple[Any, str]:
+    """The file's tree with every placeholder filled in, and the name errors call it by."""
     file = Path(path)
     kind = _READERS.get(file.suffix.lower())
     if kind is None:
@@ -84,17 +149,19 @@ def load_sharding_config(
         raise ValidationError(f"{file}: cannot be read ({error.strerror})") from None
     variables = os.environ if environ is None else environ
     if kind == "ini":
-        tree = _read_ini(text, file.name, variables)
-    else:
-        tree = _fill(_read_structured(kind, text, file.name), file.name, variables)
+        return _read_ini(text, file.name, variables), file.name
+    return _fill(_read_structured(kind, text, file.name), file.name, variables), file.name
+
+
+def _section(tree: Any, name: str, steps: tuple[str, ...]) -> Any:
     node: Any = tree
     walked = []
-    for step in _PREFIX:
+    for step in steps:
         walked.append(step)
         if not isinstance(node, Mapping) or step not in node:
-            raise ValidationError(f"{file.name}: no '{'.'.join(walked)}' in the file")
+            raise ValidationError(f"{name}: no '{'.'.join(walked)}' in the file")
         node = node[step]
-    return _sharding(node, f"{file.name}: ekbatan.sharding")
+    return node
 
 
 # -- reading ----------------------------------------------------------------------------------
@@ -463,6 +530,78 @@ def _typed(value: Any, declared: Any, path: str) -> Any:
         bool: "true or false",
     }
     raise ValidationError(f"{path}: must be {wanted.get(target, target)}")
+
+
+#: `LocalEventHandlerConfig`'s knobs, each a duration or a count; `handling` is its own group.
+_EVENT_KNOBS = {
+    "fanout_poll_delay": timedelta,
+    "fanout_batch_size": int,
+    "handling_poll_delay": timedelta,
+    "handling_batch_size": int,
+    "handling_max_backoff_cap": timedelta,
+    "handling_retention_window": timedelta,
+}
+
+
+def _local_event_handler(node: Any, path: str) -> LocalEventHandlerConfig:
+    entries = _entries(node, path, {*_EVENT_KNOBS, "handling"})
+    given: dict[str, Any] = {}
+    for canonical, (key, value) in entries.items():
+        where = f"{path}.{key}"
+        if canonical == "handling":
+            handling = _entries(value, where, {"enabled"})
+            enabled = (
+                _typed(handling["enabled"][1], bool, f"{where}.{handling['enabled'][0]}")
+                if "enabled" in handling
+                else False
+            )
+            given["handling"] = HandlingConfig(enabled=enabled)
+        elif _EVENT_KNOBS[canonical] is timedelta:
+            given[canonical] = _duration(value, where)
+        else:
+            given[canonical] = _typed(value, int, where)
+    return _validated(path, lambda: LocalEventHandlerConfig(**given))
+
+
+def _jobs(node: Any, path: str) -> JobsConfig:
+    entries = _entries(node, path, {"polling_interval", "heartbeat_interval", "shutdown_max_wait"})
+    given = {
+        canonical: _duration(value, f"{path}.{key}") for canonical, (key, value) in entries.items()
+    }
+    return _validated(path, lambda: JobsConfig(**given))
+
+
+#: Java's `Duration.parse`: `PnDTnHnMn.nS`, each part optional but at least one, any case, a sign
+#: on the whole and on each part, a fraction of a second up to nine digits after `.` or `,`.
+_ISO_DURATION = re.compile(
+    r"([-+]?)P(?:([-+]?\d+)D)?"
+    r"(T(?:([-+]?\d+)H)?(?:([-+]?\d+)M)?(?:([-+]?\d+)(?:[.,](\d{0,9}))?S)?)?",
+    re.IGNORECASE,
+)
+
+
+def _duration(value: Any, path: str) -> timedelta:
+    """An ISO-8601 duration as Java's ``Duration.parse`` reads it. A bare number is refused: it
+    says nothing about its unit, and Java's binder refuses Spring's ``10s`` shorthand too."""
+    text = value.value if isinstance(value, _Text) else value
+    match = _ISO_DURATION.fullmatch(text) if isinstance(text, str) else None
+    if (
+        match is None
+        or (match.group(2) is None and match.group(3) is None)
+        or (match.group(3) is not None and not any(match.group(i) for i in (4, 5, 6)))
+    ):
+        raise ValidationError(
+            f"{path}: must be an ISO-8601 duration such as PT10S, PT0.5S or PT5M, as Java reads it"
+        )
+    sign, days, _, hours, minutes, seconds, fraction = match.groups()
+    total = timedelta(
+        days=int(days or 0), hours=int(hours or 0), minutes=int(minutes or 0)
+    ) + timedelta(seconds=int(seconds or 0))
+    if fraction:
+        nanos = int(fraction.ljust(9, "0"))
+        part = timedelta(microseconds=nanos / 1000)
+        total += -part if (seconds or "").startswith("-") else part
+    return -total if sign == "-" else total
 
 
 def _number(entries: dict[str, tuple[str, Any]], key: str, path: str) -> int:

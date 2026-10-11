@@ -253,6 +253,25 @@ building it are below the first rows.
 | a text field refuses a number from YAML (`username: 1234`) instead of converting it | YAML reads `0123` as 83; converting would hide that | built |
 | everything outside `ekbatan.sharding` is ignored | the file may hold the application's own settings | built |
 
+## The whole `ekbatan` section, and the examples on it
+
+Asked by the user on 2026-10-11: every example on a config file, as close to Java's
+`application.yml` as possible (see `docs/EXAMPLES-CONFIG-FILES-LEDGER.md`).
+
+| decision | why | who |
+| --- | --- | --- |
+| `load_ekbatan_config` returns `EkbatanConfig(namespace, sharding, jobs, local_event_handler)`; `load_sharding_config` kept | one call for what Java binds from `ekbatan.*`; nothing that used the old one breaks | built |
+| unknown keys under `ekbatan` refused (Spring ignores them) | the same rule as under `ekbatan.sharding`; `handling.enable` must not silently leave handling off | built |
+| durations: ISO-8601 only, Java's `Duration.parse` grammar; a bare number refused | what Java's examples write and its binder accepts; compared with `Duration.parse` on 20 inputs | built |
+| namespace default `default` | Java's `@DefaultValue("default")` | built |
+| every example's file is YAML, keys spelled as the Java examples spell them (`defaultShard`, `primaryConfig`, `dataSourceProperties`, `poolSize`) | parity; the other formats are covered by the unit tests | built |
+| url and login in the examples are `${NAME:default}` placeholders; Java's examples write the values | one file runs locally as it is, and the test fills it from its container, as Spring tests override properties | built |
+| MySQL/MariaDB examples set `init_command: SET SESSION innodb_lock_wait_timeout=10` | PyMySQL's counterpart of the Java examples' `sessionVariables`; the test reads it back | built |
+| the saga example runs on the fan-out and handling jobs, `handling.enabled: true` in its file; manual `deliver_pending_events` and `POST /transfers/deliver` removed | as Java's saga example; driving the pipeline by hand showed a path no service uses | the user |
+| the saga test shares one running service across the module, and waits up to 15 s for the saga to settle | as Java's one application context and `await().atMost(15s)`; a service per test waited out db-scheduler's 10 s poll each time | built |
+| no `local-event-handler` block in the sharded example | it has no handler or event jobs, unlike Java's; a block that does nothing would mislead | built |
+| job worker threads and run-migrations stay environment variables | Java has no key for either | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

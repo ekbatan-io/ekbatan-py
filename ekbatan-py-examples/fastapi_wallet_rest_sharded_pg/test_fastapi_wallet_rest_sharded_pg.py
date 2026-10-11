@@ -40,7 +40,8 @@ from .model import Wallet
 
 
 @pytest.fixture(scope="module")
-def urls() -> Iterator[dict[object, str]]:
+def environ() -> Iterator[dict[str, str]]:
+    """What fills `ekbatan.yaml`'s placeholders: one url per shard, and the login."""
     from testcontainers.postgres import PostgresContainer
 
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
@@ -54,13 +55,19 @@ def urls() -> Iterator[dict[object, str]]:
         finally:
             admin.dispose()
 
-        head, _, _ = split_login(base)[0].rpartition("/")
-        yield {GLOBAL: f"{head}/shard_global", MEXICO: f"{head}/shard_mexico"}
+        url, username, password = split_login(base)
+        head, _, _ = url.rpartition("/")
+        yield {
+            "WALLET_GLOBAL_URL": f"{head}/shard_global",
+            "WALLET_MEXICO_URL": f"{head}/shard_mexico",
+            "WALLET_DATABASE_USERNAME": username or "",
+            "WALLET_DATABASE_PASSWORD": password or "",
+        }
 
 
 @pytest.fixture
-def service(urls: dict[object, str]) -> Iterator[ShardedWallets]:
-    built = build(urls, username="test", password="test")  # type: ignore[arg-type]
+def service(environ: dict[str, str]) -> Iterator[ShardedWallets]:
+    built = build(environ)
     try:
         for shard in built.registry.shards:
             with built.registry.manager(shard).connection() as conn:
@@ -222,12 +229,12 @@ def test_a_per_shard_total_is_a_question_about_databases(service: ShardedWallets
 
 
 @pytest.fixture
-def client(urls: dict[object, str]) -> Iterator[TestClient]:
+def client(environ: dict[str, str]) -> Iterator[TestClient]:
     from fastapi.testclient import TestClient
 
     from .api import create_app
 
-    with TestClient(create_app(urls, username="test", password="test")) as running:  # type: ignore[arg-type]
+    with TestClient(create_app(environ)) as running:
         for shard in running.app.state.service.registry.shards:
             with running.app.state.service.registry.manager(shard).connection() as conn:
                 conn.execute(text("DELETE FROM wallets"))
@@ -306,6 +313,17 @@ def test_the_totals_endpoint_asks_every_database(client: TestClient) -> None:
     open_via_http(client, "GL", "25.00")
 
     assert client.get("/shards").json() == {"0:0": "25.0000", "1:0": "10.0000"}
+
+
+def test_the_service_runs_on_the_layout_in_ekbatan_yaml(service: ShardedWallets) -> None:
+    """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: both
+    shards, their names, the namespace, and the driver setting reaching each server."""
+    assert service.executor.namespace == "example.fastapi_wallet_rest_sharded_pg"
+    assert sorted(service.registry.shards) == [GLOBAL, MEXICO]
+    for shard in (GLOBAL, MEXICO):
+        with service.registry.manager(shard).primary.connect() as conn:
+            reported = conn.execute(text("SELECT current_setting('application_name')"))
+            assert reported.scalar() == "wallet-service"
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs():

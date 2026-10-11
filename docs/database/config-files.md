@@ -1,7 +1,8 @@
 # Config files
 
 `load_sharding_config` reads the layout from a file and builds the same `ShardingConfig` that code
-builds. Every check stays in the config classes - a url with a login in it, a blank username, a
+builds; `load_ekbatan_config` reads the whole `ekbatan` section - namespace, jobs and
+local-event-handler too. Every check stays in the config classes - a url with a login in it, a blank username, a
 driver setting named `password` are refused exactly as they are in code.
 
 ```python
@@ -104,6 +105,50 @@ sslmode = require
 INI has one level of sections, so a group is a dotted section name and a list item a numbered one
 (`groups.0`, `groups.1`), numbered from 0 with no gaps. Keys keep their case, and an INI
 `[DEFAULT]` section is not copied into the others.
+
+## The whole `ekbatan` section
+
+`load_ekbatan_config` reads everything the Java examples keep under `ekbatan` in
+`application.yml`, in the same keys, and returns one `EkbatanConfig`:
+
+```python
+from ekbatan.config_files import load_ekbatan_config
+
+ekbatan = load_ekbatan_config("ekbatan.yaml")
+
+registry = DatabaseRegistry.from_config(ekbatan.sharding)
+executor_builder = ActionExecutor.builder().namespace(ekbatan.namespace)
+jobs_builder = job_registry().with_config(ekbatan.jobs)
+handling_builder = EventHandlingJob.builder().config(ekbatan.local_event_handler)
+```
+
+```yaml
+ekbatan:
+  namespace: example.wallet
+  sharding:
+    # ... as above
+  jobs:
+    pollingInterval: PT10S
+  local-event-handler:
+    handling:
+      enabled: true
+```
+
+| Key | Becomes | When the file has none |
+|---|---|---|
+| `namespace` | `ekbatan.namespace` | `default`, as in Java |
+| `sharding` | `ShardingConfig` | refused: it is required |
+| `jobs` | `JobsConfig`: `polling-interval`, `heartbeat-interval`, `shutdown-max-wait` | framework defaults |
+| `local-event-handler` | `LocalEventHandlerConfig`: `fanout-poll-delay`, `fanout-batch-size`, `handling-poll-delay`, `handling-batch-size`, `handling-max-backoff-cap`, `handling-retention-window`, `handling.enabled` | framework defaults; handling off |
+
+- **Durations are ISO-8601 text**, exactly what Java's `Duration.parse` accepts: `PT10S`,
+  `PT0.5S`, `PT5M`, `P1DT2H`. A bare number or Spring's `10s` is refused, as Java's binder refuses
+  it.
+- **A key under `ekbatan` that means nothing is refused**, with its path, so a misspelt
+  `local-event-handler.handling.enable` fails at startup instead of leaving handling off. Keys
+  outside `ekbatan` are left alone, so the file can hold the application's own settings too.
+- Every example in `ekbatan-py-examples` reads its settings this way, from an `ekbatan.yaml` beside
+  its `app.py`.
 
 ## Environment variables
 

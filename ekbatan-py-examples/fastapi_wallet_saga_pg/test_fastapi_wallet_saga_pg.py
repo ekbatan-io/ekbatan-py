@@ -8,17 +8,19 @@ paths, and that a replayed delivery is a no-op.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from ekbatan.clock import SystemClock
 from ekbatan.config import split_login
 from ekbatan.ids import ShardedId
 from ekbatan.migrations import validate_scripts
+from ekbatan.sharding import DEFAULT_SHARD
 
 from .actions import (
     CompleteTransferAction,
@@ -31,7 +33,7 @@ from .actions import (
 )
 from .app import MIGRATIONS, SagaService, build
 from .model import StepName, Wallet
-from .schema import EVENTS
+from .schema import EVENT_NOTIFICATIONS, EVENTS
 
 
 @pytest.fixture(scope="module")
@@ -45,19 +47,66 @@ def database() -> Iterator[str]:
         yield container.get_connection_url()
 
 
-@pytest.fixture
+def environ_for(database: str) -> dict[str, str]:
+    """What fills `ekbatan.yaml`'s placeholders: the container's url, its login kept apart."""
+    url, username, password = split_login(database)
+    return {
+        "WALLET_DATABASE_URL": url,
+        "WALLET_DATABASE_USERNAME": username or "",
+        "WALLET_DATABASE_PASSWORD": password or "",
+    }
+
+
+@pytest.fixture(scope="module")
 def service(database: str) -> Iterator[SagaService]:
+    # One running service for every test, as Java's test shares one application context. A
+    # service per test would also be correct, and slow: each new scheduler waits for its first
+    # poll - ten seconds - before it takes over the event jobs the last one left behind.
     # A *running* clock, not a frozen one. The event trail below is read in `event_date` order,
     # and the outbox has no ordinal column - so under a frozen clock every step ties and the
     # order falls back to a random uuid. Each saga step is a separate unit of work at a
     # different instant, which is exactly what makes the trail readable; freezing time would
     # be testing an order neither port promises.
-    url, username, password = split_login(database)
-    built = build(url, username=username, password=password, clock=SystemClock())
+    built = build(environ_for(database), clock=SystemClock())
+    built.start()
     try:
         yield built
     finally:
         built.close()
+
+
+#: The event types the saga's handlers subscribe to. Fan-out reads only these; the rest - a
+#: wallet opened, a transfer completed - have no subscriber and stay undelivered, correctly.
+HANDLED = ("TransferInitiatedEvent", "TransferFailedEvent")
+
+
+def settled(service: SagaService, within: float = 15.0) -> None:
+    """Wait until the saga has run as far as it will go - Java's test waits the same way, up to
+    15 seconds. The fan-out and handling jobs run in the background, so a step lands whenever
+    they reach it: done means every handled event fanned out and no delivery waiting or due a
+    retry."""
+    deadline = time.monotonic() + within
+    while True:
+        with service.registry.default.connection(readonly=True) as conn:
+            undelivered = conn.execute(
+                select(func.count())
+                .select_from(EVENTS)
+                .where(EVENTS.c.delivered.is_(False))
+                .where(EVENTS.c.event_type.in_(HANDLED))
+            ).scalar_one()
+            waiting = conn.execute(
+                select(func.count())
+                .select_from(EVENT_NOTIFICATIONS)
+                .where(EVENT_NOTIFICATIONS.c.state.in_(("PENDING", "FAILED")))
+            ).scalar_one()
+        if undelivered == 0 and waiting == 0:
+            return
+        if time.monotonic() > deadline:
+            raise AssertionError(
+                f"after {within}s: {undelivered} events not fanned out, "
+                f"{waiting} deliveries waiting"
+            )
+        time.sleep(0.1)
 
 
 def a_wallet(service: SagaService, balance: str = "100.00", currency: str = "EUR") -> Wallet:
@@ -94,11 +143,11 @@ def test_a_transfer_moves_the_money_in_two_commits(service: SagaService) -> None
 
     result = transfer(service, source, destination.id, "30.00")
 
-    # Step one has committed, on its own: the money has left and has not arrived.
-    assert service.wallets.get(source.id).balance == Decimal("70.0000")
-    assert service.wallets.get(destination.id).balance == Decimal("0.0000")
+    # Step one has committed, on its own, and returned: the money has left the source. Where it
+    # is at this instant depends on the background jobs, so only step one's own result is read.
+    assert result.source.balance == Decimal("70.0000")
 
-    service.deliver_pending_events()
+    settled(service)
 
     assert service.wallets.get(source.id).balance == Decimal("70.0000")
     assert service.wallets.get(destination.id).balance == Decimal("30.0000")
@@ -110,7 +159,7 @@ def test_the_source_carries_the_whole_story(service: SagaService) -> None:
     source, destination = a_wallet(service, "100.00"), a_wallet(service, "0.00")
 
     transfer(service, source, destination.id, "30.00")
-    service.deliver_pending_events()
+    settled(service)
 
     assert events_on(service, source.id) == ["WalletOpenedEvent", "TransferInitiatedEvent"]
     assert events_on(service, destination.id) == ["WalletOpenedEvent", "TransferCompletedEvent"]
@@ -125,7 +174,7 @@ def test_a_closed_destination_is_compensated_not_lost(service: SagaService) -> N
     result = transfer(service, source, destination.id, "30.00")
     assert service.wallets.get(source.id).balance == Decimal("70.0000"), "debited"
 
-    service.deliver_pending_events()
+    settled(service)
 
     assert service.wallets.get(source.id).balance == Decimal("100.0000"), "and made whole"
     assert service.wallets.get(destination.id).balance == Decimal("0.0000"), "untouched"
@@ -141,7 +190,7 @@ def test_the_failure_and_the_refund_land_on_the_source_s_trail(service: SagaServ
     service.wallets.update(service.wallets.get(destination.id).close())
 
     transfer(service, source, destination.id, "30.00")
-    service.deliver_pending_events()
+    settled(service)
 
     assert events_on(service, source.id) == [
         "WalletOpenedEvent",
@@ -156,7 +205,7 @@ def test_a_mismatched_currency_is_refused_the_same_way(service: SagaService) -> 
     destination = a_wallet(service, "0.00", "USD")
 
     transfer(service, source, destination.id, "30.00")
-    service.deliver_pending_events()
+    settled(service)
 
     assert service.wallets.get(source.id).balance == Decimal("100.0000")
     assert "TransferRefundedEvent" in events_on(service, source.id)
@@ -168,7 +217,7 @@ def test_a_destination_that_does_not_exist_is_refused_the_same_way(service: Saga
     source = a_wallet(service, "100.00")
 
     transfer(service, source, ShardedId[Wallet](uuid4()), "30.00")
-    service.deliver_pending_events()
+    settled(service)
 
     assert service.wallets.get(source.id).balance == Decimal("100.0000")
     assert "TransferRefundedEvent" in events_on(service, source.id)
@@ -192,7 +241,7 @@ def test_a_replayed_delivery_does_not_credit_twice(service: SagaService) -> None
 
     source, destination = a_wallet(service, "100.00"), a_wallet(service, "0.00")
     result = transfer(service, source, destination.id, "30.00")
-    service.deliver_pending_events()
+    settled(service)
 
     assert service.wallets.get(destination.id).balance == Decimal("30.0000")
 
@@ -234,7 +283,7 @@ def test_every_step_is_its_own_unit_of_work(service: SagaService) -> None:
 
     before = _action_ids(service)
     transfer(service, source, destination.id, "30.00")
-    service.deliver_pending_events()
+    settled(service)
 
     started = _action_ids(service) - before
     assert len(started) == 3, "initiate, complete-but-failed, refund - three transactions"
@@ -258,8 +307,7 @@ def client(database: str):
 
     from .api import create_app
 
-    url, username, password = split_login(database)
-    with TestClient(create_app(url, username=username, password=password)) as running:
+    with TestClient(create_app(environ_for(database))) as running:
         with running.app.state.service.registry.default.connection() as conn:
             for table in ("event_notifications", "events", "transfer_steps", "wallets"):
                 conn.execute(text(f"TRUNCATE TABLE {table}"))
@@ -288,7 +336,6 @@ def test_a_transfer_is_accepted_not_completed(client) -> None:
     assert accepted.status_code == 202
     body = accepted.json()
     assert body["source"]["balance"] == "70.00", "step one committed"
-    assert client.get(f"/wallets/{destination['id']}").json()["balance"] == "0.00", "not yet"
     assert body["status_url"] == f"/transfers/{body['transfer_id']}"
 
 
@@ -299,11 +346,9 @@ def test_the_status_endpoint_follows_the_saga_forward(client) -> None:
         json={"to_wallet_id": destination["id"], "amount": "30.00"},
     ).json()
 
-    before = client.get(accepted["status_url"]).json()
-    client.post("/transfers/deliver")
+    settled(client.app.state.service)
     after = client.get(accepted["status_url"]).json()
 
-    assert before["state"] == "IN_FLIGHT" and before["steps"] == []
     assert after["state"] == "COMPLETED" and after["steps"] == ["CREDIT"]
     assert client.get(f"/wallets/{destination['id']}").json()["balance"] == "30.00"
 
@@ -318,12 +363,21 @@ def test_a_failed_transfer_reports_itself_refunded(client) -> None:
         f"/wallets/{source['id']}/transfers",
         json={"to_wallet_id": closed["id"], "amount": "30.00"},
     ).json()
-    client.post("/transfers/deliver")
+    settled(client.app.state.service)
 
     status = client.get(accepted["status_url"]).json()
     assert status["state"] == "REFUNDED"
     assert status["steps"] == ["CREDIT", "REFUND"]
     assert client.get(f"/wallets/{source['id']}").json()["balance"] == "100.00", "made whole"
+
+
+def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service: SagaService) -> None:
+    """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: the
+    namespace and the driver setting reaching the server come from it."""
+    assert service.executor.namespace == "example.fastapi_wallet_saga_pg"
+    with service.registry.manager(DEFAULT_SHARD).primary.connect() as conn:
+        reported = conn.execute(text("SELECT current_setting('application_name')"))
+        assert reported.scalar() == "wallet-service"
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs():

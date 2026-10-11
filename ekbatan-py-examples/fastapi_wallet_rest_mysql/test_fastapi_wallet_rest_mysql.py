@@ -22,10 +22,12 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from testcontainers.community.mysql import MySqlContainer
 
 from ekbatan.config import split_login
 from ekbatan.migrations import validate_scripts
+from ekbatan.sharding import DEFAULT_SHARD
 
 from .app import MIGRATIONS, Settings
 
@@ -45,9 +47,15 @@ def database() -> Iterator[str]:
 def client(database: str) -> Iterator[TestClient]:
     from .api import create_app
 
-    # The container's url carries its login; the settings keep it apart, as a deployment does.
+    # The container's url carries its login; `ekbatan.yaml` keeps it apart, as a deployment does,
+    # and reads all three from the placeholders filled here.
     url, username, password = split_login(database)
-    app = create_app(Settings(url=url, username=username, password=password, job_workers=3))
+    environ = {
+        "WALLET_DATABASE_URL": url,
+        "WALLET_DATABASE_USERNAME": username or "",
+        "WALLET_DATABASE_PASSWORD": password or "",
+    }
+    app = create_app(Settings(environ=environ, job_workers=3))
     # `with TestClient(...)` is what runs the lifespan - and therefore the migrations, the
     # pools and the scheduler. Without the `with`, none of that happens and every test here
     # would fail against an empty database.
@@ -195,6 +203,21 @@ def test_it_runs_on_the_database_this_example_is_named_for(client: TestClient) -
 
     assert service.registry.dialect == "mysql"
     assert type(service.locks).__name__ == "MySQLKeyedLockProvider"
+
+
+def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) -> None:
+    """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: the
+    namespace, the three pools and the driver setting all come from it. (The handling job it
+    turns on is proven by the deposit tests above: without it no alert is ever raised.)"""
+    service = client.app.state.service
+    primary = service.registry.manager(DEFAULT_SHARD).primary
+
+    assert service.executor.namespace == "example.fastapi_wallet_rest_mysql"
+    assert (primary.pool.size(), service.jobs_engine.pool.size()) == (10, 8)
+    assert service.lock_engine.pool.size() == 5
+    with primary.connect() as connection:
+        # `init_command` under `dataSourceProperties`, reaching the server.
+        assert connection.execute(text("SELECT @@SESSION.innodb_lock_wait_timeout")).scalar() == 10
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs():

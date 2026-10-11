@@ -11,6 +11,12 @@ cd ekbatan-py-examples && uv run python -m fastapi_wallet_saga_pg
 uv run pytest ekbatan-py-examples/fastapi_wallet_saga_pg
 ```
 
+The database, the namespace and the event handling switch are in `ekbatan.yaml`, in the same
+keys as Java's `application.yml`. As in Java, the whole saga depends on
+`local-event-handler.handling.enabled: true`: every step after the first is started by a handler,
+run by the fan-out and handling jobs in the background. Switch it off and the saga stops after
+step one.
+
 ## What a saga costs a client
 
 One endpoint changes shape, and `api.py` is where you see it:
@@ -92,10 +98,10 @@ happened or the transfer was failed instead, because what it guards is "step two
 
 ## Running on PostgreSQL
 
-As Java's `spring-boot-wallet-saga-gradle-pg` does. This example is about the saga, and the steps are driven by hand through
-`deliver_pending_events()` so they happen where a reader can see them. In a service, fan-out
-and dispatch are two distributed jobs and nobody calls them — `fastapi_wallet_rest_pg` shows
-that shape. For a run that needs nothing installed, `wallet_service_sqlite` is the one.
+As Java's `spring-boot-wallet-saga-gradle-pg` does. Fan-out and dispatch are two distributed
+jobs and nobody calls them, so a step lands whenever the jobs reach it; the tests wait for the
+saga to settle, up to 15 seconds, as Java's do. For a run that needs nothing installed,
+`wallet_service_sqlite` is the one.
 
 One thing the tests had to get right, and it is worth knowing: the event trail is read in
 `event_date` order, and the outbox has **no ordinal column**. Under a frozen test clock every

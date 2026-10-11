@@ -20,7 +20,6 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ekbatan import ShardIdentifier
 from ekbatan.errors import CrossShardError, EntityNotFoundError, StaleRecordError, ValidationError
 from ekbatan.ids import ShardedId
 
@@ -86,16 +85,13 @@ def service_of(request: Request) -> ShardedWallets:
 Service = Annotated[ShardedWallets, Depends(service_of)]
 
 
-def create_app(
-    urls: Mapping[ShardIdentifier, str] | None = None,
-    *,
-    username: str | None = None,
-    password: str | None = None,
-) -> FastAPI:
+def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
+    """The app on the layout in `ekbatan.yaml`; `environ` fills its placeholders, `os.environ`
+    when left out."""
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        assert urls is not None, "this example has no single-database default; pass the layout"
-        service = build(urls, username=username, password=password)
+        service = build(environ)
         app.state.service = service
         try:
             yield

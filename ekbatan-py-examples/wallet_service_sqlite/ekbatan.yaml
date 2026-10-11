@@ -1,0 +1,25 @@
+# The service's Ekbatan settings - the same keys, in the same places, as the Java examples'
+# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+#
+# `${WALLET_DATABASE_URL:...}` is an environment variable with a default; the script and the
+# test each point it at a file in a temporary directory. SQLite has no login, so none is given.
+ekbatan:
+  namespace: example.wallet_service_sqlite
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            name: global
+            configs:
+              primaryConfig:
+                url: ${WALLET_DATABASE_URL:sqlite:///wallet.db}
+
+  # Handling is off by default; a deployment draining through Kafka would leave it so.
+  local-event-handler:
+    handling:
+      enabled: true

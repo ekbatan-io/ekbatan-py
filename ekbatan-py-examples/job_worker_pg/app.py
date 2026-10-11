@@ -26,7 +26,7 @@ Java's `JobRegistry` can therefore turn its own on without asking.
 
 from __future__ import annotations
 
-import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,22 +37,14 @@ from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    ShardingConfig,
     SingleTableJsonEventPersister,
     engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
-from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardMemberConfig
+from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import JobRegistry, job_registry
-from ekbatan.events import (
-    EventFanoutJob,
-    EventHandlerRegistry,
-    EventHandlingJob,
-    HandlingConfig,
-    LocalEventHandlerConfig,
-)
+from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob
 from ekbatan.migrations import migrate
-from ekbatan.sharding import DEFAULT_SHARD
 
 from .actions import (
     CloseWalletAction,
@@ -65,15 +57,14 @@ from .jobs import PayStipendJob, WalletReportJob
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS
 
-DEFAULT_URL = os.environ.get("WORKER_DATABASE_URL", "postgresql+psycopg://localhost:5432/wallet")
-#: The login lives here, never in the url - a url is logged and repeated.
-DEFAULT_USERNAME = os.environ.get("WORKER_DATABASE_USERNAME", "ekbatan")
-DEFAULT_PASSWORD = os.environ.get("WORKER_DATABASE_PASSWORD", "ekbatan")
-
 #: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
 #: rather than from `create_all`, which is the difference between an example and something you
 #: could deploy: `create_all` has no answer for a column that changed.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
+
+#: The worker's Ekbatan settings - database layout, namespace, polling interval, event handling -
+#: in the same keys as the Java job worker's `application.yml`.
+CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,49 +89,19 @@ class Worker:
 
 
 def build(
-    url: str = DEFAULT_URL,
+    environ: Mapping[str, str] | None = None,
     *,
-    username: str | None = DEFAULT_USERNAME,
-    password: str | None = DEFAULT_PASSWORD,
+    config_file: Path = CONFIG_FILE,
     clock: Clock | None = None,
     workers: int = 4,
 ) -> Worker:
+    """Wire the worker on `config_file`; `environ` fills its `${...}` placeholders, `os.environ`
+    when left out. `workers` has no key in Java, whose job bodies run on virtual threads."""
     running = clock or SystemClock()
     # Java's layout: one group, one member, and the scheduler's pool declared on the member as
     # `jobsConfig` beside the primary - more connections than workers, see the module docstring.
-    layout = (
-        ShardingConfig.builder()
-        .default_shard(DEFAULT_SHARD)
-        .with_group(
-            ShardGroupConfig.builder()
-            .group(0)
-            .name("global")
-            .with_member(
-                ShardMemberConfig.builder()
-                .member(0)
-                .name("global")
-                .primary_config(
-                    DataSourceConfig.builder()
-                    .url(url)
-                    .username(username)
-                    .password(password)
-                    .build()
-                )
-                .with_config(
-                    "jobsConfig",
-                    DataSourceConfig.builder()
-                    .url(url)
-                    .username(username)
-                    .password(password)
-                    .pool_size(workers * 2)
-                    .build(),
-                )
-                .build()
-            )
-            .build()
-        )
-        .build()
-    )
+    ekbatan = load_ekbatan_config(config_file, environ=environ)
+    layout = ekbatan.sharding
     migrate(layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)
 
@@ -149,7 +110,7 @@ def build(
 
     executor = (
         ActionExecutor.builder()
-        .namespace("example.job_worker_pg")
+        .namespace(ekbatan.namespace)
         .database_registry(registry)
         .repository_registry(
             RepositoryRegistry.builder()
@@ -173,11 +134,7 @@ def build(
     handlers = (
         EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
     )
-    events_config = (
-        LocalEventHandlerConfig.builder()
-        .handling(HandlingConfig.builder().enabled(True).build())
-        .build()
-    )
+    events_config = ekbatan.local_event_handler
     report = WalletReportJob(wallets)
     jobs_config = layout.groups[0].members[0].config_for("jobsConfig")
     if jobs_config is None:
@@ -218,6 +175,7 @@ def build(
                     report,
                 ]
             )
+            .with_config(ekbatan.jobs)
             .workers(workers)
             .build()
         ),

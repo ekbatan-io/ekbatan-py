@@ -5,6 +5,7 @@ cd ekbatan-py-examples && uv run python -m wallet_service_sqlite
 
 from __future__ import annotations
 
+import os
 import tempfile
 from decimal import Decimal
 from pathlib import Path
@@ -31,7 +32,9 @@ from .schema import EVENTS
 
 def main() -> None:
     with tempfile.TemporaryDirectory() as directory:
-        service = build(f"sqlite:///{Path(directory) / 'wallet.db'}")
+        # `ekbatan.yaml` reads the database url from WALLET_DATABASE_URL.
+        url = f"sqlite:///{Path(directory) / 'wallet.db'}"
+        service = build({**os.environ, "WALLET_DATABASE_URL": url})
         try:
             run(service)
         finally:

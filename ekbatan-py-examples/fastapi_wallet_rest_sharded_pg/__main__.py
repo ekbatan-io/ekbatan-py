@@ -24,25 +24,14 @@ import os
 
 import uvicorn
 
-from .actions import GLOBAL, MEXICO
-
-BASE = os.environ.get("WALLET_BASE_URL", "postgresql+psycopg://localhost:5432")
-#: The login lives here, never in a url - a url is logged and repeated.
-USERNAME = os.environ.get("WALLET_DATABASE_USERNAME", "ekbatan")
-PASSWORD = os.environ.get("WALLET_DATABASE_PASSWORD", "ekbatan")
-
-#: The whole layout. Adding a shard is one more entry; nothing above this file changes.
-LAYOUT = {
-    GLOBAL: os.environ.get("WALLET_GLOBAL_URL", f"{BASE}/shard_global"),
-    MEXICO: os.environ.get("WALLET_MEXICO_URL", f"{BASE}/shard_mexico"),
-}
-
 
 def main() -> None:
     from .api import create_app
 
+    # The layout, the login and the namespace are in `ekbatan.yaml`; its placeholders read
+    # WALLET_GLOBAL_URL, WALLET_MEXICO_URL, WALLET_DATABASE_USERNAME and WALLET_DATABASE_PASSWORD.
     uvicorn.run(
-        create_app(LAYOUT, username=USERNAME, password=PASSWORD),
+        create_app(),
         host=os.environ.get("WALLET_HOST", "127.0.0.1"),
         port=int(os.environ.get("WALLET_PORT", "8000")),
     )

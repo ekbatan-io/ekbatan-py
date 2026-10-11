@@ -1556,4 +1556,13 @@ file itself. The layout and its keys are Java's; where it differs:
 | `jdbc-url` | `url` | a SQLAlchemy url |
 | datasource keys `maximum-pool-size`, ... | `pool-size`, ... (`pool_size` too) | the Python pool's own knobs |
 | values typed by Jackson | INI text typed by the declared field; in `data-source-properties` by the quote rule | INI holds only text |
+| `ekbatan.namespace`, `ekbatan.jobs`, `ekbatan.local-event-handler` bound by the DI framework | read by `load_ekbatan_config` into `EkbatanConfig` | no DI framework; same keys, same defaults |
+| unknown `ekbatan.*` keys ignored by Spring's binder | refused, with their path | a misspelt `handling.enable` would otherwise leave handling off without a word |
+| `handling.enabled: false` - the handling job bean is not created | the job is built and registered, with a disabled schedule | no conditional beans; the job never runs either way |
+
+The examples follow: each reads an `ekbatan.yaml` beside its `app.py`, holding what the Java
+example holds in `application.yml`. `fastapi_wallet_rest_sharded_pg` has no `local-event-handler`
+block yet: unlike Java's sharded example it registers no handler and no event jobs, so nothing
+would read it. Job worker threads and the run-migrations switch stay environment variables -
+Java has no key for either.
 

@@ -13,7 +13,7 @@ Java's `spring-boot-wallet-saga-gradle-pg` adds the same endpoint to the same wa
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Annotated
@@ -93,10 +93,13 @@ def service_of(request: Request) -> SagaService:
 Service = Annotated[SagaService, Depends(service_of)]
 
 
-def create_app(url: str, *, username: str | None = None, password: str | None = None) -> FastAPI:
+def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
+    """The app on `ekbatan.yaml`; `environ` fills its placeholders, `os.environ` when left out."""
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build(url, username=username, password=password)
+        service = build(environ)
+        service.start()
         app.state.service = service
         try:
             yield
@@ -171,16 +174,6 @@ def create_app(url: str, *, username: str | None = None, password: str | None = 
         else:
             state = "IN_FLIGHT"
         return TransferStatus(transfer_id=transfer_id, steps=[s.name for s in steps], state=state)
-
-    @app.post("/transfers/deliver", status_code=200)
-    def deliver(service: Service) -> dict[str, int]:
-        """Runs the pipeline by hand, so this example stays readable.
-
-        In a service, fan-out and dispatch are two distributed jobs and no endpoint like this
-        exists - `fastapi_wallet_rest_pg` shows that. Here it is what lets a reader watch the
-        saga advance one step at a time.
-        """
-        return {"delivered": service.deliver_pending_events()}
 
     @app.get("/health")
     def health() -> dict[str, str]:

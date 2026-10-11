@@ -1,0 +1,40 @@
+# The service's Ekbatan settings - the same keys, in the same places, as the Java examples'
+# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+#
+# The whole layout is here: add a shard by adding a member to a group, or a group, and nothing in
+# the code changes. `${NAME:default}` is an environment variable with a default; the test fills
+# them from its container.
+ekbatan:
+  namespace: example.fastapi_wallet_rest_sharded_pg
+  sharding:
+    # Where a row goes when its id names a shard this deployment has not configured - which is
+    # what lets one environment read another's ids instead of refusing them.
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            name: global
+            configs:
+              primaryConfig:
+                dataSourceProperties:
+                  application_name: wallet-service
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+      - group: 1
+        name: mexico
+        members:
+          - member: 0
+            name: mexico
+            configs:
+              primaryConfig:
+                dataSourceProperties:
+                  application_name: wallet-service
+                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5432/shard_mexico}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
