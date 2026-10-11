@@ -18,8 +18,9 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
-from ekbatan import Model, ModelEvent, ShardedId
+from ekbatan import Entity, GenericState, Model, ModelEvent, ShardedId
 from ekbatan.errors import ValidationError
+from ekbatan.ids import Id
 
 from .builders import WalletBuilder
 
@@ -109,4 +110,27 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
             )
             .balance(new_balance)
             .build()
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class Alert(Entity[Id["Alert"]]):
+    """What the deposit handler writes - Java's `Notification`.
+
+    Its id carries no shard, so every alert lives on the default shard whichever shard its wallet
+    is on, as Java's `Id.random(Notification.class)` does. An entity: writing one emits nothing.
+    """
+
+    wallet_id: ShardedId[Wallet]
+    recipient: str
+    message: str
+
+    @classmethod
+    def create(cls, *, wallet_id: ShardedId[Wallet], recipient: str, message: str) -> Alert:
+        return cls(
+            id=Id[Alert].random(),
+            state=GenericState.ACTIVE,
+            wallet_id=wallet_id,
+            recipient=recipient,
+            message=message,
         )

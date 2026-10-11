@@ -8,11 +8,12 @@ Java examples' `application.yml`.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from db_scheduler.clock import SettableClock
+from sqlalchemy import select
 
 from ekbatan import (
     ActionExecutor,
@@ -23,14 +24,14 @@ from ekbatan import (
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
-from ekbatan.distributedjobs import ManualJobRegistry, job_registry
+from ekbatan.distributedjobs import JobRegistry, job_registry
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob
 
 from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
 from .handlers import MoneyDepositedEventHandler
-from .jobs import PayStipendJob
+from .jobs import STIPEND_JOB_NAME, PayStipendJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
+from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
 
 #: The service's Ekbatan settings, in the same keys as the Java examples' `application.yml`.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
@@ -44,20 +45,37 @@ class WalletService:
     wallets: WalletRepository
     alerts: AlertRepository
     executor: ActionExecutor
-    fanout: EventFanoutJob
-    dispatch: EventHandlingJob
-    jobs: ManualJobRegistry
+    jobs: JobRegistry
 
-    def deliver_pending_events(self) -> None:
-        """Turn committed events into work, then do it.
+    def start(self) -> None:
+        """Begin polling. Fan-out and handling are two of the jobs, so this is what starts the
+        event pipeline: from here on, a committed event reaches its handler on its own.
 
-        In a service this runs on a timer or as a distributed job. Called directly here so the
-        example stays a single-threaded script you can read top to bottom.
+        Returns once the stipend's first run is over. A `FixedDelay` job is due the moment it is
+        registered, so the stipend pays every open wallet right at startup; waiting for that
+        here means a wallet opened afterwards is not paid by surprise half a second later.
         """
-        self.fanout.fanout.drain_until_idle()
-        self.dispatch.dispatch.drain_until_idle()
+        self.jobs.start()
+        deadline = time.monotonic() + 15
+        while not self._stipend_has_run():
+            if time.monotonic() > deadline:
+                raise RuntimeError("the stipend's first run did not finish within 15 seconds")
+            time.sleep(0.05)
+
+    def _stipend_has_run(self) -> bool:
+        with self.registry.default.connection(readonly=True) as conn:
+            return (
+                conn.execute(
+                    select(SCHEDULED_TASKS.c.last_success).where(
+                        SCHEDULED_TASKS.c.task_name == STIPEND_JOB_NAME
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
 
     def close(self) -> None:
+        # Stop taking work before closing what the work runs on.
+        self.jobs.stop()
         self.registry.close()
 
 
@@ -147,8 +165,6 @@ def build(
         wallets=wallets,
         alerts=alerts,
         executor=executor,
-        fanout=fanout,
-        dispatch=dispatch,
         # The jobs run on db-scheduler, against the same `scheduled_tasks` table the Java
         # implementation uses - so a Java instance and a Python instance coordinate through one
         # row per job rather than each running the stipend.
@@ -161,6 +177,7 @@ def build(
             job_registry()
             .engine(registry.default.primary)
             .with_jobs([fanout, dispatch, PayStipendJob(executor, wallets)])
-            .build_manual(SettableClock(running.now()))
+            .with_config(ekbatan.jobs)
+            .build()
         ),
     )

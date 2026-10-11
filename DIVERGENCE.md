@@ -1561,8 +1561,7 @@ file itself. The layout and its keys are Java's; where it differs:
 | `handling.enabled: false` - the handling job bean is not created | the job is built and registered, with a disabled schedule | no conditional beans; the job never runs either way |
 
 The examples follow: each reads an `ekbatan.yaml` beside its `app.py`, holding what the Java
-example holds in `application.yml`. `fastapi_wallet_rest_sharded_pg` has no `local-event-handler`
-block yet: unlike Java's sharded example it registers no handler and no event jobs, so nothing
-would read it. Job worker threads and the run-migrations switch stay environment variables -
-Java has no key for either.
+example holds in `application.yml`, and every example with a handler runs it on the fan-out and
+handling jobs, switched on there - none delivers events by hand. Job worker threads and the
+run-migrations switch stay environment variables - Java has no key for either.
 

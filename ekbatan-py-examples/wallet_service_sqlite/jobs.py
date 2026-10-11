@@ -23,6 +23,9 @@ from .actions import DepositMoneyAction, DepositParams
 from .model import WalletState
 from .repository import WalletRepository
 
+#: The stipend's row in `scheduled_tasks`.
+STIPEND_JOB_NAME = "wallet-stipend"
+
 
 class PayStipendJob(DistributedJob):
     """Deposits into every open wallet, once a day, from one instance.
@@ -44,7 +47,7 @@ class PayStipendJob(DistributedJob):
     def name(self) -> str:
         """The primary key of this job's row, and how every instance recognises it as the same
         job. Stable across restarts, or each boot writes a fresh row and nothing ever recurs."""
-        return "wallet-stipend"
+        return STIPEND_JOB_NAME
 
     def schedule(self) -> Schedule:
         return FixedDelay.of(timedelta(days=1))

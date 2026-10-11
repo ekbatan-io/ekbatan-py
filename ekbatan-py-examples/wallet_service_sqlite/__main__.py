@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -42,6 +44,12 @@ def main() -> None:
 
 
 def run(service: WalletService) -> None:
+    say("start the jobs")
+    # Fan-out, handling and the stipend start polling here, as they would in any service.
+    # Nothing below calls them.
+    service.start()
+    print("   fan-out, handling and the stipend are polling")
+
     say("open a wallet")
     wallet = service.executor.execute(
         OpenWalletAction,
@@ -58,23 +66,27 @@ def run(service: WalletService) -> None:
     print("   the row and its event were written by one transaction")
 
     say("let the in-process handler react")
-    service.deliver_pending_events()
+    # Nobody calls the handler: the fan-out job turns the committed event into a delivery and
+    # the handling job runs it, each on its own thread, within a second or two.
+    deadline = time.monotonic() + 15
+    while not service.alerts.all():
+        if time.monotonic() > deadline:
+            raise RuntimeError("no alert after 15 seconds: fan-out or handling is not running")
+        time.sleep(0.1)
     for alert in service.alerts.all():
         print(f"   alert for {alert.recipient}: {alert.message}")
     print("   the handler read the recipient off the action's parameters, not the event")
 
-    say("run the daily stipend, as one instance of a cluster would")
-    service.jobs.start()
-    # A registry of its own, holding only the stipend. The service registers three jobs and
-    # that is what a deployment looks like - but the two event jobs are each one execution
-    # that loops for the life of the process, as Java's are, so running one to completion on
-    # this thread would never return. Java's own tests never schedule them either; they call
-    # `fanoutJob.drainOneRound()`, which is what `deliver_pending_events()` above is.
+    say("a day later, the daily stipend runs, as one instance of a cluster would")
+    # The stipend ran once at startup, before this wallet existed, and is next due in a day.
+    # Rather than wait a day, a scheduler of its own whose clock says a day has passed picks
+    # the same row from `scheduled_tasks` and runs it once.
+    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
         .engine(service.registry.default.primary)
         .with_jobs([PayStipendJob(service.executor, service.wallets)])
-        .build_manual(SettableClock(SystemClock().now()))
+        .build_manual(a_day_later)
     )
     stipend_only.start()
     stipend_only.scheduler.run_any_due_executions()

@@ -13,6 +13,7 @@ would prove nothing further and cost a second container.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from decimal import Decimal
 from uuid import uuid4
@@ -71,8 +72,8 @@ def service(environ: dict[str, str]) -> Iterator[ShardedWallets]:
     try:
         for shard in built.registry.shards:
             with built.registry.manager(shard).connection() as conn:
-                conn.execute(text("DELETE FROM wallets"))
-                conn.execute(text("DELETE FROM events"))
+                for table in ("wallets", "events", "event_notifications", "alerts"):
+                    conn.execute(text(f"DELETE FROM {table}"))
         yield built
     finally:
         built.close()
@@ -124,7 +125,8 @@ def test_an_action_never_names_a_shard(service: ShardedWallets) -> None:
     mexican = a_wallet(service, "MX", "10.00")
 
     after = service.executor.execute(
-        DepositMoneyAction, DepositParams(wallet_id=mexican.id, amount=Decimal("5.00"))
+        DepositMoneyAction,
+        DepositParams(wallet_id=mexican.id, amount=Decimal("5.00"), recipient="mx@example.com"),
     )
 
     assert after.balance == Decimal("15.00")
@@ -237,8 +239,8 @@ def client(environ: dict[str, str]) -> Iterator[TestClient]:
     with TestClient(create_app(environ)) as running:
         for shard in running.app.state.service.registry.shards:
             with running.app.state.service.registry.manager(shard).connection() as conn:
-                conn.execute(text("DELETE FROM wallets"))
-                conn.execute(text("DELETE FROM events"))
+                for table in ("wallets", "events", "event_notifications", "alerts"):
+                    conn.execute(text(f"DELETE FROM {table}"))
         yield running
 
 
@@ -275,9 +277,38 @@ def test_a_client_reads_a_wallet_back_with_nothing_but_its_id(client: TestClient
 def test_a_deposit_endpoint_names_no_database(client: TestClient) -> None:
     mexican = open_via_http(client, "MX", "10.00")
 
-    after = client.post(f"/wallets/{mexican['id']}/deposits", json={"amount": "5.00"})
+    after = client.post(
+        f"/wallets/{mexican['id']}/deposits",
+        json={"amount": "5.00", "recipient": "mexico@example.com"},
+    )
 
     assert after.json()["balance"] == "15.00"
+
+
+def test_a_deposit_on_any_shard_reaches_the_handler(client: TestClient) -> None:
+    """Java's sharded example asserts the same: the deposit commits on its wallet's shard, the
+    fan-out and handling jobs - one scheduler for every shard - run the handler, and it writes
+    an alert. Waited for up to 15 seconds, as Java's test does; the jobs run in the background."""
+    global_wallet = open_via_http(client, "GL", "10.00")
+    mexican = open_via_http(client, "MX", "20.00")
+    for wallet, amount, recipient in (
+        (global_wallet, "5.00", "global@example.com"),
+        (mexican, "7.00", "mexico@example.com"),
+    ):
+        deposited = client.post(
+            f"/wallets/{wallet['id']}/deposits", json={"amount": amount, "recipient": recipient}
+        )
+        assert deposited.status_code == 200, deposited.text
+
+    deadline = time.monotonic() + 15
+    alerts: list[dict[str, str]] = []
+    while not alerts and time.monotonic() < deadline:
+        alerts = client.get(f"/wallets/{mexican['id']}/alerts").json()
+        time.sleep(0.2)
+
+    assert len(alerts) == 1, "the handler never ran; fan-out or handling is not running"
+    assert alerts[0]["recipient"] == "mexico@example.com"
+    assert alerts[0]["message"].startswith("Deposit of 7.00 received.")
 
 
 def test_a_transfer_within_one_shard_succeeds(client: TestClient) -> None:
@@ -329,4 +360,7 @@ def test_the_service_runs_on_the_layout_in_ekbatan_yaml(service: ShardedWallets)
 def test_the_migration_files_pass_the_checks_a_deploy_runs():
     """No database needed, so CI catches it: two files with one version, a file whose name would
     be skipped without a word, a rollback file. Each is refused here rather than at startup."""
-    assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]
+    assert [script.script for script in validate_scripts(MIGRATIONS)] == [
+        "V0001__schema.sql",
+        "V0002__event_handler_and_alerts.sql",
+    ]

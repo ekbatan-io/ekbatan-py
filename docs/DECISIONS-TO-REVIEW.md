@@ -269,7 +269,9 @@ Asked by the user on 2026-10-11: every example on a config file, as close to Jav
 | MySQL/MariaDB examples set `init_command: SET SESSION innodb_lock_wait_timeout=10` | PyMySQL's counterpart of the Java examples' `sessionVariables`; the test reads it back | built |
 | the saga example runs on the fan-out and handling jobs, `handling.enabled: true` in its file; manual `deliver_pending_events` and `POST /transfers/deliver` removed | as Java's saga example; driving the pipeline by hand showed a path no service uses | the user |
 | the saga test shares one running service across the module, and waits up to 15 s for the saga to settle | as Java's one application context and `await().atMost(15s)`; a service per test waited out db-scheduler's 10 s poll each time | built |
-| no `local-event-handler` block in the sharded example | it has no handler or event jobs, unlike Java's; a block that does nothing would mislead | built |
+| the sharded example gets Java's deposit handler (as `alerts`, the name the other Python examples use for Java's notifications), the event jobs on one scheduler for every shard, and `handling.enabled: true` | as Java's sharded example | the user |
+| the SQLite example runs on a real job registry; `deliver_pending_events` removed; its manual stipend run uses a scheduler whose clock is a day ahead | the standard way, as asked; the stipend already ran at startup | the user |
+| SQLite `start()` waits for the stipend's run at startup | a `FixedDelay` job is due when registered; without the wait a wallet opened just after start could be paid | built |
 | job worker threads and run-migrations stay environment variables | Java has no key for either | built |
 
 ## Ported an invariant Java already had - lower risk

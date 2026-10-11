@@ -10,12 +10,13 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
-from ekbatan.domain import ModelBuilder
+from ekbatan.domain import EntityBuilder, ModelBuilder
 
 if TYPE_CHECKING:
-    from ekbatan.ids import ShardedId  # noqa: F401
+    from ekbatan.domain import GenericState  # noqa: F401
+    from ekbatan.ids import Id, ShardedId  # noqa: F401
 
-    from .model import Wallet, WalletState  # noqa: F401
+    from .model import Alert, Wallet, WalletState  # noqa: F401
 
 
 class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
@@ -40,4 +41,29 @@ class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
 def wallet(source: Wallet | None = None) -> WalletBuilder:
     """A fresh WalletBuilder, optionally pre-loaded from an existing Wallet."""
     made = WalletBuilder()
+    return made.copy_base(source) if source is not None else made
+
+
+class AlertBuilder(EntityBuilder["Alert", "Id[Alert]", "GenericState"]):
+    """Builds an Alert, with the field types a checker can see.
+
+    id, state and version come from EntityBuilder, typed by the
+    parameters above, so only the fields Alert added are declared here.
+    """
+
+    builds_ref = "fastapi_wallet_rest_sharded_pg.model:Alert"
+
+    def wallet_id(self, value: ShardedId[Wallet]) -> Self:
+        return self.set(wallet_id=value)
+
+    def recipient(self, value: str) -> Self:
+        return self.set(recipient=value)
+
+    def message(self, value: str) -> Self:
+        return self.set(message=value)
+
+
+def alert(source: Alert | None = None) -> AlertBuilder:
+    """A fresh AlertBuilder, optionally pre-loaded from an existing Alert."""
+    made = AlertBuilder()
     return made.copy_base(source) if source is not None else made

@@ -6,9 +6,11 @@ A wallet, end to end, in about two hundred lines. Runs on SQLite so you can try 
 cd ekbatan-py-examples && uv run python -m wallet_service_sqlite
 ```
 
-It creates a wallet, deposits into it, lets an in-process handler react to the deposit by
-writing a notification, runs a scheduled job, and prints the outbox so you can see what a
-consumer would read.
+It starts the jobs, creates a wallet, deposits into it, waits while the in-process handler
+reacts to the deposit by writing a notification, runs a scheduled job, and prints the outbox so
+you can see what a consumer would read. Nobody calls the handler: the fan-out and handling jobs
+run in the background, as in any service, switched on by `local-event-handler.handling.enabled`
+in `ekbatan.yaml`.
 
 ## What to look at, in order
 
@@ -23,6 +25,8 @@ work. It reads the recipient off the producing action's parameters rather than t
 because a delivery address has no business inside a money-deposited event.
 
 **`jobs.py`** - `PayStipendJob`. The same actions, on a schedule, one instance across a cluster.
+A daily job is due the moment it is registered, so it runs once at startup; `start()` waits for
+that run, so a wallet opened afterwards is not paid by surprise.
 
 **`repository.py`** - `WalletRepository`. Where a query that means something to the business
 lives, and where the sharding strategy is named. Note what is *not* there: no row mapping. The

@@ -14,13 +14,14 @@ from uuid import UUID
 
 from sqlalchemy import Row, func, select
 
-from ekbatan import DatabaseRegistry, ModelRepository, ShardIdentifier
+from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository, ShardIdentifier
 from ekbatan.clock import Clock, to_storage
-from ekbatan.ids import ShardedId
+from ekbatan.domain import GenericState
+from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
-from .model import Wallet, WalletState
-from .schema import WALLETS
+from .model import Alert, Wallet, WalletState
+from .schema import ALERTS, WALLETS
 
 
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
@@ -99,3 +100,35 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
             shard: Decimal(str(conn.execute(query).scalar_one()))
             for shard, conn in self.readonly_dbs()
         }
+
+
+class AlertRepository(EntityRepository[Alert, Id[Alert]]):
+    """Alerts - Java's `NotificationRepository`. Their ids carry no shard, so they are all on the
+    default shard, and are looked up by wallet."""
+
+    def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
+        super().__init__(Alert, ALERTS, registry, clock=clock)
+
+    def to_row(self, alert: Alert) -> dict[str, Any]:
+        return {
+            "id": alert.id.value,
+            "version": alert.version,
+            "state": alert.state.name,
+            "wallet_id": alert.wallet_id.value,
+            "recipient": alert.recipient,
+            "message": alert.message,
+        }
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Alert:
+        values = row._mapping if isinstance(row, Row) else row
+        return Alert(
+            id=Id[Alert](values["id"]),
+            version=values["version"],
+            state=GenericState[values["state"]],
+            wallet_id=ShardedId[Wallet](values["wallet_id"]),
+            recipient=values["recipient"],
+            message=values["message"],
+        )
+
+    def find_for_wallet(self, wallet_id: ShardedId[Wallet]) -> list[Alert]:
+        return self.find_where(ALERTS.c.wallet_id == wallet_id.value)

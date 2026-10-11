@@ -47,7 +47,8 @@ track reads the rest of Java's `ekbatan` section and moves the examples over.
 - Example files keep the Java examples' spellings, mixed as they are (`defaultShard`, `local-event-handler`).
 - url and login are placeholders with local defaults; Java's files write the values.
 - MySQL and MariaDB set `init_command` - PyMySQL's counterpart of `sessionVariables`.
-- No `local-event-handler` block in the sharded example: nothing there reads it (Java's has a handler).
+- The sharded example got Java's deposit handler, as `alerts`; the SQLite example runs on a real
+  job registry, and its `start()` waits for the stipend's run at startup (the user's calls).
 - The saga example runs on the event jobs with handling on, as Java's (the user's call); its test
   shares one running service and waits up to 15 s, as Java's does.
 - Job worker threads and run-migrations stay environment variables.
@@ -61,5 +62,6 @@ track reads the rest of Java's `ekbatan` section and moves the examples over.
 - The job worker's first test missed one of them - the shipped `PT10S` equals db-scheduler's
   default - so it now builds from a copy with `PT7S`.
 - Handling switched off in the PG example's file: the handler test went red. The same in the
-  saga's file: events fanned out, the delivery never ran, the saga stalled after step one.
+  saga's file: events fanned out, the delivery never ran, the saga stalled after step one. The
+  same in the sharded file (the handler test red) and the SQLite file (six tests red).
 - Key spellings: the MySQL file with keys rewritten kebab, camel and snake loads the same.

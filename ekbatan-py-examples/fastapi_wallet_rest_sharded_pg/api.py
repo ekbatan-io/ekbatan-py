@@ -48,6 +48,7 @@ class OpenWalletRequest(BaseModel):
 
 class DepositRequest(BaseModel):
     amount: Decimal = Field(gt=0)
+    recipient: str
 
 
 class TransferRequest(BaseModel):
@@ -77,6 +78,13 @@ class WalletResponse(BaseModel):
         )
 
 
+class AlertResponse(BaseModel):
+    id: UUID
+    wallet_id: UUID
+    recipient: str
+    message: str
+
+
 def service_of(request: Request) -> ShardedWallets:
     service: ShardedWallets = request.app.state.service
     return service
@@ -92,6 +100,7 @@ def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         service = build(environ)
+        service.start()
         app.state.service = service
         try:
             yield
@@ -156,7 +165,11 @@ def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
         return WalletResponse.of(
             service.executor.execute(
                 DepositMoneyAction,
-                DepositParams(wallet_id=ShardedId[Wallet](wallet_id), amount=body.amount),
+                DepositParams(
+                    wallet_id=ShardedId[Wallet](wallet_id),
+                    amount=body.amount,
+                    recipient=body.recipient,
+                ),
             )
         )
 
@@ -181,6 +194,20 @@ def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
         """What each database holds - one query per shard, which is what a question without an
         id costs."""
         return {str(shard): total for shard, total in service.wallets.total_per_shard().items()}
+
+    @app.get("/wallets/{wallet_id}/alerts", response_model=list[AlertResponse])
+    def read_alerts(wallet_id: UUID, service: Service) -> list[AlertResponse]:
+        """What the in-process handler wrote after a deposit, without anybody asking it to - on
+        the default shard, whichever shard the wallet is on."""
+        return [
+            AlertResponse(
+                id=alert.id.value,
+                wallet_id=alert.wallet_id.value,
+                recipient=alert.recipient,
+                message=alert.message,
+            )
+            for alert in service.alerts.find_for_wallet(ShardedId[Wallet](wallet_id))
+        ]
 
     @app.get("/health")
     def health() -> dict[str, str]:

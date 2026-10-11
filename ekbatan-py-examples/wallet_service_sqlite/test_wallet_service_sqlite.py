@@ -9,13 +9,14 @@ that makes the prose false makes this red.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ekbatan.clock import SystemClock, VirtualClock
 from ekbatan.errors import ValidationError
@@ -29,7 +30,7 @@ from .actions import (
     WalletIdParams,
 )
 from .app import WalletService, build
-from .schema import EVENTS, SCHEDULED_TASKS, WALLETS
+from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, WALLETS
 
 
 @pytest.fixture
@@ -38,10 +39,39 @@ def service(tmp_path: Path) -> Iterator[WalletService]:
         {"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'wallet.db'}"},
         clock=VirtualClock(SystemClock().now()),
     )
+    # Started before any wallet exists, as a service is: the jobs poll from here on, and
+    # `start()` returns once the stipend's run at startup - on an empty database - is over.
+    built.start()
     try:
         yield built
     finally:
         built.close()
+
+
+def settled(service: WalletService, within: float = 15.0) -> None:
+    """Wait until the handler has run for every deposit so far - the fan-out and handling jobs
+    run in the background, as in a service. Every deposit fanned out, and no delivery waiting."""
+    deadline = time.monotonic() + within
+    while True:
+        with service.registry.default.connection(readonly=True) as conn:
+            undelivered = conn.execute(
+                select(func.count())
+                .select_from(EVENTS)
+                .where(EVENTS.c.delivered.is_(False))
+                .where(EVENTS.c.event_type == "MoneyDepositedEvent")
+            ).scalar_one()
+            waiting = conn.execute(
+                select(func.count())
+                .select_from(EVENT_NOTIFICATIONS)
+                .where(EVENT_NOTIFICATIONS.c.state.in_(("PENDING", "FAILED")))
+            ).scalar_one()
+        if undelivered == 0 and waiting == 0:
+            return
+        if time.monotonic() > deadline:
+            raise AssertionError(
+                f"after {within}s: {undelivered} deposits not fanned out, {waiting} waiting"
+            )
+        time.sleep(0.05)
 
 
 def a_wallet(service: WalletService, balance: str = "100.00"):
@@ -87,7 +117,7 @@ def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):
         DepositParams(wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@example.com"),
     )
 
-    service.deliver_pending_events()
+    settled(service)
 
     alerts = service.alerts.all()
     assert len(alerts) == 1
@@ -105,7 +135,7 @@ def test_writing_an_entity_emits_nothing_and_is_still_recorded(service):
         DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
     )
-    service.deliver_pending_events()
+    settled(service)
 
     alert_rows = [r for r in outbox(service) if r.action_name == "RaiseAlertAction"]
     assert len(alert_rows) == 1
@@ -132,13 +162,10 @@ def test_closing_twice_changes_nothing_the_second_time(service):
 
 
 def test_the_stipend_job_pays_every_open_wallet(service):
-    """Driven through a registry holding only the stipend.
+    """The stipend ran at startup, before this wallet existed, and is next due in a day. A
+    scheduler whose clock says a day has passed picks the same row and runs it - once."""
+    from datetime import timedelta
 
-    The service registers three - fan-out, handling and the stipend - and that is what a
-    deployment looks like. But an event job is one execution that loops for the life of the
-    process, the same as Java's, so running one to completion on this thread would never
-    return. No Java test schedules them either; they call `fanoutJob.drainOneRound()`.
-    """
     from db_scheduler.clock import SettableClock
 
     from ekbatan.distributedjobs import job_registry
@@ -146,18 +173,19 @@ def test_the_stipend_job_pays_every_open_wallet(service):
     from .jobs import PayStipendJob
 
     wallet = a_wallet(service, "0.00")
-    service.jobs.start()  # all three get their row
+    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
         .engine(service.registry.default.primary)
         .with_jobs([PayStipendJob(service.executor, service.wallets)])
-        .build_manual(SettableClock(SystemClock().now()))
+        .build_manual(a_day_later)
     )
     stipend_only.start()
 
     stipend_only.scheduler.run_any_due_executions()
     assert service.wallets.get(wallet.id).balance == Decimal("1.0000")
     stipend_only.scheduler.run_any_due_executions()  # its slot rescheduled; nothing due
+    assert service.wallets.get(wallet.id).balance == Decimal("1.0000")
 
 
 def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
@@ -165,7 +193,6 @@ def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
     instance - so it is claimed through `scheduled_tasks` like any other job."""
     from ekbatan.events.jobs import FANOUT_JOB_NAME, HANDLING_JOB_NAME
 
-    service.jobs.start()
     with service.registry.default.connection(readonly=True) as conn:
         registered = {r[0] for r in conn.execute(select(SCHEDULED_TASKS.c.task_name))}
 
@@ -177,7 +204,7 @@ def test_the_event_pipeline_runs_as_two_distributed_jobs(service):
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
     )
 
-    service.deliver_pending_events()  # a round of each, as `drainOneRound()` is in Java's tests
+    settled(service)
     assert service.alerts.find_for_wallet(wallet.id), "the handler ran, driven by the job"
 
 
@@ -209,6 +236,7 @@ def test_the_script_runs(tmp_path, capsys):
 
     printed = capsys.readouterr().out
     assert "open a wallet" in printed
+    assert "alert for ada@example.com" in printed, "the jobs delivered the deposit"
     assert "what a consumer reads from the outbox" in printed
     assert "sentinel" in printed
 
@@ -286,7 +314,7 @@ def test_alerts_are_found_by_the_wallet_they_are_about(service):
         DepositMoneyAction,
         DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@example.com"),
     )
-    service.deliver_pending_events()
+    settled(service)
 
     found = service.alerts.find_for_wallet(wallet.id)
     assert len(found) == 1
@@ -352,5 +380,7 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service) -> None:
     """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: the
     database, the namespace and the handling job switched on all come from it."""
     assert service.executor.namespace == "example.wallet_service_sqlite"
-    assert service.dispatch.enabled is True
+    assert any("event-handling" in name for name in service.jobs._names_requiring_registration), (
+        "a switched-off handling job is registered but never scheduled"
+    )
     assert service.registry.default.primary.url.database.endswith("wallet.db")

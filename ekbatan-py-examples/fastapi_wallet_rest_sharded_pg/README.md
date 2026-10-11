@@ -20,7 +20,15 @@ POST /wallets/{id}/deposits                       -> names no database
 POST /wallets/{id}/transfers  (same shard)        -> 200
 POST /wallets/{id}/transfers  (across shards)     -> 422, and says to use a saga
 GET  /shards                                      -> one query per database
+GET  /wallets/{id}/alerts                         -> what the deposit handler wrote
 ```
+
+**A deposit on any shard reaches its handler**, as in Java's sharded example. The deposit
+commits on its wallet's shard; one scheduler, on the global shard's `jobsConfig` pool, runs the
+fan-out and handling jobs, which reach every shard through the registry; the handler writes an
+alert. Alerts have plain ids, so they all live on the default shard, as Java's notifications
+do. The tables for this arrive in `V0002__event_handler_and_alerts.sql` - a second migration,
+because an applied one is never edited.
 
 A **422** for the cross-shard transfer, not a 500: the framework refused the request rather than
 failing at it, so it is the caller's request that is wrong. The reply names both databases and

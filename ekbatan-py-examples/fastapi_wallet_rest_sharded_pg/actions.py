@@ -14,7 +14,7 @@ from uuid import UUID
 from ekbatan import Action, Clock, ShardIdentifier
 from ekbatan.ids import ShardedId
 
-from .model import Wallet
+from .model import Alert, Wallet
 from .repository import WalletRepository
 
 #: Where each country's wallets live. The one piece of routing policy this application owns -
@@ -37,6 +37,16 @@ class OpenWalletParams:
 class DepositParams:
     wallet_id: ShardedId[Wallet]
     amount: Decimal
+    #: Not part of the event. A delivery address has no business inside a money-deposited
+    #: event, so it travels as an action parameter and the handler reads it from the envelope.
+    recipient: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class RaiseAlertParams:
+    wallet_id: ShardedId[Wallet]
+    recipient: str
+    message: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -91,4 +101,17 @@ class TransferWithinShardAction(Action[TransferParams, tuple[Wallet, Wallet]]):
         return (
             self.plan.update(source.withdraw(params.amount)),
             self.plan.update(destination.deposit(params.amount)),
+        )
+
+
+class RaiseAlertAction(Action[RaiseAlertParams, Alert]):
+    """Writes an entity - Java's `CreateNotificationAction`. Emits nothing, and is still audited."""
+
+    def perform(self, principal: str | None, params: RaiseAlertParams) -> Alert:
+        return self.plan.add(
+            Alert.create(
+                wallet_id=params.wallet_id,
+                recipient=params.recipient,
+                message=params.message,
+            )
         )
