@@ -22,7 +22,7 @@ whatever is decided about the rest.
 
 | # | Bug | Checked | Area |
 |---|---|---|---|
-| 1 | MySQL/MariaDB lock names have an `ekbatan:` prefix Java's lack, so a Python and a Java service never block each other; the docstring says they match | run, re-checked | D |
+| 1 | ~~MySQL/MariaDB lock names have an `ekbatan:` prefix Java's lack, so a Python and a Java service never block each other~~ **fixed** (`EKB-0244`): bare hex as Java, pinned against Java's output and on real MySQL/MariaDB | run, re-checked | D |
 | 2 | Quartz cron: a numeric day-of-week runs a day late (`2` is Monday in Java, Tuesday here) | run, re-checked (`PORTING.md` records it) | D |
 | 3 | Keyed locks are held per OS thread, so two asyncio tasks on one loop both get "the same" lock | run | D |
 | 4 | The handler registry accepts three clashes Java refuses: one handler twice, two event classes with one name, an alias equal to another handler's name | run | B |

@@ -325,6 +325,30 @@ def test_releasing_twice_is_harmless(locks, registry, request):
 # -- the one case that is not shared ------------------------------------------------------------
 
 
+def test_the_server_sees_the_lock_under_the_name_java_uses(locks, registry, dialect):
+    """A Java service locks `wallet:abc` as `GET_LOCK('813e4046e5b48a46', ...)` - bare hex, as
+    Java's `Long.toHexString(LockKeyHash.hashUtf8(key))` gives it. Asking the server about that
+    exact name, from a connection of its own, is what shows a Python holder and a Java one would
+    contend for one lock rather than each holding its own."""
+    if dialect not in ("mysql", "mariadb"):
+        pytest.skip("Postgres locks a number, pinned in the unit tests; no name to ask about")
+    from sqlalchemy import text
+
+    java_name = "813e4046e5b48a46"
+
+    def holder() -> object:
+        with registry.default.primary.connect() as conn:
+            return conn.execute(text("SELECT IS_USED_LOCK(:name)"), {"name": java_name}).scalar()
+
+    assert holder() is None, "free before"
+    lease = locks.acquire("wallet:abc", HOLD)
+    try:
+        assert holder() is not None, "held under Java's name while Python holds it"
+    finally:
+        lease.release()
+    assert holder() is None, "free again after release"
+
+
 def test_what_a_sub_second_wait_actually_does_on_each_server(locks, dialect, request):
     """Java has a case here for MySQL and MariaDB and none for Postgres, because `GET_LOCK`
     takes its timeout as a `DOUBLE` and the two servers disagree about the fraction.

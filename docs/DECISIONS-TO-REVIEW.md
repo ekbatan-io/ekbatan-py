@@ -281,6 +281,7 @@ without it.
 
 | what | commit |
 | --- | --- |
+| MySQL/MariaDB `GET_LOCK` names are Java's - bare hex, no `ekbatan:` prefix - so a Python and a Java service contend for one lock. Found by the Dracula sweep; pinned against Java's own output for five keys, and on real MySQL and MariaDB by asking the server for Java's name while Python holds the lock | `EKB-0244` |
 | A `DataSourceConfig` never prints its password - nor does anything holding one (a layout, a migration result), nor an error about a url. Java's prints no fields at all; here the password is inside the url and a dataclass printed every field, so `log.info(result)` wrote it out. Now `***`, as SQLAlchemy prints its own urls; secret-looking `connect_args` hidden too; and a test refuses any later dataclass whose url or password field would print by default. Proven with a real user and password on PostgreSQL, MySQL and MariaDB, every logger at DEBUG | `EKB-0237` |
 | `Model` / `Entity` / `TypedValue` reject null id, null state, null/absent version, `version < 1`, null events | `EKB-0108` |
 | A model's events tuple is copied, so a "frozen" model cannot change underneath it | `EKB-0108` |

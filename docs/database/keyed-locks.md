@@ -180,7 +180,8 @@ will not tell you so at runtime - two instances each get their own.
 
 Each key is hashed to a 64-bit integer, and the hash matches Java's exactly, **so a Python
 service and a Java service contending for one key actually contend.** The MySQL lock name is
-`ekbatan:<unsigned hex>`, byte for byte what Java produces.
+the bare unsigned hex of that hash (`813e4046e5b48a46` for `wallet:abc`), byte for byte what
+Java produces, with no prefix - a test holds a lock and asks the server for Java's name.
 
 ### Wiring up a backend
 

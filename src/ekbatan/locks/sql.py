@@ -222,8 +222,6 @@ class MySQLKeyedLockProvider(SqlKeyedLockProvider):
     above one second and not below it - a 500ms wait does not become 1s, it becomes none.)
     """
 
-    _name_prefix = "ekbatan:"
-
     def _try_lock(self, conn: Connection, key: int, wait: timedelta) -> bool:
         from sqlalchemy import text
 
@@ -246,9 +244,10 @@ class MySQLKeyedLockProvider(SqlKeyedLockProvider):
         conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": self._name(key)})
 
     def _name(self, key: int) -> str:
-        # Unsigned hex, matching the Java implementation exactly, so a Python service and a
-        # Java service contending for one key actually contend.
-        return f"{self._name_prefix}{key & 0xFFFFFFFFFFFFFFFF:x}"
+        # Bare unsigned hex - Java's `Long.toHexString(LockKeyHash.hashUtf8(key))`, character for
+        # character, so a Python service and a Java service contending for one key actually
+        # contend. Pinned against Java's output in `test_locks.py`.
+        return f"{key & 0xFFFFFFFFFFFFFFFF:x}"
 
 
 class MariaDBKeyedLockProvider(MySQLKeyedLockProvider):

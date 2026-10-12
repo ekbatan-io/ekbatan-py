@@ -69,6 +69,29 @@ def test_a_lock_key_hashes_to_the_same_id_java_gives_it(key, expected):
     assert lock_key_hash(key) == expected
 
 
+#: The `GET_LOCK` name Java's `MySQLKeyedLockProvider` and `MariaDBKeyedLockProvider` give each
+#: key - `Long.toHexString(LockKeyHash.hashUtf8(key))`, produced by running that Java code on this
+#: machine. Bare hex, no prefix: Java is the reference, and a name that differs by one character
+#: is a different lock, so a Python and a Java service would each hold "the same" lock at once.
+JAVA_GET_LOCK_NAMES = {
+    "wallet:abc": "813e4046e5b48a46",
+    "order-42": "3bf8b157c4238eef",
+    "": "e3b0c44298fc1c14",
+    "\u043a\u043b\u044e\u0447": "1de36a32af798da0",
+    "a": "ca978112ca1bbdca",
+}
+
+
+@pytest.mark.parametrize("provider", ["MySQLKeyedLockProvider", "MariaDBKeyedLockProvider"])
+@pytest.mark.parametrize(("key", "expected"), sorted(JAVA_GET_LOCK_NAMES.items()))
+def test_a_get_lock_name_is_the_one_java_gives_it(provider, key, expected):
+    from ekbatan.locks import sql
+
+    # The name is a pure function of the key; no engine is needed to compute it.
+    cls = getattr(sql, provider)
+    assert cls._name(cls.__new__(cls), lock_key_hash(key)) == expected
+
+
 def test_the_lock_id_is_signed_and_fits_a_bigint():
     """SHA-256's first eight bytes read as a *signed* big-endian long, which is what
     `ByteBuffer.getLong()` returns. Read unsigned, half of all keys would land outside the
