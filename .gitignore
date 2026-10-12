@@ -52,3 +52,7 @@ website/.astro/
 .env
 .env.*
 !.env.example
+
+# The SQLite example's default url, `sqlite:///wallet.db`, is relative to wherever it is run; a
+# run without WALLET_DATABASE_URL leaves the file behind.
+wallet.db
