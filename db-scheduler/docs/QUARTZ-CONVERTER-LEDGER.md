@@ -127,3 +127,12 @@ limit, `||` read as one union, both day fields allowed, a step limit off by one,
 as the last Saturday, a second `#` refused, `31W` accepted, lower-case names refused, a trailing
 comma accepted, a wrapping year range accepted, `?` in seconds, an empty time field accepted,
 plain day sets taken from 31-day months only.
+
+### Found after the commit: croniter at import time (`EKB-0249`)
+
+`EKB-0246` imported croniter at module level, where `CronSchedule` had always imported it inside
+its methods. croniter calls `platform.architecture()` on import, which runs `file` as a
+subprocess; under gevent, one subprocess is enough to stop `multiprocessing` from seeing its
+children exit, and ekbatan's `make test-gevent` lost three migration-concurrency tests (bisected
+to `EKB-0246`; reproduced with nothing but a `subprocess.run(['true'])` under gevent). croniter is
+imported lazily again, and `tests/unit/test_import_side_effects.py` keeps it so.

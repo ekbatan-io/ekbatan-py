@@ -34,8 +34,6 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from croniter import CroniterBadDateError, croniter
-
 __all__ = ["QuartzCron", "QuartzError", "compile_quartz"]
 
 
@@ -734,6 +732,12 @@ class _Part:
     __slots__ = ("_iterators", "_lock", "patterns")
 
     def __init__(self, patterns: tuple[str, ...]) -> None:
+        # Imported here, never at module level - as `CronSchedule` always did. croniter calls
+        # `platform.architecture()` on import, which runs `file` as a subprocess; importing it
+        # with the module would do that in every process that imports ekbatan, and under gevent
+        # one subprocess is enough to stop `multiprocessing` from seeing its children exit.
+        from croniter import croniter
+
         self.patterns = patterns
         self._iterators = [
             croniter(pattern, _EPOCH, second_at_beginning=True, max_years_between_matches=130)
@@ -747,6 +751,8 @@ class _Part:
         A start that matches is returned as it is, fraction and all. The 100-year limit is
         cron-utils' own.
         """
+        from croniter import CroniterBadDateError
+
         whole = start.replace(microsecond=0)
         before = _shift(whole, -1)
         found = []
