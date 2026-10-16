@@ -274,6 +274,23 @@ Asked by the user on 2026-10-11: every example on a config file, as close to Jav
 | SQLite `start()` waits for the stipend's run at startup | a `FixedDelay` job is due when registered; without the wait a wallet opened just after start could be paid | built |
 | job worker threads and run-migrations stay environment variables | Java has no key for either | built |
 
+## QUARTZ cron patterns read as Java reads them (`EKB-0246`)
+
+Asked by the user on 2026-10-16: a converter that turns a QUARTZ pattern into croniter patterns
+that mean exactly what Java db-scheduler computes, with many tests (see
+`db-scheduler/docs/QUARTZ-CONVERTER-LEDGER.md`). The reference is cron-utils 9.2.1, which Java
+db-scheduler runs - not the Quartz Scheduler.
+
+| decision | why | who |
+| --- | --- | --- |
+| croniter kept; QUARTZ patterns ported from cron-utils' parser, validation and value generators, check for check, then handed to croniter as explicit values | no maintained Python library reads Quartz correctly (ten tried, by running); croniter is right for the other styles | the user |
+| cron-utils' surprising readings reproduced: a wrapping range (`22-2`) is its first value and nothing inside a list; `L`, `L-n`, `LW` dropped from a day-of-month list and `nW` read as `n` there; `nW` on a month-end Sunday stays on it; day-of-week `L` and `L-n` mean Saturday; `1-5/2/3` is `1-5/2`, `6#3#2` is `6#3`, `LWLW` is `LW` | a Java and a Python scheduler can share one table and must compute the same next time; refusing them would also have been safe, but would break patterns that run in Java | built |
+| a pattern cron-utils accepts but throws on while computing (`31W` with a shorter month in range, `6-2/2`) is refused when the schedule is built | the same failure, sooner, instead of an exception from inside the scheduler loop on reaching the bad month | built |
+| text outside printable ASCII refused | Java reads non-ASCII digits as digits; nobody writes them on purpose | built |
+| cron-utils' search reproduced: a start's fraction kept when the next second matches, nothing after 2099, nothing more than 100 years out, each `\|\|` part computed on its own | each is what Java returns; each is pinned by a test | built |
+| daylight-saving behaviour left as croniter's, for every style | it is not a Quartz difference and changing it changes every style; recorded as Dracula bug 10 for the user to decide | built |
+| tests compare against answers recorded from cron-utils itself (56,477 cases, plus for 24,107 patterns whether Java throws from the first of some month); the recorder and a checksum-pinned Java runner are committed | the tests need no Java; anyone can regenerate or check the answers | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

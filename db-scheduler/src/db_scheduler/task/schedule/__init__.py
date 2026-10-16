@@ -17,6 +17,7 @@ from datetime import tzinfo as datetime_tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .. import ExecutionComplete
+from ._quartz import QuartzCron, QuartzError, compile_quartz
 
 __all__ = [
     "NEVER",
@@ -275,15 +276,18 @@ class CronStyle(enum.Enum):
 class CronSchedule(Schedule):
     """A cron pattern, in a named zone. `-` means disabled.
 
-    croniter stands in for cron-utils. It reads all five dialects db-scheduler names, given the
-    one flag that says where the seconds live - including Quartz's `?` and its optional seventh
-    year field, both of which `croniter.is_valid` rejects even though `croniter` itself parses
-    them, which is why validation here is a parse rather than a check.
+    croniter stands in for cron-utils. It reads four of the five dialects db-scheduler names,
+    given the one flag that says where the seconds live, which is why validation here is a parse
+    rather than a check.
+
+    QUARTZ is the exception: croniter numbers the days of the week differently and lacks some of
+    Quartz's specials, so a QUARTZ pattern is first read the way cron-utils reads it and turned
+    into croniter patterns that mean the same thing (`_quartz.py`).
     """
 
     DISABLED = "-"
 
-    __slots__ = ("cron_style", "pattern", "zone")
+    __slots__ = ("_quartz", "cron_style", "pattern", "zone")
 
     def __init__(
         self,
@@ -307,7 +311,14 @@ class CronSchedule(Schedule):
         """
         from croniter import CroniterBadCronError, croniter
 
+        self._quartz: QuartzCron | None = None
         if self.is_disabled:
+            return
+        if self.cron_style is CronStyle.QUARTZ:
+            try:
+                self._quartz = compile_quartz(self.pattern)
+            except QuartzError as exc:
+                raise ValueError(f"invalid cron pattern: {self.pattern!r}: {exc}") from exc
             return
         try:
             croniter(self.pattern, second_at_beginning=self.cron_style.seconds_first)
@@ -326,6 +337,17 @@ class CronSchedule(Schedule):
         if self.is_disabled:
             raise self._unsupported()
         last = completion.time_done.astimezone(self.zone)
+        if self._quartz is not None:
+            found = self._quartz.next_after(last)
+            if found is None:
+                LOG.error(
+                    "Cron-pattern did not return any further execution-times. This behavior is "
+                    "currently not supported by the scheduler. Setting next execution-time to "
+                    'far-future, aka "NEVER" (%s)',
+                    NEVER,
+                )
+                return NEVER
+            return found.astimezone(UTC)
         iterator = croniter(
             self.pattern, last, second_at_beginning=self.cron_style.seconds_first
         )

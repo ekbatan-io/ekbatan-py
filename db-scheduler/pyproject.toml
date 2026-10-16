@@ -69,6 +69,8 @@ ignore = ["E501", "TID252"]
 # N818 wants every exception to end in "Error". These names are db-scheduler's, and a reader
 # moving between the two implementations should find the same word; the convention loses.
 "src/db_scheduler/task/schedule/__init__.py" = ["N818"]
+# Named after cron-utils' own: `_NoValue` is its NoSuchValueException.
+"src/db_scheduler/task/schedule/_quartz.py" = ["N818"]
 "src/db_scheduler/exceptions.py" = ["N818"]
 
 [tool.mypy]

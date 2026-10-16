@@ -33,6 +33,7 @@ marked unverified.
 - **Why:** a choice. croniter was picked instead of cron-utils, and it has no Quartz mode.
 - **Could match Java?** yes. Turn numeric day-of-week values in QUARTZ patterns into names (or subtract 1) before handing the pattern to croniter.
 - **Surprise:** high
+- **Fixed** (`EKB-0246`): every QUARTZ pattern is now read the way cron-utils reads it and converted for croniter, not just the day numbers. See `db-scheduler/docs/QUARTZ-CONVERTER-LEDGER.md`.
 
 ### SIGTERM does not drain running jobs unless you turn it on
 - **What:** in Java, an ordinary container stop (SIGTERM) runs `Scheduler.stop()` and lets running jobs finish. That is on by default. In Python, SIGTERM kills the process mid-job unless you call `register_shutdown_hook()`. That call only works on the main thread, and it throws an error from `start()` anywhere else.
