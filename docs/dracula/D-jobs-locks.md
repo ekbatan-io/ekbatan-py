@@ -25,6 +25,7 @@ marked unverified.
 - **Why:** Python forces it. Python has no virtual threads, and the port is sync-only (DIVERGENCE.md "The framework is synchronous..."). That section covers the blocking problem but not the lost exclusion.
 - **Could match Java?** partly. Keying on a `ContextVar` token would give one holder per asyncio task. The blocking call would still need `asyncio.to_thread`.
 - **Surprise:** high
+- **Fixed** (`EKB-0250`), by refusing rather than adapting: a holder per task would turn "both get in" into "the loop freezes" unless the lock also grew an async API, and ekbatan is synchronous throughout. Taking a lock on an event loop's thread now raises `ValidationError`, naming the way out (a `def` endpoint, `asyncio.to_thread`).
 
 ### Quartz cron: a numeric day-of-week runs one day late
 - **What:** in a `CronStyle.QUARTZ` pattern, `2` means Monday in Java (1 = Sunday). croniter reads it as Tuesday. Day names (`MON`) and `?` work correctly.

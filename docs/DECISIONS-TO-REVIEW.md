@@ -304,6 +304,15 @@ Asked by the user on 2026-10-16: fix Dracula 6, matching Java.
 | the migrator's MDC keys `ekbatanShard` and `ekbatanTarget` as record attributes, from a context variable through a filter on its logger | Python has no MDC; this is its standard counterpart. Unlike Java's thread-wide MDC, the keys reach only the migrator's own lines | built |
 | log messages themselves left as they are | the row was about names; messages differ in places (`executing` vs `Executing`) | built |
 
+## Keyed locks on an event loop (`EKB-0250`)
+
+Decided with the user on 2026-10-17 (Dracula bug 3).
+
+| decision | why | who |
+| --- | --- | --- |
+| a keyed lock taken on an asyncio event loop's thread raises `ValidationError`, instead of becoming async-aware | ekbatan is synchronous throughout; a holder per task alone would freeze the loop, and an async lock API is beyond Java. Worker threads (`def` endpoints, `asyncio.to_thread`) make each request its own holder, as in Java | the user |
+| the check runs only if asyncio has been imported | without it no loop can be running; one dictionary lookup otherwise | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

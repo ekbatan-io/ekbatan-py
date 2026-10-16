@@ -19,6 +19,7 @@ Two distinctions the interface exists to preserve:
 from __future__ import annotations
 
 import hashlib
+import sys
 from datetime import timedelta
 from types import TracebackType
 from typing import Protocol, runtime_checkable
@@ -104,6 +105,7 @@ class KeyedLockProvider(Protocol):
 
 def check(key: str, max_hold: timedelta, max_wait: timedelta | None = None) -> None:
     """Refuse the arguments that produce something which looks like a lock and is not."""
+    _refuse_on_an_event_loop()
     if not key or not key.strip():
         raise ValidationError("lock key cannot be blank; a blank key collides with every other")
     if max_hold <= timedelta(0):
@@ -112,3 +114,29 @@ def check(key: str, max_hold: timedelta, max_wait: timedelta | None = None) -> N
         )
     if max_wait is not None and max_wait < timedelta(0):
         raise ValidationError(f"max_wait cannot be negative, got {max_wait}")
+
+
+def _refuse_on_an_event_loop() -> None:
+    """Refuse a lock taken on an asyncio event loop's own thread.
+
+    A holder is a thread, as in Java, where each request has a thread of its own. On an event
+    loop every request shares one: a second request would "re-enter" the first one's lock and
+    walk straight in, and a request that did wait would freeze the loop - the holder included.
+    Ekbatan is synchronous throughout, so the answer is not a lock that knows about tasks but
+    calling it from a worker thread, where each request is its own holder again: a plain
+    ``def`` endpoint, which FastAPI and Starlette already run on one, or ``asyncio.to_thread``.
+
+    asyncio not imported means no loop can be running, so then this costs a dictionary lookup.
+    """
+    asyncio = sys.modules.get("asyncio")
+    if asyncio is None:
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise ValidationError(
+        "a keyed lock was taken on an asyncio event loop's thread. Ekbatan is synchronous: "
+        "there, two requests would share one lock holder and both get in. Call it from a worker "
+        "thread instead - a plain `def` endpoint, or `await asyncio.to_thread(...)`"
+    )
