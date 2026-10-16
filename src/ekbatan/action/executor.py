@@ -38,7 +38,9 @@ __all__ = [
     "RetryConfig",
 ]
 
-LOG = logging.getLogger("ekbatan.action")
+LOG = logging.getLogger("io.ekbatan.core.action.ActionExecutor")
+# Java logs a retry from its `Retry` class, under that class's logger.
+RETRY_LOG = logging.getLogger("io.ekbatan.core.action.Retry")
 
 #: Dot-separated identifiers, like a package. Anchored, so the whole value must match.
 _NAMESPACE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
@@ -324,7 +326,7 @@ class ActionExecutor:
                     if match is not None and retried < match[0].max_retries:
                         retried += 1
                         chosen, cause = match
-                        LOG.warning(
+                        RETRY_LOG.warning(
                             "retrying %s (%d/%d) after %s: %s",
                             name,
                             retried,

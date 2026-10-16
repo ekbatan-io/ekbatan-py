@@ -36,7 +36,10 @@ __all__ = [
     "insert_ignoring_duplicates",
 ]
 
-LOG = logging.getLogger("ekbatan.persistence")
+# Java names a logger after its class, and so do these: a logging config written for the Java
+# port - `io.ekbatan.core.persistence: DEBUG` - applies here unchanged.
+LOG = logging.getLogger("io.ekbatan.core.persistence.TransactionManager")
+REGISTRY_LOG = logging.getLogger("io.ekbatan.core.shard.DatabaseRegistry")
 
 # Default None rather than an empty dict: a mutable default on a ContextVar is shared by every
 # context that never set one, and the day something mutates it in place is the day two requests
@@ -339,7 +342,7 @@ class DatabaseRegistry:
                 f"shard {shard} is not registered and unknown_shard_policy is 'fail'; "
                 f"registered: {sorted(str(s) for s in self._managers)}"
             )
-        LOG.warning(
+        REGISTRY_LOG.warning(
             "shard %s is not registered, routing to default %s [registered=%s]",
             shard,
             self.default_shard,
@@ -362,7 +365,7 @@ class DatabaseRegistry:
             try:
                 manager.close()
             except Exception as exc:
-                LOG.warning("failed to close shard %s: %s", shard, exc)
+                REGISTRY_LOG.warning("failed to close shard %s: %s", shard, exc)
                 first = first or exc
         if first is not None:
             raise first

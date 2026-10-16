@@ -33,7 +33,7 @@ from types import FrameType
 
 from ..errors import ValidationError
 
-LOG = logging.getLogger("ekbatan.jobs")
+LOG = logging.getLogger("io.ekbatan.distributedjobs.JobRegistry")
 
 #: What a container stop sends, and what an interactive Ctrl-C sends. Both mean "wind up".
 _SIGNALS = (signal.SIGTERM, signal.SIGINT)

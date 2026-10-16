@@ -19,7 +19,7 @@ from .base import Lease
 
 __all__ = ["KeyedReentrantHolder", "ReleaseReason"]
 
-LOG = logging.getLogger("ekbatan.locks")
+LOG = logging.getLogger("io.ekbatan.core.concurrent.KeyedReentrantHolder")
 
 
 class ReleaseReason(Enum):

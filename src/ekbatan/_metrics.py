@@ -1,7 +1,7 @@
-"""Counters and histograms, if anyone is listening.
+"""Counters and histograms, under the same meter as the Java implementation's.
 
-The same bargain as :mod:`ekbatan._tracing`: OpenTelemetry is not a dependency, so this looks
-for one at import, uses it if it is there, and costs an attribute lookup if it is not.
+The same bargain as :mod:`ekbatan._tracing`: OpenTelemetry's API is a dependency, as in Java,
+and records nothing until the application installs an SDK.
 
 The instrument names, units and attribute keys match the Java implementation's. That is the
 whole point of them - an operator whose dashboard reads
@@ -14,18 +14,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-__all__ = ["Counter", "Histogram", "counter", "histogram", "metrics_enabled"]
+import opentelemetry.metrics as _otel
 
-try:  # pragma: no cover - depends on what is installed
-    import opentelemetry.metrics as _otel
+__all__ = ["Counter", "Histogram", "counter", "histogram"]
 
-    _METER: Any = _otel.get_meter("io.ekbatan.events.localeventhandler")
-except ImportError:  # pragma: no cover
-    _METER = None
-
-
-def metrics_enabled() -> bool:
-    return _METER is not None
+#: Java: `GlobalOpenTelemetry.get().getMeter("io.ekbatan.events.localeventhandler")`.
+_METER: Any = _otel.get_meter("io.ekbatan.events.localeventhandler")
 
 
 class Counter:
@@ -55,12 +49,8 @@ class Histogram:
 
 
 def counter(name: str, description: str, unit: str) -> Counter:
-    if _METER is None:
-        return Counter()
     return Counter(_METER.create_counter(name, unit=unit, description=description))
 
 
 def histogram(name: str, description: str, unit: str) -> Histogram:
-    if _METER is None:
-        return Histogram()
     return Histogram(_METER.create_histogram(name, unit=unit, description=description))

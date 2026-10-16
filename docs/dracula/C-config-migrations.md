@@ -180,6 +180,7 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Why:** a choice for the names (the span names and attributes do match); optional OpenTelemetry is a Python convention.
 - **Could match Java?** yes - the tracer name and version are one line; logger names could be `io.ekbatan.*` too.
 - **Surprise:** medium
+- **Fixed** (`EKB-0248`): each logger is named after the Java class that writes the same lines (`io.ekbatan.core.action.ActionExecutor`, ...), the tracer scope is `io.ekbatan.core` at this package's version, `opentelemetry-api` is a dependency, and the migrator puts `ekbatanShard` and `ekbatanTarget` on its records. See `docs/runtime/observability.md#loggers`.
 
 ### The framework's tables are not in an `eventlog` schema
 - **What:** Java keeps `events` and `event_notifications` in the PostgreSQL schema `eventlog`. The

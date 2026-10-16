@@ -44,7 +44,7 @@ whatever is decided about the rest.
 | 3 | Migration history is `ekbatan_schema_history` with SHA-256, not Flyway's table and CRC32: the ports cannot migrate one database | forced + choice | partly | H | C |
 | 4 | db-scheduler task data is JSON; Java's default is Java serialization | forced | no | M | D |
 | 5 | Redis lock is a plain key, Redisson uses a hash: mixing ports on one Redis is likely unsafe | forced | partly | M (unverified) | D |
-| 6 | Tracer scope `ekbatan` and loggers `ekbatan.*`, not `io.ekbatan.*`; OpenTelemetry optional | choice | yes | M | C, B |
+| 6 | ~~Tracer scope `ekbatan` and loggers `ekbatan.*`, not `io.ekbatan.*`; OpenTelemetry optional~~ **fixed** (`EKB-0248`): loggers named after the Java class writing the same lines, scope `io.ekbatan.core`, the OpenTelemetry API a dependency, the migrator's MDC keys | choice | yes | M | C, B |
 | 7 | The scheduler port always writes `priority`; Java leaves it NULL | choice | yes | L | D |
 
 ### Wiring and configuration

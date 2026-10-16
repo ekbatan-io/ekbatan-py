@@ -1,31 +1,37 @@
-"""Spans, if anyone is listening.
+"""Spans, under the same instrumentation scope as the Java implementation's.
 
-OpenTelemetry is not a dependency. A persistence framework that drags a tracing stack into
-every project that installs it has made a decision it had no standing to make - so this looks
-for one at import, uses it if it is there, and costs a couple of attribute lookups if it is
-not.
+OpenTelemetry's API is a dependency, as it is of Java's `ekbatan-core`: it is a few small
+modules, and on its own it does nothing - spans go nowhere until the application installs an
+SDK, exactly as Java's `GlobalOpenTelemetry` stays a no-op until one is registered.
 
-The span names and attributes match the Java implementation's, so one trace can span both.
+The scope is Java's, `io.ekbatan.core`, and so are the span names and attributes, so one trace -
+and one filter on it - covers both. The version is this package's own, as Java's is its
+artifact's.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from importlib import metadata
 from typing import Any
 
-__all__ = ["Span", "span", "tracing_enabled"]
+import opentelemetry.trace as _otel
 
-try:  # pragma: no cover - depends on what is installed
-    import opentelemetry.trace as _otel
+__all__ = ["SCOPE", "Span", "span"]
 
-    _TRACER: Any = _otel.get_tracer("ekbatan", "0.1.0")
-except ImportError:  # pragma: no cover
-    _TRACER = None
+#: Java: `GlobalOpenTelemetry.get().getTracer("io.ekbatan.core", "1.1.2")`.
+SCOPE = "io.ekbatan.core"
 
 
-def tracing_enabled() -> bool:
-    return _TRACER is not None
+def _version() -> str:
+    try:
+        return metadata.version("ekbatan")
+    except metadata.PackageNotFoundError:  # pragma: no cover - running from a bare checkout
+        return "0"
+
+
+_TRACER: Any = _otel.get_tracer(SCOPE, _version())
 
 
 class Span:
@@ -64,15 +70,9 @@ class Span:
             self._span.set_attribute(outcome, "error")
 
 
-_NOWHERE = Span()
-
-
 @contextmanager
 def span(name: str, attributes: Mapping[str, Any] | None = None) -> Iterator[Span]:
-    """Open a span, or do nothing at all."""
-    if _TRACER is None:
-        yield _NOWHERE
-        return
+    """Open a span - which does nothing at all until an SDK is installed."""
     with _TRACER.start_as_current_span(name) as underlying:
         wrapped = Span(underlying)
         if attributes:

@@ -235,7 +235,7 @@ def test_an_unregistered_shard_falls_back_to_the_default_and_says_so(caplog):
     """
     registry = _two_shards()
     try:
-        with caplog.at_level(logging.WARNING, logger="ekbatan.persistence"):
+        with caplog.at_level(logging.WARNING, logger="io.ekbatan.core.shard.DatabaseRegistry"):
             assert registry.effective_shard(ShardIdentifier(9, 9)) == ShardIdentifier(0, 0)
 
         assert "shard 9:9 is not registered, routing to default 0:0" in caplog.text
@@ -249,7 +249,7 @@ def test_a_shard_nobody_proposed_is_not_a_fallback_and_says_nothing(caplog):
     warning on every read there would be noise, and noise is how a real warning gets ignored."""
     registry = _two_shards()
     try:
-        with caplog.at_level(logging.WARNING, logger="ekbatan.persistence"):
+        with caplog.at_level(logging.WARNING, logger="io.ekbatan.core.shard.DatabaseRegistry"):
             assert registry.effective_shard(None) == ShardIdentifier(0, 0)
 
         assert caplog.text == ""

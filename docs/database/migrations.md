@@ -314,8 +314,8 @@ and MariaDB - and a replica is refused rather than migrated.
 
 ## What a migration's queries return
 
-A `SELECT` in a migration has its result **logged, at `INFO`, on the `ekbatan.migrations`
-logger** - as Flyway logs it - rather than printed. Turn it off with
+A `SELECT` in a migration has its result **logged, at `INFO`, on the
+`io.ekbatan.flyway.FlywayMigrator` logger** - as Flyway logs it - rather than printed. Turn it off with
 `migrate(..., output_query_results=False)`, or `.output_query_results(False)` on the builder: a
 migration that selects real rows logs them.
 

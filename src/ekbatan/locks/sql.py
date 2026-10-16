@@ -33,8 +33,6 @@ __all__ = [
     "SqlKeyedLockProviderBuilder",
 ]
 
-LOG = logging.getLogger("ekbatan.locks")
-
 SEGMENT = timedelta(seconds=5)
 
 
@@ -43,6 +41,9 @@ class SqlKeyedLockProvider(ABC):
 
     A backend supplies two operations and nothing else.
     """
+
+    #: Each backend logs under its Java class's name, as Java's do; this is only the default.
+    _log = logging.getLogger("io.ekbatan.core.concurrent")
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -108,14 +109,14 @@ class SqlKeyedLockProvider(ABC):
         try:
             acquired = self._try_lock(conn, hashed, wait)
         except LockAcquisitionError:
-            _discard(conn)
+            _discard(conn, self._log)
             raise
         except Exception as exc:
-            _discard(conn)
+            _discard(conn, self._log)
             raise LockAcquisitionError(key, f"the lock backend failed: {exc}") from exc
 
         if not acquired:
-            _discard(conn)
+            _discard(conn, self._log)
             return None
         return self._holder.register(key, (hashed, conn), max_hold, self._release)
 
@@ -128,12 +129,12 @@ class SqlKeyedLockProvider(ABC):
             # this session still holds the lock: handing the connection back to the pool would
             # hand the lock to whoever borrows it next, invisibly. Closing the physical
             # connection is what makes the server drop the session and its locks with it.
-            LOG.exception("failed to release a database lock; discarding its session")
+            self._log.exception("failed to release a database lock; discarding its session")
             conn.invalidate()
-        _discard(conn)
+        _discard(conn, self._log)
 
 
-def _discard(conn: Connection) -> None:
+def _discard(conn: Connection, log: logging.Logger) -> None:
     """Close and return the connection, whatever state it is in.
 
     A connection that raised part-way through a lock statement may be carrying settings the
@@ -143,7 +144,7 @@ def _discard(conn: Connection) -> None:
     try:
         conn.close()
     except Exception:  # pragma: no cover - the pool is already unhappy
-        LOG.debug("failed to close a lock connection", exc_info=True)
+        log.debug("failed to close a lock connection", exc_info=True)
 
 
 def _is_lock_timeout(error: Exception) -> bool:
@@ -159,6 +160,8 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
     ``lock_timeout`` for a bounded wait - so the waiter is genuinely queued in the database and
     a releasing holder hands over immediately, rather than the waiter polling.
     """
+
+    _log = logging.getLogger("io.ekbatan.core.concurrent.PostgresKeyedLockProvider")
 
     def _try_lock(self, conn: Connection, key: int, wait: timedelta) -> bool:
         from sqlalchemy import text
@@ -182,7 +185,7 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
             # Java marks the connection dirty here and evicts it rather than releasing it. The
             # next borrower would otherwise inherit this lock_timeout and wait on some
             # unrelated statement for a duration nobody set.
-            LOG.warning("could not reset lock_timeout; the connection will be discarded")
+            self._log.warning("could not reset lock_timeout; the connection will be discarded")
             conn.invalidate()
             raise
         return True
@@ -222,6 +225,8 @@ class MySQLKeyedLockProvider(SqlKeyedLockProvider):
     above one second and not below it - a 500ms wait does not become 1s, it becomes none.)
     """
 
+    _log = logging.getLogger("io.ekbatan.core.concurrent.MySQLKeyedLockProvider")
+
     def _try_lock(self, conn: Connection, key: int, wait: timedelta) -> bool:
         from sqlalchemy import text
 
@@ -257,6 +262,8 @@ class MariaDBKeyedLockProvider(MySQLKeyedLockProvider):
     argument: MariaDB honours millisecond precision where MySQL rounds up to a second. Kept as
     its own class rather than a flag, because a flag is something to set wrongly.
     """
+
+    _log = logging.getLogger("io.ekbatan.core.concurrent.MariaDBKeyedLockProvider")
 
 
 class SqlKeyedLockProviderBuilder[P: SqlKeyedLockProvider]:

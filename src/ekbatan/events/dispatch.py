@@ -58,7 +58,7 @@ DELIVERY_LAG = histogram(
 
 __all__ = ["EventDispatch"]
 
-LOG = logging.getLogger("ekbatan.events")
+LOG = logging.getLogger("io.ekbatan.events.localeventhandler.job.EventHandlingJob")
 
 DEFAULT_RETENTION = timedelta(days=7)
 DEFAULT_MAX_BACKOFF = timedelta(minutes=5)
@@ -120,11 +120,11 @@ class EventDispatch:
         self._batch = batch_size
         self._retention = retention
         self._max_backoff = max_backoff
-        self._shards = Concurrently(len(registry.shards), name="ekbatan-dispatch-shard")
+        self._shards = Concurrently(len(registry.shards), name="ekbatan-dispatch-shard", log=LOG)
         # One pool per shard, each the width of a batch - which is the shape Java has, where
         # the executor is created inside each shard's batch rather than around the round.
         self._delivery = {
-            shard: Concurrently(batch_size, name=f"ekbatan-handler-{shard}")
+            shard: Concurrently(batch_size, name=f"ekbatan-handler-{shard}", log=LOG)
             for shard in registry.shards
         }
 

@@ -953,7 +953,7 @@ def run_ours(db: Database, handle: str, root: Path, step: Step) -> Outcome:
     config = ShardingConfig.single(plain, username=username, password=password)
     captured: list[str] = []
     handler = _Capture(captured)
-    logger = logging.getLogger("ekbatan.migrations")
+    logger = logging.getLogger("io.ekbatan.flyway.FlywayMigrator")
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     try:

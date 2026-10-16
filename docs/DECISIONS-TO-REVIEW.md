@@ -291,6 +291,19 @@ db-scheduler runs - not the Quartz Scheduler.
 | daylight-saving behaviour left as croniter's, for every style (Dracula bug 10) | not a Quartz difference; changing it changes every style | the user |
 | tests compare against answers recorded from cron-utils itself (56,477 cases, plus for 24,107 patterns whether Java throws from the first of some month); the recorder and a checksum-pinned Java runner are committed | the tests need no Java; anyone can regenerate or check the answers | built |
 
+## Log and trace names, as Java's (`EKB-0248`)
+
+Asked by the user on 2026-10-16: fix Dracula 6, matching Java.
+
+| decision | why | who |
+| --- | --- | --- |
+| each logger named after the Java class that writes the same lines (`io.ekbatan.core.action.ActionExecutor`, `...Retry`, `...shard.DatabaseRegistry`, one per SQL lock backend, `io.ekbatan.flyway.FlywayMigrator` for the migrator, ...); every name checked against a Java class file | a logging config written for Java applies unchanged | the user |
+| a Python-only line goes under the Java class with the same job (fan-out's "still had work" under `EventFanoutJob`, the lock watchdog under `KeyedReentrantHolder`) | there is no Java line to copy, only a class doing that work | built |
+| tracer scope `io.ekbatan.core`, at this package's version | Java's scope; Java reports its artifact's version, so this reports its own | built |
+| `opentelemetry-api` is a dependency; the SDK stays the application's choice | Java's `ekbatan-core` depends on the API; without an SDK both are no-ops. Reverses the old "not a dependency" choice | the user |
+| the migrator's MDC keys `ekbatanShard` and `ekbatanTarget` as record attributes, from a context variable through a filter on its logger | Python has no MDC; this is its standard counterpart. Unlike Java's thread-wide MDC, the keys reach only the migrator's own lines | built |
+| log messages themselves left as they are | the row was about names; messages differ in places (`executing` vs `Executing`) | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

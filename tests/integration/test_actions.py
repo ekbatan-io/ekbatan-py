@@ -333,7 +333,10 @@ class CollapsesAction(Action[None, None]):
 def test_a_failure_that_is_not_an_ordinary_error_is_still_reported(executor, caplog, outbox):
     """Catching only Exception meant one of these was recorded as neither success nor failure:
     no log line, no span status, nothing - while the unit of work had certainly failed."""
-    with caplog.at_level(logging.ERROR, logger="ekbatan.action"), pytest.raises(KeyboardInterrupt):
+    with (
+        caplog.at_level(logging.ERROR, logger="io.ekbatan.core.action.ActionExecutor"),
+        pytest.raises(KeyboardInterrupt),
+    ):
         run(executor, CollapsesAction(executor.clock), None)
 
     assert any("CollapsesAction failed" in r.getMessage() for r in caplog.records)
@@ -458,10 +461,10 @@ def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
 # -------------------------------------------------------------------------------- tracing
 
 
-def test_the_framework_runs_without_a_tracing_stack(executor):
-    """OpenTelemetry is not a dependency. A persistence framework that drags a tracing stack
-    into every project installing it has made a decision it had no standing to make."""
-    from ekbatan._tracing import span, tracing_enabled
+def test_the_framework_runs_without_a_tracing_sdk(executor):
+    """OpenTelemetry's API is a dependency, as in Java; the SDK is the application's choice.
+    Without one, spans go nowhere and cost nothing - Java's no-op `GlobalOpenTelemetry`."""
+    from ekbatan._tracing import span
 
     with span("probe", {"ekbatan.thing": "value"}) as s:
         s.set({"ekbatan.other": 1})
@@ -469,7 +472,6 @@ def test_the_framework_runs_without_a_tracing_stack(executor):
         s.failed(ValueError("boom"), outcome="ekbatan.action.outcome")
 
     assert run(executor, ReadsTheClockAction(executor.clock), None) is not None
-    assert isinstance(tracing_enabled(), bool)
 
 
 # -- the shape of a trace, not only its names ---------------------------------------------------
@@ -534,6 +536,8 @@ def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallets):
     execute = by_name["ekbatan.action.execute"]
 
     assert len({s.context.trace_id for s in collected if s.name.startswith("ekbatan.action")}) == 1
+    # Java's scope, so a filter on it catches both ports' spans.
+    assert {s.instrumentation_scope.name for s in collected} == {"io.ekbatan.core"}
     for child in ("ekbatan.action.perform", "ekbatan.action.persist"):
         assert by_name[child].parent.span_id == execute.context.span_id, (
             f"{child} has to sit under the execute span"

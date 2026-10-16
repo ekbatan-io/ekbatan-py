@@ -33,7 +33,7 @@ import threading
 import time
 from collections.abc import Callable
 
-LOG = logging.getLogger("ekbatan.locks")
+LOG = logging.getLogger("io.ekbatan.core.concurrent.KeyedReentrantHolder")
 
 #: Rebuild the heap once this share of it is cancelled entries. A hold that is closed normally -
 #: which is nearly all of them - leaves its deadline behind, so without this the heap would grow

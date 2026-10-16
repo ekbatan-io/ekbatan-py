@@ -295,7 +295,7 @@ def test_a_database_a_newer_release_migrated_is_left_alone(backend, request, fil
     migrate(single(url), files.path)
 
     files.drop("V2__gadgets.sql")
-    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ()
@@ -310,7 +310,7 @@ def test_a_database_a_newer_release_migrated_is_left_alone(backend, request, fil
 def test_query_output_goes_to_the_log_not_the_screen(backend, request, files, caplog, capsys):
     url = fresh(backend, request)
     files.add("V1__hello.sql", "SELECT 'hello from the migration' AS greeting;")
-    caplog.set_level(logging.INFO, logger="ekbatan.migrations")
+    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
 
     migrate(single(url), files.path)
 
@@ -323,7 +323,7 @@ def test_query_output_can_be_switched_off(backend, request, files, caplog, capsy
     """Flyway's `outputQueryResults=false`."""
     url = fresh(backend, request)
     files.add("V1__hello.sql", "SELECT 'hello from the migration' AS greeting;")
-    caplog.set_level(logging.INFO, logger="ekbatan.migrations")
+    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
 
     migrate(single(url), files.path, output_query_results=False)
 
@@ -409,7 +409,7 @@ def test_a_postgres_index_can_be_built_concurrently(backend, request, files, cap
         "V2__index.sql",
         "-- transactional: false\nCREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);",
     )
-    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
 
     migrate(single(url), files.path)
 
@@ -585,7 +585,7 @@ def test_a_database_whose_lock_is_held_waits_and_another_database_does_not(
     other: MySQL and MariaDB lock names are server-wide, so the name carries the database."""
     busy, free = fresh(backend, request, "_a"), fresh(backend, request, "_b")
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-    caplog.set_level(logging.INFO, logger="ekbatan.migrations")
+    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
 
     held = Held(busy, backend.dialect)
     outcome: list[object] = []
@@ -892,7 +892,7 @@ def test_an_older_release_applies_its_own_repeatable_again(backend, request, fil
 
     files.drop("V2__two.sql")
     files.add("R__x.sql", ran("old"))
-    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ("R__x.sql",)
@@ -996,7 +996,7 @@ def test_a_failure_a_newer_release_recorded_does_not_stop_an_older_one(
         migrate(single(url), files.path)
 
     files.drop("V2__loose.sql")
-    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ()
@@ -1331,7 +1331,7 @@ def test_the_log_says_what_it_did(backend, request, files, caplog):
     - in this migrator's words."""
     url = fresh(backend, request)
     files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
-    caplog.set_level(logging.INFO, logger="ekbatan.migrations")
+    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
 
     migrate(single(url), files.path)
     migrate(single(url), files.path)
@@ -1354,7 +1354,7 @@ def test_the_databases_own_warnings_are_logged(backend, request, files, caplog):
         pytest.skip("SQLite has no warnings to report")
     url = fresh(backend, request)
     files.add("V1__tidy.sql", "DROP TABLE IF EXISTS nothing_here;")
-    caplog.set_level(logging.WARNING, logger="ekbatan.migrations")
+    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
 
     migrate(single(url), files.path)
 

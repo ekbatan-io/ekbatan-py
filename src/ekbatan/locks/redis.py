@@ -35,7 +35,7 @@ from .base import Lease, check
 
 __all__ = ["DEFAULT_NAMESPACE", "RedisKeyedLockProvider", "RedisKeyedLockProviderBuilder"]
 
-LOG = logging.getLogger("ekbatan.locks")
+LOG = logging.getLogger("io.ekbatan.keyedlock.redis.RedisKeyedLockProvider")
 
 #: What Java's builder defaults to. The colon is added by the provider.
 DEFAULT_NAMESPACE = "ekbatan-lock"

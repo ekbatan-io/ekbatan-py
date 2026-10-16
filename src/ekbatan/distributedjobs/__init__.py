@@ -49,7 +49,7 @@ __all__ = [
     "job_registry",
 ]
 
-LOG = logging.getLogger("ekbatan.distributedjobs")
+LOG = logging.getLogger("io.ekbatan.distributedjobs.JobRegistry")
 
 #: The framework's heartbeat interval - deliberately ours, not db-scheduler's five minutes.
 #:
@@ -621,7 +621,7 @@ def _run_job(job: DistributedJob, name: str) -> Callable[[Any, ExecutionContext]
             job.execute(ctx)
         except BaseException as exc:
             # BaseException, not Exception. db-scheduler does log what escapes, but under its
-            # own logger: anyone filtering on `ekbatan.*` saw a job log "execution started" and
+            # own logger: anyone filtering on `io.ekbatan.*` saw a job log "execution started" and
             # then nothing at all, with no terminal line either way. Re-raised unchanged, so
             # db-scheduler still treats it as a failure; this only makes our own log tell the
             # whole story.

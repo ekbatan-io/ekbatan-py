@@ -398,6 +398,7 @@ version = "0.1.0.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "ekbatan-py-db-scheduler" },
+    { name = "opentelemetry-api" },
     { name = "pyyaml" },
     { name = "sqlalchemy" },
 ]
@@ -449,6 +450,7 @@ tracing = [
 [package.metadata]
 requires-dist = [
     { name = "ekbatan-py-db-scheduler", editable = "db-scheduler" },
+    { name = "opentelemetry-api", specifier = ">=1.27" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'codegen'", specifier = ">=3.2" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pymysql", marker = "extra == 'mariadb'", specifier = ">=1.1" },

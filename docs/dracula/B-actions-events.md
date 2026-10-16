@@ -296,4 +296,5 @@ sides. Ordered by surprise, highest first.
 - **Java:** `Action.java:69`, `ActionExecutor.java:80,429`
 - **Why:** a Python convention.
 - **Could match Java?** partly. Logger names could follow module paths (`ekbatan.action.executor`). The rest is idiom.
+- **Logger names fixed** (`EKB-0248`): they are now Java's class names, `io.ekbatan.core.action.ActionExecutor` and the rest. The snake_case names stay.
 - **Surprise:** low

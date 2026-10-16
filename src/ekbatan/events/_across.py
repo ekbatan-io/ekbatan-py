@@ -22,17 +22,16 @@ import logging
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 
-LOG = logging.getLogger("ekbatan.events")
-
 
 class Concurrently:
     """A lazily built, reused pool, and a way to run one round through it."""
 
-    __slots__ = ("_name", "_pool", "_size")
+    __slots__ = ("_log", "_name", "_pool", "_size")
 
-    def __init__(self, size: int, *, name: str) -> None:
+    def __init__(self, size: int, *, name: str, log: logging.Logger) -> None:
         self._size = max(size, 1)
         self._name = name
+        self._log = log  # the owning job's, so a failed round is logged under its class
         self._pool: ThreadPoolExecutor | None = None
 
     def run[I, T](self, items: Sequence[I], work: Callable[[I], T]) -> list[T]:
@@ -56,7 +55,7 @@ class Concurrently:
             try:
                 results.append(future.result())
             except BaseException as error:  # re-raised below, once the round has finished
-                LOG.warning("%s: %r failed this round: %s", self._name, item, error)
+                self._log.warning("%s: %r failed this round: %s", self._name, item, error)
                 if failure is None:
                     failure = error
         if failure is not None:

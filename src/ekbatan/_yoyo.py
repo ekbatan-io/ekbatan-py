@@ -44,7 +44,7 @@ from .locks.base import lock_key_hash
 if TYPE_CHECKING:
     from sqlalchemy.engine import URL
 
-LOG = logging.getLogger("ekbatan.migrations")
+LOG = logging.getLogger("io.ekbatan.flyway.FlywayMigrator")
 
 #: How long a process waiting for another's migration sleeps between attempts. Every attempt is
 #: its own short statement, so a waiting session is idle between them rather than blocked inside

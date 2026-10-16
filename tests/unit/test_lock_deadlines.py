@@ -94,7 +94,7 @@ def test_a_deadline_that_raises_does_not_take_the_watchdog_with_it(caplog):
     def boom() -> None:
         raise RuntimeError("release failed")
 
-    with caplog.at_level("ERROR", logger="ekbatan.locks"):
+    with caplog.at_level("ERROR", logger="io.ekbatan.core.concurrent.KeyedReentrantHolder"):
         watcher.after(0.01, boom)
         time.sleep(0.05)
         watcher.after(0.01, survived.set)

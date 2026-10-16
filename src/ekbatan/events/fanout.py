@@ -41,7 +41,7 @@ NOTIFICATIONS_CREATED = counter(
 
 __all__ = ["EventFanout"]
 
-LOG = logging.getLogger("ekbatan.events")
+LOG = logging.getLogger("io.ekbatan.events.localeventhandler.job.EventFanoutJob")
 
 
 class EventFanout:
@@ -73,7 +73,7 @@ class EventFanout:
         self._notification_repository = EventNotificationRepository(registry, notifications)
         self._clock = clock or SystemClock()
         self._batch = batch_size
-        self._shards = Concurrently(len(registry.shards), name="ekbatan-fanout-shard")
+        self._shards = Concurrently(len(registry.shards), name="ekbatan-fanout-shard", log=LOG)
 
     def drain_once(self) -> int:
         """One batch on every shard, the shards concurrently.

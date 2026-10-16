@@ -67,8 +67,9 @@ import io
 import logging
 import re
 import time
-from collections.abc import Callable, Iterable, Sequence
-from contextlib import redirect_stdout
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager, redirect_stdout
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -88,6 +89,8 @@ if TYPE_CHECKING:
 __all__ = [
     "BASELINE_DESCRIPTION",
     "HISTORY_TABLE",
+    "MDC_SHARD",
+    "MDC_TARGET",
     "BaselineResult",
     "Hook",
     "InfoResult",
@@ -114,7 +117,46 @@ __all__ = [
     "validate_scripts",
 ]
 
-LOG = logging.getLogger("ekbatan.migrations")
+LOG = logging.getLogger("io.ekbatan.flyway.FlywayMigrator")
+
+#: Java's `FlywayMigrator.MDC_SHARD`: while a target migrates, each record this module logs
+#: carries its shard as ``group:member`` - ``1:0`` - under this attribute name, so a formatter
+#: written for Java's ``%X{ekbatanShard}`` has ``%(ekbatanShard)s`` here.
+MDC_SHARD = "ekbatanShard"
+
+#: Java's `FlywayMigrator.MDC_TARGET`: the target's name - ``mexico/member-0``.
+MDC_TARGET = "ekbatanTarget"
+
+# Python has no MDC. Its standard counterpart is this: the values live in a context variable,
+# which is per thread and per task as the MDC is per thread, and a filter on this module's
+# logger copies them onto each record it sees. Outside a migration a record has neither
+# attribute, as Java's MDC has neither key - `Formatter(defaults=...)` covers a format that
+# names them.
+_log_context: ContextVar[dict[str, str] | None] = ContextVar("ekbatan_migration_log", default=None)
+
+
+class _InLogContext(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        for key, value in (_log_context.get() or {}).items():
+            setattr(record, key, value)
+        return True
+
+
+LOG.addFilter(_InLogContext())
+
+
+@contextmanager
+def _in_log_context(each: Target) -> Iterator[None]:
+    """Java's `inLogContext`: the target's shard and name on every record while it migrates,
+    and whatever a caller had there put back afterwards, failure or not."""
+    token = _log_context.set(
+        {MDC_SHARD: f"{each.shard.group}:{each.shard.member}", MDC_TARGET: each.name}
+    )
+    try:
+        yield
+    finally:
+        _log_context.reset(token)
+
 
 #: One row per migration applied, per repeatable migration each time it is applied, and per
 #: failure that could not be rolled back - Flyway's ``flyway_schema_history``, under this name.
@@ -1140,13 +1182,14 @@ def _each[T](chosen: Sequence[Target], verb: str, action: Callable[[Target], T])
 
 def _run(chosen: Sequence[Target], scripts: Scripts, output_query_results: bool) -> list[Result]:
     def one(each: Target) -> Result:
-        outcome = _migrate(each, scripts, output_query_results)
-        LOG.info(
-            "%s is at version %s (%d applied)",
-            each.name,
-            outcome.target_schema_version,
-            outcome.migrations_executed,
-        )
+        with _in_log_context(each):
+            outcome = _migrate(each, scripts, output_query_results)
+            LOG.info(
+                "%s is at version %s (%d applied)",
+                each.name,
+                outcome.target_schema_version,
+                outcome.migrations_executed,
+            )
         return Result(each, outcome)
 
     return _each(chosen, "migrated", one)

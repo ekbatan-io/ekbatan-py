@@ -29,7 +29,7 @@ from .plan import PersistableChanges
 
 __all__ = ["ChangePersister"]
 
-LOG = logging.getLogger("ekbatan.action")
+LOG = logging.getLogger("io.ekbatan.core.action.persister.ChangePersister")
 
 
 class ChangePersister:

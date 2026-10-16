@@ -1,8 +1,9 @@
 # Observability
 
-The action pipeline is instrumented with the **OpenTelemetry API** only - no SDK. With no SDK
-registered at runtime every call is a no-op, so the framework costs nothing to an application
-that does not want tracing, and the absence path is the one most of the test suite exercises.
+The action pipeline is instrumented with the **OpenTelemetry API** only - no SDK. The API is a
+dependency, as it is of Java's `ekbatan-core`; with no SDK registered at runtime every call is a
+no-op, so the framework costs nothing to an application that does not want tracing, and the
+no-SDK path is the one most of the test suite exercises.
 
 **The span and metric names are a cross-language contract.** An operator filtering a trace on
 `ekbatan.action.name` is filtering across both implementations, so a service written here and one
@@ -19,10 +20,9 @@ Configure through the standard environment variables - `OTEL_EXPORTER_OTLP_ENDPO
 `OTEL_SERVICE_NAME`. The framework uses whatever the global provider returns, for both traces and
 metrics.
 
-This repository keeps the SDK in its own dependency group rather than in an extra, precisely so
-that `uv sync --all-extras` does **not** install it - otherwise the test proving the framework
-runs without a tracing stack would quietly stop testing anything. One CI job asks for the group
-and asserts the span names; every other job proves the absence path.
+This repository keeps the SDK in its own dependency group rather than in an extra, so that
+`uv sync --all-extras` does **not** install it and every other CI job runs as an application with
+no SDK. One CI job asks for the group and asserts the span names and their scope.
 
 ## Span hierarchy
 
@@ -78,12 +78,39 @@ Java logs the same facts at CRITICAL. Putting them on the span as well means the
 the failure also shows exactly what state the data is in - which is the question anyone looks at
 that trace to answer.
 
-### The instrumentation scope differs
+### The instrumentation scope
 
-Java reports scope `io.ekbatan.core` at the Java artifact's version. This port reports `ekbatan`
-at its own. That is deliberate: the scope names the library that produced the span, the two
-versions are independent, and a dashboard filtering on span *names* - which are identical - sees
-both.
+`io.ekbatan.core`, as Java's - so a filter on the scope, like one on the span names, catches
+both ports. The version is each port's own: Java reports its artifact's, this port its package's.
+The meter is Java's too: `io.ekbatan.events.localeventhandler`.
+
+## Loggers
+
+Each logger is named after the Java class that writes the same lines, as Java's
+`LoggerFactory.getLogger(SomeClass.class)` names them - so a logging config written for the Java
+port, `io.ekbatan.core.action: DEBUG` or `io.ekbatan: WARN`, applies here unchanged.
+
+| logger | logs |
+| --- | --- |
+| `io.ekbatan.core.action.ActionExecutor` | each action: executing, completed, failed; cross-shard warnings |
+| `io.ekbatan.core.action.Retry` | each retry |
+| `io.ekbatan.core.action.persister.ChangePersister` | what a persist wrote |
+| `io.ekbatan.core.persistence.TransactionManager` | transactions started, committed, rolled back |
+| `io.ekbatan.core.shard.DatabaseRegistry` | a shard routed to the default; a pool that failed to close |
+| `io.ekbatan.core.concurrent.KeyedReentrantHolder` | a lock released at its hold limit |
+| `io.ekbatan.core.concurrent.PostgresKeyedLockProvider`, `...MySQLKeyedLockProvider`, `...MariaDBKeyedLockProvider` | a lock that failed to release |
+| `io.ekbatan.keyedlock.redis.RedisKeyedLockProvider` | the same, for Redis |
+| `io.ekbatan.distributedjobs.JobRegistry` | jobs started, finished, failed; the registry starting and stopping |
+| `io.ekbatan.events.localeventhandler.job.EventFanoutJob` | fan-out |
+| `io.ekbatan.events.localeventhandler.job.EventHandlingJob` | handler failures and discarded notifications |
+| `io.ekbatan.flyway.FlywayMigrator` | migrations |
+
+While a target migrates, each line the migrator logs carries Java's MDC keys as record attributes:
+`ekbatanShard` (`1:0`) and `ekbatanTarget` (`mexico/member-0`). Java's pattern `%X{ekbatanShard}`
+is `%(ekbatanShard)s` here; give the formatter `defaults={"ekbatanShard": "", "ekbatanTarget": ""}`
+for the lines logged outside a migration, where Java's MDC prints nothing. Python has no MDC, so
+the keys are on the migrator's own lines only - not on lines a driver logs meanwhile, which Java's
+thread-wide MDC would also cover.
 
 ## Retry events
 
