@@ -93,8 +93,7 @@ refused with a clear error. Never guessed.
 On the day the clocks go forward, a time inside the missing hour runs at 03:00 here and not at
 all in Java; on the day they go back, a daily time inside the repeated hour runs twice here and
 once in Java. Every style, run through `CronSchedule` for QUARTZ and SPRING53 in Amsterdam and
-New York. Left alone: it is croniter's behaviour for every style, so changing it is its own
-decision. The tests keep their zones away from clock-change days.
+New York. Left alone, by the user's decision on 2026-10-16: it is croniter's behaviour for every style. The tests keep their zones away from clock-change days.
 
 ### The tests
 

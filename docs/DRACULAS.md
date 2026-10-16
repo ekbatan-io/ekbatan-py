@@ -31,7 +31,7 @@ whatever is decided about the rest.
 | 7 | The guide says to gitignore `schema.py`; a hatchling-built wheel then leaves it out silently | run | E |
 | 8 | `DIVERGENCE.md` says the built-in reads match Java; they read inside the open transaction and Java's do not | run | A |
 | 9 | A repository takes a `clock=` it never uses; the `Transaction` docstring names `registry.transaction()`, which does not exist | read | A |
-| 10 | Cron on clock-change days, every style: a time inside the hour skipped in spring runs at 03:00 here and not at all in Java; a daily time inside the hour repeated in autumn runs twice here and once in Java. Found while building the bug 2 fix | run (Amsterdam, New York) | D |
+| 10 | Cron on clock-change days, every style: a time inside the hour skipped in spring runs at 03:00 here and not at all in Java; a daily time inside the hour repeated in autumn runs twice here and once in Java. Found while building the bug 2 fix. **Left as is** - the user's decision, 2026-10-16 | run (Amsterdam, New York) | D |
 
 ## Part 2: the Draculas
 

@@ -288,7 +288,7 @@ db-scheduler runs - not the Quartz Scheduler.
 | a pattern cron-utils accepts but throws on while computing (`31W` with a shorter month in range, `6-2/2`) is refused when the schedule is built | the same failure, sooner, instead of an exception from inside the scheduler loop on reaching the bad month | built |
 | text outside printable ASCII refused | Java reads non-ASCII digits as digits; nobody writes them on purpose | built |
 | cron-utils' search reproduced: a start's fraction kept when the next second matches, nothing after 2099, nothing more than 100 years out, each `\|\|` part computed on its own | each is what Java returns; each is pinned by a test | built |
-| daylight-saving behaviour left as croniter's, for every style | it is not a Quartz difference and changing it changes every style; recorded as Dracula bug 10 for the user to decide | built |
+| daylight-saving behaviour left as croniter's, for every style (Dracula bug 10) | not a Quartz difference; changing it changes every style | the user |
 | tests compare against answers recorded from cron-utils itself (56,477 cases, plus for 24,107 patterns whether Java throws from the first of some month); the recorder and a checksum-pinned Java runner are committed | the tests need no Java; anyone can regenerate or check the answers | built |
 
 ## Ported an invariant Java already had - lower risk
