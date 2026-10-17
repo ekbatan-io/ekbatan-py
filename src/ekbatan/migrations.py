@@ -130,6 +130,7 @@ _NAMING_LOG = logging.getLogger("org.flywaydb.core.internal.resource.ResourceNam
 _BASELINE_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbBaseline")
 _REPAIR_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbRepair")
 _CALLBACK_LOG = logging.getLogger("org.flywaydb.core.internal.callback.SqlScriptCallbackFactory")
+_SCANNER_LOG = logging.getLogger("org.flywaydb.core.internal.scanner.filesystem.FileSystemScanner")
 
 #: Java's `FlywayMigrator.MDC_SHARD`: while a target migrates, each record the migrator logs
 #: carries its shard as ``group:member`` - ``1:0`` - under this attribute name, so a formatter
@@ -168,6 +169,7 @@ for _logger in (
     _BASELINE_LOG,
     _REPAIR_LOG,
     _CALLBACK_LOG,
+    _SCANNER_LOG,
 ):
     _logger.addFilter(_FILTER)
 
@@ -502,13 +504,78 @@ class _Resource:
     read: Callable[[], bytes] = field(repr=False)
 
 
+_PREFIX = re.compile(r"(?P<prefix>[A-Za-z][A-Za-z0-9+.-]+):(?P<rest>.*)", re.DOTALL)
+
+
 def _location_resources(location: str) -> list[_Resource]:
-    directory = Path(location)
-    if not directory.is_dir():
-        raise ValidationError(f"no migrations directory at {directory}")
-    found = []
-    for path in sorted(_files(directory)):
-        found.append(_Resource(path.relative_to(directory).as_posix(), str(path), path.read_bytes))
+    """The files of one location, as Flyway's scanners find them.
+
+    - ``filesystem:<path>`` and a plain path are a folder. A folder that is not there, or a
+      file in its place, is skipped with Flyway's ERROR line and the run carries on - a plain
+      path is never read as a classpath location, which in Java finds nothing and "succeeds".
+    - ``classpath:<package>/<folder>`` is a folder inside an importable package, found through
+      ``importlib.resources``, so it works from an installed wheel. The first part names the
+      top-level package, as a classpath root holds Java's; ``classpath:db/migration``, Java's
+      default, is the ``migration`` folder of a package ``db``. A package that is not there
+      holds nothing, as a classpath location nobody provides holds nothing in Java.
+    """
+    match = _PREFIX.fullmatch(location)
+    prefix = match["prefix"].lower() if match else ""
+    if prefix == "classpath":
+        return _classpath_resources(location, match["rest"] if match else "")
+    if prefix == "filesystem":
+        path = match["rest"] if match else location
+    elif match and len(match["prefix"]) > 1:
+        raise ValidationError(
+            f"Unknown prefix for location (should be one of filesystem:, classpath:): {location}"
+        )
+    else:
+        path = location
+    directory = Path(path)
+    problem = (
+        "not found"
+        if not directory.exists()
+        else "not readable"
+        if not os.access(directory, os.R_OK)
+        else "not a directory"
+        if not directory.is_dir()
+        else None
+    )
+    if problem is not None:
+        _SCANNER_LOG.error("Skipping filesystem location: %s (%s)", path, problem)
+        return []
+    return [
+        _Resource(found.relative_to(directory).as_posix(), str(found), found.read_bytes)
+        for found in sorted(_files(directory))
+    ]
+
+
+def _classpath_resources(location: str, path: str) -> list[_Resource]:
+    from importlib import resources
+
+    parts = [part for part in path.strip("/").split("/") if part]
+    if not parts:
+        raise ValidationError(f"a classpath location names a package: {location}")
+    try:
+        root: Any = resources.files(parts[0])
+    except (ImportError, TypeError, ValueError):
+        LOG.debug("%s: no package %s", location, parts[0])
+        return []
+    folder = root.joinpath(*parts[1:]) if len(parts) > 1 else root
+    if not folder.is_dir():
+        LOG.debug("%s: no folder %s", location, "/".join(parts[1:]))
+        return []
+    found: list[_Resource] = []
+
+    def walk(directory: Any, prefix: str) -> None:
+        for entry in sorted(directory.iterdir(), key=lambda e: e.name):
+            if entry.is_dir():
+                if not entry.name.startswith("."):
+                    walk(entry, f"{prefix}{entry.name}/")
+            elif entry.is_file():
+                found.append(_Resource(f"{prefix}{entry.name}", str(entry), entry.read_bytes))
+
+    walk(folder, "")
     return found
 
 

@@ -493,9 +493,9 @@ def test_no_location_means_javas_default():
     assert FlywayMigrator.builder().locations()._locations == ("classpath:db/migration",)
 
 
-def test_a_missing_location_is_refused_before_any_database_is_reached(tmp_path):
-    with pytest.raises(ValidationError, match="no migrations directory"):
-        FlywayMigrator.builder().with_data_source(a_source()).locations(tmp_path / "nope").migrate()
+def test_an_unknown_location_prefix_is_refused_before_any_database_is_reached():
+    with pytest.raises(ValidationError, match="Unknown prefix for location"):
+        FlywayMigrator.builder().with_data_source(a_source()).locations("s3:bucket/x").migrate()
 
 
 def test_with_data_source_is_javas_default_target():

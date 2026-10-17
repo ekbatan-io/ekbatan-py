@@ -68,6 +68,17 @@ def schema(key: str, precreate: bool) -> None:
 
 
 quick = str(SQL / "quick")
+
+# Java's `classpath:db/parityF` is a test resource folder; Python's is the `parityF` folder of a
+# package `db` on sys.path, holding the same file.
+import shutil
+import sys
+import tempfile
+
+_root = Path(tempfile.mkdtemp())
+(_root / "db" / "parityF").mkdir(parents=True)
+shutil.copy(SQL / "quick" / "V1__quick.sql", _root / "db" / "parityF" / "V1__quick.sql")
+sys.path.insert(0, str(_root))
 loc("filesystem_prefix", "filesystem:" + quick)
 loc("plain_absolute_path", quick)
 loc("classpath_prefix", "classpath:db/parityF")

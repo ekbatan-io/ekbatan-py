@@ -823,3 +823,63 @@ def test_placeholder_settings_are_flyways_by_default():
         configuration._placeholder_separator,
         configuration._lock_retry_count,
     ) == (True, "${", "}", ":", 50)
+
+
+# -- locations: filesystem: and classpath: ------------------------------------------------------
+
+SCANNER_LOG = "org.flywaydb.core.internal.scanner.filesystem.FileSystemScanner"
+
+
+def test_a_filesystem_prefix_and_a_plain_path_are_the_same_folder(tmp_path):
+    """Row 20 of the scan: Python refused the prefix. A plain absolute path is a folder too -
+    Java reads it as a classpath location and finds nothing, a trap not copied (row 21)."""
+    write(tmp_path, "V1__one.sql")
+
+    assert names(validate_scripts(f"filesystem:{tmp_path}")) == ["V1__one.sql"]
+    assert names(validate_scripts(str(tmp_path))) == ["V1__one.sql"]
+
+
+@pytest.mark.parametrize(
+    ("where", "problem"), [("nowhere", "not found"), ("a_file", "not a directory")]
+)
+def test_a_folder_that_is_not_there_is_skipped_with_flyways_error_line(
+    tmp_path, caplog, where, problem
+):
+    """Row 18 of the scan: Flyway logs it, skips it and migrates what it found; Python refused
+    the whole run."""
+    write(tmp_path / "good", "V1__one.sql")
+    write(tmp_path, "a_file", "not a folder")
+    missing = tmp_path / where
+
+    with caplog.at_level(logging.ERROR, logger=SCANNER_LOG):
+        scripts = validate_scripts(f"filesystem:{missing}", f"filesystem:{tmp_path / 'good'}")
+
+    assert names(scripts) == ["V1__one.sql"]
+    (line,) = [r for r in caplog.records if r.name == SCANNER_LOG]
+    assert line.levelno == logging.ERROR
+    assert line.getMessage() == f"Skipping filesystem location: {missing} ({problem})"
+
+
+def test_an_unknown_prefix_is_refused():
+    with pytest.raises(ValidationError, match="Unknown prefix for location"):
+        validate_scripts("s3:bucket/migrations")
+
+
+def test_a_classpath_location_is_a_folder_in_an_importable_package(tmp_path, monkeypatch):
+    """Python's nearest thing to a classpath root: an importable top-level package, read through
+    importlib.resources, so it works from a wheel too."""
+    write(tmp_path / "parity_app" / "db" / "migration", "V1__one.sql")
+    write(tmp_path / "parity_app", "__init__.py", "")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    scripts = validate_scripts("classpath:parity_app/db/migration")
+
+    assert names(scripts) == ["V1__one.sql"]
+    assert scripts[0].path.endswith("parity_app/db/migration/V1__one.sql")
+
+
+def test_a_classpath_location_nobody_provides_holds_nothing(caplog):
+    """As in Java: `classpath:db/migration`, the default, with no package `db`, finds no files -
+    and the run warns "No migrations found" once it reaches the database."""
+    assert validate_scripts("classpath:no_such_package_here/migration") == ()
+    assert validate_scripts(FlywayMigrator.DEFAULT_LOCATION) == ()
