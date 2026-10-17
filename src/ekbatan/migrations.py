@@ -121,6 +121,7 @@ _SCRIPT_LOG = logging.getLogger("org.flywaydb.core.internal.sqlscript.DefaultSql
 _NAMING_LOG = logging.getLogger("org.flywaydb.core.internal.resource.ResourceNameValidator")
 _BASELINE_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbBaseline")
 _REPAIR_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbRepair")
+_CALLBACK_LOG = logging.getLogger("org.flywaydb.core.internal.callback.SqlScriptCallbackFactory")
 
 #: Java's `FlywayMigrator.MDC_SHARD`: while a target migrates, each record the migrator logs
 #: carries its shard as ``group:member`` - ``1:0`` - under this attribute name, so a formatter
@@ -158,7 +159,7 @@ for _logger in (
     _NAMING_LOG,
     _BASELINE_LOG,
     _REPAIR_LOG,
-    logging.getLogger("org.flywaydb.core.internal.sqlscript.DefaultSqlScriptExecutor"),
+    _CALLBACK_LOG,
 ):
     _logger.addFilter(_FILTER)
 
@@ -688,13 +689,19 @@ class _Session:
     schema: str = ""
     table: str = ""
     installed_by: str = ""
+    #: The files, for the callbacks run along the way.
+    scripts: Scripts | None = None
+    #: Each callback's statements, parsed once.
+    parsed: dict[str, tuple[list[Statement], bool]] = field(default_factory=dict)
 
     @property
     def schema_shown(self) -> str:
         return self.backend.quote(self.schema)
 
 
-def _open_session(each: Target, configuration: FlywayConfiguration) -> _Session:
+def _open_session(
+    each: Target, configuration: FlywayConfiguration, scripts: Scripts | None = None
+) -> _Session:
     backend = _open(each)
     try:
         schema = backend.current_schema()
@@ -707,6 +714,7 @@ def _open_session(each: Target, configuration: FlywayConfiguration) -> _Session:
         configuration,
         schema=schema,
         table=backend.quote(schema, configuration._table),
+        scripts=scripts,
     )
 
 
@@ -1590,13 +1598,16 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
     applied: list[MigrationScript] = []
     before: str | None = None
     try:
-        session = _open_session(each, configuration)
+        session = _open_session(each, configuration, scripts)
         backend = session.backend
         backend.refuse_if_read_only()
+        _fire(session, "afterConnect")
         backend.acquire(session.table, configuration._lock_retry_count)
         try:
             session.installed_by = configuration._installed_by or backend.current_user()
-            model = _validated(session, scripts)
+            model = _validating(session, lambda: _validated(session, scripts))
+            _fire(session, "createSchema")
+            _fire(session, "beforeCreateSchema")
             if not _history_exists(session):
                 model = _prepare_history(session, scripts) or model
             before = model.schema_version
@@ -1604,19 +1615,37 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
                 _Prepared(script, *_parse(session, script.text, script.path, script.config))
                 for script in model.pending
             ]
-            _MIGRATE_LOG.info(
-                "Current version of schema %s: %s",
-                session.schema_shown,
-                before or "<< Empty Schema >>",
-            )
-            _log_future(session, scripts, model)
-            started = time.monotonic()
-            for current in prepared:
-                _apply(session, current)
-                applied.append(current.script)
-            current = None
-            millis = int((time.monotonic() - started) * 1000)
-            _log_summary(session, applied, millis)
+            for callback in scripts.callbacks:
+                _parsed_callback(session, callback)
+            _fire(session, "beforeMigrate")
+            try:
+                _MIGRATE_LOG.info(
+                    "Current version of schema %s: %s",
+                    session.schema_shown,
+                    before or "<< Empty Schema >>",
+                )
+                _log_future(session, scripts, model)
+                started = time.monotonic()
+                versioned = True
+                for current in prepared:
+                    if versioned and current.script.repeatable:
+                        _fire(session, "afterVersioned")
+                        _fire(session, "beforeRepeatables")
+                        versioned = False
+                    _apply(session, current)
+                    applied.append(current.script)
+                current = None
+                if versioned:
+                    _fire(session, "afterVersioned")
+                millis = int((time.monotonic() - started) * 1000)
+                _log_summary(session, applied, millis)
+            except Exception:
+                _fire(session, "afterMigrateError")
+                raise
+            if applied:
+                _fire(session, "afterMigrateApplied")
+            _fire(session, "afterMigrate")
+            _fire(session, "afterMigrateOperationFinish")
         finally:
             backend.release()
     except MigrationError:
@@ -1641,6 +1670,19 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
         target_schema_version=target_version,
         migrations=tuple(s.script for s in applied),
     )
+
+
+def _validating[T](session: _Session, check: Callable[[], T]) -> T:
+    """Flyway's validate callbacks around a check: ``beforeValidate``, then ``afterValidate``
+    or ``afterValidateError``."""
+    _fire(session, "beforeValidate")
+    try:
+        found = check()
+    except MigrationError:
+        _fire(session, "afterValidateError")
+        raise
+    _fire(session, "afterValidate")
+    return found
 
 
 def _validated(session: _Session, scripts: Scripts) -> _Model:
@@ -1773,10 +1815,19 @@ def _migration_text(session: _Session, prepared: _Prepared) -> str:
     return f'schema {session.schema_shown} with repeatable migration "{script.description}"{marker}'
 
 
-def _execute(session: _Session, statements: Sequence[Statement], where: str) -> None:
-    """Each statement in turn, its results logged as Flyway logs them."""
+def _execute(
+    session: _Session,
+    statements: Sequence[Statement],
+    where: str,
+    *,
+    statement_callbacks: bool = False,
+) -> None:
+    """Each statement in turn, its results logged as Flyway logs them - with Flyway's
+    statement callbacks around each, for a migration's statements, not a callback's."""
     backend = session.backend
     for statement in statements:
+        if statement_callbacks:
+            _fire(session, "beforeEachMigrateStatement", own_transaction=False)
         try:
             if statement.copy_data is not None:
                 backend.copy(statement.sql, statement.copy_data)
@@ -1784,10 +1835,56 @@ def _execute(session: _Session, statements: Sequence[Statement], where: str) -> 
             else:
                 results = backend.run(statement.sql)
         except Exception as error:
+            if statement_callbacks:
+                _fire(session, "afterEachMigrateStatementError", own_transaction=False)
             raise _StatementFailed(where, statement, error) from error
+        if statement_callbacks:
+            _fire(session, "afterEachMigrateStatement", own_transaction=False)
         if session.configuration._output_query_results:
             for result in results:
                 _SCRIPT_LOG.info("%s", _ascii_table(result))
+
+
+class _CallbackFailed(Exception):
+    def __init__(self, event: str, error: BaseException) -> None:
+        super().__init__(f"Error while executing {event} callback: {error}")
+        self.event = event
+        self.error = error
+
+
+def _parsed_callback(session: _Session, callback: Callback) -> tuple[list[Statement], bool]:
+    if callback.script not in session.parsed:
+        session.parsed[callback.script] = _parse(
+            session, callback.text, callback.path, callback.config
+        )
+    return session.parsed[callback.script]
+
+
+def _fire(session: _Session, event: str, *, own_transaction: bool = True) -> None:
+    """Flyway's SQL callbacks for ``event``, in order of description - each in a transaction
+    of its own where it can run in one, unless it runs inside a migration's
+    (``beforeEachMigrate`` and the rest of the "each" events)."""
+    if session.scripts is None:
+        return
+    backend = session.backend
+    for callback in session.scripts.callbacks:
+        if callback.event != event:
+            continue
+        statements, in_transaction = _parsed_callback(session, callback)
+        _CALLBACK_LOG.info(
+            "Executing SQL callback: %s - %s%s",
+            event,
+            callback.description,
+            "" if in_transaction else " [non-transactional]",
+        )
+        try:
+            if own_transaction and in_transaction and not backend.in_transaction:
+                with backend.transaction():
+                    _execute(session, statements, callback.script)
+            else:
+                _execute(session, statements, callback.script)
+        except Exception as error:
+            raise _CallbackFailed(event, error) from error
 
 
 class _StatementFailed(Exception):
@@ -1829,7 +1926,6 @@ def _apply(session: _Session, prepared: _Prepared) -> None:
     script = prepared.script
     text = _migration_text(session, prepared)
     started = time.monotonic()
-    _MIGRATE_LOG.info("Migrating %s", text)
 
     def elapsed() -> int:
         return int((time.monotonic() - started) * 1000)
@@ -1846,19 +1942,33 @@ def _apply(session: _Session, prepared: _Prepared) -> None:
             success=success,
         )
 
+    def run() -> None:
+        _fire(session, "beforeEachMigrate", own_transaction=False)
+        _MIGRATE_LOG.info("Migrating %s", text)
+        _execute(session, prepared.statements, script.script, statement_callbacks=True)
+        _fire(session, "afterEachMigrate", own_transaction=False)
+
     try:
         if prepared.in_transaction:
             # One transaction for the migration and its row. On MySQL and MariaDB a schema
             # change still commits on its own inside it - nothing can stop that - but a
             # migration that only changes data is recorded atomically there too.
             with backend.transaction():
-                _execute(session, prepared.statements, script.script)
+                run()
                 record(True)
         else:
-            _execute(session, prepared.statements, script.script)
+            run()
             with backend.transaction():
                 record(True)
     except Exception as error:
+        # After the migration's transaction is rolled back, not inside it as Flyway runs it:
+        # there, on PostgreSQL, the aborted transaction fails the callback and its error
+        # replaces the migration's. A failing callback here is logged; the migration's error
+        # is the one raised.
+        try:
+            _fire(session, "afterEachMigrateError")
+        except _CallbackFailed as callback:
+            _MIGRATE_LOG.error("%s", callback)
         rolled_back = backend.transactional_ddl and prepared.in_transaction
         failed = f"Migration of {text} failed!"
         recorded: bool | BaseException = False
@@ -1887,7 +1997,7 @@ def _failure(
     backend = session.backend if session is not None else None
     where = f" in {current.script.script}" if current is not None else ""
     parts = [f"migrating {label} failed{where}: {type(error).__name__}: {error}".rstrip()]
-    if isinstance(error, _StatementFailed):
+    if isinstance(error, _StatementFailed | _CallbackFailed):
         parts = [f"migrating {label} failed{where}: {error}"]
     if backend is not None and backend.connection_lost():
         parts.append("The connection to the database was lost.")
@@ -1938,21 +2048,43 @@ def info(
     )
 
 
-def _info_of(each: Target, scripts: Scripts, configuration: FlywayConfiguration) -> InfoResult:
-    session = _open_session(each, configuration)
+def _info_of(
+    each: Target,
+    scripts: Scripts,
+    configuration: FlywayConfiguration,
+    *,
+    events: tuple[str, str, str] | None = ("beforeInfo", "afterInfo", "afterInfoError"),
+) -> InfoResult:
+    """Where everything stands, with Flyway's callbacks for the command around it."""
+    session = _open_session(each, configuration, scripts)
     try:
-        rows: list[_Row] = []
-        if _history_exists(session):
-            _refuse_another_shape(session)
-            rows = _read_history(session)
-        model = _model(scripts, rows)
-        return InfoResult(
-            target=each,
-            schema_version=model.schema_version,
-            migrations=tuple(model.infos),
-            problems=tuple(model.problems),
-            warnings=tuple(model.warnings),
-        )
+        _fire(session, "afterConnect")
+        if events:
+            _fire(session, events[0])
+        try:
+            rows: list[_Row] = []
+            if _history_exists(session):
+                _refuse_another_shape(session)
+                rows = _read_history(session)
+            model = _model(scripts, rows)
+            result = InfoResult(
+                target=each,
+                schema_version=model.schema_version,
+                migrations=tuple(model.infos),
+                problems=tuple(model.problems),
+                warnings=tuple(model.warnings),
+            )
+            if events and events[0] == "beforeValidate":
+                _refuse_invalid(each, result)
+        except Exception:
+            if events:
+                _fire(session, events[2])
+            raise
+        if events:
+            _fire(session, events[1])
+            if events[0] == "beforeInfo":
+                _fire(session, "afterInfoOperationFinish")
+        return result
     finally:
         session.backend.close()
 
@@ -1973,7 +2105,18 @@ def validate(
 
 
 def _validate(each: Target, scripts: Scripts, configuration: FlywayConfiguration) -> InfoResult:
-    result = _info_of(each, scripts, configuration)
+    result = _info_of(
+        each,
+        scripts,
+        configuration,
+        events=("beforeValidate", "afterValidate", "afterValidateError"),
+    )
+    count = len(result.migrations)
+    _VALIDATE_LOG.info("Successfully validated %d migration%s", count, "" if count == 1 else "s")
+    return result
+
+
+def _refuse_invalid(each: Target, result: InfoResult) -> None:
     problems = list(result.problems) + [
         f"Detected resolved migration not applied to database: "
         f"{m.version if m.version is not None else m.description} ({m.script})"
@@ -1984,9 +2127,6 @@ def _validate(each: Target, scripts: Scripts, configuration: FlywayConfiguration
             f"{each.label}: Validate failed: Migrations have failed validation\n  - "
             + "\n  - ".join(problems)
         )
-    count = len(result.migrations)
-    _VALIDATE_LOG.info("Successfully validated %d migration%s", count, "" if count == 1 else "s")
-    return result
 
 
 def repair(
@@ -2017,13 +2157,20 @@ def _repair(each: Target, scripts: Scripts, configuration: FlywayConfiguration) 
     from ._migration_backend import MigrationBackendError
 
     label = each.label
-    session = _open_session(each, configuration)
+    session = _open_session(each, configuration, scripts)
     backend = session.backend
     try:
         backend.refuse_if_read_only()
+        _fire(session, "afterConnect")
         backend.acquire(session.table, configuration._lock_retry_count)
         try:
-            result = _repair_locked(each, scripts, session)
+            _fire(session, "beforeRepair")
+            try:
+                result = _repair_locked(each, scripts, session)
+            except Exception:
+                _fire(session, "afterRepairError")
+                raise
+            _fire(session, "afterRepair")
         finally:
             backend.release()
     except MigrationBackendError as error:
@@ -2110,16 +2257,35 @@ def baseline(
     return _each(_choose(config, shards), "baselined", lambda each: _baseline(each, configuration))
 
 
-def _baseline(each: Target, configuration: FlywayConfiguration) -> BaselineResult:
+def _baseline(
+    each: Target, configuration: FlywayConfiguration, scripts: Scripts | None = None
+) -> BaselineResult:
+    session = _open_session(each, configuration, scripts)
+    try:
+        session.backend.refuse_if_read_only()
+        _fire(session, "afterConnect")
+        _fire(session, "beforeBaseline")
+        try:
+            result = _baseline_in(each, configuration, session)
+        except Exception:
+            _fire(session, "afterBaselineError")
+            raise
+        _fire(session, "afterBaseline")
+        return result
+    finally:
+        session.backend.close()
+
+
+def _baseline_in(
+    each: Target, configuration: FlywayConfiguration, session: _Session
+) -> BaselineResult:
     from ._migration_backend import MigrationBackendError
 
     label = each.label
     version = configuration._baseline_version
     description = configuration._baseline_description
-    session = _open_session(each, configuration)
     backend = session.backend
     try:
-        backend.refuse_if_read_only()
         backend.acquire(session.table, configuration._lock_retry_count)
         try:
             session.installed_by = configuration._installed_by or backend.current_user()
@@ -2162,8 +2328,6 @@ def _baseline(each: Target, configuration: FlywayConfiguration) -> BaselineResul
             backend.release()
     except MigrationBackendError as error:
         raise MigrationError(str(error)) from error
-    finally:
-        backend.close()
     return BaselineResult(each, version, description)
 
 
@@ -2305,7 +2469,8 @@ class FlywayMigratorBuilder:
         if description is not None:
             configuration.baseline_description(description)
         chosen = self._chosen()
-        return _each(chosen, "baselined", lambda each: _baseline(each, configuration))
+        scripts = self._scripts()
+        return _each(chosen, "baselined", lambda each: _baseline(each, configuration, scripts))
 
 
 # -- development helpers ---------------------------------------------------------------------

@@ -1335,7 +1335,12 @@ def test_the_builder_runs_info_repair_and_baseline_too(backend, request, files):
 
     legacy = fresh(backend, request, "_l")
     query(legacy, "CREATE TABLE legacy (id INTEGER)")
-    (done,) = FlywayMigrator.builder().with_data_source(data_source(legacy)).baseline("5")
+    (done,) = (
+        FlywayMigrator.builder()
+        .with_data_source(data_source(legacy))
+        .locations(files.path)
+        .baseline("5")
+    )
     assert done.version == "5"
 
 
@@ -1470,4 +1475,168 @@ def test_one_database_outside_a_layout_logs_no_stopped_at_line(backend, request,
     assert ekbatan_lines(caplog) == [
         "INFO|0:0|default|Migrating default (0:0)",
         "ERROR|0:0|default|Migrating default (0:0) failed",
+    ]
+
+
+# -- Flyway's SQL callbacks (item 40 of the parity fix) -------------------------------------------
+
+
+def runs_table_if_missing(dialect: str) -> str:
+    return RUNS[dialect].replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
+
+
+def test_flyway_callbacks_run_where_flyway_runs_them(backend, request, files, caplog):
+    """Each callback file Flyway runs, at the point it runs it: before and after the whole
+    migrate, around each migration, between the versioned and the repeatable ones, and only
+    when something was applied (rows 9 and 10 of the scan: Python refused `afterMigrate.sql`).
+    None of them is recorded in the history."""
+    url = fresh(backend, request)
+    files.add(
+        "beforeMigrate.sql", runs_table_if_missing(backend.dialect) + "\n" + ran("beforeMigrate")
+    )
+    for event in (
+        "beforeEachMigrate",
+        "afterEachMigrate",
+        "afterVersioned",
+        "beforeRepeatables",
+        "afterMigrateApplied",
+        "afterMigrate",
+    ):
+        files.add(f"{event}.sql", ran(event))
+    files.add("V1__one.sql", ran("V1")).add("R__x.sql", ran("R"))
+    caplog.set_level(logging.INFO)
+
+    migrate(single(url), files.path)
+    first = runs(url)
+    migrate(single(url), files.path)
+
+    assert first == [
+        "beforeMigrate",
+        "beforeEachMigrate",
+        "V1",
+        "afterEachMigrate",
+        "afterVersioned",
+        "beforeRepeatables",
+        "beforeEachMigrate",
+        "R",
+        "afterEachMigrate",
+        "afterMigrateApplied",
+        "afterMigrate",
+    ]
+    assert runs(url)[len(first) :] == ["beforeMigrate", "afterVersioned", "afterMigrate"], (
+        "nothing pending: no each-migrate, no afterMigrateApplied"
+    )
+    assert history(url) == [("1", "V1__one.sql"), (None, "R__x.sql")], "callbacks are not recorded"
+    assert "Executing SQL callback: afterMigrate - " in caplog.text, "Flyway's line"
+
+
+def test_callbacks_of_one_event_run_in_order_of_description(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("afterMigrate__b.sql", ran("b")).add("afterMigrate__a.sql", ran("a"))
+    files.add("afterMigrate.sql", ran("plain"))
+
+    migrate(single(url), files.path)
+
+    assert runs(url) == ["plain", "a", "b"]
+
+
+def test_a_failing_migration_runs_the_error_callbacks(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("V2__bad.sql", "INSERT INTO nowhere VALUES (1);")
+    files.add("afterEachMigrateError.sql", ran("afterEachMigrateError"))
+    files.add("afterMigrateError.sql", ran("afterMigrateError"))
+    files.add("afterMigrate.sql", ran("afterMigrate"))
+
+    with pytest.raises(MigrationError, match=r"failed in V2__bad\.sql"):
+        migrate(single(url), files.path)
+
+    assert runs(url) == ["afterEachMigrateError", "afterMigrateError"], "and no afterMigrate"
+
+
+def test_statement_callbacks_run_around_each_statement_of_a_migration(backend, request, files):
+    url = fresh(backend, request)
+    files.add("beforeMigrate.sql", runs_table_if_missing(backend.dialect))
+    files.add("beforeEachMigrateStatement.sql", ran("before"))
+    files.add("afterEachMigrateStatement.sql", ran("after"))
+    files.add("V1__two.sql", ran("one") + ran("two"))
+
+    migrate(single(url), files.path)
+
+    assert runs(url) == ["before", "one", "after", "before", "two", "after"]
+
+
+def test_a_failing_callback_fails_the_migrate_with_flyways_words(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("afterMigrate.sql", "INSERT INTO nowhere VALUES (1);")
+
+    with pytest.raises(MigrationError, match="Error while executing afterMigrate callback"):
+        migrate(single(url), files.path)
+
+    assert history(url) == [("1", "V1__runs.sql")], "what was applied stays recorded"
+
+
+def test_a_callback_can_run_outside_a_transaction(backend, request, files, caplog):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("afterMigrate.sql", ran("after")).add(
+        "afterMigrate.sql.conf", "executeInTransaction=false"
+    )
+    caplog.set_level(logging.INFO)
+
+    migrate(single(url), files.path)
+
+    assert runs(url) == ["after"]
+    assert "Executing SQL callback: afterMigrate -  [non-transactional]" in caplog.text, (
+        "Flyway's line, its two spaces included"
+    )
+
+
+def test_validate_callbacks_run_around_the_check(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    migrate(single(url), files.path)
+    files.add("beforeValidate.sql", ran("beforeValidate"))
+    files.add("afterValidate.sql", ran("afterValidate"))
+    files.add("afterValidateError.sql", ran("afterValidateError"))
+
+    migrate(single(url), files.path)
+    files.add("V1__runs.sql", RUNS[backend.dialect] + "\n-- edited")
+    with pytest.raises(MigrationError, match="has changed since it was applied"):
+        migrate(single(url), files.path)
+
+    assert runs(url) == ["beforeValidate", "afterValidate", "beforeValidate", "afterValidateError"]
+
+
+def test_a_post_apply_file_is_not_a_callback(backend, request, files, caplog):
+    """yoyo's hook is gone: Flyway skips the name, with its one line, and so does this."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("post-apply.sql", ran("post"))
+    caplog.set_level(logging.INFO)
+
+    migrate(single(url), files.path)
+
+    assert runs(url) == []
+    assert "1 SQL migrations were detected but not run" in caplog.text
+
+
+def test_info_repair_and_baseline_run_their_own_callbacks(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    migrate(single(url), files.path)
+    for event in ("afterConnect", "beforeInfo", "afterInfo", "beforeRepair", "afterRepair"):
+        files.add(f"{event}.sql", ran(event))
+
+    info(single(url), files.path)
+    repair(single(url), files.path)
+
+    assert runs(url) == [
+        "afterConnect",
+        "beforeInfo",
+        "afterInfo",
+        "afterConnect",
+        "beforeRepair",
+        "afterRepair",
     ]
