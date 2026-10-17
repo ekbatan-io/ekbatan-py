@@ -130,7 +130,9 @@ class EventFanout:
                 .event_date(event.event_date)
                 .state(EventNotificationState.PENDING)
                 .attempts(0)
-                .next_retry_at(now)
+                # Due at the event's own date, as Java's is: an older event fanned out late
+                # is still handled first, and one dated in the future waits for its date.
+                .next_retry_at(event.event_date)
                 .created_date(now)
                 .updated_date(now)
                 .build()

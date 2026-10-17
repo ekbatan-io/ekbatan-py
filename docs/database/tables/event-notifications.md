@@ -108,7 +108,7 @@ The rest are the delivery state, and they are this table's own:
 | `event_type` | no | not null here, unlike in `events`: sentinel rows are never fanned out |
 | `state` | no | `PENDING`, `FAILED`, `SUCCEEDED` or `EXPIRED` |
 | `attempts` | no | failed attempts so far |
-| `next_retry_at` | no | the earliest instant dispatch may try again |
+| `next_retry_at` | no | the earliest instant dispatch may try again; the event's `event_date` when fan-out writes the row |
 | `created_date` | no | when fan-out created the row |
 | `updated_date` | no | when it last changed |
 

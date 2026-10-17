@@ -20,7 +20,7 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 2 | One notification per (event, handler), written on the event's own shard | 6 on shard 0, 2 on shard 1 | same | same | `f.s0.*`, `f.s1.*` |
 | 3 | The notification copies the event's columns exactly | 0 mismatches | 0 | same | `f.copied_mismatch` |
 | 4 | New notification: `PENDING`, attempts 0, created/updated = fan-out clock | yes | yes | same | `f.s0.*` |
-| 5 | New notification's `next_retry_at` | the event's `event_date` | the fan-out time | differs | `f.s0.*`, `f.late.e3_row` |
+| 5 | New notification's `next_retry_at` | the event's `event_date` | same (fixed in EKB-0272) | same | `f.s0.*`, `f.late.e3_row` |
 | 6 | Fan-out run again, or an event flipped back to undelivered, adds no duplicate rows | 6 rows stay 6 | same | same | `f.round2`, `f.refanout.*` |
 | 7 | A handler registered after its events exist still gets them | yes | yes | same | `f.late.*` |
 | 8 | Envelope: decoded event, event id, action id/name/params, dates, model id/type; an unknown payload field is ignored | all equal | all equal | same | `f.received.*`, `f.after.s0.e6.*` |
@@ -34,8 +34,8 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 16 | Row exactly at `event_date + retention` when claimed | handler called, `SUCCEEDED` | `EXPIRED`, handler not called | differs | `x.boundary.exact` |
 | 17 | Row past the retention window when claimed | `EXPIRED`, attempts unchanged, handler not called | same | same | `x.boundary.one_second_older` |
 | 18 | When a failing row expires | as soon as the next retry would land past the deadline (5th failure at +450 s) | only once the deadline has passed (still `FAILED` at +450 s, `EXPIRED` at +750 s) | differs | `x.step*`, `x.near_deadline.*` |
-| 19 | Event whose `event_date` is later than the clock | not delivered until `event_date` | delivered at once | differs | `c.future_event.*` |
-| 20 | Handling order when an older event is fanned out after a newer one | older event first | fan-out order (newer first) | differs | `c.order.*` |
+| 19 | Event whose `event_date` is later than the clock | not delivered until `event_date` | same (fixed in EKB-0272) | same | `c.future_event.*` |
+| 20 | Handling order when an older event is fanned out after a newer one | older event first | same (fixed in EKB-0272) | same | `c.order.*` |
 | 21 | One outcome write fails (a trigger refuses `FAILED`) while a sibling succeeded | sibling stays `SUCCEEDED`; handler called once | whole batch rolled back; sibling back to `PENDING`, its handler called again | differs | `t.outcome_write_failed.*` |
 | 22 | `findUndelivered` inside an open transaction on the shard | does not see the transaction's own rows (0) | same (fixed in EKB-0270) | same | `t.find_undelivered_*`, `t.undelivered_after_mark_in_same_tx` |
 | 23 | `findDue` inside an open transaction on the shard | does not see them (0) | same (fixed in EKB-0270) | same | `t.find_due_sees_own_uncommitted` |
@@ -100,7 +100,7 @@ Most surprising first.
   (Python's is all-or-nothing on purpose).
 - **Surprise:** medium
 
-### 5, 19, 20. A new notification is due at the fan-out time, not the event time
+### 5, 19, 20. A new notification is due at the fan-out time, not the event time - fixed in EKB-0272
 - **What:** Java sets `next_retry_at` to the event's `event_date`; Python to the fan-out clock.
   Effects seen: an event dated in the future is delivered at once in Python but waits in Java,
   and an older event fanned out late is handled first in Java but last in Python.

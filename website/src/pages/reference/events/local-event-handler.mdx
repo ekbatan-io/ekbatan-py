@@ -216,7 +216,8 @@ Each round:
    fan-out late, and an event read twice is dropped by the unique key in step 2. The read takes
    a connection of its own, as Java's does; steps 2 and 3 are one transaction.
 2. For each, insert one notification row per subscribed handler, with the full denormalised
-   context: `PENDING`, `attempts = 0`, `next_retry_at = now`.
+   context: `PENDING`, `attempts = 0`, `next_retry_at = event_date`, as Java's. An older event
+   fanned out late is still handled first, and an event dated in the future waits for its date.
 3. Mark the source events `delivered = TRUE`.
 4. Loop immediately if anything was drained; otherwise sleep the poll delay.
 

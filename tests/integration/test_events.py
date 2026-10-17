@@ -642,3 +642,34 @@ def test_outcomes_that_differ_get_their_own_statement(
 
     assert notifications_in() == {"SUCCEEDED": 2, "FAILED": 1}
     assert len(updates) == 2, "the two that succeeded share a statement; the failure is its own"
+
+
+def test_a_new_notification_is_due_at_its_event_s_date_not_at_fan_out_time(
+    executor, wallets, pipeline, clock, registry
+):
+    """Java's fan-out sets `next_retry_at` to the event's `event_date`. So an event dated
+    later than the fan-out clock waits for its date, and an older event fanned out late is
+    still handled first."""
+    from sqlalchemy import select
+
+    from fixtures.schema import EVENT_NOTIFICATIONS
+
+    wallet = a_wallet(executor)
+    deposit(executor, wallets, wallet)
+    event_date = clock.now().replace(tzinfo=None)
+    clock.pause_at(clock.now() - timedelta(hours=1))
+
+    email = succeeding("email")
+    fanout, dispatch = pipeline(email)
+    fanout.drain_once()
+
+    with registry.default.connection() as conn:
+        (due_at,) = conn.execute(select(EVENT_NOTIFICATIONS.c.next_retry_at)).scalars()
+    assert due_at == event_date, "next_retry_at is the fan-out time; Java's is the event date"
+
+    dispatch.drain_once()
+    assert email.calls == 0, "an event dated an hour from now was handed over at once"
+
+    clock.advance(timedelta(hours=1))
+    dispatch.drain_once()
+    assert email.calls == 1
