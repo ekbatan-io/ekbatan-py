@@ -91,7 +91,7 @@ whatever is decided about the rest.
 | 34 | `workers(n)`: job threads have a ceiling, one per job by default | forced | no | M | D |
 | 35 | `stop()` never interrupts a running job; it waits once, then leaves it | forced | no | M | D |
 | 36 | A waiting `acquire` cannot be interrupted | forced | partly | M | D |
-| 37 | A lock provider's `close()` releases every thread's held locks; Java's does nothing | choice | yes | M | D |
+| 37 | ~~A lock provider's `close()` releases every thread's held locks; Java's does nothing~~ **fixed** (`EKB-0266`): `close()` does nothing, as Java's; open leases stay held | choice | yes | M | D |
 | 38 | Build the scheduler after `fork()` (gunicorn `--preload`) | forced | no | M | D |
 | 39 | Each server process has its own pools and scheduler | forced | no | M | E |
 | 40 | Handlers run on real OS threads, one batch wide per shard | forced | partly | L | B |

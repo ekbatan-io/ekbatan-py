@@ -368,6 +368,18 @@ def test_closing_a_lease_twice_is_harmless(provider, redis_client, request):
     assert redis_client.get(stored) is None
 
 
+def test_closing_the_provider_leaves_open_leases_held(provider, redis_client, request):
+    """Java's `close()` does nothing (Dracula 37); it used to delete every open lease's key."""
+    k = key(request)
+    lease = provider.acquire(k, SHORT)
+    try:
+        provider.close()
+        assert lease.held
+        assert redis_client.exists(f"{provider._prefix}{k}")
+    finally:
+        lease.release()
+
+
 # -- when the backend is unhappy ----------------------------------------------------------------
 
 

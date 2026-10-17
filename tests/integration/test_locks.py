@@ -325,6 +325,23 @@ def test_releasing_twice_is_harmless(locks, registry, request):
 # -- the one case that is not shared ------------------------------------------------------------
 
 
+def test_closing_the_provider_leaves_open_leases_held(locks, request):
+    """Java's `close()` does nothing (Dracula 37). It used to release every open lease here, on
+    every thread, while their holders were still inside."""
+    k = key(request)
+    lease = locks.acquire(k, HOLD)
+    try:
+        locks.close()
+        assert lease.held
+        outcome: list[object] = []
+        thread = threading.Thread(target=lambda: outcome.append(locks.try_acquire(k, NOW, HOLD)))
+        thread.start()
+        thread.join(20)
+        assert outcome == [None], "another thread is still kept out"
+    finally:
+        lease.release()
+
+
 def test_the_server_sees_the_lock_under_the_name_java_uses(locks, registry, dialect):
     """A Java service locks `wallet:abc` as `GET_LOCK('813e4046e5b48a46', ...)` - bare hex, as
     Java's `Long.toHexString(LockKeyHash.hashUtf8(key))` gives it. Asking the server about that

@@ -68,7 +68,8 @@ marked unverified.
 - **Could match Java?** partly. One builder switch could set both, but SIGTERM would still need the opt-in described above.
 - **Surprise:** medium
 
-### `KeyedLockProvider.close()` releases held locks, including other threads' locks
+### ~~`KeyedLockProvider.close()` releases held locks, including other threads' locks~~ fixed (`EKB-0266`)
+- **Fixed:** `close()` does nothing on every provider, as Java's. Proven by `test_closing_the_provider_leaves_open_leases_held` (SQL and Redis) and the parity probe `provider_close.*`, now Java's on all four backends.
 - **What:** Java's `close()` does nothing by default, and no provider overrides it. Python's `close()` releases every lock this provider is currently holding, for every thread, while those threads are still using them. A re-entered hold only loses one level.
 - **Python:** `src/ekbatan/locks/sql.py:95-96`, `redis.py:132-133`, `_holder.py:181-185`.
 - **Java:** `KeyedLockProvider.java:125` (`default void close() {}`), not overridden in `PostgresKeyedLockProvider`, `MySQLKeyedLockProvider`, `MariaDBKeyedLockProvider` or `RedisKeyedLockProvider`.

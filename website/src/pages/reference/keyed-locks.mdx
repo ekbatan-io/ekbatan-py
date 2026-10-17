@@ -204,10 +204,10 @@ locks = PostgresKeyedLockProvider(
 ```
 
 A provider is a plain object you construct and hand to whatever needs it — there is no registry
-to declare it in and nothing discovers it. Close it when the service closes: `locks.close()`
-releases every lease still held, which for a SQL backend is what returns those connections. The
-engine is yours — you created it, so you dispose it — and the order matters: release the leases
-before disposing the pool they are holding connections from.
+to declare it in and nothing discovers it. `locks.close()` does nothing, as in Java: a lease still
+open stays held until it is released or its `max_hold` passes. The engine is yours — you created
+it, so you dispose it — and the order matters: let the leases end before disposing the pool they
+are holding connections from.
 
 Redis takes a client rather than an engine:
 

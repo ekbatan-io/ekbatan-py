@@ -235,22 +235,6 @@ def test_a_close_and_a_watchdog_cannot_both_release(caplog):
     assert releases == ["EXPIRED"], "the watchdog got there first, so the close is a no-op"
 
 
-def test_releasing_everything_at_once_frees_each_outermost_hold():
-    """`close()` on a provider. Java's `KeyedLockProvider.close()` is a no-op by default; the
-    providers here own a holder and hand back whatever is still out."""
-    from ekbatan.locks._holder import KeyedReentrantHolder
-
-    holder = KeyedReentrantHolder()
-    released: list[str] = []
-
-    holder.register("a", "pa", HOLD, lambda p, r: released.append(p))
-    holder.register("b", "pb", HOLD, lambda p, r: released.append(p))
-
-    holder.release_all()
-
-    assert sorted(released) == ["pa", "pb"]
-
-
 def test_closing_an_inner_lease_twice_does_not_free_the_outer_hold():
     """As Java's `HeldLease`: each lease remembers it was closed. Counting the hold down on
     every close let a second close of the inner lease free the key under the outer region."""

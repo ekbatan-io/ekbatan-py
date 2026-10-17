@@ -177,9 +177,3 @@ class KeyedReentrantHolder:
                 if current is holding:
                     del self._held[entry]
                     return
-
-    def release_all(self) -> None:
-        with self._gate:
-            holdings = list(self._held.values())
-        for holding in holdings:
-            holding.release_one()

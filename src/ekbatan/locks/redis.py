@@ -130,7 +130,8 @@ class RedisKeyedLockProvider:
             remaining -= POLL
 
     def close(self) -> None:
-        self._holder.release_all()
+        """Does nothing, as Java's ``close()`` does nothing. Leases still open stay held until
+        they are released or their ``max_hold`` passes. The client is yours to close."""
 
     # ---------------------------------------------------------------- internals
 

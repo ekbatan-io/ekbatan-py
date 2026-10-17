@@ -372,6 +372,7 @@ rule "match Java". Ledger: [`parity-fix/L-locks-jobs.md`](parity-fix/L-locks-job
 | --- | --- | --- |
 | an unreachable database is a `LockAcquisitionError` ("could not obtain a connection") on every SQL provider | the documented error for a backend failure; it used to escape as SQLAlchemy's `OperationalError` | wraps the failed connection the same way |
 | MySQL / MariaDB: `GET_LOCK`'s seconds sent as a `Decimal`, 0 for no wait, else whole milliseconds (at least 1) over 1000 | Connector/J writes Java's double as `0.5`, which MySQL rounds half up; PyMySQL wrote a float as `0.5e0`, rounded half to even, so a 500 ms wait was none. Measured on MySQL 26.7 | `toGetLockTimeout`, `setDouble` |
+| `close()` on a lock provider does nothing; open leases stay held until released or `max_hold` | Dracula 37: it released every thread's leases while their holders were inside. The examples still call it, harmlessly, as Java code calls `close()` | `default void close() {}`, not overridden |
 | the Redis provider keeps wrapping a Redis failure as `LockAcquisitionError` | Java's own contract says a backend failure is `LockAcquisitionException`; its Redis provider lets Redisson's `RedisException` through, which is a Java bug (below) | lets `RedisException` escape |
 
 ## Ported an invariant Java already had - lower risk

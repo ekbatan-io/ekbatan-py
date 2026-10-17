@@ -94,8 +94,9 @@ class SqlKeyedLockProvider(ABC):
             if remaining <= timedelta(0):
                 return None
 
-    def close(self) -> None:
-        self._holder.release_all()
+    def close(self) -> None:  # noqa: B027 - deliberately empty, as Java's default
+        """Does nothing, as Java's ``close()`` does nothing. Leases still open stay held until
+        they are released or their ``max_hold`` passes; release them before disposing the engine."""
 
     # ---------------------------------------------------------------- internals
 

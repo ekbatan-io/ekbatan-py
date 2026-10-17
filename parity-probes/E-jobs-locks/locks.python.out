@@ -42,8 +42,8 @@ PROBE pg.outer_max_hold_governs.other_can_acquire: true
 PROBE pg.close_from_other_thread: no-error
 PROBE pg.close_from_other_thread.held: false
 PROBE pg.close_from_other_thread.other_can_acquire: true
-PROBE pg.provider_close.lease_held: false
-PROBE pg.provider_close.other_can_acquire: true
+PROBE pg.provider_close.lease_held: true
+PROBE pg.provider_close.other_can_acquire: false
 PROBE pg.validate.blank_key: refused
 PROBE pg.validate.empty_key: refused
 PROBE pg.validate.zero_max_hold: refused
@@ -101,8 +101,8 @@ PROBE mysql.outer_max_hold_governs.other_can_acquire: true
 PROBE mysql.close_from_other_thread: no-error
 PROBE mysql.close_from_other_thread.held: false
 PROBE mysql.close_from_other_thread.other_can_acquire: true
-PROBE mysql.provider_close.lease_held: false
-PROBE mysql.provider_close.other_can_acquire: true
+PROBE mysql.provider_close.lease_held: true
+PROBE mysql.provider_close.other_can_acquire: false
 PROBE mysql.validate.blank_key: refused
 PROBE mysql.validate.empty_key: refused
 PROBE mysql.validate.zero_max_hold: refused
@@ -160,8 +160,8 @@ PROBE mariadb.outer_max_hold_governs.other_can_acquire: true
 PROBE mariadb.close_from_other_thread: no-error
 PROBE mariadb.close_from_other_thread.held: false
 PROBE mariadb.close_from_other_thread.other_can_acquire: true
-PROBE mariadb.provider_close.lease_held: false
-PROBE mariadb.provider_close.other_can_acquire: true
+PROBE mariadb.provider_close.lease_held: true
+PROBE mariadb.provider_close.other_can_acquire: false
 PROBE mariadb.validate.blank_key: refused
 PROBE mariadb.validate.empty_key: refused
 PROBE mariadb.validate.zero_max_hold: refused
@@ -221,8 +221,8 @@ PROBE redis.outer_max_hold_governs.other_can_acquire: true
 PROBE redis.close_from_other_thread: no-error
 PROBE redis.close_from_other_thread.held: false
 PROBE redis.close_from_other_thread.other_can_acquire: true
-PROBE redis.provider_close.lease_held: false
-PROBE redis.provider_close.other_can_acquire: true
+PROBE redis.provider_close.lease_held: true
+PROBE redis.provider_close.other_can_acquire: false
 PROBE redis.validate.blank_key: refused
 PROBE redis.validate.empty_key: refused
 PROBE redis.validate.zero_max_hold: refused

@@ -45,7 +45,7 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 23 | Inner `maxHold` is ignored (Redis TTL too) | outer's limit holds | same | same | locks `inner_max_hold_ignored` |
 | 24 | Outer `maxHold` ends the inner lease too | yes | same | same | locks `outer_max_hold_governs` |
 | 25 | Lease closed by a different thread | releases | same | same | locks `close_from_other_thread` |
-| 26 | Provider closed while a lease is open | lease kept, lock held | lock released, lease not held | differs | locks `provider_close.*` |
+| 26 | Provider closed while a lease is open | lease kept, lock held | lease kept, lock held (was: released; fixed in EKB-0266) | same | locks `provider_close.*` |
 | 27 | Blank or empty key, zero or negative `maxHold`, negative `maxWait` | refused (`IllegalArgumentException`) | refused (`ValidationError`, a `ValueError`) | same | locks `validate.*` |
 | 28 | SQL session killed under a held lock | others get in, lease still says held, close is quiet, provider keeps working | same | same | locks `conn_drop.*` |
 | 29 | Redis key deleted under the holder | others get in; old holder's close leaves the new owner's key | same | same | locks `redis.conn_drop.*` |
@@ -128,6 +128,8 @@ Python can match: send the seconds as a `Decimal`. Cheap.
 5 s `try_acquire` gives up after about 5.75 s. Redisson's wait is on time.
 Java `RedisKeyedLockProvider.java:92`. Python `locks/redis.py:122-130`.
 Python can match: wait against a monotonic deadline. Cheap.
+
+> **Fixed in EKB-0266:** `close()` does nothing. Rerun on all four backends: `provider_close.lease_held: true`, `other_can_acquire: false`, as Java.
 
 **26. `close()` on a provider frees open locks** (surprise: medium). Known: Dracula 37. Java's
 `close()` does nothing. Python's releases every lock the provider holds, on every thread.
