@@ -25,3 +25,18 @@ Items 2, 30, 31, 32, 33, 34, 35 of the importance table in
 - Website built (54 pages); the new anchor `#mysql-rounds-the-wait-to-whole-seconds` resolves.
 - Probes rerun on group L's own containers (ports 571xx): `locks`, `wait`, `jobs` and `crossport`
   (Java and Python against one Redis, both directions).
+
+## Item 31, pinned to real Redisson (`EKB-0311`)
+
+Asked by the user on 2026-10-18 ("does it have enough tests?"): the suite only compared this port
+with its own copy of Redisson's scripts, so a wrong copy would have passed. Two tests now compare
+it with a recording of real Redisson 3.39.0, made once under Redis `MONITOR` while Ekbatan's Java
+provider ran `tests/fixtures/redisson/RedissonRecordingTest.java`:
+
+- `test_the_scripts_are_redissons_own` - the Lua this port sends is the Lua Redisson sends.
+- `test_redis_sees_from_this_port_exactly_what_it_saw_from_java` - the same scenarios, every
+  command Redis runs (the scripts' own `hincrby`, `pexpire`, `del`, `PUBLISH`, the latch) equal,
+  values included.
+
+Neither needs Java. Planted faults - one space added to the lock script, unlock message `1`,
+latch 13 000 ms - each fail them; restored, all 41 Redis tests pass.

@@ -10,9 +10,11 @@ Nothing here is mocked. A lock that works against a fake is a lock nobody has te
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -540,3 +542,111 @@ def test_a_redisson_holder_keeps_a_python_waiter_out_until_it_unlocks(
 
     assert took and took[0] is not None, "the unlock message woke the waiter"
     took[0].release()
+
+
+# -- pinned to real Redisson -------------------------------------------------------------------
+#
+# `tests/fixtures/redisson/java-3.39.0.monitor.log` is what Redis's MONITOR printed while Ekbatan's
+# Java `RedisKeyedLockProvider`, on Redisson 3.39.0, ran the scenarios in
+# `RedissonRecordingTest.java` beside it. The tests above check this port against its own copy of
+# Redisson's scripts; these two check that copy against the real thing, without needing Java.
+# To re-record after a Redisson upgrade: run that test against a Redis under `redis-cli monitor`.
+
+_RECORDING = Path(__file__).parents[1] / "fixtures" / "redisson" / "java-3.39.0.monitor.log"
+_SKIPPED = {"ping", "client", "info", "config", "hello", "select", "command", "script"}
+_OWNER = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:\d+$")
+_LATCH = re.compile(r"^(redisson_unlock_latch:\{[^}]*\}):[0-9a-f]+$")
+
+
+def _monitor_line(line: str) -> tuple[str, list[str]] | None:
+    """`<time> [<db> <origin>] "CMD" "arg" ...` -> (origin, [cmd, args...]), MONITOR's escapes
+    undone. Origin is `lua` for a command a script ran, else `client`."""
+    head = re.match(r"^\d+\.\d+ \[\d+ ([^\]]+)\] ", line)
+    if head is None:
+        return None
+    origin = "lua" if head.group(1) == "lua" else "client"
+    words = [
+        bytes(w, "latin-1").decode("unicode_escape")
+        for w in re.findall(r'"((?:[^"\\]|\\.)*)"', line[head.end() :])
+    ]
+    return origin, words
+
+
+def _normalised(lines: list[str], scripts: dict[str, str]) -> list[tuple[str, ...]]:
+    """The commands from the first scenario marker on, with what differs per run - the owner's
+    client id and thread, the latch's random suffix - replaced, and a script call named by the
+    script it ran rather than by its text or SHA."""
+    out: list[tuple[str, ...]] = []
+    started = False
+    for line in lines:
+        parsed = _monitor_line(line)
+        if parsed is None:
+            continue
+        origin, (cmd, *args) = parsed
+        cmd = cmd.lower()
+        if cmd == "exists" and args and args[0].startswith("rec:marker:"):
+            started = True
+        if not started or cmd in _SKIPPED:
+            continue
+        if origin == "client" and cmd in ("eval", "evalsha"):
+            out.append((origin, "script", scripts[args[0]]))
+            continue
+        args = ["<owner>" if _OWNER.match(a) else _LATCH.sub(r"\1:<latch>", a) for a in args]
+        out.append((origin, cmd, *args))
+    # A failed EVALSHA (NOSCRIPT) is followed by the same call again; keep one.
+    return [c for i, c in enumerate(out) if not (c[1] == "script" and out[i - 1 : i] == [c])]
+
+
+def test_the_scripts_are_redissons_own():
+    """The Lua this port sends is the Lua real Redisson sends, character for character."""
+    from ekbatan.locks.redis import _LOCK, _UNLOCK
+
+    sent = set()
+    for line in _RECORDING.read_text().splitlines():
+        parsed = _monitor_line(line)
+        if parsed and parsed[0] == "client" and parsed[1][0].upper() == "EVAL":
+            sent.add(parsed[1][1])
+    assert sent == {_LOCK, _UNLOCK}, "Redisson 3.39.0 sends other scripts than this port copies"
+
+
+def test_redis_sees_from_this_port_exactly_what_it_saw_from_java(redis_client):
+    """The same three scenarios as `RedissonRecordingTest.java`, under MONITOR: every command
+    Redis runs - the scripts' own `hincrby`, `pexpire`, `del`, `PUBLISH`, the latch - matches the
+    Java recording, values included."""
+    import hashlib
+
+    from ekbatan.locks.redis import _LOCK, _UNLOCK
+
+    scripts = {_LOCK: "lock", _UNLOCK: "unlock"}
+    scripts |= {hashlib.sha1(s.encode()).hexdigest(): n for s, n in list(scripts.items())}
+    provider = RedisKeyedLockProvider(redis_client)  # the default namespace, as Java's
+    hold = timedelta(seconds=30)
+
+    def mark(name: str) -> None:
+        redis_client.exists(f"rec:marker:{name}")
+
+    with redis_client.monitor() as monitor:
+        mark("acquire-release")
+        with provider.acquire("rec:one", hold):
+            mark("while-held")
+        mark("re-entry")
+        with provider.acquire("rec:two", hold):
+            with provider.acquire("rec:two", hold):
+                mark("inner-held")
+            mark("inner-closed")
+        mark("try-acquire")
+        lease = provider.try_acquire("rec:three", NONE, hold)
+        assert lease is not None
+        with lease:
+            mark("try-held")
+        mark("end")
+
+        seen: list[str] = []
+        while not seen or '"rec:marker:end"' not in seen[-1]:
+            raw = monitor.connection.read_response()
+            seen.append(raw.decode() if isinstance(raw, bytes) else raw)
+    provider.close()
+
+    java = _normalised(_RECORDING.read_text().splitlines(), scripts)
+    assert len(java) > 30, "the recording lost its scenarios"
+    assert _normalised(seen, scripts) == java
