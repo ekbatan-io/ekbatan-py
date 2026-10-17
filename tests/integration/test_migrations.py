@@ -1,10 +1,10 @@
 """The migrator against a real database - every dialect the run asks for.
 
-Java runs Flyway here. The migrator is yoyo underneath, with a lock, checks and a history of its
-own on top, because yoyo alone gets each of those wrong. The behaviour copied from Flyway was run
-on Flyway 12 first - `docs/MIGRATOR-LEDGER.md` says what each run showed, and
-`scripts/flyway-parity.py` runs it again. What several processes do at once is
-`test_migration_concurrency.py`; what is decided before a database is reached is
+Java runs Flyway 12 here, and a Python service shares its databases, so the migrator reads and
+writes what Flyway reads and writes: its history table, its checksums, its lock. The behaviour
+copied from Flyway was run on Flyway first - `docs/MIGRATOR-LEDGER.md` and
+`docs/behaviour-parity/F-migrations.md` say what each run showed. What several processes do at
+once is `test_migration_concurrency.py`; what is decided before a database is reached is
 `tests/unit/test_migration_scripts.py` and `tests/unit/test_migration_model.py`.
 """
 
@@ -18,13 +18,15 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, text
 
-from ekbatan._yoyo import POSTGRES_LOCK_KEY, mysql_lock_name, open_backend
+from ekbatan import _migration_backend
+from ekbatan._flyway_sql import checksum as flyway_checksum
+from ekbatan._migration_backend import mysql_lock_name, postgres_lock_key
 from ekbatan.config import ShardingConfig
 from ekbatan.migrations import (
     HISTORY_TABLE,
+    FlywayMigrator,
     MigrationError,
     MigrationState,
-    YoyoMigrator,
     baseline,
     info,
     migrate,
@@ -158,7 +160,7 @@ def test_running_again_applies_nothing(backend, request, files):
 
     assert again.migrate_result.migrations == ()
     assert again.migrate_result.initial_schema_version == "1"
-    assert again.migrate_result.target_schema_version == "1"
+    assert again.migrate_result.target_schema_version is None, "Flyway's: nothing ran"
 
 
 def test_a_new_migration_is_picked_up(backend, request, files):
@@ -192,8 +194,10 @@ def test_the_history_records_what_each_file_contained(backend, request, files):
         "SQL",
         "V1__widgets.sql",
     )
-    assert len(checksum) == 64, "sha256 of what the file contained"
-    assert on.endswith("Z") and took >= 0 and bool(success) is True
+    assert checksum == flyway_checksum("CREATE TABLE widgets (id INTEGER PRIMARY KEY);"), (
+        "Flyway's CRC32 of what the file contained"
+    )
+    assert on is not None and took >= 0 and bool(success) is True
     assert by == _user(url, backend.dialect), "the database user, as Flyway records it"
 
 
@@ -295,11 +299,11 @@ def test_a_database_a_newer_release_migrated_is_left_alone(backend, request, fil
     migrate(single(url), files.path)
 
     files.drop("V2__gadgets.sql")
-    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
+    caplog.set_level(logging.WARNING)
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ()
-    assert result.migrate_result.target_schema_version == "2"
+    assert result.migrate_result.initial_schema_version == "2"
     assert "newer than every migration here" in caplog.text
     assert result.migrate_result.warnings
 
@@ -310,7 +314,7 @@ def test_a_database_a_newer_release_migrated_is_left_alone(backend, request, fil
 def test_query_output_goes_to_the_log_not_the_screen(backend, request, files, caplog, capsys):
     url = fresh(backend, request)
     files.add("V1__hello.sql", "SELECT 'hello from the migration' AS greeting;")
-    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
+    caplog.set_level(logging.INFO)
 
     migrate(single(url), files.path)
 
@@ -323,7 +327,7 @@ def test_query_output_can_be_switched_off(backend, request, files, caplog, capsy
     """Flyway's `outputQueryResults=false`."""
     url = fresh(backend, request)
     files.add("V1__hello.sql", "SELECT 'hello from the migration' AS greeting;")
-    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
+    caplog.set_level(logging.INFO)
 
     migrate(single(url), files.path, output_query_results=False)
 
@@ -346,7 +350,7 @@ def test_a_migration_and_its_history_row_commit_together(backend, request, files
     (#13) - and the message says so."""
     url = fresh(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-    monkeypatch.setattr("ekbatan.migrations._record", _fail_to_record)
+    monkeypatch.setattr("ekbatan.migrations._insert", _fail_to_record)
 
     with pytest.raises(MigrationError) as raised:
         migrate(single(url), files.path)
@@ -371,7 +375,7 @@ def test_a_data_migration_is_recorded_atomically_on_every_dialect(
     migrate(single(url), files.path)
 
     files.add("V2__rows.sql", "INSERT INTO things VALUES (1);\nINSERT INTO things VALUES (2);")
-    monkeypatch.setattr("ekbatan.migrations._record", _fail_to_record)
+    monkeypatch.setattr("ekbatan.migrations._insert", _fail_to_record)
     with pytest.raises(MigrationError):
         migrate(single(url), files.path)
 
@@ -400,33 +404,54 @@ def test_a_failure_names_the_migration_and_what_ran_before_it(backend, request, 
 # -- running outside a transaction (#10) -----------------------------------------------------
 
 
-def test_a_postgres_index_can_be_built_concurrently(backend, request, files, caplog):
-    if backend.dialect != "postgres":
-        pytest.skip("CREATE INDEX CONCURRENTLY is PostgreSQL's")
-    url = fresh(backend, request)
-    files.add("V1__table.sql", "CREATE TABLE people (id INTEGER PRIMARY KEY, owner TEXT);")
-    files.add(
-        "V2__index.sql",
-        "-- transactional: false\nCREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);",
-    )
-    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
-
-    migrate(single(url), files.path)
-
-    indexes = {r[0] for r in query(url, "SELECT indexname FROM pg_indexes")}
-    assert "ix_people_owner" in indexes
-    assert "no transaction in progress" not in caplog.text, "yoyo's stray ROLLBACK is not sent"
-
-
-def test_without_the_directive_postgres_refuses_it_and_says_why(backend, request, files):
+def test_a_postgres_index_built_concurrently_runs_outside_a_transaction_by_itself(
+    backend, request, files, caplog
+):
+    """Flyway's parser sees ``CREATE INDEX CONCURRENTLY`` and runs the migration outside a
+    transaction, with no marker in the file (row 23 of the scan) - and so does this. Python ran
+    it in a transaction and PostgreSQL refused it."""
     if backend.dialect != "postgres":
         pytest.skip("CREATE INDEX CONCURRENTLY is PostgreSQL's")
     url = fresh(backend, request)
     files.add("V1__table.sql", "CREATE TABLE people (id INTEGER PRIMARY KEY, owner TEXT);")
     files.add("V2__index.sql", "CREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);")
+    caplog.set_level(logging.INFO)
+
+    migrate(single(url), files.path)
+
+    indexes = {r[0] for r in query(url, "SELECT indexname FROM pg_indexes")}
+    assert "ix_people_owner" in indexes
+    assert 'to version "2 - index" [non-transactional]' in caplog.text, "Flyway's own line"
+
+
+def test_a_conf_file_can_insist_on_a_transaction_and_postgres_then_refuses(backend, request, files):
+    if backend.dialect != "postgres":
+        pytest.skip("CREATE INDEX CONCURRENTLY is PostgreSQL's")
+    url = fresh(backend, request)
+    files.add("V1__table.sql", "CREATE TABLE people (id INTEGER PRIMARY KEY, owner TEXT);")
+    files.add("V2__index.sql", "CREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);")
+    files.add("V2__index.sql.conf", "executeInTransaction=true")
 
     with pytest.raises(MigrationError, match="cannot run inside a transaction block"):
         migrate(single(url), files.path)
+
+
+def test_a_migration_mixing_both_kinds_of_statement_is_refused_as_flyway_refuses_it(
+    backend, request, files
+):
+    if backend.dialect != "postgres":
+        pytest.skip("CREATE INDEX CONCURRENTLY is PostgreSQL's")
+    url = fresh(backend, request)
+    files.add(
+        "V1__mixed.sql",
+        "CREATE TABLE people (id INTEGER, owner TEXT);\n"
+        "CREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);",
+    )
+
+    with pytest.raises(MigrationError, match="Detected both transactional and non-transactional"):
+        migrate(single(url), files.path)
+
+    assert tables(url) == {HISTORY_TABLE}, "refused before it ran"
 
 
 def test_a_migration_outside_a_transaction_keeps_its_rows(backend, request, files):
@@ -434,10 +459,8 @@ def test_a_migration_outside_a_transaction_keeps_its_rows(backend, request, file
     closed, and the migration was recorded as applied anyway. Measured."""
     url = fresh(backend, request)
     files.add("V1__table.sql", "CREATE TABLE things (id INTEGER PRIMARY KEY);")
-    files.add(
-        "V2__rows.sql",
-        "-- transactional: false\nINSERT INTO things VALUES (1);\nINSERT INTO things VALUES (2);",
-    )
+    files.add("V2__rows.sql", "INSERT INTO things VALUES (1);\nINSERT INTO things VALUES (2);")
+    files.add("V2__rows.sql.conf", "executeInTransaction=false")
 
     migrate(single(url), files.path)
 
@@ -445,10 +468,9 @@ def test_a_migration_outside_a_transaction_keeps_its_rows(backend, request, file
     assert history(url)[-1] == ("2", "V2__rows.sql")
 
 
-def test_on_mysql_the_real_error_is_reported_not_a_savepoint_error(backend, request, files):
-    """#10 - a schema change commits implicitly on MySQL and MariaDB and drops yoyo's savepoint;
-    rolling back to it failed with `SAVEPOINT sp_N does not exist`, which replaced the error
-    that actually happened."""
+def test_on_mysql_the_real_error_is_reported(backend, request, files):
+    """A schema change commits implicitly on MySQL and MariaDB, ending the transaction; the
+    error that happened is the one reported, with the statement and its line."""
     if backend.dialect not in ("mysql", "mariadb"):
         pytest.skip("only MySQL and MariaDB commit a schema change on their own")
     url = fresh(backend, request)
@@ -458,7 +480,7 @@ def test_on_mysql_the_real_error_is_reported_not_a_savepoint_error(backend, requ
         migrate(single(url), files.path)
 
     assert "nope" in str(raised.value), "the statement that failed"
-    assert "SAVEPOINT" not in str(raised.value)
+    assert "at line 2: INSERT INTO nope VALUES (1)" in str(raised.value)
     assert "half" in tables(url), "#13: the schema change stays - a database limit, documented"
     assert history(url) == [] and failed(url) == ["V1__half.sql"]
 
@@ -466,27 +488,48 @@ def test_on_mysql_the_real_error_is_reported_not_a_savepoint_error(backend, requ
 # -- one connection, closed when done (#12, #15) ---------------------------------------------
 
 
-def test_the_migrator_never_opens_a_second_connection_or_uses_yoyos_lock(backend, request):
-    """#15 - yoyo applies each migration on a connection it opens with `copy()`, apart from
-    the one holding the lock. Neither path is reachable here."""
-    migrator = open_backend("s", fresh(backend, request), {})
-    try:
-        with pytest.raises(AssertionError, match="nothing may open another"):
-            migrator.copy()
-        with pytest.raises(AssertionError, match="not yoyo's"):
-            migrator.lock()
-    finally:
-        migrator.close()
-
-
-def test_no_yoyo_lock_table_is_created(backend, request, files):
+def test_the_only_table_of_its_own_is_flyways_history(backend, request, files):
     url = fresh(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
 
     migrate(single(url), files.path)
 
-    assert "yoyo_lock" not in tables(url)
-    assert not {t for t in tables(url) if t.startswith("_yoyo")}, "nor yoyo's bookkeeping"
+    assert tables(url) == {"widgets", "flyway_schema_history"}
+
+
+FLYWAY_COLUMNS = {
+    "postgres": "installed_rank|integer|NO, version|character varying|YES, description|character "
+    "varying|NO, type|character varying|NO, script|character varying|NO, checksum|integer|YES, "
+    "installed_by|character varying|NO, installed_on|timestamp without time zone|NO, "
+    "execution_time|integer|NO, success|boolean|NO",
+    "mysql": "installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, "
+    "script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, "
+    "execution_time|int|NO, success|tinyint|NO",
+}
+FLYWAY_COLUMNS["mariadb"] = FLYWAY_COLUMNS["mysql"]
+
+
+def test_the_history_table_is_flyways_column_for_column(backend, request, files):
+    """What Java's Flyway created on the same servers (f2 a_first, read off information_schema):
+    the same names, order, types and nulls, so a Java service reads these rows and the other way
+    round (rows 24 and 25 of the scan: Python's had text for `checksum` and `installed_on`)."""
+    if backend.dialect == "sqlite":
+        pytest.skip("Java's migrator does not run on SQLite; the DDL is Flyway's SQLite one")
+    url = fresh(backend, request)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+    migrate(single(url), files.path)
+    schema = "current_schema()" if backend.dialect == "postgres" else "DATABASE()"
+
+    found = query(
+        url,
+        "SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE "
+        f"table_schema = {schema} AND table_name = 'flyway_schema_history' "
+        "ORDER BY ordinal_position",
+    )
+
+    assert (
+        ", ".join("|".join(str(v) for v in row) for row in found) == FLYWAY_COLUMNS[backend.dialect]
+    )
 
 
 def _alter_history(url: str, dialect: str) -> None:
@@ -564,10 +607,11 @@ class Held:
         self._engine = create_engine(url, isolation_level="AUTOCOMMIT")
         self._conn = self._engine.connect()
         if dialect == "postgres":
-            self._conn.execute(text(f"SELECT pg_advisory_lock({POSTGRES_LOCK_KEY})"))
+            key = postgres_lock_key('"public"."flyway_schema_history"')
+            self._conn.execute(text(f"SELECT pg_advisory_lock({key})"))
         else:
             database = self._conn.execute(text("SELECT DATABASE()")).scalar()
-            name = mysql_lock_name(database)
+            name = mysql_lock_name(f"`{database}`.`flyway_schema_history`")
             assert self._conn.execute(text(f"SELECT GET_LOCK('{name}', 0)")).scalar() == 1
 
     def release(self) -> None:
@@ -581,11 +625,12 @@ class Held:
 def test_a_database_whose_lock_is_held_waits_and_another_database_does_not(
     backend, request, files, caplog
 ):
-    """Follow-up b - two shards that are two databases on one server must not wait on each
-    other: MySQL and MariaDB lock names are server-wide, so the name carries the database."""
+    """The lock is Flyway's, held here as Java's migrator holds it - so this is also a Python
+    migrator waiting for a Java one. Two shards that are two databases on one server do not wait
+    on each other: Flyway's MySQL lock name carries the database."""
     busy, free = fresh(backend, request, "_a"), fresh(backend, request, "_b")
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
+    caplog.set_level(logging.INFO)
 
     held = Held(busy, backend.dialect)
     outcome: list[object] = []
@@ -605,6 +650,30 @@ def test_a_database_whose_lock_is_held_waits_and_another_database_does_not(
 
     assert not waiter.is_alive() and outcome, "and runs once the lock is let go"
     assert "widgets" in tables(busy)
+
+
+def test_postgres_gives_up_on_a_held_lock_after_lock_retry_count_as_flyway_does(
+    backend, request, files, monkeypatch
+):
+    """Flyway retries PostgreSQL's lock a second apart, 50 times, then fails with this message
+    (row 46 of the scan: Python waited for as long as it took). Retries shortened here."""
+    if backend.dialect != "postgres":
+        pytest.skip("only Flyway's PostgreSQL lock gives up; MySQL's waits, as here")
+    url = fresh(backend, request)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+    monkeypatch.setattr(_migration_backend, "LOCK_RETRY_INTERVAL", 0.05)
+
+    held = Held(url, backend.dialect)
+    try:
+        with pytest.raises(MigrationError, match="Number of retries exceeded") as raised:
+            FlywayMigrator.builder().with_data_source(data_source(url)).locations(
+                files.path
+            ).customize(lambda c: c.lock_retry_count(3)).migrate()
+    finally:
+        held.release()
+
+    assert "'lockRetryCount'" in str(raised.value)
+    assert HISTORY_TABLE not in tables(url), "nothing done without the lock"
 
 
 # -- SQLite specifics ------------------------------------------------------------------------
@@ -698,7 +767,7 @@ def test_one_database_outside_a_layout(backend, request, files):
     """Java's `FlywayMigrator.migrate(DataSourceConfig, locations...)`."""
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
 
-    result = YoyoMigrator.migrate_data_source(data_source(fresh(backend, request)), files.path)
+    result = FlywayMigrator.migrate_data_source(data_source(fresh(backend, request)), files.path)
 
     assert result.migrations == ("V1__widgets.sql",)
 
@@ -709,7 +778,7 @@ def test_the_builder_migrates_its_targets_under_their_own_names(backend, request
     ledger = target(data_source(fresh(backend, request, "_l")), shard=ShardIdentifier(3, 1))
 
     results = (
-        YoyoMigrator.builder()
+        FlywayMigrator.builder()
         .with_target(orders)
         .with_targets([ledger])
         .locations(files.path)
@@ -863,7 +932,7 @@ def test_a_repeatable_can_run_outside_a_transaction(backend, request, files):
     """Parity R15."""
     url = fresh(backend, request)
     files.add("V1__runs.sql", RUNS[backend.dialect])
-    files.add("R__x.sql", "-- transactional: false\n" + ran("x"))
+    files.add("R__x.sql", ran("x")).add("R__x.sql.conf", "executeInTransaction=false")
 
     migrate(single(url), files.path)
 
@@ -892,7 +961,7 @@ def test_an_older_release_applies_its_own_repeatable_again(backend, request, fil
 
     files.drop("V2__two.sql")
     files.add("R__x.sql", ran("old"))
-    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
+    caplog.set_level(logging.WARNING)
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ("R__x.sql",)
@@ -967,13 +1036,12 @@ def test_a_half_applied_migration_is_recorded_and_blocks_until_repaired(backend,
 
 
 def test_a_failure_outside_a_transaction_is_recorded_on_every_dialect(backend, request, files):
-    """Parity X02b: `-- transactional: false` cannot be rolled back anywhere, so its failure is
-    recorded on PostgreSQL and SQLite too."""
+    """Parity X02b: a migration outside a transaction cannot be rolled back anywhere, so its
+    failure is recorded on PostgreSQL and SQLite too."""
     url = fresh(backend, request)
     files.add("V1__runs.sql", RUNS[backend.dialect])
-    files.add(
-        "V2__loose.sql", "-- transactional: false\n" + ran("V2") + "INSERT INTO nowhere VALUES (1);"
-    )
+    files.add("V2__loose.sql", ran("V2") + "INSERT INTO nowhere VALUES (1);")
+    files.add("V2__loose.sql.conf", "executeInTransaction=false")
 
     with pytest.raises(MigrationError, match="It is recorded as failed"):
         migrate(single(url), files.path)
@@ -991,12 +1059,14 @@ def test_a_failure_a_newer_release_recorded_does_not_stop_an_older_one(
     rollback of an application whose new migration failed has to be able to start."""
     url = fresh(backend, request)
     files.add("V1__runs.sql", RUNS[backend.dialect])
-    files.add("V2__loose.sql", "-- transactional: false\nINSERT INTO nowhere VALUES (1);")
+    files.add("V2__loose.sql", "INSERT INTO nowhere VALUES (1);")
+    files.add("V2__loose.sql.conf", "executeInTransaction=false")
     with pytest.raises(MigrationError):
         migrate(single(url), files.path)
 
     files.drop("V2__loose.sql")
-    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
+    files.drop("V2__loose.sql.conf")
+    caplog.set_level(logging.WARNING)
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ()
@@ -1148,13 +1218,13 @@ def test_baseline_is_refused_where_it_would_skip_or_rewrite_history(backend, req
     baseline(single(legacy), version="3")
     (again,) = baseline(single(legacy), version="3")
     assert again.created is False
-    with pytest.raises(MigrationError, match="already been baselined at version 3"):
+    with pytest.raises(MigrationError, match=r"already been baselined with \(3,"):
         baseline(single(legacy), version="4")
 
     files.add("V1__a.sql", "SELECT 1;")
     migrated = fresh(backend, request, "_m")
     migrate(single(migrated), files.path)
-    with pytest.raises(MigrationError, match="already has migrations in its history"):
+    with pytest.raises(MigrationError, match="already contains migrations"):
         baseline(single(migrated))
 
 
@@ -1183,42 +1253,6 @@ def test_info_says_where_each_migration_stands_and_changes_nothing(backend, requ
     assert now.problems == ()
 
 
-# -- post-apply hooks (ledger F18) -----------------------------------------------------------
-
-
-def test_a_post_apply_hook_runs_at_the_end_of_every_migrate(backend, request, files):
-    """Parity F18: Flyway's afterMigrate runs at the end of every migrate, even with nothing
-    pending, after the repeatables. yoyo's own hook runs only when something was applied."""
-    url = fresh(backend, request)
-    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
-    files.add("post-apply.sql", ran("after"))
-
-    migrate(single(url), files.path)
-    migrate(single(url), files.path)
-
-    assert runs(url) == ["x", "after", "after"]
-    assert history(url) == [("1", "V1__runs.sql"), (None, "R__x.sql")], "a hook is not recorded"
-
-
-def test_a_failing_hook_fails_the_migrate_and_runs_again_next_time(backend, request, files):
-    """Parity F18b: what was applied stays recorded, and the fixed hook runs on the next start -
-    the retry yoyo's own timing would never give it."""
-    url = fresh(backend, request)
-    files.add("V1__runs.sql", RUNS[backend.dialect])
-    files.add("post-apply.sql", ran("after") + "INSERT INTO nowhere VALUES (1);\n")
-
-    with pytest.raises(MigrationError, match=r"post-apply hook post-apply\.sql failed") as raised:
-        migrate(single(url), files.path)
-    assert "(V1__runs.sql)" in str(raised.value) and "runs again" in str(raised.value)
-    assert history(url) == [("1", "V1__runs.sql")]
-
-    files.add("post-apply.sql", ran("after-fixed"))
-    (result,) = migrate(single(url), files.path)
-
-    assert result.migrate_result.migrations == ()
-    assert runs(url)[-1] == "after-fixed"
-
-
 # -- the history table (ledger section 6) ----------------------------------------------------
 
 
@@ -1241,15 +1275,15 @@ def test_every_application_is_ranked_in_the_order_it_happened(backend, request, 
     ]
 
 
-def test_a_history_table_from_an_earlier_build_is_refused(backend, request, files):
+def test_a_history_table_that_is_not_flyways_is_refused(backend, request, files):
     url = fresh(backend, request)
     query(url, f"CREATE TABLE {HISTORY_TABLE} (version VARCHAR(50) PRIMARY KEY, script TEXT)")
     files.add("V1__a.sql", "SELECT 1;")
 
     for command in (migrate, info, repair):
-        with pytest.raises(MigrationError, match="made by a development build of this migrator"):
+        with pytest.raises(MigrationError, match="does not have Flyway's columns"):
             command(single(url), files.path)
-    with pytest.raises(MigrationError, match="made by a development build of this migrator"):
+    with pytest.raises(MigrationError, match="does not have Flyway's columns"):
         baseline(single(url))
 
 
@@ -1289,7 +1323,7 @@ def test_moving_or_respelling_an_applied_file_is_not_a_change(backend, request, 
 def test_the_builder_runs_info_repair_and_baseline_too(backend, request, files):
     files.add("V1__a.sql", "SELECT 1;")
     url = fresh(backend, request)
-    builder = YoyoMigrator.builder().with_data_source(data_source(url)).locations(files.path)
+    builder = FlywayMigrator.builder().with_data_source(data_source(url)).locations(files.path)
 
     (status,) = builder.info()
     assert [m.state for m in status.migrations] == [MigrationState.PENDING]
@@ -1299,7 +1333,7 @@ def test_the_builder_runs_info_repair_and_baseline_too(backend, request, files):
 
     legacy = fresh(backend, request, "_l")
     query(legacy, "CREATE TABLE legacy (id INTEGER)")
-    (done,) = YoyoMigrator.builder().with_data_source(data_source(legacy)).baseline("5")
+    (done,) = FlywayMigrator.builder().with_data_source(data_source(legacy)).baseline("5")
     assert done.version == "5"
 
 
@@ -1323,28 +1357,35 @@ def test_no_migration_files_at_all_is_a_warning(backend, request, files):
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ()
-    assert result.migrate_result.warnings == ("no migrations found - are the locations right?",)
+    assert result.migrate_result.warnings == (
+        "No migrations found. Are your locations set up correctly?",
+    )
 
 
-def test_the_log_says_what_it_did(backend, request, files, caplog):
-    """Parity M15: what Flyway logs - the version it starts from, each migration, and a summary
-    - in this migrator's words."""
+def test_the_log_says_what_flyway_says(backend, request, files, caplog):
+    """Flyway's own lines, word for word, from the loggers of the Flyway classes that write them,
+    so a log search written for the Java service finds the Python one's."""
     url = fresh(backend, request)
     files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
-    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
+    caplog.set_level(logging.INFO)
 
     migrate(single(url), files.path)
     migrate(single(url), files.path)
 
-    for line in (
-        "current version << empty >>",
-        "migrating to version 1 - runs",
-        "applying repeatable migration 'x'",
-        "applied 2 migrations, now at version 1",
-        "current version 1",
-        "up to date, nothing to apply",
+    schema = {"postgres": '"public"', "sqlite": '"main"'}.get(backend.dialect)
+    lines = [(r.name.rsplit(".", 1)[-1], r.getMessage()) for r in caplog.records]
+    for logger, line in (
+        ("DbValidate", "Successfully validated 2 migrations"),
+        ("JdbcTableSchemaHistory", "Creating Schema History table "),
+        ("DbMigrate", "Current version of schema "),
+        ("DbMigrate", ' to version "1 - runs"'),
+        ("DbMigrate", ' with repeatable migration "x"'),
+        ("DbMigrate", "Successfully applied 2 migrations to schema "),
+        ("DbMigrate", "is up to date. No migration necessary."),
     ):
-        assert line in caplog.text, line
+        assert any(name == logger and line in text for name, text in lines), line
+    if schema:
+        assert f"Current version of schema {schema}: << Empty Schema >>" in caplog.text
 
 
 def test_the_databases_own_warnings_are_logged(backend, request, files, caplog):
@@ -1354,9 +1395,10 @@ def test_the_databases_own_warnings_are_logged(backend, request, files, caplog):
         pytest.skip("SQLite has no warnings to report")
     url = fresh(backend, request)
     files.add("V1__tidy.sql", "DROP TABLE IF EXISTS nothing_here;")
-    caplog.set_level(logging.WARNING, logger="io.ekbatan.flyway.FlywayMigrator")
+    caplog.set_level(logging.INFO)
 
     migrate(single(url), files.path)
 
-    assert "the database said:" in caplog.text
-    assert "nothing_here" in caplog.text
+    (said,) = [r for r in caplog.records if r.getMessage().startswith("DB: ")]
+    assert said.name == "org.flywaydb.core.internal.sqlscript.DefaultSqlScriptExecutor"
+    assert "nothing_here" in said.getMessage()

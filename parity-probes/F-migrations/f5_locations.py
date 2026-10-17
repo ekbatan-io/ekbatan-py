@@ -6,7 +6,7 @@ from pathlib import Path
 from common import PW, SQL, Captured, cfg, execute, fresh, msg, probe, query, tables, url
 
 from ekbatan.config import DataSourceConfig
-from ekbatan.migrations import HISTORY_TABLE as HISTORY, YoyoMigrator
+from ekbatan.migrations import HISTORY_TABLE as HISTORY, FlywayMigrator
 
 
 def loc(key: str, *locations: str) -> None:
@@ -14,7 +14,7 @@ def loc(key: str, *locations: str) -> None:
     fresh("pg", db)
     with Captured() as log:
         try:
-            r = YoyoMigrator.migrate_data_source(cfg("pg", db), *locations)
+            r = FlywayMigrator.migrate_data_source(cfg("pg", db), *locations)
             probe(f"loc.{key}.outcome", f"OK applied={r.migrations_executed}")
         except Exception as e:
             probe(f"loc.{key}.outcome", "FAIL " + msg(e))
@@ -31,7 +31,7 @@ def schema(key: str, precreate: bool) -> None:
         url=url("pg", db, "?options=-csearch_path%3Dapp"), username="postgres", password=PW
     )
     try:
-        r = YoyoMigrator.migrate_data_source(config, str(SQL / "quick"))
+        r = FlywayMigrator.migrate_data_source(config, str(SQL / "quick"))
         probe(f"schema.{key}.outcome", f"OK applied={r.migrations_executed}")
     except Exception as e:
         probe(f"schema.{key}.outcome", "FAIL " + msg(e))

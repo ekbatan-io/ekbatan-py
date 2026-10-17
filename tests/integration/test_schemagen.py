@@ -192,18 +192,24 @@ def test_the_fingerprint_covers_every_file_the_migrator_reads(migrations: Path, 
     assert fingerprint(migrations) != before
 
 
-def test_the_fingerprint_of_a_flat_directory_is_what_it_always_was(migrations: Path) -> None:
-    """Every module generated before subdirectories were read stays current."""
+def test_the_fingerprint_is_each_files_path_and_flyway_checksum(migrations: Path) -> None:
+    """The same checksum the history keeps, so a file the migrator would call unchanged - only
+    its line endings differ - leaves a generated module current."""
     import hashlib
 
-    from ekbatan.migrations import checksum
+    from ekbatan._flyway_sql import checksum
 
     digest = hashlib.sha256()
     for path in sorted(migrations.glob("*.sql")):
         digest.update(path.name.encode())
-        digest.update(checksum(path).encode())
+        digest.update(str(checksum(path.read_text())).encode())
+    before = fingerprint(migrations)
 
-    assert fingerprint(migrations) == digest.hexdigest()[:16]
+    first = sorted(migrations.glob("*.sql"))[0]
+    first.write_bytes(first.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert before == digest.hexdigest()[:16]
+    assert fingerprint(migrations) == before
 
 
 def test_the_fingerprint_ignores_what_is_not_a_migration(migrations: Path) -> None:

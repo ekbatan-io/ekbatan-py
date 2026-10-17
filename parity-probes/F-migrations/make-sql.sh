@@ -77,3 +77,21 @@ echo 'CREATE INDEX CONCURRENTLY ci_idx ON ci (id);' > concurrent_index_pg/V2__in
 mkdir -p script_migration
 echo "$v1" > script_migration/V1__first.sql
 echo "open('/private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/parityF-script-ran', 'w').write('ran')" > script_migration/V2__touch.py
+
+# --- F6 turns (parity fix M): one database migrated by both ports in turn. Cumulative folders:
+# a = V1, V1_5, V2 and a repeatable; b adds V3; c adds V4.
+for f in a b c; do
+    mkdir -p "turns/$f"
+    echo 'CREATE TABLE turns_v1 (id INT);' > "turns/$f/V1__first.sql"
+    echo 'CREATE TABLE turns_v1_5 (id INT);' > "turns/$f/V1_5__underscore.sql"
+    echo 'CREATE TABLE turns_v2 (id INT);' > "turns/$f/V2__second.sql"
+    echo 'CREATE OR REPLACE VIEW turns_view AS SELECT 1 AS n;' > "turns/$f/R__turns_view.sql"
+done
+for f in b c; do echo 'CREATE TABLE turns_v3 (id INT);' > "turns/$f/V3__third.sql"; done
+echo 'CREATE TABLE turns_v4 (id INT);' > turns/c/V4__fourth.sql
+
+# --- F6 a concurrent index built while the other port waits on the lock
+mkdir -p cic_pg
+echo 'CREATE TABLE cic_t (id INT);' > cic_pg/V1__table.sql
+echo 'SELECT pg_sleep(4);' > cic_pg/V2__slow.sql
+echo 'CREATE INDEX CONCURRENTLY cic_idx ON cic_t (id);' > cic_pg/V3__index.sql

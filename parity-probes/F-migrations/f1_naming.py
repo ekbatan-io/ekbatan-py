@@ -3,7 +3,7 @@ ParityFNamingProbeTest.java."""
 
 from common import SQL, Captured, cfg, fresh, history, msg, probe, query, tables
 
-from ekbatan.migrations import YoyoMigrator
+from ekbatan.migrations import FlywayMigrator
 
 FOLDERS = [
     "accept",
@@ -34,7 +34,7 @@ def run(dialect: str, folder: str) -> None:
     fresh(dialect, db)
     with Captured() as log:
         try:
-            r = YoyoMigrator.migrate_data_source(cfg(dialect, db), str(SQL / folder))
+            r = FlywayMigrator.migrate_data_source(cfg(dialect, db), str(SQL / folder))
             probe(key + ".outcome", f"OK applied={r.migrations_executed}")
             rows = [row.split("|") for row in history(dialect, db)]
             probe(

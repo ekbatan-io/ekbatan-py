@@ -31,7 +31,7 @@ from ekbatan.locks import (
     PostgresKeyedLockProvider,
 )
 from ekbatan.locks.redis import DEFAULT_NAMESPACE, RedisKeyedLockProvider
-from ekbatan.migrations import YoyoMigrator
+from ekbatan.migrations import FlywayMigrator
 from ekbatan.persistence import DatabaseRegistry, TransactionManager
 from ekbatan.sharding import ShardIdentifier
 from ekbatan.streaming import ActionEvent
@@ -484,22 +484,23 @@ def test_an_action_event_without_an_id_is_refused():
 def test_the_migrator_needs_at_least_one_target():
     """Java's `IllegalStateException("at least one Flyway migration target is required")`."""
     with pytest.raises(ValidationError, match="at least one migration target is required"):
-        YoyoMigrator.builder().locations(Path(".")).migrate()
+        FlywayMigrator.builder().locations(Path(".")).migrate()
 
 
-def test_the_migrator_needs_at_least_one_location():
-    with pytest.raises(ValidationError, match="at least one migrations location is required"):
-        YoyoMigrator.builder().with_data_source(a_source()).migrate()
+def test_no_location_means_javas_default():
+    """Java's `DEFAULT_LOCATION`, used when none is given."""
+    assert FlywayMigrator.builder()._locations == ("classpath:db/migration",)
+    assert FlywayMigrator.builder().locations()._locations == ("classpath:db/migration",)
 
 
 def test_a_missing_location_is_refused_before_any_database_is_reached(tmp_path):
     with pytest.raises(ValidationError, match="no migrations directory"):
-        YoyoMigrator.builder().with_data_source(a_source()).locations(tmp_path / "nope").migrate()
+        FlywayMigrator.builder().with_data_source(a_source()).locations(tmp_path / "nope").migrate()
 
 
 def test_with_data_source_is_javas_default_target():
-    built = YoyoMigrator.builder().with_data_source(a_source())
-    assert built._targets == [YoyoMigrator.Target(ShardIdentifier(0, 0), "default", a_source())]
+    built = FlywayMigrator.builder().with_data_source(a_source())
+    assert built._targets == [FlywayMigrator.Target(ShardIdentifier(0, 0), "default", a_source())]
 
 
 def test_with_sharding_config_adds_a_target_per_member_named_as_java_names_them():
@@ -521,7 +522,7 @@ def test_with_sharding_config_adds_a_target_per_member_named_as_java_names_them(
         .build()
     )
 
-    built = YoyoMigrator.builder().with_sharding_config(layout)
+    built = FlywayMigrator.builder().with_sharding_config(layout)
 
     assert [(t.shard, t.name, t.data_source.url) for t in built._targets] == [
         (FIRST, "global/eu", URL),
@@ -531,4 +532,4 @@ def test_with_sharding_config_adds_a_target_per_member_named_as_java_names_them(
 
 def test_a_none_target_is_refused_where_it_is_added():
     with pytest.raises(ValidationError, match="target is required"):
-        YoyoMigrator.builder().with_target(None)  # type: ignore[arg-type]
+        FlywayMigrator.builder().with_target(None)  # type: ignore[arg-type]

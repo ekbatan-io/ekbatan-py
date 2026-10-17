@@ -1,42 +1,71 @@
-PROBE cross.pg.a2_python_migrates_base_plus_v3.outcome: FAIL MigrationError: default (0:0) already has flyway_schema_history, life_a, life_b, life_v but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time,...
-PROBE cross.pg.a2_python_migrates_base_plus_v3.tables: [life_a, life_b, life_v]
-PROBE cross.pg.a2_python_migrates_base_plus_v3.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE cross.pg.a2_python_migrates_base_plus_v3.ekbatan_history: [<no history table>]
-PROBE cross.mysql.a2_python_migrates_base_plus_v3.outcome: FAIL MigrationError: default (0:0) already has flyway_schema_history, life_a, life_b, life_v but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time,...
-PROBE cross.mysql.a2_python_migrates_base_plus_v3.tables: [life_a, life_b, life_v]
-PROBE cross.mysql.a2_python_migrates_base_plus_v3.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE cross.mysql.a2_python_migrates_base_plus_v3.ekbatan_history: [<no history table>]
-PROBE cross.pg.a3_python_baselines_at_2_then_migrates.baseline: OK
-PROBE cross.pg.a3_python_baselines_at_2_then_migrates.outcome: OK applied=2 initial=2
-PROBE cross.pg.a3_python_baselines_at_2_then_migrates.tables: [life_a, life_b, life_c, life_v]
-PROBE cross.pg.a3_python_baselines_at_2_then_migrates.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE cross.pg.a3_python_baselines_at_2_then_migrates.ekbatan_history: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-PROBE cross.mysql.a3_python_baselines_at_2_then_migrates.baseline: OK
-PROBE cross.mysql.a3_python_baselines_at_2_then_migrates.outcome: OK applied=2 initial=2
-PROBE cross.mysql.a3_python_baselines_at_2_then_migrates.tables: [life_a, life_b, life_c, life_v]
-PROBE cross.mysql.a3_python_baselines_at_2_then_migrates.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE cross.mysql.a3_python_baselines_at_2_then_migrates.ekbatan_history: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-PROBE cross.pg.a5_final.tables: [life_a, life_b, life_c, life_v]
-PROBE cross.pg.a5_final.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE cross.pg.a5_final.ekbatan_history: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-PROBE cross.mysql.a5_final.tables: [life_a, life_b, life_c, life_v]
-PROBE cross.mysql.a5_final.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|3|half|SQL|V3__half.sql|-1158503407|root|time>=0|false]
-PROBE cross.mysql.a5_final.ekbatan_history: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-PROBE cross.pg.b1_python_migrates_base.outcome: OK applied=3 initial=None
-PROBE cross.pg.b1_python_migrates_base.tables: [life_a, life_b, life_v]
-PROBE cross.pg.b1_python_migrates_base.flyway_history: [<no history table>]
-PROBE cross.pg.b1_python_migrates_base.ekbatan_history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-PROBE cross.pg.b1_installed_on_sample: [2026-10-17T18:23:45.030808Z]
-PROBE cross.mysql.b1_python_migrates_base.outcome: OK applied=3 initial=None
-PROBE cross.mysql.b1_python_migrates_base.tables: [life_a, life_b, life_v]
-PROBE cross.mysql.b1_python_migrates_base.flyway_history: [<no history table>]
-PROBE cross.mysql.b1_python_migrates_base.ekbatan_history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-PROBE cross.mysql.b1_installed_on_sample: [2026-10-17T18:23:45.123025Z]
+PROBE cross.pg.a2_python_migrates_v3.outcome: OK applied=1 initial=2 target=3
+PROBE cross.pg.a2_python_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
+PROBE cross.pg.a2_python_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true]
+PROBE cross.mysql.a2_python_migrates_v3.outcome: OK applied=1 initial=2 target=3
+PROBE cross.mysql.a2_python_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
+PROBE cross.mysql.a2_python_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true]
+PROBE cross.maria.a2_python_migrates_v3.outcome: OK applied=1 initial=2 target=3
+PROBE cross.maria.a2_python_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
+PROBE cross.maria.a2_python_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true]
+PROBE cross.pg.a4_python.validate: OK
+PROBE cross.pg.a4_python_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.pg.a4_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.pg.a4_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
+PROBE cross.mysql.a4_python.validate: OK
+PROBE cross.mysql.a4_python_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.mysql.a4_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.mysql.a4_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.maria.a4_python.validate: OK
+PROBE cross.maria.a4_python_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.maria.a4_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.maria.a4_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.pg.b1_python_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
+PROBE cross.pg.b1_python_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
+PROBE cross.pg.b1_python_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true]
+PROBE cross.pg.b1_installed_on_is_a_timestamp: [timestamp without time zone]
+PROBE cross.mysql.b1_python_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
+PROBE cross.mysql.b1_python_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
+PROBE cross.mysql.b1_python_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true]
+PROBE cross.mysql.b1_installed_on_is_a_timestamp: [timestamp]
+PROBE cross.maria.b1_python_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
+PROBE cross.maria.b1_python_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
+PROBE cross.maria.b1_python_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true]
+PROBE cross.maria.b1_installed_on_is_a_timestamp: [timestamp]
+PROBE cross.pg.b3_python_migrates_v4.outcome: OK applied=1 initial=3 target=4
+PROBE cross.pg.b3_python_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.pg.b3_python_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
+PROBE cross.mysql.b3_python_migrates_v4.outcome: OK applied=1 initial=3 target=4
+PROBE cross.mysql.b3_python_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.mysql.b3_python_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.maria.b3_python_migrates_v4.outcome: OK applied=1 initial=3 target=4
+PROBE cross.maria.b3_python_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.maria.b3_python_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.pg.b5_python.validate: OK
+PROBE cross.pg.b5_python_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.pg.b5_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.pg.b5_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
+PROBE cross.mysql.b5_python.validate: OK
+PROBE cross.mysql.b5_python_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.mysql.b5_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.mysql.b5_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.maria.b5_python.validate: OK
+PROBE cross.maria.b5_python_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.maria.b5_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.maria.b5_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
 PROBE cross.pg.c1_python_outcome: OK applied=1
+PROBE cross.pg.c1_python_took_s: 4
 PROBE cross.mysql.c1_python_outcome: OK applied=1
+PROBE cross.mysql.c1_python_took_s: 4
+PROBE cross.maria.c1_python_outcome: OK applied=1
+PROBE cross.maria.c1_python_took_s: 4
 PROBE cross.pg.c2_after_both_at_once.tables: [slow_t]
-PROBE cross.pg.c2_after_both_at_once.flyway_history: [<no history table>]
-PROBE cross.pg.c2_after_both_at_once.ekbatan_history: [1|1|slow|SQL|V1__slow.sql|6823ff9414d708fc280b3b84b743a0b51db44d75455e709af8fa145a352881a5|postgres|time>=0|true]
+PROBE cross.pg.c2_after_both_at_once.history: [1|1|slow|SQL|V1__slow.sql|-657010055|postgres|time>=0|true]
 PROBE cross.mysql.c2_after_both_at_once.tables: [slow_t]
-PROBE cross.mysql.c2_after_both_at_once.flyway_history: [<no history table>]
-PROBE cross.mysql.c2_after_both_at_once.ekbatan_history: [1|1|slow|SQL|V1__slow.sql|b49e7c6bc0b81321069a1300b35d3241bc8870355bc64d283e04e17de912dbeb|root|time>=0|true]
+PROBE cross.mysql.c2_after_both_at_once.history: [1|1|slow|SQL|V1__slow.sql|-1335638295|root|time>=0|true]
+PROBE cross.maria.c2_after_both_at_once.tables: [slow_t]
+PROBE cross.maria.c2_after_both_at_once.history: [1|1|slow|SQL|V1__slow.sql|-1335638295|root|time>=0|true]
+PROBE cross.pg.e1_python_outcome: OK applied=3
+PROBE cross.pg.e1_python_took_under_30s: false
+PROBE cross.pg.e2_after.tables: [cic_t]
+PROBE cross.pg.e2_after.history: [1|1|table|SQL|V1__table.sql|-1863562701|postgres|time>=0|true, 2|2|slow|SQL|V2__slow.sql|593069317|postgres|time>=0|true, 3|3|index|SQL|V3__index.sql|-422733637|postgres|time>=0|true]
+PROBE cross.pg.e2_index: [cic_idx]

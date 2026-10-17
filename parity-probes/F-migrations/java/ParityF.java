@@ -16,7 +16,8 @@ import org.slf4j.MDC;
 /** PARITY-PROBE helpers (temporary). Mirrors parity-probes/F-migrations/common.py. */
 final class ParityF {
 
-    static final String SQL = "/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/";
+    static final String SQL = System.getenv().getOrDefault(
+            "PARITY_F_SQL", "/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/");
     static final String PW = "parity-pw-F";
 
     private ParityF() {}
@@ -26,15 +27,20 @@ final class ParityF {
         System.out.flush();
     }
 
+    /** The scan ran on 55432/53306/53307; a rerun may pick other ports (PARITY_F_PG_PORT, ...). */
+    static String port(String which, String fallback) {
+        return System.getenv().getOrDefault("PARITY_F_" + which + "_PORT", fallback);
+    }
+
     static String user(String dialect) {
         return dialect.equals("pg") ? "postgres" : "root";
     }
 
     static String url(String dialect, String db) {
         return switch (dialect) {
-            case "pg" -> "jdbc:postgresql://localhost:55432/" + db;
-            case "mysql" -> "jdbc:mysql://localhost:53306/" + db;
-            case "maria" -> "jdbc:mariadb://localhost:53307/" + db;
+            case "pg" -> "jdbc:postgresql://localhost:" + port("PG", "55432") + "/" + db;
+            case "mysql" -> "jdbc:mysql://localhost:" + port("MYSQL", "53306") + "/" + db;
+            case "maria" -> "jdbc:mariadb://localhost:" + port("MARIA", "53307") + "/" + db;
             default -> throw new IllegalArgumentException(dialect);
         };
     }

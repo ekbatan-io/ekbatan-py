@@ -1,28 +1,59 @@
-PROBE cross.pg.a1_java_migrates_base.outcome: OK applied=3 initial=null
-PROBE cross.pg.a1_java_migrates_base.tables: [life_a, life_b, life_v]
-PROBE cross.pg.a1_java_migrates_base.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE cross.pg.a1_java_migrates_base.ekbatan_history: [<no history table>]
-PROBE cross.pg.a1_installed_on_sample: [2026-10-17 20:23:40.577395]
-PROBE cross.mysql.a1_java_migrates_base.outcome: OK applied=3 initial=null
-PROBE cross.mysql.a1_java_migrates_base.tables: [life_a, life_b, life_v]
-PROBE cross.mysql.a1_java_migrates_base.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE cross.mysql.a1_java_migrates_base.ekbatan_history: [<no history table>]
-PROBE cross.mysql.a1_installed_on_sample: [2026-10-17 18:23:41]
-PROBE cross.pg.a4_java_migrates_base_plus_v3.outcome: FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42P07 Error Code : 0 Message : ERROR: relation "life_c" already exists Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql) Line : 1 Statement : Run Flyway with -X option to se...
-PROBE cross.pg.a4_java_migrates_base_plus_v3.tables: [life_a, life_b, life_c, life_v]
-PROBE cross.pg.a4_java_migrates_base_plus_v3.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE cross.pg.a4_java_migrates_base_plus_v3.ekbatan_history: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-PROBE cross.mysql.a4_java_migrates_base_plus_v3.outcome: FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42S01 Error Code : 1050 Message : Table 'life_c' already exists Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql) Line : 1 Statement : Run Flyway with -X option to see the a...
-PROBE cross.mysql.a4_java_migrates_base_plus_v3.tables: [life_a, life_b, life_c, life_v]
-PROBE cross.mysql.a4_java_migrates_base_plus_v3.flyway_history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|3|half|SQL|V3__half.sql|-1158503407|root|time>=0|false]
-PROBE cross.mysql.a4_java_migrates_base_plus_v3.ekbatan_history: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-PROBE cross.pg.b2_java_migrates_base_plus_v3.outcome: FAIL FlywayException: Found non-empty schema(s) "public" but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
-PROBE cross.pg.b2_java_migrates_base_plus_v3.tables: [life_a, life_b, life_v]
-PROBE cross.pg.b2_java_migrates_base_plus_v3.flyway_history: [<no history table>]
-PROBE cross.pg.b2_java_migrates_base_plus_v3.ekbatan_history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-PROBE cross.mysql.b2_java_migrates_base_plus_v3.outcome: FAIL FlywayException: Found non-empty schema(s) `f6_b` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
-PROBE cross.mysql.b2_java_migrates_base_plus_v3.tables: [life_a, life_b, life_v]
-PROBE cross.mysql.b2_java_migrates_base_plus_v3.flyway_history: [<no history table>]
-PROBE cross.mysql.b2_java_migrates_base_plus_v3.ekbatan_history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-PROBE cross.pg.c1_java_outcome: FAIL FlywayException: Found non-empty schema(s) "public" but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
-PROBE cross.mysql.c1_java_outcome: FAIL FlywayException: Found non-empty schema(s) `f6_c` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+PROBE cross.pg.a1_java_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
+PROBE cross.pg.a1_java_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
+PROBE cross.pg.a1_java_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true]
+PROBE cross.mysql.a1_java_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
+PROBE cross.mysql.a1_java_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
+PROBE cross.mysql.a1_java_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true]
+PROBE cross.maria.a1_java_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
+PROBE cross.maria.a1_java_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
+PROBE cross.maria.a1_java_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true]
+PROBE cross.pg.a3_java_migrates_v4.outcome: OK applied=1 initial=3 target=4
+PROBE cross.pg.a3_java_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.pg.a3_java_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
+PROBE cross.mysql.a3_java_migrates_v4.outcome: OK applied=1 initial=3 target=4
+PROBE cross.mysql.a3_java_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.mysql.a3_java_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.maria.a3_java_migrates_v4.outcome: OK applied=1 initial=3 target=4
+PROBE cross.maria.a3_java_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.maria.a3_java_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.pg.a5_java.validate: OK
+PROBE cross.pg.a5_java_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.pg.a5_java_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.pg.a5_java_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
+PROBE cross.mysql.a5_java.validate: OK
+PROBE cross.mysql.a5_java_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.mysql.a5_java_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.mysql.a5_java_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.maria.a5_java.validate: OK
+PROBE cross.maria.a5_java_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.maria.a5_java_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.maria.a5_java_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.pg.b2_java_migrates_v3.outcome: OK applied=1 initial=2 target=3
+PROBE cross.pg.b2_java_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
+PROBE cross.pg.b2_java_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true]
+PROBE cross.mysql.b2_java_migrates_v3.outcome: OK applied=1 initial=2 target=3
+PROBE cross.mysql.b2_java_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
+PROBE cross.mysql.b2_java_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true]
+PROBE cross.maria.b2_java_migrates_v3.outcome: OK applied=1 initial=2 target=3
+PROBE cross.maria.b2_java_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
+PROBE cross.maria.b2_java_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true]
+PROBE cross.pg.b4_java.validate: OK
+PROBE cross.pg.b4_java_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.pg.b4_java_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.pg.b4_java_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
+PROBE cross.mysql.b4_java.validate: OK
+PROBE cross.mysql.b4_java_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.mysql.b4_java_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.mysql.b4_java_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.maria.b4_java.validate: OK
+PROBE cross.maria.b4_java_migrates_again.outcome: OK applied=0 initial=4 target=null
+PROBE cross.maria.b4_java_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
+PROBE cross.maria.b4_java_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
+PROBE cross.pg.c1_java_outcome: OK applied=0
+PROBE cross.pg.c1_java_took_s: 4
+PROBE cross.mysql.c1_java_outcome: OK applied=0
+PROBE cross.mysql.c1_java_took_s: 4
+PROBE cross.maria.c1_java_outcome: OK applied=0
+PROBE cross.maria.c1_java_took_s: 4
+PROBE cross.pg.e1_java_outcome: FAIL FlywayException: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk
+PROBE cross.pg.e1_java_took_under_30s: false

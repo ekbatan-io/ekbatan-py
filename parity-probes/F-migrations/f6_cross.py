@@ -2,73 +2,118 @@
 order with the Java steps (ParityFCrossProbeTest) between them.
 
     python f6_cross.py <step>
+
+Rewritten for parity fix M, once the migrator wrote Flyway's history: the steps are the turns
+of the goal - Java migrates V1-V2, Python V3, Java V4, and the reverse - then both validate and
+both migrate again, applying nothing. The scan's first version of this probe (the two ports
+refusing each other's databases) is in git history.
 """
 
 import sys
 import time
 from pathlib import Path
 
-from common import SQL, cfg, fresh, history, msg, probe, query, tables
+from common import SQL, _s, cfg, fresh, history, msg, probe, query, tables
 
-from ekbatan.migrations import YoyoMigrator
+from ekbatan.migrations import FlywayMigrator
 
-DIALECTS = ["pg", "mysql"]
+DIALECTS = ["pg", "mysql", "maria"]
 START = Path(
     "/private/tmp/claude-501/-Users-mike-workspace-ekbatan/"
     "73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/parityF-start"
 )
 
 
-def both(k: str, d: str, db: str) -> None:
+def show(k: str, d: str, db: str) -> None:
     probe(k + ".tables", tables(d, db))
-    probe(k + ".flyway_history", history(d, db, "flyway_schema_history"))
-    probe(k + ".ekbatan_history", history(d, db))
+    probe(k + ".history", history(d, db))
 
 
 def migrate(k: str, d: str, db: str, folder: str) -> None:
     try:
-        r = YoyoMigrator.migrate_data_source(cfg(d, db), str(SQL / folder))
+        r = FlywayMigrator.migrate_data_source(cfg(d, db), str(SQL / folder))
         probe(
             k + ".outcome",
-            f"OK applied={r.migrations_executed} initial={r.initial_schema_version}",
+            f"OK applied={r.migrations_executed} initial={_s(r.initial_schema_version)} "
+            f"target={_s(r.target_schema_version)}",
         )
     except Exception as e:
         probe(k + ".outcome", "FAIL " + msg(e))
-    both(k, d, db)
+    show(k, d, db)
+
+
+def validate(k: str, d: str, db: str, folder: str) -> None:
+    try:
+        FlywayMigrator.builder().with_data_source(cfg(d, db)).locations(
+            str(SQL / folder)
+        ).validate()
+        probe(k + ".validate", "OK")
+    except Exception as e:
+        probe(k + ".validate", "FAIL " + msg(e))
+
+
+def at_start(offset: float) -> None:
+    at = int(START.read_text().strip()) / 1000 + offset
+    while time.time() < at:
+        time.sleep(0.02)
 
 
 step = sys.argv[1]
 for d in DIALECTS:
     if step == "a2":
-        migrate(f"cross.{d}.a2_python_migrates_base_plus_v3", d, "f6_a", "life/fixed")
-    elif step == "a3":
-        k = f"cross.{d}.a3_python_baselines_at_2_then_migrates"
-        b = YoyoMigrator.builder().with_data_source(cfg(d, "f6_a")).locations(str(SQL / "life/fixed"))
-        try:
-            b.baseline("2")
-            probe(k + ".baseline", "OK")
-        except Exception as e:
-            probe(k + ".baseline", "FAIL " + msg(e))
-        migrate(k, d, "f6_a", "life/fixed")
-    elif step == "a5":
-        both(f"cross.{d}.a5_final", d, "f6_a")
+        migrate(f"cross.{d}.a2_python_migrates_v3", d, "f6_a", "turns/b")
+    elif step == "a4":
+        validate(f"cross.{d}.a4_python", d, "f6_a", "turns/c")
+        migrate(f"cross.{d}.a4_python_migrates_again", d, "f6_a", "turns/c")
     elif step == "b1":
         fresh(d, "f6_b")
-        migrate(f"cross.{d}.b1_python_migrates_base", d, "f6_b", "life/base")
+        migrate(f"cross.{d}.b1_python_migrates_v1_v2", d, "f6_b", "turns/a")
         probe(
-            f"cross.{d}.b1_installed_on_sample",
-            query(d, "f6_b", "SELECT installed_on FROM ekbatan_schema_history WHERE installed_rank = 1"),
+            f"cross.{d}.b1_installed_on_is_a_timestamp",
+            query(
+                d,
+                "f6_b",
+                "SELECT data_type FROM information_schema.columns WHERE table_name = "
+                "'flyway_schema_history' AND column_name = 'installed_on' AND table_schema = "
+                + ("current_schema()" if d == "pg" else "DATABASE()"),
+            ),
         )
+    elif step == "b3":
+        migrate(f"cross.{d}.b3_python_migrates_v4", d, "f6_b", "turns/c")
+    elif step == "b5":
+        validate(f"cross.{d}.b5_python", d, "f6_b", "turns/c")
+        migrate(f"cross.{d}.b5_python_migrates_again", d, "f6_b", "turns/c")
     elif step == "c0":
         fresh(d, "f6_c")
     elif step == "c1":
-        at = int(START.read_text().strip()) / 1000 + (15 if d == "mysql" else 0)
-        while time.time() < at:
-            time.sleep(0.02)
+        at_start({"pg": 0, "mysql": 15, "maria": 30}[d])
+        began = time.time()
+        folder = "lock_pg" if d == "pg" else "lock_mysql"
         try:
-            r = YoyoMigrator.migrate_data_source(cfg(d, "f6_c"), str(SQL / f"lock_{d}"))
+            r = FlywayMigrator.migrate_data_source(cfg(d, "f6_c"), str(SQL / folder))
             probe(f"cross.{d}.c1_python_outcome", f"OK applied={r.migrations_executed}")
         except Exception as e:
             probe(f"cross.{d}.c1_python_outcome", "FAIL " + msg(e))
+        probe(f"cross.{d}.c1_python_took_s", round(time.time() - began))
     elif step == "c2":
-        both(f"cross.{d}.c2_after_both_at_once", d, "f6_c")
+        show(f"cross.{d}.c2_after_both_at_once", d, "f6_c")
+    elif step == "e0" and d == "pg":
+        fresh(d, "f6_e")
+    elif step == "e1" and d == "pg":
+        # Python builds a concurrent index while Java waits on the lock: no one hangs.
+        at_start(0)
+        began = time.time()
+        try:
+            r = FlywayMigrator.migrate_data_source(
+                cfg(d, "f6_e"), str(SQL / "cic_pg")
+            )
+            probe("cross.pg.e1_python_outcome", f"OK applied={r.migrations_executed}")
+        except Exception as e:
+            probe("cross.pg.e1_python_outcome", "FAIL " + msg(e))
+        probe("cross.pg.e1_python_took_under_30s", _s(time.time() - began < 30))
+    elif step == "e2" and d == "pg":
+        show("cross.pg.e2_after", d, "f6_e")
+        probe(
+            "cross.pg.e2_index",
+            query(d, "f6_e", "SELECT indexname FROM pg_indexes WHERE indexname = 'cic_idx'"),
+        )

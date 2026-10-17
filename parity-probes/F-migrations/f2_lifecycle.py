@@ -16,7 +16,7 @@ from common import (
     tables,
 )
 
-from ekbatan.migrations import YoyoMigrator
+from ekbatan.migrations import FlywayMigrator
 
 
 def schema(dialect: str) -> str:
@@ -26,7 +26,7 @@ def schema(dialect: str) -> str:
 def step(dialect: str, db: str, key: str, folder: str) -> None:
     with Captured() as log:
         try:
-            r = YoyoMigrator.migrate_data_source(cfg(dialect, db), str(SQL / "life" / folder))
+            r = FlywayMigrator.migrate_data_source(cfg(dialect, db), str(SQL / "life" / folder))
             probe(
                 key + ".outcome",
                 f"OK applied={r.migrations_executed} initial={r.initial_schema_version} "
@@ -115,7 +115,7 @@ def baseline(dialect: str) -> None:
     execute(dialect, db, "CREATE TABLE life_a (id INT PRIMARY KEY, name VARCHAR(20))")
     try:
         builder = (
-            YoyoMigrator.builder()
+            FlywayMigrator.builder()
             .with_data_source(cfg(dialect, db))
             .locations(str(SQL / "life" / "base"))
         )

@@ -1,14 +1,17 @@
 """Several processes migrating one database at once - the migrator's lock, on every dialect.
 
-This is where yoyo went wrong on its own, each measured:
+The lock is Flyway's own (its PostgreSQL advisory-lock key, its MySQL `GET_LOCK` name), so these
+processes would wait for a Java migrator the same way; the cross-port runs are in
+`parity-probes/F-migrations/`. Each failure below was measured with the migrator this one
+replaced:
 
-- #6: its lock gave up after ten seconds, so every process waiting behind a longer migration
-  crashed.
-- #7: its lock was a row in a table, so a process killed while holding it left every later
-  deploy failing until someone cleared the row by hand.
-- #15: it applied migrations on a second connection, apart from the lock's, so when the lock's
+- #6: a lock that gave up after ten seconds crashed every process waiting behind a longer
+  migration.
+- #7: a lock that was a row in a table, left behind by a process killed while holding it, failed
+  every later deploy until someone cleared the row by hand.
+- #15: migrations applied on a second connection, apart from the lock's: when the lock's
   connection died - a network blip, an idle timeout, a proxy - a second process ran the same
-  migration at the same time. Every split design ran it twice.
+  migration at the same time.
 
 Every test counts rows in a `runs` table that the slow migration inserts into: one row is one
 application, so "ran once" is checked, not inferred from who finished first.
@@ -24,12 +27,18 @@ from queue import Empty
 
 import pytest
 
-from ekbatan._yoyo import POSTGRES_LOCK_KEY, mysql_lock_name
+from ekbatan._migration_backend import mysql_lock_name, postgres_lock_key
 from ekbatan.migrations import HISTORY_TABLE, migrate
 from fixtures.logins import single
 from fixtures.migrating import CONTEXT, fresh, query, sleep_sql, start
 
 SERVERS = ("postgres", "mysql", "mariadb")
+POSTGRES_LOCK_KEY = postgres_lock_key('"public"."flyway_schema_history"')
+
+
+def mysql_lock(url: str) -> str:
+    database = query(url, "SELECT DATABASE()")[0][0]
+    return mysql_lock_name(f"`{database}`.`flyway_schema_history`")
 
 
 def slow_migrations(directory: Path, dialect: str, seconds: float) -> Path:
@@ -55,8 +64,7 @@ def lock_is_held(url: str, dialect: str) -> bool:
             )[0][0]
         )
     if dialect in ("mysql", "mariadb"):
-        database = query(url, "SELECT DATABASE()")[0][0]
-        return query(url, f"SELECT IS_USED_LOCK('{mysql_lock_name(database)}')")[0][0] is not None
+        return query(url, f"SELECT IS_USED_LOCK('{mysql_lock(url)}')")[0][0] is not None
     import fcntl
 
     with open(url.removeprefix("sqlite:///") + "-ekbatan-migrate.lock", "a+b") as handle:
@@ -86,8 +94,7 @@ def drop_the_lock_holders_session(url: str, dialect: str) -> None:
             "AND d.datname = current_database()",
         )
     else:
-        database = query(url, "SELECT DATABASE()")[0][0]
-        holder = query(url, f"SELECT IS_USED_LOCK('{mysql_lock_name(database)}')")[0][0]
+        holder = query(url, f"SELECT IS_USED_LOCK('{mysql_lock(url)}')")[0][0]
         query(url, f"KILL {holder}")
 
 
@@ -114,8 +121,8 @@ def finish(processes, timeout: float = 5) -> None:
 
 
 def test_four_processes_at_once_apply_each_migration_once(backend, request, tmp_path):
-    """On the servers the migration takes longer than yoyo's ten-second lock timeout, which is
-    what made its waiting processes crash. Here they wait, then find nothing left to do."""
+    """On the servers the migration takes longer than ten seconds, the timeout that made the old
+    lock's waiting processes crash. Here they wait, then find nothing left to do."""
     url = fresh(backend, request)
     seconds = 11 if backend.dialect in SERVERS else 2.5
     location = slow_migrations(tmp_path / "m", backend.dialect, seconds)
@@ -136,8 +143,8 @@ def test_four_processes_at_once_apply_each_migration_once(backend, request, tmp_
 
 
 def test_a_process_killed_mid_migration_does_not_block_the_next(backend, request, tmp_path):
-    """yoyo's lock row outlived the process and failed every later deploy. A session lock and an
-    OS file lock both die with the process."""
+    """A lock row outlived the process and failed every later deploy. A session lock and an OS
+    file lock both die with the process."""
     url = fresh(backend, request)
     location = slow_migrations(tmp_path / "m", backend.dialect, 30)
     results = CONTEXT.Queue()
@@ -187,8 +194,8 @@ def test_when_the_holders_session_is_dropped_the_migration_still_runs_once(
 
 def test_a_short_idle_timeout_does_not_let_a_second_process_in(backend, request, tmp_path):
     """An idle-connection killer took down a lock connection that sat idle through a migration.
-    Here nothing sits idle: the migrating connection is busy, and a waiting one asks every half
-    second."""
+    Here nothing sits idle for long: the migrating connection is busy, and a waiting one asks
+    every second, as Flyway's does - so a timeout of a few seconds never fires."""
     if backend.dialect not in SERVERS:
         pytest.skip("SQLite has no idle timeout")
     url = fresh(backend, request)
@@ -197,9 +204,9 @@ def test_a_short_idle_timeout_does_not_let_a_second_process_in(backend, request,
     )[0][0]
     location = slow_migrations(tmp_path / "m", backend.dialect, 5)
     if backend.dialect == "postgres":
-        query(url, f"ALTER DATABASE {database} SET idle_session_timeout = '1s'")
+        query(url, f"ALTER DATABASE {database} SET idle_session_timeout = '3s'")
     else:
-        query(url, "SET GLOBAL wait_timeout = 2")
+        query(url, "SET GLOBAL wait_timeout = 3")
     try:
         results, go = CONTEXT.Queue(), CONTEXT.Event()
         processes = [start(url, location, results, f"p{i}", go) for i in range(2)]
@@ -220,10 +227,12 @@ def test_a_short_idle_timeout_does_not_let_a_second_process_in(backend, request,
 
 
 def test_concurrent_index_builds_do_not_wait_on_the_waiters_forever(backend, request, tmp_path):
-    """The first version of the lock hung here. A waiting session blocked inside a lock call is
-    mid-statement, `CREATE INDEX CONCURRENTLY` waits for every such session, and they wait for
-    the lock - nothing moves and nothing reports a deadlock. Waiters now try and sleep, idle
-    between attempts, so the index gets built."""
+    """A waiting session blocked inside a lock call is mid-statement, `CREATE INDEX
+    CONCURRENTLY` waits for every such session, and they wait for the lock - nothing moves and
+    nothing reports a deadlock. Waiters try and sleep, idle between attempts, as Flyway's do;
+    and the migration runs outside a transaction on the lock's own connection, so it never
+    waits on itself, which is how Java's Flyway hangs here (row 23 of the scan). No marker in
+    the file: Flyway's parser finds the statement, and so does this one."""
     if backend.dialect != "postgres":
         pytest.skip("CREATE INDEX CONCURRENTLY is PostgreSQL's")
     url = fresh(backend, request)
@@ -232,7 +241,7 @@ def test_concurrent_index_builds_do_not_wait_on_the_waiters_forever(backend, req
     (location / "V1__table.sql").write_text("CREATE TABLE people (id INTEGER, owner TEXT);")
     (location / "V2__slow.sql").write_text("SELECT pg_sleep(2);")
     (location / "V3__index.sql").write_text(
-        "-- transactional: false\nCREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);"
+        "CREATE INDEX CONCURRENTLY ix_people_owner ON people (owner);"
     )
     results, go = CONTEXT.Queue(), CONTEXT.Event()
 
@@ -287,9 +296,10 @@ def test_four_processes_and_a_recorded_failure_leave_one_failed_row(backend, req
     location.mkdir()
     (location / "V1__runs.sql").write_text("CREATE TABLE runs (n INTEGER);")
     (location / "V2__half.sql").write_text(
-        f"-- transactional: false\n{sleep_sql(backend.dialect, 1)}\n"
-        "INSERT INTO runs VALUES (1);\nINSERT INTO nowhere VALUES (1);"
+        f"{sleep_sql(backend.dialect, 1)}\nINSERT INTO runs VALUES (1);\n"
+        "INSERT INTO nowhere VALUES (1);"
     )
+    (location / "V2__half.sql.conf").write_text("executeInTransaction=false")
     results, go = CONTEXT.Queue(), CONTEXT.Event()
 
     processes = [start(url, location, results, f"p{i}", go) for i in range(4)]

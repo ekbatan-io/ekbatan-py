@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from ekbatan.migrations import (
+    FlywayConfiguration,
     MigrationError,
     MigrationScript,
     MigrationState,
@@ -30,7 +31,7 @@ def files(tmp_path: Path, *spec: str | tuple[str, str]) -> Scripts:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(sql)
-    return _scan(tmp_path)
+    return _scan([tmp_path], FlywayConfiguration())
 
 
 def script(scripts: Scripts, name: str) -> MigrationScript:
@@ -43,7 +44,7 @@ def applied(
     rank: int,
     *,
     success: bool = True,
-    checksum: str | None = None,
+    checksum: int | None = None,
     description: str | None = None,
     name: str | None = None,
 ) -> _Row:
@@ -55,7 +56,7 @@ def applied(
         script=name or found.script,
         checksum=found.checksum if checksum is None else checksum,
         installed_by="me",
-        installed_on="2026-10-01T00:00:00.000000Z",
+        installed_on=None,
         execution_time=1,
         success=success,
     )
@@ -64,12 +65,21 @@ def applied(
 def gone(version: str | None, description: str, rank: int, *, success: bool = True) -> _Row:
     """A row whose file is not among the files."""
     script = f"V{version}__{description}.sql" if version else f"R__{description}.sql"
-    return _Row(rank, version, description, "SQL", script, "0" * 64, "me", "t", 1, success)
+    return _Row(rank, version, description, "SQL", script, 12345, "me", None, 1, success)
 
 
 def baseline(version: str, rank: int = 1) -> _Row:
     return _Row(
-        rank, version, "<< Baseline >>", "BASELINE", "<< Baseline >>", None, "me", "t", 0, True
+        rank,
+        version,
+        "<< Flyway Baseline >>",
+        "BASELINE",
+        "<< Flyway Baseline >>",
+        None,
+        "me",
+        None,
+        0,
+        True,
     )
 
 
@@ -112,7 +122,7 @@ def test_an_edited_migration_is_refused_and_can_be_realigned(tmp_path):
     """Flyway: "Migration checksum mismatch" (parity X04a)."""
     scripts = files(tmp_path, "V1__a.sql")
     one = script(scripts, "V1__a.sql")
-    history = [applied(one, 1, checksum="0" * 64)]
+    history = [applied(one, 1, checksum=12345)]
 
     model = _model(scripts, history)
 
@@ -197,7 +207,7 @@ def test_a_failed_migration_is_refused_until_repaired(tmp_path):
     scripts = files(tmp_path, "V1__a.sql", "V2__half.sql")
     one, half = script(scripts, "V1__a.sql"), script(scripts, "V2__half.sql")
 
-    model = _model(scripts, [applied(one, 1), applied(half, 2, success=False, checksum="0" * 64)])
+    model = _model(scripts, [applied(one, 1), applied(half, 2, success=False, checksum=12345)])
 
     with pytest.raises(MigrationError, match=r"version 2 \(V2__half\.sql\) failed on an earlier"):
         model.refuse("shard")
@@ -235,7 +245,7 @@ def test_every_problem_is_reported_at_once(tmp_path):
     scripts = files(tmp_path, "V1__a.sql", "V2__b.sql", "V3__c.sql")
     one, three = script(scripts, "V1__a.sql"), script(scripts, "V3__c.sql")
 
-    model = _model(scripts, [applied(one, 1, checksum="0" * 64), applied(three, 2)])
+    model = _model(scripts, [applied(one, 1, checksum=12345), applied(three, 2)])
 
     with pytest.raises(MigrationError) as raised:
         model.refuse("wallet (0:0)")
@@ -262,7 +272,7 @@ def test_a_changed_repeatable_migration_runs_again_and_the_old_row_is_superseded
     outdated until it has been applied again."""
     scripts = files(tmp_path, ("R__x.sql", "SELECT 'x2';"))
     x = script(scripts, "R__x.sql")
-    history = [applied(x, 1, checksum="1" * 64), applied(x, 2, checksum="2" * 64)]
+    history = [applied(x, 1, checksum=111), applied(x, 2, checksum=222)]
 
     model = _model(scripts, history)
 
@@ -280,7 +290,7 @@ def test_only_the_newest_row_counts_so_a_file_changed_back_runs_again(tmp_path):
     scripts = files(tmp_path, ("R__x.sql", "SELECT 'A';"))
     a = script(scripts, "R__x.sql")
 
-    model = _model(scripts, [applied(a, 1), applied(a, 2, checksum="b" * 64)])
+    model = _model(scripts, [applied(a, 1), applied(a, 2, checksum=999)])
 
     assert pending(model) == ["R__x.sql"]
 
@@ -290,7 +300,7 @@ def test_only_the_changed_repeatable_runs(tmp_path):
     scripts = files(tmp_path, "R__a.sql", "R__b.sql")
     a, b = script(scripts, "R__a.sql"), script(scripts, "R__b.sql")
 
-    model = _model(scripts, [applied(a, 1), applied(b, 2, checksum="0" * 64)])
+    model = _model(scripts, [applied(a, 1), applied(b, 2, checksum=12345)])
 
     assert pending(model) == ["R__b.sql"]
 
@@ -376,7 +386,7 @@ def test_what_a_baseline_covers_never_runs_and_what_follows_does(tmp_path):
     assert states(model) == [
         ("1", "a", "Below Baseline"),
         ("2", "b", "Ignored (Baseline)"),
-        ("2", "<< Baseline >>", "Baseline"),
+        ("2", "<< Flyway Baseline >>", "Baseline"),
         ("3", "c", "Pending"),
     ]
 
@@ -414,8 +424,38 @@ def test_info_lists_what_a_baseline_skipped_then_the_history_then_what_is_pendin
 
     assert [(i.category, i.description, i.state) for i in model.infos] == [
         ("Versioned", "a", MigrationState.BASELINE_IGNORED),
-        ("", "<< Baseline >>", MigrationState.BASELINE),
+        ("", "<< Flyway Baseline >>", MigrationState.BASELINE),
         ("Repeatable", "v", MigrationState.SUCCESS),
         ("Versioned", "b", MigrationState.SUCCESS),
         ("Repeatable", "u", MigrationState.PENDING),
     ]
+
+
+# -- rows Flyway keeps for itself -----------------------------------------------------------------
+
+
+def test_flyways_schema_creation_row_is_neither_a_migration_nor_missing(tmp_path):
+    """Java's Flyway writes rank 0, ``SCHEMA``, no version, when it created the schema. Read as
+    a repeatable migration it would be "missing a file" and stop every Python run."""
+    scripts = files(tmp_path, "V1__a.sql")
+    created = _Row(
+        0, None, "<< Flyway Schema Creation >>", "SCHEMA", '"app"', None, "me", None, 0, True
+    )
+
+    model = _model(scripts, [created, applied(script(scripts, "V1__a.sql"), 1)])
+
+    assert model.problems == [] and model.pending == []
+    assert states(model)[0] == (None, "<< Flyway Schema Creation >>", "Success")
+
+
+def test_a_long_repeatable_description_finds_its_own_row_again(tmp_path):
+    """The history keeps 197 characters and ``...``; matched on the uncut description the row is
+    lost and the file reads as never applied while the row reads as missing. Matched on what the
+    history holds, it is found."""
+    long_name = "R__" + "v" * 210 + ".sql"
+    scripts = files(tmp_path, long_name)
+    row = applied(script(scripts, long_name), 1, description="v" * 197 + "...")
+
+    model = _model(scripts, [row])
+
+    assert model.problems == [] and model.pending == []

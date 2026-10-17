@@ -3,7 +3,7 @@ name = "fastapi-wallet-rest-mariadb"
 version = "0.1.0"
 description = "A wallet service over HTTP on MariaDB, built with pip and setuptools."
 requires-python = ">=3.13"
-dependencies = ["ekbatan[mariadb,migrations]", "fastapi>=0.115", "uvicorn[standard]>=0.32"]
+dependencies = ["ekbatan[mariadb]", "fastapi>=0.115", "uvicorn[standard]>=0.32"]
 
 [dependency-groups]
 dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[mysql]>=4.15", "httpx>=0.27"]
