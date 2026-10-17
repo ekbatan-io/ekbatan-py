@@ -113,7 +113,7 @@ PROBE j.empty_registry_fanout.any: false
 PROBE j.fanout.name: ekbatan-event-fanout
 PROBE j.fanout.schedule: FixedDelay
 PROBE j.handling.name: ekbatan-event-handling
-PROBE j.handling.schedule_default: DisabledSchedule
+PROBE j.handling.schedule_default: FixedDelay
 PROBE j.job.batch_zero: ok
 PROBE j.job.blank_name: refused: EventFanoutJob has a blank name. The name is the primary key of this job's row and how every instance recognises it as the same job.
 PROBE j.job.no_clock: ok

@@ -142,7 +142,8 @@ jobs = (
         EventFanoutJob(registry, handlers, events=EVENTS,
                        notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
         EventHandlingJob(registry, handlers,
-                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
+                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock,
+                         enabled=events_config.handling.enabled),
     ])
     .build()
 )
@@ -152,10 +153,13 @@ jobs.start()
 The executor already writes every committed event with `delivered = False`, so it becomes visible
 to fan-out automatically. There is no extra persister to configure.
 
-**Dispatch is opt-in** (`HandlingConfig(enabled=True)`, default off). Some deployments want
-fan-out on - so events leave the outbox into notifications - without running handlers in *this*
-process, because a separate worker picks them up. Fan-out has no such switch and is always on
-when the job is registered.
+**A handling job you build runs**, as Java's does: its schedule is a fixed delay of the handling
+poll delay, 1 second by default, whatever the config says. The switch, `handling.enabled`
+(default off, as in Java), is read by your wiring, as Java's DI reads it to decide whether to
+create the job: pass `enabled=events_config.handling.enabled`, as above, or leave the job out.
+Some deployments want fan-out on - so events leave the outbox into notifications - without
+running handlers in *this* process, because a separate worker picks them up. Fan-out has no
+such switch and is always on when the job is registered.
 
 ## Schema additions
 

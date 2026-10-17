@@ -24,12 +24,16 @@ __all__ = [
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class HandlingConfig:
-    """Whether the in-process handling job runs at all.
+    """Whether the application runs the in-process handling job: Java's
+    ``ekbatan.local-event-handler.handling.enabled``.
 
-    Off by default, and deliberately: a deployment that drains notifications through an
-    external pipeline still registers its handlers - they are what decodes an event - but must
-    not also run a consumer in process. Turning it on is a decision somebody makes, not one
-    they inherit.
+    Off by default, as in Java: a deployment that drains notifications through an external
+    pipeline still registers its handlers - they are what decodes an event - but must not also
+    run a consumer in process.
+
+    The job itself does not read it, as Java's does not. Java's DI wiring reads it and does not
+    create the job when it is off; here your ``build()`` is the wiring, so it reads it -
+    ``EventHandlingJob.builder()...enabled(config.handling.enabled)``.
     """
 
     enabled: bool = False
@@ -59,7 +63,7 @@ class LocalEventHandlerConfig:
     handling_max_backoff_cap: timedelta | None = None
     #: How long a notification may keep being retried before it expires.
     handling_retention_window: timedelta | None = None
-    #: The handling job's own toggle.
+    #: Whether the application runs the handling job; read by the wiring, not by the job.
     handling: HandlingConfig = field(default_factory=HandlingConfig)
 
     def __post_init__(self) -> None:

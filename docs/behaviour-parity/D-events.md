@@ -44,7 +44,7 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 26 | Handlers in a batch, and shards, run at the same time | 5 at once (3 + 2 over two shards) | 5 | same | `c.max_concurrent_handlers` |
 | 27 | Default batch sizes (no size given) | fan-out 200, handling 100 | same | same | `c.default_*_batch` |
 | 28 | Default job names | `ekbatan-event-fanout`, `ekbatan-event-handling` | same | same | `j.*.name` |
-| 29 | Hand-built handling job's schedule | `FixedDelay` (runs) | `DisabledSchedule` (never runs) | differs | `j.handling.schedule_default` (Dracula 11) |
+| 29 | Hand-built handling job's schedule | `FixedDelay` (runs) | same (fixed in EKB-0275) | same | `j.handling.schedule_default` (Dracula 11) |
 | 30 | Config defaults | every knob empty, `handling.enabled` false | same | same | `j.config.defaults_empty`, `j.config.handling_enabled_default` |
 | 31 | Config with batch size 0, poll delay 0, negative retention | accepted (checked later, by the job) | refused when the config is built | differs | `j.config.*` |
 | 32 | Job checks: blank name, batch size 0, no clock | blank name ok; batch 0 refused; no clock refused | blank name refused; batch 0 accepted by `EventFanout`; no clock means the system clock | differs | `j.job.*` |
@@ -69,7 +69,7 @@ Most surprising first.
   the open transaction (see 22).
 - **Surprise:** high
 
-### 29. A hand-built handling job never runs (known: Dracula 11)
+### 29. A hand-built handling job never runs (known: Dracula 11) - fixed in EKB-0275
 - **What:** Java's `EventHandlingJob` always has a `FixedDelay` schedule; the on/off switch lives in
   the DI wiring. Python's job reads `handling.enabled` (default false) and returns
   `DisabledSchedule`.

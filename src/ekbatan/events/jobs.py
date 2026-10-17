@@ -162,9 +162,12 @@ class EventFanoutJob(DistributedJob):
 class EventHandlingJob(DistributedJob):
     """Delivers due notifications to their handlers, in one long-running execution.
 
-    Off unless switched on. A deployment draining notifications through an external pipeline
-    still registers its handlers - they are what decodes an event - and must not also run a
-    consumer in process, so this is opt-in rather than something to remember to turn off.
+    **A job you build runs**, as Java's does: its schedule is a fixed delay of the handling poll
+    delay, 1 second by default. It does not read ``handling.enabled`` from the config. In Java
+    that switch lives in the Spring, Quarkus and Micronaut wiring, which simply does not create
+    the job when it is off; here the wiring is your ``build()``, so read the switch there - pass
+    ``enabled=config.handling.enabled``, or leave the job out - as the examples do.
+    ``enabled=False`` registers the job with a `DisabledSchedule`, so it never runs.
     """
 
     __slots__ = ("_dispatch", "_enabled", "_name", "_poll_delay")
@@ -178,12 +181,12 @@ class EventHandlingJob(DistributedJob):
         config: LocalEventHandlerConfig | None = None,
         clock: Clock | None = None,
         name: str = HANDLING_JOB_NAME,
-        enabled: bool | None = None,
+        enabled: bool = True,
     ) -> None:
         tuning = config or LocalEventHandlerConfig()
         self._name = _valid_name(name, type(self).__name__)
         self._poll_delay = tuning.handling_poll_delay or DEFAULT_POLL_DELAY
-        self._enabled = tuning.handling.enabled if enabled is None else enabled
+        self._enabled = enabled
         self._dispatch = EventDispatch(
             registry,
             handlers,
@@ -337,7 +340,7 @@ class EventHandlingJobBuilder(_JobBuilder):
             config=self._config,
             clock=self._clock,
             name=self._name if self._name is not None else HANDLING_JOB_NAME,
-            enabled=self._enabled,
+            enabled=self._enabled if self._enabled is not None else True,
         )
 
 

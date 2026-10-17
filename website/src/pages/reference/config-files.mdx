@@ -124,7 +124,12 @@ ekbatan = load_ekbatan_config("ekbatan.yaml")
 registry = DatabaseRegistry.from_config(ekbatan.sharding)
 executor_builder = ActionExecutor.builder().namespace(ekbatan.namespace)
 jobs_builder = job_registry().with_config(ekbatan.jobs)
-handling_builder = EventHandlingJob.builder().config(ekbatan.local_event_handler)
+handling_builder = (
+    EventHandlingJob.builder()
+    .config(ekbatan.local_event_handler)
+    # The job does not read the switch, as Java's does not; the wiring does.
+    .enabled(ekbatan.local_event_handler.handling.enabled)
+)
 ```
 
 ```yaml

@@ -1579,7 +1579,7 @@ file itself. The layout and its keys are Java's; where it differs:
 | values typed by Jackson | INI text typed by the declared field; in `data-source-properties` by the quote rule | INI holds only text |
 | `ekbatan.namespace`, `ekbatan.jobs`, `ekbatan.local-event-handler` bound by the DI framework | read by `load_ekbatan_config` into `EkbatanConfig` | no DI framework; same keys, same defaults |
 | unknown `ekbatan.*` keys ignored by Spring's binder | refused, with their path | a misspelt `handling.enable` would otherwise leave handling off without a word |
-| `handling.enabled: false` - the handling job bean is not created | the job is built and registered, with a disabled schedule | no conditional beans; the job never runs either way |
+| `handling.enabled: false` - the handling job bean is not created | your wiring reads it and passes `enabled=` to the job, which then registers with a disabled schedule; the job itself does not read it, as Java's does not (`EKB-0275`) | no conditional beans; the job never runs either way |
 
 The examples follow: each reads an `ekbatan.yaml` beside its `app.py`, holding what the Java
 example holds in `application.yml`, and every example with a handler runs it on the fan-out and

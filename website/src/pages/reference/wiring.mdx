@@ -253,7 +253,9 @@ jobs = (
         EventFanoutJob(registry, handlers, events=EVENTS,
                        notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
         EventHandlingJob(registry, handlers,
-                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
+                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running,
+                         # Java's DI creates this job only when the switch is on.
+                         enabled=events_config.handling.enabled),
         PayStipendJob(executor, wallets),
     ])
     .with_config(ekbatan.jobs)  # `jobs` in the file, if any

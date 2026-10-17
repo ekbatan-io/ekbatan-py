@@ -76,28 +76,34 @@ def test_they_carry_the_names_the_java_implementation_uses(registry, handlers, c
 
 def test_they_are_scheduled_at_a_fixed_delay(registry, handlers, clock):
     assert a_fanout(registry, handlers, clock).schedule() == FixedDelay(DEFAULT_POLL_DELAY)
+    assert a_handling(registry, handlers, clock).schedule() == FixedDelay(DEFAULT_POLL_DELAY)
 
-    # Handling is opt-in, and a job that is switched off says so through its schedule rather
-    # than through a separate flag - which is how Java says it, and what db-scheduler reads to
-    # decide whether to write a row at all.
-    assert isinstance(a_handling(registry, handlers, clock).schedule(), DisabledSchedule)
-    switched_on = a_handling(
-        registry,
-        handlers,
-        clock,
-        config=LocalEventHandlerConfig(handling=HandlingConfig(enabled=True)),
-    )
-    assert switched_on.schedule() == FixedDelay(DEFAULT_POLL_DELAY)
+    # A job switched off says so through its schedule rather than through a separate flag -
+    # what db-scheduler reads to decide whether to run it at all.
+    switched_off = a_handling(registry, handlers, clock, enabled=False)
+    assert isinstance(switched_off.schedule(), DisabledSchedule)
 
 
-def test_handling_is_off_unless_it_is_switched_on(registry, handlers, clock):
-    """A deployment draining through an external pipeline registers its handlers - they decode
-    the event - and must not also run a consumer in process."""
-    assert a_fanout(registry, handlers, clock).enabled is True
-    assert a_handling(registry, handlers, clock).enabled is False
+def test_a_handling_job_built_by_hand_runs_as_java_s_does(registry, handlers, clock):
+    """Java's `EventHandlingJob` always has a `FixedDelay` schedule; only its DI wiring reads
+    `handling.enabled`, by not creating the job. So the job here does not read it either: a
+    config with handling off, as the config's default is, still gives a job that runs."""
+    off = LocalEventHandlerConfig(handling=HandlingConfig(enabled=False))
+    for job in (
+        a_handling(registry, handlers, clock),
+        a_handling(registry, handlers, clock, config=off),
+        EventHandlingJob.builder()
+        .registry(registry)
+        .handlers(handlers)
+        .notifications(EVENT_NOTIFICATIONS)
+        .config(off)
+        .clock(clock)
+        .build(),
+    ):
+        assert job.enabled is True
+        assert job.schedule() == FixedDelay(DEFAULT_POLL_DELAY)
 
-    on = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
-    assert a_handling(registry, handlers, clock, config=on).enabled is True
+    assert a_handling(registry, handlers, clock, enabled=False).enabled is False
 
 
 def test_a_blank_name_is_refused(registry, handlers, clock):
@@ -212,7 +218,8 @@ def test_a_disabled_handling_job_holds_its_row_and_does_nothing(
     registry, executor, handlers, recorder, clock
 ):
     fanout_job = a_fanout(registry, handlers, clock)
-    jobs = a_job_registry(registry, [fanout_job, a_handling(registry, handlers, clock)])
+    off = a_handling(registry, handlers, clock, enabled=False)
+    jobs = a_job_registry(registry, [fanout_job, off])
     jobs.start()
 
     run(

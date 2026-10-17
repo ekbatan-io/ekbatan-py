@@ -109,7 +109,8 @@ re-implemented.
 ### A.1 Turn it on
 
 There is no module to add — the in-process path ships in the framework. It is off until you
-register a handler and enable handling in your wiring:
+register a handler and the handling job. `handling.enabled` (default off) is the switch your
+wiring reads, as Java's DI does - the job itself runs once registered, as Java's does:
 
 ```python
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])

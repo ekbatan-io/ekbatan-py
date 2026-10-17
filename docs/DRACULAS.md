@@ -55,7 +55,7 @@ whatever is decided about the rest.
 | 8 | No DI container, no annotations, no discovery: every repository, action, handler, job and pool is built and registered by hand in `build()` | choice | partly (a helper from `EkbatanConfig`) | H | B, C, D, E |
 | 9 | A Java datasource block does not load: `jdbcUrl`, `maximumPoolSize`, `driverClassName` are unknown keys | choice | partly | H | C |
 | 10 | Pool settings are SQLAlchemy's (`pool_size` + `max_overflow`, `pool_recycle`, `pool_pre_ping`); no `minimumIdle`, `idleTimeout`, leak detection | forced | partly | H | C |
-| 11 | The handling job built by hand never runs unless switched on; Java's always runs | choice | yes | H | B |
+| 11 | ~~The handling job built by hand never runs unless switched on; Java's always runs~~ **fixed** (`EKB-0275`): a hand-built job runs on a fixed delay, as Java's; `handling.enabled` is read by the wiring, as Java's DI reads it | choice | yes | H | B |
 | 12 | Two `SystemClock()` objects count as different clocks, and the executor refuses to start | choice | partly | H | B |
 | 13 | The app finds its config file by a path it passes; no profiles, no per-key env overrides, no classpath | forced + choice | partly | M | C, E |
 | 14 | You declare the events tables and pass them to the executor and both jobs; the executor builder needs `event_persister(...)` | choice | partly | M | B |

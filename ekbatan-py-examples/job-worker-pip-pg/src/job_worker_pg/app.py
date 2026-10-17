@@ -169,6 +169,8 @@ def build(
                     .handlers(handlers)
                     .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
+                    # Java's DI makes this job only if `handling.enabled`; this is that check.
+                    .enabled(events_config.handling.enabled)
                     .clock(running)
                     .build(),
                     PayStipendJob(executor, wallets),

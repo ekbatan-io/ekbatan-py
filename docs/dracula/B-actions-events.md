@@ -11,7 +11,8 @@ sides. Ordered by surprise, highest first.
 
 ---
 
-### The handling job you build yourself never runs unless you switch it on
+### ~~The handling job you build yourself never runs unless you switch it on~~ fixed (`EKB-0275`)
+- **Fixed:** a hand-built `EventHandlingJob` runs on `FixedDelay(handling poll delay)`, 1 s by default, as Java's does, whatever the config says. The job no longer reads `handling.enabled`; the wiring does, as Java's DI does - the examples pass `.enabled(config.handling.enabled)`. `enabled=False` still registers it with a `DisabledSchedule`.
 - **What:** `EventHandlingJob(...)`, or its builder, with no config gives a job whose schedule is
   `DisabledSchedule`, so it registers and never delivers anything, and nothing says so. In Java a
   hand-built `EventHandlingJob` always runs. Only the Spring/Quarkus/Micronaut wiring checks
