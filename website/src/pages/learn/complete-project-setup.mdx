@@ -91,6 +91,10 @@ requires-python = ">=3.13"
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
+
+# setuptools packs only .py files unless told: the migrations and the config file ride along here
+[tool.setuptools.package-data]
+wallet = ["ekbatan.yaml", "migrations/*.sql"]
 ```
 
 </div>
@@ -98,6 +102,17 @@ build-backend = "setuptools.build_meta"
 
 ```bash
 poetry new wallet && cd wallet
+```
+
+Poetry leaves a gitignored file out of the package, and `schema.py` will be one (below), so name it:
+
+```bash
+cat >> pyproject.toml <<'EOF'
+
+[[tool.poetry.include]]
+path = "src/wallet/schema.py"
+format = ["sdist", "wheel"]
+EOF
 ```
 
 </div>
@@ -132,6 +147,10 @@ wallet/
 Two generated files, and the difference between them matters: **`builders.py` is committed**
 because it is derived from source you already have; **`schema.py` is gitignored** because it is
 derived from a database you have to start. The Makefile in step 7 makes both.
+
+```bash
+echo "src/wallet/schema.py" >> .gitignore
+```
 
 ## 2. Start a database
 
@@ -942,7 +961,52 @@ wallet - an event nobody handles stays undelivered rather than being marked done
 so a handler added later still finds it. The alert's row carries no event at all: writing an
 entity emits nothing, and the unit of work is recorded anyway.
 
-## 17. The example projects
+## 17. Package it
+
+What you deploy is a wheel, built from this folder - and a wheel holds only what the build tool
+decides to put in it:
+
+<div data-install="uv">
+
+```bash
+uv build --wheel
+python3 -m zipfile -l dist/*.whl | grep -E 'schema.py|ekbatan.yaml|\.sql'
+```
+
+</div>
+<div data-install="pip">
+
+```bash
+pip wheel --no-deps . -w dist
+python3 -m zipfile -l dist/*.whl | grep -E 'schema.py|ekbatan.yaml|\.sql'
+```
+
+</div>
+<div data-install="poetry">
+
+```bash
+poetry build -f wheel
+python3 -m zipfile -l dist/*.whl | grep -E 'schema.py|ekbatan.yaml|\.sql'
+```
+
+</div>
+
+`schema.py`, `ekbatan.yaml` and the four migrations must all be listed: the service imports the
+first and reads the others at startup, and a wheel without them fails there, not here. Each tool
+has its own rule, which is why step 1 carries a line for two of them. Checked by building a
+wheel with each:
+
+| build tool | a gitignored `schema.py` | the `.yaml` and `.sql` files |
+| --- | --- | --- |
+| `uv_build` (`uv init`) | packed | packed |
+| setuptools (the pip setup above) | packed | only with `[tool.setuptools.package-data]` |
+| poetry-core (`poetry new`) | only with `[[tool.poetry.include]]` | packed |
+| hatchling | only with `artifacts = ["src/wallet/schema.py"]` under `[tool.hatch.build.targets.wheel]` | packed |
+
+Java has none of this to think about: the generated classes are compiled into the jar whatever
+git ignores.
+
+## 18. The example projects
 
 When you want to see more than one service's worth, they are the reference:
 

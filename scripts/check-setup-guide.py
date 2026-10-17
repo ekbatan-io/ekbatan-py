@@ -7,7 +7,11 @@ It reads `website/src/pages/learn/complete-project-setup.mdx`, keeps what the pi
 one database and one installer, and in page order writes every file the page shows (each
 `CodeBlock` is the example file it imports) and runs every shell command and the Makefile. Then
 it checks what the page promises: `make test` passes, the service answers, a deposit raises an
-alert, the tables are there, and the outbox holds exactly the rows the page's table lists.
+alert, the tables are there, the outbox holds exactly the rows the page's table lists, and the
+wheel holds `schema.py`, the config and the migrations - and, installed into a fresh venv away
+from the source, imports and finds them. The packaging step runs inside a git repository, made
+if the page did not make one, because a real project lives in one and some build tools honour
+`.gitignore` only there.
 
 Needs Docker, network, and Python 3.13+ found by `uv python find`. Not part of `make lint`.
 
@@ -35,6 +39,12 @@ PAGE = ROOT / "website" / "src" / "pages" / "learn" / "complete-project-setup.md
 DATABASES = ("pg", "mysql", "mariadb")
 INSTALLERS = ("uv", "pip", "poetry")
 CONTAINERS = {"pg": "wallet-pg", "mysql": "wallet-mysql", "mariadb": "wallet-mariadb"}
+MIGRATIONS = (
+    "V0001__eventlog.sql",
+    "V0002__scheduled_tasks.sql",
+    "V0003__wallets.sql",
+    "V0004__alerts.sql",
+)
 
 
 @dataclass
@@ -157,6 +167,29 @@ def script_for(db: str, install: str, items: list[Item], python: Path, shims: Pa
                     'echo "== health $(curl -s localhost:8000/health)"'
                 )
                 continue
+            if text.startswith(("uv build", "pip wheel", "poetry build")):
+                # A real project lives in a repository, and some build tools honour .gitignore
+                # only inside one - so the packaging is checked in one.
+                parts.append(
+                    "[ -d .git ] || { git init -q && git add -A >/dev/null 2>&1 && "
+                    "git -c user.email=check@example.com -c user.name=check commit -qm init; }"
+                )
+                build, listing = text.splitlines()
+                parts.append(build)
+                parts.append(f'echo "== wheel"; {listing}')
+                # And the wheel works on its own: installed where no source tree is next to it.
+                extras = {"pg": "postgres", "mysql": "mysql", "mariadb": "mariadb"}[db]
+                parts.append(
+                    "python3 -m venv ../installed && "
+                    f'../installed/bin/pip install -q -e "{ROOT}/db-scheduler" '
+                    f'"{ROOT}[{extras},migrations]" fastapi && '
+                    "../installed/bin/pip install -q --no-deps dist/*.whl && "
+                    '(cd .. && installed/bin/python -c "'
+                    "from wallet.app import MIGRATIONS, Settings; import wallet.repository; "
+                    "print('== installed', sorted(p.name for p in MIGRATIONS.glob('*.sql')), "
+                    'Settings().config_file.is_file())")'
+                )
+                continue
             if text.strip() == "make test":
                 parts.append('echo "== make test"; make test 2>&1 | tail -1')
                 continue
@@ -193,6 +226,13 @@ def check(output: str, db: str) -> list[str]:
     for table in ("alerts", "event_notifications", "events", "scheduled_tasks", "wallets"):
         if not re.search(rf"\b{table}\b", output):
             problems.append(f"table {table} missing")
+    wheel = output.split("== wheel", 1)[1] if "== wheel" in output else ""
+    for packed in ("schema.py", "ekbatan.yaml", *MIGRATIONS):
+        if packed not in wheel:
+            problems.append(f"{packed} is not in the wheel")
+    installed = f"== installed {list(MIGRATIONS)} True"
+    if installed not in output:
+        problems.append("the installed wheel does not find its migrations and config")
     expected = page_outbox(db)
     rows = [
         tuple(cell.strip() for cell in re.split(r"\t|\|", line) if cell.strip() != "")

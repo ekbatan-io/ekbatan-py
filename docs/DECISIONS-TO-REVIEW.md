@@ -336,6 +336,16 @@ user's choice. See `docs/SETUP-GUIDE-LEDGER.md`.
 | `codegen` works in a new project: the package comes from the module read, and a stand-in answers the model's import of the builders it is writing | without it no new project could generate its first builders | built |
 | `scripts/check-setup-guide.py` follows the page for 3 databases x 3 installers, installing `ekbatan` from the checkout - its only substitution, until it is on PyPI | the proof that the page runs as written; Docker-bound, so not in `make lint` | built |
 
+## A wheel that holds what the service reads (`EKB-0256`)
+
+Asked by the user on 2026-10-17 (Dracula bug 7).
+
+| decision | why | who |
+| --- | --- | --- |
+| `schema.py` stays gitignored, and the guide says so as a command, with the line each build tool needs to pack it anyway | it is generated, as Java's jOOQ output is; measured: poetry-core and hatchling drop it, `uv_build` and setuptools keep it | built |
+| the guide's pip setup declares `[tool.setuptools.package-data]` for `ekbatan.yaml` and the migrations | measured: setuptools packs only `.py` files, so the wheel had neither, whatever git ignored - worse than the bug reported | built |
+| the setup-guide check builds the wheel, checks it lists the files, and imports it installed in a fresh venv; the packaging runs in a git repository, made if the page did not make one | the failure only shows on a machine without the source tree; some tools honour `.gitignore` only inside a repository | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

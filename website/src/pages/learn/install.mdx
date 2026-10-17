@@ -70,6 +70,12 @@ Starts a throwaway container, runs **your** migrations into it, reflects the res
 counterpart to the Java port's jOOQ step, and its output is gitignored for the same reason
 `build/generated-jooq` is: it is derived from a database you have to start.
 
+**Gitignored is not left out of the package - check that it is not.** Some build tools leave a
+gitignored file out of the wheel: poetry-core and hatchling drop `schema.py` unless told to keep
+it, while `uv_build` keeps it. The wheel then imports a module it does not contain, and fails at
+startup. [Complete project setup](/learn/complete-project-setup/) has the one line each tool needs, and a command that lists what
+a wheel holds.
+
 ## A Makefile, because uv has no task runner
 
 `uv` manages dependencies and runs commands. What it does not have — and this is the one real
