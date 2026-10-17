@@ -43,3 +43,16 @@ file belongs to the file beside it in its own location - each with a test that f
 | f5 locations | 28 | 12 | Java's own bugs not copied (concurrent index hangs; a plain absolute path finds nothing), `script_migration` refused here (a limit), wording |
 | f3 lock | 15 | 1 | wording of the give-up error (Python names the target) |
 | f6 cross-over | 51 mirrored | 0 | both directions, three servers: the same rows written by either port, validate OK in both, nothing re-applied; both at once: one applies, the other waits |
+
+## Verification
+
+- Full suite, `--dialects=all`, at `EKB-0283`: 2504 passed, 64 skipped, 0 failed. After
+  `EKB-0284`, the migration suites (unit, `test_migrations`, `test_migration_concurrency`,
+  `test_schemagen`, `test_secrets_stay_secret`) on every dialect: 1234 passed, 33 skipped.
+- `make test-gevent`: 1306 passed, 44 skipped.
+- `make examples`: all 21 pass (each runs `schemagen` through the new migrator, and migrates at
+  startup).
+- `make lint`: ruff, format, mypy, divergence, builders, examples, API snippets and docs/website
+  sync all pass; `links.py` reports only the other groups' ledgers, which do not exist on this
+  branch.
+- `cd website && npm run build`: 54 pages.
