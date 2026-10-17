@@ -79,7 +79,7 @@ PROBE mysql.close_twice.other_can_acquire: true
 PROBE mysql.try_held.wait_0ms.got: false
 PROBE mysql.try_held.wait_0ms.elapsed_bucket_ms: 0
 PROBE mysql.try_held.wait_500ms.got: false
-PROBE mysql.try_held.wait_500ms.elapsed_bucket_ms: 0
+PROBE mysql.try_held.wait_500ms.elapsed_bucket_ms: 1000
 PROBE mysql.try_held.wait_1000ms.got: false
 PROBE mysql.try_held.wait_1000ms.elapsed_bucket_ms: 1000
 PROBE mysql.try_held.wait_1500ms.got: false

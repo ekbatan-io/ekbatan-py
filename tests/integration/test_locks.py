@@ -382,19 +382,12 @@ def test_a_timed_out_wait_leaves_no_lock_timeout_on_the_pooled_connection(
 
 
 def test_what_a_sub_second_wait_actually_does_on_each_server(locks, dialect, request):
-    """Java has a case here for MySQL and MariaDB and none for Postgres, because `GET_LOCK`
-    takes its timeout as a `DOUBLE` and the two servers disagree about the fraction.
+    """Java has a case here for MySQL and MariaDB and none for Postgres, because the two servers
+    disagree about the fraction in `GET_LOCK`'s timeout.
 
-    Measured, not assumed - holding the lock and timing a second session against the containers
-    this suite runs:
-
-        timeout   MySQL 8.4.11   MariaDB 11.4
-        0.25s     0.00s          0.26s
-        0.5s      0.00s          0.51s
-        1.5s      2.01s          1.51s
-
-    MySQL truncates a sub-second timeout to zero, so a 500ms wait is a poll. MariaDB honours it.
-    Postgres waits with its own `lock_timeout`, in whatever resolution it was given.
+    MySQL rounds it to whole seconds, MariaDB keeps it. Java sends the seconds as a decimal
+    (`0.5`), which MySQL rounds half up, so a 500ms wait lasts one second there. Python sends the
+    same decimal; as a float (`0.5e0`) MySQL rounded it half to even, to no wait at all.
     """
     if dialect not in ("mysql", "mariadb"):
         pytest.skip("Postgres waits with its own timeout, in any resolution")
@@ -414,12 +407,24 @@ def test_what_a_sub_second_wait_actually_does_on_each_server(locks, dialect, req
         waited = time.monotonic() - started
 
     if dialect == "mariadb":
-        assert waited >= 0.4, f"MariaDB honours the fraction; waited {waited:.2f}s"
+        assert 0.4 <= waited < 0.9, f"MariaDB honours the fraction; waited {waited:.2f}s"
     else:
-        assert waited < 0.4, (
-            f"MySQL truncates a sub-second timeout to zero, so this returns at once; "
-            f"waited {waited:.2f}s"
+        assert 0.9 <= waited < 1.5, (
+            f"MySQL rounds 0.5s half up to one second, as it does for Java; waited {waited:.2f}s"
         )
+
+
+def test_the_get_lock_timeout_is_the_value_java_sends():
+    """Java's `toGetLockTimeout`, sent as Connector/J sends a double: a plain decimal."""
+    from decimal import Decimal
+
+    from ekbatan.locks.sql import _get_lock_timeout
+
+    assert _get_lock_timeout(timedelta(0)) == 0
+    assert _get_lock_timeout(timedelta(microseconds=1)) == Decimal("0.001")
+    assert _get_lock_timeout(timedelta(milliseconds=500)) == Decimal("0.5")
+    assert _get_lock_timeout(timedelta(milliseconds=1500, microseconds=999)) == Decimal("1.5")
+    assert isinstance(_get_lock_timeout(timedelta(seconds=5)), Decimal)
 
 
 # -- a lock around a whole unit of work ----------------------------------------------------------

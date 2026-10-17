@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any, Self
 
 from sqlalchemy import Connection, Engine
@@ -222,30 +223,23 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
 class MySQLKeyedLockProvider(SqlKeyedLockProvider):
     """MySQL user-level locks via ``GET_LOCK``.
 
-    **A sub-second wait is not a wait on MySQL.** ``GET_LOCK`` takes a ``DOUBLE``, and the two
-    servers have diverged on what they do with the fraction. Measured against the containers
-    this suite runs, holding the lock and timing a second session:
+    **MySQL rounds the wait to whole seconds; MariaDB keeps the fraction.** The seconds are sent
+    as a ``Decimal``, because that is what Java's Connector/J puts on the wire (``0.5``), and
+    MySQL rounds a decimal half up. PyMySQL would send a float as ``0.5e0``, which MySQL rounds
+    half to even - so a 500ms wait became no wait at all in Python and one second in Java.
+    Measured on MySQL 26.7 and MariaDB 12.2, holding the lock and timing a second session:
 
-    ==============  ==================  ==============
-    timeout asked   MySQL 8.4.11        MariaDB 11.4
-    ==============  ==================  ==============
-    0.25s           0.00s               0.26s
-    0.5s            0.00s               0.51s
-    1s              1.01s               1.01s
-    1.5s            2.01s               1.51s
-    ==============  ==================  ==============
+    ==============  ===============  ===============  ==============
+    timeout asked   MySQL, decimal   MySQL, float     MariaDB, both
+    ==============  ===============  ===============  ==============
+    0.25s           0.00s            0.00s            0.25s
+    0.5s            1.00s            0.00s            0.50s
+    1s              1.01s            1.01s            1.00s
+    1.5s            2.01s            2.00s            1.50s
+    ==============  ===============  ===============  ==============
 
-    So MySQL truncates a sub-second timeout to zero and rounds a fractional one above a second
-    up; MariaDB honours the fraction. A ``try_acquire`` with a 500ms wait therefore returns
-    almost immediately on MySQL - it is a poll, not a wait.
-
-    The value is passed through as-is anyway, as the Java implementation passes it. Rounding it
-    up here would make a 50ms wait take a second, which is a surprise in the other direction,
-    and polling in a loop would trade a bounded imprecision for load on the database. What is
-    worth having is that this is written down and tested rather than discovered.
-
-    (Java's own comment says MySQL "rounds up to the next whole second" for these. That holds
-    above one second and not below it - a 500ms wait does not become 1s, it becomes none.)
+    The value is Java's too: ``0`` for no wait, otherwise the milliseconds (at least 1) over
+    1000. A 250ms ``try_acquire`` on MySQL is therefore a single try, in both ports.
     """
 
     _log = logging.getLogger("io.ekbatan.core.concurrent.MySQLKeyedLockProvider")
@@ -255,7 +249,7 @@ class MySQLKeyedLockProvider(SqlKeyedLockProvider):
 
         result = conn.execute(
             text("SELECT GET_LOCK(:name, :timeout)"),
-            {"name": self._name(key), "timeout": max(0.0, wait.total_seconds())},
+            {"name": self._name(key), "timeout": _get_lock_timeout(wait)},
         ).scalar()
         if result is None:
             # NULL is a server-side failure - out of memory, a killed session. It has to stay
@@ -278,11 +272,18 @@ class MySQLKeyedLockProvider(SqlKeyedLockProvider):
         return f"{key & 0xFFFFFFFFFFFFFFFF:x}"
 
 
+def _get_lock_timeout(wait: timedelta) -> Decimal:
+    """Java's ``toGetLockTimeout``: 0 for no wait, else whole milliseconds (at least 1) / 1000."""
+    if wait <= timedelta(0):
+        return Decimal(0)
+    return Decimal(max(1, wait // timedelta(milliseconds=1))) / 1000
+
+
 class MariaDBKeyedLockProvider(MySQLKeyedLockProvider):
     """MariaDB user-level locks.
 
     Same statements as MySQL, and separate because the two have diverged on the timeout
-    argument: MariaDB honours millisecond precision where MySQL rounds up to a second. Kept as
+    argument: MariaDB honours millisecond precision where MySQL rounds to whole seconds. Kept as
     its own class rather than a flag, because a flag is something to set wrongly.
     """
 

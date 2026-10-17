@@ -36,7 +36,7 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 14 | Outer closed first, inner open | outer `isHeld` false, lock kept | outer `held` false, lock kept (was: true; fixed in EKB-0262) | same | locks `outer_first.*` |
 | 15 | One lease closed twice | no error, released once | same | same | locks `close_twice` |
 | 16 | `tryAcquire` on a held key, 0 / 0.5 / 1 / 1.5 s (PG, MariaDB) | empty after about the wait | same | same | locks `try_held.*` |
-| 17 | MySQL `tryAcquire` with a 500 ms wait | waits 1 s | waits 0 s | differs | locks `mysql.try_held.wait_500ms`, wait `mysql.*` |
+| 17 | MySQL `tryAcquire` with a 500 ms wait | waits 1 s | waits 1 s (was: 0 s; fixed in EKB-0265) | same | locks `mysql.try_held.wait_500ms`, wait `mysql.*` |
 | 18 | Redis `tryAcquire` wait length (1 s, 5 s) | 1 s, 5 s | 1.25 s, 5.75 s | differs | locks `redis.try_held.*`, wait `redis.*` |
 | 19 | `tryAcquire` gets it when the holder lets go in time | yes, under 1.5 s | same | same | locks `try_released_in_time` |
 | 20 | `acquire` waits while held, then gets it | yes | same | same | locks `blocking_acquire` |
@@ -112,6 +112,8 @@ works as it should. This confirms the "unverified" Dracula in D.
 Java `RedisKeyedLockProvider.java:72,90-92`. Python `locks/redis.py:140`.
 Python could match by writing Redisson's hash layout with Redisson's Lua scripts. Moderate
 cost, and it ties the port to Redisson's internal format.
+
+> **Fixed in EKB-0265:** the seconds go as a `Decimal`. Rerun: `mysql.try_held.wait_500ms.elapsed_bucket_ms: 1000`, as Java.
 
 **17. MySQL: a 500 ms wait lasts 1 s in Java and 0 s in Python** (surprise: medium). Both send
 0.5. Connector/J sends it as a decimal, which MySQL rounds to 1 s; PyMySQL sends a float

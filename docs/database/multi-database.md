@@ -162,7 +162,7 @@ Everything below was found by running the suite against all four, not by reading
 | --- | --- |
 | **`SKIP LOCKED`** | PostgreSQL, MySQL 8+ and MariaDB 10.6+ have it. SQLite does not, which is the main reason it is not a production dialect |
 | **`RETURNING`** | PostgreSQL and SQLite support it on writes; MySQL and MariaDB do not, so the framework rebuilds written rows itself there |
-| **`GET_LOCK` sub-second timeouts** | MySQL truncates them to zero; MariaDB honours them. [Measured](keyed-locks.md#a-sub-second-wait-is-not-a-wait-on-mysql) |
+| **`GET_LOCK` sub-second timeouts** | MySQL rounds them to whole seconds; MariaDB honours them. [Measured](keyed-locks.md#mysql-rounds-the-wait-to-whole-seconds) |
 | **Native UUID** | PostgreSQL always; MariaDB 10.7+; MySQL never |
 | **Reflected type names** | MariaDB reports a bigint as `BIGINT(display_width=20)` and JSON as `LONGTEXT`. [`schemagen`](schemagen.md) normalises both |
 | **Untyped `NULL` in a multi-row `VALUES`** | PostgreSQL infers `text` and then refuses to insert it into an integer column. The framework casts every NULL explicitly |

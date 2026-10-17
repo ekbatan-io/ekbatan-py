@@ -126,10 +126,9 @@ rebuilds written rows itself. That is why `add_no_result` and `update_no_result`
 large batch where you do not need the objects back, they skip work that is free on PostgreSQL and
 is not free here.
 
-**A sub-second lock wait is not a wait.** `GET_LOCK(name, 0.5)` returns **immediately** on MySQL
-- it truncates the fraction to zero - while a 1.5-second wait is rounded *up* to two.
-[Measured](keyed-locks.md#a-sub-second-wait-is-not-a-wait-on-mysql). A `try_acquire` with a
-500 ms wait is a poll.
+**A lock wait is rounded to whole seconds.** MySQL rounds `GET_LOCK`'s timeout to the nearest
+second: a 250 ms wait is a single try, 500 ms waits one second, 1.5 s waits two - the same as in
+Java. [Measured](keyed-locks.md#mysql-rounds-the-wait-to-whole-seconds).
 
 **`eventlog` would be a separate database.** Only if you want Java's layout. It needs a migration
 to create it and an init script to grant rights - the grant cannot be in a migration, because the

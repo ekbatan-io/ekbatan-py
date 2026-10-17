@@ -141,9 +141,9 @@ Java has the same problem and solves it the same way, with a jOOQ `ForcedType` c
 Emitted verbatim into a generated module, it does not even import - `TypeError: BIGINT() takes no
 arguments`. `schemagen` normalises it.
 
-**`GET_LOCK` honours sub-second timeouts here** - unlike MySQL, which truncates them to zero.
+**`GET_LOCK` honours sub-second timeouts here** - unlike MySQL, which rounds them to whole seconds.
 That is why there is a separate provider class for a backend that issues identical statements.
-[The measurements](keyed-locks.md#a-sub-second-wait-is-not-a-wait-on-mysql).
+[The measurements](keyed-locks.md#mysql-rounds-the-wait-to-whole-seconds).
 
 **No partial indexes**, same as MySQL. The predicate column goes in the index.
 

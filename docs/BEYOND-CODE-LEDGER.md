@@ -99,7 +99,7 @@ port's MySQL and MariaDB behaviour is not identical to Java's.
 | database/outbox-schema.md | 11 | - | n/a - a redirect stub preserving an old Java URL. This port has no old URLs |
 | database/repositories.md | 213 | `docs/database/repositories.md` | done - and a good half of the Java page had no counterpart, as expected: mapping by field name deletes `fromRecord`/`toRecord` entirely |
 | database/transaction-manager.md | 174 | `docs/database/transaction-manager.md` | done - one `with` block against four overloads, and a sharper divergence than expected: **this port joins an open transaction where Java nests onto a second connection**, which Java documents as "do not nest" |
-| database/keyed-locks.md | 248 | `docs/database/keyed-locks.md` | done - carries the `GET_LOCK` table (MySQL truncates a sub-second wait to zero; MariaDB honours it) and the watchdog's thread cost |
+| database/keyed-locks.md | 248 | `docs/database/keyed-locks.md` | done - carries the `GET_LOCK` table (MySQL rounds the wait to whole seconds; MariaDB honours the fraction) and the watchdog's thread cost |
 | database/sharding.md | 323 | `docs/database/sharding.md` | done - the reference half; the reasoning is in `concepts/sharding.md`. Documents why `max_overflow` defaults to 0 where SQLAlchemy's default is 10 |
 | database/multi-database.md | 136 | `docs/database/multi-database.md` | done - Java's grid of types against converters collapses to three column helpers, because a SQLAlchemy type decorator renders itself per dialect |
 | database/postgresql.md | 205 | `docs/database/postgresql.md` | done |

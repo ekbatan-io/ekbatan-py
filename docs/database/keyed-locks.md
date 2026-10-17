@@ -163,7 +163,7 @@ what makes "uniform across all five" checkable rather than aspirational.
 | Provider | Scope | Mechanism | Hold | Notes |
 |---|---|---|---|---|
 | `PostgresKeyedLockProvider` | cross-process | `pg_advisory_lock` (session-scoped) | session + watchdog | Auto-released if the session ends — a crashed process or a dropped network connection releases the key without anyone intervening. One connection per lease |
-| `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | A sub-second `max_wait` is **not a wait** — see [below](#a-sub-second-wait-is-not-a-wait-on-mysql) |
+| `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | `max_wait` is **rounded to whole seconds** — see [below](#mysql-rounds-the-wait-to-whole-seconds) |
 | `MariaDBKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | Same statements as the MySQL one, separate because MariaDB honours sub-second timeouts |
 | `RedisKeyedLockProvider` | the Redis deployment | `SET NX PX` | **TTL** + watchdog | Sub-millisecond hand-off. Single-master only — **not** Redlock |
 
@@ -265,30 +265,25 @@ A network partition landing *inside* a segment still parks the caller in a block
 and no client-side loop can bound that. Set a socket timeout on the lock pool if you need a hard
 one; it is not lock-specific, any long-running query has the same exposure.
 
-## A sub-second wait is not a wait on MySQL
+## MySQL rounds the wait to whole seconds
 
-`GET_LOCK` takes a `DOUBLE`, and the two servers have diverged on what they do with the
-fraction. Measured against the containers this suite runs, holding the lock and timing a second
-session:
+`GET_LOCK` takes its timeout in seconds, and the two servers differ on the fraction: MySQL
+rounds it to the nearest whole second, MariaDB keeps it. Holding the lock and timing a second
+session (MySQL 26.7, MariaDB 12.2):
 
-| timeout asked | MySQL 8.4.11 | MariaDB 11.4 |
+| timeout asked | MySQL | MariaDB |
 | --- | --- | --- |
-| 0.25s | **0.00s** | 0.26s |
-| 0.5s | **0.00s** | 0.51s |
-| 1s | 1.01s | 1.01s |
-| 1.5s | **2.01s** | 1.51s |
+| 0.25s | **0.00s** | 0.25s |
+| 0.5s | **1.00s** | 0.50s |
+| 1s | 1.01s | 1.00s |
+| 1.5s | **2.01s** | 1.50s |
 
-MySQL truncates a sub-second timeout to zero and rounds a fractional one above a second *up*;
-MariaDB honours the fraction. So `try_acquire(key, timedelta(milliseconds=500), ...)` on MySQL is
-a **poll, not a wait** - it returns almost immediately.
+So `try_acquire(key, timedelta(milliseconds=250), ...)` on MySQL is a single try, and a 500 ms
+wait lasts a second. The same happens in Java: both ports send the same value, the milliseconds
+over 1000 as a decimal (`0.5`), which is what Java's driver puts on the wire.
 
-The value is passed through as-is, as Java passes it. Rounding up here would make a 50 ms wait
-take a second, a surprise in the other direction; polling in a loop would trade a bounded
-imprecision for load on the database. What is worth having is that it is written down and tested
-rather than discovered.
-
-Java's own comment says MySQL "rounds up to the next whole second". That holds above one second
-and not below it: a 500 ms wait does not become 1 s, it becomes none.
+The type matters. Sent as a float (`0.5e0`), MySQL rounds half to even, and the 500 ms wait
+becomes no wait at all - which is what this port did until `EKB-0265`.
 
 ## The watchdog is one thread, not one per hold
 
