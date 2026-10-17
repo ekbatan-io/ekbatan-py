@@ -625,7 +625,7 @@ def _scan(locations: Sequence[str | Path], configuration: FlywayConfiguration) -
             raise ValidationError("locations cannot contain blank values")
         resources += _location_resources(str(location))
 
-    conf = {r.relative[: -len(".conf")]: r for r in resources if r.relative.endswith(".sql.conf")}
+    conf = {r.shown[: -len(".conf")]: r for r in resources if r.shown.endswith(".sql.conf")}
     versioned: list[MigrationScript] = []
     repeatable: list[MigrationScript] = []
     callbacks: list[Callback] = []
@@ -649,7 +649,7 @@ def _scan(locations: Sequence[str | Path], configuration: FlywayConfiguration) -
             invalid.append(name.message)
             continue
         config = ScriptConfig()
-        conf_file = conf.get(resource.relative)
+        conf_file = conf.get(resource.shown)
         if conf_file is not None:
             config = read_script_config(
                 _decode(conf_file.read(), "utf-8", conf_file.shown), conf_file.shown
@@ -1830,20 +1830,26 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
                 _log_future(session, scripts, model)
                 started = time.monotonic()
                 versioned = True
-                for current in prepared:
-                    if versioned and current.script.repeatable:
+                for one in prepared:
+                    if versioned and one.script.repeatable:
                         _fire(session, "afterVersioned")
                         _fire(session, "beforeRepeatables")
                         versioned = False
+                    current = one
                     _apply(session, current)
                     applied.append(current.script)
-                current = None
+                    current = None
                 if versioned:
                     _fire(session, "afterVersioned")
                 millis = int((time.monotonic() - started) * 1000)
                 _log_summary(session, applied, millis)
             except Exception:
-                _fire(session, "afterMigrateError")
+                # A failing afterMigrateError callback is logged; the error raised is the one
+                # that failed the run, not the callback's.
+                try:
+                    _fire(session, "afterMigrateError")
+                except _CallbackFailed as callback:
+                    _MIGRATE_LOG.error("%s", callback)
                 raise
             if applied:
                 _fire(session, "afterMigrateApplied")

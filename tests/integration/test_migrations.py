@@ -1770,3 +1770,27 @@ def test_with_create_schemas_off_a_missing_schema_is_not_created(backend, reques
 
     assert "The configuration option 'createSchemas' is false." in caplog.text
     assert query(url, "SELECT count(*) FROM pg_namespace WHERE nspname = 'app'")[0][0] == 0
+
+
+def test_a_failing_error_callback_does_not_hide_the_migrations_error(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("V2__bad.sql", "INSERT INTO nowhere VALUES (1);")
+    files.add("afterMigrateError.sql", "INSERT INTO nowhere_either VALUES (1);")
+
+    with pytest.raises(MigrationError, match=r"failed in V2__bad\.sql") as raised:
+        migrate(single(url), files.path)
+
+    assert "nowhere_either" not in str(raised.value)
+
+
+def test_a_failing_between_callback_blames_no_migration(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect]).add("R__x.sql", ran("x"))
+    files.add("beforeRepeatables.sql", "INSERT INTO nowhere VALUES (1);")
+
+    with pytest.raises(MigrationError, match="Error while executing beforeRepeatables") as raised:
+        migrate(single(url), files.path)
+
+    assert "R__x.sql" not in str(raised.value).split("Applied by this run")[0]
+    assert runs(url) == []

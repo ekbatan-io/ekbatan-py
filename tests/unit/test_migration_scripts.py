@@ -883,3 +883,13 @@ def test_a_classpath_location_nobody_provides_holds_nothing(caplog):
     and the run warns "No migrations found" once it reaches the database."""
     assert validate_scripts("classpath:no_such_package_here/migration") == ()
     assert validate_scripts(FlywayMigrator.DEFAULT_LOCATION) == ()
+
+
+def test_a_conf_file_belongs_to_the_file_beside_it_in_its_own_location(tmp_path):
+    write(tmp_path / "a", "V1__one.sql")
+    write(tmp_path / "a", "V2__two.sql.conf", "executeInTransaction=false")
+    write(tmp_path / "b", "V2__two.sql")
+
+    _, two = validate_scripts(tmp_path / "a", tmp_path / "b")
+
+    assert two.config.execute_in_transaction is None
