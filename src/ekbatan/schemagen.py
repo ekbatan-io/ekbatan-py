@@ -71,9 +71,9 @@ FRAMEWORK_TABLES = {
     "scheduled_tasks": "scheduled_tasks_table",
 }
 
-#: Tables that belong to the migration machinery and to nobody else - this framework's history,
-#: and Flyway's, for a database the Java port migrated.
-BOOKKEEPING = frozenset({"ekbatan_schema_history", "flyway_schema_history"})
+#: Tables that belong to the migration machinery and to nobody else: Flyway's history, which
+#: the migrator and Java's Flyway both write.
+BOOKKEEPING = frozenset({"flyway_schema_history"})
 
 #: The `forcedTypes` equivalent: a reflected type, and the helper that carries its per-dialect
 #: variants. Everything not named here is emitted as SQLAlchemy reflected it.

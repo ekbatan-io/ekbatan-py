@@ -42,4 +42,8 @@ for d in ("pg", "mysql", "maria"):
                 print(f"DIFF {jk} | {pk}\n     java:   {jv}\n     python: {pv}")
     jk, pk = f"cross.{d}.c1_java_outcome", f"cross.{d}.c1_python_outcome"
     print(f"BOTH {d} at once: java {java.get(jk)}, python {python.get(pk)} (one applies, one waits)")
-print(f"E pg: python {python.get('cross.pg.e1_python_outcome')}, java {java.get('cross.pg.e1_java_outcome')}")
+for e in ("e1", "e1b"):
+    print(
+        f"{e} pg: python {python.get(f'cross.pg.{e}_python_outcome')} under 30 s "
+        f"{python.get(f'cross.pg.{e}_python_took_under_30s')}, java {java.get(f'cross.pg.{e}_java_outcome')}"
+    )

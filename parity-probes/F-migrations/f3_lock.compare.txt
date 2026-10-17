@@ -1,32 +1,18 @@
-DIFF mysql.concurrent.history
-     java:   [1|1|slow|SQL|V1__slow.sql|-1335638295|root|time>=0|true]
-     python: [1|1|slow|SQL|V1__slow.sql|b49e7c6bc0b81321069a1300b35d3241bc8870355bc64d283e04e17de912dbeb|root|time>=0|true]
+=    mysql.concurrent.history: [1|1|slow|SQL|V1__slow.sql|-1335638295|root|time>=0|true]
 =    mysql.concurrent.locks_left_after: []
-DIFF mysql.concurrent.locks_seen
-     java:   [flyway--196644676|EXCLUSIVE|GRANTED, flyway--196644676|EXCLUSIVE|PENDING]
-     python: [ekbatan-migrate:f3_lock|EXCLUSIVE|GRANTED]
+=    mysql.concurrent.locks_seen: [flyway--196644676|EXCLUSIVE|GRANTED, flyway--196644676|EXCLUSIVE|PENDING]
 =    mysql.concurrent.outcomes: [OK applied=0, OK applied=1]
 =    mysql.concurrent.tables: [slow_t]
-DIFF mysql.held.history
-     java:   [1|1|quick|SQL|V1__quick.sql|-1996852011|root|time>=0|true]
-     python: [1|1|quick|SQL|V1__quick.sql|63649b5e669bab51b754221c2a6def903eec5332cfa3e4951c85b7196ea08ed0|root|time>=0|true]
+=    mysql.held.history: [1|1|quick|SQL|V1__quick.sql|-1996852011|root|time>=0|true]
 =    mysql.held.outcome: OK applied=1
 =    mysql.held.seconds_rounded_to_10: 70
-DIFF pg.concurrent.history
-     java:   [1|1|slow|SQL|V1__slow.sql|-657010055|postgres|time>=0|true]
-     python: [1|1|slow|SQL|V1__slow.sql|6823ff9414d708fc280b3b84b743a0b51db44d75455e709af8fa145a352881a5|postgres|time>=0|true]
+=    pg.concurrent.history: [1|1|slow|SQL|V1__slow.sql|-657010055|postgres|time>=0|true]
 =    pg.concurrent.locks_left_after: []
-DIFF pg.concurrent.locks_seen
-     java:   [advisory|18028|4163491309|1|ExclusiveLock|true]
-     python: [advisory|3812316770|1925703687|1|ExclusiveLock|true]
+=    pg.concurrent.locks_seen: [advisory|18028|4163491309|1|ExclusiveLock|true]
 =    pg.concurrent.outcomes: [OK applied=0, OK applied=1]
 =    pg.concurrent.tables: [slow_t]
-DIFF pg.held.history
-     java:   [<no history table>]
-     python: [1|1|quick|SQL|V1__quick.sql|63649b5e669bab51b754221c2a6def903eec5332cfa3e4951c85b7196ea08ed0|postgres|time>=0|true]
+=    pg.held.history: [<no history table>]
 DIFF pg.held.outcome
      java:   FAIL FlywayException: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk
-     python: OK applied=1
-DIFF pg.held.seconds_rounded_to_10
-     java:   50
-     python: 70
+     python: FAIL MigrationError: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+=    pg.held.seconds_rounded_to_10: 50

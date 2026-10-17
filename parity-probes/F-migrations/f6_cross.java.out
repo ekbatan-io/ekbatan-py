@@ -57,3 +57,5 @@ PROBE cross.maria.c1_java_outcome: OK applied=0
 PROBE cross.maria.c1_java_took_s: 4
 PROBE cross.pg.e1_java_outcome: FAIL FlywayException: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk
 PROBE cross.pg.e1_java_took_under_30s: false
+PROBE cross.pg.e1b_java_outcome: OK applied=0
+PROBE cross.pg.e1b_java_took_under_30s: true

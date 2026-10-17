@@ -95,7 +95,7 @@ def test_the_framework_s_own_tables_are_built_not_reflected(generated: Path) -> 
 def test_the_migration_bookkeeping_tables_are_left_out(generated: Path) -> None:
     text = generated.read_text()
 
-    assert "ekbatan_schema_history" not in text
+    assert "flyway_schema_history" not in text
 
 
 def test_a_unique_constraint_survives(generated: Path) -> None:
@@ -178,12 +178,12 @@ def test_the_fingerprint_changes_when_a_migration_changes(migrations: Path) -> N
 
 @pytest.mark.parametrize(
     "name",
-    ["2026/V0003__more.sql", "R__totals.sql", "post-apply.sql", "V0004__caps.SQL"],
-    ids=["in a subdirectory", "repeatable", "post-apply hook", "in capitals"],
+    ["2026/V0003__more.sql", "R__totals.sql", "afterMigrate.sql", "V0004__caps.SQL"],
+    ids=["in a subdirectory", "repeatable", "callback", "in capitals"],
 )
 def test_the_fingerprint_covers_every_file_the_migrator_reads(migrations: Path, name: str) -> None:
-    """The migrator reads subdirectories, repeatable files, hooks and `.SQL` - a change to any of
-    them changes the schema, so it has to make the module stale."""
+    """The migrator reads subdirectories, repeatable files, callbacks and `.SQL` - a change to
+    any of them changes the schema, so it has to make the module stale."""
     before = fingerprint(migrations)
     path = migrations / name
     path.parent.mkdir(parents=True, exist_ok=True)

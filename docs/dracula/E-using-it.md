@@ -26,7 +26,7 @@ follow the guide and run the project. Area F merges the two.
 
 ### The setup guide's commands do not run as written
 - **What:** Several steps of the "complete project setup" fail when you follow them in order:
-  1. `uv add ekbatan[postgres,migrations]` is unquoted. In zsh (the macOS default) this stops
+  1. `uv add ekbatan[postgres,codegen]` is unquoted. In zsh (the macOS default) this stops
      with `no matches found`. The page warns about quotes in the pip tab only. **(run)**
   2. `uv init wallet` (uv 0.13) makes a `src/wallet/` package with the `uv_build` backend. The
      page's tree puts the package at `wallet/wallet/`. With that layout **every** `uv run` fails:

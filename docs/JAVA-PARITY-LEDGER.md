@@ -294,7 +294,7 @@ which means "use the default".
 
 | Java file | lines | Python | status |
 | --- | --- | --- | --- |
-| FlywayMigrator.java | 371 | `migrations.py`, `_yoyo.py` | done - `YoyoMigrator`: `migrate`, `targets`, `target`, `Target`, `Result`, the builder; SQL files on yoyo, per shard (`EKB-0233`); Flyway's migrate behaviour, repeatable migrations, recorded failures, and Flyway's `info`, `repair` and `baseline` (`EKB-0235`), each behaviour settled in `MIGRATOR-LEDGER.md`; see DIVERGENCE |
+| FlywayMigrator.java | 371 | `migrations.py`, `_flyway_sql.py`, `_migration_backend.py` | done - `FlywayMigrator` (was `YoyoMigrator`; Flyway-compatible since `EKB-0277`: Flyway's history table, checksum, lock, parser, callbacks, placeholders, locations): `migrate`, `targets`, `target`, `Target`, `Result`, the builder; SQL files on yoyo, per shard (`EKB-0233`); Flyway's migrate behaviour, repeatable migrations, recorded failures, and Flyway's `info`, `repair` and `baseline` (`EKB-0235`), each behaviour settled in `MIGRATOR-LEDGER.md`; see DIVERGENCE |
 | NativeImageFlywayResourceProvider.java | 92 | - | n/a - GraalVM native-image resource provider |
 
 #### `keyedlock/redis`

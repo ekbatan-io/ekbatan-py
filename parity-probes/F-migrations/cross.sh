@@ -40,4 +40,12 @@ py e1 &
 jv e1_java_waits_while_python_builds_a_concurrent_index
 wait
 py e2
+
+# E again, Java with Flyway's session lock (postgresql.transactional.lock=false)
+py e0
+echo $(( $(date +%s) * 1000 + 40000 )) > "$OUT/parityF-start"
+py e1b &
+jv e1b_java_with_a_session_lock_waits_while_python_builds_a_concurrent_index
+wait
+py e2
 echo done

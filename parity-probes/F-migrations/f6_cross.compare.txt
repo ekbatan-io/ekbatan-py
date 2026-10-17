@@ -52,4 +52,5 @@ BOTH mysql at once: java OK applied=0, python OK applied=1 (one applies, one wai
 =    cross.maria.b4_java_migrates_again.history | cross.maria.b5_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
 =    cross.maria.b4_java_migrates_again.tables | cross.maria.b5_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
 BOTH maria at once: java OK applied=0, python OK applied=1 (one applies, one waits)
-E pg: python OK applied=3, java FAIL FlywayException: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk
+e1 pg: python OK applied=3 under 30 s false, java FAIL FlywayException: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk
+e1b pg: python OK applied=3 under 30 s true, java OK applied=0

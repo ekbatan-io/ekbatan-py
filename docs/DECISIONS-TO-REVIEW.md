@@ -199,20 +199,24 @@ These change behaviour Java does not have. Each is defensible and each is mine.
 one run on Flyway 12 as well as read. Most rows copy Flyway. These are the ones where I chose - to
 differ, or to copy something of Flyway's that bites.
 
+> **Superseded in part by [parity fix M](#parity-fix-m-the-migrator-flyway-compatible-ekb-0277-ekb-0282)**,
+> which made the migrator write Flyway's own history and take Flyway's lock. The rows marked
+> *superseded* below no longer hold; the others still do.
+
 | what | commit | the case for it | the case against |
 | --- | --- | --- | --- |
 | The lock is held for the whole run, and the files are checked against the history under it | `EKB-0235` | One lock rather than one per migration, and the checks never read a history another process is changing. The outcome was measured the same as Flyway's: four processes, each migration applied once, in order (parity C03) | Flyway's processes share out the work, one migration each; here one process does it all while the rest wait. They wait either way |
-| `post-apply` hooks run at the end of every migrate, not only when something was applied | `EKB-0235` | It is Flyway's `afterMigrate` timing, run and seen (parity F18). yoyo's timing means a hook that failed never runs again, since the next run has nothing to apply | A yoyo user expects yoyo's timing, and an expensive hook now runs, under the lock, on every start of every replica |
+| *superseded (`EKB-0279`): Flyway's callbacks instead* `post-apply` hooks run at the end of every migrate, not only when something was applied | `EKB-0235` | It is Flyway's `afterMigrate` timing, run and seen (parity F18). yoyo's timing means a hook that failed never runs again, since the next run has nothing to apply | A yoyo user expects yoyo's timing, and an expensive hook now runs, under the lock, on every start of every replica |
 | `baseline` refuses an empty database | `EKB-0235` | Flyway baselines it and then never runs its first migration; the next one failed on the missing table (parity X05c) | A deviation from Flyway, with no way round it for a schema whose objects the emptiness check does not see |
-| A description longer than 200 characters is refused | `EKB-0235` | Flyway cuts it to fit the history, and then cannot match a repeatable migration to its row: its next migrate failed (parity H07) | Flyway's versioned migrations survive the cut; this refuses those too |
-| A history table of the shape `EKB-0233` made is refused, not upgraded | `EKB-0235` | No release ever made one - the version is still `0.1.0.dev0` - so an upgrade would be code that runs once, on nobody's database | A developer database migrated in the day between the two commits has to have its table dropped by hand |
-| `installed_on` stays text, in UTC | `EKB-0233`, `EKB-0235` | It reads the same on every dialect, with no driver's idea of a date in between | Flyway's is a timestamp column; date functions over this one need a cast |
-| What yoyo cannot read as Flyway does is refused rather than misread: `DELIMITER`, a `.conf` file, a Flyway callback file, `R1__x.sql` | `EKB-0235` | yoyo glues `DELIMITER` onto the next statement, which fails after the statements before it have run; the rest would be skipped without a word | Flyway runs a file with `DELIMITER` in it; a Java project's procedures have to lose it to move over |
+| *superseded (`EKB-0277`): cut to fit, as Flyway, and matched by what the history holds* A description longer than 200 characters is refused | `EKB-0235` | Flyway cuts it to fit the history, and then cannot match a repeatable migration to its row: its next migrate failed (parity H07) | Flyway's versioned migrations survive the cut; this refuses those too |
+| *superseded (`EKB-0277`): the table is Flyway's now* A history table of the shape `EKB-0233` made is refused, not upgraded | `EKB-0235` | No release ever made one - the version is still `0.1.0.dev0` - so an upgrade would be code that runs once, on nobody's database | A developer database migrated in the day between the two commits has to have its table dropped by hand |
+| *superseded (`EKB-0277`): Flyway's timestamp column and default* `installed_on` stays text, in UTC | `EKB-0233`, `EKB-0235` | It reads the same on every dialect, with no driver's idea of a date in between | Flyway's is a timestamp column; date functions over this one need a cast |
+| *superseded (`EKB-0277`, `EKB-0279`): all read as Flyway reads them* What yoyo cannot read as Flyway does is refused rather than misread: `DELIMITER`, a `.conf` file, a Flyway callback file, `R1__x.sql` | `EKB-0235` | yoyo glues `DELIMITER` onto the next statement, which fails after the statements before it have run; the rest would be skipped without a word | Flyway runs a file with `DELIMITER` in it; a Java project's procedures have to lose it to move over |
 | Subdirectories are read | `EKB-0235` | Flyway reads them (parity F04): a file Flyway would run must not be one this skips. `EKB-0233` read one level only | A directory holding one subdirectory per dialect now merges them - and is refused, loudly, as duplicate versions |
 | A schema is "not empty" with a materialized view, a partitioned or foreign table (PostgreSQL), or a view or trigger (SQLite) in it | `EKB-0235` | Each is something a migration made; Flyway's queries miss them | Not Flyway's exact rule |
 | `info`, `repair` and `baseline` are part of the migrator | `EKB-0235` | Java reaches them through Flyway itself. Without them a recorded failure, or a database that predates its migrations, means editing the history table by hand | Surface Java's `FlywayMigrator` does not have |
 | Copied although it bites: an older release re-applies its older repeatable migrations, and refuses to start when a newer release added one | `EKB-0235` | Flyway does both (parity R16, R23). A rule that tolerated the second cannot tell a file a newer release added from one a person deleted | During a rolling deploy a changed view flips back each time an old instance restarts; a rollback past a new repeatable migration needs `repair()` first |
-| `target_schema_version` is the highest version applied, whatever this run did | `EKB-0233` | It answers "what version is this database at" | Flyway's is the last version this run applied, and empty when it applied none |
+| *superseded (`EKB-0278`): Flyway's, empty when nothing ran* `target_schema_version` is the highest version applied, whatever this run did | `EKB-0233` | It answers "what version is this database at" | Flyway's is the last version this run applied, and empty when it applied none |
 
 ## Login fields and driver settings (`EKB-0239`)
 
@@ -435,6 +439,38 @@ removed a collision: two fields called `retries` meaning different things.
 | Tests select outbox rows by `action_name` / `action_id` / row id rather than by position | `EKB-0111` | They were asserting an order neither port promises, and passing only because Postgres and SQLite happen to return insertion order |
 | The wallet fixture gained a JSON list column and a nullable integer | `EKB-0134` | Java's `Dummy` fixture carries both deliberately - `aliases` is "a value that can only reach the database through a converter", `rewardPoints` is "nullable on purpose ... a batch write in which every row leaves this null is what exposes an untyped NULL bind". This port's fixture had neither, so neither path was tested. Adding them **immediately failed on Postgres**: SQLAlchemy renders a bare `None` inside `VALUES` as the literal `NULL` rather than a bound parameter, dropping the declared type, and Postgres then infers `text` - so `reward_points=v.reward_points` failed with "column is of type integer but expression is of type text". The suite's one existing all-null case used a nullable *text* column, which is the single type an uncast NULL happens to infer as. Fixed by casting; verified against all four dialects |
 
+## Parity fix M: the migrator, Flyway-compatible (`EKB-0277`-`EKB-0282`)
+
+The goal the user set: a Java service (Ekbatan's Flyway wrapper) and a Python service migrate the
+same database, in either order, taking turns, at the same time. So the Python migrator now reads
+and writes what Flyway 12 reads and writes. yoyo is gone - it could not split statements as
+Flyway does, replace placeholders, or tell which statements refuse a transaction. These replace
+the "migrator against Flyway" calls above wherever the two disagree.
+
+| what | why | what Java does |
+| --- | --- | --- |
+| The migrator is written in Python, porting Flyway's classes: `ResourceNameParser`, `ChecksumCalculator`, `PlaceholderReplacingReader`, the dialect parsers, the history DDL, the lock templates | Sharing a database needs the same checksum, the same statements, the same rows and the same lock, byte for byte; a port of the source is the only way to get there that can be checked line by line | Runs Flyway 12 |
+| Renamed `YoyoMigrator` to `FlywayMigrator` (and the builder) | Java's name; yoyo is no longer under it. The docstring says it is not Flyway and needs no Java | `FlywayMigrator` |
+| The `migrations` extra is gone | Nothing to install: the drivers come with `postgres`/`mysql`/`mariadb` | - |
+| Every pending file is parsed, placeholders replaced, before the first one runs | An unknown placeholder or an unfinished statement fails with nothing applied. Flyway parses each migration just before it runs it, so it applies V1 and then fails on V2 | Applies the files before the bad one |
+| The lock is held for the whole run (kept from `EKB-0235`), on Flyway's key | Flyway takes it per migration; a Python and a Java migrator still wait for each other, since the key is the same, and the history is always read under it | Per migration |
+| PostgreSQL: the session form of Flyway's advisory lock, on the migrating connection | Flyway takes the transaction form on a second connection and holds a transaction open while a `CREATE INDEX CONCURRENTLY` runs on the first - which is why it waits on itself forever. The two forms conflict, so the ports still exclude each other | `pg_try_advisory_xact_lock` on its own connection |
+| A failing `afterEachMigrateError` callback runs after the failed migration is rolled back, in its own transaction | Flyway runs it inside the failed migration's transaction, which PostgreSQL has aborted, so the callback fails and its error replaces the migration's | Inside the aborted transaction |
+| A long repeatable description is matched by what the history holds (197 characters and `...`) | Flyway stores the cut description and matches the uncut one, so it loses the row: the file reads as never applied and the row as missing | Loses the row; the next migrate fails |
+| `classpath:a/b` is the resource folder `b` of the importable package `a` (`importlib.resources`); a plain path is a folder | Python's nearest thing to a classpath root is an importable top-level package, and it works from a wheel. A plain path read as a classpath location finds nothing in Java (see below) | Classpath roots |
+| Script migrations (`V2__x.py`) and baseline migrations (`B5__x.sql`) are refused | This migrator runs no programs, and skipping a file Java applies would leave two databases different. Refusing is the loud version | Runs them |
+| `baseline` still refuses an empty database (kept from `EKB-0235`) | Baselining an empty database skips the migrations that build it | Baselines it |
+| `validate()` is part of the migrator | So both ports can be asked whether a database matches the files; Java reaches Flyway's `validate` through Flyway | Through Flyway |
+| Flyway's own log lines are written under Flyway's class names (`org.flywaydb.core.internal.command.DbMigrate`, ...) | One logging config - `org.flywaydb: WARN` - quietens both ports, and a log search for Flyway's wording finds both | The same names |
+| No config-file keys for the migrator; settings go through `customize` | Java's ekbatan config has none either - Java's wrapper takes Flyway settings through `customize(FluentConfiguration)` - so this mirrors it with `customize(FlywayConfiguration)` | `customize` |
+| The result's `warnings` stay empty | Flyway's `MigrateResult.warnings` holds only `outOfOrder` warnings, a mode not here; warnings go to the log, as Flyway's do | Empty |
+| `installed_on` is the column's default, as Flyway writes it; on PostgreSQL the session zone is the server's | Python has no JVM zone to set; the value is the database's clock either way (scan row 29, left as is) | The JVM's zone on PostgreSQL |
+| MySQL's warnings are logged with SQL state `HY000` | The driver gives no state for a warning; the message and code are MySQL's | Connector/J's state |
+| A `.sql.conf` file's own placeholders are not replaced | Flyway replaces them; no use was found for it, and it would read placeholders before the database is reached | Replaces them |
+| Galera / Percona strict mode: the `GET_LOCK` lock is taken anyway | Flyway falls back to a table lock there; not built, as no Ekbatan dialect is Galera | Table lock |
+| The `migrations` and `post-apply` names are not kept as aliases | ekbatan-py is unreleased; no shims | - |
+
+
 ## Noticed in the Java, not acted on
 
 - **`RedisKeyedLockProvider` does not wrap a Redis failure** (found by parity group L,
@@ -446,3 +482,15 @@ removed a collision: two fields called `retries` meaning different things.
 
 See the table at the top of `JAVA-PARITY-LEDGER.md`: `EmbeddedBitsShardingStrategy` decodes shard
 bits from a `ShardedId` with no version guard, while the `Id` branch beside it has one.
+
+### Flyway, as Ekbatan's `FlywayMigrator` runs it (found by parity fix M)
+
+| what | how it was seen | what Python does instead |
+| --- | --- | --- |
+| **A migration with `CREATE INDEX CONCURRENTLY` hangs for ever.** Flyway runs it outside a transaction on one connection while its lock's transaction stays open on the other, and the index build waits for that transaction (`pg_stat_activity`: `virtualxid`) | run (scan f5, `concurrent_index_no_marker`: still waiting after 30 s) | one connection, a session lock, no open transaction: it finishes |
+| **A waiting Flyway migrator holds a transaction open**, so any `CREATE INDEX CONCURRENTLY` - another port's included - waits until Flyway gives up (50 retries, about a minute). Setting `flyway.postgresql.transactional.lock=false` makes Flyway take the session lock and the wait goes away | run (f6 `e1`: Python's index done only after Java's give-up; `e1b`: with the setting, done at once and Java applied nothing) | - (nothing a Python process can change); documented on the migrations page |
+| **A plain absolute path as a location is read as a classpath location**, finds nothing, and the run "succeeds" with 0 applied | run (scan f5, `plain_absolute_path`) | a plain path is a folder |
+| **`afterEachMigrateError` runs inside the failed migration's transaction**, which PostgreSQL has aborted, so the callback fails and its error replaces the migration's | read (`DbMigrate.doMigrateGroup`, `DefaultCallbackExecutor`) | runs it after the rollback |
+| **A repeatable migration with a description over 200 characters loses its row**: stored cut to 197 + `...`, matched uncut, so the next migrate finds a missing row and a file never applied | run earlier (MIGRATOR-LEDGER H07), read again (`MigrationInfoServiceImpl`) | matches by what the history holds |
+| **An unknown placeholder in V2 fails after V1 is applied**: each migration is parsed just before it runs | read (`ParserSqlScript`, `DbMigrate.applyMigrations`) | every pending file is parsed first; nothing is applied |
+

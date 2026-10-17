@@ -69,3 +69,5 @@ PROBE cross.pg.e1_python_took_under_30s: false
 PROBE cross.pg.e2_after.tables: [cic_t]
 PROBE cross.pg.e2_after.history: [1|1|table|SQL|V1__table.sql|-1863562701|postgres|time>=0|true, 2|2|slow|SQL|V2__slow.sql|593069317|postgres|time>=0|true, 3|3|index|SQL|V3__index.sql|-422733637|postgres|time>=0|true]
 PROBE cross.pg.e2_index: [cic_idx]
+PROBE cross.pg.e1b_python_outcome: OK applied=3
+PROBE cross.pg.e1b_python_took_under_30s: true

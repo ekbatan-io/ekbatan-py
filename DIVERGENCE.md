@@ -1080,67 +1080,50 @@ and had no entry; that the framework's own tables are *built* rather than reflec
 Java's jOOQ reflects them from the database like any other, had no entry either. Found by being
 asked what Java does about `scheduled_tasks`.
 
-## Migrations run on yoyo, with the lock, checks and history yoyo does not have
+## Migrations are Flyway-compatible, written in Python
 
-> **forced** - There is no Flyway for Python. yoyo runs the SQL; what Flyway does and yoyo does not is built on top, to behave as Flyway behaves, and where Flyway's default was run and found less safe it is not copied. Those judgement calls are in [`DECISIONS-TO-REVIEW.md`](docs/DECISIONS-TO-REVIEW.md).
+> **forced** - There is no Flyway for Python, and a Python service has to share its databases with Java services that run Flyway. So the migrator is a port of the Flyway 12 classes that decide what a file means and what the history says - the name parser, the checksum, the placeholders, the statement parser, the history DDL, the lock. Where Flyway's behaviour is a bug it is not copied. The judgement calls are in [`DECISIONS-TO-REVIEW.md`](docs/DECISIONS-TO-REVIEW.md) under "Parity fix M".
 
-Java uses Flyway, with its defaults. Here it is [yoyo](https://ollycope.com/software/yoyo/), used
-as a library, over the same files - plain SQL named `V<version>__<description>.sql`, run in the
-order of their version numbers, and `R__<description>.sql`, run after them and again whenever
-they change. yoyo reads the files, splits them into statements and runs them, in a transaction
-or, for a file marked `-- transactional: false`, without one. Everything else is in
-`ekbatan.migrations`, because yoyo alone does not do it or got it wrong - measured, one at a time.
-[`docs/MIGRATOR-LEDGER.md`](docs/MIGRATOR-LEDGER.md) settles every behaviour of a Flyway migrate
-against this one, each run on Flyway 12 as well as read in its source.
+Java uses Flyway with its defaults; here the migrator is `ekbatan.migrations`, needing no Java and
+no extra package. It writes what Flyway writes - `flyway_schema_history` with Flyway's columns per
+dialect, Flyway's CRC32 checksum, the version as Flyway spells it (`1.5` for `V1_5`), Flyway's
+baseline and schema-creation rows - and takes Flyway's lock, on Flyway's key. A Java service and
+a Python service migrate the same database in either order, taking turns or at the same moment:
+run on PostgreSQL, MySQL and MariaDB (`parity-probes/F-migrations/cross.sh`).
 
-| yoyo alone | here |
-| --- | --- |
-| two files with one version both run - a migration's name is its whole file name | refused before any database is touched, by a check a CI test can run (`validate_scripts`) |
-| an edited, renamed or deleted applied migration, or a new one older than one applied, is accepted silently | refused before anything runs, as Flyway refuses it; a migration newer than every file is left alone with a warning, as Flyway leaves it |
-| file names sorted as text, so `V10` ran before `V2` | version numbers compared as numbers |
-| no repeatable migrations | `R__` files, as Flyway runs them: after every versioned migration, in Java's order of their descriptions, again whenever they change |
-| a `post-apply` hook runs only when something was applied, so one that failed is never run again | run at the end of every migrate, as Flyway's `afterMigrate` is |
-| a migration that fails after MySQL has committed its schema change is simply run again next time, over what it half did | recorded as failed, and the next run refuses until the database has been checked and `repair()` run, as Flyway does |
-| nothing stops the first migration running against a database something else built | refused, as Flyway refuses it, until `baseline()` records what is there |
-| `V2__x.SQL` handed to Python's import machinery, the suffix check being case-sensitive | read as SQL, as Flyway reads it |
-| the lock is a table row: waiters give up after ten seconds, and a killed holder leaves every later deploy failing | a database session lock - advisory lock, `GET_LOCK`, an OS file lock for SQLite - that waiters wait on for as long as it takes and the database drops when its holder dies |
-| each migration runs on a second connection, apart from the lock's; when the lock's connection died a second process ran the migration at the same time | the lock, the migration and its history row share one connection and die together |
-| a migration is recorded in a separate step after it is applied | recorded in the same transaction wherever the database can roll back a schema change |
-| on MySQL and MariaDB, a `transactional: false` migration's statements were never committed, and a savepoint error replaced the real one | committed, and the real error reported |
-| query results printed to stdout | logged at `INFO`, switchable, as Flyway's `outputQueryResults` |
-| the database's own warnings and notices dropped | logged at `WARNING`, as Flyway logs them |
+The files are read as Flyway reads them: `V` and `R` names, Flyway's skip of any other `.sql`
+name, `.sql.conf` script configuration, callbacks by file name, `${...}` placeholders and
+Flyway's built-ins, `filesystem:` and `classpath:` locations with Java's default, statements split
+by Flyway's parser (`DELIMITER` included), and a migration with `CREATE INDEX CONCURRENTLY` run
+outside a transaction because the parser says so.
 
-**Where it differs from Java's Flyway**, as distinct from yoyo:
+**Where it differs from Java's Flyway:**
 
-- **The history table** is `ekbatan_schema_history`, with Flyway's columns but a SHA-256 checksum
-  rather than Flyway's CRC32 - which notices two lines joined into one, where Flyway's does not -
-  and `installed_on` as UTC text. A database cannot be migrated by the Java port's Flyway and this
-  interchangeably.
-- **Locations are required.** Flyway defaults to `classpath:db/migration`; there is no classpath
-  here to default into.
-- **The lock waits for as long as it takes.** Flyway gives up after 50 one-second retries by
-  default (`lockRetryCount`), which crashes every replica waiting behind a longer migration.
-- **One connection.** Flyway on PostgreSQL, by default, holds its lock in a transaction on one
-  connection and runs the migration on another - so a migrator killed mid-statement has its lock
-  dropped at once while its statement runs on, and that transaction-held lock also makes
-  `CREATE INDEX CONCURRENTLY` wait on it forever. Both measured. Here neither can happen; and on
-  PostgreSQL 14 and later a killed migrator's statement is cancelled within a second
-  (`client_connection_check_interval`), so the next process does not wait for it to finish.
+- **One connection.** Flyway on PostgreSQL holds its lock in a transaction on one connection and
+  runs the migration on another - so a migrator killed mid-statement has its lock dropped at once
+  while its statement runs on, and that open transaction makes its own `CREATE INDEX CONCURRENTLY`
+  wait forever. Here the lock is the session form of Flyway's key, on the migrating connection,
+  which is never left in a transaction while a migration runs outside one. The two forms conflict,
+  so the ports still exclude each other.
 - **The lock is held for the whole run**, where Flyway takes it once per migration, and the files
-  are checked against the history under it, where Flyway checks before taking it. The outcome is
-  Flyway's - each migration once, in order.
+  are checked against the history under it. The outcome is Flyway's - each migration once, in
+  order.
+- **Every pending file is read before the first runs**, so an unknown placeholder or an unfinished
+  statement fails with nothing applied; Flyway applies the files before the bad one.
+- **`afterEachMigrateError` runs after the failed migration is rolled back**, not inside the
+  aborted transaction, where on PostgreSQL it fails and replaces the migration's error.
+- **A long repeatable description finds its own row again**; Flyway cuts it to fit and then
+  cannot match it.
+- **A plain path is a folder.** Java reads a plain absolute path as a classpath location, finds
+  nothing and "succeeds". `classpath:<package>/<folder>` is an importable package's folder.
 - **A replica is refused** - `pg_is_in_recovery()`, `read_only`, `super_read_only` - before
   anything else. Flyway migrates whatever the url reaches.
-- **A misnamed `.sql` file is refused**, `R1__x.sql` included. Flyway skips it, and it never runs.
-- **What yoyo cannot read as Flyway does is refused, not misread**: `DELIMITER`, a Flyway `.conf`
-  file, a Flyway callback file, a description longer than the history keeps.
-- **`-- transactional: false`** is how a file says it cannot run in a transaction; Flyway has a
-  `.conf` file, or detects the statement itself.
 - **`baseline` refuses an empty database**, where Flyway baselines it and then never runs its
   first migration.
+- **Script migrations (`V2__x.py`) and baseline migrations (`B5__x.sql`) are refused**; Flyway
+  runs them.
 - **`shards=`** picks a subset of the layout; Java does the same by passing some of `targets(...)`.
-- **Not here:** undo migrations, a target version, placeholders, callbacks other than
-  `afterMigrate`, migrations in code, and `customize`.
+- **Not here:** undo migrations, `clean`, a target version, migrations in code.
 
 ## The Redis lock is Redisson's layout, written with redis-py
 

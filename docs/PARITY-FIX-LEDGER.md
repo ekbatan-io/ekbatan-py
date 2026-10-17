@@ -48,6 +48,6 @@ Item 1 (a lock lease closed twice) is done: `EKB-0262`.
 |---|---|
 | L | done, merged |
 | E | done, merged |
-| M | running |
+| M | done, merged |
 | J | running |
 | T | running |

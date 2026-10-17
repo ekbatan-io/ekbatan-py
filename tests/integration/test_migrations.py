@@ -127,7 +127,7 @@ def single(url: str) -> ShardingConfig:
 
 
 def test_a_fresh_database_gets_every_migration_in_version_order(backend, request, files):
-    """`V10` alters the table `V2` creates. Sorted as text, as yoyo sorts, it ran first and
+    """`V10` alters the table `V2` creates. Sorted as text, as yoyo sorted, it ran first and
     failed; sorted as numbers it runs last."""
     url = fresh(backend, request)
     files.add("V2__gadgets.sql", "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);")
@@ -226,7 +226,7 @@ def test_duplicate_versions_are_refused_and_the_database_is_not_touched(backend,
 
 
 def test_an_edited_migration_is_refused_and_nothing_new_runs(backend, request, files):
-    """#2 - measured with yoyo alone: it accepted the edit, and the database kept the old table
+    """#2 - measured with yoyo: it accepted the edit, and the database kept the old table
     while the file described a new one."""
     url = fresh(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
@@ -265,7 +265,7 @@ def test_a_renamed_migration_is_refused(backend, request, files):
 
 
 def test_a_migration_older_than_one_applied_is_refused_and_nothing_runs(backend, request, files):
-    """#3 - yoyo runs it, out of order, without a word."""
+    """#3 - yoyo ran it, out of order, without a word."""
     url = fresh(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
     files.add("V3__sprockets.sql", "CREATE TABLE sprockets (id INTEGER PRIMARY KEY);")
@@ -279,7 +279,7 @@ def test_a_migration_older_than_one_applied_is_refused_and_nothing_runs(backend,
 
 
 def test_an_applied_migration_whose_file_is_gone_is_refused(backend, request, files):
-    """#4 - yoyo ignores it."""
+    """#4 - yoyo ignored it."""
     url = fresh(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
     files.add("V2__gadgets.sql", "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);")
@@ -346,7 +346,7 @@ def _fail_to_record(*args, **kwargs):
 
 
 def test_a_migration_and_its_history_row_commit_together(backend, request, files, monkeypatch):
-    """#14 - yoyo records a migration in a separate step after applying it, so a failure between
+    """#14 - yoyo recorded a migration in a separate step after applying it, so a failure between
     the two leaves it applied and unrecorded, and it runs again. Here the recording fails on
     purpose. Where a schema change can be rolled back, nothing of the migration remains; on
     MySQL and MariaDB the table stays, because no tool can undo a committed schema change there
@@ -458,7 +458,7 @@ def test_a_migration_mixing_both_kinds_of_statement_is_refused_as_flyway_refuses
 
 
 def test_a_migration_outside_a_transaction_keeps_its_rows(backend, request, files):
-    """#10 - yoyo on MySQL and MariaDB never commits these: the rows vanished when the connection
+    """#10 - yoyo on MySQL and MariaDB never committed these: the rows vanished when the connection
     closed, and the migration was recorded as applied anyway. Measured."""
     url = fresh(backend, request)
     files.add("V1__table.sql", "CREATE TABLE things (id INTEGER PRIMARY KEY);")

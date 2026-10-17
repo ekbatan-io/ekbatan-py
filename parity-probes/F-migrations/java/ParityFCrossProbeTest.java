@@ -125,4 +125,21 @@ class ParityFCrossProbeTest {
         }
         probe("cross.pg.e1_java_took_under_30s", System.currentTimeMillis() - began < 30_000);
     }
+
+    @Test
+    void e1b_java_with_a_session_lock_waits_while_python_builds_a_concurrent_index() throws Exception {
+        atStart(1_000);
+        long began = System.currentTimeMillis();
+        try {
+            var results = FlywayMigrator.builder()
+                    .withDataSource(cfg("pg", "f6_e"))
+                    .locations("filesystem:" + SQL + "cic_pg")
+                    .customize(c -> c.configuration(java.util.Map.of("flyway.postgresql.transactional.lock", "false")))
+                    .migrate();
+            probe("cross.pg.e1b_java_outcome", "OK applied=" + results.get(0).migrateResult().migrationsExecuted);
+        } catch (RuntimeException e) {
+            probe("cross.pg.e1b_java_outcome", "FAIL " + msg(e));
+        }
+        probe("cross.pg.e1b_java_took_under_30s", System.currentTimeMillis() - began < 30_000);
+    }
 }

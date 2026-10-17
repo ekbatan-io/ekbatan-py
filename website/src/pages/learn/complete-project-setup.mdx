@@ -199,7 +199,7 @@ container with nothing set. Elsewhere, set the variables the file names.
 <div data-db="pg">
 
 ```bash
-uv add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
+uv add "ekbatan[postgres]" fastapi "uvicorn[standard]" httpx
 uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 ```
 
@@ -207,7 +207,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 <div data-db="mysql">
 
 ```bash
-uv add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
+uv add "ekbatan[mysql]" fastapi "uvicorn[standard]" httpx
 uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 ```
 
@@ -215,7 +215,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 <div data-db="mariadb">
 
 ```bash
-uv add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
+uv add "ekbatan[mariadb]" fastapi "uvicorn[standard]" httpx
 uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 ```
 
@@ -232,7 +232,7 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 <div data-db="pg">
 
 ```bash
-pip install "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[postgres]" fastapi "uvicorn[standard]" httpx
 pip install "ekbatan[codegen]" pytest "testcontainers[postgres]"
 pip install -e .
 ```
@@ -241,7 +241,7 @@ pip install -e .
 <div data-db="mysql">
 
 ```bash
-pip install "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[mysql]" fastapi "uvicorn[standard]" httpx
 pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
 pip install -e .
 ```
@@ -250,7 +250,7 @@ pip install -e .
 <div data-db="mariadb">
 
 ```bash
-pip install "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[mariadb]" fastapi "uvicorn[standard]" httpx
 pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
 pip install -e .
 ```
@@ -268,7 +268,7 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 <div data-db="pg">
 
 ```bash
-poetry add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add "ekbatan[postgres]" fastapi "uvicorn[standard]" httpx
 poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 poetry install
 ```
@@ -277,7 +277,7 @@ poetry install
 <div data-db="mysql">
 
 ```bash
-poetry add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add "ekbatan[mysql]" fastapi "uvicorn[standard]" httpx
 poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 poetry install
 ```
@@ -286,7 +286,7 @@ poetry install
 <div data-db="mariadb">
 
 ```bash
-poetry add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add "ekbatan[mariadb]" fastapi "uvicorn[standard]" httpx
 poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 poetry install
 ```
@@ -885,7 +885,7 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 
 </div>
 
-`alerts`, `ekbatan_schema_history` (the migrator's own), `event_notifications`, `events`,
+`alerts`, `flyway_schema_history` (the migrator's - Flyway's table), `event_notifications`, `events`,
 `scheduled_tasks` and `wallets`.
 
 Open a wallet and deposit into it:

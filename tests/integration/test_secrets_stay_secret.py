@@ -55,7 +55,7 @@ def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
     (migrations / "R__view.sql").write_text(
         "DROP VIEW IF EXISTS seen;\nCREATE VIEW seen AS SELECT 1 AS n;"
     )
-    (migrations / "post-apply.sql").write_text("SELECT count(*) FROM runs;")
+    (migrations / "afterMigrate.sql").write_text("SELECT count(*) FROM runs;")
     caplog.set_level(logging.DEBUG)  # every logger, everything it says
     layout = ShardingConfig.single(url, username=USER, password=SECRET, echo=True)
     written: list[str] = [repr(layout), str(layout)]

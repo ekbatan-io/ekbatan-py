@@ -47,7 +47,13 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - a helper could build the registry and executor straight from `EkbatanConfig`, and environment overrides per key could be added; profiles would be new invention.
 - **Surprise:** high
 
-### The migration history table is not Flyway's, so the two ports cannot share a database
+### ~~The migration history table is not Flyway's, so the two ports cannot share a database~~ fixed (`EKB-0277`)
+
+> Now Flyway's: `flyway_schema_history` with Flyway's DDL per dialect, its CRC32 checksum, its ranks and rows, and its lock.
+> Run both ways on PostgreSQL, MySQL and MariaDB: Java migrates V1-V2, Python V3, Java V4 (and the reverse); validate passes
+> in both and nothing runs twice (`parity-probes/F-migrations/f6_cross.*`). The cost, accepted: joining two lines is not an
+> edit, as it is not to Flyway.
+
 - **What:** History goes into `ekbatan_schema_history` with a SHA-256 checksum and `installed_on`
   stored as text. Java's Flyway uses `flyway_schema_history` with a CRC32 checksum. A database
   migrated by one port cannot be migrated by the other.
@@ -81,7 +87,12 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - a `--check` flag on `ekbatan.codegen` would give users the guard; always-fresh like Java is not possible.
 - **Surprise:** high
 
-### Migration locations are plain folder paths; no `classpath:`, no `filesystem:`, no default
+### ~~Migration locations are plain folder paths; no `classpath:`, no `filesystem:`, no default~~ fixed (`EKB-0281`)
+
+> Now `filesystem:` and `classpath:` both work; `classpath:<package>/<folder>` is a folder of an importable package
+> (`importlib.resources`), no location means Java's `classpath:db/migration`, and a missing folder is skipped with
+> Flyway's ERROR line. A plain absolute path stays a folder - Java's reading of it as a classpath location is a trap.
+
 - **What:** Flyway defaults to `classpath:db/migration` and takes `classpath:`/`filesystem:`
   prefixes. Python needs at least one location and takes it as a folder path, relative to the
   working directory. Verified by run: `filesystem:mig` and `classpath:db/migration` both fail with
@@ -93,7 +104,11 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - `filesystem:` could be stripped and accepted, and a package's folder could be the default (`importlib.resources`).
 - **Surprise:** medium
 
-### Flyway callbacks are refused; the only hook is `post-apply*.sql`
+### ~~Flyway callbacks are refused; the only hook is `post-apply*.sql`~~ fixed (`EKB-0279`)
+
+> Now Flyway's SQL callbacks run by file name where Flyway runs them (`beforeMigrate`, `afterEachMigrate`, `afterMigrate`
+> and the rest), and `post-apply` is gone - Flyway skips the name, and so does this.
+
 - **What:** A file named `afterMigrate.sql` (or any `beforeX`/`afterX` callback) stops the
   migration with an error. The one hook is yoyo's: any file whose name starts with `post-apply`,
   run at the end of every migrate. Verified by run.
@@ -103,7 +118,11 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - `afterMigrate.sql` could be read as the post-apply hook; the other callbacks would have to be written.
 - **Surprise:** medium
 
-### A migration that cannot run in a transaction says so with a comment line
+### ~~A migration that cannot run in a transaction says so with a comment line~~ fixed (`EKB-0277`)
+
+> Now Flyway's parser decides, as Flyway's does: `CREATE INDEX CONCURRENTLY` and the rest of its list run outside a
+> transaction with no marker, and a `.sql.conf` file's `executeInTransaction` says it outright. The comment line is gone.
+
 - **What:** For `CREATE INDEX CONCURRENTLY` and the like, the file's first line must be
   `-- transactional: false`. Flyway has a `.sql.conf` file for this (refused here) or works it out
   from the statement.
@@ -113,7 +132,12 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - Flyway's `executeInTransaction=false` in a `.conf` file could be read; detecting it from the statement would be new work.
 - **Surprise:** medium
 
-### The migrator refuses things Flyway lets through
+### ~~The migrator refuses things Flyway lets through~~ fixed (`EKB-0277`)
+
+> Now a name Flyway skips is skipped with Flyway's two INFO lines, `DELIMITER` is read by Flyway's MySQL parser, and a
+> long description is cut to fit. Still refused, on purpose: script and baseline migrations, an empty database to
+> baseline, a replica (`DECISIONS-TO-REVIEW.md`, parity fix M).
+
 - **What:** A `.sql` file with a name Flyway would quietly skip (`R1__x.sql`, `create.sql`) stops
   the migration. So does `DELIMITER`, yoyo's `-- depends:`, a description over 200 characters,
   baselining an empty database, and a url that reaches a read-only replica. Flyway skips, accepts,
@@ -124,7 +148,11 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** yes - each refusal could be turned off; the port chose not to.
 - **Surprise:** medium
 
-### A migration waiting for another one's lock waits forever
+### ~~A migration waiting for another one's lock waits forever~~ fixed (`EKB-0277`)
+
+> Now Flyway's: on PostgreSQL 50 retries a second apart, then Flyway's "Number of retries exceeded" (measured: 50 s in
+> both ports); `lock_retry_count(-1)` waits for ever. MySQL waits for as long as it takes, as Flyway's does.
+
 - **What:** A second process waits for the lock with no time limit, logging "still waiting".
   Flyway gives up after 50 one-second retries and fails. The lock is also held for the whole run,
   not per migration.
@@ -134,7 +162,12 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** yes - a retry limit is a few lines.
 - **Surprise:** medium
 
-### No `customize`, and several Flyway features are missing
+### ~~No `customize`, and several Flyway features are missing~~ fixed (`EKB-0280`)
+
+> Now `customize` takes Flyway's settings (`placeholders`, `lock_retry_count`, `table`, `create_schemas`, ...), and
+> placeholders work as Flyway's, built-ins included. Undo (a paid Flyway feature), a target version and code migrations
+> are still not here.
+
 - **What:** Java's builder hands you Flyway's own configuration (`customize`). Python's builder has
   only `output_query_results`. Also missing: placeholders in SQL, undo migrations, a target
   version, migrations written in code, and every callback except the one hook.
@@ -146,9 +179,10 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 
 ### The migrator's API is shaped differently
 - **What:** `migrate(config, *locations)` takes only a `ShardingConfig`. One plain database is
-  `YoyoMigrator.migrate_data_source(ds, ...)`; there is no `migrate(url, user, password, ...)`.
+  `FlywayMigrator.migrate_data_source(ds, ...)`; there is no `migrate(url, user, password, ...)`.
   `migrate(Target...)` becomes `migrate_targets([...])`. A `shards=` argument picks some shards.
-  `info`, `repair` and `baseline` are added. The class is `YoyoMigrator`, not `FlywayMigrator`.
+  `info`, `validate`, `repair` and `baseline` are added. The class is `FlywayMigrator`, as Java's
+  (renamed from `YoyoMigrator` in `EKB-0277`).
   The result is a smaller `MigrateResult`, not Flyway's.
 - **Python:** `migrations.py:1087-1116`, `:1364-1515`, `:1576-1607`, `MigrateResult` `:975-989`
 - **Java:** `FlywayMigrator.java:78-137`

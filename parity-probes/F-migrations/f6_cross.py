@@ -99,7 +99,7 @@ for d in DIALECTS:
         show(f"cross.{d}.c2_after_both_at_once", d, "f6_c")
     elif step == "e0" and d == "pg":
         fresh(d, "f6_e")
-    elif step == "e1" and d == "pg":
+    elif step in ("e1", "e1b") and d == "pg":
         # Python builds a concurrent index while Java waits on the lock: no one hangs.
         at_start(0)
         began = time.time()
@@ -107,10 +107,10 @@ for d in DIALECTS:
             r = FlywayMigrator.migrate_data_source(
                 cfg(d, "f6_e"), str(SQL / "cic_pg")
             )
-            probe("cross.pg.e1_python_outcome", f"OK applied={r.migrations_executed}")
+            probe(f"cross.pg.{step}_python_outcome", f"OK applied={r.migrations_executed}")
         except Exception as e:
-            probe("cross.pg.e1_python_outcome", "FAIL " + msg(e))
-        probe("cross.pg.e1_python_took_under_30s", _s(time.time() - began < 30))
+            probe(f"cross.pg.{step}_python_outcome", "FAIL " + msg(e))
+        probe(f"cross.pg.{step}_python_took_under_30s", _s(time.time() - began < 30))
     elif step == "e2" and d == "pg":
         show("cross.pg.e2_after", d, "f6_e")
         probe(

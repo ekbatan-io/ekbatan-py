@@ -60,7 +60,7 @@ uv add "ekbatan[postgres]"          # or [mysql], or [mariadb]
 ```
 
 The extras are the drivers and the optional pieces, and nothing you do not ask for is installed.
-`postgres` brings psycopg 3, `mysql` and `mariadb` bring PyMySQL, `migrations` brings yoyo,
+`postgres` brings psycopg 3, `mysql` and `mariadb` bring PyMySQL,
 `redis` brings the Redis-backed keyed lock, and `codegen` brings what `schemagen` needs to start
 a container at build time - a development dependency, not a runtime one:
 
@@ -104,9 +104,10 @@ transaction is the worst thing you could do to this design.
 
 Table definitions are generated with `python -m ekbatan.schemagen`, which starts a container,
 runs your migrations into it and reflects the result - the counterpart to Java's jOOQ step.
-Postgres via psycopg 3, MySQL and MariaDB via PyMySQL. Migrations are plain SQL files run by yoyo
-as a library, with a database lock, checks and a history on top, so one call migrates every
-shard - safely, from any number of processes at once.
+Postgres via psycopg 3, MySQL and MariaDB via PyMySQL. Migrations are plain SQL files read and run as
+Flyway runs them, with Flyway's history table, checksums and lock, so one call migrates every
+shard - safely, from any number of processes at once, and alongside a Java service on the same
+database.
 
 ## What is here
 

@@ -81,7 +81,7 @@ is what making it a setting is for.
 shard *and what had already succeeded*, because half a migrated cluster is a state an operator
 has to reason about.
 
-It also records a checksum of every applied migration in `ekbatan_schema_history` and refuses to
+It also records a checksum of every applied migration in `flyway_schema_history` (Flyway's own table, which a Java service reads too) and refuses to
 run when an applied file has been edited, renamed or deleted, so the files and the database never
 disagree with nothing to say so. Each database is locked while it is migrated - a lock the database
 drops if the migrating process dies - so replicas starting together cannot run a migration twice,
