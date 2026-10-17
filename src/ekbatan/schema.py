@@ -20,7 +20,7 @@ puts them too: `V0001__eventlog.sql`.
 Two rules that outlive any one dialect:
 
 - **Timestamp columns carry no zone**, as Java's do; the values read back are aware UTC
-  ``datetime``\ s, as Java's are ``Instant``\ s.
+  ``datetime`` values, as Java's are ``Instant`` values.
 - **``model_id`` is a string.** Not every model is keyed by a UUID; typing it as one would
   exclude every aggregate keyed by an account number or an ISIN.
 """
