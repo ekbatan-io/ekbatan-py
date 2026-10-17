@@ -52,10 +52,6 @@ LOG = logging.getLogger("io.ekbatan.flyway.FlywayMigrator")
 POLL = 0.5
 #: How often a waiting process says it is still waiting.
 REPORT_EVERY = 30.0
-#: How long a migration waits for another's PostgreSQL lock before giving up: Flyway's
-#: ``lockRetryCount`` default, 50 retries one second apart. MySQL and MariaDB wait as long as it
-#: takes, as Flyway does there.
-POSTGRES_LOCK_WAIT = 50.0
 
 #: The advisory-lock key on PostgreSQL. Advisory locks are scoped to one database already, so
 #: two shards that are two databases on the same server do not wait on each other.
@@ -98,27 +94,16 @@ class _SessionLock:
     def _try_lock(self) -> bool:
         raise NotImplementedError
 
-    def _gives_up_after(self) -> float | None:
-        """Seconds to wait for another process's lock before failing; ``None`` waits forever."""
-        return None
-
-    def _gave_up(self) -> str:
-        raise NotImplementedError
-
     def _unlock(self) -> None:
         raise NotImplementedError
 
     def acquire(self) -> None:
-        """Wait for the lock: on PostgreSQL for :data:`POSTGRES_LOCK_WAIT` seconds and then fail,
-        as Flyway does; elsewhere as long as it takes. Another process's migration finishes or
-        its process dies, and either way the database lets go of the lock."""
+        """Wait as long as it takes. Another process's migration finishes or its process dies,
+        and either way the database lets go of the lock."""
         started = time.monotonic()
         last_report: float | None = None
-        limit = self._gives_up_after()
         while not self._try_lock():
             now = time.monotonic()
-            if limit is not None and now - started >= limit:
-                raise MigrationBackendError(self._gave_up())
             if last_report is None:
                 LOG.info(
                     "%s: another process is migrating this database; waiting for it to finish",
@@ -286,18 +271,6 @@ class PostgresMigrationBackend(_Common, PostgresqlPsycopgBackend):  # type: igno
     def _try_lock(self) -> bool:
         cursor = self.execute("SELECT pg_try_advisory_lock(:key)", {"key": POSTGRES_LOCK_KEY})
         return bool(cursor.fetchone()[0])
-
-    def _gives_up_after(self) -> float | None:
-        return POSTGRES_LOCK_WAIT
-
-    def _gave_up(self) -> str:
-        # Flyway's own words for it, then what they mean here: Java changes the limit through
-        # Flyway's `lockRetryCount`; this port has no Flyway configuration to put it in.
-        return (
-            f"{self.label}: Number of retries exceeded while attempting to acquire PostgreSQL "
-            f"advisory lock. Another process held the migration lock for "
-            f"{POSTGRES_LOCK_WAIT:.0f} s; run again once it has finished."
-        )
 
     def _unlock(self) -> None:
         self.execute("SELECT pg_advisory_unlock(:key)", {"key": POSTGRES_LOCK_KEY})

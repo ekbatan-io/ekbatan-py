@@ -296,12 +296,9 @@ migration applied once, in order - and so is the rule that matters: **the histor
 under the lock**. A changed repeatable migration is applied by one process, not by each; a failure
 is recorded once, and the processes behind it refuse rather than try again.
 
-A waiting process says so in the log every thirty seconds. **On PostgreSQL it gives up after 50
-seconds**, as Flyway does (its `lockRetryCount` default, 50 retries one second apart), failing with
-Flyway's message - "Number of retries exceeded while attempting to acquire PostgreSQL advisory
-lock" - and applying nothing; run it again once the other has finished. As in Java, a migration
-that takes longer than that fails the processes waiting behind it. **On MySQL, MariaDB and SQLite
-it waits as long as it takes**, as Flyway does on MySQL and MariaDB.
+A waiting process **waits as long as it takes** and says so in the log every thirty seconds.
+There is no timeout to outlast: a migration that takes five minutes does not crash every replica
+waiting behind it.
 
 A migrator that dies holding the lock - killed, out of memory, its container stopped - **does
 not leave it behind**: the database drops a lock when its connection ends. On PostgreSQL 14 and
@@ -395,8 +392,8 @@ Every behaviour above was run on Flyway 12 - the Java port's version - as well a
 source; [the migrator ledger](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/MIGRATOR-LEDGER.md) has each one, and
 `scripts/flyway-parity.py` runs the two side by side. Where this differs, it is on purpose:
 
-- **One connection for everything, on every database.** Flyway on PostgreSQL uses two
-  connections.
+- **One connection for everything, on every database**, and a lock that waits as long as it
+  takes. Flyway on PostgreSQL uses two connections and gives up after about fifty seconds.
 - **The lock is held for the whole run** rather than per migration; the checks run under it.
 - **A misnamed `.sql` file is refused**, where Flyway skips it; so is `DELIMITER`, which yoyo does
   not understand, and a description too long for the history.

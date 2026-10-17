@@ -431,8 +431,15 @@ it, automatic is not good". The migrator stops with the database's own error.
 Left as they are, by the user's decision (2026-10-18), of the parity scan's migration items:
 13-16 (one migration history shared with Java), 39 (files Flyway skips or accepts), 40 (Flyway's
 callbacks), 42 (`classpath:` / `filesystem:` locations), 43 (creating a missing schema) and 44
-(non-transactional migrations stay marked `-- transactional: false`). Items 37 (`EKB-0312`) and
-38 (`EKB-0313`) were matched to Java on top of yoyo.
+(non-transactional migrations stay marked `-- transactional: false`). Item 37 (`EKB-0312`) was
+matched to Java on top of yoyo.
+
+Item 38, the lock wait, was matched (`EKB-0313`) and then undone (`EKB-0314`) by the user's
+decision: Flyway gives up after 50 s on PostgreSQL only because its PostgreSQL lock goes through
+`RetryStrategy` (`lockRetryCount`) while its MySQL lock is a plain endless loop - an accident, not
+a design. Giving up crashes every instance waiting behind a migration longer than 50 s, and a
+waiter cannot be stuck behind a dead holder, because the lock is the database session's. So the
+migrator waits as long as it takes on every database, logging every thirty seconds.
 
 ## Ported an invariant Java already had - lower risk
 

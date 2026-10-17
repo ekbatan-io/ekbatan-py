@@ -1147,10 +1147,8 @@ against this one, each run on Flyway 12 as well as read in its source.
   interchangeably.
 - **Locations are required.** Flyway defaults to `classpath:db/migration`; there is no classpath
   here to default into.
-- **The lock wait is Flyway's** (`EKB-0313`): on PostgreSQL a waiter gives up after 50 s with
-  Flyway's message, its `lockRetryCount` default; on MySQL and MariaDB it waits as long as it
-  takes, as Flyway does there. Java changes the limit through Flyway's configuration; this port
-  has none to put it in.
+- **The lock waits for as long as it takes.** Flyway gives up after 50 one-second retries by
+  default (`lockRetryCount`), which crashes every replica waiting behind a longer migration.
 - **One connection.** Flyway on PostgreSQL, by default, holds its lock in a transaction on one
   connection and runs the migration on another - so a migrator killed mid-statement has its lock
   dropped at once while its statement runs on, and that transaction-held lock also makes
