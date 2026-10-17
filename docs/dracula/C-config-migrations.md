@@ -186,7 +186,7 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **What:** Java keeps `events` and `event_notifications` in the PostgreSQL schema `eventlog`. The
   Python table helpers default to no schema, so `emit_ddl` and the examples create them in the
   default schema (`public`). Overlaps area A/B.
-- **Python:** `schema.py:112-136` (`schema=None`); `migrations.py:1697-1713` (`emit_ddl`); `ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0001__wallet_schema.sql:18,45`
+- **Python:** `schema.py:112-136` (`schema=None`); `migrations.py:1697-1713` (`emit_ddl`); `ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0001__eventlog.sql:18,45`
 - **Java:** `ekbatan-core/.../EventEntityRepository.java:35` (`SCHEMA_NAME = "eventlog"`); example `V0001__eventlog.sql:1-3`
 - **Why:** a choice - SQLite has no schemas, so the application picks one.
 - **Could match Java?** yes - default to `eventlog` on PostgreSQL and MySQL/MariaDB (a database there), none on SQLite.
