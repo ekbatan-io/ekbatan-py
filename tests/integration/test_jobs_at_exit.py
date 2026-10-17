@@ -187,8 +187,32 @@ def engine(registry):
     return registry.default.primary
 
 
-def test_starting_adds_one_entry_and_stopping_takes_it_off(engine):
-    before = atexit._ncallbacks()
+@pytest.fixture
+def exit_hooks(monkeypatch):
+    """How many hooks the framework has on the interpreter's exit list right now.
+
+    Counted at the source rather than with `exit_hooks()`: before Python 3.14 that count
+    keeps a slot for every hook ever unregistered, so on 3.13 a registry that took its hook off
+    still looked as if it had left it on. The real `register`/`unregister` still run.
+    """
+    live: list[object] = []
+    register, unregister = atexit.register, atexit.unregister
+
+    def counting_register(func, *args, **kwargs):
+        live.append(func)
+        return register(func, *args, **kwargs)
+
+    def counting_unregister(func):
+        live[:] = [f for f in live if f != func]
+        return unregister(func)
+
+    monkeypatch.setattr(atexit, "register", counting_register)
+    monkeypatch.setattr(atexit, "unregister", counting_unregister)
+    return lambda: len(live)
+
+
+def test_starting_adds_one_entry_and_stopping_takes_it_off(engine, exit_hooks):
+    before = exit_hooks()
     jobs = (
         job_registry()
         .engine(engine)
@@ -198,23 +222,23 @@ def test_starting_adds_one_entry_and_stopping_takes_it_off(engine):
     )
 
     jobs.start()
-    assert atexit._ncallbacks() == before + 1
+    assert exit_hooks() == before + 1
 
     jobs.stop()
-    assert atexit._ncallbacks() == before, "a stopped registry was left on the list"
+    assert exit_hooks() == before, "a stopped registry was left on the list"
 
 
-def test_building_alone_adds_nothing(engine):
+def test_building_alone_adds_nothing(engine, exit_hooks):
     """Only a started registry has anything to drain."""
-    before = atexit._ncallbacks()
+    before = exit_hooks()
 
     job_registry().engine(engine).with_job(NeverDue()).build()
 
-    assert atexit._ncallbacks() == before
+    assert exit_hooks() == before
 
 
-def test_turned_off_it_is_never_on_the_list(engine):
-    before = atexit._ncallbacks()
+def test_turned_off_it_is_never_on_the_list(engine, exit_hooks):
+    before = exit_hooks()
     jobs = (
         job_registry()
         .engine(engine)
@@ -225,18 +249,18 @@ def test_turned_off_it_is_never_on_the_list(engine):
     )
     jobs.start()
     try:
-        assert atexit._ncallbacks() == before
+        assert exit_hooks() == before
     finally:
         jobs.stop()
 
 
-def test_a_manual_registry_is_never_on_the_list(engine):
+def test_a_manual_registry_is_never_on_the_list(engine, exit_hooks):
     """A test that starts one and forgets it must not have it drained, against a database the
     suite has already torn down, as the interpreter exits."""
-    before = atexit._ncallbacks()
+    before = exit_hooks()
     jobs = job_registry().engine(engine).with_job(NeverDue()).build_manual()
     jobs.start()
     try:
-        assert atexit._ncallbacks() == before
+        assert exit_hooks() == before
     finally:
         jobs.stop()
