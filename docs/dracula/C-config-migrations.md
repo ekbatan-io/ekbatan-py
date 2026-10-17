@@ -126,7 +126,11 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** yes - each refusal could be turned off; the port chose not to.
 - **Surprise:** medium
 
-### A migration waiting for another one's lock waits forever
+### ~~A migration waiting for another one's lock waits forever~~ fixed (`EKB-0313`)
+
+> On PostgreSQL a waiter now gives up after 50 s with Flyway's message, as Flyway does; on MySQL and
+> MariaDB it waits, as Flyway does there.
+
 - **What:** A second process waits for the lock with no time limit, logging "still waiting".
   Flyway gives up after 50 one-second retries and fails. The lock is also held for the whole run,
   not per migration.

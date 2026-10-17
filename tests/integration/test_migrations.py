@@ -607,6 +607,40 @@ def test_a_database_whose_lock_is_held_waits_and_another_database_does_not(
     assert "widgets" in tables(busy)
 
 
+def test_postgres_gives_up_on_a_held_lock_as_flyway_does(backend, request, files, monkeypatch):
+    """Flyway's `lockRetryCount`: on PostgreSQL a migration waits 50 s for another's lock, then
+    fails with Flyway's words, applying nothing. MySQL and MariaDB wait as long as it takes, as
+    Flyway does there (the test above). The 50 s is shortened here so the test is quick."""
+    if backend.dialect != "postgres":
+        pytest.skip("only PostgreSQL gives up, as only Flyway's PostgreSQL lock does")
+    monkeypatch.setattr("ekbatan._yoyo.POSTGRES_LOCK_WAIT", 1.0)
+    url = fresh(backend, request)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+
+    held = Held(url, backend.dialect)
+    try:
+        started = time.monotonic()
+        with pytest.raises(MigrationError) as raised:
+            migrate(single(url), files.path)
+        waited = time.monotonic() - started
+    finally:
+        held.release()
+
+    assert "Number of retries exceeded while attempting to acquire PostgreSQL advisory lock" in (
+        str(raised.value)
+    )
+    assert 1.0 <= waited < 5, f"gave up after {waited:.1f} s"
+    assert "widgets" not in tables(url), "nothing was applied"
+    (result,) = migrate(single(url), files.path)
+    assert result.migrate_result.migrations_executed == 1, "and it runs once the lock is free"
+
+
+def test_the_postgres_lock_wait_is_flyways_default():
+    from ekbatan._yoyo import POSTGRES_LOCK_WAIT
+
+    assert POSTGRES_LOCK_WAIT == 50.0, "Flyway's lockRetryCount: 50 retries, one second apart"
+
+
 # -- SQLite specifics ------------------------------------------------------------------------
 
 

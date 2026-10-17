@@ -65,3 +65,6 @@ was a decision the user should have made, not this run. Everything group M did (
 Item 37 was then fixed on top of yoyo at the user's request (2026-10-18, `EKB-0312`): a failed
 migration logs Java's `Migrating <target> failed` and, for a run of targets, `Stopped at <target>;
 already migrated: [...]`, at ERROR. The other items of group M stay open by the user's decision.
+
+Item 38 likewise (2026-10-18, `EKB-0313`): on PostgreSQL a migration waiting for another's lock
+gives up after 50 s with Flyway's message; MySQL and MariaDB wait as long as it takes, as Flyway does.
