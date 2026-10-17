@@ -72,6 +72,15 @@ EXPIRED_POST_FAILURE = "expired_post_failure"
 #: No handler is registered under the row's name any more.
 DEFERRED = "deferred"
 
+#: The order the outcome buckets are written in - Java's, with this port's own `DEFERRED` last.
+_WRITE_ORDER = {
+    EXPIRED_PREFLIGHT: 0,
+    SUCCEEDED: 1,
+    EXPIRED_POST_FAILURE: 2,
+    FAILED: 3,
+    DEFERRED: 4,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class _Outcome:
@@ -168,8 +177,11 @@ class EventDispatch:
         # batch spends blocked rather than computing - and the GIL is released for it.
         outcomes = self._delivery[shard].run(due, self._deliver)
 
-        # Written after the whole batch has been attempted, in one transaction. Every outcome
-        # is recorded or none is - and no single delivery can take the others' results with it.
+        # Written after the whole batch has been attempted, each bucket its own statement that
+        # commits itself, in Java's order: pre-flight expiries, successes, post-failure expiries,
+        # then the retries. No transaction around them, as in Java: if one write fails, the
+        # ones before it stay written, so a handler that already succeeded is not called again.
+        # No single delivery can take the others' results with it.
         #
         # One statement per *bucket* rather than per row, which is what Java does: rows that
         # decided the same thing are one `UPDATE ... WHERE id IN (...)`. A batch of a hundred
@@ -185,18 +197,17 @@ class EventDispatch:
         for outcome in outcomes:
             buckets[(outcome.kind, outcome.retry_delay)].append(outcome.notification_id)
 
-        with self._registry.manager(shard).transaction():
-            for (kind, delay), ids in buckets.items():
-                if kind == SUCCEEDED:
-                    repository.mark_succeeded_all(ids, now, shard)
-                elif kind == EXPIRED_PREFLIGHT:
-                    repository.mark_expired_all_preflight(ids, now, shard)
-                elif kind == EXPIRED_POST_FAILURE:
-                    repository.mark_expired_all_post_failure(ids, now, shard)
-                elif kind == FAILED:
-                    repository.mark_failed_bucket(ids, now + delay, now, shard)  # type: ignore[operator]
-                else:
-                    repository.defer_pending_bucket(ids, now + delay, now, shard)  # type: ignore[operator]
+        for (kind, delay), ids in sorted(buckets.items(), key=lambda b: _WRITE_ORDER[b[0][0]]):
+            if kind == SUCCEEDED:
+                repository.mark_succeeded_all(ids, now, shard)
+            elif kind == EXPIRED_PREFLIGHT:
+                repository.mark_expired_all_preflight(ids, now, shard)
+            elif kind == EXPIRED_POST_FAILURE:
+                repository.mark_expired_all_post_failure(ids, now, shard)
+            elif kind == FAILED:
+                repository.mark_failed_bucket(ids, now + delay, now, shard)  # type: ignore[operator]
+            else:
+                repository.defer_pending_bucket(ids, now + delay, now, shard)  # type: ignore[operator]
         return len(outcomes)
 
     def _deliver(self, row: EventNotification) -> _Outcome:

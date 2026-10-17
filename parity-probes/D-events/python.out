@@ -128,8 +128,8 @@ PROBE t.find_due_sees_own_uncommitted: 0
 PROBE t.find_undelivered_sees_own_uncommitted: 0
 PROBE t.mark_delivered_rolled_back: f
 PROBE t.outcome_write_failed.fail_row: PENDING
-PROBE t.outcome_write_failed.ok_calls_after_two_rounds: 2
-PROBE t.outcome_write_failed.ok_row: PENDING
+PROBE t.outcome_write_failed.ok_calls_after_two_rounds: 1
+PROBE t.outcome_write_failed.ok_row: SUCCEEDED
 PROBE t.outcome_write_failed.threw: true
 PROBE t.undelivered_after_mark_in_same_tx: 1
 PROBE x.boundary.calls: [m-13]

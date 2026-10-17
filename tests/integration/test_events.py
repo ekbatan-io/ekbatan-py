@@ -695,3 +695,40 @@ def test_a_failing_row_expires_as_soon_as_its_next_retry_would_land_past_the_dea
 
     assert notifications_in() == {"EXPIRED": 1}, "still FAILED; Java expires it at once"
     assert never.calls == 2
+
+
+def test_a_failed_outcome_write_keeps_the_outcomes_already_written(
+    executor, wallets, pipeline, registry, monkeypatch
+):
+    """Java writes each outcome bucket as its own statement, successes before retries. When
+    the retry write fails, the success already written stays, so that handler is not called
+    again."""
+    import pytest
+    from sqlalchemy import select
+
+    from ekbatan.events.repository import EventNotificationRepository
+    from fixtures.schema import EVENT_NOTIFICATIONS
+
+    ok, flaky = succeeding("ok"), failing("flaky")
+    fanout, dispatch = pipeline(ok, flaky)
+    wallet = a_wallet(executor)
+    deposit(executor, wallets, wallet)
+    fanout.drain_once()
+
+    def refuse(*args, **kwargs):
+        raise RuntimeError("the database refused the write")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(EventNotificationRepository, "mark_failed_bucket", refuse)
+        with pytest.raises(RuntimeError, match="refused"):
+            dispatch.drain_once()
+
+    with registry.default.connection() as conn:
+        rows = conn.execute(
+            select(EVENT_NOTIFICATIONS.c.handler_name, EVENT_NOTIFICATIONS.c.state)
+        ).all()
+    states = {name: state for name, state in rows}
+    assert states["ok"] == "SUCCEEDED", "the whole batch was rolled back; Java keeps the success"
+
+    dispatch.drain_once()
+    assert ok.calls == 1, "a handler that had already succeeded was called again"

@@ -36,7 +36,7 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 18 | When a failing row expires | as soon as the next retry would land past the deadline (5th failure at +450 s) | same (fixed in EKB-0273) | same | `x.step*`, `x.near_deadline.*` |
 | 19 | Event whose `event_date` is later than the clock | not delivered until `event_date` | same (fixed in EKB-0272) | same | `c.future_event.*` |
 | 20 | Handling order when an older event is fanned out after a newer one | older event first | same (fixed in EKB-0272) | same | `c.order.*` |
-| 21 | One outcome write fails (a trigger refuses `FAILED`) while a sibling succeeded | sibling stays `SUCCEEDED`; handler called once | whole batch rolled back; sibling back to `PENDING`, its handler called again | differs | `t.outcome_write_failed.*` |
+| 21 | One outcome write fails (a trigger refuses `FAILED`) while a sibling succeeded | sibling stays `SUCCEEDED`; handler called once | same (fixed in EKB-0274) | same | `t.outcome_write_failed.*` |
 | 22 | `findUndelivered` inside an open transaction on the shard | does not see the transaction's own rows (0) | same (fixed in EKB-0270) | same | `t.find_undelivered_*`, `t.undelivered_after_mark_in_same_tx` |
 | 23 | `findDue` inside an open transaction on the shard | does not see them (0) | same (fixed in EKB-0270) | same | `t.find_due_sees_own_uncommitted` |
 | 24 | `markDelivered` / inserts join the open transaction and roll back with it | yes | yes | same | `t.mark_delivered_rolled_back`, `t.after_rollback_events` |
@@ -90,7 +90,7 @@ Most surprising first.
   fan-out reads and marks delivered in one transaction on purpose, so matching changes that too.
 - **Surprise:** medium
 
-### 21. Outcome writes are one transaction in Python, separate statements in Java
+### 21. Outcome writes are one transaction in Python, separate statements in Java - fixed in EKB-0274
 - **What:** after a batch, Java writes each outcome group as its own auto-committed `UPDATE`; Python
   writes them all in one transaction. When one write fails, Java keeps the ones already written;
   Python rolls back all, so a handler that already succeeded is called again next round.

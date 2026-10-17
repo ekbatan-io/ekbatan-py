@@ -256,7 +256,10 @@ Each round:
      `next_retry_at = now + backoff(attempts)`
    - raises, and the next retry would land past `event_date + retention` → `EXPIRED`,
      `attempts++`, at once, as in Java. `now` is read once, after the whole batch has run.
-4. Write the outcomes.
+4. Write the outcomes, one statement per bucket, each committing itself, as Java does: pre-flight
+   expiries, successes, post-failure expiries, then the retries. No transaction around them, so
+   if one write fails the ones before it stay written - a handler that already succeeded is not
+   called again.
 5. Loop if anything was drained; otherwise sleep.
 
 Backoff is capped exponential: `30s x 2^(attempts-1)`, capped at 5 minutes. So 30s, 1m, 2m, 4m,
