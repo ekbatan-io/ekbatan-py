@@ -304,8 +304,10 @@ def test_a_database_a_newer_release_migrated_is_left_alone(backend, request, fil
 
     assert result.migrate_result.migrations == ()
     assert result.migrate_result.initial_schema_version == "2"
-    assert "newer than every migration here" in caplog.text
-    assert result.migrate_result.warnings
+    assert "has a version (2) that is newer than the latest available migration (1) !" in (
+        caplog.text
+    ), "Flyway's line"
+    assert result.migrate_result.warnings == (), "Flyway's result carries none either"
 
 
 # -- what a SELECT in a migration returns (#11) ----------------------------------------------
@@ -966,7 +968,7 @@ def test_an_older_release_applies_its_own_repeatable_again(backend, request, fil
 
     assert result.migrate_result.migrations == ("R__x.sql",)
     assert runs(url) == ["V2", "new", "old"]
-    assert "newer than every migration here" in caplog.text
+    assert "that is newer than the latest available migration (1) !" in caplog.text
 
 
 def test_bodies_with_semicolons_inside_run_whole(backend, request, files):
@@ -1070,7 +1072,7 @@ def test_a_failure_a_newer_release_recorded_does_not_stop_an_older_one(
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ()
-    assert "failed when a newer release applied it" in caplog.text
+    assert "contains a failed future migration to version 2 !" in caplog.text
 
 
 # -- repair (ledger X05) ---------------------------------------------------------------------
@@ -1349,17 +1351,18 @@ def test_a_directory_of_only_repeatable_migrations(backend, request, files):
     assert query(url, "SELECT n FROM answer")[0][0] == 42
 
 
-def test_no_migration_files_at_all_is_a_warning(backend, request, files):
+def test_no_migration_files_at_all_is_a_warning(backend, request, files, caplog):
     """Parity M16: Flyway warns "No migrations found" and carries on."""
     url = fresh(backend, request)
     files.add("README.md", "notes")
+    caplog.set_level(logging.WARNING)
 
     (result,) = migrate(single(url), files.path)
 
     assert result.migrate_result.migrations == ()
-    assert result.migrate_result.warnings == (
-        "No migrations found. Are your locations set up correctly?",
-    )
+    (warning,) = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning.name == "org.flywaydb.core.internal.command.DbValidate"
+    assert warning.getMessage() == "No migrations found. Are your locations set up correctly?"
 
 
 def test_the_log_says_what_flyway_says(backend, request, files, caplog):
@@ -1402,3 +1405,69 @@ def test_the_databases_own_warnings_are_logged(backend, request, files, caplog):
     (said,) = [r for r in caplog.records if r.getMessage().startswith("DB: ")]
     assert said.name == "org.flywaydb.core.internal.sqlscript.DefaultSqlScriptExecutor"
     assert "nothing_here" in said.getMessage()
+
+
+# -- Java's own lines around each target (item 37 of the parity fix) -----------------------------
+
+
+def ekbatan_lines(caplog) -> list[str]:
+    return [
+        f"{r.levelname}|{getattr(r, 'ekbatanShard', None)}|{getattr(r, 'ekbatanTarget', None)}|"
+        f"{r.getMessage()}"
+        for r in caplog.records
+        if r.name == "io.ekbatan.flyway.FlywayMigrator"
+    ]
+
+
+def test_a_failing_shard_logs_javas_error_lines(backend, request, files, caplog):
+    """What Java's `FlywayMigrator` logged for the same run (f4 `fail`): a start and an end line
+    per target, ``Migrating X failed`` at ERROR inside the failing target's context and
+    ``Stopped at X; already migrated: [...]`` at ERROR outside it. Python wrote no ERROR line
+    at all, so an alert on ERROR stayed quiet (row 53 of the scan)."""
+    config = two_shards(backend, request)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+    query(
+        config.member(MEXICO).primary_config().sqlalchemy_url(), "CREATE TABLE widgets (id INTEGER)"
+    )
+    caplog.set_level(logging.INFO)
+
+    with pytest.raises(MigrationError):
+        migrate(config, files.path)
+
+    assert ekbatan_lines(caplog) == [
+        "INFO|0:0|global/member-0|Migrating global/member-0 (0:0)",
+        "INFO|0:0|global/member-0|global/member-0 (0:0) is at version 1 (1 applied)",
+        "INFO|1:0|mexico/member-0|Migrating mexico/member-0 (1:0)",
+        "ERROR|1:0|mexico/member-0|Migrating mexico/member-0 (1:0) failed",
+        "ERROR|None|None|Stopped at mexico/member-0 (1:0); already migrated: [global/member-0]",
+    ]
+
+
+def test_running_again_says_where_each_target_is(backend, request, files, caplog):
+    """Java's ``is at version`` line: the version before when nothing ran, with the shard."""
+    url = fresh(backend, request)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+    migrate(single(url), files.path)
+    caplog.set_level(logging.INFO)
+
+    migrate(single(url), files.path)
+
+    assert ekbatan_lines(caplog) == [
+        "INFO|0:0|default/member-0|Migrating default/member-0 (0:0)",
+        "INFO|0:0|default/member-0|default/member-0 (0:0) is at version 1 (0 applied)",
+    ]
+
+
+def test_one_database_outside_a_layout_logs_no_stopped_at_line(backend, request, files, caplog):
+    """Java's single-database ``migrate(DataSourceConfig, ...)`` has no "stopped at"; a bad file
+    fails inside the target's context, as Flyway reads the files inside Java's (f1 `dup_*`)."""
+    files.add("V1__a.sql", "SELECT 1;").add("V1__b.sql", "SELECT 2;")
+    caplog.set_level(logging.INFO)
+
+    with pytest.raises(MigrationError, match="two migrations are one migration"):
+        FlywayMigrator.migrate_data_source(data_source(fresh(backend, request)), files.path)
+
+    assert ekbatan_lines(caplog) == [
+        "INFO|0:0|default|Migrating default (0:0)",
+        "ERROR|0:0|default|Migrating default (0:0) failed",
+    ]

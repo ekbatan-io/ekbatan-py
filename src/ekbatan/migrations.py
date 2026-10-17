@@ -1292,6 +1292,8 @@ class MigrateResult:
     target_schema_version: str | None
     #: The files this run applied, in the order it applied them - versioned, then repeatable.
     migrations: tuple[str, ...]
+    #: Flyway's ``warnings``: what it adds there is for modes this migrator does not have
+    #: (``outOfOrder``), so this stays empty, as Java's does. Warnings go to the log.
     warnings: tuple[str, ...] = ()
 
     @property
@@ -1411,8 +1413,7 @@ def migrate(
     skipped: a typo there would otherwise read as "nothing to do" and migrate nothing at all.
     """
     configuration = FlywayConfiguration().output_query_results(output_query_results)
-    scripts = _scan(_locations(locations), configuration)
-    return _run(_choose(config, shards), scripts, configuration)
+    return _run(_choose(config, shards), _locations(locations), configuration)
 
 
 def migrate_targets(
@@ -1425,18 +1426,32 @@ def migrate_targets(
     if not chosen:
         raise ValidationError("at least one migration target is required")
     configuration = FlywayConfiguration().output_query_results(output_query_results)
-    return _run(chosen, _scan(_locations(locations), configuration), configuration)
+    return _run(chosen, _locations(locations), configuration)
 
 
-def _each[T](chosen: Sequence[Target], verb: str, action: Callable[[Target], T]) -> list[T]:
+def _each[T](
+    chosen: Sequence[Target],
+    verb: str,
+    action: Callable[[Target], T],
+    *,
+    on_failure: Callable[[Target], object] | None = None,
+    done: list[str] | None = None,
+) -> list[T]:
     """``action`` on each target in turn, stopping at the first that fails - and saying which
     targets were already done, since the database's own error names none of them."""
     results: list[T] = []
-    done: list[str] = []
+    done = [] if done is None else done
     for each in chosen:
         try:
             results.append(action(each))
+        except ValidationError:
+            # A setting or a location that is wrong - not something this target did.
+            if on_failure is not None:
+                on_failure(each)
+            raise
         except Exception as error:
+            if on_failure is not None:
+                on_failure(each)
             message = (
                 str(error)
                 if isinstance(error, MigrationError)
@@ -1452,20 +1467,49 @@ def _each[T](chosen: Sequence[Target], verb: str, action: Callable[[Target], T])
 
 
 def _run(
-    chosen: Sequence[Target], scripts: Scripts, configuration: FlywayConfiguration
+    chosen: Sequence[Target],
+    locations: Sequence[str | Path],
+    configuration: FlywayConfiguration,
+    *,
+    say_where_it_stopped: bool = True,
 ) -> list[Result]:
+    """Java's ``Builder.migrate``: each target in its log context, between Java's two lines -
+    ``Migrating X`` and ``X is at version V (n applied)``, or ``Migrating X failed`` at ERROR -
+    and, when one fails, ``Stopped at X; already migrated: [...]``. Java's single-database
+    ``migrate(DataSourceConfig, ...)`` logs no "stopped at", and neither does this for it.
+
+    The files are read inside the first target's context, as Flyway reads them inside Java's,
+    so a bad file fails that target with Java's lines too - and still before any database is
+    reached.
+    """
+    found: list[Scripts] = []
+
     def one(each: Target) -> Result:
+        label = each.label
         with _in_log_context(each):
-            outcome = _migrate(each, scripts, configuration)
+            LOG.info("Migrating %s", label)
+            try:
+                if not found:
+                    found.append(_scan(locations, configuration))
+                outcome = _migrate(each, found[0], configuration)
+            except Exception:
+                LOG.error("Migrating %s failed", label)
+                raise
             LOG.info(
                 "%s is at version %s (%d applied)",
-                each.name,
+                label,
                 outcome.target_schema_version or outcome.initial_schema_version or "<< empty >>",
                 outcome.migrations_executed,
             )
         return Result(each, outcome)
 
-    return _each(chosen, "migrated", one)
+    done: list[str] = []
+
+    def stopped(each: Target) -> None:
+        if say_where_it_stopped:
+            LOG.error("Stopped at %s; already migrated: [%s]", each.label, ", ".join(done))
+
+    return _each(chosen, "migrated", one, on_failure=stopped, done=done)
 
 
 class _Failed(Exception):
@@ -1544,7 +1588,6 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
     session: _Session | None = None
     current: _Prepared | None = None
     applied: list[MigrationScript] = []
-    warnings: list[str] = []
     before: str | None = None
     try:
         session = _open_session(each, configuration)
@@ -1553,9 +1596,9 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
         backend.acquire(session.table, configuration._lock_retry_count)
         try:
             session.installed_by = configuration._installed_by or backend.current_user()
-            model = _validated(session, scripts, warnings)
+            model = _validated(session, scripts)
             if not _history_exists(session):
-                model = _prepare_history(session, scripts, warnings) or model
+                model = _prepare_history(session, scripts) or model
             before = model.schema_version
             prepared = [
                 _Prepared(script, *_parse(session, script.text, script.path, script.config))
@@ -1566,6 +1609,7 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
                 session.schema_shown,
                 before or "<< Empty Schema >>",
             )
+            _log_future(session, scripts, model)
             started = time.monotonic()
             for current in prepared:
                 _apply(session, current)
@@ -1596,11 +1640,10 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
         initial_schema_version=before,
         target_schema_version=target_version,
         migrations=tuple(s.script for s in applied),
-        warnings=tuple(warnings),
     )
 
 
-def _validated(session: _Session, scripts: Scripts, warnings: list[str]) -> _Model:
+def _validated(session: _Session, scripts: Scripts) -> _Model:
     """Flyway's ``validate``, as ``migrate`` runs it first: the files against the history,
     every disagreement refused before anything runs."""
     started = time.monotonic()
@@ -1623,16 +1666,41 @@ def _validated(session: _Session, scripts: Scripts, warnings: list[str]) -> _Mod
             "Successfully validated %d migrations (execution time %s)", count, _format_time(millis)
         )
     if count == 0:
-        warning = "No migrations found. Are your locations set up correctly?"
-        _VALIDATE_LOG.warning(warning)
-        warnings.append(warning)
-    for warning in model.warnings:
-        _MIGRATE_LOG.warning("%s: %s", session.label, warning)
-        warnings.append(warning)
+        _VALIDATE_LOG.warning("No migrations found. Are your locations set up correctly?")
     return model
 
 
-def _prepare_history(session: _Session, scripts: Scripts, warnings: list[str]) -> _Model | None:
+def _log_future(session: _Session, scripts: Scripts, model: _Model) -> None:
+    """Flyway's lines for a database a newer release migrated: ``DbMigrate`` warns, and carries
+    on."""
+    future = [i for i in model.infos if i.state is MigrationState.FUTURE]
+    failed = [i for i in model.infos if i.state is MigrationState.FUTURE_FAILED]
+    schema, current = session.schema_shown, model.schema_version
+    if future or failed:
+        if not scripts.migrations:
+            _MIGRATE_LOG.error(
+                "Schema %s has version %s, but no migration could be resolved in the "
+                "configured locations !",
+                schema,
+                current,
+            )
+        elif scripts.versioned:
+            _MIGRATE_LOG.warning(
+                "Schema %s has a version (%s) that is newer than the latest available "
+                "migration (%s) !",
+                schema,
+                current,
+                scripts.versioned[-1].version,
+            )
+    if len(failed) == 1:
+        _MIGRATE_LOG.warning(
+            "Schema %s contains a failed future migration to version %s !",
+            schema,
+            failed[0].version,
+        )
+
+
+def _prepare_history(session: _Session, scripts: Scripts) -> _Model | None:
     """The history table, created - and the two databases Flyway refuses, refused.
 
     A schema with anything in it and no history was built by something else - by hand, by
@@ -2130,8 +2198,12 @@ class FlywayMigrator:
         output_query_results: bool = True,
     ) -> MigrateResult:
         """Java's ``migrate(DataSourceConfig, locations...)``: one database, outside a layout."""
-        (result,) = migrate_targets(
-            [target(data_source)], *locations, output_query_results=output_query_results
+        configuration = FlywayConfiguration().output_query_results(output_query_results)
+        (result,) = _run(
+            [target(data_source)],
+            _locations(locations),
+            configuration,
+            say_where_it_stopped=False,
         )
         return result.migrate_result
 
@@ -2208,7 +2280,7 @@ class FlywayMigratorBuilder:
 
     def migrate(self) -> list[Result]:
         chosen = self._chosen()
-        return _run(chosen, self._scripts(), self._configuration.copy())
+        return _run(chosen, self._locations, self._configuration.copy())
 
     def info(self) -> list[InfoResult]:
         scripts, configuration = self._scripts(), self._configuration.copy()

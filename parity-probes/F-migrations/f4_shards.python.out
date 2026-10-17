@@ -1,22 +1,22 @@
 PROBE targets.config_order: [0:0 global/member-0, 1:0 mexico/member-0, 2:0 brazil/member-0]
 PROBE targets.groups_given_2_0_1: [2:0 brazil/member-0, 0:0 global/member-0, 1:0 mexico/member-0]
-PROBE fail.outcome: FAIL MigrationError: mexico/member-0 (1:0) already has existing but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: global/member-0. Targets are migrated one at a time, so the rest are u...
-PROBE fail.ekbatan_lines: [INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0): current version << empty >>, INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0): migrating to version 1 - quick, INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0): applied 1 migration, now at version 1, INFO|FlywayMigrator|0:0|global/member-0|global/member-0 is at version 1 (1 applied)]
-PROBE fail.flyway_lines_present: false
-PROBE fail.flyway_lines_mdc: []
+PROBE fail.outcome: FAIL MigrationError: mexico/member-0 (1:0) already has existing but no flyway_schema_history, so nothing says which migrations built it - Flyway refuses it too ("Found non-empty schema(s) "public" but no schema history table"). If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database...
+PROBE fail.ekbatan_lines: [INFO|FlywayMigrator|0:0|global/member-0|Migrating global/member-0 (0:0), INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0) is at version 1 (1 applied), INFO|FlywayMigrator|1:0|mexico/member-0|Migrating mexico/member-0 (1:0), SEVERE|FlywayMigrator|1:0|mexico/member-0|Migrating mexico/member-0 (1:0) failed, SEVERE|FlywayMigrator|null|null|Stopped at mexico/member-0 (1:0); already migrated: [global/member-0]]
+PROBE fail.flyway_lines_present: true
+PROBE fail.flyway_lines_mdc: [0:0 global/member-0, 1:0 mexico/member-0]
 PROBE fail.mdc_after: null null
-PROBE fail.s0.history: [1|1|quick|SQL|V1__quick.sql|63649b5e669bab51b754221c2a6def903eec5332cfa3e4951c85b7196ea08ed0|postgres|time>=0|true]
+PROBE fail.s0.history: [1|1|quick|SQL|V1__quick.sql|-1996852011|postgres|time>=0|true]
 PROBE fail.s1.history: [<no history table>]
 PROBE fail.s2.history: [<no history table>]
 PROBE again.results: [global/member-0 applied=0, mexico/member-0 applied=1, brazil/member-0 applied=1]
-PROBE again.ekbatan_lines: [INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0): current version 1, INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0): up to date, nothing to apply, INFO|FlywayMigrator|0:0|global/member-0|global/member-0 is at version 1 (0 applied), INFO|FlywayMigrator|1:0|mexico/member-0|mexico/member-0 (1:0): current version << empty >>, INFO|FlywayMigrator|1:0|mexico/member-0|mexico/member-0 (1:0): migrating to version 1 - quick, INFO|FlywayMigrator|1:0|mexico/member-0|mexico/member-0 (1:0): applied 1 migration, now at version 1, INFO|FlywayMigrator|1:0|mexico/member-0|mexico/member-0 is at version 1 (1 applied), INFO|FlywayMigrator|2:0|brazil/member-0|brazil/member-0 (2:0): current version << empty >>, INFO|FlywayMigrator|2:0|brazil/member-0|brazil/member-0 (2:0): migrating to version 1 - quick, INFO|FlywayMigrator|2:0|brazil/member-0|brazil/member-0 (2:0): applied 1 migration, now at version 1, INFO|FlywayMigrator|2:0|brazil/member-0|brazil/member-0 is at version 1 (1 applied)]
-PROBE again.flyway_lines_present: false
-PROBE again.flyway_lines_mdc: []
-PROBE single.ekbatan_lines: [INFO|FlywayMigrator|0:0|default|default (0:0): current version << empty >>, INFO|FlywayMigrator|0:0|default|default (0:0): migrating to version 1 - quick, INFO|FlywayMigrator|0:0|default|default (0:0): applied 1 migration, now at version 1, INFO|FlywayMigrator|0:0|default|default is at version 1 (1 applied)]
-PROBE single.flyway_lines_present: false
-PROBE single.flyway_lines_mdc: []
+PROBE again.ekbatan_lines: [INFO|FlywayMigrator|0:0|global/member-0|Migrating global/member-0 (0:0), INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0) is at version 1 (0 applied), INFO|FlywayMigrator|1:0|mexico/member-0|Migrating mexico/member-0 (1:0), INFO|FlywayMigrator|1:0|mexico/member-0|mexico/member-0 (1:0) is at version 1 (1 applied), INFO|FlywayMigrator|2:0|brazil/member-0|Migrating brazil/member-0 (2:0), INFO|FlywayMigrator|2:0|brazil/member-0|brazil/member-0 (2:0) is at version 1 (1 applied)]
+PROBE again.flyway_lines_present: true
+PROBE again.flyway_lines_mdc: [0:0 global/member-0, 1:0 mexico/member-0, 2:0 brazil/member-0]
+PROBE single.ekbatan_lines: [INFO|FlywayMigrator|0:0|default|Migrating default (0:0), INFO|FlywayMigrator|0:0|default|default (0:0) is at version 1 (1 applied)]
+PROBE single.flyway_lines_present: true
+PROBE single.flyway_lines_mdc: [0:0 default]
 PROBE target.shard_no_name: 3:1 shard-3-1
 PROBE target.default: 0:0 default
 PROBE refuse.no_targets: FAIL ValidationError: at least one migration target is required
-PROBE refuse.blank_location: FAIL ValidationError: no migrations directory at
+PROBE refuse.blank_location: FAIL ValidationError: locations cannot contain blank values
 PROBE refuse.blank_target_name: FAIL ValidationError: name is required

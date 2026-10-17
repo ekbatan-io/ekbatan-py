@@ -176,8 +176,8 @@ class Captured(logging.Handler):
         self.records.append(record)
         text = re.sub(r"\s+", " ", record.getMessage())
         self.lines.append(
-            f"{record.levelname}|{record.name}|{getattr(record, 'ekbatanShard', None)}|"
-            f"{getattr(record, 'ekbatanTarget', None)}|{text}"
+            f"{record.levelname}|{record.name}|{getattr(record, 'ekbatanShard', 'null')}|"
+            f"{getattr(record, 'ekbatanTarget', 'null')}|{text}"
         )
 
     # Java's twin listens on `org.flywaydb` and `io.ekbatan`; so does this.

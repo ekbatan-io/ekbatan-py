@@ -29,11 +29,18 @@ def layout(groups: list[int]) -> ShardingConfig:
 def report(k: str, log: Captured) -> None:
     probe(
         k + ".ekbatan_lines",
-        [line.replace("io.ekbatan.flyway.FlywayMigrator", "FlywayMigrator") for line in log.lines],
+        [
+            line.replace("io.ekbatan.flyway.FlywayMigrator", "FlywayMigrator").replace(
+                "ERROR|", "SEVERE|"
+            )
+            for line in log.lines
+            if "|io.ekbatan." in line
+        ],
     )
-    # Python has no Flyway: every line is the migrator's own, so there are no "Flyway lines".
-    probe(k + ".flyway_lines_present", "false")
-    probe(k + ".flyway_lines_mdc", "[]")
+    # The migrator writes Flyway's own lines under Flyway's logger names, as Java's Flyway does.
+    flyway = [line.split("|") for line in log.lines if "|org.flywaydb." in line]
+    probe(k + ".flyway_lines_present", "true" if flyway else "false")
+    probe(k + ".flyway_lines_mdc", sorted({f"{p[2]} {p[3]}" for p in flyway}))
 
 
 def names(targets) -> list[str]:
