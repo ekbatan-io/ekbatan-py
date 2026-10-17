@@ -50,7 +50,7 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 28 | SQL session killed under a held lock | others get in, lease still says held, close is quiet, provider keeps working | same | same | locks `conn_drop.*` |
 | 29 | Redis key deleted under the holder | others get in; old holder's close leaves the new owner's key | same | same | locks `redis.conn_drop.*` |
 | 30 | Interrupting a thread waiting in `acquire` | `InterruptedException` | no way to do it | differs | locks `interrupt_waiting_acquire` |
-| 31 | PG: `lock_timeout` on the pooled connection after a timed-out bounded wait | `0` | `200ms` stays on it | differs | locks `pg.lock_timeout_after_timed_out_try` |
+| 31 | PG: `lock_timeout` on the pooled connection after a timed-out bounded wait | `0` | `0` (was: `200ms` stays on it; fixed in EKB-0263) | same | locks `pg.lock_timeout_after_timed_out_try` |
 | 32 | PG: `lock_timeout` after a bounded wait that got the lock | `0` | `0` | same | locks `pg.lock_timeout_after_acquired_try` |
 | 33 | Database unreachable on `tryAcquire` | `LockAcquisitionException` | raw `OperationalError` | differs | locks `pg.backend_down.*` |
 | 34 | Taking a lock on an asyncio event loop's thread | (nothing like it) | refused, `ValidationError` (EKB-0250) | differs | locks `pg.on_asyncio_loop` |
@@ -85,6 +85,8 @@ twice frees the database lock while the outer code still thinks it holds it, and
 gets in. `held` also answers for the whole hold, not the lease.
 Java `KeyedReentrantHolder.java:255-262`. Python `locks/base.py:66-73`, `locks/_holder.py:71`.
 Python can match: give `Lease` its own closed flag, checked in `release()` and `held`. A few lines.
+
+> **Fixed in EKB-0263:** the reset runs after every bounded wait. Rerun: `pg.lock_timeout_after_timed_out_try.next_borrower_sees: 0`, as Java.
 
 **31. PostgreSQL: a timed-out wait leaves `lock_timeout` on the pooled connection** (surprise:
 high). Java sets `lock_timeout` back to 0 whether or not it got the lock. Python resets it only

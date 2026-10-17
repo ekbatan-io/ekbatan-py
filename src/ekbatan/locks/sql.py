@@ -131,7 +131,14 @@ class SqlKeyedLockProvider(ABC):
             # connection is what makes the server drop the session and its locks with it.
             self._log.exception("failed to release a database lock; discarding its session")
             conn.invalidate()
+        else:
+            if conn.info.get(_DIRTY):
+                conn.invalidate()
         _discard(conn, self._log)
+
+
+#: Marks a connection whose session settings could not be put back; it is discarded on release.
+_DIRTY = "ekbatan.lock.dirty"
 
 
 def _discard(conn: Connection, log: logging.Logger) -> None:
@@ -173,22 +180,32 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
 
         millis = max(1, int(wait.total_seconds() * 1000))
         conn.exec_driver_sql(f"SET lock_timeout = {millis}")
+        acquired = False
+        failure: Exception | None = None
         try:
             conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
+            acquired = True
         except Exception as exc:
             if not _is_lock_timeout(exc):
-                raise
-            return False
+                failure = exc
+        # Back to 0 whether the lock came or not, as Java does. Skipping it after a timed-out
+        # wait left the lock_timeout on the pooled connection, and the next borrower's ordinary
+        # statements could then fail with lock timeouts nobody asked for.
         try:
             conn.exec_driver_sql("SET lock_timeout = 0")
-        except Exception:
-            # Java marks the connection dirty here and evicts it rather than releasing it. The
-            # next borrower would otherwise inherit this lock_timeout and wait on some
-            # unrelated statement for a duration nobody set.
+        except Exception as reset:
+            # Java marks the connection dirty here and evicts it instead of returning it.
             self._log.warning("could not reset lock_timeout; the connection will be discarded")
-            conn.invalidate()
-            raise
-        return True
+            if failure is not None:
+                failure.add_note(f"resetting lock_timeout also failed: {reset!r}")
+            if acquired:
+                # The lock is kept, as Java keeps it; its connection is discarded on release.
+                conn.info[_DIRTY] = True
+            else:
+                conn.invalidate()
+        if failure is not None:
+            raise failure
+        return acquired
 
     def _unlock(self, conn: Connection, key: int) -> None:
         from sqlalchemy import text

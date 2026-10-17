@@ -1183,13 +1183,16 @@ statement ends its own implicit transaction and leaves nothing behind. An adviso
 session-scoped in both Postgres and MySQL, so there was never a transaction to want.
 
 Measured both ways: with the original `finally` restored and `AUTOCOMMIT` added, the suite passes;
-the reset is simply no longer running against a poisoned connection. Both changes are in, because
-the narrower one is still correct and costs nothing.
+the reset is simply no longer running against a poisoned connection. The narrower change had stayed
+in, and it was not harmless: skipping the reset after a timed-out wait left the `lock_timeout` on
+the pooled connection for its next borrower. The parity scan found it; since `EKB-0263` the reset
+runs after every bounded wait, got or not, as in Java.
 
 Two more things came out of reading `PostgresKeyedLockProvider` whole rather than inferring it
-from its tests. A connection whose `lock_timeout` reset failed is now **invalidated** rather than
+from its tests. A connection whose `lock_timeout` reset failed is now **discarded** rather than
 returned - Java calls it `dirty` and evicts it, because the next borrower would otherwise inherit
-a timeout nobody set. And a failed `pg_advisory_unlock` invalidates too: the unlock did not
+a timeout nobody set. If the wait got the lock, the lock is kept, as in Java, and the connection
+is discarded when the lock is released. And a failed `pg_advisory_unlock` invalidates too: the unlock did not
 happen, so that session still holds the lock, and handing the connection back to the pool would
 hand the lock with it.
 

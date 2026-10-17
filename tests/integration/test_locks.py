@@ -349,6 +349,38 @@ def test_the_server_sees_the_lock_under_the_name_java_uses(locks, registry, dial
     assert holder() is None, "free again after release"
 
 
+def test_a_timed_out_wait_leaves_no_lock_timeout_on_the_pooled_connection(
+    locks, registry, dialect, request
+):
+    """Java sets `lock_timeout` back to 0 whether the bounded wait got the lock or not. Left
+    set, the next borrower of that pooled connection inherits it, and its ordinary statements
+    can fail with lock timeouts."""
+    if dialect != "postgres":
+        pytest.skip("only Postgres waits with a session lock_timeout")
+    from sqlalchemy import create_engine
+
+    from ekbatan.locks.sql import PostgresKeyedLockProvider
+
+    k = key(request)
+    one = create_engine(registry.default.primary.url, pool_size=1, max_overflow=0)
+    try:
+        waiter = PostgresKeyedLockProvider(one)
+        with locks.acquire(k, HOLD):
+            outcome: list[object] = []
+            thread = threading.Thread(
+                target=lambda: outcome.append(
+                    waiter.try_acquire(k, timedelta(milliseconds=200), HOLD)
+                )
+            )
+            thread.start()
+            thread.join(20)
+            assert outcome == [None]
+        with one.connect() as conn:
+            assert conn.exec_driver_sql("SHOW lock_timeout").scalar() == "0"
+    finally:
+        one.dispose()
+
+
 def test_what_a_sub_second_wait_actually_does_on_each_server(locks, dialect, request):
     """Java has a case here for MySQL and MariaDB and none for Postgres, because `GET_LOCK`
     takes its timeout as a `DOUBLE` and the two servers disagree about the fraction.
