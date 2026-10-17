@@ -441,6 +441,10 @@ a design. Giving up crashes every instance waiting behind a migration longer tha
 waiter cannot be stuck behind a dead holder, because the lock is the database session's. So the
 migrator waits as long as it takes on every database, logging every thirty seconds.
 
+Items 77-84 (script migrations, how `V1_5` is stored, the history table's shape, the checksum
+ignoring line breaks, the `installed_on` zone, the baseline text, the result of a run with nothing
+to apply, and the success log lines) are left as they are, by the user's decision (2026-10-18).
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails
