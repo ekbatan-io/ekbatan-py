@@ -90,15 +90,17 @@ class EventEntityRepository(_ShardRepository):
         marked delivered, so registering a handler later still picks it up - and a sentinel
         row, which has no event type at all, is never selected.
 
-        Read outside any open transaction, as Java's is, so it does not see rows that
-        transaction has written and not yet committed.
+        Read from the shard's replica, or its primary when it has none, as Java's is - so with a
+        lagging replica fan-out runs late, never wrong: an event read twice is dropped by the
+        unique key on the notification insert. Outside any open transaction, so it does not see
+        rows that transaction has written and not yet committed.
         """
         if handled_event_types is None:
             raise ValidationError("handled_event_types cannot be None")
         if not handled_event_types:
             return []
         table = self._table
-        with self._db(shard) as conn:
+        with self._readonly_db(shard) as conn:
             rows = conn.execute(
                 select(table)
                 .where(table.c.delivered.is_(False), table.c.event_type.in_(handled_event_types))
@@ -140,11 +142,12 @@ class EventNotificationRepository(_ShardRepository):
     ) -> list[EventNotification]:
         """Pending or failed notifications whose retry time has come, soonest first.
 
-        Read outside any open transaction, as Java's is, from the replica, where Java reads
-        the primary.
+        Read from the primary, outside any open transaction, as Java's is. Never the replica: a
+        replica that has not yet seen a row marked ``SUCCEEDED`` would hand it to its handler
+        again.
         """
         table = self._table
-        with self._readonly_db(shard) as conn:
+        with self._db(shard) as conn:
             rows = conn.execute(
                 select(table)
                 .where(

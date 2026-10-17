@@ -117,12 +117,12 @@ PROBE j.handling.schedule_default: DisabledSchedule
 PROBE j.job.batch_zero: ok
 PROBE j.job.blank_name: refused: EventFanoutJob has a blank name. The name is the primary key of this job's row and how every instance recognises it as the same job.
 PROBE j.job.no_clock: ok
-PROBE r.fanout.any: true
-PROBE r.fanout.primary_notifications: 1
-PROBE r.find_due: 0
-PROBE r.find_undelivered: 1
-PROBE r.handling.any: false
-PROBE r.handling.calls: 0
+PROBE r.fanout.any: false
+PROBE r.fanout.primary_notifications: 0
+PROBE r.find_due: 1
+PROBE r.find_undelivered: 0
+PROBE r.handling.any: true
+PROBE r.handling.calls: 1
 PROBE t.after_rollback_events: 0
 PROBE t.find_due_sees_own_uncommitted: 0
 PROBE t.find_undelivered_sees_own_uncommitted: 0

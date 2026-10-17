@@ -213,7 +213,9 @@ dataclass, so the trap does not exist and neither do the two spellings of every 
 Each round:
 
 1. Drain a batch of undelivered events whose `event_type` **currently has a registered handler** -
-   `delivered = FALSE AND event_type IN (...)`, limited, ordered by `event_date`. The read takes
+   `delivered = FALSE AND event_type IN (...)`, limited, ordered by `event_date`. **From the
+   replica** when the shard has one, else the primary, as Java's is: a lagging replica makes
+   fan-out late, and an event read twice is dropped by the unique key in step 2. The read takes
    a connection of its own, as Java's does; steps 2 and 3 are one transaction.
 2. For each, insert one notification row per subscribed handler, with the full denormalised
    context: `PENDING`, `attempts = 0`, `next_retry_at = now`.

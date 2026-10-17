@@ -244,3 +244,41 @@ def test_find_due_does_not_join_an_open_transaction(registry, notifications):
         inside = notifications.find_due(DEFAULT_SHARD, 10, NOW)
     assert inside == [], "find_due joined the open transaction; Java's does not"
     assert len(notifications.find_due(DEFAULT_SHARD, 10, NOW)) == 1
+
+
+@pytest.fixture
+def lagging_replica(backend):
+    """A shard whose replica has seen nothing: the primary and the replica are two databases."""
+    from sqlalchemy import create_engine
+
+    from ekbatan.persistence import DatabaseRegistry, TransactionManager
+    from fixtures.schema import metadata
+
+    written, lagging = "ekbatan_written", "ekbatan_lagging"
+    for name in (written, lagging):
+        backend.prepare(name, metadata)
+        backend.truncate(name, metadata)
+    manager = TransactionManager(
+        DEFAULT_SHARD, create_engine(backend.url(written)), create_engine(backend.url(lagging))
+    )
+    with DatabaseRegistry({DEFAULT_SHARD: manager}, DEFAULT_SHARD) as reg:
+        yield reg
+
+
+def test_fan_out_reads_the_replica_and_handling_reads_the_primary(lagging_replica):
+    """Java's `findUndelivered` reads `readonlyDb()`, its `findDue` reads `db()`. With a
+    lagging replica fan-out runs late; handling never sees a stale row."""
+    OutboxRepository(lagging_replica, EVENTS).add_all_no_result([an_event()], DEFAULT_SHARD)
+    EventNotificationRepository(lagging_replica, EVENT_NOTIFICATIONS).add_all_no_result(
+        [a_notification()], DEFAULT_SHARD
+    )
+
+    undelivered = EventEntityRepository(lagging_replica, EVENTS).find_undelivered(
+        DEFAULT_SHARD, ["WalletCreatedEvent"], 10
+    )
+    due = EventNotificationRepository(lagging_replica, EVENT_NOTIFICATIONS).find_due(
+        DEFAULT_SHARD, 10, NOW
+    )
+
+    assert undelivered == [], "find_undelivered read the primary; Java's reads the replica"
+    assert len(due) == 1, "find_due read the replica; Java's reads the primary"

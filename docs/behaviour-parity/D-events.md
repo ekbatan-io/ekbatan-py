@@ -40,7 +40,7 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 22 | `findUndelivered` inside an open transaction on the shard | does not see the transaction's own rows (0) | same (fixed in EKB-0270) | same | `t.find_undelivered_*`, `t.undelivered_after_mark_in_same_tx` |
 | 23 | `findDue` inside an open transaction on the shard | does not see them (0) | same (fixed in EKB-0270) | same | `t.find_due_sees_own_uncommitted` |
 | 24 | `markDelivered` / inserts join the open transaction and roll back with it | yes | yes | same | `t.mark_delivered_rolled_back`, `t.after_rollback_events` |
-| 25 | Where the reads go when the shard has a replica (replica empty, primary has the rows) | `findUndelivered` replica (fan-out finds nothing); `findDue` primary (handler called) | the other way round: fan-out works, handling finds nothing | differs | `r.*` |
+| 25 | Where the reads go when the shard has a replica (replica empty, primary has the rows) | `findUndelivered` replica (fan-out finds nothing); `findDue` primary (handler called) | same (fixed in EKB-0271) | same | `r.*` |
 | 26 | Handlers in a batch, and shards, run at the same time | 5 at once (3 + 2 over two shards) | 5 | same | `c.max_concurrent_handlers` |
 | 27 | Default batch sizes (no size given) | fan-out 200, handling 100 | same | same | `c.default_*_batch` |
 | 28 | Default job names | `ekbatan-event-fanout`, `ekbatan-event-handling` | same | same | `j.*.name` |
@@ -58,7 +58,7 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 
 Most surprising first.
 
-### 25. The replica is read at the opposite stage
+### 25. The replica is read at the opposite stage - fixed in EKB-0271
 - **What:** with a replica configured, Java's fan-out reads new events from the replica and the
   handling job reads due rows from the primary. Python does the reverse. With a lagging replica,
   Java delays fan-out; Python delays delivery, and a replica that has not yet seen a row marked
