@@ -127,7 +127,7 @@ the text is not measured here.
 
 Most surprising first.
 
-**78, 77. Decimals read back from JSON (and Java reading its own events).** Java writes a
+**78, 77. Decimals read back from JSON (and Java reading its own events).** *Python side fixed in `EKB-0290`: Python writes numbers as Java does and reads every number as a `Decimal`; Java's own loss is recorded under "Noticed in the Java" in DECISIONS-TO-REVIEW, with the one setting that fixes it.* Java writes a
 decimal as a JSON number; when any reader parses that number it goes through a double, so
 `10.50` comes back `10.5` and `123456789012345678901234567890.123456789` comes back
 `123456789012345680000000000000`. That is true for Java's own `EventHandlingJob` reading Java's
@@ -141,25 +141,25 @@ the wire form only by writing numbers (Dracula 1); it could stop its own loss wh
 numbers cheaply with `json.loads(..., parse_float=Decimal)` in `_json.loads`. The Java loss is a
 Java-side matter (`USE_BIG_DECIMAL_FOR_FLOATS` on the converter's mapper). Surprise: high.
 
-**77, 78. Dates, times and bytes in an event read back by Python come back as text.**
+**77, 78. ~~Dates, times and bytes in an event read back by Python come back as text.~~** *Fixed in `EKB-0290`.*
 `_json.decode` rebuilds `Decimal`, `UUID`, `datetime`, enums and nested dataclasses, but not
 `date`, `time` or `bytes`, so a handler gets `"2025-01-31"` where its event says `date`, even for
 Python's own payload. A zone-less `datetime` comes back with a UTC zone. Java restores all of
 them. Python `_json.py:109-142`. Could match: yes, cheaply - three more branches in `_revive`.
 Surprise: high.
 
-**73, 78. Bytes: base64 in Java, hex in Python.** Each port's bytes are unreadable to the other:
+**73, 78. ~~Bytes: base64 in Java, hex in Python.~~** *Fixed in `EKB-0290`: base64.* Each port's bytes are unreadable to the other:
 Java refuses Python's `"0102ff"`, Python hands back Java's `"AQL/"` as text. Java: Jackson
 default. Python `_json.py:45-46`. Could match: yes, cheaply (`base64.b64encode` / decode).
 Surprise: medium.
 
-**74. Typed ids and typed values inside an event.** Jackson writes a `ShardedId` field as
+**74. ~~Typed ids and typed values inside an event.~~** *Fixed in `EKB-0290`: Python writes Java's shape.* Jackson writes a `ShardedId` field as
 `{"id":"...","value":"..."}` and a `TypedValue` as `{"value":"W-1"}` (their getters); Python
 writes the bare value. Java: `domain/ShardedId.java:67-75`, `domain/TypedValue.java:29-31` (no
 `@JsonValue`). Python `_json.py:49-53`. Could match: yes, but the Java shape is probably an
 accident, not a contract; the better fix is `@JsonValue` on the Java side. Surprise: medium.
 
-**8, 41, 42, 80. A field never set gives `TypeError`, not `ValidationError`.** Building a model
+**8, 41, 42, 80. ~~A field never set gives `TypeError`, not `ValidationError`.~~** *Fixed in `EKB-0292` (builders) and `EKB-0290` (JSON).* Building a model
 without calling a required setter, or reading an event payload with a missing key, ends in the
 dataclass constructor's `TypeError: missing 1 required keyword-only argument: 'id'`. Java says
 "id cannot be null" (and for JSON simply leaves the field null). Code catching
@@ -167,14 +167,14 @@ dataclass constructor's `TypeError: missing 1 required keyword-only argument: 'i
 Java `domain/Model.java:81-87`. Could match: yes, cheaply - `build()` and `decode` can check the
 missing names first, as `_builder.FieldBuilder.build` already does. Surprise: medium.
 
-**56. Id ordering.** Java's `UUID.compareTo` compares the two halves as signed numbers, so an id
+**56. ~~Id ordering.~~** *Fixed in `EKB-0293`: Java's signed order.* Java's `UUID.compareTo` compares the two halves as signed numbers, so an id
 starting `8...`-`f...` sorts before one starting `0...`; Python (and PostgreSQL) compare unsigned.
 Version 7 ids agree (row 57) until the year ~6400; random version 4 ids (`Id.random`) sort
 differently in half the cases. Neither framework sorts ids itself. Java `domain/Id.java:69-71`,
 `domain/ShardedId.java:78-80`; Python `ids.py:92-100`. Could match: yes, cheaply (compare as
 signed halves) - but Python's order is the database's. Surprise: medium.
 
-**66, 72, 76, 64, 65. JSON text is not byte-identical.** Beyond the known names (Dracula 1):
+**66, 72, 76, 64, 65. ~~JSON text is not byte-identical.~~** *Fixed in `EKB-0290`: byte-identical, checked over 50,000 values.* Beyond the known names (Dracula 1):
 Python sorts keys, including inside maps (Java keeps declaration / insertion order); decimals are
 strings (Java numbers, in `toString` form such as `1E+3`); a float is a string (Java a number).
 Java: `SingleTableJsonEventPersister.java:132,142` with Jackson 3 defaults; Python
@@ -182,19 +182,19 @@ Java: `SingleTableJsonEventPersister.java:132,142` with Jackson 3 defaults; Pyth
 Jackson, at the cost of the "sorted, canonical" promise in `_json.dumps`. Surprise: high for a
 reader comparing rows (known: Dracula 1).
 
-**67, 68, 69. Time in JSON.** Python always writes six fraction digits and always UTC with `Z`;
+**67, 68, 69. ~~Time in JSON.~~** *Fixed in `EKB-0290`; one limit: an `OffsetDateTime` at offset zero.* Python always writes six fraction digits and always UTC with `Z`;
 Java writes the shortest form, keeps an offset on an `OffsetDateTime`, and writes no zone for a
 `LocalDateTime` (Python treats a naive datetime as UTC and adds `Z`). Both ports parse the
 other's instants correctly (row 78). Python `_json.py:35-38`. Could match: partly - trimming
 digits is cheap; offsets need the type kept. Surprise: low.
 
-**22. Model timestamps cannot be compared with `clock.now()`.** Known: Dracula 43. Python
+**22. ~~Model timestamps cannot be compared with `clock.now()`.~~** *Fixed in `EKB-0294`.* Known: Dracula 43. Python
 `domain.py:654`, `clock.py:132-144`; Java `domain/Model.java:84-86`. Surprise: high.
 
 **39. Event equality.** Known: Dracula 56. Python `domain.py:87`; Java `domain/ModelEvent.java:23`.
 Surprise: medium.
 
-**5, 6. Version left unset.** Known: Dracula 52; row 6 is the same default seen through
+**5, 6. ~~Version left unset.~~** *Fixed in `EKB-0292`.* Known: Dracula 52; row 6 is the same default seen through
 `increase_version()`. Python `domain.py:479`, `domain.py:230-231`; Java `domain/Model.java:87`,
 `domain/Model.java:238-240`. Surprise: medium.
 
@@ -214,7 +214,7 @@ match: yes (a regex before parsing), cheap. Surprise: low.
 timestamp out of any uuid (`shard/ShardedUUID.java:77-96`); Python refuses the shard and returns
 `None` for the time (`ids.py:183-196`, `sharding.py:102-125`). Surprise: low.
 
-**84. A number sent for a text field.** Jackson turns it into text; `_json.decode` passes the int
+**84. ~~A number sent for a text field.~~** *Fixed in `EKB-0290`.* Jackson turns it into text; `_json.decode` passes the int
 through unchanged into a `str` field. Python `_json.py:113-142`. Could match: yes, cheaply.
 Surprise: low.
 
@@ -231,9 +231,7 @@ Java `domain/TypedValue.java:34-49`. Surprise: low.
 grows (the database column would refuse it on write). Python `domain.py:573-574`; Java
 `domain/Model.java:238-240`. Could match: yes, cheaply; nobody will reach it. Surprise: low.
 
-**Totals:** 91 rows - 51 same, 32 differs, 8 read. 12 of the differences are known Draculas
-(rows 5, 13, 22, 39, 49, 58, 60, 63, 64, 65, 66, 89 - Draculas 1, 43, 52, 53, 56, 59, 60, 65, 66).
-20 are new: JSON read back (77, 78, 80, 84), JSON format beyond Dracula 1 (67, 68, 69, 72, 73,
-74, 76), `TypeError` for an unset field (8, 41, 42), id ordering (56), accepted uuid text (52),
-the null event (11), time out of a v4 uuid (50), version overflow (7) and `increase_version` on an
-unset version (6).
+**Totals:** 91 rows - 51 same, 32 differs, 8 read, as scanned. Parity-fix group J
+(`EKB-0290`-`EKB-0294`) settled rows 5, 6, 8, 22, 41, 56, 64-69, 72-74, 76, 80 and 84, and the
+Python side of 77 and 78; row 82 now differs only by Java's decimal loss (a Java bug), and 42 only
+by Dracula 53.

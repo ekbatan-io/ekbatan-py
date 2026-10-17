@@ -37,7 +37,10 @@ the Java while porting go in an openspec change, not a code change.
   thing that could happen to this design.
 - Keep PostgreSQL, MySQL and MariaDB aligned unless a dialect difference is intentional and
   documented. SQLite is not a production dialect and proves less than it looks like it proves.
-- `timestamp_column()`, never a zoned type. `DATETIME(6)`, never bare `DATETIME`.
+- `timestamp_column()`, never a zoned type. `DATETIME(6)`, never bare `DATETIME`. Columns hold
+  the zone-less UTC time; every timestamp handed back is an aware UTC `datetime` (Java's `Instant`).
+- Params and payload JSON is the text Java's default Jackson 3 mapper writes, byte for byte
+  (camelCase keys, decimals as numbers); `ekbatan._json` and `parity-probes/G-domain-model/` hold it.
 - Nothing in `src/` may import a web framework. `tests/test_structure.py` enforces it.
 - The ambient transaction is a `ContextVar`. Work handed to a pool does not inherit it, and that
   is correct.

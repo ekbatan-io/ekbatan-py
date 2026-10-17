@@ -97,16 +97,16 @@ def test_a_deposit_writes_the_balance_and_its_event_together(service):
     assert service.wallets.get(wallet.id).balance == Decimal("125.5000")
     deposited = [r for r in outbox(service) if r.event_type == "MoneyDepositedEvent"]
     assert len(deposited) == 1
+    # The JSON a Java service writes for the same event: Java's field names, decimals as JSON
+    # numbers (read back as Decimal, scale kept). The event's own identity travels *inside* the
+    # payload as well as in its columns, because Java's `@JsonCreator` requires both.
     assert deposited[0].payload == {
-        "amount": "25.50",
-        "new_balance": "125.5000",
-        # The event's own identity travels *inside* the payload as well as in its columns,
-        # because a consumer deserialising the payload into a typed event needs them there -
-        # Java's `@JsonCreator` requires both, and a handler reading a row written without
-        # them would fail, retry, and expire. Spelled as Java spells them.
         "modelId": str(wallet.id),
         "modelName": "Wallet",
+        "amount": Decimal("25.50"),
+        "newBalance": Decimal("125.5000"),
     }
+    assert str(deposited[0].payload["amount"]) == "25.50"
 
 
 def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):

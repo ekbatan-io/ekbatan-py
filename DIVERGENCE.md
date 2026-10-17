@@ -150,7 +150,7 @@ row the other wrote.
 
 ## The JSON of params and payloads is Java's, byte for byte
 
-> **parity** - since `EKB-0290` the outbox's `action_params` and `payload` are the text Ekbatan's default Jackson 3 mapper writes for the same object. Three corners Python cannot reach are listed below and in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#json-domain-model-and-timestamps-ekb-0290-ekb-0296).
+> **parity** - since `EKB-0290` the outbox's `action_params` and `payload` are the text Ekbatan's default Jackson 3 mapper writes for the same object. Three corners Python cannot reach are listed below and in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#json-domain-model-and-timestamps-ekb-0290-ekb-0294).
 
 A dataclass field `new_balance` is written `newBalance`, in declaration order (a Java record, or
 an event with Ekbatan's usual `@JsonCreator`); decimals are JSON numbers in `BigDecimal.toString()`

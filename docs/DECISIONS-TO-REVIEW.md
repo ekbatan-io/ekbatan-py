@@ -471,7 +471,7 @@ the "migrator against Flyway" calls above wherever the two disagree.
 | The `migrations` and `post-apply` names are not kept as aliases | ekbatan-py is unreleased; no shims | - |
 
 
-## JSON, domain model and timestamps (`EKB-0290`-`EKB-0296`)
+## JSON, domain model and timestamps (`EKB-0290`-`EKB-0295`)
 
 Parity-fix group J, 2026-10-17, unattended. The user: "i like the thing to be compatible with
 java, so camel case". Ledger: [parity-fix/J-json-domain.md](parity-fix/J-json-domain.md).

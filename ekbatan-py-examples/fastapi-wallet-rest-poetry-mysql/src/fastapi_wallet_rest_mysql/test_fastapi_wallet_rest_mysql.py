@@ -128,7 +128,10 @@ def test_the_deposit_event_reaches_the_handler_and_writes_an_alert(client: TestC
 
     assert alerts, "the handler never ran; fan-out or dispatch is not running"
     assert alerts[0]["recipient"] == "ada@example.com", "read off the action's parameters"
-    assert "10.00" in alerts[0]["message"]
+    # "10.0", not "10.00": the payload carries the amount as a JSON number, as Java writes it,
+    # and MySQL's JSON column keeps a number with a fraction as a double. A Java service reading
+    # this row sees the same.
+    assert alerts[0]["message"].startswith("10.0 received")
 
 
 def test_a_missing_wallet_is_a_404_not_a_500(client: TestClient) -> None:

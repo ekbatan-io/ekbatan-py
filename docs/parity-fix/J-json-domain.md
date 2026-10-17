@@ -17,3 +17,14 @@ The user, 2026-10-17: "i like the thing to be compatible with java, so camel cas
 | 24 | Never-set field raises `TypeError` | "`<field>` cannot be null" from a builder, in Java's order; JSON leaves it null (`EKB-0290`) | done | `EKB-0292` | `test_domain.py::test_a_setter_never_called_is_refused_by_name_in_javas_order` (6 cases), `test_an_optional_field_never_set_is_none`, `test_the_version_range_is_checked_before_the_models_own_fields` fail on the old code; probes `model.missingId/State/CreatedDate`, `entity.missingId`, `codegen.missingBusinessField/BaseField` now give Java's messages; `test_json.py::test_a_missing_key_leaves_the_field_none_as_jackson_leaves_it_null`, probe `in.missingFields` = Java's |
 | 25 | Random ids sort differently | Java's signed `UUID.compareTo` on `Id` and `ShardedId`; the framework sorts ids nowhere else | done | `EKB-0293` | `test_ids.py::test_ids_sort_as_javas_uuid_compare_to_sorts_them_signed[Id/ShardedId]`, `test_an_id_and_a_sharded_id_do_not_compare` fail on the old code; probes `order.id.msbHighBitVsZero`, `order.shardedId.msbHighBitVsZero`, `order.id.lsbVariant10vs00`, `order.id.sorted` now identical to Java's |
 | 26 | Version never set defaults to 1 | refused: "version cannot be null" | done | `EKB-0292` | `test_a_builder_never_given_a_version_is_refused_not_started_at_one`, `test_an_entity_builder_never_given_a_version_is_refused`, `test_increase_version_with_no_version_set_is_refused` fail on the old code; probes `model.versionNotSet`, `entity.versionNotSet`, `model.increaseVersionWhenUnset` now refused as Java |
+
+## Proof run at the end
+
+- Full suite, `uv run pytest --dialects=all` (after `EKB-0294`): 2486 passed, 67 skipped, 4 failed
+  - the 4 are `test_jobs_at_exit.py::test_starting_adds_one_entry_and_stopping_takes_it_off`,
+  one per dialect, which fails the same way on the untouched branch (`EKB-0262`) run alone.
+- `make lint`: clean except the links to the other groups' ledgers, which exist only after the merge.
+- All 21 examples pass. Two example tests changed: the sqlite wallet service's payload assertion
+  (Java's keys, decimals as numbers) and the MySQL REST example's alert text (`10.0`: MySQL's JSON
+  column keeps a number with a fraction as a double).
+- Website builds (54 pages). Temporary Java probes removed from the throwaway Java worktree.
