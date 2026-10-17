@@ -12,4 +12,16 @@ Items 2, 30, 31, 32, 33, 34, 35 of the importance table in
 | 33 | 26 | `close()` on a provider does nothing, as Java's; the holder's `release_all` removed | done | `EKB-0266` | `test_closing_the_provider_leaves_open_leases_held` (SQL, Redis) fails before, passes after; probe `provider_close.lease_held: true` / `other_can_acquire: false` on PG, MySQL, MariaDB and Redis in both ports |
 | 31 | 4, 8, 18 | Redis: Redisson 3.39.0's hash layout, its two Lua scripts verbatim, its unlock latch and its `0` message on `redisson_lock__channel:{key}`; waiters subscribe, wait against a deadline | done | `EKB-0267` | new tests `test_the_lock_is_a_redisson_hash`, `test_a_release_publishes_redissons_unlock_message`, `test_a_redisson_holder_keeps_a_python_waiter_out_until_it_unlocks`, `test_a_backend_failure_on_acquire_is_reported_as_one` fail before, pass after; probes: `redis.name.*: hash`, `redis.wait_5000ms: 5000`, crossport both ways true incl. `redis.wake.java_woken_under_3s` and `python_woken_under_3s` (5-min TTL, 15 s wait: only the message can wake) |
 | 34 | 30 | waiting `acquire` cannot be interrupted: a limit. No cancel flag (new API) and no async exception (a hack); the docs say so and point to `try_acquire` with a bounded wait | limit | `EKB-0268` | probe `interrupt_waiting_acquire: no-api` stays, as recorded; docs: keyed-locks page (and website), Dracula 36, DECISIONS |
-| 35 | 47 | `stop()` cannot interrupt a job past `shutdown_max_wait`: a limit | todo | | |
+| 35 | 47 | `stop()` cannot interrupt a job past `shutdown_max_wait`: a limit. Return after one wait (when Java returns for an interrupted job), no second wait; log "Cannot interrupt executor service threads in Python" where Java logs its interrupt; jobs page corrected (it said the wait is doubled) | limit | `EKB-0269` | `test_and_names_what_did_not_finish` (db-scheduler) checks the new line, fails before, passes after; probe `j8b` unchanged: both return at 1 s |
+
+## Verification, on the last commit
+
+- `uv run pytest --dialects=all`: 2417 passed, 71 skipped.
+- `make test-gevent`: 1270 passed, 45 skipped; the lock suites (SQL on PostgreSQL, Redis) also
+  pass under gevent.
+- `make examples`: all 21 pass, and the SQLite walk-through runs.
+- `make lint`: ruff and mypy clean; the docs link check flags only the other groups' ledgers,
+  which exist in their own worktrees.
+- Website built (54 pages); the new anchor `#mysql-rounds-the-wait-to-whole-seconds` resolves.
+- Probes rerun on group L's own containers (ports 571xx): `locks`, `wait`, `jobs` and `crossport`
+  (Java and Python against one Redis, both directions).

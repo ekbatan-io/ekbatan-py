@@ -361,6 +361,14 @@ class Executor:
         if not still_running:
             LOG.info("Scheduler stopped.")
         else:
+            # Where Java logs "Interrupting executor service threads for shutdown." and waits a
+            # second time. Python has no thread interrupt, so a second wait would only delay the
+            # return; this says so, then names what is left, as Java does.
+            LOG.info(
+                "Cannot interrupt executor service threads in Python; leaving %d running "
+                "execution(s) to finish on their own.",
+                len(still_running),
+            )
             LOG.warning(
                 "Scheduler stopped, but some tasks did not complete. Was currently running the "
                 "following executions:\n%s",

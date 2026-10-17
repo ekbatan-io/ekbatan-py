@@ -53,6 +53,7 @@ marked unverified.
 - **Surprise:** medium
 
 ### `stop()` never interrupts a running job; it waits once, then leaves it running
+- **Decided (`EKB-0269`): kept as a limit.** No second wait: with no interrupt it could only delay the return, and Java returns after the first wait for a job its interrupt ended (scan row 47: both at 1 s). Where Java logs "Interrupting executor service threads for shutdown.", the port now logs "Cannot interrupt executor service threads in Python; ...", then names the executions still running, as Java does. The jobs page no longer says the wait is doubled.
 - **What:** Java waits `shutdownMaxWait`, then interrupts the job threads and waits again, so up to 2x. Python waits `shutdown_max_wait` once, logs the jobs still running, and returns. Those jobs keep running on daemon threads until the interpreter exits and kills them mid-line. A job blocked in `sleep()` or I/O gets no `InterruptedException`-style signal.
 - **Python:** `db-scheduler/src/db_scheduler/executor.py:342-360`, `scheduler.py:336-360`, `pool.py:1-10` (daemon workers); `distributedjobs/__init__.py:219-225` (docstring says bounded by `shutdown_max_wait`).
 - **Java:** db-scheduler `Executor.java:66-70` ("Will wait up to 2x"), `ExecutorUtils.java:28-37` (`shutdownNow()`); Ekbatan `JobRegistry.java:121-125`.

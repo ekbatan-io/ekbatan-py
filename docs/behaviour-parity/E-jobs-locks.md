@@ -66,7 +66,7 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 44 | Start with `scheduled_tasks` missing | refused, names the job (`IllegalStateException`) | refused, names the job (`ValidationError`) | same | jobs `j6.*` |
 | 45 | A row for a task nobody registered | left alone, never picked | same | same | jobs `j7.ghost_row` |
 | 46 | `stop()` with a running job, wait 5 s | waits for it (1.5 s) | same | same | jobs `j8a.*` |
-| 47 | `stop()` with a job longer than `shutdownMaxWait` (1 s) | returns at 1 s, job interrupted | returns at 1 s, job runs on to the end | differs | jobs `j8b.*` |
+| 47 | `stop()` with a job longer than `shutdownMaxWait` (1 s) | returns at 1 s, job interrupted | returns at 1 s, job runs on to the end (a limit; logged and documented in EKB-0269) | differs | jobs `j8b.*` |
 | 48 | Three jobs due at once | run in parallel (3) | same | same | jobs `j9` |
 | 49 | `heartbeatInterval(1s)` moves `last_heartbeat` | yes | same | same | jobs `j10.*` |
 | 50 | Defaults: 10 s polling (first run at 10 s), 10 s heartbeat | yes | same | same | jobs `j11.*` |
@@ -147,6 +147,8 @@ Java `KeyedLockProvider.java:125`. Python `locks/sql.py:96-97`, `locks/redis.py:
 Python has no thread interrupt. Java `PostgresKeyedLockProvider.java:88`. Python
 `locks/sql.py` `acquire` loop. Python could only add a cancel flag, which is new API.
 
+> **Kept as a limit in EKB-0269:** Python cannot interrupt a thread. `stop()` still returns when Java's does, and now logs that it cannot interrupt where Java logs its interrupt.
+
 **47. `stop()` does not interrupt a job that runs past `shutdownMaxWait`** (surprise: medium).
 Known: Dracula 35. Both return after the wait. Java then interrupts the job; Python leaves it
 running to the end, and it records its success after the scheduler has stopped.
@@ -163,7 +165,7 @@ fixed by EKB-0250. Java has nothing like an event loop thread. No action.
 
 ## Totals
 
-53 rows: 40 same, 11 differs, 2 read (rows 12-14 fixed in EKB-0262; at the scan, 37 same and 14 differ). Of the 14 differing rows, 5 are already-known Draculas
+53 rows: 47 same, 4 differ, 2 read (rows 12-14 fixed in EKB-0262; 4, 8, 17, 18, 26, 31 and 33 fixed in EKB-0263-EKB-0267; 30 and 47 kept as limits in EKB-0268-EKB-0269; at the scan, 37 same and 14 differ). Of the 14 differing rows, 5 are already-known Draculas
 (26, 30, 34, 38, 47) and 2 confirm a Dracula that had never been run (4, 8: Redis key layout).
 The other 7 are new: the lease close mark (12-14), the MySQL 500 ms wait (17), the Redis wait
 overshoot (18), the PostgreSQL `lock_timeout` leak (31) and the unwrapped connection error (33).

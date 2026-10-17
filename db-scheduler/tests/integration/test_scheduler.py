@@ -519,11 +519,13 @@ class TestShutdownIsBounded:
             scheduler.schedule_if_not_exists(task.instance("an-id"), SystemClock().now())
             assert started.wait(PATIENCE)
 
-            with caplog.at_level(logging.WARNING, logger="db_scheduler.executor"):
+            with caplog.at_level(logging.INFO, logger="db_scheduler.executor"):
                 scheduler.stop()
 
             assert "some tasks did not complete" in caplog.text
             assert "an-id" in caplog.text
+            # Where Java says it interrupts, this says it cannot.
+            assert "Cannot interrupt executor service threads" in caplog.text
         finally:
             never.set()
 

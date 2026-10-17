@@ -163,11 +163,15 @@ The heartbeat is written by the housekeeping thread rather than by the thread ru
 a long `execute()` is not itself at risk. What puts it at risk is the housekeeper stalling - a
 saturated pool, or a database that will not accept the write.
 
-**`shutdown_max_wait` is effectively doubled.** db-scheduler applies it to each of two shutdown
-phases - waiting politely, then waiting again after interrupting. On the 30-minute default that
-is up to an hour, which is usually worth lowering in tests. An execution still running when it
-expires is abandoned, leaving its row picked with a frozen heartbeat, and is recovered later by
-the same path as a crash.
+**`stop()` waits `shutdown_max_wait` once, then returns.** Java's db-scheduler waits, interrupts
+the job threads, and waits again - up to twice the setting - and the interrupt usually ends a job
+in a `sleep` or a blocking call at once. Python cannot interrupt a thread, so there is no second
+phase here: `stop()` logs that it cannot interrupt, names the executions still running, and
+returns, at the same moment Java returns for a job that its interrupt ended. Such an execution runs
+on to its end on a daemon thread, or is cut off when the process exits; if cut off, its row stays
+picked with a frozen heartbeat and is recovered later by the same path as a crash. A job that must
+stop cleanly checks `ctx.scheduler_state.is_shutting_down`. The 30-minute default is usually worth
+lowering in tests.
 
 ### Database dialect
 

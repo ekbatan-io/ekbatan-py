@@ -89,7 +89,7 @@ whatever is decided about the rest.
 | 32 | SIGTERM does not let running jobs finish unless you turn it on (main thread only) | forced | partly | H | D, E |
 | 33 | Drain-at-exit is a second switch, `stop_on_exit`, on `atexit` | forced | partly | M | D |
 | 34 | `workers(n)`: job threads have a ceiling, one per job by default | forced | no | M | D |
-| 35 | `stop()` never interrupts a running job; it waits once, then leaves it | forced | no | M | D |
+| 35 | `stop()` never interrupts a running job; it waits once, then leaves it. **Kept as a limit** (`EKB-0269`): Python cannot interrupt a thread; `stop()` returns when Java's does for an interrupted job, and logs that it cannot interrupt where Java logs its interrupt | forced | no | M | D |
 | 36 | A waiting `acquire` cannot be interrupted. **Kept as a limit** (`EKB-0268`): Python has no thread interrupt; the docs say to use `try_acquire` with a bounded wait where stopping matters | forced | partly | M | D |
 | 37 | ~~A lock provider's `close()` releases every thread's held locks; Java's does nothing~~ **fixed** (`EKB-0266`): `close()` does nothing, as Java's; open leases stay held | choice | yes | M | D |
 | 38 | Build the scheduler after `fork()` (gunicorn `--preload`) | forced | no | M | D |
