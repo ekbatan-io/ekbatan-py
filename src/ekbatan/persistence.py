@@ -41,15 +41,22 @@ __all__ = [
 LOG = logging.getLogger("io.ekbatan.core.persistence.TransactionManager")
 REGISTRY_LOG = logging.getLogger("io.ekbatan.core.shard.DatabaseRegistry")
 
+# Keyed by the manager, not by its shard - as Java keeps one `ScopedValue` per manager. Two
+# managers for the same shard (another registry, or one built on a member's `jobsConfig`) are two
+# databases as far as anyone can tell, and keyed by shard the second would run its statements on
+# the first one's connection.
+#
 # Default None rather than an empty dict: a mutable default on a ContextVar is shared by every
 # context that never set one, and the day something mutates it in place is the day two requests
 # start sharing a connection.
-_ambient: ContextVar[Mapping[ShardIdentifier, Db] | None] = ContextVar("ekbatan_tx", default=None)
+_ambient: ContextVar[Mapping[TransactionManager, Db] | None] = ContextVar(
+    "ekbatan_tx", default=None
+)
 
-_NONE: Mapping[ShardIdentifier, Db] = MappingProxyType({})
+_NONE: Mapping[TransactionManager, Db] = MappingProxyType({})
 
 
-def _open() -> Mapping[ShardIdentifier, Db]:
+def _open() -> Mapping[TransactionManager, Db]:
     """The transactions open on this thread or task."""
     return _ambient.get() or _NONE
 
@@ -152,7 +159,7 @@ class TransactionManager:
             ),
             Db(self.primary) as conn,
         ):
-            token = _ambient.set({**_open(), self.shard: conn})
+            token = _ambient.set({**_open(), self: conn})
             # Begin, commit and roll back by hand rather than through `with conn.begin()`. The
             # context manager rolls back for us, but it has nowhere to say that the rollback
             # *itself* failed - and SQLAlchemy then returns that connection to the pool and
@@ -196,13 +203,13 @@ class TransactionManager:
                 _ambient.reset(token)
 
     def current(self) -> Db | None:
-        """The transaction open on this shard right now, or ``None``.
+        """The transaction this manager has open right now, or ``None``.
 
         The counterpart to Java's ``currentTransactionDbContext``. Where the ambient
         transaction is kept is this module's business, so asking is a method rather than a
         reach into it from outside.
         """
-        return _open().get(self.shard)
+        return _open().get(self)
 
     @contextmanager
     def connection(self, *, readonly: bool = False) -> Iterator[Db]:
@@ -226,7 +233,7 @@ class TransactionManager:
         A read taken inside a transaction ignores it and joins the transaction - it has to see
         the writes that transaction has already made, and a replica by definition has not.
         """
-        existing = _open().get(self.shard)
+        existing = _open().get(self)
         if existing is not None:
             yield existing
             return

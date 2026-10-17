@@ -14,6 +14,12 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import Connection, text
 
+from ekbatan.persistence import TransactionManager
+from ekbatan.sharding import ShardIdentifier
+
+GLOBAL = ShardIdentifier(0, 0)
+MEXICO = ShardIdentifier(1, 0)
+
 ROLLBACK = "sqlalchemy.engine.base.RootTransaction.rollback"
 COMMIT = "sqlalchemy.engine.base.RootTransaction.commit"
 
@@ -149,3 +155,24 @@ def test_a_nested_call_joins_rather_than_opening_a_second_transaction(manager):
         assert inner.connection is outer.connection
 
     assert manager.current() is None
+
+
+def test_two_managers_for_one_shard_do_not_share_a_transaction(sharded_registry):
+    """Java keeps one `ScopedValue` per manager, so a second manager for the same shard - another
+    registry, or one built on a member's `jobsConfig` - sees no transaction inside the first one's
+    and opens its own, on its own database. Keyed by shard, the second ran on the first's
+    connection, and its statements landed in the first one's database."""
+    first = sharded_registry.manager(GLOBAL)
+    other_database = sharded_registry.manager(MEXICO).primary
+    second = TransactionManager(GLOBAL, other_database)
+
+    with first.transaction() as outer:
+        assert second.current() is None
+        with second.connection() as conn:
+            assert conn is not outer.connection
+            assert conn.engine is other_database
+        with second.transaction() as inner:
+            assert inner.connection is not outer.connection
+            assert inner.connection.engine is other_database
+            assert second.current() is inner.connection
+        assert first.current() is outer.connection

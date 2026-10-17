@@ -89,7 +89,7 @@ Probes and outputs: [`parity-probes/C-transactions-sharding-config/`](../../pari
 | 63 | Inner fails, outer catches it and commits | inner row gone | inner row committed | differs | T: `tx.nested.inner_failure_caught.*` |
 | 64 | Inner writes a row the outer has locked | blocks (lock timeout here; forever without one) | fine | differs | T: `tx.nested.inner_updates_row_outer_locked` |
 | 65 | After the inner block, current is the outer | yes | yes | same | T: `tx.nested.current_after_inner_is_outer` |
-| 66 | Two managers for the same shard (here different databases): the second inside the first's transaction | sees none; opens its own on its own database | sees the first's; runs on the first's connection and database | differs | T: `tx.two_managers_same_shard.*` |
+| 66 | Two managers for the same shard (here different databases): the second inside the first's transaction | sees none; opens its own on its own database | same (fixed in EKB-0300) | same | T: `tx.two_managers_same_shard.*` |
 | 67 | Rollback fails (connection killed): original error out, connection thrown away and logged, row gone, next transaction fine | yes | yes | same | T: `tx.failed_rollback.*` (message differs by row 53) |
 | 68 | Commit fails (deferred unique): error with SQLSTATE 23505, nothing kept, next transaction fine | yes | yes | same | T: `tx.commit_failure.*` |
 | 69 | Replica configured: repository read-only access reads the replica, also inside a transaction | yes | yes | same | T: `rep.secondary_database`, `rep.repo_readonly_*` |
@@ -198,7 +198,8 @@ could match by opening a second connection (cheap to write; changes what every n
 Known: Dracula 44. Row 63 is the new detail: the inner block's own failure does not roll back its
 own writes. Surprise: high.
 
-**66. Two managers for the same shard share one transaction.** Python keys the open transaction
+**66. Two managers for the same shard share one transaction.** **Fixed** (`EKB-0300`): the open
+transaction is now kept per manager, as Java's. Before: Python keyed the open transaction
 by shard, not by manager. A second `TransactionManager` for the same shard - another registry,
 or one built on a member's `jobsConfig` - finds the first one's transaction, and its own
 `transaction()` runs on the first's connection: here a manager for `replicadb` wrote into

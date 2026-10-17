@@ -25,8 +25,8 @@ PROBE tx.nested.outer_row_kept_after_outer_rollback: no
 PROBE tx.nested.inner_failure_caught.inner_row_kept: yes
 PROBE tx.nested.inner_failure_caught.outer_row_kept: yes
 PROBE tx.nested.inner_updates_row_outer_locked: ok
-PROBE tx.two_managers_same_shard.second_current_inside_first: present
-PROBE tx.two_managers_same_shard.second_tx_database: testdb
+PROBE tx.two_managers_same_shard.second_current_inside_first: empty
+PROBE tx.two_managers_same_shard.second_tx_database: replicadb
 PROBE tx.failed_rollback.propagated: boom
 PROBE tx.failed_rollback.discard_logged: yes
 PROBE tx.failed_rollback.row_kept: no

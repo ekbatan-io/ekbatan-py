@@ -79,7 +79,7 @@ there. Here it is not required.
 ## Direct usage — a worked example
 
 1. Borrow a connection from the **primary** pool.
-2. Bind it into the ambient context for this shard.
+2. Bind it into the ambient context for this manager.
 3. `BEGIN`, then run your block.
 4. Normal return: `COMMIT`, release the connection.
 5. Exception: `ROLLBACK`, release, re-raise.
@@ -122,7 +122,10 @@ block's own uncommitted writes, use `tx.execute` / `tx.rows` or a repository met
 The mechanism is the ambient transaction, and it is worth being precise about it because it is
 what makes a repository call read the same inside a unit of work and outside one.
 
-Opening a transaction binds its connection to a `ContextVar` keyed by shard. Every repository
+Opening a transaction binds its connection to a `ContextVar`, keyed by the manager - as Java
+keeps one `ScopedValue` per manager. A second manager for the same shard (another registry, or
+one built on a member's `jobsConfig`) sees no transaction there and opens its own, on its own
+database. Every repository
 write goes through `tx_db_else_db(...)`, which looks in that binding first: inside the block it
 finds the connection and joins, outside it finds nothing and each statement commits on its own.
 Nothing is threaded through arguments, and no repository takes a connection parameter.
