@@ -80,11 +80,15 @@ class _Outcome:
     ``retry_delay`` rather than a resolved timestamp, because the timestamp is what would stop
     two identical outcomes from being one `UPDATE`: computed per row it differs by microseconds
     and every row needs its own statement. Java resolves it once per batch for the same reason.
+
+    A failure carries its row too: whether it is retried or expired is decided after the whole
+    batch has run, against one clock reading, as Java's ``postInvokeNow`` is.
     """
 
     notification_id: Any
     kind: str
     retry_delay: timedelta | None = None
+    row: EventNotification | None = None
 
 
 class EventDispatch:
@@ -176,6 +180,7 @@ class EventDispatch:
         # One `now` for the whole batch, again as Java's `postInvokeNow` is. Resolved per row it
         # would differ by microseconds and no two rows could ever share a statement.
         now = to_storage(self._clock.now())
+        outcomes = [self._retry_or_expire(outcome, now) for outcome in outcomes]
         buckets: dict[tuple[str, timedelta | None], list[Any]] = defaultdict(list)
         for outcome in outcomes:
             buckets[(outcome.kind, outcome.retry_delay)].append(outcome.notification_id)
@@ -236,33 +241,15 @@ class EventDispatch:
             # BaseException on purpose. The failure class an ordinary `except Exception`
             # misses is exactly the one that would otherwise escape and discard this batch's
             # siblings, whose successes would then never be recorded.
-            after = to_storage(self._clock.now())
-            if self._expired(row.event_date, after):
-                LOG.warning(
-                    "notification %s failed and is now past its retention window: %s: %s",
-                    row.id,
-                    type(error).__name__,
-                    error,
-                )
-                LOG.error(
-                    "notification %s for handler %r was discarded: it exhausted the retention "
-                    "window after repeated handler failures",
-                    row.id,
-                    row.handler_name,
-                )
-                HANDLED.add(1, {"outcome": "expired_postfailure", "handler": row.handler_name})
-                return _Outcome(row.id, EXPIRED_POST_FAILURE)
-            delay = backoff(attempts, self._max_backoff)
             LOG.warning(
-                "handler %r failed on attempt %d (%s: %s); retrying in %s",
+                "handler %r failed on attempt %d (%s: %s)",
                 row.handler_name,
                 attempts,
                 type(error).__name__,
                 error,
-                delay,
             )
-            HANDLED.add(1, {"outcome": "failed_retry", "handler": row.handler_name})
-            return _Outcome(row.id, FAILED, delay)
+            # Retry or expire is decided once the whole batch has run - `_retry_or_expire`.
+            return _Outcome(row.id, FAILED, backoff(attempts, self._max_backoff), row)
 
         HANDLER_DURATION.record(
             time.monotonic() - started, {"handler": row.handler_name, "outcome": "succeeded"}
@@ -273,6 +260,34 @@ class EventDispatch:
             {"handler": row.handler_name},
         )
         return _Outcome(row.id, SUCCEEDED)
+
+    def _retry_or_expire(self, outcome: _Outcome, now: datetime) -> _Outcome:
+        """A failure is retried unless its next retry would land past the retention deadline,
+        in which case it expires now - Java's rule, against the batch's one clock reading.
+
+        Waiting for the deadline to pass instead would leave the row ``FAILED`` with a retry
+        nobody will ever make, and expire it later without the handler being called.
+        """
+        row = outcome.row
+        if outcome.kind != FAILED or row is None or outcome.retry_delay is None:
+            return outcome
+        if now + outcome.retry_delay > row.event_date + self._retention:
+            LOG.error(
+                "notification %s for handler %r was discarded: it exhausted the retention "
+                "window after repeated handler failures",
+                row.id,
+                row.handler_name,
+            )
+            HANDLED.add(1, {"outcome": "expired_postfailure", "handler": row.handler_name})
+            return _Outcome(row.id, EXPIRED_POST_FAILURE)
+        LOG.warning(
+            "notification %s for handler %r will be retried in %s",
+            row.id,
+            row.handler_name,
+            outcome.retry_delay,
+        )
+        HANDLED.add(1, {"outcome": "failed_retry", "handler": row.handler_name})
+        return outcome
 
     def _expired(self, event_date: datetime, now: datetime) -> bool:
         return event_date + self._retention <= now

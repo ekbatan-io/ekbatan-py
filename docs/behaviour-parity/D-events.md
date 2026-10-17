@@ -33,7 +33,7 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 15 | Rows queued under an old name are drained by the handler that lists it as an alias; new rows use the new name | yes | yes | same | `e.alias.*` |
 | 16 | Row exactly at `event_date + retention` when claimed | handler called, `SUCCEEDED` | `EXPIRED`, handler not called | differs | `x.boundary.exact` |
 | 17 | Row past the retention window when claimed | `EXPIRED`, attempts unchanged, handler not called | same | same | `x.boundary.one_second_older` |
-| 18 | When a failing row expires | as soon as the next retry would land past the deadline (5th failure at +450 s) | only once the deadline has passed (still `FAILED` at +450 s, `EXPIRED` at +750 s) | differs | `x.step*`, `x.near_deadline.*` |
+| 18 | When a failing row expires | as soon as the next retry would land past the deadline (5th failure at +450 s) | same (fixed in EKB-0273) | same | `x.step*`, `x.near_deadline.*` |
 | 19 | Event whose `event_date` is later than the clock | not delivered until `event_date` | same (fixed in EKB-0272) | same | `c.future_event.*` |
 | 20 | Handling order when an older event is fanned out after a newer one | older event first | same (fixed in EKB-0272) | same | `c.order.*` |
 | 21 | One outcome write fails (a trigger refuses `FAILED`) while a sibling succeeded | sibling stays `SUCCEEDED`; handler called once | whole batch rolled back; sibling back to `PENDING`, its handler called again | differs | `t.outcome_write_failed.*` |
@@ -109,7 +109,7 @@ Most surprising first.
 - **Match Java?** yes, one line.
 - **Surprise:** medium
 
-### 18. A failing row expires later in Python
+### 18. A failing row expires later in Python - fixed in EKB-0273
 - **What:** Java expires a failed row as soon as its next retry would land past
   `event_date + retention`. Python marks it `FAILED` with a retry past the deadline and expires it
   at that retry, without calling the handler. Same number of handler calls; the row sits as

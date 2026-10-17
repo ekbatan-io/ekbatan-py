@@ -136,10 +136,9 @@ PROBE x.boundary.calls: [m-13]
 PROBE x.boundary.exact: EXPIRED | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00
 PROBE x.boundary.one_second_older: EXPIRED | 0 | 2026-01-01 09:49:59 | 2026-01-01 10:00:00
 PROBE x.boundary.one_second_younger: SUCCEEDED | 1 | 2026-01-01 09:50:01 | 2026-01-01 10:00:00
-PROBE x.near_deadline.first_failure: FAILED | 1 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+PROBE x.near_deadline.first_failure: EXPIRED | 1 | 2026-01-01 09:50:10 | 2026-01-01 10:00:00
 PROBE x.step1: at=+0s FAILED attempts=1 next=+30s calls=1
 PROBE x.step2: at=+30s FAILED attempts=2 next=+90s calls=2
 PROBE x.step3: at=+90s FAILED attempts=3 next=+210s calls=3
 PROBE x.step4: at=+210s FAILED attempts=4 next=+450s calls=4
-PROBE x.step5: at=+450s FAILED attempts=5 next=+750s calls=5
-PROBE x.step6: at=+750s EXPIRED attempts=5 next=+750s calls=5
+PROBE x.step5: at=+450s EXPIRED attempts=5 next=+450s calls=5

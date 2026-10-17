@@ -673,3 +673,25 @@ def test_a_new_notification_is_due_at_its_event_s_date_not_at_fan_out_time(
     clock.advance(timedelta(hours=1))
     dispatch.drain_once()
     assert email.calls == 1
+
+
+def test_a_failing_row_expires_as_soon_as_its_next_retry_would_land_past_the_deadline(
+    executor, wallets, pipeline, notifications_in, clock
+):
+    """Java's rule: after a failure, a row whose next retry would come after `event_date +
+    retention` expires there and then, rather than sitting `FAILED` with a retry nobody makes."""
+    never = failing("never")
+    fanout, dispatch = pipeline(never, retention=timedelta(seconds=40))
+
+    wallet = a_wallet(executor)
+    deposit(executor, wallets, wallet)
+    fanout.drain_once()
+
+    dispatch.drain_once()  # fails at +0s; the next retry, +30s, is inside the window
+    assert notifications_in() == {"FAILED": 1}
+
+    clock.advance(timedelta(seconds=30))
+    dispatch.drain_once()  # fails at +30s; the next retry, +90s, is past the +40s deadline
+
+    assert notifications_in() == {"EXPIRED": 1}, "still FAILED; Java expires it at once"
+    assert never.calls == 2

@@ -252,8 +252,10 @@ Each round:
    invoking the handler. A stale event should not burn anything.
 3. Invoke the handler:
    - returns → `SUCCEEDED`, `attempts++`
-   - raises, within retention → `FAILED`, `attempts++`, `next_retry_at = now + backoff(attempts)`
-   - raises, past retention → `EXPIRED`, `attempts++`
+   - raises, and the next retry lands inside the window → `FAILED`, `attempts++`,
+     `next_retry_at = now + backoff(attempts)`
+   - raises, and the next retry would land past `event_date + retention` → `EXPIRED`,
+     `attempts++`, at once, as in Java. `now` is read once, after the whole batch has run.
 4. Write the outcomes.
 5. Loop if anything was drained; otherwise sleep.
 
