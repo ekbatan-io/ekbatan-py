@@ -8,35 +8,35 @@ lead: Every file of a working service, for your database and your installer - ea
 import SetupPicker from "../../components/SetupPicker.astro";
 import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
-import pg_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/ekbatan.yaml?raw";
-import pg_repository_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/repository.py?raw";
-import pg_app_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/app.py?raw";
-import pg_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0001__eventlog.sql?raw";
-import pg_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0002__scheduled_tasks.sql?raw";
-import pg_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0003__wallets.sql?raw";
-import pg_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0004__alerts.sql?raw";
-import pg_test from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/test_fastapi_wallet_rest_pg.py?raw";
-import mysql_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/ekbatan.yaml?raw";
-import mysql_repository_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/repository.py?raw";
-import mysql_app_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/app.py?raw";
-import mysql_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0001__eventlog.sql?raw";
-import mysql_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0002__scheduled_tasks.sql?raw";
-import mysql_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0003__wallets.sql?raw";
-import mysql_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0004__alerts.sql?raw";
-import mysql_test from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/test_fastapi_wallet_rest_mysql.py?raw";
-import mariadb_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/ekbatan.yaml?raw";
-import mariadb_repository_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/repository.py?raw";
-import mariadb_app_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/app.py?raw";
-import mariadb_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0001__eventlog.sql?raw";
-import mariadb_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0002__scheduled_tasks.sql?raw";
-import mariadb_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0003__wallets.sql?raw";
-import mariadb_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0004__alerts.sql?raw";
-import mariadb_test from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/test_fastapi_wallet_rest_mariadb.py?raw";
-import shared_model_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/model.py?raw";
-import shared_actions_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/actions.py?raw";
-import shared_handlers_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/handlers.py?raw";
-import shared_jobs_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/jobs.py?raw";
-import shared_api_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/api.py?raw";
+import pg_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/ekbatan.yaml?raw";
+import pg_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/repository.py?raw";
+import pg_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/app.py?raw";
+import pg_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0001__eventlog.sql?raw";
+import pg_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0002__scheduled_tasks.sql?raw";
+import pg_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0003__wallets.sql?raw";
+import pg_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0004__alerts.sql?raw";
+import pg_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/test_fastapi_wallet_rest_pg.py?raw";
+import mysql_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/ekbatan.yaml?raw";
+import mysql_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/repository.py?raw";
+import mysql_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/app.py?raw";
+import mysql_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0001__eventlog.sql?raw";
+import mysql_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0002__scheduled_tasks.sql?raw";
+import mysql_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0003__wallets.sql?raw";
+import mysql_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0004__alerts.sql?raw";
+import mysql_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/test_fastapi_wallet_rest_mysql.py?raw";
+import mariadb_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/ekbatan.yaml?raw";
+import mariadb_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/repository.py?raw";
+import mariadb_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/app.py?raw";
+import mariadb_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0001__eventlog.sql?raw";
+import mariadb_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0002__scheduled_tasks.sql?raw";
+import mariadb_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0003__wallets.sql?raw";
+import mariadb_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0004__alerts.sql?raw";
+import mariadb_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/test_fastapi_wallet_rest_mariadb.py?raw";
+import shared_model_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/model.py?raw";
+import shared_actions_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/actions.py?raw";
+import shared_handlers_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/handlers.py?raw";
+import shared_jobs_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/jobs.py?raw";
+import shared_api_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/api.py?raw";
 
 <SetupPicker />
 
@@ -45,12 +45,11 @@ page rewrites itself; the choice persists across pages.
 
 This is a **complete** service: migrations, generated schema, domain, actions, repository,
 handler, job, wiring, HTTP layer, a test and a Makefile. **Every file on this page is the real
-file** of the example project for your database -
-[`fastapi_wallet_rest_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_pg),
-[`_mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mysql) or
-[`_mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mariadb) -
-read from it when this site is built, so it cannot drift from code that is tested on every commit.
-Copy each one to the path in its header and the project runs; the steps were checked by doing
+file** of an example project that is tested on every commit, read from it when this site is
+built, so it cannot drift. Each example exists once per database and once per installer - the
+picker's *Example* row names the one for your choices, `fastapi-wallet-rest-uv-pg` to
+`fastapi-wallet-rest-poetry-mariadb` - and each of those builds its wheel and tests it installed.
+Copy each file to the path in its header and the project runs; the steps were checked by doing
 exactly that, in an empty folder, with each installer.
 
 You need Python 3.13 or later, and Docker: the database in step 2, the schema generator and the
@@ -58,7 +57,7 @@ test each run a container.
 
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -186,7 +185,7 @@ docker run --rm -d --name wallet-mariadb \
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -223,7 +222,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -259,7 +258,7 @@ pip install -e .
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -295,7 +294,7 @@ poetry install
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -330,7 +329,7 @@ one-member case, which is why going to two databases later changes this file and
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -392,7 +391,7 @@ shape they must have.
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -446,7 +445,7 @@ uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -479,7 +478,7 @@ python -m ekbatan.schemagen --migrations src/wallet/migrations \
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -512,7 +511,7 @@ poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -763,7 +762,7 @@ layer, invisible to the event stream.
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -808,7 +807,7 @@ must still tolerate running twice** - a claim can be lost to a dead-execution ti
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -839,7 +838,7 @@ keyed lock is refused.
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -882,7 +881,7 @@ docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e 'SHOW TABLES'
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -951,7 +950,7 @@ docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e \
 </div>
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -1008,16 +1007,20 @@ git ignores.
 
 ## 18. The example projects
 
-When you want to see more than one service's worth, they are the reference:
+When you want to see more than one service's worth, they are the reference. Each exists three
+times, built with uv, pip and Poetry - `-uv-`, `-pip-`, `-poetry-` in the name - with only the
+build files differing:
 
 | | |
 | --- | --- |
-| [`fastapi_wallet_rest_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_pg) | this project, on PostgreSQL |
-| [`fastapi_wallet_rest_mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mysql) · [`_mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mariadb) | the same, on the other databases |
-| [`fastapi_wallet_rest_sharded_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_sharded_pg) | two databases, with placement asserted |
-| [`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg) | a transfer across shards, with compensation |
-| [`job_worker_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job_worker_pg) | no HTTP at all - a worker running distributed jobs |
-| [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) | one module set, one command, no container |
+| [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) | this project, on PostgreSQL |
+| [`fastapi-wallet-rest-uv-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mysql) · [`fastapi-wallet-rest-uv-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb) | the same, on the other databases |
+| [`fastapi-wallet-rest-uv-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) | two databases, with placement asserted |
+| [`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg) | a transfer across shards, with compensation |
+| [`job-worker-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-pg) | no HTTP at all - a worker running distributed jobs |
+| [`wallet-service-uv-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-sqlite) | one module set, one command, no container |
+
+The [examples index](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples) lists all 21.
 
 ## After setup
 

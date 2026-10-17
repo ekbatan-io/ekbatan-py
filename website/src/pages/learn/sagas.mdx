@@ -35,7 +35,7 @@ earlier ones did not happen.
 
 ## Wallet transfer example
 
-[`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg)
+[`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg)
 splits a transfer into three steps.
 
 | step | action | what commits atomically | event |
@@ -219,5 +219,5 @@ are visible in the event log, and compensation is explicit and auditable.
   dispatch jobs each step waits on,
   [Actions](/reference/action/#cross-shard-execution) — the one-action alternative, and what it
   costs
-- [`ekbatan-py-examples/fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg)
+- [`ekbatan-py-examples/fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg)
   — the runnable transfer, including the replay test that shows nothing is written twice

@@ -1,30 +1,49 @@
 # Examples
 
-Standalone applications. Each one runs on its own, imports only `ekbatan`, the standard library
-and what the `examples` dependency group declares, and is imported by nothing.
+Standalone applications. Each one is a project of its own - its own `pyproject.toml`, its own
+`Makefile`, its own environment - imports only `ekbatan`, the standard library and what its
+`pyproject.toml` declares, and is imported by nothing. `cd` into one and `make` builds it and
+tests it as its installed wheel, as `cd` into a Java example and `./gradlew build` does.
 
-That last part is deliberate. The framework's own tests have their own domain, in
-`tests/fixtures/`, which exists to exercise every shape worth exercising - including a few no
-application would want. If the tests read from here instead, every change made for coverage
-would land in the documentation and every change made for clarity would break the suite. So
-they do not meet, and `tests/test_structure.py` keeps it that way.
+The framework's own tests have their own domain, in `tests/fixtures/`, which exists to exercise
+every shape worth exercising - including a few no application would want. If the tests read from
+here instead, every change made for coverage would land in the documentation and every change made
+for clarity would break the suite. So they do not meet, and `tests/test_structure.py` keeps it
+that way.
 
-Every directory carries its database in its name, as Java's do.
+## Seven examples, each built three ways
 
-## The matrix: one REST service per database
+Java carries each of its examples per build tool - `*-gradle-*` and `*-maven-*`. Python projects
+are built three common ways, so each example here is carried three times, with only its build
+files telling the copies apart:
 
-The same application three times, differing only by database - the counterpart to Java's
-`*-wallet-rest-*` grid.
+| build | in the name | `pyproject.toml` builds with | environment |
+|---|---|---|---|
+| uv | `-uv-` | `uv_build` | uv's |
+| pip | `-pip-` | setuptools | a venv the Makefile makes |
+| Poetry | `-poetry-` | poetry-core | Poetry's |
 
-| | Database |
-|---|---|
-| [`fastapi_wallet_rest_pg/`](fastapi_wallet_rest_pg/) | PostgreSQL |
-| [`fastapi_wallet_rest_mysql/`](fastapi_wallet_rest_mysql/) | MySQL |
-| [`fastapi_wallet_rest_mariadb/`](fastapi_wallet_rest_mariadb/) | MariaDB |
+The build tool is not a detail: it decides what goes into the wheel. Poetry leaves a gitignored
+`schema.py` out unless told, and setuptools leaves out the migrations and `ekbatan.yaml` - each
+project carries the line its tool needs, and each tests its wheel installed, so a file left out
+fails here rather than on a server.
 
-REST endpoints, SQL migrations from files, three separate connection pools, and a keyed lock
-around the deposit endpoint. The domain is byte-identical across all three; **four things
-differ** and each is a real difference rather than a setting:
+**The uv project is the source.** Change its `src/` or README, then run
+`uv run python scripts/sync-examples.py`: it writes the pip and Poetry twins - the same `src/`,
+byte for byte - and every project's build files. `make lint` runs it with `--check`.
+
+## The REST service, one per database
+
+| | uv | pip | Poetry |
+|---|---|---|---|
+| PostgreSQL | [`fastapi-wallet-rest-uv-pg`](fastapi-wallet-rest-uv-pg/) | [`fastapi-wallet-rest-pip-pg`](fastapi-wallet-rest-pip-pg/) | [`fastapi-wallet-rest-poetry-pg`](fastapi-wallet-rest-poetry-pg/) |
+| MySQL | [`fastapi-wallet-rest-uv-mysql`](fastapi-wallet-rest-uv-mysql/) | [`fastapi-wallet-rest-pip-mysql`](fastapi-wallet-rest-pip-mysql/) | [`fastapi-wallet-rest-poetry-mysql`](fastapi-wallet-rest-poetry-mysql/) |
+| MariaDB | [`fastapi-wallet-rest-uv-mariadb`](fastapi-wallet-rest-uv-mariadb/) | [`fastapi-wallet-rest-pip-mariadb`](fastapi-wallet-rest-pip-mariadb/) | [`fastapi-wallet-rest-poetry-mariadb`](fastapi-wallet-rest-poetry-mariadb/) |
+
+The counterpart to Java's `*-wallet-rest-*` grid: REST endpoints, SQL migrations from files,
+three separate connection pools, and a keyed lock around the deposit endpoint. The domain is
+byte-identical across the databases; **four things differ** and each is a real difference rather
+than a setting:
 
 - the **url scheme** and driver extra
 - the **keyed lock provider** - `pg_advisory_lock` on PostgreSQL, `GET_LOCK` on the other two
@@ -35,55 +54,36 @@ And one that only shows up when a migration fails half-way: MySQL and MariaDB co
 change on its own, so a migration that fails after one leaves it behind, where PostgreSQL rolls
 the whole file back.
 
-## Outside the matrix
+## Outside the database matrix
 
-These exist once each, on PostgreSQL, exactly as their Java counterparts do - a second copy per
-database would demonstrate nothing the matrix above does not already. The first two are the same
-REST service with something added, which is why they keep the `fastapi_wallet_` prefix; Java
-names its equivalents `...-wallet-rest-...-sharded-pg` and `...-wallet-saga-...-pg` for the same
-reason.
+These exist once per build tool, on PostgreSQL, as their Java counterparts exist once per
+database - a second copy per database would demonstrate nothing the REST service does not.
 
 | | Shows |
 |---|---|
-| [`fastapi_wallet_rest_sharded_pg/`](fastapi_wallet_rest_sharded_pg/) | the REST service over **two** databases: routing packed into the id, and a cross-shard transfer answered **422** rather than half-committed |
-| [`fastapi_wallet_saga_pg/`](fastapi_wallet_saga_pg/) | a transfer as three single-aggregate steps chained by events, with forward-only compensation - and `POST /transfers` answering **202**, because only step one has committed |
-| [`job_worker_pg/`](job_worker_pg/) | a worker process with **no HTTP at all**: two jobs, once per slot across a cluster, and shutdown done properly. No web framework, so no prefix |
+| `fastapi-wallet-rest-{uv,pip,poetry}-sharded-pg` | the REST service over **two** databases: routing packed into the id, and a cross-shard transfer answered **422** rather than half-committed |
+| `fastapi-wallet-saga-{uv,pip,poetry}-pg` | a transfer as three single-aggregate steps chained by events, with forward-only compensation - and `POST /transfers` answering **202**, because only step one has committed |
+| `job-worker-{uv,pip,poetry}-pg` | a worker process with **no HTTP at all**: two jobs, once per slot across a cluster, and shutdown done properly |
 
 ## Start here instead
 
-| | |
-|---|---|
-| [`wallet_service_sqlite/`](wallet_service_sqlite/) | one wallet end to end on SQLite, in one command, with no server and nothing to install. No Java counterpart - there, the smallest example still needs Docker. |
+`wallet-service-{uv,pip,poetry}-sqlite`: one wallet end to end on SQLite, with no server and
+nothing to install. No Java counterpart - there, the smallest example still needs Docker.
 
 ```
-cd ekbatan-py-examples && uv run python -m wallet_service_sqlite     # runs now, needs nothing
+make -C ekbatan-py-examples/wallet-service-uv-sqlite run     # runs now, needs nothing
 ```
 
 ## The schema is generated, not written
 
-Every project here except `wallet_service_sqlite` generates its `schema.py` from the database
-its **own migrations** produce - a throwaway container, the migrations run into it, the result
-reflected. That is Java's build step, and the reason is the same: the schema is the database's,
-not a hand-transcription that can drift from it.
+Every project here except the SQLite ones generates its `schema.py` from the database its **own
+migrations** produce - a throwaway container, the migrations run into it, the result reflected.
+That is Java's build step, and the reason is the same: the schema is the database's, not a
+hand-transcription that can drift from it. `make` regenerates it when a migration changed and
+not otherwise.
 
-Each example carries its **own** Makefile, as each Java example carries its own wrapper - so you
-can work in one without the rest:
-
-```
-cd ekbatan-py-examples/fastapi_wallet_saga_pg
-make            # generate if a migration changed, then test
-make run        # ...then serve
-```
-
-The root Makefile delegates to them rather than repeating the rules:
-
-```
-make schema     # every example that generates
-make            # generate what changed, then lint and test
-```
-
-The generated modules are **gitignored**, as Java's `build/generated-jooq` is. `make` builds a
-missing one, so a fresh clone works the same way `./gradlew build` does.
+The generated modules are **gitignored**, as Java's `build/generated-jooq` is - and named in the
+Poetry projects' `pyproject.toml`, which would otherwise leave them out of the wheel.
 
 Two things the generator does that a plain reflection would not, both of which were bugs before
 they were features:
@@ -95,39 +95,42 @@ they were features:
 - **It normalises dialect quirks.** MariaDB reflects a bigint as `BIGINT(display_width=20)`;
   emitted verbatim that module does not even import.
 
-`wallet_service_sqlite` keeps a hand-written schema on purpose: its whole job is running with
+The SQLite examples keep a hand-written schema on purpose: their whole job is running with
 nothing installed, and generating needs Docker.
 
 ## Naming
 
-`[stack]_[domain]_[style][_variant]_[db]`, which is Java's
-`[stack]-[domain]-[style]-[build][-variant]-[db]` minus the build tool - there is one here.
-Every directory ends in the database it runs on, and each one's test asserts it really is
-running on that database, because three projects differing only by url makes a wrong one
-invisible.
+Java's own: `[stack]-[domain]-[style]-[build][-variant]-[db]` - `fastapi-wallet-rest-uv-pg` as
+`spring-boot-wallet-rest-gradle-pg`, `fastapi-wallet-rest-poetry-sharded-pg` as
+`spring-boot-wallet-rest-gradle-sharded-pg`. Every directory ends in the database it runs on, and
+each one's test asserts it really is running on that database. The package inside keeps its
+Python name - `src/fastapi_wallet_rest_pg/` - in all three builds, so the code is the same file.
 
-## Why three REST projects and not thirty-six
+In the code, the same conventions as the Java side: `...Action` for a unit of work, `...Event`
+for something that happened, `...EventHandler` for what reacts to one, `...Job` for scheduled
+work, `...Repository` for reads.
+
+## Why 21 and not Java's 36
 
 Java's grid is three DI frameworks x two build tools x three databases, each JVM and native.
-Two of those axes are Java packaging concerns: changing the build tool means a different project
-layout, and changing the database means new driver dependencies and a fresh jOOQ codegen.
-
-Here the build tool is a line in `pyproject.toml` and there is one web framework worth
-targeting, so those axes collapse. The **database** axis does not, for the four reasons above -
-which is why it is the one that survives.
-
-## Naming
-
-The same conventions as the Java side, so a reader moving between the two recognises what they
-are looking at: `...Action` for a unit of work, `...Event` for something that happened,
-`...EventHandler` for what reacts to one, `...Job` for scheduled work, `...Repository` for reads.
+Here there is one web framework worth targeting and no native image, so those axes collapse. The
+**database** axis does not, for the four reasons above, and neither does the **build** axis: it
+decides what a wheel holds, which is the one thing an example cannot show from the source tree.
 
 ## Running them
 
 ```
-uv sync --all-extras --group examples
-uv run pytest ekbatan-py-examples          # everything except wallet_service_sqlite needs Docker
+make examples                    # all 21, each in its own environment, each as its wheel
+make -C ekbatan-py-examples/fastapi-wallet-rest-pip-mysql      # or one
 ```
+
+Everything except the SQLite examples needs Docker. The pip projects need a Python 3.13 or later
+(`make PYTHON=python3.13`; the root Makefile finds one through uv), and the Poetry ones need
+`poetry` 2 on the path.
+
+`ekbatan` is not on PyPI yet, so each project takes it - and its scheduler - from this repository:
+`[tool.uv.sources]`, a Poetry path dependency, or an editable install in the pip Makefile. One
+marked block each, to delete once it is published.
 
 An example nobody runs is an example that rots - and one did, silently, for several commits. So
 each carries its own test asserting what its README claims, and CI runs them all.

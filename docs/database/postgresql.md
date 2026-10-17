@@ -118,4 +118,4 @@ does not ship one because most applications do not need it.
 
 - [Framework tables](tables.md) - the DDL
 - [Multiple dialects](multi-database.md) - where the four disagree
-- [`fastapi_wallet_rest_pg`](../../ekbatan-py-examples/fastapi_wallet_rest_pg)
+- [`fastapi-wallet-rest-uv-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg)

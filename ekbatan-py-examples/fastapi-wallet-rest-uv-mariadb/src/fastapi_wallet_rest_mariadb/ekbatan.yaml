@@ -1,0 +1,51 @@
+# The service's Ekbatan settings - the same keys, in the same places, as the Java examples'
+# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+#
+# `${NAME:default}` is an environment variable with a default, so the file runs as it is against
+# a local server and the same file runs anywhere else with the variables set. The test fills them
+# from its container.
+ekbatan:
+  namespace: example.fastapi_wallet_rest_mariadb
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            name: global
+            configs:
+              # Requests. Sized for how many requests are served at once.
+              primaryConfig:
+                # Extra driver settings, each name exactly as the driver spells it; handed to the
+                # driver beside the url, never printed.
+                # init_command runs on each new connection, like sessionVariables in Java.
+                dataSourceProperties:
+                  init_command: SET SESSION innodb_lock_wait_timeout=10
+                url: ${WALLET_DATABASE_URL:mariadb+pymysql://localhost:3306/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+              # The scheduler. At least twice the job worker threads: a job body holding the last
+              # connection would starve the heartbeat, and an execution whose heartbeat stops is
+              # declared dead and run again elsewhere. Warned at startup if short.
+              jobsConfig:
+                url: ${WALLET_DATABASE_URL:mariadb+pymysql://localhost:3306/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 8
+              # Held lock leases. One connection per lease that can be held at once.
+              lockConfig:
+                url: ${WALLET_DATABASE_URL:mariadb+pymysql://localhost:3306/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
+
+  local-event-handler:
+    handling:
+      enabled: true

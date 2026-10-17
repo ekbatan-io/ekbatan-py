@@ -1339,7 +1339,7 @@ worker thread::
 
 Two things make this less painful than it sounds. A plain `def` endpoint in FastAPI is already
 run in a threadpool by the framework, so the ordinary way of writing one is safe without any of
-the above - `ekbatan-py-examples/fastapi_wallet_rest_pg` is written that way throughout, and
+the above - `ekbatan-py-examples/fastapi-wallet-rest-uv-pg` is written that way throughout, and
 that is why it needs no `to_thread` anywhere. And the ambient transaction lives in a
 `ContextVar`, which is per-async-task as well as per-thread, so the state mechanism is already
 correct if this port ever grows an async surface.

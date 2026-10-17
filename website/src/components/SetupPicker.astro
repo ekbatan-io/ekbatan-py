@@ -31,15 +31,17 @@ const rows = [
     },
 ] as const;
 
-// Per-dialect link to the matching example project. Rendered as an extra row at the bottom;
-// only the entry matching the current dialect is visible, toggled by the same data-db rule as
-// the content blocks in MDX.
-const examples = [
-    { db: "pg", slug: "fastapi_wallet_rest_pg" },
-    { db: "mysql", slug: "fastapi_wallet_rest_mysql" },
-    { db: "mariadb", slug: "fastapi_wallet_rest_mariadb" },
-    { db: "sqlite", slug: "wallet_service_sqlite" },
-] as const;
+// Link to the example project for the current database AND installer - each example is carried
+// once per build tool, as Java's are per Gradle and Maven. Rendered as an extra row at the bottom;
+// only the entry matching both choices is visible, by the same data-db/data-install rule as the
+// content blocks in MDX.
+const installs = ["uv", "pip", "poetry"] as const;
+const examples = installs.flatMap((install) => [
+    { db: "pg", install, slug: `fastapi-wallet-rest-${install}-pg` },
+    { db: "mysql", install, slug: `fastapi-wallet-rest-${install}-mysql` },
+    { db: "mariadb", install, slug: `fastapi-wallet-rest-${install}-mariadb` },
+    { db: "sqlite", install, slug: `wallet-service-${install}-sqlite` },
+]);
 ---
 
 <!-- Sticky-state sentinel: 1px tall, sits immediately above the picker. The
@@ -84,7 +86,7 @@ const examples = [
             </span>
             <span class="font-mono text-[10px] whitespace-nowrap">
                 {examples.map((e) => (
-                    <span data-db={e.db}>
+                    <span data-db={e.db} data-install={e.install}>
                         → <a href={`https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/${e.slug}`}>{e.slug}</a>
                     </span>
                 ))}

@@ -19,6 +19,22 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TESTS = ROOT / "tests"
 EXAMPLES = ROOT / "ekbatan-py-examples"
 
+#: What a build leaves inside an example project - its environment, its wheel - is not its code.
+_NOT_SOURCE = {".venv", "dist", "build", ".pytest_cache", "__pycache__"}
+
+
+def example_sources() -> list[pathlib.Path]:
+    """Every Python file the example projects carry, and nothing an install put beside them."""
+    return [
+        path
+        for path in EXAMPLES.rglob("*.py")
+        if not any(
+            part in _NOT_SOURCE or part.endswith(".egg-info")
+            for part in path.relative_to(EXAMPLES).parts
+        )
+    ]
+
+
 DATABASE_FIXTURES = {
     "registry",
     "sharded_registry",
@@ -70,7 +86,7 @@ def test_no_example_imports_a_test():
             for m in imported_modules(path)
             if m.split(".")[0] in {"tests", "fixtures", "backends"}
         )
-        for path in EXAMPLES.rglob("*.py")
+        for path in example_sources()
     }
     offenders = {path: names for path, names in offenders.items() if names}
     assert offenders == {}, f"an example is reading from the suite: {offenders}"
@@ -78,10 +94,10 @@ def test_no_example_imports_a_test():
 
 #: What an example may import besides the framework and the standard library.
 #:
-#: Every one of these is declared in the `examples` dependency group in `pyproject.toml`, and
-#: that is the point of the list: adding a dependency to an example is an edit in two places
-#: and therefore a decision, rather than something that happens because an import was
-#: convenient. Nothing in `src/` may import any of them.
+#: Every one of these is declared in the example projects' own `pyproject.toml` (written by
+#: `scripts/sync-examples.py`), and that is the point of the list: adding a dependency to an
+#: example is an edit in two places and therefore a decision, rather than something that happens
+#: because an import was convenient. Nothing in `src/` may import any of them.
 EXAMPLE_DEPENDENCIES = {
     # The framework itself, which is the point.
     "ekbatan",
@@ -90,7 +106,7 @@ EXAMPLE_DEPENDENCIES = {
     # `DistributedJob` returns one. A user writing a job imports it in either language.
     "db_scheduler",
     "sqlalchemy",
-    # The `fastapi_wallet_rest_*` projects are REST services, which is the whole thing they
+    # The `fastapi-wallet-*` projects are REST services, which is the whole thing they
     # exist to show - so they need a web framework, the way Java's grid examples need Spring,
     # Quarkus or Micronaut.
     "fastapi",
@@ -115,13 +131,13 @@ def test_an_example_depends_on_nothing_but_the_framework_and_its_declared_extras
     without reading it - and the list is the part that is supposed to be read.
     """
     allowed = EXAMPLE_DEPENDENCIES | set(sys.stdlib_module_names)
-    for path in EXAMPLES.rglob("*.py"):
+    for path in example_sources():
         package = path.relative_to(EXAMPLES).parts[0]
         for module in imported_modules(path):
             root = module.split(".")[0]
             assert root in allowed or module.startswith(f"examples.{package}"), (
                 f"{path.relative_to(ROOT)} imports {module!r}; an example may use the framework, "
-                f"the standard library, and what the `examples` dependency group declares - see "
+                f"the standard library, and what the example projects declare - see "
                 f"EXAMPLE_DEPENDENCIES in this file"
             )
 

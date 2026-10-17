@@ -149,4 +149,4 @@ procedure's `BEGIN ... END` body included, written without `DELIMITER`.
 
 - [MariaDB](mariadb.md) - close, and different in ways that matter
 - [Framework tables](tables.md) · [Multiple dialects](multi-database.md)
-- [`fastapi_wallet_rest_mysql`](../../ekbatan-py-examples/fastapi_wallet_rest_mysql)
+- [`fastapi-wallet-rest-uv-mysql`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql)

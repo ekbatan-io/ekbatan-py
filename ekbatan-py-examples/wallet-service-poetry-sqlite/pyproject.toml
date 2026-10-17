@@ -1,0 +1,30 @@
+[project]
+name = "wallet-service-sqlite"
+version = "0.1.0"
+description = "A wallet, end to end, on SQLite, built with Poetry."
+requires-python = ">=3.13"
+dependencies = [
+    "ekbatan",
+    # ekbatan's own dependency, listed only so that the path below applies to it: Poetry
+    # applies [tool.poetry.dependencies] only to what is listed here. Delete with that.
+    "ekbatan-py-db-scheduler",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0,<3.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "wallet_service_sqlite", from = "src" }]
+
+# ekbatan is not on PyPI yet. Until it is, it - and its scheduler - come from this
+# repository; delete this once it is published.
+[tool.poetry.dependencies]
+ekbatan = { path = "../..", develop = true }
+ekbatan-py-db-scheduler = { path = "../../db-scheduler", develop = true }
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+
+[tool.pytest.ini_options]
+addopts = "-q"

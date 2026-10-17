@@ -7,7 +7,7 @@ building the service per request instead of once, and calling into the framework
 [Wiring](wiring.md) is the framework half and has nothing to do with HTTP. This page is the
 seam between the two.
 
-> From [`ekbatan-py-examples/fastapi_wallet_rest_pg/api.py`](../ekbatan-py-examples/fastapi_wallet_rest_pg/api.py).
+> From [`ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/api.py`](../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/api.py).
 
 ## Build once, in a lifespan
 
@@ -195,5 +195,5 @@ trap and the least interesting one.
 
 - [Wiring](wiring.md) - what `build()` contains
 - [Concurrency](runtime/concurrency.md) - the `def` versus `async def` question in full
-- [`fastapi_wallet_rest_pg`](../ekbatan-py-examples/fastapi_wallet_rest_pg) - all of the above,
+- [`fastapi-wallet-rest-uv-pg`](../ekbatan-py-examples/fastapi-wallet-rest-uv-pg) - all of the above,
   running

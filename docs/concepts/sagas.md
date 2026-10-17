@@ -28,7 +28,7 @@ the honest thing to have, because the alternative was never actually available.
 
 ## Wallet transfer example
 
-[`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg)
+[`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg)
 splits a transfer into three steps.
 
 | step | action | what commits atomically | event |
@@ -229,5 +229,5 @@ partial-commit risk.
 - [Actions](actions.md) - why actions are not nested
 - [The outbox](outbox.md) - why each step gets a durable event
 - [Sharding](sharding.md) - why cross-shard is refused by default
-- [`fastapi_wallet_saga_pg`](../../ekbatan-py-examples/fastapi_wallet_saga_pg) - all of it,
+- [`fastapi-wallet-saga-uv-pg`](../../ekbatan-py-examples/fastapi-wallet-saga-uv-pg) - all of it,
   running

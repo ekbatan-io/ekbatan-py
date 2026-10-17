@@ -8,7 +8,7 @@ That is the whole of it. There is no container to configure, no annotation to re
 startup order to reason about beyond the order the lines are in.
 
 > Everything below is taken from
-> [`ekbatan-py-examples/fastapi_wallet_rest_pg/app.py`](../ekbatan-py-examples/fastapi_wallet_rest_pg/app.py),
+> [`ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/app.py`](../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/app.py),
 > which runs and is tested. The HTTP half is in [Wiring with FastAPI](wiring-fastapi.md); this
 > page is the part that has nothing to do with HTTP.
 

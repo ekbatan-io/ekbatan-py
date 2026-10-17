@@ -119,7 +119,18 @@ python_version = "3.13"
 strict = true
 # The library and the examples, strictly. An example is documentation, and documentation that
 # would not type-check is documentation that is wrong.
-files = ["src", "ekbatan-py-examples"]
+# The examples' uv projects; their pip and Poetry twins are the same code, kept so by
+# scripts/sync-examples.py.
+files = [
+    "src",
+    "ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src",
+    "ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src",
+    "ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src",
+    "ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg/src",
+    "ekbatan-py-examples/fastapi-wallet-saga-uv-pg/src",
+    "ekbatan-py-examples/job-worker-uv-pg/src",
+    "ekbatan-py-examples/wallet-service-uv-sqlite/src",
+]
 # An example's own test is a test, and is held to the same bar as the rest of them.
 exclude = "ekbatan-py-examples/.*/test_.*\\.py$"
 

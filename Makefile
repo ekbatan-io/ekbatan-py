@@ -18,14 +18,17 @@
 
 UV := uv run
 
-# What is generated, and what it is generated from. Adding a project here is one line.
-GENERATED := \
-	ekbatan-py-examples/fastapi_wallet_rest_pg/schema.py \
-	ekbatan-py-examples/fastapi_wallet_rest_mysql/schema.py \
-	ekbatan-py-examples/fastapi_wallet_rest_mariadb/schema.py \
-	ekbatan-py-examples/fastapi_wallet_rest_sharded_pg/schema.py \
-	ekbatan-py-examples/fastapi_wallet_saga_pg/schema.py \
-	ekbatan-py-examples/job_worker_pg/schema.py
+# The examples: seven, each a project of its own and each built three ways - with uv, pip and
+# Poetry - as Java carries each of its examples per build tool. `scripts/sync-examples.py` writes
+# the pip and Poetry projects from the uv one and keeps them in step.
+EXAMPLES := \
+	fastapi-wallet-rest-uv-pg fastapi-wallet-rest-pip-pg fastapi-wallet-rest-poetry-pg \
+	fastapi-wallet-rest-uv-mysql fastapi-wallet-rest-pip-mysql fastapi-wallet-rest-poetry-mysql \
+	fastapi-wallet-rest-uv-mariadb fastapi-wallet-rest-pip-mariadb fastapi-wallet-rest-poetry-mariadb \
+	fastapi-wallet-rest-uv-sharded-pg fastapi-wallet-rest-pip-sharded-pg fastapi-wallet-rest-poetry-sharded-pg \
+	fastapi-wallet-saga-uv-pg fastapi-wallet-saga-pip-pg fastapi-wallet-saga-poetry-pg \
+	job-worker-uv-pg job-worker-pip-pg job-worker-poetry-pg \
+	wallet-service-uv-sqlite wallet-service-pip-sqlite wallet-service-poetry-sqlite
 
 .PHONY: all lint format test test-all test-gevent examples schema build clean help website website-dev
 .DEFAULT_GOAL := all
@@ -41,14 +44,16 @@ all: lint test
 
 # Listed rather than globbed: `$(wildcard */)` does not filter to directories on the make that
 # ships with macOS (3.81), so it picked up README.md and asked for a schema from it. A list is
-# also the place a reader looks to find out what is here.
+# also the place a reader looks to find out what is here. These are the uv projects whose
+# `schema.py` is generated - the ones `lint` type-checks; their pip and Poetry twins hold the
+# same code.
 GENERATES := \
-	fastapi_wallet_rest_pg \
-	fastapi_wallet_rest_mysql \
-	fastapi_wallet_rest_mariadb \
-	fastapi_wallet_rest_sharded_pg \
-	fastapi_wallet_saga_pg \
-	job_worker_pg
+	fastapi-wallet-rest-uv-pg \
+	fastapi-wallet-rest-uv-mysql \
+	fastapi-wallet-rest-uv-mariadb \
+	fastapi-wallet-rest-uv-sharded-pg \
+	fastapi-wallet-saga-uv-pg \
+	job-worker-uv-pg
 
 .PHONY: $(addprefix schema-,$(GENERATES))
 $(addprefix schema-,$(GENERATES)): schema-%:
@@ -82,6 +87,9 @@ lint: schema
 	# Java's annotation processor runs on every compile, so a generated builder there cannot
 	# be stale or missing. Here the file is committed, so this restores the guarantee.
 	$(UV) python scripts/check-builders.py
+	# Each example is carried three times, one per build tool; the copies must stay the code
+	# of the one they were written from.
+	$(UV) python scripts/sync-examples.py --check
 	# Both trees make claims about this API in code a reader will copy: what they import,
 	# what they call on a class, and whether a snippet parses at all. Checked here rather
 	# than in `npm run check`, which is the Node half and has no interpreter to ask.
@@ -114,9 +122,16 @@ test-all:
 test-gevent:
 	$(UV) python -m gevent.monkey --module pytest
 
-examples: schema
-	$(UV) pytest ekbatan-py-examples
-	cd ekbatan-py-examples && $(UV) python -m wallet_service_sqlite
+# Every example, each in its own environment, each tested as its built wheel installed - and the
+# SQLite one run end to end. The pip projects make their venv with a Python found by uv, since
+# the system `python3` may be older than 3.13; the Poetry ones need `poetry` on the path.
+EXAMPLE_PYTHON := $(shell uv python find '>=3.13' 2>/dev/null)
+
+examples:
+	@set -e; for e in $(EXAMPLES); do \
+		echo "== $$e"; $(MAKE) --no-print-directory -C ekbatan-py-examples/$$e PYTHON=$(EXAMPLE_PYTHON); \
+	done
+	$(MAKE) --no-print-directory -C ekbatan-py-examples/wallet-service-uv-sqlite run
 
 # -- the website -------------------------------------------------------------------------------
 #
@@ -134,7 +149,7 @@ build:
 	uv build
 
 clean:
-	$(foreach e,$(GENERATES),$(MAKE) -C ekbatan-py-examples/$(e) clean;)
+	$(foreach e,$(EXAMPLES),$(MAKE) -C ekbatan-py-examples/$(e) clean;)
 
 help:
 	@grep -E '^#     make' $(MAKEFILE_LIST) | sed 's/^#     //'

@@ -113,7 +113,7 @@ Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and i
 
 - the inner loop, and the unit tests;
 - an example that should run with no setup -
-  [`wallet_service_sqlite`](../../ekbatan-py-examples/wallet_service_sqlite) is exactly that;
+  [`wallet-service-uv-sqlite`](../../ekbatan-py-examples/wallet-service-uv-sqlite) is exactly that;
 - a single-process tool or an internal utility that will never have a second instance.
 
 For that last case it genuinely works: accept that the scheduler is not cluster-exclusive
@@ -131,5 +131,5 @@ sufficient.
 ## See also
 
 - [Multiple dialects](multi-database.md) - where the four disagree
-- [`wallet_service_sqlite`](../../ekbatan-py-examples/wallet_service_sqlite) - no container, no
+- [`wallet-service-uv-sqlite`](../../ekbatan-py-examples/wallet-service-uv-sqlite) - no container, no
   web stack

@@ -1,0 +1,22 @@
+[project]
+name = "fastapi-wallet-saga-pg"
+version = "0.1.0"
+description = "A transfer across two databases, as a saga, built with uv."
+requires-python = ">=3.13"
+dependencies = ["ekbatan[postgres,migrations]", "fastapi>=0.115", "uvicorn[standard]>=0.32"]
+
+[dependency-groups]
+dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[postgres]>=4.15", "httpx>=0.27"]
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+# ekbatan is not on PyPI yet. Until it is, it - and its scheduler - come from this
+# repository; delete this once it is published.
+[tool.uv.sources]
+ekbatan = { path = "../..", editable = true }
+ekbatan-py-db-scheduler = { path = "../../db-scheduler", editable = true }

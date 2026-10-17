@@ -83,7 +83,7 @@ src/ekbatan/
   locks/             base.py, sql.py, redis.py, inprocess.py, _holder.py
   distributedjobs/   DistributedJob, JobRegistry, JobsConfig
 db-scheduler/        a separate distribution: the port of kagkarlsson/db-scheduler
-ekbatan-py-examples/ seven standalone example projects
+ekbatan-py-examples/ seven examples x uv/pip/Poetry: 21 standalone projects
 ```
 
 `db-scheduler/` is **its own distribution** with its own lock file, tests, CI workflow and ruff
@@ -128,14 +128,15 @@ unit of work does **not** inherit it - which is correct, and is pinned by
 ### Nothing in `src/` may import a web framework
 
 `tests/test_structure.py` enforces it, along with the rule that an example imports only the
-framework, the standard library and the declared `examples` group.
+framework, the standard library and what its own `pyproject.toml` declares. The pip and Poetry
+projects are written from the uv ones by `scripts/sync-examples.py`; edit only the uv ones.
 
 ## Testing
 
 ```bash
 make test        # unit, then the whole suite on SQLite
 make test-all    # PostgreSQL, MySQL and MariaDB too - needs Docker
-make examples    # every example's own test
+make examples    # every example, each as its built wheel installed
 ```
 
 - `tests/unit/` is **database-free by rule**, not by luck, and a test enforces it.
@@ -169,7 +170,7 @@ found were found that way, and several "passing" tests turned out to assert noth
 - **uv** for dependencies and running - `uv sync`, `uv run`. There is no task runner, which is
   why there is a Makefile.
 - **hatchling** builds the wheel; `uv build` drives it.
-- **ruff** for lint and format, **mypy `--strict`** over `src` *and* `ekbatan-py-examples` -
+- **ruff** for lint and format, **mypy `--strict`** over `src` *and* the examples' uv projects -
   an example is documentation, and documentation that would not type-check is wrong.
 - **Make** supplies the one thing uv has no answer for: a dependency graph. It is how generated
   schemas are rebuilt when their migrations change and skipped when they have not.

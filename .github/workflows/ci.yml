@@ -56,15 +56,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with: { enable-cache: true }
-      # `--group examples` as well as the extras: `--all-extras` installs extras, and the web
-      # stack the REST example needs is a dependency *group* precisely so that nothing else
-      # gets it. Without this the job fails at import.
-      - run: uv sync --all-extras --group examples
+      # Each example is a project of its own - seven, built three ways each - with its own
+      # environment, so nothing is synced here. The pip ones need a Python of 3.13 or later, which
+      # uv provides; the Poetry ones need `poetry`.
+      - run: uv python install 3.13
+      - run: uv tool install poetry
       # An example nobody runs is an example that rots - and one did. The payload assertion in
       # `wallet_service_sqlite` went stale at EKB-0129 and stayed that way, because this repository
       # has no remote and so this file has never actually run. When it does, it catches that.
-      # `make` rather than `uv run pytest` so the generated schema is built first, and so
-      # this job and the Makefile cannot drift apart.
+      # `make` builds each one's generated schema first, tests each as its built wheel installed,
+      # and cannot drift from the Makefile.
       - run: make examples
 
   tracing:

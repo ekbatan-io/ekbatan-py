@@ -155,4 +155,4 @@ That is why there is a separate provider class for a backend that issues identic
 
 - [MySQL](mysql.md) - most of this, with the differences called out
 - [schemagen](schemagen.md) - the normalisation that makes reflection usable here
-- [`fastapi_wallet_rest_mariadb`](../../ekbatan-py-examples/fastapi_wallet_rest_mariadb)
+- [`fastapi-wallet-rest-uv-mariadb`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb)

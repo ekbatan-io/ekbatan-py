@@ -429,4 +429,4 @@ thread per shard. On eight shards a round takes eight batches' time rather than 
 
 - [Concepts → Sharding](../concepts/sharding.md) - the reasoning
 - [Migrations](migrations.md) - applying migrations across shards
-- [`fastapi_wallet_rest_sharded_pg`](../../ekbatan-py-examples/fastapi_wallet_rest_sharded_pg)
+- [`fastapi-wallet-rest-uv-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg)

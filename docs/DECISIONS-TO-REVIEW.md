@@ -346,6 +346,23 @@ Asked by the user on 2026-10-17 (Dracula bug 7).
 | the guide's pip setup declares `[tool.setuptools.package-data]` for `ekbatan.yaml` and the migrations | measured: setuptools packs only `.py` files, so the wheel had neither, whatever git ignored - worse than the bug reported | built |
 | the setup-guide check builds the wheel, checks it lists the files, and imports it installed in a fresh venv; the packaging runs in a git repository, made if the page did not make one | the failure only shows on a machine without the source tree; some tools honour `.gitignore` only inside a repository | built |
 
+## Every example per build tool (`EKB-0257`)
+
+Asked by the user on 2026-10-17: examples per build system, as Java has Gradle and Maven ones, and
+the docs and website following the choice. The full matrix - every example in all three - was
+the user's choice. See `docs/EXAMPLES-MATRIX-LEDGER.md`.
+
+| decision | why | who |
+| --- | --- | --- |
+| 7 examples x uv, pip, Poetry = 21 standalone projects | Java carries its examples per build tool; the build tool decides what a wheel holds | the user |
+| names are Java's: `[stack]-[domain]-[style]-[build][-variant]-[db]` (`fastapi-wallet-rest-uv-pg`); the package inside keeps its Python name in all three | a reader moving between the ports recognises them; identical code across builds | built |
+| the uv project is the source; `scripts/sync-examples.py` writes the twins' `src/` and every project's build files, and `make lint` runs it with `--check` | 21 hand-kept copies drift; one source and a check do not | built |
+| each project's tests run against its built wheel, installed in its own environment | the check that would have caught bug 7 on the examples themselves | built |
+| `ekbatan` comes from this repository through each tool's own mechanism, marked for deletion once it is on PyPI | it is not published yet | built |
+| lock files gitignored | they would pin a path into this checkout | built |
+| root mypy checks the uv projects only | the twins are the same files; checking all three would type-check one file three times under one module name | built |
+| the website's picker names the example for the database **and** the installer | the choice the user asked the docs to follow | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

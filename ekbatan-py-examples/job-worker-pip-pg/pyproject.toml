@@ -1,0 +1,20 @@
+[project]
+name = "job-worker-pg"
+version = "0.1.0"
+description = "A worker running distributed jobs, no HTTP, built with pip and setuptools."
+requires-python = ">=3.13"
+dependencies = ["ekbatan[postgres,migrations]"]
+
+[dependency-groups]
+dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[postgres]>=4.15"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+# setuptools packs only .py files unless told. The service reads these at startup.
+[tool.setuptools.package-data]
+job_worker_pg = ["ekbatan.yaml", "migrations/*.sql"]
+
+[tool.pytest.ini_options]
+addopts = "-q"

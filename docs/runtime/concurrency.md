@@ -191,7 +191,7 @@ Two things make this less painful than it sounds.
 
 **A plain `def` endpoint in FastAPI is already run in a threadpool** by the framework, so the
 ordinary way of writing one is safe with none of the above.
-[`fastapi_wallet_rest_pg`](../../ekbatan-py-examples/fastapi_wallet_rest_pg) is written that way
+[`fastapi-wallet-rest-uv-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg) is written that way
 throughout, which is why it contains no `to_thread` at all.
 
 **The ambient transaction is a `ContextVar`,** which is per-async-task as well as per-thread - so
@@ -272,7 +272,7 @@ Two consequences:
 
 If you would rather not have every web worker also be a job worker, run the jobs in their own
 process: build the service with the jobs registered and the HTTP app absent.
-[`job_worker_pg`](../../ekbatan-py-examples/job_worker_pg) is that shape.
+[`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) is that shape.
 
 ## The GIL, briefly
 

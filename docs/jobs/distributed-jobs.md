@@ -310,4 +310,4 @@ an execution running twice.
 - [`scheduled_tasks`](../database/tables/scheduled-tasks.md) - the table, and the heartbeat column
 - [In-process event handlers](../events/local-event-handler.md) - two jobs on this registry
 - [Concurrency](../runtime/concurrency.md) - what `workers(n)` is actually sizing
-- [`job_worker_pg`](../../ekbatan-py-examples/job_worker_pg) - no HTTP at all
+- [`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) - no HTTP at all

@@ -32,7 +32,7 @@ Test planning and execution in this repository.
 4. **The examples** when they or the generated schemas changed:
 
    ```bash
-   make examples      # regenerates schemas first, then runs their tests
+   make examples      # all 21: each regenerates its schema, builds its wheel, tests it installed
    ```
 
 ## Reporting

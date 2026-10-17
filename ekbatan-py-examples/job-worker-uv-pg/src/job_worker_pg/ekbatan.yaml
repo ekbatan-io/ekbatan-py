@@ -1,0 +1,40 @@
+# The worker's Ekbatan settings - the same keys, in the same places, as the Java job worker's
+# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+#
+# `${NAME:default}` is an environment variable with a default, so the file runs as it is against
+# a local server; the test fills them from its container.
+ekbatan:
+  namespace: example.job_worker_pg
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            name: global
+            configs:
+              primaryConfig:
+                dataSourceProperties:
+                  application_name: wallet-worker
+                url: ${WORKER_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WORKER_DATABASE_USERNAME:ekbatan}
+                password: ${WORKER_DATABASE_PASSWORD:ekbatan}
+              # The scheduler's own pool, at least twice the worker threads: a job body holding
+              # the last connection would starve the heartbeat. See app.py's docstring.
+              jobsConfig:
+                url: ${WORKER_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                username: ${WORKER_DATABASE_USERNAME:ekbatan}
+                password: ${WORKER_DATABASE_PASSWORD:ekbatan}
+                poolSize: 8
+
+  # ISO-8601, as Java's Duration.parse reads it: PT10S. A bare number or "10s" is refused.
+  jobs:
+    pollingInterval: PT10S
+
+  local-event-handler:
+    handling:
+      enabled: true

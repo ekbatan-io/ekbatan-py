@@ -1,6 +1,6 @@
 ---
 name: ekbatan-py-examples
-description: Maintain the ekbatan-py example applications. Use when adding, updating, auditing or verifying anything under ekbatan-py-examples across the PostgreSQL, MySQL, MariaDB, sharded, saga, job-worker and SQLite variants.
+description: Maintain the ekbatan-py example applications. Use when adding, updating, auditing or verifying anything under ekbatan-py-examples across the PostgreSQL, MySQL, MariaDB, sharded, saga, job-worker and SQLite examples, each built with uv, pip and Poetry.
 ---
 
 # ekbatan-py examples
@@ -17,23 +17,26 @@ across the matrix.
 
 ## Matrix discipline
 
-Only the **REST example is replicated per database** - the same shape the Java port uses. The
-other four are one of a kind.
+Seven examples, **each carried three times** - `-uv-`, `-pip-`, `-poetry-` - as Java carries its
+examples per Gradle and Maven. Only the REST example is replicated per database.
 
 | | |
 | --- | --- |
-| replicated | `fastapi_wallet_rest_pg`, `_mysql`, `_mariadb` |
-| one of a kind | `fastapi_wallet_rest_sharded_pg`, `fastapi_wallet_saga_pg`, `job_worker_pg`, `wallet_service_sqlite` |
+| per database | `fastapi-wallet-rest-{build}-pg`, `-mysql`, `-mariadb` |
+| one of a kind | `fastapi-wallet-rest-{build}-sharded-pg`, `fastapi-wallet-saga-{build}-pg`, `job-worker-{build}-pg`, `wallet-service-{build}-sqlite` |
 
-When changing a base wallet behaviour, change all three REST variants. Do not assume they are
-generated - they are not. Compare the files directly.
+**Edit only the uv project**, then run `uv run python scripts/sync-examples.py`: it writes the
+pip and Poetry twins (the same `src/`, byte for byte) and every project's `pyproject.toml`,
+`Makefile`, `.gitignore` and README build section. Never hand-edit a twin - `make lint` runs
+`sync-examples.py --check` and fails on any drift. When changing a base wallet behaviour, change
+all three REST databases' uv projects; those are not generated from one another.
 
 ## An example is documentation
 
-- **mypy `--strict` runs over the examples**, because documentation that would not type-check is
-  documentation that is wrong.
-- They import only the framework, the standard library and the declared `examples` group.
-  `tests/test_structure.py` enforces it.
+- **mypy `--strict` runs over the examples' uv projects** (their twins are the same code),
+  because documentation that would not type-check is documentation that is wrong.
+- They import only the framework, the standard library and what each project's `pyproject.toml`
+  declares. `tests/test_structure.py` enforces it.
 - They are **not** shared with `tests/fixtures/`. The suite's domain exists to exercise every
   shape worth exercising; an example exists to show what good code looks like. Coupled, every
   coverage change lands in the documentation.
@@ -54,8 +57,11 @@ generated - they are not. Compare the files directly.
 ## Workflow
 
 1. `ls ekbatan-py-examples` to see the matrix.
-2. Read a known-good example for the dialect family before editing.
-3. Make the smallest mechanical cross-matrix edit possible.
-4. `make examples` - it regenerates schemas first, so a stale module cannot mask a break.
+2. Read a known-good uv project for the dialect family before editing.
+3. Make the smallest mechanical cross-matrix edit possible, in the uv projects.
+4. `uv run python scripts/sync-examples.py` to carry it to the pip and Poetry twins.
+5. `make examples` - every project builds its wheel and tests it installed, so a file a build
+   tool leaves out fails here. Needs Docker, `poetry` on the path, and a Python 3.13+ (found
+   through uv).
 
 Use `ekbatan-py-verification` for the full matrix.

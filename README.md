@@ -189,7 +189,7 @@ already needs no generation here, so none is done. The output is ordinary Python
 read it, regenerate it when a model changes. A stale one is a type error rather than a wrong
 answer, because `build()` still calls the real constructor.
 
-`ekbatan-py-examples/wallet_service_sqlite` uses it, including the three-line `copy()` override that makes a
+`ekbatan-py-examples/wallet-service-uv-sqlite` uses it, including the three-line `copy()` override that makes a
 model's own methods typed too.
 
 ## Layout
@@ -201,19 +201,23 @@ tests/
   fixtures/           the domain the suite is written against - owned by the suite
   unit/               no database, ever. 250 tests, about a second
   integration/        everything that touches one. 322 tests, on any dialect
-ekbatan-py-examples/
-  fastapi_wallet_rest_pg/          the REST service, on PostgreSQL
-  fastapi_wallet_rest_mysql/       the same service, on MySQL
-  fastapi_wallet_rest_mariadb/     the same service, on MariaDB
-  fastapi_wallet_rest_sharded_pg/  the same service, over two databases
-  fastapi_wallet_saga_pg/          a saga: two services, choreography, compensation
-  job_worker_pg/                   a distributed job, no HTTP at all
-  wallet_service_sqlite/           the smallest one. No container, no web stack
+ekbatan-py-examples/                 each one built three ways: -uv-, -pip-, -poetry-
+  fastapi-wallet-rest-uv-pg/          the REST service, on PostgreSQL
+  fastapi-wallet-rest-uv-mysql/       the same service, on MySQL
+  fastapi-wallet-rest-uv-mariadb/     the same service, on MariaDB
+  fastapi-wallet-rest-uv-sharded-pg/  the same service, over two databases
+  fastapi-wallet-saga-uv-pg/          a saga: two services, choreography, compensation
+  job-worker-uv-pg/                   a distributed job, no HTTP at all
+  wallet-service-uv-sqlite/           the smallest one. No container, no web stack
 ```
 
 One REST example per dialect and one of everything else, which is the shape of Java's matrix -
-there, too, only the REST project is replicated per database. Each is standalone: it imports the
-framework and is imported by nothing.
+there, too, only the REST project is replicated per database. And each is carried once per build
+tool, as Java's are per Gradle and Maven: `fastapi-wallet-rest-uv-pg`,
+`fastapi-wallet-rest-pip-pg`, `fastapi-wallet-rest-poetry-pg`, the same code with its own
+`pyproject.toml` and `Makefile` - 21 projects, kept in step by `scripts/sync-examples.py`. Each is
+standalone: `cd` into one and `make` builds it, tests it as its installed wheel, and needs
+nothing else from this repository but the framework.
 
 Three separate things with three separate jobs, and they do not import each other. The suite's
 domain exists to exercise every shape worth exercising, including a few no application would
@@ -255,8 +259,8 @@ uv run pytest tests/unit              # no database at all, about a second
 uv run pytest                         # the whole suite, on SQLite
 uv run pytest --dialects=postgres     # in a container
 uv run pytest --dialects=all          # every test, on all four
-uv run pytest ekbatan-py-examples                # the examples' own tests
-cd ekbatan-py-examples && uv run python -m wallet_service_sqlite
+make examples                         # all 21 examples, each as its installed wheel
+make -C ekbatan-py-examples/wallet-service-uv-sqlite run
 
 uv run mypy                           # strict, on the library and the examples
 uv run ruff check .

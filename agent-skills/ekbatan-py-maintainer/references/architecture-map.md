@@ -34,7 +34,7 @@ src/ekbatan/
   locks/             base, sql, redis, inprocess, _holder
   distributedjobs/   DistributedJob, JobRegistry, JobsConfig
 db-scheduler/        a separate distribution: the port of kagkarlsson/db-scheduler
-ekbatan-py-examples/ seven standalone projects
+ekbatan-py-examples/ seven examples x uv/pip/Poetry: 21 standalone projects
 website/             Astro. The only part that does not run through uv
 ```
 
