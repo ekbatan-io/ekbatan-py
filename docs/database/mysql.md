@@ -6,7 +6,7 @@ and `GET_LOCK` does something surprising with sub-second timeouts.
 ## Quick reference
 
 ```
-uv add ekbatan[mysql]
+uv add "ekbatan[mysql]"
 ```
 
 | | |

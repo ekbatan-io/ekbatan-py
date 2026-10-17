@@ -6,7 +6,7 @@ lead: "Table definitions that cannot drift from the database, because they are g
 ---
 
 ```
-uv add --dev ekbatan[codegen]
+uv add --dev "ekbatan[codegen]"
 uv run python -m ekbatan.schemagen --migrations migrations --out myapp/schema.py
 ```
 

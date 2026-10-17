@@ -40,6 +40,7 @@ follow the guide and run the project. Area F merges the two.
      would never regenerate.
 - **Python:** `website/src/pages/learn/complete-project-setup.mdx:23-43, 55, 70, 76, 790, 898,
   913, 1353`; `docs/getting-started.md:21, 82`.
+- **Fixed** (`EKB-0253`-`EKB-0255`): the page now renders the example projects' real files, and `scripts/check-setup-guide.py` follows it end to end for PostgreSQL, MySQL and MariaDB with uv, pip and poetry. See `docs/SETUP-GUIDE-LEDGER.md`.
 - **Java:** none - `docs/gradle/getting-started.md` and each example's README match a project
   that builds (`./gradlew bootRun`).
 - **Why:** a choice - doc drift; the examples are tested, the guide is not.

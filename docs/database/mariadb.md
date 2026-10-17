@@ -6,7 +6,7 @@ each cost real time.
 ## Quick reference
 
 ```
-uv add ekbatan[mariadb]
+uv add "ekbatan[mariadb]"
 ```
 
 | | |

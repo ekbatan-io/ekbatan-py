@@ -56,7 +56,7 @@ State and events land together or neither does.
 ## Install
 
 ```
-uv add ekbatan[postgres]          # or [mysql], or [mariadb]
+uv add "ekbatan[postgres]"          # or [mysql], or [mariadb]
 ```
 
 The extras are the drivers and the optional pieces, and nothing you do not ask for is installed.
@@ -65,7 +65,7 @@ The extras are the drivers and the optional pieces, and nothing you do not ask f
 a container at build time - a development dependency, not a runtime one:
 
 ```
-uv add --dev ekbatan[codegen]
+uv add --dev "ekbatan[codegen]"
 ```
 
 Python 3.13 or newer. SQLAlchemy 2.0 is the only unconditional dependency, alongside

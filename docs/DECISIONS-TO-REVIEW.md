@@ -322,6 +322,20 @@ Asked by the user on 2026-10-17: Dracula bug 4, exactly as Java.
 | `EventHandlerRegistry.add` ported from Java's `withHandler`, check for check and in its order: blank name, missing event type, a name or alias already taken (one table for both, which also refuses one handler twice), two classes behind one short name, a blank alias, an alias equal to the handler's name | the same mistakes stopped at startup as in Java | the user |
 | Java's messages, word for word; `ValidationError` for Java's `IllegalArgumentException` / NPE | a search for the Java message finds the Python one; the exception type follows the port's convention (Dracula 57) | built |
 
+## The setup guide, from the examples' own files (`EKB-0253`-`EKB-0255`)
+
+Asked by the user on 2026-10-17 (Dracula bug 6); the scope - full files, kept in sync - was the
+user's choice. See `docs/SETUP-GUIDE-LEDGER.md`.
+
+| decision | why | who |
+| --- | --- | --- |
+| every file on *Complete project setup* is the example project's own file, imported when the site is built | it cannot drift from code tested on every commit; the excerpts it had had drifted badly | the user |
+| the REST examples' one migration split into Java's four files (`V0001__eventlog` ... `V0004__alerts`) | Java's examples split them so, and the page already recommended it | built |
+| the page's layout is the examples': migrations and `ekbatan.yaml` inside the package under `src/` | what `uv init` and `poetry new` create, and a wheel then carries them | built |
+| SQLite points to `wallet_service_sqlite` rather than having a FastAPI version of the page | no FastAPI SQLite example exists, and SQLite is not a production dialect | built |
+| `codegen` works in a new project: the package comes from the module read, and a stand-in answers the model's import of the builders it is writing | without it no new project could generate its first builders | built |
+| `scripts/check-setup-guide.py` follows the page for 3 databases x 3 installers, installing `ekbatan` from the checkout - its only substitution, until it is on PyPI | the proof that the page runs as written; Docker-bound, so not in `make lint` | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

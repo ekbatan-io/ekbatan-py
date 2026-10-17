@@ -2,12 +2,41 @@
 layout: ../../layouts/DocLayout.astro
 title: Complete project setup
 activeSection: learn
-lead: Every file of a working service, for your dialect and your installer. The page you end on.
+lead: Every file of a working service, for your database and your installer - each one the real file of an example project that is tested on every commit.
 ---
 
 import SetupPicker from "../../components/SetupPicker.astro";
 import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
+import pg_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/ekbatan.yaml?raw";
+import pg_repository_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/repository.py?raw";
+import pg_app_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/app.py?raw";
+import pg_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0001__eventlog.sql?raw";
+import pg_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0002__scheduled_tasks.sql?raw";
+import pg_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0003__wallets.sql?raw";
+import pg_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/migrations/V0004__alerts.sql?raw";
+import pg_test from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/test_fastapi_wallet_rest_pg.py?raw";
+import mysql_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/ekbatan.yaml?raw";
+import mysql_repository_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/repository.py?raw";
+import mysql_app_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/app.py?raw";
+import mysql_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0001__eventlog.sql?raw";
+import mysql_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0002__scheduled_tasks.sql?raw";
+import mysql_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0003__wallets.sql?raw";
+import mysql_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/migrations/V0004__alerts.sql?raw";
+import mysql_test from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mysql/test_fastapi_wallet_rest_mysql.py?raw";
+import mariadb_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/ekbatan.yaml?raw";
+import mariadb_repository_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/repository.py?raw";
+import mariadb_app_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/app.py?raw";
+import mariadb_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0001__eventlog.sql?raw";
+import mariadb_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0002__scheduled_tasks.sql?raw";
+import mariadb_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0003__wallets.sql?raw";
+import mariadb_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/migrations/V0004__alerts.sql?raw";
+import mariadb_test from "../../../../ekbatan-py-examples/fastapi_wallet_rest_mariadb/test_fastapi_wallet_rest_mariadb.py?raw";
+import shared_model_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/model.py?raw";
+import shared_actions_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/actions.py?raw";
+import shared_handlers_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/handlers.py?raw";
+import shared_jobs_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/jobs.py?raw";
+import shared_api_py from "../../../../ekbatan-py-examples/fastapi_wallet_rest_pg/api.py?raw";
 
 <SetupPicker />
 
@@ -15,54 +44,25 @@ Everything below follows the picker. Choose your database and your installer onc
 page rewrites itself; the choice persists across pages.
 
 This is a **complete** service: migrations, generated schema, domain, actions, repository,
-handler, job, wiring, HTTP layer, tests and a Makefile. The example named in the picker is this
-page as a runnable project.
+handler, job, wiring, HTTP layer, a test and a Makefile. **Every file on this page is the real
+file** of the example project for your database -
+[`fastapi_wallet_rest_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_pg),
+[`_mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mysql) or
+[`_mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mariadb) -
+read from it when this site is built, so it cannot drift from code that is tested on every commit.
+Copy each one to the path in its header and the project runs; the steps were checked by doing
+exactly that, in an empty folder, with each installer.
+
+You need Python 3.13 or later, and Docker: the database in step 2, the schema generator and the
+test each run a container.
+
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
 
 ## 1. Scaffold a project
-
-```
-wallet/
-├─ Makefile
-├─ pyproject.toml
-├─ migrations/
-│  ├─ V0001__eventlog.sql
-│  ├─ V0002__scheduled_tasks.sql
-│  └─ V0003__wallets.sql
-├─ wallet/
-│  ├─ __init__.py
-│  ├─ model.py          the domain
-│  ├─ builders.py       GENERATED, committed
-│  ├─ schema.py         GENERATED, gitignored
-│  ├─ actions.py        the units of work
-│  ├─ repository.py     the queries this app asks
-│  ├─ handlers.py       in-process event handlers
-│  ├─ jobs.py           cluster-exclusive background work
-│  ├─ app.py            the wiring, all of it
-│  └─ api.py            the HTTP layer, and nothing else
-└─ tests/
-```
-
-Two generated files, and the difference between them matters: **`builders.py` is committed**
-because it is derived from source you already have; **`schema.py` is gitignored** because it is
-derived from a database you have to start.
-
-## 2. Start a database
-
-Nothing below needs a database until step 5, but the schema generator starts its own throwaway
-container and the tests need a real one — so it is worth having PostgreSQL up before you begin.
-
-```bash
-docker run --rm -d --name wallet-pg \
-  -e POSTGRES_DB=wallet -e POSTGRES_PASSWORD=dev \
-  -p 5432:5432 postgres:17
-```
-
-MySQL or MariaDB work the same way; only the url in step 3 and the driver extra in step 2
-change. SQLite needs no container at all, which is why
-[`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite)
-is the example to read first if you only want to see the framework work.
-
-## 3. Add dependencies
 
 <div data-install="uv">
 
@@ -70,58 +70,153 @@ is the example to read first if you only want to see the framework work.
 uv init wallet && cd wallet
 ```
 
+</div>
+<div data-install="pip">
+
+```bash
+mkdir -p wallet/src/wallet && cd wallet
+touch src/wallet/__init__.py
+python3 -m venv .venv && source .venv/bin/activate
+```
+
+pip has no scaffold of its own, so the project file is yours to write - setuptools finds the `src/` layout by itself:
+
+```toml
+# pyproject.toml
+[project]
+name = "wallet"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+```
+
+</div>
+<div data-install="poetry">
+
+```bash
+poetry new wallet && cd wallet
+```
+
+</div>
+
+You end with this - the package under `src/`, and everything the service reads at runtime inside
+it, so a wheel carries the migrations and the config file along with the code:
+
+```
+wallet/
+├─ Makefile
+├─ pyproject.toml
+└─ src/wallet/
+   ├─ __init__.py
+   ├─ ekbatan.yaml          the settings: database, pools, namespace
+   ├─ migrations/           the SQL files, run in order at startup
+   │  ├─ V0001__eventlog.sql
+   │  ├─ V0002__scheduled_tasks.sql
+   │  ├─ V0003__wallets.sql
+   │  └─ V0004__alerts.sql
+   ├─ model.py              the domain
+   ├─ builders.py           GENERATED, committed
+   ├─ schema.py             GENERATED, gitignored
+   ├─ repository.py         the queries this app asks
+   ├─ actions.py            the units of work
+   ├─ handlers.py           in-process event handlers
+   ├─ jobs.py               cluster-exclusive background work
+   ├─ app.py                the wiring, all of it
+   ├─ api.py                the HTTP layer, and nothing else
+   └─ test_wallet.py
+```
+
+Two generated files, and the difference between them matters: **`builders.py` is committed**
+because it is derived from source you already have; **`schema.py` is gitignored** because it is
+derived from a database you have to start. The Makefile in step 7 makes both.
+
+## 2. Start a database
+
+The service connects to it in step 8; the schema generator and the test start throwaway
+containers of their own.
+
 <div data-db="pg">
 
 ```bash
-uv add ekbatan[postgres,migrations]
-uv add --dev ekbatan[codegen] pytest testcontainers[postgres]
-uv add fastapi uvicorn[standard] httpx
+docker run --rm -d --name wallet-pg \
+  -e POSTGRES_DB=wallet -e POSTGRES_USER=ekbatan -e POSTGRES_PASSWORD=ekbatan \
+  -p 5432:5432 postgres:17
 ```
 
 </div>
 <div data-db="mysql">
 
 ```bash
-uv add ekbatan[mysql,migrations]
-uv add --dev ekbatan[codegen] pytest testcontainers[mysql]
-uv add fastapi uvicorn[standard] httpx
+docker run --rm -d --name wallet-mysql \
+  -e MYSQL_ROOT_PASSWORD=ekbatan -e MYSQL_DATABASE=wallet \
+  -p 3306:3306 mysql:8.4
 ```
 
 </div>
 <div data-db="mariadb">
 
 ```bash
-uv add ekbatan[mariadb,migrations]
-uv add --dev ekbatan[codegen] pytest testcontainers[mysql]
-uv add fastapi uvicorn[standard] httpx
+docker run --rm -d --name wallet-mariadb \
+  -e MARIADB_ROOT_PASSWORD=ekbatan -e MARIADB_DATABASE=wallet \
+  -p 3306:3306 mariadb:11.4
 ```
 
 </div>
 <div data-db="sqlite">
 
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
+
+The login matches the defaults in `ekbatan.yaml` (step 4), so the service runs against this
+container with nothing set. Elsewhere, set the variables the file names.
+
+## 3. Add dependencies
+
+<div data-install="uv">
+
+<div data-db="pg">
+
 ```bash
-uv add ekbatan[migrations]
-uv add --dev pytest
-uv add fastapi uvicorn[standard] httpx
+uv add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
+uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 ```
 
-SQLite needs no driver extra and no `codegen` extra — there is no container to reflect from, so
-you write `schema.py` by hand and commit it.
+</div>
+<div data-db="mysql">
+
+```bash
+uv add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
+uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
 
 </div>
+<div data-db="mariadb">
+
+```bash
+uv add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
+uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
+
+</div>
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
 </div>
 
+</div>
 <div data-install="pip">
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-```
 
 <div data-db="pg">
 
 ```bash
 pip install "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
 pip install "ekbatan[codegen]" pytest "testcontainers[postgres]"
+pip install -e .
 ```
 
 </div>
@@ -130,6 +225,7 @@ pip install "ekbatan[codegen]" pytest "testcontainers[postgres]"
 ```bash
 pip install "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
 pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install -e .
 ```
 
 </div>
@@ -138,33 +234,25 @@ pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
 ```bash
 pip install "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
 pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install -e .
 ```
 
 </div>
 <div data-db="sqlite">
 
-```bash
-pip install "ekbatan[migrations]" fastapi "uvicorn[standard]" httpx pytest
-```
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
 
 </div>
 
-The quotes are load-bearing: `zsh` treats bare brackets as a glob and reports *"no matches
-found"*.
-
 </div>
-
 <div data-install="poetry">
-
-```bash
-poetry new wallet && cd wallet
-```
 
 <div data-db="pg">
 
 ```bash
 poetry add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
 poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+poetry install
 ```
 
 </div>
@@ -173,6 +261,7 @@ poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 ```bash
 poetry add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
 poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry install
 ```
 
 </div>
@@ -181,738 +270,261 @@ poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 ```bash
 poetry add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
 poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry install
 ```
 
 </div>
 <div data-db="sqlite">
 
-```bash
-poetry add "ekbatan[migrations]" fastapi "uvicorn[standard]" httpx
-poetry add --group dev pytest
-```
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
 
 </div>
+
 </div>
+
+The quotes are load-bearing: `zsh`, the macOS default shell, reads bare brackets as a glob and
+stops with *"no matches found"*.
 
 **`codegen` is a development dependency, not a runtime one.** It starts a database container to
-reflect your schema — a thing your build does and your deployment must never do.
+reflect your schema - a thing your build does and your deployment must never do.
 
 ## 4. Configure the DB connection
 
-The framework reads its coordinates from a `ShardingConfig`. Put it in `wallet/ekbatan.yaml`, in
-the same keys as the Java port's `application.yml`. One shard is still a sharding layout — the
-single-database case is the one-member case, which is why going to two databases later changes
-this file and nothing else.
+The framework reads its coordinates from `ekbatan.yaml`, in the same keys as the Java port's
+`application.yml`. One shard is still a sharding layout - the single-database case is the
+one-member case, which is why going to two databases later changes this file and nothing else.
 
-```yaml
-ekbatan:
-  namespace: example.wallet
-  sharding:
-    defaultShard:
-      group: 0
-      member: 0
-    groups:
-      - group: 0
-        name: global
-        members:
-          - member: 0
-            name: global
-            configs:
-              primaryConfig:
-                url: ${DATABASE_URL}
-                username: ${DATABASE_USERNAME}
-                password: ${DATABASE_PASSWORD}
-                poolSize: 20
-```
+<div data-db="pg">
 
-```python
-from ekbatan.config_files import load_ekbatan_config
-from ekbatan.persistence import DatabaseRegistry
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={pg_ekbatan_yaml} />
 
-ekbatan = load_ekbatan_config("wallet/ekbatan.yaml")
-registry = DatabaseRegistry.from_config(ekbatan.sharding)
-```
+</div>
+<div data-db="mysql">
 
-`${NAME}` is an environment variable, and a missing one stops startup naming it; `${NAME:default}`
-gives a default. YAML, TOML, JSON and INI all work — see
-[Config files](/reference/config-files). The same `ShardingConfig` can also be built in code with
-`ShardingConfig.builder()`.
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mysql_ekbatan_yaml} />
 
-`defaultShard` is required: the framework routes there when no sharding strategy commits, and a
-layout that cannot answer "where does this go" is rejected at construction rather than at the
-first write.
+</div>
+<div data-db="mariadb">
 
-### The url
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mariadb_ekbatan_yaml} />
 
-The url names the database and where it is - never the login. `username` and `password` are
+</div>
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
+
+`${NAME:default}` is an environment variable with a default, and a missing one with no default
+stops startup naming it. YAML, TOML, JSON and INI all work - see
+[Config files](/reference/config-files).
+
+**The url names the database and where it is - never the login.** `username` and `password` are
 fields of their own, as in the Java port: a url is logged and repeated, and one carrying a
 password is refused.
 
-<div data-db="pg">
+**Three pools on one member.** `primaryConfig` is for requests. `jobsConfig` is the scheduler's,
+sized at least twice its worker count, because the scheduler heartbeats from a housekeeping
+thread and a job body holding the last connection starves it. `lockConfig` holds keyed-lock
+leases, one connection each for as long as the lease is held. `app.py` (step 9) builds the last
+two with `engine_for` and disposes them.
 
-```
-postgresql+psycopg://localhost:5432/wallet
-```
+**The namespace** is written into every outbox row, which is what lets two applications share
+one database without reading each other's events. Change it after the fact and the rows already
+written are, correctly, no longer yours.
 
-`psycopg`, not `psycopg2` — the `postgres` extra brings psycopg 3.
+## 5. Add the migrations
 
-</div>
-<div data-db="mysql">
-
-```
-mysql+pymysql://localhost:3306/wallet
-```
-
-</div>
-<div data-db="mariadb">
-
-```
-mariadb+pymysql://localhost:3306/wallet
-```
-
-**The scheme has to say `mariadb`.** A MariaDB container hands back a `mysql://` url, and
-SQLAlchemy picks its DDL, its version reporting and its `SKIP LOCKED` support off the scheme —
-while this framework picks its keyed-lock provider off `engine.dialect.name`. Leave it as `mysql`
-and everything works, while running MySQL's code path against a MariaDB server.
-
-</div>
-<div data-db="sqlite">
-
-```
-sqlite:///wallet.db
-```
-
-Fine for one process. Not a production dialect: no `SKIP LOCKED`, so the scheduler and the SQL
-keyed lock degrade to single-process behaviour.
-
-</div>
-
-A url naming something unsupported is refused at construction, and the two refusals are
-deliberately separate: a url nothing can be read out of is a typo, and a url naming Oracle is a
-decision about what this framework supports. They want different fixes.
-
-### The namespace
-
-```python
-executor = ActionExecutor(
-    namespace=ekbatan.namespace,     # `ekbatan.namespace` in the file
-    registry=registry,
-    repositories=repositories,
-    actions=actions,
-    events=EVENTS,
-)
-```
-
-Required, and it is a naming root rather than a label. It is written into every `events` and
-`event_notifications` row, which is what lets two applications share one database without reading
-each other's outbox. Change it after the fact and the rows already written are, correctly, no
-longer yours.
-
-### Sizing the pool
-
-In the file each knob may be written camelCase, kebab-case or snake_case (`poolSize`,
-`pool-size`, `pool_size`).
-
-| Knob | Default | What it is |
-|---|---|---|
-| `pool_size` | 10 | connections kept open |
-| `max_overflow` | 0 | extra connections allowed under burst, closed when returned |
-| `pool_timeout` | 30.0 | seconds a checkout waits before raising |
-| `pool_recycle` | 1800 | seconds before a connection is replaced |
-| `pool_pre_ping` | True | validate on checkout, to survive a database restart |
-
-`pool_size` and `max_overflow` together are what a Java reader knows as one maximum pool size.
-The split is SQLAlchemy's and is left visible rather than papered over, because an operator
-tuning a pool needs to see the knobs their own tooling reports on. Start at `pool_size` = your
-worker count, and `max_overflow=0` so an overloaded process queues rather than opening
-connections a database has not budgeted for.
-
-Every knob refuses rather than clamping. `pool_size=0`, a negative overflow or a non-positive
-timeout raise `ValidationError` naming the value, because a knob that silently disables itself is
-a knob an operator believes is set.
-
-### One pool, not three
-
-Each shard member carries a **map of named pools**, exactly as Java's does. `"primaryConfig"` is
-required and `"secondaryConfig"` optional; any other name is yours. Java's DI modules use it to
-hand the job scheduler and the keyed-lock provider pools of their own, so a job storm cannot starve
-HTTP requests. Here you do the handing:
-
-```yaml
-            configs:
-              primaryConfig:
-                url: ${DATABASE_URL}
-                username: ${DATABASE_USERNAME}
-                password: ${DATABASE_PASSWORD}
-                poolSize: 20
-              jobsConfig:
-                url: ${DATABASE_URL}
-                username: ${DATABASE_USERNAME}
-                password: ${DATABASE_PASSWORD}
-                poolSize: 5
-```
-
-```python
-jobs_engine = engine_for(ekbatan.sharding.groups[0].members[0].config_for("jobsConfig"))
-job_registry().engine(jobs_engine)
-```
-
-`engine_for` is Java's `ConnectionProvider.hikariConnectionProvider`: the same checks and settings
-the registry's own pools get. The registry builds only the primary and secondary, so this one is
-yours to dispose. If your jobs are heavy, do this — with no pool of their own, the scheduler's
-polling competes with your requests.
-
-`"secondaryConfig"` is the read path: `readonly_db()` uses it and falls back to the primary when a shard
-has none. It does not join an open transaction, because a replica has not seen what that
-transaction wrote.
-
-## 5. Add a migration
-
-Migrations are plain SQL files in `migrations/`, named `V<version>__<description>.sql` and run in
-the order of their version numbers, and the schema generator (step 6) replays the same files
-against a throwaway container to discover the schema. **The framework does not ship its tables as a bundled migration** — you write them, or
-copy one verbatim out of any
-[`ekbatan-py-examples/*`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples).
-
-That is a deliberate refusal, not an omission. A library that creates its own tables on first
-connection decides your schema, your naming and your deploy order for you, and takes them out of
-the review that every other table goes through. These are your tables; the framework only tells
-you what shape they have to be.
-
-Files this guide ends up with:
+Plain SQL files, named `V<version>__<description>.sql` and run in version order - split as the
+Java port's examples split theirs. **The framework does not ship its tables as a bundled
+migration**: they are your tables, reviewed like every other, and the framework only says what
+shape they must have.
 
 | File | What it is |
 |---|---|
-| `V0001__eventlog.sql` | the framework's outbox tables — `events` and `event_notifications` |
-| `V0002__scheduled_tasks.sql` | the scheduler's table; the in-process event handlers depend on it |
-| `V0003__wallets.sql` | your domain tables |
-
-Three files rather than one because they change for different reasons and at different
-times: the first two move when you upgrade the framework, the third moves whenever your domain
-does. Squashing them into one file works, and the first framework upgrade is where you find out
-why it was a bad idea.
-
-### 5a. Where the framework's tables live
-
-Nothing forces them into a schema of their own. `outbox_table(metadata)` writes `events` into the
-database you are already connected to, next to `wallets`, and the examples all do exactly that.
-
-If you want them separated, say so once, in your own `schema.py`:
-
-```python
-EVENTS = outbox_table(metadata, schema="eventlog")
-EVENT_NOTIFICATIONS = notifications_table(metadata, schema="eventlog")
-```
+| `V0001__eventlog.sql` | the framework's outbox - `events`, and `event_notifications` for the in-process handlers |
+| `V0002__scheduled_tasks.sql` | the job scheduler's table; the event handlers run on the scheduler |
+| `V0003__wallets.sql` | your domain table |
+| `V0004__alerts.sql` | what the deposit handler (step 11) writes |
 
 <div data-db="pg">
 
-The framework is handed `Table` objects, so it qualifies every statement with whatever schema
-those carry. PostgreSQL has true schemas inside a database, so a `CREATE SCHEMA eventlog` at the
-top of `0001` is the whole cost.
+<CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={pg_V0001__eventlog_sql} />
+<CodeBlock filename="src/wallet/migrations/V0002__scheduled_tasks.sql" language="sql" shadow="default" code={pg_V0002__scheduled_tasks_sql} />
+<CodeBlock filename="src/wallet/migrations/V0003__wallets.sql" language="sql" shadow="default" code={pg_V0003__wallets_sql} />
+<CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={pg_V0004__alerts_sql} />
 
 </div>
 <div data-db="mysql">
 
-The framework is handed `Table` objects, so it qualifies every statement with whatever schema
-those carry. MySQL treats "schema" and "database" as synonyms, so `eventlog` has to be its own
-database, created before `0001` writes into it — and the connecting user needs cross-database
-grants, which is the `mysql_init.sql` from step 2.
+<CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={mysql_V0001__eventlog_sql} />
+<CodeBlock filename="src/wallet/migrations/V0002__scheduled_tasks.sql" language="sql" shadow="default" code={mysql_V0002__scheduled_tasks_sql} />
+<CodeBlock filename="src/wallet/migrations/V0003__wallets.sql" language="sql" shadow="default" code={mysql_V0003__wallets_sql} />
+<CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={mysql_V0004__alerts_sql} />
 
 </div>
 <div data-db="mariadb">
 
-The framework is handed `Table` objects, so it qualifies every statement with whatever schema
-those carry. MariaDB treats "schema" and "database" as synonyms, so `eventlog` has to be its own
-database, created before `0001` writes into it — and the connecting user needs cross-database
-grants, which is the `mariadb_init.sql` from step 2.
+<CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={mariadb_V0001__eventlog_sql} />
+<CodeBlock filename="src/wallet/migrations/V0002__scheduled_tasks.sql" language="sql" shadow="default" code={mariadb_V0002__scheduled_tasks_sql} />
+<CodeBlock filename="src/wallet/migrations/V0003__wallets.sql" language="sql" shadow="default" code={mariadb_V0003__wallets_sql} />
+<CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={mariadb_V0004__alerts_sql} />
 
 </div>
 <div data-db="sqlite">
 
-SQLite has no schemas to speak of — `ATTACH` is the nearest thing, and it is per-connection
-rather than per-database. Leave the tables unqualified.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
 
 </div>
 
-The rest of this section shows them unqualified, which is what you want unless a DBA has told
-you otherwise.
-
-### 5b. `V0001__eventlog.sql` — the framework's outbox tables
-
-Two tables. `events` is the outbox itself; `event_notifications` holds one row per
-(event, handler) and is what the in-process dispatcher marks off as it goes. Generate both rather
-than typing them:
+They were generated once with `emit_ddl` and pasted, rather than built from `schema.py` at
+migration time - a migration has to mean the same thing forever:
 
 ```python
 from sqlalchemy import MetaData
+
 from ekbatan.migrations import emit_ddl
 from ekbatan.schema import notifications_table, outbox_table
 
 metadata = MetaData()
 outbox_table(metadata)
 notifications_table(metadata)
-
-print(emit_ddl(metadata, "postgresql"))    # or "mysql", "mariadb", "sqlite"
+print(emit_ddl(metadata, "postgresql"))  # or "mysql", "mariadb"
 ```
 
-<div data-db="pg">
+An applied file is never edited: the migrator records a checksum of each one and refuses to start
+when an applied file has changed, been renamed or gone missing. A change goes in the next file.
+`app.py` runs them at startup with `migrate(layout, MIGRATIONS)`, before anything opens a pool,
+and the test checks their names without a database through `validate_scripts`.
 
-```sql
-CREATE TABLE events (
-    id             UUID         NOT NULL,
-    namespace      VARCHAR(255) NOT NULL,
-    action_id      UUID         NOT NULL,
-    action_name    VARCHAR(255) NOT NULL,
-    action_params  JSONB        NOT NULL,
-    started_date   TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    model_id       VARCHAR(255),
-    model_type     VARCHAR(255),
-    event_type     VARCHAR(255),
-    payload        JSONB,
-    event_date     TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    delivered      BOOLEAN      NOT NULL,
-    PRIMARY KEY (id)
-);
+## 6. Generate the schema module
 
-CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
-
-CREATE INDEX ix_events_action_id ON events (action_id);
-
--- ... event_notifications, same shape plus event_id, handler_name, state, attempts,
---     next_retry_at, and a UNIQUE (event_id, handler_name)
-```
-
-`JSONB`, not `JSON`: a consumer binds to the column type, and jsonb is queryable where json is a
-string somebody has to parse first. What lands in it is byte-identical to what the Java port
-writes.
-
-</div>
-<div data-db="mysql">
-
-```sql
-CREATE TABLE events (
-    id             CHAR(36)     NOT NULL,
-    namespace      VARCHAR(255) NOT NULL,
-    action_id      CHAR(36)     NOT NULL,
-    action_name    VARCHAR(255) NOT NULL,
-    action_params  JSON         NOT NULL,
-    started_date   DATETIME(6)  NOT NULL,
-    completion_date DATETIME(6) NOT NULL,
-    model_id       VARCHAR(255),
-    model_type     VARCHAR(255),
-    event_type     VARCHAR(255),
-    payload        JSON,
-    event_date     DATETIME(6)  NOT NULL,
-    delivered      BOOL         NOT NULL,
-    PRIMARY KEY (id)
-);
-
-CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
-
-CREATE INDEX ix_events_action_id ON events (action_id);
-```
-
-`DATETIME(6)` rather than `DATETIME`, and not for precision's sake: a bare `DATETIME` truncates
-to whole seconds, and `event_date` orders the outbox.
-
-</div>
-<div data-db="mariadb">
-
-```sql
-CREATE TABLE events (
-    id             CHAR(36)     NOT NULL,
-    namespace      VARCHAR(255) NOT NULL,
-    action_id      CHAR(36)     NOT NULL,
-    action_name    VARCHAR(255) NOT NULL,
-    action_params  JSON         NOT NULL,
-    started_date   DATETIME(6)  NOT NULL,
-    completion_date DATETIME(6) NOT NULL,
-    model_id       VARCHAR(255),
-    model_type     VARCHAR(255),
-    event_type     VARCHAR(255),
-    payload        JSON,
-    event_date     DATETIME(6)  NOT NULL,
-    delivered      BOOL         NOT NULL,
-    PRIMARY KEY (id)
-);
-
-CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
-
-CREATE INDEX ix_events_action_id ON events (action_id);
-```
-
-On MariaDB `JSON` is an alias for `LONGTEXT` with a check constraint — it is stored as text and
-reflects back as text, which is why step 6 forces the type rather than trusting the reflection.
-
-</div>
-<div data-db="sqlite">
-
-```sql
-CREATE TABLE events (
-    id             CHAR(32)     NOT NULL,
-    namespace      VARCHAR(255) NOT NULL,
-    action_id      CHAR(32)     NOT NULL,
-    action_name    VARCHAR(255) NOT NULL,
-    action_params  JSON         NOT NULL,
-    started_date   DATETIME     NOT NULL,
-    completion_date DATETIME    NOT NULL,
-    model_id       VARCHAR(255),
-    model_type     VARCHAR(255),
-    event_type     VARCHAR(255),
-    payload        JSON,
-    event_date     DATETIME     NOT NULL,
-    delivered      BOOLEAN      NOT NULL,
-    PRIMARY KEY (id)
-);
-```
-
-SQLite stores a uuid as 32 hex characters with no dashes, which is what SQLAlchemy's `Uuid` type
-does there. It is the one dialect whose outbox rows are not byte-comparable with the others'.
-
-</div>
-
-Two details in that DDL are load-bearing, whichever dialect you are on. `action_params` is **not
-null** — every row carries the full input of the unit of work that produced it, so one row is a
-complete audit record without a join, and so a consumer can read a value the domain event
-deliberately does not carry. And `delivered` is the outbox's only mutable column: it belongs to
-the consumer, and a producer that flips it loses the event for every consumer that had not read
-it yet. See [`events`](/reference/tables/events/) for every column.
-
-### 5c. `V0002__scheduled_tasks.sql` — the scheduler's table
-
-The distributed job scheduler needs one table, and the in-process event dispatcher is built on
-the scheduler, so you need it even if you never write a job of your own:
-
-```python
-from ekbatan.schema import scheduled_tasks_table
-```
-
-<div data-db="pg">
-
-```sql
-CREATE TABLE scheduled_tasks (
-    task_name            VARCHAR(100) NOT NULL,
-    task_instance        VARCHAR(100) NOT NULL,
-    task_data            BYTEA,
-    execution_time       TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    picked               BOOLEAN      NOT NULL,
-    picked_by            VARCHAR(50),
-    last_success         TIMESTAMP WITHOUT TIME ZONE,
-    last_failure         TIMESTAMP WITHOUT TIME ZONE,
-    consecutive_failures INTEGER,
-    last_heartbeat       TIMESTAMP WITHOUT TIME ZONE,
-    version              BIGINT       NOT NULL,
-    priority             SMALLINT,
-    PRIMARY KEY (task_name, task_instance)
-);
-
-CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
-
-CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
-
-CREATE INDEX scheduled_tasks_priority_execution_time_idx ON scheduled_tasks (priority, execution_time);
-```
-
-</div>
-<div data-db="mysql">
-
-```sql
-CREATE TABLE scheduled_tasks (
-    task_name            VARCHAR(100) NOT NULL,
-    task_instance        VARCHAR(100) NOT NULL,
-    task_data            BLOB,
-    execution_time       DATETIME(6)  NOT NULL,
-    picked               BOOL         NOT NULL,
-    picked_by            VARCHAR(50),
-    last_success         DATETIME(6),
-    last_failure         DATETIME(6),
-    consecutive_failures INTEGER,
-    last_heartbeat       DATETIME(6),
-    version              BIGINT       NOT NULL,
-    priority             SMALLINT,
-    PRIMARY KEY (task_name, task_instance)
-);
-
-CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
-
-CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
-```
-
-</div>
-<div data-db="mariadb">
-
-```sql
-CREATE TABLE scheduled_tasks (
-    task_name            VARCHAR(100) NOT NULL,
-    task_instance        VARCHAR(100) NOT NULL,
-    task_data            BLOB,
-    execution_time       DATETIME(6)  NOT NULL,
-    picked               BOOL         NOT NULL,
-    picked_by            VARCHAR(50),
-    last_success         DATETIME(6),
-    last_failure         DATETIME(6),
-    consecutive_failures INTEGER,
-    last_heartbeat       DATETIME(6),
-    version              BIGINT       NOT NULL,
-    priority             SMALLINT,
-    PRIMARY KEY (task_name, task_instance)
-);
-
-CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time);
-
-CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat);
-```
-
-</div>
-<div data-db="sqlite">
-
-Same columns, with `BLOB` for `task_data` and `DATETIME` for the timestamps. The scheduler runs,
-but it has no `SKIP LOCKED` to lean on, so exactly-once picking across processes is not something
-SQLite can give you — see step 4.
-
-</div>
-
-`VARCHAR(100)`, not 255, and `priority` is not optional. Both are the scheduler's own definition,
-and a hand-written second copy of this table has a way of drifting from it until an insert fails.
-
-### 5d. `V0003__wallets.sql` — your domain tables
-
-Your tables are yours; the framework only requires the columns that make a model a model.
-
-<div data-db="pg">
-
-```sql
-CREATE TABLE wallets (
-    id           UUID          NOT NULL,
-    version      BIGINT        NOT NULL,
-    state        VARCHAR(24)   NOT NULL,
-    owner_id     UUID          NOT NULL,
-    currency     VARCHAR(3)    NOT NULL,
-    balance      NUMERIC(19,4) NOT NULL,
-    created_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    updated_date TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    PRIMARY KEY (id)
-);
-```
-
-</div>
-<div data-db="mysql">
-
-```sql
-CREATE TABLE wallets (
-    id           CHAR(36)      NOT NULL,
-    version      BIGINT        NOT NULL,
-    state        VARCHAR(24)   NOT NULL,
-    owner_id     CHAR(36)      NOT NULL,
-    currency     VARCHAR(3)    NOT NULL,
-    balance      DECIMAL(19,4) NOT NULL,
-    created_date DATETIME(6)   NOT NULL,
-    updated_date DATETIME(6)   NOT NULL,
-    PRIMARY KEY (id)
-);
-```
-
-</div>
-<div data-db="mariadb">
-
-```sql
-CREATE TABLE wallets (
-    id           CHAR(36)      NOT NULL,
-    version      BIGINT        NOT NULL,
-    state        VARCHAR(24)   NOT NULL,
-    owner_id     CHAR(36)      NOT NULL,
-    currency     VARCHAR(3)    NOT NULL,
-    balance      DECIMAL(19,4) NOT NULL,
-    created_date DATETIME(6)   NOT NULL,
-    updated_date DATETIME(6)   NOT NULL,
-    PRIMARY KEY (id)
-);
-```
-
-</div>
-<div data-db="sqlite">
-
-```sql
-CREATE TABLE wallets (
-    id           CHAR(32)      NOT NULL,
-    version      BIGINT        NOT NULL,
-    state        VARCHAR(24)   NOT NULL,
-    owner_id     CHAR(32)      NOT NULL,
-    currency     VARCHAR(3)    NOT NULL,
-    balance      NUMERIC(19,4) NOT NULL,
-    created_date DATETIME      NOT NULL,
-    updated_date DATETIME      NOT NULL,
-    PRIMARY KEY (id)
-);
-```
-
-</div>
-
-`version` and `state` are the two the framework insists on: `version` carries optimistic locking,
-and `state` is how a soft-deleted row stays readable. `created_date` is required when you build
-the row - pass `self.clock.now()` - and `updated_date` falls back to it until you move it. A `balance` is `NUMERIC`/`DECIMAL` and never a float — see
-[Models and entities](/reference/model/).
-
-### What goes in a file
-
-Several statements per file are fine: the migrator splits a file into statements itself, on every
-database. A statement that refuses to run inside a transaction — PostgreSQL's
-`CREATE INDEX CONCURRENTLY` — goes in a file of its own that says so on its first line:
-
-```sql
--- transactional: false
-CREATE INDEX CONCURRENTLY ix_wallets_owner ON wallets (owner_id);
-```
-
-Generate, save, commit. Then edit `schema.py`, regenerate, and put the *difference* in the next
-file — never edit a file that has already run, or make one read today's `schema.py`. The migrator
-records a checksum of every file it applies and refuses to run when an applied file has changed,
-been renamed or gone missing, or when a new file's version is older than one already applied;
-the same checks on the names run without a database, so a test can catch two files with one
-version in CI:
-
-```python
-from ekbatan.migrations import validate_scripts
-
-
-def test_the_migration_files_pass_the_checks_a_deploy_runs():
-    validate_scripts("migrations")
-```
-
-### Running them
-
-One call, from the layout you already configured:
-
-```python
-from ekbatan.migrations import migrate
-
-migrate(layout, MIGRATIONS)          # before anything opens a pool
-```
-
-`migrate` takes the `ShardingConfig` itself rather than a url, so the coordinates are not copied
-into a second migration-specific block that can drift from the one the application reads. **This
-is the same shape for one database or many.** Here there is one shard, so it runs once; in a
-sharded application the same call runs the same files against every member's primary, one at a
-time and fail-fast — carrying on past a failure turns one broken database into several. It
-returns a result per shard: the version it was on, the version it is on now, and the files it
-applied.
-
-Rolling out to a subset is the deliberate act:
-
-```python
-migrate(layout, MIGRATIONS, shards=[MEXICO])
-```
-
-A coordinate the layout does not contain is refused rather than skipped, because a typo there
-would otherwise read as "nothing to do" and migrate nothing at all.
-
-**Before anything opens a pool**, and before the job registry starts — the scheduler writes to
-`scheduled_tasks` on its first tick, and a tick that beats the migration fails on a table that
-does not exist yet. In `build()` that ordering is just line order; in a stack with lazy
-initialisation it is something you have to say out loud.
-
-For development and tests there is a shortcut that skips the files:
-
-```python
-migrate_registry(registry, metadata)     # create_all, on every shard
-```
-
-Use it in tests. Not in a deployment: `create_all` has no answer for a column that changed.
-
-## 6. Wire the schema generator
-
-<div data-db="sqlite">
-
-Skip this step. There is no container to reflect from, so write `schema.py` by hand with the
-column helpers and commit it:
-
-```python
-from sqlalchemy import Column, MetaData, Numeric, String, Table
-from ekbatan.schema import timestamp_column, uuid_column
-
-metadata = MetaData()
-WALLETS = Table(
-    "wallets", metadata,
-    Column("id", uuid_column(), primary_key=True),
-    Column("version", Integer, nullable=False),
-    Column("state", String(32), nullable=False),
-    Column("owner_id", uuid_column(), nullable=False),
-    Column("currency", String(3), nullable=False),
-    Column("balance", Numeric(19, 4), nullable=False),
-    Column("created_date", timestamp_column(), nullable=False),
-    Column("updated_date", timestamp_column(), nullable=False),
-)
-```
-
-</div>
+<div data-install="uv">
 
 <div data-db="pg">
 
 ```bash
-uv run python -m ekbatan.schemagen --migrations migrations --out wallet/schema.py \
-  --image postgres:17-alpine
+uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image postgres:17-alpine
 ```
 
 </div>
 <div data-db="mysql">
 
 ```bash
-uv run python -m ekbatan.schemagen --migrations migrations --out wallet/schema.py \
-  --image mysql:8.4
+uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mysql:8.4
 ```
 
 </div>
 <div data-db="mariadb">
 
 ```bash
-uv run python -m ekbatan.schemagen --migrations migrations --out wallet/schema.py \
-  --image mariadb:11.4
+uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mariadb:11.4
 ```
 
 </div>
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
+
+</div>
+<div data-install="pip">
 
 <div data-db="pg">
-It starts a throwaway container, runs **your** migrations into it, reflects the result and
-writes a module of `Table` definitions — the counterpart to the Java port's jOOQ step.
+
+```bash
+python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image postgres:17-alpine
+```
+
 </div>
 <div data-db="mysql">
-It starts a throwaway container, runs **your** migrations into it and reflects the result. The
-type forcing matters here: a uuid on MySQL is `CHAR(36)` and nothing in the database says it is a
-uuid, so a plain reflection would give you a text column that no other dialect can join against.
+
+```bash
+python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mysql:8.4
+```
+
 </div>
 <div data-db="mariadb">
-It starts a throwaway container, runs **your** migrations into it and reflects the result. Two
-MariaDB quirks make the forcing essential: `JSON` is reported as `LONGTEXT`, and a bigint comes
-back as `BIGINT(display_width=20)` — which, emitted verbatim, does not even import.
+
+```bash
+python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mariadb:11.4
+```
+
 </div>
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
+
+</div>
+<div data-install="poetry">
+
+<div data-db="pg">
+
+```bash
+poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image postgres:17-alpine
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mysql:8.4
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mariadb:11.4
+```
+
+</div>
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
+
+</div>
+
+It starts a throwaway container, runs **your** migrations into it, reflects the result and writes a
+module of `Table` definitions - the counterpart to the Java port's jOOQ step. On MySQL and MariaDB
+the type forcing matters: a uuid is `CHAR(36)` there and nothing in the database says it is one.
+You rarely run this by hand; the Makefile does, when a migration changes.
 
 ## 7. The Makefile
 
 `uv` has no task runner and no dependency graph, which is the one real gap against Gradle.
 
-<div data-db="sqlite">
+<div data-install="uv">
 
-```make
-.PHONY: run test lint
-run:   ; uv run uvicorn wallet.api:app --reload
-test:  ; uv run pytest
-lint:  ; uv run mypy wallet && uv run ruff check .
-```
-
-</div>
 <div data-db="pg">
 
 ```make
 IMAGE := postgres:17-alpine
+PKG   := src/wallet
 
-wallet/schema.py: $(wildcard migrations/*.sql)
-	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
-.PHONY: run test lint
-run:  wallet/schema.py ; uv run uvicorn wallet.api:app --reload
-test: wallet/schema.py ; uv run pytest
-lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
+$(PKG)/builders.py: $(PKG)/model.py
+	uv run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -920,14 +532,17 @@ lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
 
 ```make
 IMAGE := mysql:8.4
+PKG   := src/wallet
 
-wallet/schema.py: $(wildcard migrations/*.sql)
-	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
-.PHONY: run test lint
-run:  wallet/schema.py ; uv run uvicorn wallet.api:app --reload
-test: wallet/schema.py ; uv run pytest
-lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
+$(PKG)/builders.py: $(PKG)/model.py
+	uv run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -935,454 +550,325 @@ lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
 
 ```make
 IMAGE := mariadb:11.4
+PKG   := src/wallet
 
-wallet/schema.py: $(wildcard migrations/*.sql)
-	uv run python -m ekbatan.schemagen --migrations migrations --out $@ --image $(IMAGE)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
-.PHONY: run test lint
-run:  wallet/schema.py ; uv run uvicorn wallet.api:app --reload
-test: wallet/schema.py ; uv run pytest
-lint: wallet/schema.py ; uv run mypy wallet && uv run ruff check .
+$(PKG)/builders.py: $(PKG)/model.py
+	uv run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
 
-The dependency on the migration files is what makes this bearable in front of every target: **it
-starts a container when they change and does nothing when they have not.** That is Gradle's
-up-to-date check, in one line. `lint` depends on it because mypy reads the generated module.
+</div>
+<div data-install="pip">
 
-## 8. Sneak peek — a model and a repository
+<div data-db="pg">
 
-Four pieces, in the order they depend on each other: the state enum, the events the wallet emits,
-the model itself, and the repository.
+```make
+IMAGE := postgres:17-alpine
+PKG   := src/wallet
 
-`WalletState` first, because the model's type signature names it:
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
-```python
-class WalletState(StrEnum):
-    OPENED = "OPENED"
-    CLOSED = "CLOSED"
-    DELETED = "DELETED"
+$(PKG)/builders.py: $(PKG)/model.py
+	python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
-`DELETED` is not decoration. It is how a soft-deleted row stays readable — `delete()` moves the
-state, it does not issue a `DELETE`, so the event that explains the deletion still has a row to
-point at.
-
-The events are pure data carriers that say which model they are about: the class line names the
-model (`ModelEvent["Wallet"]`), and each is constructed with that model's id. Those fill the
-outbox's `model_id` and `model_type` columns.
-
-```python
-@dataclass(frozen=True, kw_only=True)
-class WalletOpenedEvent(ModelEvent["Wallet"]):
-    owner_id: UUID
-    currency: str
-    opening_balance: Decimal
-
-
-@dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent["Wallet"]):
-    amount: Decimal
-    new_balance: Decimal
-```
-
-Then the model. Frozen, version-tracked, and every state change returns a *new* wallet with its
-event already attached:
-
-<CodeBlock filename="wallet/model.py" language="python" shadow="yellow" code={`@dataclass(frozen=True, kw_only=True)
-class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
-    owner_id: UUID
-    currency: str
-    balance: Decimal
-
-    @staticmethod
-    def open(*, owner_id: UUID, currency: str, opening_balance: Decimal) -> "Wallet":
-        wallet_id = ShardedId[Wallet].random()      # the default shard
-        return (
-            WalletBuilder()
-            .id(wallet_id)
-            .state(WalletState.OPENED)
-            .owner_id(owner_id)
-            .currency(currency)
-            .balance(opening_balance)
-            .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
-                                          currency=currency, opening_balance=opening_balance))
-            .build()
-        )
-
-    def deposit(self, amount: Decimal) -> "Wallet":
-        if amount <= 0:
-            raise ValidationError(f"deposit amount must be positive, got {amount}")
-        new_balance = self.balance + amount
-        return (
-            self.copy()
-            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
-            .balance(new_balance)
-            .build()
-        )`} />
-
-`deposit()` is the only place `MoneyDepositedEvent` is ever attached. That is the whole
-discipline: events are produced inside the model, staged inside an action's `perform()`, and
-persisted by the framework. A balance cannot exist without the event that explains it, because
-there is no other way to change one.
-
-`copy()` returns a builder. Which builder is the third argument on `Wallet`'s class line —
-`Model[ShardedId["Wallet"], WalletState, WalletBuilder]` — so a checker sees the real field types,
-the one thing Python cannot work out for itself. Leave it out and `copy()` **refuses**, so a missing
-builder is an error at the call rather than a checker quietly seeing `__getattr__`.
-`python -m ekbatan.codegen` writes the builder; writing one by hand satisfies it just as well.
-
-`balance` is `Decimal`, never `float`. It lands in a `NUMERIC` column, and a float that
-round-trips through JSON is no longer the balance.
-
-There is no id class to write. The id is `ShardedId[Wallet]`, spelled as Java spells
-`ShardedId<Wallet>`: the model is the type argument, so a checker refuses a `ShardedId[Wallet]`
-where an `Id[Order]` belongs. On `Wallet`'s own class line the name is quoted —
-`ShardedId["Wallet"]` — because the class does not exist yet at that point.
-
-At runtime the model is erased, as it is in Java: two models' ids holding one uuid compare
-equal. The checker is what keeps them apart, so run it. `ShardedId` carries the shard in the
-uuid itself, which is what lets you add a second database later — see
-[Adding a shard](/learn/sharding/).
-
-And the repository:
-
-```python
-class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
-    def __init__(self, registry: DatabaseRegistry) -> None:
-        super().__init__(Wallet, WALLETS, registry)
-
-    def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        return self.find_where(WALLETS.c.owner_id == owner_id)
-```
-
-That is the whole thing. `get`, `find_where`, `add`, `update`, counting and existence are
-inherited, and the mapping between table and dataclass is **by field name** — no `from_row`, no
-`to_row`, nothing to keep in step with the model. What you add are the questions your business
-actually asks.
-
-`WALLETS` comes from the `schema.py` step 6 generated. That is the chain the whole setup exists
-to close: migration → generated schema → repository, with the database as the single source of
-truth for all three.
-
-## 9. Wire the service
-
-<CodeBlock filename="wallet/app.py" language="python" shadow="orange" code={`@dataclass(frozen=True, slots=True)
-class WalletService:
-    registry: DatabaseRegistry
-    wallets: WalletRepository
-    executor: ActionExecutor
-    locks: KeyedLockProvider
-    jobs: JobRegistry
-    lock_engine: Engine    # built from "lockConfig" - yours to dispose
-    jobs_engine: Engine    # built from "jobsConfig" - likewise
-
-    def start(self) -> None:
-        self.jobs.start()
-
-    def close(self) -> None:
-        # Order matters: stop taking work before closing what the work runs on.
-        self.jobs.stop()
-        self.locks.close()
-        self.lock_engine.dispose()
-        self.jobs_engine.dispose()
-        self.registry.close()
-
-
-def build(config: Settings) -> WalletService:
-    # primaryConfig, jobsConfig and lockConfig on the member, the namespace and
-    # local-event-handler.handling.enabled - all in ekbatan.yaml, as in Java's application.yml.
-    ekbatan = load_ekbatan_config(config.config_file, environ=config.environ)
-    layout = ekbatan.sharding
-
-    if config.run_migrations:
-        migrate(layout, MIGRATIONS)          # before anything opens a pool
-
-    registry = DatabaseRegistry.from_config(layout)
-    wallets = WalletRepository(registry)
-
-    executor = ActionExecutor(
-        namespace=ekbatan.namespace,
-        registry=registry,
-        repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
-        actions=(ActionRegistry.builder()
-                 .with_action(OpenWalletAction(clock))
-                 .with_action(DepositMoneyAction(wallets, clock))
-                 .build()),
-        events=EVENTS,
-    )
-
-    member = layout.groups[0].members[0]
-    lock_engine = engine_for(member.config_for("lockConfig"))
-    jobs_engine = engine_for(member.config_for("jobsConfig"))
-
-    handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
-    events_config = ekbatan.local_event_handler
-
-    return WalletService(
-        registry=registry,
-        wallets=wallets,
-        executor=executor,
-        locks=PostgresKeyedLockProvider(lock_engine),
-        lock_engine=lock_engine,
-        jobs_engine=jobs_engine,
-        jobs=(job_registry()
-              .engine(jobs_engine)
-              .with_jobs([
-                  EventFanoutJob(registry, handlers, events=EVENTS,
-                                 notifications=EVENT_NOTIFICATIONS, config=events_config),
-                  EventHandlingJob(registry, handlers,
-                                   notifications=EVENT_NOTIFICATIONS, config=events_config),
-                  PayStipendJob(executor, wallets),
-              ])
-              .workers(3)
-              .build()),
-    )`} />
-
-**Three pools.** Requests get the main engine. Jobs get their own, sized at **at least twice the
-worker count**, because the scheduler heartbeats from a housekeeping thread and a job body
-holding the last connection starves it — and an execution whose heartbeat stops is declared dead
-and run again somewhere else. Locks get a third, because a keyed lock holds its connection for
-the life of the lease.
-
+</div>
 <div data-db="mysql">
-Use `MySQLKeyedLockProvider` rather than the PostgreSQL one — and note that a sub-second
-`try_acquire` wait is a **poll** on MySQL, which truncates the fraction to zero.
+
+```make
+IMAGE := mysql:8.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
+```
+
 </div>
 <div data-db="mariadb">
-Use `MariaDBKeyedLockProvider`. It issues the same statements as the MySQL one and exists
-separately because MariaDB honours sub-second `GET_LOCK` timeouts where MySQL truncates them.
+
+```make
+IMAGE := mariadb:11.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
+```
+
+</div>
+
+</div>
+<div data-install="poetry">
+
+<div data-db="pg">
+
+```make
+IMAGE := postgres:17-alpine
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	poetry run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
+```
+
+</div>
+<div data-db="mysql">
+
+```make
+IMAGE := mysql:8.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	poetry run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
+```
+
+</div>
+<div data-db="mariadb">
+
+```make
+IMAGE := mariadb:11.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	poetry run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload
+test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
+```
+
+</div>
+
+</div>
+
+**It regenerates only what is out of date**: `schema.py` when a migration changed, `builders.py`
+when the model did - a container starts when it has to and not otherwise. `builders.py` is
+generated on the first run too, before it exists, though the model already imports it.
+
+## 8. The model
+
+<CodeBlock filename="src/wallet/model.py" language="python" shadow="yellow" code={shared_model_py} />
+
+Read `Wallet.deposit` first. Events are produced inside the model, staged inside an action and
+persisted by the framework - a balance cannot change without the event that explains it, because
+there is no other way to change one.
+
+`copy()` returns the builder the class line names - `Model[ShardedId["Wallet"], WalletState,
+WalletBuilder]` - which is what lets a checker see the real field types. `make` writes it:
+
+<div data-install="uv">
+
+```bash
+uv run python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
+```
+
+</div>
+<div data-install="pip">
+
+```bash
+python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
+```
+
+</div>
+<div data-install="poetry">
+
+```bash
+poetry run python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
+```
+
+</div>
+
+`balance` is `Decimal`, never `float`. And there is no id class to write: the id is
+`ShardedId[Wallet]`, which carries its shard inside the uuid - what lets you add a second database
+later, see [Adding a shard](/learn/sharding/). `Alert` is an entity: tracked by the persistence
+layer, invisible to the event stream.
+
+## 9. The repository
+
+<div data-db="pg">
+
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={pg_repository_py} />
+
+</div>
+<div data-db="mysql">
+
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={mysql_repository_py} />
+
+</div>
+<div data-db="mariadb">
+
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={mariadb_repository_py} />
+
 </div>
 <div data-db="sqlite">
-SQLite has no advisory locks, so there is no SQLite provider — and no in-process one, as there is
-none in Java: a lock in one process's memory excludes nothing in the next worker. If a SQLite
-service needs keyed locks, use `RedisKeyedLockProvider`. Optimistic locking on every write needs
-nothing and is on regardless.
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
 </div>
 
-## 10. The HTTP layer
+`get`, `find_where`, `add`, `update`, counting and existence are inherited, and the mapping between
+table and dataclass is by field name. What you add are the questions your business asks.
 
-<CodeBlock filename="wallet/api.py" language="python" shadow="yellow" code={`def service_of(request: Request) -> WalletService:
-    service: WalletService = request.app.state.service
-    return service
+## 10. The actions
 
+<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={shared_actions_py} />
 
-# MODULE LEVEL. With \`from __future__ import annotations\`, FastAPI resolves string
-# annotations against the *module* namespace - an alias defined inside create_app is
-# invisible, and the parameter is read as an unfilled query parameter instead. The
-# symptom is a 422 on every endpoint, naming a field nobody declared.
-Service = Annotated[WalletService, Depends(service_of)]
+## 11. An event handler
 
+<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={shared_handlers_py} />
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build(settings or Settings())
-        service.start()
-        app.state.service = service
-        try:
-            yield
-        finally:
-            service.close()
+The handler takes the **executor**, not a connection: it does its work as its own unit of work,
+after the one that produced the event has committed. **Delivery is at-least-once** - make the body
+idempotent - and the handler's `name` is stored on every notification row, so keep it stable.
 
-    app = FastAPI(title="Wallet", lifespan=lifespan)
+## 12. A distributed job
 
-    # A handler must RETURN a response. Raising from inside one is not caught again and
-    # becomes a 500 - the opposite of what these exist for.
-    @app.exception_handler(StaleRecordError)
-    async def _lost_a_race(request: Request, error: Exception) -> JSONResponse:
-        return JSONResponse(status_code=409, content={"detail": "the wallet changed; retry"})
+<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={shared_jobs_py} />
 
-    # \`def\`, not \`async def\`. FastAPI runs a plain def in a threadpool, so a blocking
-    # database call blocks one worker thread. An async def endpoint runs on the event
-    # loop, where the same call stops every request on that worker.
-    @app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
-    def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
-        return WalletResponse.of(
-            service.executor.execute(
-                DepositMoneyAction,
-                DepositParams(wallet_id=ShardedId[Wallet](wallet_id), amount=body.amount),
-            )
-        )
+Exclusivity comes from the `scheduled_tasks` row: whichever instance claims it runs. **The body
+must still tolerate running twice** - a claim can be lost to a dead-execution timeout.
 
-    return app`} />
+## 13. The wiring
 
-## 11. Example actions
+<div data-db="pg">
 
-Three shapes, which between them cover almost everything you will write.
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={pg_app_py} />
 
-```python
-class OpenWalletAction(Action[OpenWalletParams, Wallet]):
-    """Creates. `plan.add` stages an INSERT and hands back the row you gave it."""
+</div>
+<div data-db="mysql">
 
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
-        super().__init__(clock)
-        self.wallets = wallets
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mysql_app_py} />
 
-    def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
-        return self.plan.add(
-            Wallet.open(
-                owner_id=params.owner_id,
-                currency=params.currency,
-                balance=params.opening_balance,
-            )
-        )
+</div>
+<div data-db="mariadb">
 
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mariadb_app_py} />
 
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    """Changes. Read, mutate, stage - and the event goes along with the row."""
+</div>
+<div data-db="sqlite">
 
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
-        super().__init__(clock)
-        self.wallets = wallets
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
-        return self.plan.update(wallet.deposit(params.amount))
+</div>
 
+## 14. The HTTP layer
 
-class CloseWalletAction(Action[WalletIdParams, Wallet]):
-    """Changes, sometimes. Closing a closed wallet stages nothing and emits nothing -
-    and the invocation is still recorded, as one sentinel row."""
+<CodeBlock filename="src/wallet/api.py" language="python" shadow="yellow" code={shared_api_py} />
 
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
-        super().__init__(clock)
-        self.wallets = wallets
+Endpoints are plain `def`, not `async def`: FastAPI runs a `def` on a worker thread, where a
+blocking database call blocks one thread. Ekbatan is synchronous, and on the event loop itself a
+keyed lock is refused.
 
-    def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
-        closed = wallet.close()
-        return self.plan.update(closed) if closed is not wallet else wallet
+## 15. The test
+
+<div data-db="pg">
+
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={pg_test} />
+
+</div>
+<div data-db="mysql">
+
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mysql_test} />
+
+</div>
+<div data-db="mariadb">
+
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mariadb_test} />
+
+</div>
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
+
+```bash
+make test
 ```
 
-That last one is worth pausing on. An action that changes nothing still writes a row to the
-outbox, with `event_type` null — so *"this ran and decided there was nothing to do"* is a fact
-in the log rather than a silence you cannot distinguish from a crash.
+**The `with TestClient(...)` matters.** `TestClient` runs the lifespan only inside a context
+manager; without it `app.state.service` is never set and every request fails on the dependency.
 
-## 12. An example event handler
-
-With `EventFanoutJob` and `EventHandlingJob` registered — step 9 does both — the framework polls
-the outbox, materialises one `event_notifications` row per (event, handler), and invokes your
-handlers on a cluster-exclusive worker. Two jobs rather than one because fan-out and delivery
-fail for different reasons: a handler that keeps raising retries its own row without re-reading
-the outbox.
-
-Two attributes and a method. Register it in `build()` alongside everything else:
-
-```python
-class MoneyDepositedEventHandler:
-    # Cluster-stable identifier; stored in event_notifications.handler_name.
-    name = "money-deposited"
-    event_type = MoneyDepositedEvent
-
-    def __init__(self, executor: ActionExecutor) -> None:
-        self.executor = executor
-
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        # The recipient is not on the event - a delivery address has no business inside a
-        # money-deposited event - so it comes off the action's parameters instead.
-        self.executor.execute(
-            RaiseAlertAction,
-            RaiseAlertParams(
-                wallet_id=ShardedId[Wallet](UUID(envelope.model_id)),
-                recipient=envelope.action_params["recipient"],
-                message=f"deposited {envelope.event.amount}",
-            ),
-        )
-```
-
-The handler takes the **executor**, not a connection: it does its own work as its own unit of
-work, with its own transaction and its own outbox rows. The transaction that produced the event
-committed and went away before this ran.
-
-**Delivery is at-least-once.** A handler can run twice — a crash between the work and the row
-update leaves the notification unmarked, and it is picked up again. Make the body idempotent:
-a unique constraint, an idempotency key, or the event id itself. Rename `name` and every
-notification written under the old one is orphaned, so treat it as cluster-stable.
-
-## 13. An example distributed job
-
-Periodic work that must run on exactly one instance of the cluster, however many are deployed:
-
-```python
-class PayStipendJob(DistributedJob):
-    name = "pay-stipend"
-    schedule = Schedule.fixed_delay(timedelta(hours=24))
-
-    def __init__(self, wallets: WalletRepository, executor: ActionExecutor) -> None:
-        self.wallets = wallets
-        self.executor = executor
-
-    def run(self, context: ExecutionContext) -> None:
-        for wallet in self.wallets.find_open_below(Decimal("10.00")):
-            self.executor.execute(
-                DepositMoneyAction,
-                DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="stipend"),
-            )
-```
-
-Exclusivity comes from the `scheduled_tasks` row, not from configuration: whichever instance
-claims it runs, the rest do not. **The body must still tolerate running twice** — a claim can be
-lost to a dead-execution timeout, and then another instance picks the task up.
-
-## 14. A test
-
-```python
-with TestClient(create_app(settings)) as client:
-    created = client.post("/wallets", json={...}).json()
-    client.post(f"/wallets/{created['id']}/deposits", json={"amount": "25.50"})
-```
-
-**The `with` matters.** `TestClient` only runs the lifespan inside a context manager, so without
-it `app.state.service` is never set and every request fails on the dependency.
-
-## 15. Run + verify
+## 16. Run + verify
 
 ```bash
 make run
 ```
 
-Then check that the framework's tables are actually there — the most common setup failure is a
-migration that never ran, and it shows up as a confusing error on the first write rather than at
-boot:
+Migrations run at startup. Check the tables are there - a migration that never ran shows up as a
+confusing error on the first write rather than at boot:
 
 <div data-db="pg">
 
 ```bash
-docker compose exec wallet-db psql -U wallet -c "\dt"
+docker exec wallet-pg psql -U ekbatan -d wallet -c '\dt'
 ```
-
-`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
 
 </div>
 <div data-db="mysql">
 
 ```bash
-docker compose exec wallet-db mysql -u wallet -pwallet wallet -e "SHOW TABLES"
+docker exec wallet-mysql mysql -uroot -pekbatan wallet -e 'SHOW TABLES'
 ```
-
-`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
 
 </div>
 <div data-db="mariadb">
 
 ```bash
-docker compose exec wallet-db mariadb -u wallet -pwallet wallet -e "SHOW TABLES"
+docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e 'SHOW TABLES'
 ```
-
-`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
 
 </div>
 <div data-db="sqlite">
 
-```bash
-sqlite3 wallet.db ".tables"
-```
-
-`events`, `event_notifications`, `scheduled_tasks` and `wallets`.
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
 
 </div>
+
+`alerts`, `ekbatan_schema_history` (the migrator's own), `event_notifications`, `events`,
+`scheduled_tasks` and `wallets`.
 
 Open a wallet and deposit into it:
 
@@ -1393,38 +879,81 @@ WALLET=$(curl -sX POST localhost:8000/wallets \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
 curl -sX POST localhost:8000/wallets/$WALLET/deposits \
-  -H 'Content-Type: application/json' -d '{"amount": "25.50"}'
+  -H 'Content-Type: application/json' -d '{"amount": "25.50", "recipient": "ada@example.com"}'
+
+curl -s localhost:8000/wallets/$WALLET/alerts
 ```
 
-Then read the outbox, which is the whole point:
+The alert arrives within a poll interval or two: the deposit's event is fanned out to the handler,
+which raises the alert in a unit of work of its own. Then read the outbox, which is the whole
+point:
 
-```sql
-SELECT action_name, model_type, event_type, delivered
-FROM events ORDER BY event_date;
+<div data-db="pg">
+
+```bash
+docker exec wallet-pg psql -U ekbatan -d wallet -c \
+  'SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date'
 ```
 
 | action_name | model_type | event_type | delivered |
 | --- | --- | --- | --- |
-| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | true |
-| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | true |
+| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | `f` |
+| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | `t` |
+| `RaiseAlertAction` |  |  | `f` |
 
-Two rows, written in the same transactions as the two `wallets` writes. `delivered` flips to true
-within a poll interval of the fanout job — if it stays false, the job registry never started, and
-the place to look is `service.start()`.
+</div>
+<div data-db="mysql">
 
-## 16. Use the example projects as your reference
+```bash
+docker exec wallet-mysql mysql -uroot -pekbatan wallet -e \
+  'SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date'
+```
 
-Everything above is distilled from projects that run and are tested on every commit. When a
-snippet here has drifted from reality, they are the truth:
+| action_name | model_type | event_type | delivered |
+| --- | --- | --- | --- |
+| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | `0` |
+| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | `1` |
+| `RaiseAlertAction` | `NULL` | `NULL` | `0` |
+
+</div>
+<div data-db="mariadb">
+
+```bash
+docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e \
+  'SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date'
+```
+
+| action_name | model_type | event_type | delivered |
+| --- | --- | --- | --- |
+| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | `0` |
+| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | `1` |
+| `RaiseAlertAction` | `NULL` | `NULL` | `0` |
+
+</div>
+<div data-db="sqlite">
+
+SQLite has no step here: this page builds a FastAPI service on a server database. Read [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) instead - one module set, a hand-written schema, no container.
+
+</div>
+
+Three rows, each written in the same transaction as the change it describes. Only the deposit is
+delivered: a handler subscribes to `MoneyDepositedEvent`, and nothing subscribes to the opened
+wallet - an event nobody handles stays undelivered rather than being marked done and thrown away,
+so a handler added later still finds it. The alert's row carries no event at all: writing an
+entity emits nothing, and the unit of work is recorded anyway.
+
+## 17. The example projects
+
+When you want to see more than one service's worth, they are the reference:
 
 | | |
 | --- | --- |
-| [`fastapi_wallet_rest_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_pg) | this project, complete, on PostgreSQL |
-| [`fastapi_wallet_rest_mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mysql) · [`_mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mariadb) | the same, on the other dialects |
+| [`fastapi_wallet_rest_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_pg) | this project, on PostgreSQL |
+| [`fastapi_wallet_rest_mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mysql) · [`_mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_mariadb) | the same, on the other databases |
 | [`fastapi_wallet_rest_sharded_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_rest_sharded_pg) | two databases, with placement asserted |
 | [`fastapi_wallet_saga_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi_wallet_saga_pg) | a transfer across shards, with compensation |
-| [`job_worker_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job_worker_pg) | no HTTP at all — a worker running distributed jobs |
-| [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) | one file to read, one command to run, no container |
+| [`job_worker_pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job_worker_pg) | no HTTP at all - a worker running distributed jobs |
+| [`wallet_service_sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet_service_sqlite) | one module set, one command, no container |
 
 ## After setup
 
@@ -1436,9 +965,9 @@ operational: how many pools, how many threads, and what to watch.
 
 ## See also
 
-- [Going to production](/learn/going-to-production/) — threads, pool sizing, what to alert on
-- [Wiring a service](/learn/wiring-a-service/) — the `build()` function in detail
-- [Consuming events](/learn/consuming-events/) — turning those outbox rows into work
+- [Going to production](/learn/going-to-production/) - threads, pool sizing, what to alert on
+- [Wiring a service](/learn/wiring-a-service/) - the `build()` function in detail
+- [Consuming events](/learn/consuming-events/) - turning those outbox rows into work
 - Reference: [schemagen](/reference/schemagen/),
   [Migrations](/reference/migrations/),
   [Wiring with FastAPI](/reference/wiring-fastapi/),

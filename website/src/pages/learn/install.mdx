@@ -18,7 +18,7 @@ for one process and wrong for a cluster.
 ## Install
 
 ```bash
-uv add ekbatan[postgres]
+uv add "ekbatan[postgres]"
 ```
 
 Everything optional is an extra, and nothing you do not name is installed:
@@ -37,7 +37,7 @@ Everything optional is an extra, and nothing you do not name is installed:
 container to reflect your schema — a thing your build does and your deployment must never do:
 
 ```bash
-uv add --dev ekbatan[codegen]
+uv add --dev "ekbatan[codegen]"
 ```
 
 That is the whole of the setup. There is **no counterpart to the Java port's five numbered

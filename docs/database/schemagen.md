@@ -5,7 +5,7 @@ Table definitions that cannot drift from the database, because they are generate
 One command, and four lines of Makefile to make it incremental.
 
 ```
-uv add --dev ekbatan[codegen]
+uv add --dev "ekbatan[codegen]"
 uv run python -m ekbatan.schemagen --migrations migrations --out myapp/schema.py
 ```
 

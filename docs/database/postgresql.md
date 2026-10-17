@@ -6,7 +6,7 @@ every feature the framework wants, without a workaround.
 ## Quick reference
 
 ```
-uv add ekbatan[postgres]
+uv add "ekbatan[postgres]"
 ```
 
 | | |

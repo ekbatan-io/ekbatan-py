@@ -11,7 +11,7 @@ match what each database has applied, a history written in the same transaction 
 migration, repeatable migrations, and a way back from a migration that failed half-way.
 
 ```
-uv add ekbatan[migrations]
+uv add "ekbatan[migrations]"
 ```
 
 ## One call, every shard

@@ -18,8 +18,11 @@ degrade to behaviour that is fine for one process and wrong for a cluster.
 ## Install
 
 ```
-uv add ekbatan[postgres]
+uv add "ekbatan[postgres]"
 ```
+
+The quotes matter: `zsh`, the macOS default shell, reads bare brackets as a glob and stops with
+*"no matches found"*.
 
 Everything optional is an extra, and nothing you do not name is installed:
 
@@ -39,7 +42,7 @@ PyPI, and pinned to the version `ekbatan` was cut with.
 to reflect your schema, which is a thing your build does and your deployment must never do:
 
 ```
-uv add --dev ekbatan[codegen]
+uv add --dev "ekbatan[codegen]"
 ```
 
 That is the whole of the setup. There is no counterpart to Java's five numbered gotchas - no BOM
@@ -79,7 +82,7 @@ container or you regenerate by hand and forget.
 Make is the answer, and it is four lines:
 
 ```make
-schema.py: $(wildcard migrations/*.py)
+schema.py: $(wildcard migrations/*.sql)
 	uv run python -m ekbatan.schemagen --migrations migrations --out $@
 
 lint: schema.py
@@ -92,6 +95,8 @@ Java's compiler has the same dependency and Gradle resolves it the same way.
 
 Every example in [`ekbatan-py-examples/`](../ekbatan-py-examples) carries one of these, as every
 Java example carries a Gradle wrapper. The repository root delegates to them with `$(MAKE) -C`.
+The complete one for a new project - the builders too, and a run and a test target - is on the
+website's *Complete project setup* page.
 
 ## Your first action, end to end
 
@@ -127,7 +132,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
         super().__init__(Wallet, WALLETS, registry)
 ```
 
-That is the whole repository - `get`, `find_where`, `save`, `delete`, counting and existence are
+That is the whole repository - `get`, `find_where`, `add`, `update`, counting and existence are
 inherited, and the mapping between the table and the dataclass is by field name. Nothing needs
 declaring unless a name differs. Java writes `fromRecord` and `toRecord` by hand for the same
 repository, listing every column twice.
