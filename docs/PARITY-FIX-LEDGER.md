@@ -61,3 +61,7 @@ real service does; the fix replaced a migrator the user had vetted with a hand-w
 was a decision the user should have made, not this run. Everything group M did (`EKB-0277`-
 `EKB-0285`) is reverted; the migrator is the yoyo-based one again, as it was at `EKB-0276`. Items
 13-16 and 37-44 stay open as known, accepted differences (Draculas 3, 15, 80-85).
+
+Item 37 was then fixed on top of yoyo at the user's request (2026-10-18, `EKB-0312`): a failed
+migration logs Java's `Migrating <target> failed` and, for a run of targets, `Stopped at <target>;
+already migrated: [...]`, at ERROR. The other items of group M stay open by the user's decision.

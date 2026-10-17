@@ -30,7 +30,9 @@ Each shard's `primaryConfig` is migrated - the replica follows it, and any other
 the member is a pool onto the same schema. Shards go **one at a time, in configuration order**,
 and the run stops at the first failure, naming the shard **and what had already been migrated** -
 half a migrated cluster is a state an operator has to reason about, and the database's own error
-only names a connection. A shard in `shards=` that the configuration does not have is **refused**,
+only names a connection. It is logged as well, at ERROR on `io.ekbatan.flyway.FlywayMigrator`, as
+Java logs it: `Migrating mexico/member-0 (1:0) failed`, then `Stopped at mexico/member-0 (1:0);
+already migrated: [global/member-0]`. A shard in `shards=` that the configuration does not have is **refused**,
 not skipped: a typo in a shard list should not quietly migrate nothing.
 
 It returns a `Result` per shard: the target, and what migrating it did - the version before, the

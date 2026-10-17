@@ -691,6 +691,61 @@ def test_a_failing_shard_stops_the_run_and_names_what_was_already_migrated(backe
     assert "what was applied is skipped" in message, "and what to do about it"
 
 
+def _errors(caplog) -> list[tuple[str, str | None, str | None]]:
+    """The migrator's ERROR lines, each with the shard and target its log context carried."""
+    return [
+        (r.getMessage(), getattr(r, "ekbatanShard", None), getattr(r, "ekbatanTarget", None))
+        for r in caplog.records
+        if r.name == "io.ekbatan.flyway.FlywayMigrator" and r.levelno == logging.ERROR
+    ]
+
+
+def test_a_failed_migration_is_logged_as_java_logs_it(backend, request, files, caplog):
+    """Java's `inLogContext` and builder `migrate()`: `Migrating <target> failed` inside the
+    target's log context, then `Stopped at <target>; already migrated: [...]` outside it."""
+    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
+    files.add("V1__broken.sql", "CREATE TABLE ( THIS IS NOT SQL;")
+
+    with pytest.raises(MigrationError):
+        migrate(single(fresh(backend, request)), files.path)
+
+    assert _errors(caplog) == [
+        ("Migrating default/member-0 (0:0) failed", "0:0", "default/member-0"),
+        ("Stopped at default/member-0 (0:0); already migrated: []", None, None),
+    ]
+
+
+def test_a_failing_shard_is_logged_with_the_shards_migrated_before_it(
+    backend, request, files, caplog
+):
+    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
+    config = two_shards(backend, request)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+    query(
+        config.member(MEXICO).primary_config().sqlalchemy_url(), "CREATE TABLE widgets (id INTEGER)"
+    )
+
+    with pytest.raises(MigrationError):
+        migrate(config, files.path)
+
+    assert _errors(caplog) == [
+        ("Migrating mexico/member-0 (1:0) failed", "1:0", "mexico/member-0"),
+        ("Stopped at mexico/member-0 (1:0); already migrated: [global/member-0]", None, None),
+    ]
+
+
+def test_one_database_outside_a_layout_logs_no_stop_line(backend, request, files, caplog):
+    """Java's single-database `migrate(DataSourceConfig, ...)` runs one target, not a run of
+    them, so it writes only the first line."""
+    caplog.set_level(logging.INFO, logger="io.ekbatan.flyway.FlywayMigrator")
+    files.add("V1__broken.sql", "CREATE TABLE ( THIS IS NOT SQL;")
+
+    with pytest.raises(MigrationError):
+        YoyoMigrator.migrate_data_source(data_source(fresh(backend, request)), files.path)
+
+    assert [message for message, _, _ in _errors(caplog)] == ["Migrating default (0:0) failed"]
+
+
 # -- Java's other entry points ---------------------------------------------------------------
 
 

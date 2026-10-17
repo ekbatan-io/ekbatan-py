@@ -1157,15 +1157,28 @@ def migrate_targets(
     return _run(chosen, _scan(*locations), output_query_results)
 
 
-def _each[T](chosen: Sequence[Target], verb: str, action: Callable[[Target], T]) -> list[T]:
+def _each[T](
+    chosen: Sequence[Target],
+    verb: str,
+    action: Callable[[Target], T],
+    *,
+    log_the_stop: bool = False,
+) -> list[T]:
     """``action`` on each target in turn, stopping at the first that fails - and saying which
-    targets were already done, since the database's own error names none of them."""
+    targets were already done, since the database's own error names none of them.
+
+    ``log_the_stop`` writes it to the log as well, as Java's builder ``migrate()`` does:
+    ``Stopped at <target>; already migrated: [<names>]`` at ERROR, outside the target's log
+    context.
+    """
     results: list[T] = []
     done: list[str] = []
     for each in chosen:
         try:
             results.append(action(each))
         except Exception as error:
+            if log_the_stop:
+                LOG.error("Stopped at %s; already migrated: [%s]", each.label, ", ".join(done))
             message = (
                 str(error)
                 if isinstance(error, MigrationError)
@@ -1180,10 +1193,25 @@ def _each[T](chosen: Sequence[Target], verb: str, action: Callable[[Target], T])
     return results
 
 
-def _run(chosen: Sequence[Target], scripts: Scripts, output_query_results: bool) -> list[Result]:
+def _run(
+    chosen: Sequence[Target],
+    scripts: Scripts,
+    output_query_results: bool,
+    *,
+    log_the_stop: bool = True,
+) -> list[Result]:
+    """Migrate ``chosen`` in turn. ``log_the_stop`` is off only for Java's single-database
+    ``migrate(DataSourceConfig, ...)``, which has no run of targets to stop."""
+
     def one(each: Target) -> Result:
         with _in_log_context(each):
-            outcome = _migrate(each, scripts, output_query_results)
+            try:
+                outcome = _migrate(each, scripts, output_query_results)
+            except Exception:
+                # Java's `inLogContext`: an ERROR line naming the target, inside its log context.
+                # The failure itself is in the exception, which goes on to the caller.
+                LOG.error("Migrating %s failed", each.label)
+                raise
             LOG.info(
                 "%s is at version %s (%d applied)",
                 each.name,
@@ -1192,7 +1220,7 @@ def _run(chosen: Sequence[Target], scripts: Scripts, output_query_results: bool)
             )
         return Result(each, outcome)
 
-    return _each(chosen, "migrated", one)
+    return _each(chosen, "migrated", one, log_the_stop=log_the_stop)
 
 
 class _Failed(Exception):
@@ -1640,8 +1668,11 @@ class YoyoMigrator:
         output_query_results: bool = True,
     ) -> MigrateResult:
         """Java's ``migrate(DataSourceConfig, locations...)``: one database, outside a layout."""
-        (result,) = migrate_targets(
-            [target(data_source)], *locations, output_query_results=output_query_results
+        (result,) = _run(
+            [target(data_source)],
+            _scan(*locations),
+            output_query_results,
+            log_the_stop=False,
         )
         return result.migrate_result
 
