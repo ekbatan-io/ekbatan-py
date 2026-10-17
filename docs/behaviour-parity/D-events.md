@@ -154,4 +154,4 @@ Most surprising first.
 - **Match Java?** yes, trivial.
 - **Surprise:** low
 
-**Totals:** 37 behaviours: 22 same, 14 differ, 1 read.
+**Totals:** 37 behaviours: 22 same, 14 differ, 1 read. After the parity fixes of group E (`EKB-0270`-`EKB-0275`): 31 same, 5 differ (14, 16, 31, 32, 34), 1 read.

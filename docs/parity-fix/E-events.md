@@ -12,3 +12,15 @@ Commits `EKB-0270`..`EKB-0276`.
 | 20 | 18 | failing row expires one retry late | as Java: expire as soon as the next retry would land past the deadline | done | `EKB-0273` | `test_a_failing_row_expires_as_soon_as_its_next_retry_would_land_past_the_deadline` fails on the old code (all 4 dbs); probe `x.step1`-`x.step5` (no `x.step6` any more) and `x.near_deadline.first_failure` now match Java. `x.boundary.*` still differ: that is scan row 16 (exactly at the edge), not in items 1-44 |
 | 18 | 21 | one failed outcome write rolls back the batch | as Java: each outcome group its own auto-committed statement, in Java's order | done | `EKB-0274` | `test_a_failed_outcome_write_keeps_the_outcomes_already_written` fails on the old code (all 4 dbs); probe `t.outcome_write_failed.ok_row: SUCCEEDED`, `ok_calls_after_two_rounds: 1` now match Java |
 | 12 | 29 | hand-built handling job never runs (Dracula 11) | as Java: always `FixedDelay(poll delay)`, default 1 s; the job no longer reads `handling.enabled` - the wiring does, as Java's DI does | done | `EKB-0275` | `test_a_handling_job_built_by_hand_runs_as_java_s_does` and `test_they_are_scheduled_at_a_fixed_delay` fail on the old code; probe `j.handling.schedule_default: FixedDelay` now matches Java; the 21 examples pass `.enabled(config.handling.enabled)` |
+
+## Whole-change checks (at `EKB-0275`)
+
+- `uv run pytest --dialects=all`: 2444 passed, 51 skipped, 0 failed (SQLite, PostgreSQL, MySQL,
+  MariaDB). At `EKB-0270`: 2412 passed, 67 skipped, 0 failed.
+- `make test-gevent`: 1271 passed, 39 skipped.
+- `make lint`: ruff, format, mypy clean; `links.py` reports only the four other groups' ledgers,
+  which exist once the groups are merged; every later lint step passes.
+- `make examples`: all 21 pass.
+- `cd website && npm run build`: 54 pages built.
+- Probe: Java rerun, unchanged (144 lines). Python now differs from Java only on rows outside
+  these items: 9 (`attempt`), 14 (missing handler), 16 (exact edge), 31, 32, 33's wording, 34.

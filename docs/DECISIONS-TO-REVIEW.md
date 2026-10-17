@@ -380,6 +380,22 @@ rule "match Java". Ledger: [`parity-fix/L-locks-jobs.md`](parity-fix/L-locks-job
 | `stop()` with a job past `shutdown_max_wait`: kept as a limit; one wait, then return; an INFO line "Cannot interrupt executor service threads in Python" where Java logs its interrupt | a second wait without an interrupt only delays the return; Java returns after the first wait for a job its interrupt ended, and the scan measured both at 1 s | waits, interrupts, waits again (up to 2x) |
 | the Redis provider keeps wrapping a Redis failure as `LockAcquisitionError` | Java's own contract says a backend failure is `LockAcquisitionException`; its Redis provider lets Redisson's `RedisException` through, which is a Java bug (below) | lets `RedisException` escape |
 
+## Events as Java's (parity fix group E, `EKB-0270`-`EKB-0276`)
+
+Asked by the user on 2026-10-17: fix items 11, 12, 17, 18, 19 and 20 of the parity scan, matching
+Java. See `docs/parity-fix/E-events.md`. No exceptions were needed: Python can do all of it, and
+none of Java's behaviour here is a bug.
+
+| decision | why | who |
+| --- | --- | --- |
+| `find_undelivered` and `find_due` take a connection of their own, never the open transaction (`EKB-0270`); the outbox repository's reads (`count`, `find_all`, `find_by_action_id`) still join it | Java's two event reads use `readonlyDb()` / `db()`; Java's outbox repository uses `txDbElseDb` for every read, so Python already matched there | the user |
+| fan-out reads the replica, handling reads the primary (`EKB-0271`) | Java's choice: a lagging replica makes fan-out late, never wrong (the unique key drops a second insert), while a stale due row would call a handler twice. Overrides the earlier Python reasoning that fan-out should read and mark in one transaction | the user |
+| a new notification is due at its event's `event_date` (`EKB-0272`) | Java's; an older event fanned out late is handled first, a future-dated one waits | the user |
+| a failure expires at once when its next retry would land past `event_date + retention`, judged against one clock reading taken after the whole batch (`EKB-0273`) | Java's `postInvokeNow` rule; the per-row log lines moved with the decision: the failure is logged when it happens, retry-or-discard once the batch is done | the user |
+| outcome buckets are written one auto-committed statement each, in Java's order - pre-flight expiries, successes, post-failure expiries, retries - and this port's own "no handler" bucket last (`EKB-0274`) | Java's; a failed write keeps the outcomes before it, so a succeeded handler is not called again. Overrides the earlier all-or-nothing choice | the user |
+| a hand-built `EventHandlingJob` runs on `FixedDelay(poll delay)`, 1 s by default, and no longer reads `handling.enabled`; it keeps an `enabled=` argument (default `True`), and the examples pass `enabled=config.handling.enabled` (`EKB-0275`) | Java's job always runs and its DI wiring reads the switch by not creating the job. With no DI here, `build()` is the wiring, and `enabled=False` (a `DisabledSchedule`) is the nearest thing to "not created" that still lets one list of jobs be built either way | built |
+| scan rows 14 (a missing handler is not a failed attempt) and 16 (exactly at the retention edge) left as they are | not in items 1-44; the probe still shows them (`e.round*.ghost`, `x.boundary.*`) | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails
