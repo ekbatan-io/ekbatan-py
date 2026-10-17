@@ -237,10 +237,10 @@ PROBE redis.conn_drop.new_owner_key_survives_old_close: true
 PROBE redis.interrupt_waiting_acquire: no-api
 PROBE-DONE redis
 PROBE pg.lock_timeout_after_timed_out_try.got: false
-PROBE pg.lock_timeout_after_timed_out_try.next_borrower_sees: 200ms
+PROBE pg.lock_timeout_after_timed_out_try.next_borrower_sees: 0
 PROBE pg.lock_timeout_after_acquired_try.got: true
 PROBE pg.lock_timeout_after_acquired_try.next_borrower_sees: 0
-PROBE pg.backend_down.is_lock_acquisition_error: false
-PROBE pg.backend_down.type: OperationalError
+PROBE pg.backend_down.is_lock_acquisition_error: true
+PROBE pg.backend_down.type: LockAcquisitionError
 PROBE-DONE pgOnly
 PROBE pg.on_asyncio_loop: ValidationError

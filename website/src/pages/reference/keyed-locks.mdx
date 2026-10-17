@@ -42,7 +42,8 @@ wrongly under pressure:
   code — it is the promise that the lock is released even if this process dies holding it. Set
   it above the worst case for the work inside.
 - **Contention is not failure.** `try_acquire` returns `None` when the lease cannot be had
-  inside `max_wait`; `acquire` raises `LockAcquisitionError`. Keeping those distinguishable is
+  inside `max_wait`, and `acquire` simply waits longer. A broken backend - an unreachable
+  database included - raises `LockAcquisitionError`, as in Java. Keeping those distinguishable is
   what lets an HTTP handler answer 503 with a `Retry-After` instead of 500.
 - **The key is a string you choose**, and its granularity is the whole design. `wallet:{id}`
   serialises one wallet; `wallets` serialises every wallet, which is a different product.

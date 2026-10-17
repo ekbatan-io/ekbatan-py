@@ -105,7 +105,13 @@ class SqlKeyedLockProvider(ABC):
         # every later statement on the connection until it is rolled back, which is how a
         # timed-out `try_acquire` came to report itself as a backend failure. An advisory lock
         # is session-scoped in both Postgres and MySQL, so there is no transaction to want.
-        conn = self._engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+        try:
+            conn = self._engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+        except Exception as exc:
+            # Drawing the connection is part of taking the lock, so an unreachable database is a
+            # LockAcquisitionError like any other backend failure, as in Java. Nothing to give
+            # back: the connection was never handed over.
+            raise LockAcquisitionError(key, "could not obtain a connection") from exc
         try:
             acquired = self._try_lock(conn, hashed, wait)
         except LockAcquisitionError:

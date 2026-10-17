@@ -52,7 +52,7 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 30 | Interrupting a thread waiting in `acquire` | `InterruptedException` | no way to do it | differs | locks `interrupt_waiting_acquire` |
 | 31 | PG: `lock_timeout` on the pooled connection after a timed-out bounded wait | `0` | `0` (was: `200ms` stays on it; fixed in EKB-0263) | same | locks `pg.lock_timeout_after_timed_out_try` |
 | 32 | PG: `lock_timeout` after a bounded wait that got the lock | `0` | `0` | same | locks `pg.lock_timeout_after_acquired_try` |
-| 33 | Database unreachable on `tryAcquire` | `LockAcquisitionException` | raw `OperationalError` | differs | locks `pg.backend_down.*` |
+| 33 | Database unreachable on `tryAcquire` | `LockAcquisitionException` | `LockAcquisitionError` (was: raw `OperationalError`; fixed in EKB-0264) | same | locks `pg.backend_down.*` |
 | 34 | Taking a lock on an asyncio event loop's thread | (nothing like it) | refused, `ValidationError` (EKB-0250) | differs | locks `pg.on_asyncio_loop` |
 | 35 | Registry build checks: no jobs, no database, null job, blank or duplicate name, null schedule, zero or negative poll, zero heartbeat, negative shutdown wait | refused; zero shutdown wait accepted | same | same | jobs `validate.*` |
 | 36 | `JobsConfig` checks and defaults | zero intervals and negative wait refused, 1 µs accepted, all unset by default | same | same | jobs `config.*` |
@@ -95,6 +95,8 @@ connection inherits a 200 ms `lock_timeout`, and ordinary statements on that eng
 failing with lock timeouts.
 Java `PostgresKeyedLockProvider.java:182-185`. Python `locks/sql.py:175-183`.
 Python can match: reset in a `finally`. Cheap.
+
+> **Fixed in EKB-0264:** the connection is drawn inside the `try`. Rerun: `pg.backend_down.is_lock_acquisition_error: true`, as Java.
 
 **33. An unreachable database is not a `LockAcquisitionError`** (surprise: medium). Java wraps a
 failed connection as `LockAcquisitionException` ("could not obtain a connection"). Python opens

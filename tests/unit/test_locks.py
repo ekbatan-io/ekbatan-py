@@ -279,3 +279,40 @@ def test_closing_an_inner_lease_twice_does_not_free_the_outer_hold():
     outer.release()
     outer.release()
     assert released == ["CLOSED"], "the outermost close frees it, once"
+
+
+# -- an unreachable database ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("provider", "url"),
+    [
+        ("PostgresKeyedLockProvider", "postgresql+psycopg://u:{pw}@127.0.0.1:1/x"),
+        ("MySQLKeyedLockProvider", "mysql+pymysql://u:{pw}@127.0.0.1:1/x"),
+        ("MariaDBKeyedLockProvider", "mysql+pymysql://u:{pw}@127.0.0.1:1/x"),
+    ],
+)
+def test_an_unreachable_database_is_a_lock_acquisition_error(provider, url):
+    """Java wraps a failed connection as `LockAcquisitionException` ("could not obtain a
+    connection"), so a caller's `except` for the documented type catches the most likely
+    failure of all. The password is in no message along the way."""
+    from sqlalchemy import create_engine
+
+    from ekbatan.errors import LockAcquisitionError
+    from ekbatan.locks import sql
+
+    marker = "Marker-Pw-5f3a9"
+    engine = create_engine(url.format(pw=marker), pool_size=1, max_overflow=0)
+    locks = getattr(sql, provider)(engine)
+    try:
+        for attempt in (
+            lambda: locks.try_acquire("k", timedelta(0), HOLD),
+            lambda: locks.acquire("k", HOLD),
+        ):
+            with pytest.raises(LockAcquisitionError, match="could not obtain a connection") as e:
+                attempt()
+            assert e.value.key == "k"
+            chain = [e.value, e.value.__cause__]
+            assert all(marker not in str(x) and marker not in repr(x) for x in chain)
+    finally:
+        engine.dispose()

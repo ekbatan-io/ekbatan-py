@@ -363,6 +363,16 @@ the user's choice. See `docs/EXAMPLES-MATRIX-LEDGER.md`.
 | root mypy checks the uv projects only | the twins are the same files; checking all three would type-check one file three times under one module name | built |
 | the website's picker names the example for the database **and** the installer | the choice the user asked the docs to follow | built |
 
+## Parity fixes, group L: locks and jobs (`EKB-0263`-`EKB-0269`)
+
+Items 2 and 30-35 of the parity scan's importance table, fixed unattended on 2026-10-17 under the
+rule "match Java". Ledger: [`parity-fix/L-locks-jobs.md`](parity-fix/L-locks-jobs.md).
+
+| decision | why | what Java does |
+| --- | --- | --- |
+| an unreachable database is a `LockAcquisitionError` ("could not obtain a connection") on every SQL provider | the documented error for a backend failure; it used to escape as SQLAlchemy's `OperationalError` | wraps the failed connection the same way |
+| the Redis provider keeps wrapping a Redis failure as `LockAcquisitionError` | Java's own contract says a backend failure is `LockAcquisitionException`; its Redis provider lets Redisson's `RedisException` through, which is a Java bug (below) | lets `RedisException` escape |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails
@@ -403,6 +413,13 @@ removed a collision: two fields called `retries` meaning different things.
 | The wallet fixture gained a JSON list column and a nullable integer | `EKB-0134` | Java's `Dummy` fixture carries both deliberately - `aliases` is "a value that can only reach the database through a converter", `rewardPoints` is "nullable on purpose ... a batch write in which every row leaves this null is what exposes an untyped NULL bind". This port's fixture had neither, so neither path was tested. Adding them **immediately failed on Postgres**: SQLAlchemy renders a bare `None` inside `VALUES` as the literal `NULL` rather than a bound parameter, dropping the declared type, and Postgres then infers `text` - so `reward_points=v.reward_points` failed with "column is of type integer but expression is of type text". The suite's one existing all-null case used a nullable *text* column, which is the single type an uncast NULL happens to infer as. Fixed by casting; verified against all four dialects |
 
 ## Noticed in the Java, not acted on
+
+- **`RedisKeyedLockProvider` does not wrap a Redis failure** (found by parity group L,
+  2026-10-17). `KeyedLockProvider`'s javadoc says "a backend failure raises
+  `LockAcquisitionException`"; the Redis provider calls `rlock.tryLock` / `lockInterruptibly`
+  with no `catch`, so an unreachable Redis reaches the caller as Redisson's `RedisException` (run:
+  `tryAcquire` against a closed port threw `RedisException`).
+  The SQL providers wrap. ekbatan-py wraps in all four.
 
 See the table at the top of `JAVA-PARITY-LEDGER.md`: `EmbeddedBitsShardingStrategy` decodes shard
 bits from a `ShardedId` with no version guard, while the `Id` branch beside it has one.
