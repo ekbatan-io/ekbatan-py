@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from ekbatan.clock import VirtualClock
-from ekbatan.errors import EntityNotFoundError, StaleRecordError
+from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
 from ekbatan.persistence import DatabaseRegistry
 from ekbatan.repository import AbstractRepository
@@ -687,3 +687,36 @@ def test_an_integer_column_set_in_some_rows_and_null_in_others(wallets):
         key=lambda w: (w.reward_points is None, w.reward_points or 0),
     )
     assert [w.reward_points for w in back] == [10, 30, None]
+
+
+# --------------------------------------------------------------------------- None, as Java's null
+
+
+@pytest.mark.parametrize(
+    ("call", "message"),
+    [
+        (lambda repo: repo.add_all(None), "Models collection cannot be null"),
+        (lambda repo: repo.update_all(None), "Models collection cannot be null"),
+        (lambda repo: repo.add_all_no_result(None), "Models collection cannot be null"),
+        (lambda repo: repo.update_all_no_result(None), "Models collection cannot be null"),
+        (lambda repo: repo.add(None), "Model cannot be null"),
+        (lambda repo: repo.add_no_result(None), "Model cannot be null"),
+        (lambda repo: repo.update(None), "Model cannot be null"),
+        (lambda repo: repo.update_no_result(None), "Model cannot be null"),
+        (lambda repo: repo.add_all([None]), "Model cannot be null"),
+        (lambda repo: repo.add_all([a_wallet(), None]), "Model in collection cannot be null"),
+    ],
+)
+def test_none_is_refused_with_javas_message_and_nothing_is_written(wallets, call, message):
+    """Java's `Validate.notNull` checks. A `None` batch used to be read as empty and do nothing,
+    and a `None` model failed on its first attribute."""
+    with pytest.raises(ValidationError, match=f"^{message}$"):
+        call(wallets)
+    assert wallets.count() == 0
+
+
+def test_an_entity_repository_names_entities(notifications):
+    with pytest.raises(ValidationError, match=r"^Entities collection cannot be null$"):
+        notifications.add_all(None)
+    with pytest.raises(ValidationError, match=r"^Entity cannot be null$"):
+        notifications.add(None)

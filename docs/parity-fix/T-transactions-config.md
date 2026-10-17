@@ -16,7 +16,7 @@ password), databases `testdb` and `replicadb`; the Java probes ran in a throwawa
 | 27 | YAML policy `useDefaultShard` refused | normalise as Java: keep only letters, any case; empty or `None` is the default - in the file loader, `ShardingConfig`, its builder and the registry (rows 12, 13 and 17 follow) | done | `EKB-0303` | `test_unknown_shard_policy_is_read_as_java_reads_it` and `test_the_policy_in_a_file_is_read_as_java_reads_it` fail on the old code (15 cases); pure probe `policy.*` now all as Java (`useDefaultShard`, `padded_fail`, `empty_string`, `null_value`, `config_builder_null`) |
 | 28 | Pool of 3 holds 1 connection after one query (Dracula 10) | fill to the maximum in the background, as Hikari's `minimumIdle` default | todo | | |
 | 29 | Wrong password fails at once; Java retries for 30 s | retry as Hikari for `pool_timeout` (Hikari's `connectionTimeout`, 30 s) | todo | | |
-| 36 | `add_all(None)` and friends do nothing | refuse with Java's message "Models collection cannot be null" (and "Model cannot be null") | todo | | |
+| 36 | `add_all(None)` and friends do nothing | refuse with Java's messages: "Models collection cannot be null", "Model cannot be null", "Model in collection cannot be null" ("Entities"/"Entity" on an entity repository), as `ValidationError` like the port's other argument checks; also the single-row calls (A row 10) | done | `EKB-0304` | `test_none_is_refused_with_javas_message_and_nothing_is_written` (10 cases) and `test_an_entity_repository_names_entities` fail on the old code; A probe `*.null*.msg` lines now Java's word for word on PostgreSQL, MySQL and MariaDB |
 
 ## Measured before deciding
 

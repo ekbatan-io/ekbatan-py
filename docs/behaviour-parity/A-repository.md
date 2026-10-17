@@ -33,8 +33,8 @@ Dracula 57); a row is `same` when both raise the matching error at the same poin
 | 6 | `addAll` returns rows in input order (all dialects) | yes | yes | same | `addAll.two.order_kept` |
 | 7 | `addNoResult` writes and returns nothing | yes | yes | same | `addNoResult.row_exists` |
 | 8 | Empty list to `addAll` / `updateAll` / `addAllNoResult` | empty result, no SQL | same | same | `addAll.empty.size`, `updateAll.empty.size` |
-| 9 | `null` collection to `addAll` / `updateAll` / `addAllNoResult` | `NullPointerException` "Models collection cannot be null" | returns `[]` / nothing, silently | differs | `addAll.null`, `updateAll.null_collection`, `addAllNoResult.null` |
-| 10 | `null` model to `add` / `addNoResult` / `update`, or inside `addAll` | `NullPointerException` "Model cannot be null" / "Model in collection cannot be null"; nothing written | `AttributeError: 'NoneType' object has no attribute ...`; nothing written | differs | `add.null`, `update.null`, `addAll.null_element*` |
+| 9 | `null` collection to `addAll` / `updateAll` / `addAllNoResult` | `NullPointerException` "Models collection cannot be null" | same message, as `ValidationError` (fixed in EKB-0304) | same | `addAll.null`, `updateAll.null_collection`, `addAllNoResult.null` |
+| 10 | `null` model to `add` / `addNoResult` / `update`, or inside `addAll` | `NullPointerException` "Model cannot be null" / "Model in collection cannot be null"; nothing written | same messages, as `ValidationError`; nothing written (fixed in EKB-0304) | same | `add.null`, `update.null`, `addAll.null_element*` |
 | 11 | Duplicate id on `add` or inside a batch | driver error passed through (`IntegrityConstraintViolationException`) | driver error passed through (`IntegrityError`) | same | `add.duplicate_id`, `addAll.duplicate_id_in_batch` |
 | 12 | `update` returns version + 1 and the row holds it | 2, 2 | 2, 2 | same | `update.version`, `update.db_version` |
 | 13 | `update` leaves `updated_date` and `created_date` as they were | yes | yes | same | `update.updated_date` |
@@ -98,7 +98,8 @@ written. Java `domain/Model.java:84-86`; Python `domain.py:654`, `clock.py:132`.
 partly - keep the value aware in memory and drop the zone only on the way to the column; touches
 the model, the mapper and every test that compares dates. Surprise: **high**.
 
-**9. A `null` collection is accepted silently.** `add_all(None)`, `update_all(None)` and
+**9. A `null` collection is accepted silently.** **Fixed** (`EKB-0304`): refused with Java's
+message. `add_all(None)`, `update_all(None)` and
 `add_all_no_result(None)` return `[]` or nothing - the `if not models` check treats `None` as
 empty. Java throws `NullPointerException` "Models collection cannot be null", so a caller's bug
 shows. Java `repository/AbstractRepository.java:381, 426, 535, 572`; Python `repository.py:725,
@@ -125,7 +126,8 @@ Python puts them back in input order. MySQL and MariaDB keep input order in both
 by dropping the reorder - but Python's order is the one a caller can rely on; Java could adopt
 it instead. Surprise: low.
 
-**10. A `null` model fails with `AttributeError`.** Java checks first and says "Model cannot be
+**10. A `null` model fails with `AttributeError`.** **Fixed** (`EKB-0304`): refused first, with
+Java's messages. Java checks first and says "Model cannot be
 null" / "Model in collection cannot be null"; Python fails on the first attribute it reads
 (`'NoneType' object has no attribute 'id'` / `'next_version'`). Nothing is written in either.
 Java `repository/AbstractRepository.java:353, 374, 393, 457`; Python `repository.py:702, 729,

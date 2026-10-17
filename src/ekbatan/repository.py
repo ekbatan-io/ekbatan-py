@@ -699,11 +699,11 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
 
     def add(self, model: M) -> M:
         """Insert one row and hand back what the database now holds."""
-        return self.add_all([model])[0]
+        return self.add_all([self._one(model)])[0]
 
     def add_no_result(self, model: M) -> None:
         """Insert one row without reading it back."""
-        self.add_all_no_result([model])
+        self.add_all_no_result([self._one(model)])
 
     def add_all(self, models: Sequence[M]) -> list[M]:
         """Insert, one statement however many rows there are, and read the rows back.
@@ -722,7 +722,7 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
         ``uuid4()`` passed where an ``Id[Notification]`` belongs would otherwise come back raw on
         MySQL and wrapped on every other database - the same call, two shapes.
         """
-        if not models:
+        if not self._all(models):
             return []
         shard = self.shard_of_all(models)
         stamped = list(models)
@@ -750,7 +750,7 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
         For the thousand-row import whose rows nobody is going to read. Never asks for
         ``RETURNING``, so nothing crosses the wire on the way home.
         """
-        if not models:
+        if not self._all(models):
             return
         with self._writing("BATCH_INSERT", len(models)):
             shard = self.shard_of_all(models)
@@ -760,10 +760,10 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
 
     def update(self, model: M) -> M:
         """Update one row under the optimistic lock, and hand back what the database holds."""
-        return self.update_all([model])[0]
+        return self.update_all([self._one(model)])[0]
 
     def update_no_result(self, model: M) -> None:
-        self.update_all_no_result([model])
+        self.update_all_no_result([self._one(model)])
 
     def update_all(self, models: Sequence[M]) -> list[M]:
         """Update under the optimistic lock and read the rows back.
@@ -785,15 +785,40 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
         every row's version changes, so no row can be reported unaffected for having been
         written its own values.
         """
-        written = self._apply_updates(models, read_back=True)
+        written = self._apply_updates(self._all(models), read_back=True)
         return written if written is not None else []
 
     def update_all_no_result(self, models: Sequence[M]) -> None:
         """Update without reading anything back."""
-        if not models:
+        if not self._all(models):
             return
         with self._writing("BATCH_UPDATE", len(models)):
             self._apply_updates(models, read_back=False)
+
+    def _kind(self) -> str:
+        """Java's ``getDomainTypeName()``: what its null messages call the row."""
+        return "Model" if issubclass(self.model_type, Model) else "Entity"
+
+    def _one(self, model: M) -> M:
+        """Java's ``Validate.notNull(domainObject, "Model cannot be null")``."""
+        if model is None:
+            raise ValidationError(f"{self._kind()} cannot be null")
+        return model
+
+    def _all(self, models: Sequence[M]) -> Sequence[M]:
+        """Java's checks on a batch: the collection, then each element.
+
+        ``None`` is refused rather than read as empty - a caller's bug, shown where it is. A
+        batch of one is checked as Java's is, which hands it to the single-row call.
+        """
+        if models is None:
+            name = "Entities" if self._kind() == "Entity" else "Models"
+            raise ValidationError(f"{name} collection cannot be null")
+        if len(models) == 1:
+            self._one(models[0])
+        elif any(model is None for model in models):
+            raise ValidationError(f"{self._kind()} in collection cannot be null")
+        return models
 
     @contextmanager
     def _writing(self, operation: str, size: int) -> Iterator[None]:

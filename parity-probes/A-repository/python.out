@@ -15,16 +15,18 @@ PROBE pg.addAll.two.order_kept: true
 PROBE pg.addAll.two.same_instances: false
 PROBE pg.addAll.two.events_on_result: 0
 PROBE pg.addAll.one.same_instance: false
-PROBE pg.addAll.null: no error -> []
-PROBE pg.addAll.null_element.err: AttributeError
-PROBE pg.addAll.null_element.msg: 'NoneType' object has no attribute 'id'
+PROBE pg.addAll.null.err: ValidationError
+PROBE pg.addAll.null.msg: Models collection cannot be null
+PROBE pg.addAll.null_element.err: ValidationError
+PROBE pg.addAll.null_element.msg: Model in collection cannot be null
 PROBE pg.addAll.null_element.first_row_written: false
-PROBE pg.add.null.err: AttributeError
-PROBE pg.add.null.msg: 'NoneType' object has no attribute 'id'
-PROBE pg.addNoResult.null.err: AttributeError
-PROBE pg.addNoResult.null.msg: 'NoneType' object has no attribute 'id'
+PROBE pg.add.null.err: ValidationError
+PROBE pg.add.null.msg: Model cannot be null
+PROBE pg.addNoResult.null.err: ValidationError
+PROBE pg.addNoResult.null.msg: Model cannot be null
 PROBE pg.addAllNoResult.empty: no error -> ok
-PROBE pg.addAllNoResult.null: no error -> ok
+PROBE pg.addAllNoResult.null.err: ValidationError
+PROBE pg.addAllNoResult.null.msg: Models collection cannot be null
 PROBE pg.add.duplicate_id.err: IntegrityError
 PROBE pg.addAll.duplicate_id_in_batch.err: IntegrityError
 PROBE pg.update.version: 2
@@ -43,8 +45,8 @@ PROBE pg.update.missing.msg: expected to update 1 Wallet row(s) but matched 0; o
 PROBE pg.updateNoResult.missing.err: StaleRecordError
 PROBE pg.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
 PROBE pg.updateNoResult.db_version: 4
-PROBE pg.update.null.err: AttributeError
-PROBE pg.update.null.msg: 'NoneType' object has no attribute 'next_version'
+PROBE pg.update.null.err: ValidationError
+PROBE pg.update.null.msg: Model cannot be null
 PROBE pg.delete.returned_state: DELETED
 PROBE pg.delete.returned_version: 2
 PROBE pg.delete.findById_present: false
@@ -67,7 +69,8 @@ PROBE pg.updateAll.same_row_twice.db_version: 2
 PROBE pg.updateAllNoResult.same_row_twice.err: StaleRecordError
 PROBE pg.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
 PROBE pg.updateAll.null_column_every_row: no error -> None
-PROBE pg.updateAll.null_collection: no error -> []
+PROBE pg.updateAll.null_collection.err: ValidationError
+PROBE pg.updateAll.null_collection.msg: Models collection cannot be null
 PROBE pg.findById.missing: false
 PROBE pg.getById.missing.err: EntityNotFoundError
 PROBE pg.getById.missing.msg: no Wallet with id UUID('<uuid>')
@@ -131,16 +134,18 @@ PROBE mysql.addAll.two.order_kept: true
 PROBE mysql.addAll.two.same_instances: false
 PROBE mysql.addAll.two.events_on_result: 0
 PROBE mysql.addAll.one.same_instance: false
-PROBE mysql.addAll.null: no error -> []
-PROBE mysql.addAll.null_element.err: AttributeError
-PROBE mysql.addAll.null_element.msg: 'NoneType' object has no attribute 'id'
+PROBE mysql.addAll.null.err: ValidationError
+PROBE mysql.addAll.null.msg: Models collection cannot be null
+PROBE mysql.addAll.null_element.err: ValidationError
+PROBE mysql.addAll.null_element.msg: Model in collection cannot be null
 PROBE mysql.addAll.null_element.first_row_written: false
-PROBE mysql.add.null.err: AttributeError
-PROBE mysql.add.null.msg: 'NoneType' object has no attribute 'id'
-PROBE mysql.addNoResult.null.err: AttributeError
-PROBE mysql.addNoResult.null.msg: 'NoneType' object has no attribute 'id'
+PROBE mysql.add.null.err: ValidationError
+PROBE mysql.add.null.msg: Model cannot be null
+PROBE mysql.addNoResult.null.err: ValidationError
+PROBE mysql.addNoResult.null.msg: Model cannot be null
 PROBE mysql.addAllNoResult.empty: no error -> ok
-PROBE mysql.addAllNoResult.null: no error -> ok
+PROBE mysql.addAllNoResult.null.err: ValidationError
+PROBE mysql.addAllNoResult.null.msg: Models collection cannot be null
 PROBE mysql.add.duplicate_id.err: IntegrityError
 PROBE mysql.addAll.duplicate_id_in_batch.err: IntegrityError
 PROBE mysql.update.version: 2
@@ -159,8 +164,8 @@ PROBE mysql.update.missing.msg: expected to update 1 Wallet row(s) but matched 0
 PROBE mysql.updateNoResult.missing.err: StaleRecordError
 PROBE mysql.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
 PROBE mysql.updateNoResult.db_version: 4
-PROBE mysql.update.null.err: AttributeError
-PROBE mysql.update.null.msg: 'NoneType' object has no attribute 'next_version'
+PROBE mysql.update.null.err: ValidationError
+PROBE mysql.update.null.msg: Model cannot be null
 PROBE mysql.delete.returned_state: DELETED
 PROBE mysql.delete.returned_version: 2
 PROBE mysql.delete.findById_present: false
@@ -183,7 +188,8 @@ PROBE mysql.updateAll.same_row_twice.db_version: 2
 PROBE mysql.updateAllNoResult.same_row_twice.err: StaleRecordError
 PROBE mysql.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
 PROBE mysql.updateAll.null_column_every_row: no error -> None
-PROBE mysql.updateAll.null_collection: no error -> []
+PROBE mysql.updateAll.null_collection.err: ValidationError
+PROBE mysql.updateAll.null_collection.msg: Models collection cannot be null
 PROBE mysql.findById.missing: false
 PROBE mysql.getById.missing.err: EntityNotFoundError
 PROBE mysql.getById.missing.msg: no Wallet with id UUID('<uuid>')
@@ -247,16 +253,18 @@ PROBE mariadb.addAll.two.order_kept: true
 PROBE mariadb.addAll.two.same_instances: false
 PROBE mariadb.addAll.two.events_on_result: 0
 PROBE mariadb.addAll.one.same_instance: false
-PROBE mariadb.addAll.null: no error -> []
-PROBE mariadb.addAll.null_element.err: AttributeError
-PROBE mariadb.addAll.null_element.msg: 'NoneType' object has no attribute 'id'
+PROBE mariadb.addAll.null.err: ValidationError
+PROBE mariadb.addAll.null.msg: Models collection cannot be null
+PROBE mariadb.addAll.null_element.err: ValidationError
+PROBE mariadb.addAll.null_element.msg: Model in collection cannot be null
 PROBE mariadb.addAll.null_element.first_row_written: false
-PROBE mariadb.add.null.err: AttributeError
-PROBE mariadb.add.null.msg: 'NoneType' object has no attribute 'id'
-PROBE mariadb.addNoResult.null.err: AttributeError
-PROBE mariadb.addNoResult.null.msg: 'NoneType' object has no attribute 'id'
+PROBE mariadb.add.null.err: ValidationError
+PROBE mariadb.add.null.msg: Model cannot be null
+PROBE mariadb.addNoResult.null.err: ValidationError
+PROBE mariadb.addNoResult.null.msg: Model cannot be null
 PROBE mariadb.addAllNoResult.empty: no error -> ok
-PROBE mariadb.addAllNoResult.null: no error -> ok
+PROBE mariadb.addAllNoResult.null.err: ValidationError
+PROBE mariadb.addAllNoResult.null.msg: Models collection cannot be null
 PROBE mariadb.add.duplicate_id.err: IntegrityError
 PROBE mariadb.addAll.duplicate_id_in_batch.err: IntegrityError
 PROBE mariadb.update.version: 2
@@ -275,8 +283,8 @@ PROBE mariadb.update.missing.msg: expected to update 1 Wallet row(s) but matched
 PROBE mariadb.updateNoResult.missing.err: StaleRecordError
 PROBE mariadb.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
 PROBE mariadb.updateNoResult.db_version: 4
-PROBE mariadb.update.null.err: AttributeError
-PROBE mariadb.update.null.msg: 'NoneType' object has no attribute 'next_version'
+PROBE mariadb.update.null.err: ValidationError
+PROBE mariadb.update.null.msg: Model cannot be null
 PROBE mariadb.delete.returned_state: DELETED
 PROBE mariadb.delete.returned_version: 2
 PROBE mariadb.delete.findById_present: false
@@ -299,7 +307,8 @@ PROBE mariadb.updateAll.same_row_twice.db_version: 2
 PROBE mariadb.updateAllNoResult.same_row_twice.err: StaleRecordError
 PROBE mariadb.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
 PROBE mariadb.updateAll.null_column_every_row: no error -> None
-PROBE mariadb.updateAll.null_collection: no error -> []
+PROBE mariadb.updateAll.null_collection.err: ValidationError
+PROBE mariadb.updateAll.null_collection.msg: Models collection cannot be null
 PROBE mariadb.findById.missing: false
 PROBE mariadb.getById.missing.err: EntityNotFoundError
 PROBE mariadb.getById.missing.msg: no Wallet with id UUID('<uuid>')
