@@ -1,0 +1,18 @@
+diff --git a/ekbatan-flyway/build.gradle.kts b/ekbatan-flyway/build.gradle.kts
+index f61fcaf..d7905bb 100644
+--- a/ekbatan-flyway/build.gradle.kts
++++ b/ekbatan-flyway/build.gradle.kts
+@@ -33,4 +33,13 @@ dependencies {
+     // A real SLF4J backend for the tests only. Without one the MDC is a no-op, and a test of what
+     // the migrator puts in it would pass without proving anything.
+     testRuntimeOnly("org.slf4j:slf4j-jdk14:${project.property("slf4jVersion")}")
++
++    // PARITY-PROBE (temporary, worktree only)
++    testImplementation("org.flywaydb:flyway-database-postgresql:${project.property("flywayVersion")}")
++    testImplementation("org.flywaydb:flyway-mysql:${project.property("flywayVersion")}")
++    testImplementation("org.postgresql:postgresql:${project.property("postgresqlVersion")}")
++    testRuntimeOnly("com.mysql:mysql-connector-j:${project.property("mysqlConnectorVersion")}")
++    testRuntimeOnly("org.mariadb.jdbc:mariadb-java-client:${project.property("mariadbJavaClientVersion")}")
+ }
++
++tasks.withType<Test> { outputs.upToDateWhen { false } }

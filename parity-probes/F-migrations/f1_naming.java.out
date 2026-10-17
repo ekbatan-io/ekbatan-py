@@ -1,0 +1,179 @@
+PROBE pg.accept.outcome: OK applied=13
+PROBE pg.accept.versions: [1, 1.5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
+PROBE pg.accept.warnings: []
+PROBE pg.accept.tables: [t_v1, t_v10, t_v1_10, t_v1_5, t_v1_9, t_v2, t_v20, t_v3, t_v4, t_v5, v_a, v_b, v_z]
+PROBE pg.accept.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true, 2|1.5|underscore version|SQL|V1_5__underscore_version.sql|-32438769|postgres|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|-200567608|postgres|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|694507560|postgres|time>=0|true, 5|2|two|SQL|V2__two.sql|-1656281684|postgres|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|1556740716|postgres|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|1978855407|postgres|time>=0|true, 8|5||SQL|V5__.sql|-1266929617|postgres|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|306255318|postgres|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|1709164326|postgres|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|1258378757|postgres|time>=0|true, 12|null|a view|SQL|R__a_view.sql|-223021533|postgres|time>=0|true, 13|null|b view|SQL|R__b_view.sql|1373794442|postgres|time>=0|true]
+PROBE pg.dup_v1_v1.0.outcome: FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql (SQL)
+PROBE pg.dup_v1_v1.0.warnings: [Migrating default (0:0) failed]
+PROBE pg.dup_v1_v1.0.tables: []
+PROBE pg.dup_v1_v1.0.history: [<no history table>]
+PROBE pg.dup_v1_v01.outcome: FAIL FlywayException: Found more than one migration with version 01 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V1__first.sql (SQL)
+PROBE pg.dup_v1_v01.warnings: [Migrating default (0:0) failed]
+PROBE pg.dup_v1_v01.tables: []
+PROBE pg.dup_v1_v01.history: [<no history table>]
+PROBE pg.dup_repeatable.outcome: FAIL FlywayException: Found more than one repeatable migration with description a b Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a_b.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql (SQL)
+PROBE pg.dup_repeatable.warnings: [Migrating default (0:0) failed]
+PROBE pg.dup_repeatable.tables: []
+PROBE pg.dup_repeatable.history: [<no history table>]
+PROBE pg.lowercase_v.outcome: OK applied=1
+PROBE pg.lowercase_v.versions: [1]
+PROBE pg.lowercase_v.warnings: []
+PROBE pg.lowercase_v.tables: [t_v1]
+PROBE pg.lowercase_v.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.misnamed.outcome: OK applied=1
+PROBE pg.misnamed.versions: [1]
+PROBE pg.misnamed.warnings: []
+PROBE pg.misnamed.tables: [t_v1]
+PROBE pg.misnamed.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.repeatable_with_version.outcome: OK applied=1
+PROBE pg.repeatable_with_version.versions: [1]
+PROBE pg.repeatable_with_version.warnings: []
+PROBE pg.repeatable_with_version.tables: [t_v1]
+PROBE pg.repeatable_with_version.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.undo.outcome: OK applied=1
+PROBE pg.undo.versions: [1]
+PROBE pg.undo.warnings: []
+PROBE pg.undo.tables: [t_v1]
+PROBE pg.undo.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.conf.outcome: OK applied=1
+PROBE pg.conf.versions: [1]
+PROBE pg.conf.warnings: []
+PROBE pg.conf.tables: [t_v1]
+PROBE pg.conf.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.callback.outcome: OK applied=1
+PROBE pg.callback.versions: [1]
+PROBE pg.callback.warnings: []
+PROBE pg.callback.tables: [t_callback, t_v1]
+PROBE pg.callback.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.post_apply.outcome: OK applied=1
+PROBE pg.post_apply.versions: [1]
+PROBE pg.post_apply.warnings: []
+PROBE pg.post_apply.tables: [t_v1]
+PROBE pg.post_apply.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.python_file.outcome: OK applied=2
+PROBE pg.python_file.versions: [1, 2]
+PROBE pg.python_file.warnings: []
+PROBE pg.python_file.tables: [t_v1]
+PROBE pg.python_file.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true, 2|2|code|SCRIPT|V2__code.py|-309287160|postgres|time>=0|true]
+PROBE pg.non_utf8.outcome: FAIL FlywayException: Unable to calculate checksum of V2__latin1.sql Please ensure you have configured the correct file encoding with 'flyway.encoding' or enable 'flyway.detectEncoding' to let Flyway detect it for you
+PROBE pg.non_utf8.warnings: [Migrating default (0:0) failed]
+PROBE pg.non_utf8.tables: []
+PROBE pg.non_utf8.history: [<no history table>]
+PROBE pg.long_description.outcome: OK applied=2
+PROBE pg.long_description.versions: [1, 2]
+PROBE pg.long_description.warnings: []
+PROBE pg.long_description.tables: [t_long, t_v1]
+PROBE pg.long_description.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true, 2|2|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...|SQL|V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql|380028343|postgres|time>=0|true]
+PROBE pg.placeholder.outcome: FAIL FlywayException: Unable to parse statement in /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/placeholder/V1__first.sql at line 1 col 1. See https://rd.gt/3ipi7Pm for more information. No value provided for placeholder: ${unknown_key}. Check your configuration!
+PROBE pg.placeholder.warnings: [Migrating default (0:0) failed]
+PROBE pg.placeholder.tables: []
+PROBE pg.placeholder.t_ph: none
+PROBE pg.placeholder.history: []
+PROBE pg.placeholder_builtin.outcome: OK applied=1
+PROBE pg.placeholder_builtin.versions: [1]
+PROBE pg.placeholder_builtin.warnings: []
+PROBE pg.placeholder_builtin.tables: [t_ph]
+PROBE pg.placeholder_builtin.t_ph: [flyway_schema_history]
+PROBE pg.placeholder_builtin.history: [1|1|first|SQL|V1__first.sql|1764619016|postgres|time>=0|true]
+PROBE pg.hidden.outcome: OK applied=1
+PROBE pg.hidden.versions: [1]
+PROBE pg.hidden.warnings: []
+PROBE pg.hidden.tables: [t_v1]
+PROBE pg.hidden.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+PROBE pg.empty.outcome: OK applied=0
+PROBE pg.empty.versions: []
+PROBE pg.empty.warnings: [No migrations found. Are your locations set up correctly?]
+PROBE pg.empty.tables: []
+PROBE pg.empty.history: []
+PROBE mysql.accept.outcome: OK applied=13
+PROBE mysql.accept.versions: [1, 1.5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
+PROBE mysql.accept.warnings: []
+PROBE mysql.accept.tables: [t_v1, t_v10, t_v1_10, t_v1_5, t_v1_9, t_v2, t_v20, t_v3, t_v4, t_v5, v_a, v_b, v_z]
+PROBE mysql.accept.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true, 2|1.5|underscore version|SQL|V1_5__underscore_version.sql|-32438769|root|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|-200567608|root|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|694507560|root|time>=0|true, 5|2|two|SQL|V2__two.sql|-1656281684|root|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|1556740716|root|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|1978855407|root|time>=0|true, 8|5||SQL|V5__.sql|-1266929617|root|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|306255318|root|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|1709164326|root|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|1258378757|root|time>=0|true, 12|null|a view|SQL|R__a_view.sql|-223021533|root|time>=0|true, 13|null|b view|SQL|R__b_view.sql|1373794442|root|time>=0|true]
+PROBE mysql.dup_v1_v1.0.outcome: FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql (SQL)
+PROBE mysql.dup_v1_v1.0.warnings: [Migrating default (0:0) failed]
+PROBE mysql.dup_v1_v1.0.tables: []
+PROBE mysql.dup_v1_v1.0.history: [<no history table>]
+PROBE mysql.dup_v1_v01.outcome: FAIL FlywayException: Found more than one migration with version 01 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V1__first.sql (SQL)
+PROBE mysql.dup_v1_v01.warnings: [Migrating default (0:0) failed]
+PROBE mysql.dup_v1_v01.tables: []
+PROBE mysql.dup_v1_v01.history: [<no history table>]
+PROBE mysql.dup_repeatable.outcome: FAIL FlywayException: Found more than one repeatable migration with description a b Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a_b.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql (SQL)
+PROBE mysql.dup_repeatable.warnings: [Migrating default (0:0) failed]
+PROBE mysql.dup_repeatable.tables: []
+PROBE mysql.dup_repeatable.history: [<no history table>]
+PROBE mysql.lowercase_v.outcome: OK applied=1
+PROBE mysql.lowercase_v.versions: [1]
+PROBE mysql.lowercase_v.warnings: []
+PROBE mysql.lowercase_v.tables: [t_v1]
+PROBE mysql.lowercase_v.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.misnamed.outcome: OK applied=1
+PROBE mysql.misnamed.versions: [1]
+PROBE mysql.misnamed.warnings: []
+PROBE mysql.misnamed.tables: [t_v1]
+PROBE mysql.misnamed.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.repeatable_with_version.outcome: OK applied=1
+PROBE mysql.repeatable_with_version.versions: [1]
+PROBE mysql.repeatable_with_version.warnings: []
+PROBE mysql.repeatable_with_version.tables: [t_v1]
+PROBE mysql.repeatable_with_version.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.undo.outcome: OK applied=1
+PROBE mysql.undo.versions: [1]
+PROBE mysql.undo.warnings: []
+PROBE mysql.undo.tables: [t_v1]
+PROBE mysql.undo.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.conf.outcome: OK applied=1
+PROBE mysql.conf.versions: [1]
+PROBE mysql.conf.warnings: []
+PROBE mysql.conf.tables: [t_v1]
+PROBE mysql.conf.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.callback.outcome: OK applied=1
+PROBE mysql.callback.versions: [1]
+PROBE mysql.callback.warnings: []
+PROBE mysql.callback.tables: [t_callback, t_v1]
+PROBE mysql.callback.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.post_apply.outcome: OK applied=1
+PROBE mysql.post_apply.versions: [1]
+PROBE mysql.post_apply.warnings: []
+PROBE mysql.post_apply.tables: [t_v1]
+PROBE mysql.post_apply.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.python_file.outcome: OK applied=2
+PROBE mysql.python_file.versions: [1, 2]
+PROBE mysql.python_file.warnings: []
+PROBE mysql.python_file.tables: [t_v1]
+PROBE mysql.python_file.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true, 2|2|code|SCRIPT|V2__code.py|-309287160|root|time>=0|true]
+PROBE mysql.non_utf8.outcome: FAIL FlywayException: Unable to calculate checksum of V2__latin1.sql Please ensure you have configured the correct file encoding with 'flyway.encoding' or enable 'flyway.detectEncoding' to let Flyway detect it for you
+PROBE mysql.non_utf8.warnings: [Migrating default (0:0) failed]
+PROBE mysql.non_utf8.tables: []
+PROBE mysql.non_utf8.history: [<no history table>]
+PROBE mysql.long_description.outcome: OK applied=2
+PROBE mysql.long_description.versions: [1, 2]
+PROBE mysql.long_description.warnings: []
+PROBE mysql.long_description.tables: [t_long, t_v1]
+PROBE mysql.long_description.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true, 2|2|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...|SQL|V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql|380028343|root|time>=0|true]
+PROBE mysql.placeholder.outcome: FAIL FlywayException: Unable to parse statement in /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/placeholder/V1__first.sql at line 1 col 1. See https://rd.gt/3ipi7Pm for more information. No value provided for placeholder: ${unknown_key}. Check your configuration!
+PROBE mysql.placeholder.warnings: [Migrating default (0:0) failed]
+PROBE mysql.placeholder.tables: []
+PROBE mysql.placeholder.t_ph: none
+PROBE mysql.placeholder.history: []
+PROBE mysql.placeholder_builtin.outcome: OK applied=1
+PROBE mysql.placeholder_builtin.versions: [1]
+PROBE mysql.placeholder_builtin.warnings: []
+PROBE mysql.placeholder_builtin.tables: [t_ph]
+PROBE mysql.placeholder_builtin.t_ph: [flyway_schema_history]
+PROBE mysql.placeholder_builtin.history: [1|1|first|SQL|V1__first.sql|1764619016|root|time>=0|true]
+PROBE mysql.hidden.outcome: OK applied=1
+PROBE mysql.hidden.versions: [1]
+PROBE mysql.hidden.warnings: []
+PROBE mysql.hidden.tables: [t_v1]
+PROBE mysql.hidden.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+PROBE mysql.empty.outcome: OK applied=0
+PROBE mysql.empty.versions: []
+PROBE mysql.empty.warnings: [No migrations found. Are your locations set up correctly?]
+PROBE mysql.empty.tables: []
+PROBE mysql.empty.history: []
+PROBE mysql.delimiter_mysql.outcome: OK applied=1
+PROBE mysql.delimiter_mysql.versions: [1]
+PROBE mysql.delimiter_mysql.warnings: []
+PROBE mysql.delimiter_mysql.tables: []
+PROBE mysql.delimiter_mysql.history: [1|1|proc|SQL|V1__proc.sql|-810009373|root|time>=0|true]

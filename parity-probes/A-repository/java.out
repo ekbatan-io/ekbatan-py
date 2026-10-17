@@ -1,0 +1,409 @@
+PROBE pg.add.same_instance: false
+PROBE pg.add.events_on_input: 1
+PROBE pg.add.events_on_result: 0
+PROBE pg.add.version: 1
+PROBE pg.add.created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.add.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.find.created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.find.created_date_equals_input: true
+PROBE pg.find.events: 0
+PROBE pg.find.balance: 10.0000
+PROBE pg.addNoResult.row_exists: true
+PROBE pg.addAll.empty.size: 0
+PROBE pg.addAll.two.size: 2
+PROBE pg.addAll.two.order_kept: true
+PROBE pg.addAll.two.same_instances: false
+PROBE pg.addAll.two.events_on_result: 0
+PROBE pg.addAll.one.same_instance: false
+PROBE pg.addAll.null.err: NullPointerException
+PROBE pg.addAll.null.msg: Models collection cannot be null
+PROBE pg.addAll.null_element.err: NullPointerException
+PROBE pg.addAll.null_element.msg: Model in collection cannot be null
+PROBE pg.addAll.null_element.first_row_written: false
+PROBE pg.add.null.err: NullPointerException
+PROBE pg.add.null.msg: Model cannot be null
+PROBE pg.addNoResult.null.err: NullPointerException
+PROBE pg.addNoResult.null.msg: Model cannot be null
+PROBE pg.addAllNoResult.empty: no error -> ok
+PROBE pg.addAllNoResult.null.err: NullPointerException
+PROBE pg.addAllNoResult.null.msg: Models collection cannot be null
+PROBE pg.add.duplicate_id.err: IntegrityConstraintViolationException
+PROBE pg.addAll.duplicate_id_in_batch.err: IntegrityConstraintViolationException
+PROBE pg.update.version: 2
+PROBE pg.update.events_on_result: 0
+PROBE pg.update.db_version: 2
+PROBE pg.update.balance: 11
+PROBE pg.update.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.update.created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.update.stale.err: StaleRecordException
+PROBE pg.update.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+PROBE pg.updateNoResult.stale.err: StaleRecordException
+PROBE pg.updateNoResult.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+PROBE pg.update.stale.db_version_after: 3
+PROBE pg.update.missing.err: StaleRecordException
+PROBE pg.update.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+PROBE pg.updateNoResult.missing.err: StaleRecordException
+PROBE pg.updateNoResult.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+PROBE pg.updateNoResult.db_version: 4
+PROBE pg.update.null.err: NullPointerException
+PROBE pg.update.null.msg: Model cannot be null
+PROBE pg.delete.returned_state: DELETED
+PROBE pg.delete.returned_version: 2
+PROBE pg.delete.findById_present: false
+PROBE pg.update.soft_deleted_row: no error -> 3
+PROBE pg.updateAll.empty.size: 0
+PROBE pg.updateAll.two.versions: 2,2
+PROBE pg.updateAll.two.order_kept: false
+PROBE pg.updateAll.two.events_on_result: 0
+PROBE pg.updateAll.two.balance: 11
+PROBE pg.updateAll.one.version: 3
+PROBE pg.updateAll.one_stale.err: StaleRecordException
+PROBE pg.updateAll.one_stale.msg: Expected to update 2 records but only updated 1
+PROBE pg.updateAll.one_stale.fresh_row_moved: true
+PROBE pg.updateAllNoResult.one_stale.err: StaleRecordException
+PROBE pg.updateAllNoResult.one_stale.msg: Expected to update 2 records but only updated 1
+PROBE pg.updateAllNoResult.one_stale.fresh_row_moved: true
+PROBE pg.updateAll.same_row_twice.err: StaleRecordException
+PROBE pg.updateAll.same_row_twice.msg: Expected to update 2 records but only updated 1
+PROBE pg.updateAll.same_row_twice.db_version: 2
+PROBE pg.updateAllNoResult.same_row_twice.err: StaleRecordException
+PROBE pg.updateAllNoResult.same_row_twice.msg: Expected to update 2 records but only updated 1
+PROBE pg.updateAll.null_column_every_row: no error -> null
+PROBE pg.updateAll.null_collection.err: NullPointerException
+PROBE pg.updateAll.null_collection.msg: Models collection cannot be null
+PROBE pg.findById.missing: false
+PROBE pg.getById.missing.err: EntityNotFoundException
+PROBE pg.getById.missing.msg: No entity found with id: Dummy[id=<uuid>]
+PROBE pg.getById.deleted.err: EntityNotFoundException
+PROBE pg.getById.deleted.msg: No entity found with id: Dummy[id=<uuid>]
+PROBE pg.existsById.live: true
+PROBE pg.existsById.deleted: false
+PROBE pg.existsById.missing: false
+PROBE pg.findAllByIds.empty: 0
+PROBE pg.findAllByIds.null: no error -> 0
+PROBE pg.findAllByIds.dupes_missing_deleted: 1
+PROBE pg.findAllWhere.two_live_one_deleted: 2
+PROBE pg.countWhere.two_live_one_deleted: 2
+PROBE pg.existsWhere.live: true
+PROBE pg.findOneWhere.two_matches.err: TooManyRowsException
+PROBE pg.findOneWhere.two_matches.msg: Cursor returned more than one result
+PROBE pg.findOneWhere.none: false
+PROBE pg.findOneWhere.one: true
+PROBE pg.findOneWhere.deleted_only: false
+PROBE pg.existsWhere.deleted_only: false
+PROBE pg.countWhere.deleted_only: 0
+PROBE pg.count.delta_after_one_live_one_deleted: 1
+PROBE pg.findAll.delta_after_one_live_one_deleted: 1
+PROBE pg.count.equals_findAll: true
+PROBE pg.tx.findById_sees_own_insert: false
+PROBE pg.tx.existsById_sees_own_insert: false
+PROBE pg.tx.countWhere_sees_own_insert: 0
+PROBE pg.tx.findAllByIds_sees_own_insert: 0
+PROBE pg.tx.findAll_sees_own_insert: false
+PROBE pg.tx.findOneWhere_sees_own_insert: false
+PROBE pg.tx.existsWhere_sees_own_insert: false
+PROBE pg.tx.other_connection_sees_insert: 0
+PROBE pg.tx.after_commit_visible: true
+PROBE pg.tx.update_returns_version: 2
+PROBE pg.tx.getById_after_own_update_version: 1
+PROBE pg.tx.after_commit_version: 2
+PROBE pg.tx.rollback.exception_seen: IllegalStateException
+PROBE pg.tx.rollback.insert_gone: true
+PROBE pg.tx.rollback.update_gone_version: 2
+PROBE pg.tx.updateAll_one_stale.exception: StaleRecordException
+PROBE pg.tx.updateAll_one_stale.fresh_row_version: 1
+PROBE pg.notx.other_connection_sees_insert: 1
+PROBE pg.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.add.same_instance: true
+PROBE mysql.add.events_on_input: 1
+PROBE mysql.add.events_on_result: 1
+PROBE mysql.add.version: 1
+PROBE mysql.add.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.add.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.find.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.find.created_date_equals_input: true
+PROBE mysql.find.events: 0
+PROBE mysql.find.balance: 10.0000
+PROBE mysql.addNoResult.row_exists: true
+PROBE mysql.addAll.empty.size: 0
+PROBE mysql.addAll.two.size: 2
+PROBE mysql.addAll.two.order_kept: true
+PROBE mysql.addAll.two.same_instances: true
+PROBE mysql.addAll.two.events_on_result: 1
+PROBE mysql.addAll.one.same_instance: true
+PROBE mysql.addAll.null.err: NullPointerException
+PROBE mysql.addAll.null.msg: Models collection cannot be null
+PROBE mysql.addAll.null_element.err: NullPointerException
+PROBE mysql.addAll.null_element.msg: Model in collection cannot be null
+PROBE mysql.addAll.null_element.first_row_written: false
+PROBE mysql.add.null.err: NullPointerException
+PROBE mysql.add.null.msg: Model cannot be null
+PROBE mysql.addNoResult.null.err: NullPointerException
+PROBE mysql.addNoResult.null.msg: Model cannot be null
+PROBE mysql.addAllNoResult.empty: no error -> ok
+PROBE mysql.addAllNoResult.null.err: NullPointerException
+PROBE mysql.addAllNoResult.null.msg: Models collection cannot be null
+PROBE mysql.add.duplicate_id.err: IntegrityConstraintViolationException
+PROBE mysql.addAll.duplicate_id_in_batch.err: IntegrityConstraintViolationException
+PROBE mysql.update.version: 2
+PROBE mysql.update.events_on_result: 1
+PROBE mysql.update.db_version: 2
+PROBE mysql.update.balance: 11
+PROBE mysql.update.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.update.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.update.stale.err: StaleRecordException
+PROBE mysql.update.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+PROBE mysql.updateNoResult.stale.err: StaleRecordException
+PROBE mysql.updateNoResult.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+PROBE mysql.update.stale.db_version_after: 3
+PROBE mysql.update.missing.err: StaleRecordException
+PROBE mysql.update.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+PROBE mysql.updateNoResult.missing.err: StaleRecordException
+PROBE mysql.updateNoResult.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+PROBE mysql.updateNoResult.db_version: 4
+PROBE mysql.update.null.err: NullPointerException
+PROBE mysql.update.null.msg: Model cannot be null
+PROBE mysql.delete.returned_state: DELETED
+PROBE mysql.delete.returned_version: 2
+PROBE mysql.delete.findById_present: false
+PROBE mysql.update.soft_deleted_row: no error -> 3
+PROBE mysql.updateAll.empty.size: 0
+PROBE mysql.updateAll.two.versions: 2,2
+PROBE mysql.updateAll.two.order_kept: true
+PROBE mysql.updateAll.two.events_on_result: 1
+PROBE mysql.updateAll.two.balance: 11
+PROBE mysql.updateAll.one.version: 3
+PROBE mysql.updateAll.one_stale.err: StaleRecordException
+PROBE mysql.updateAll.one_stale.msg: Expected to update 2 records but only updated 1
+PROBE mysql.updateAll.one_stale.fresh_row_moved: true
+PROBE mysql.updateAllNoResult.one_stale.err: StaleRecordException
+PROBE mysql.updateAllNoResult.one_stale.msg: Expected to update 2 records but only updated 1
+PROBE mysql.updateAllNoResult.one_stale.fresh_row_moved: true
+PROBE mysql.updateAll.same_row_twice.err: StaleRecordException
+PROBE mysql.updateAll.same_row_twice.msg: Expected to update 2 records but only updated 1
+PROBE mysql.updateAll.same_row_twice.db_version: 2
+PROBE mysql.updateAllNoResult.same_row_twice.err: StaleRecordException
+PROBE mysql.updateAllNoResult.same_row_twice.msg: Expected to update 2 records but only updated 1
+PROBE mysql.updateAll.null_column_every_row: no error -> null
+PROBE mysql.updateAll.null_collection.err: NullPointerException
+PROBE mysql.updateAll.null_collection.msg: Models collection cannot be null
+PROBE mysql.findById.missing: false
+PROBE mysql.getById.missing.err: EntityNotFoundException
+PROBE mysql.getById.missing.msg: No entity found with id: Dummy[id=<uuid>]
+PROBE mysql.getById.deleted.err: EntityNotFoundException
+PROBE mysql.getById.deleted.msg: No entity found with id: Dummy[id=<uuid>]
+PROBE mysql.existsById.live: true
+PROBE mysql.existsById.deleted: false
+PROBE mysql.existsById.missing: false
+PROBE mysql.findAllByIds.empty: 0
+PROBE mysql.findAllByIds.null: no error -> 0
+PROBE mysql.findAllByIds.dupes_missing_deleted: 1
+PROBE mysql.findAllWhere.two_live_one_deleted: 2
+PROBE mysql.countWhere.two_live_one_deleted: 2
+PROBE mysql.existsWhere.live: true
+PROBE mysql.findOneWhere.two_matches.err: TooManyRowsException
+PROBE mysql.findOneWhere.two_matches.msg: Cursor returned more than one result
+PROBE mysql.findOneWhere.none: false
+PROBE mysql.findOneWhere.one: true
+PROBE mysql.findOneWhere.deleted_only: false
+PROBE mysql.existsWhere.deleted_only: false
+PROBE mysql.countWhere.deleted_only: 0
+PROBE mysql.count.delta_after_one_live_one_deleted: 1
+PROBE mysql.findAll.delta_after_one_live_one_deleted: 1
+PROBE mysql.count.equals_findAll: true
+PROBE mysql.tx.findById_sees_own_insert: false
+PROBE mysql.tx.existsById_sees_own_insert: false
+PROBE mysql.tx.countWhere_sees_own_insert: 0
+PROBE mysql.tx.findAllByIds_sees_own_insert: 0
+PROBE mysql.tx.findAll_sees_own_insert: false
+PROBE mysql.tx.findOneWhere_sees_own_insert: false
+PROBE mysql.tx.existsWhere_sees_own_insert: false
+PROBE mysql.tx.other_connection_sees_insert: 0
+PROBE mysql.tx.after_commit_visible: true
+PROBE mysql.tx.update_returns_version: 2
+PROBE mysql.tx.getById_after_own_update_version: 1
+PROBE mysql.tx.after_commit_version: 2
+PROBE mysql.tx.rollback.exception_seen: IllegalStateException
+PROBE mysql.tx.rollback.insert_gone: true
+PROBE mysql.tx.rollback.update_gone_version: 2
+PROBE mysql.tx.updateAll_one_stale.exception: StaleRecordException
+PROBE mysql.tx.updateAll_one_stale.fresh_row_version: 1
+PROBE mysql.notx.other_connection_sees_insert: 1
+PROBE mysql.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.add.same_instance: false
+PROBE mariadb.add.events_on_input: 1
+PROBE mariadb.add.events_on_result: 0
+PROBE mariadb.add.version: 1
+PROBE mariadb.add.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.add.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.find.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.find.created_date_equals_input: true
+PROBE mariadb.find.events: 0
+PROBE mariadb.find.balance: 10.0000
+PROBE mariadb.addNoResult.row_exists: true
+PROBE mariadb.addAll.empty.size: 0
+PROBE mariadb.addAll.two.size: 2
+PROBE mariadb.addAll.two.order_kept: true
+PROBE mariadb.addAll.two.same_instances: false
+PROBE mariadb.addAll.two.events_on_result: 0
+PROBE mariadb.addAll.one.same_instance: false
+PROBE mariadb.addAll.null.err: NullPointerException
+PROBE mariadb.addAll.null.msg: Models collection cannot be null
+PROBE mariadb.addAll.null_element.err: NullPointerException
+PROBE mariadb.addAll.null_element.msg: Model in collection cannot be null
+PROBE mariadb.addAll.null_element.first_row_written: false
+PROBE mariadb.add.null.err: NullPointerException
+PROBE mariadb.add.null.msg: Model cannot be null
+PROBE mariadb.addNoResult.null.err: NullPointerException
+PROBE mariadb.addNoResult.null.msg: Model cannot be null
+PROBE mariadb.addAllNoResult.empty: no error -> ok
+PROBE mariadb.addAllNoResult.null.err: NullPointerException
+PROBE mariadb.addAllNoResult.null.msg: Models collection cannot be null
+PROBE mariadb.add.duplicate_id.err: IntegrityConstraintViolationException
+PROBE mariadb.addAll.duplicate_id_in_batch.err: IntegrityConstraintViolationException
+PROBE mariadb.update.version: 2
+PROBE mariadb.update.events_on_result: 0
+PROBE mariadb.update.db_version: 2
+PROBE mariadb.update.balance: 11
+PROBE mariadb.update.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.update.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.update.stale.err: StaleRecordException
+PROBE mariadb.update.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+PROBE mariadb.updateNoResult.stale.err: StaleRecordException
+PROBE mariadb.updateNoResult.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+PROBE mariadb.update.stale.db_version_after: 3
+PROBE mariadb.update.missing.err: StaleRecordException
+PROBE mariadb.update.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+PROBE mariadb.updateNoResult.missing.err: StaleRecordException
+PROBE mariadb.updateNoResult.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+PROBE mariadb.updateNoResult.db_version: 4
+PROBE mariadb.update.null.err: NullPointerException
+PROBE mariadb.update.null.msg: Model cannot be null
+PROBE mariadb.delete.returned_state: DELETED
+PROBE mariadb.delete.returned_version: 2
+PROBE mariadb.delete.findById_present: false
+PROBE mariadb.update.soft_deleted_row: no error -> 3
+PROBE mariadb.updateAll.empty.size: 0
+PROBE mariadb.updateAll.two.versions: 2,2
+PROBE mariadb.updateAll.two.order_kept: true
+PROBE mariadb.updateAll.two.events_on_result: 1
+PROBE mariadb.updateAll.two.balance: 11
+PROBE mariadb.updateAll.one.version: 3
+PROBE mariadb.updateAll.one_stale.err: StaleRecordException
+PROBE mariadb.updateAll.one_stale.msg: Expected to update 2 records but only updated 1
+PROBE mariadb.updateAll.one_stale.fresh_row_moved: true
+PROBE mariadb.updateAllNoResult.one_stale.err: StaleRecordException
+PROBE mariadb.updateAllNoResult.one_stale.msg: Expected to update 2 records but only updated 1
+PROBE mariadb.updateAllNoResult.one_stale.fresh_row_moved: true
+PROBE mariadb.updateAll.same_row_twice.err: StaleRecordException
+PROBE mariadb.updateAll.same_row_twice.msg: Expected to update 2 records but only updated 1
+PROBE mariadb.updateAll.same_row_twice.db_version: 2
+PROBE mariadb.updateAllNoResult.same_row_twice.err: StaleRecordException
+PROBE mariadb.updateAllNoResult.same_row_twice.msg: Expected to update 2 records but only updated 1
+PROBE mariadb.updateAll.null_column_every_row: no error -> null
+PROBE mariadb.updateAll.null_collection.err: NullPointerException
+PROBE mariadb.updateAll.null_collection.msg: Models collection cannot be null
+PROBE mariadb.findById.missing: false
+PROBE mariadb.getById.missing.err: EntityNotFoundException
+PROBE mariadb.getById.missing.msg: No entity found with id: Dummy[id=<uuid>]
+PROBE mariadb.getById.deleted.err: EntityNotFoundException
+PROBE mariadb.getById.deleted.msg: No entity found with id: Dummy[id=<uuid>]
+PROBE mariadb.existsById.live: true
+PROBE mariadb.existsById.deleted: false
+PROBE mariadb.existsById.missing: false
+PROBE mariadb.findAllByIds.empty: 0
+PROBE mariadb.findAllByIds.null: no error -> 0
+PROBE mariadb.findAllByIds.dupes_missing_deleted: 1
+PROBE mariadb.findAllWhere.two_live_one_deleted: 2
+PROBE mariadb.countWhere.two_live_one_deleted: 2
+PROBE mariadb.existsWhere.live: true
+PROBE mariadb.findOneWhere.two_matches.err: TooManyRowsException
+PROBE mariadb.findOneWhere.two_matches.msg: Cursor returned more than one result
+PROBE mariadb.findOneWhere.none: false
+PROBE mariadb.findOneWhere.one: true
+PROBE mariadb.findOneWhere.deleted_only: false
+PROBE mariadb.existsWhere.deleted_only: false
+PROBE mariadb.countWhere.deleted_only: 0
+PROBE mariadb.count.delta_after_one_live_one_deleted: 1
+PROBE mariadb.findAll.delta_after_one_live_one_deleted: 1
+PROBE mariadb.count.equals_findAll: true
+PROBE mariadb.tx.findById_sees_own_insert: false
+PROBE mariadb.tx.existsById_sees_own_insert: false
+PROBE mariadb.tx.countWhere_sees_own_insert: 0
+PROBE mariadb.tx.findAllByIds_sees_own_insert: 0
+PROBE mariadb.tx.findAll_sees_own_insert: false
+PROBE mariadb.tx.findOneWhere_sees_own_insert: false
+PROBE mariadb.tx.existsWhere_sees_own_insert: false
+PROBE mariadb.tx.other_connection_sees_insert: 0
+PROBE mariadb.tx.after_commit_visible: true
+PROBE mariadb.tx.update_returns_version: 2
+PROBE mariadb.tx.getById_after_own_update_version: 1
+PROBE mariadb.tx.after_commit_version: 2
+PROBE mariadb.tx.rollback.exception_seen: IllegalStateException
+PROBE mariadb.tx.rollback.insert_gone: true
+PROBE mariadb.tx.rollback.update_gone_version: 2
+PROBE mariadb.tx.updateAll_one_stale.exception: StaleRecordException
+PROBE mariadb.tx.updateAll_one_stale.fresh_row_version: 1
+PROBE mariadb.notx.other_connection_sees_insert: 1
+PROBE mariadb.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+PROBE shard.add_B.on_B: 1
+PROBE shard.add_B.on_A: 0
+PROBE shard.findById_B: true
+PROBE shard.existsById_B: true
+PROBE shard.add_unregistered.on_A: 1
+PROBE shard.findById_unregistered: true
+PROBE shard.addAll_cross.A_then_B.err: CrossShardException
+PROBE shard.addAll_cross.A_then_B.msg: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+PROBE shard.addAll_cross.B_then_A.err: CrossShardException
+PROBE shard.addAll_cross.B_then_A.msg: Cross-shard operation detected: action started on shard ShardIdentifier(1, 0) but attempted to access shard ShardIdentifier(0, 0)
+PROBE shard.addAll_cross.nothing_written: 0
+PROBE shard.addAllNoResult_cross.err: CrossShardException
+PROBE shard.addAllNoResult_cross.msg: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+PROBE shard.addAll_registered_and_unregistered.err: CrossShardException
+PROBE shard.addAll_registered_and_unregistered.msg: Cross-shard operation detected: action started on shard ShardIdentifier(1, 0) but attempted to access shard ShardIdentifier(0, 0)
+PROBE shard.addAll_default_and_unregistered: no error -> 2
+PROBE shard.updateAll_cross.err: CrossShardException
+PROBE shard.updateAll_cross.msg: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+PROBE shard.update_on_B.version: 2
+PROBE shard.count_across: 7
+PROBE shard.findAll_across: 7
+PROBE shard.findOneWhere_across: true
+PROBE shard.existsWhere_across: true
+PROBE shard.countWhere_across: 1
+PROBE shard.findAllWhere_across: 1
+PROBE shard.findAllByIds_across: 3
+PROBE shard.findOneWhere_one_match_per_shard: no error -> true
+PROBE shard.unsharded.count_equals_A_rows: true
+PROBE shard.unsharded.findAll_equals_A_rows: true
+PROBE shard.unsharded.add_B_id.on_A: 1
+PROBE shard.unsharded.add_B_id.on_B: 0
+PROBE shard.unsharded.findById_row_on_B: false
+PROBE shard.unsharded.addAll_mixed_ids: no error -> 2
+PROBE shard.nonid.findById.err: UnsupportedOperationException
+PROBE shard.nonid.findById.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+PROBE shard.nonid.existsById.err: UnsupportedOperationException
+PROBE shard.nonid.existsById.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+PROBE shard.nonid.findAllByIds.err: UnsupportedOperationException
+PROBE shard.nonid.findAllByIds.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+PROBE shard.nonid.getById.err: UnsupportedOperationException
+PROBE shard.nonid.getById.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+PROBE shard.nonid.add_routes_by_model.on_B: 1
+PROBE shard.nonid.findAll_scatters: true
+PROBE shard.tx_on_A.outer_exception: RuntimeException
+PROBE shard.tx_on_A.write_to_B_survives_A_rollback: 1
+PROBE shard.tx_on_A.write_to_A_rolled_back: true
+PROBE shard.fail_policy.add_unregistered.err: IllegalArgumentException
+PROBE shard.fail_policy.add_unregistered.msg: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+PROBE shard.fail_policy.findById_unregistered.err: IllegalArgumentException
+PROBE shard.fail_policy.findById_unregistered.msg: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+PROBE shard.fail_policy.findAllByIds_unregistered.err: IllegalArgumentException
+PROBE shard.fail_policy.findAllByIds_unregistered.msg: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+PROBE registry.two_repos_one_model: no error -> second
+PROBE registry.same_repo_twice: no error -> first
+PROBE registry.lookup_unregistered: no error -> null

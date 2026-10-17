@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY ci_idx ON ci (id);

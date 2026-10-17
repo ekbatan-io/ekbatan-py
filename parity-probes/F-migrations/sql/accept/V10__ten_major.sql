@@ -1,0 +1,1 @@
+CREATE TABLE t_v10 (id INT);

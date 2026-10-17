@@ -1,0 +1,240 @@
+PROBE pg.life.a_first.outcome: OK applied=3 initial=null target=2
+PROBE pg.life.a_first.result_warnings: []
+PROBE pg.life.a_first.log_warnings: []
+PROBE pg.life.a_first.tables: [life_a, life_b, life_v]
+PROBE pg.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.a_first.history_tables: [flyway_schema_history]
+PROBE pg.life.a_first.columns: installed_rank|integer|NO, version|character varying|YES, description|character varying|NO, type|character varying|NO, script|character varying|NO, checksum|integer|YES, installed_by|character varying|NO, installed_on|timestamp without time zone|NO, execution_time|integer|NO, success|boolean|NO
+PROBE pg.life.a_first.indexes: [flyway_schema_history_pk CREATE UNIQUE INDEX flyway_schema_history_pk ON public.flyway_schema_history USING btree (installed_rank), flyway_schema_history_s_idx CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success)]
+PROBE pg.life.a_first.installed_on_type: [timestamp without time zone]
+PROBE pg.life.b_again.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.b_again.result_warnings: []
+PROBE pg.life.b_again.log_warnings: []
+PROBE pg.life.b_again.tables: [life_a, life_b, life_v]
+PROBE pg.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.c_edited.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration checksum mismatch for migration version 1 -> Applied to database : -1033942919 -> Resolved locally : 2061709084 Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE pg.life.c_edited.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.life.c_edited.tables: [life_a, life_b, life_v]
+PROBE pg.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.d_crlf.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.d_crlf.result_warnings: []
+PROBE pg.life.d_crlf.log_warnings: []
+PROBE pg.life.d_crlf.tables: [life_a, life_b, life_v]
+PROBE pg.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.e_joined.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.e_joined.result_warnings: []
+PROBE pg.life.e_joined.log_warnings: []
+PROBE pg.life.e_joined.tables: [life_a, life_b, life_v]
+PROBE pg.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.f_renamed.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration description mismatch for migration version 1 -> Applied to database : create -> Resolved locally : create renamed Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE pg.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.life.f_renamed.tables: [life_a, life_b, life_v]
+PROBE pg.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.g_respelled.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.g_respelled.result_warnings: []
+PROBE pg.life.g_respelled.log_warnings: []
+PROBE pg.life.g_respelled.tables: [life_a, life_b, life_v]
+PROBE pg.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.h_out_of_order.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected resolved migration not applied to database: 1.5. To ignore this migration, set -ignoreMigrationPatterns='*:ignored'. To allow executing this migration, set -outOfOrder=true. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE pg.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.life.h_out_of_order.tables: [life_a, life_b, life_v]
+PROBE pg.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.i_missing.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.i_missing.result_warnings: []
+PROBE pg.life.i_missing.log_warnings: [Schema "public" has a version (2) that is newer than the latest available migration (1) !]
+PROBE pg.life.i_missing.tables: [life_a, life_b, life_v]
+PROBE pg.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
+PROBE pg.life.j_repeatable_changed.result_warnings: []
+PROBE pg.life.j_repeatable_changed.log_warnings: []
+PROBE pg.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
+PROBE pg.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
+PROBE pg.life.k_failing.outcome: FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42P01 Error Code : 0 Message : ERROR: relation "no_such_table" does not exist Position: 13 Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql) Line : 2 Statement : Run Fly...
+PROBE pg.life.k_failing.log_warnings: [Migration of schema "public" to version "3 - half" failed! Changes successfully rolled back., Migrating default (0:0) failed]
+PROBE pg.life.k_failing.tables: [life_a, life_b, life_v]
+PROBE pg.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
+PROBE pg.life.l_fixed.outcome: FAIL FlywayMigrateException: Failed to execute script R__view.sql ------------------------------------ SQL State : 42P16 Error Code : 0 Message : ERROR: cannot drop columns from view Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql) Line : 1 Statement : Run Flyway with -X option to see the a...
+PROBE pg.life.l_fixed.log_warnings: [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
+PROBE pg.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
+PROBE pg.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
+PROBE pg.life.m_fixed_again.outcome: FAIL FlywayMigrateException: Failed to execute script R__view.sql ------------------------------------ SQL State : 42P16 Error Code : 0 Message : ERROR: cannot drop columns from view Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql) Line : 1 Statement : Run Flyway with -X option to see the a...
+PROBE pg.life.m_fixed_again.log_warnings: [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
+PROBE pg.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
+PROBE pg.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
+PROBE pg.future.a_newer_release.outcome: OK applied=4 initial=null target=9
+PROBE pg.future.a_newer_release.result_warnings: []
+PROBE pg.future.a_newer_release.log_warnings: []
+PROBE pg.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
+PROBE pg.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.future.b_older_release.outcome: OK applied=0 initial=9 target=null
+PROBE pg.future.b_older_release.result_warnings: []
+PROBE pg.future.b_older_release.log_warnings: [Schema "public" has a version (9) that is newer than the latest available migration (2) !]
+PROBE pg.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
+PROBE pg.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.nonempty.outcome: FAIL FlywayException: Found non-empty schema(s) "public" but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+PROBE pg.nonempty.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.nonempty.tables: [existing]
+PROBE pg.nonempty.history: [<no history table>]
+PROBE pg.baseline.outcome: OK applied=2 initial=1 target=2
+PROBE pg.baseline.tables: [life_a, life_b, life_v]
+PROBE pg.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE mysql.life.a_first.outcome: OK applied=3 initial=null target=2
+PROBE mysql.life.a_first.result_warnings: []
+PROBE mysql.life.a_first.log_warnings: []
+PROBE mysql.life.a_first.tables: [life_a, life_b, life_v]
+PROBE mysql.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.a_first.history_tables: [flyway_schema_history]
+PROBE mysql.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
+PROBE mysql.life.a_first.indexes: [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
+PROBE mysql.life.a_first.installed_on_type: [timestamp]
+PROBE mysql.life.b_again.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.b_again.result_warnings: []
+PROBE mysql.life.b_again.log_warnings: []
+PROBE mysql.life.b_again.tables: [life_a, life_b, life_v]
+PROBE mysql.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.c_edited.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration checksum mismatch for migration version 1 -> Applied to database : -1033942919 -> Resolved locally : 2061709084 Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE mysql.life.c_edited.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.c_edited.tables: [life_a, life_b, life_v]
+PROBE mysql.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.d_crlf.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.d_crlf.result_warnings: []
+PROBE mysql.life.d_crlf.log_warnings: []
+PROBE mysql.life.d_crlf.tables: [life_a, life_b, life_v]
+PROBE mysql.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.e_joined.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.e_joined.result_warnings: []
+PROBE mysql.life.e_joined.log_warnings: []
+PROBE mysql.life.e_joined.tables: [life_a, life_b, life_v]
+PROBE mysql.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.f_renamed.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration description mismatch for migration version 1 -> Applied to database : create -> Resolved locally : create renamed Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE mysql.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.f_renamed.tables: [life_a, life_b, life_v]
+PROBE mysql.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.g_respelled.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.g_respelled.result_warnings: []
+PROBE mysql.life.g_respelled.log_warnings: []
+PROBE mysql.life.g_respelled.tables: [life_a, life_b, life_v]
+PROBE mysql.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.h_out_of_order.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected resolved migration not applied to database: 1.5. To ignore this migration, set -ignoreMigrationPatterns='*:ignored'. To allow executing this migration, set -outOfOrder=true. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE mysql.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.h_out_of_order.tables: [life_a, life_b, life_v]
+PROBE mysql.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.i_missing.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.i_missing.result_warnings: []
+PROBE mysql.life.i_missing.log_warnings: [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
+PROBE mysql.life.i_missing.tables: [life_a, life_b, life_v]
+PROBE mysql.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
+PROBE mysql.life.j_repeatable_changed.result_warnings: []
+PROBE mysql.life.j_repeatable_changed.log_warnings: []
+PROBE mysql.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
+PROBE mysql.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
+PROBE mysql.life.k_failing.outcome: FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42S02 Error Code : 1146 Message : Table 'f2_life.no_such_table' doesn't exist Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql) Line : 2 Statement : Run Flyway with -X o...
+PROBE mysql.life.k_failing.log_warnings: [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
+PROBE mysql.life.k_failing.tables: [life_a, life_b, life_c, life_v]
+PROBE mysql.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE mysql.life.l_fixed.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE mysql.life.l_fixed.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
+PROBE mysql.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE mysql.life.m_fixed_again.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE mysql.life.m_fixed_again.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
+PROBE mysql.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE mysql.future.a_newer_release.outcome: OK applied=4 initial=null target=9
+PROBE mysql.future.a_newer_release.result_warnings: []
+PROBE mysql.future.a_newer_release.log_warnings: []
+PROBE mysql.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
+PROBE mysql.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.future.b_older_release.outcome: OK applied=0 initial=9 target=null
+PROBE mysql.future.b_older_release.result_warnings: []
+PROBE mysql.future.b_older_release.log_warnings: [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
+PROBE mysql.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
+PROBE mysql.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.nonempty.outcome: FAIL FlywayException: Found non-empty schema(s) `f2_nonempty` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+PROBE mysql.nonempty.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.nonempty.tables: [existing]
+PROBE mysql.nonempty.history: [<no history table>]
+PROBE mysql.baseline.outcome: OK applied=2 initial=1 target=2
+PROBE mysql.baseline.tables: [life_a, life_b, life_v]
+PROBE mysql.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.a_first.outcome: OK applied=3 initial=null target=2
+PROBE maria.life.a_first.result_warnings: []
+PROBE maria.life.a_first.log_warnings: []
+PROBE maria.life.a_first.tables: [life_a, life_b, life_v]
+PROBE maria.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.a_first.history_tables: [flyway_schema_history]
+PROBE maria.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
+PROBE maria.life.a_first.indexes: [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
+PROBE maria.life.a_first.installed_on_type: [timestamp]
+PROBE maria.life.b_again.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.b_again.result_warnings: []
+PROBE maria.life.b_again.log_warnings: []
+PROBE maria.life.b_again.tables: [life_a, life_b, life_v]
+PROBE maria.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.c_edited.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration checksum mismatch for migration version 1 -> Applied to database : -1033942919 -> Resolved locally : 2061709084 Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE maria.life.c_edited.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.c_edited.tables: [life_a, life_b, life_v]
+PROBE maria.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.d_crlf.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.d_crlf.result_warnings: []
+PROBE maria.life.d_crlf.log_warnings: []
+PROBE maria.life.d_crlf.tables: [life_a, life_b, life_v]
+PROBE maria.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.e_joined.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.e_joined.result_warnings: []
+PROBE maria.life.e_joined.log_warnings: []
+PROBE maria.life.e_joined.tables: [life_a, life_b, life_v]
+PROBE maria.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.f_renamed.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration description mismatch for migration version 1 -> Applied to database : create -> Resolved locally : create renamed Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE maria.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.f_renamed.tables: [life_a, life_b, life_v]
+PROBE maria.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.g_respelled.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.g_respelled.result_warnings: []
+PROBE maria.life.g_respelled.log_warnings: []
+PROBE maria.life.g_respelled.tables: [life_a, life_b, life_v]
+PROBE maria.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.h_out_of_order.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected resolved migration not applied to database: 1.5. To ignore this migration, set -ignoreMigrationPatterns='*:ignored'. To allow executing this migration, set -outOfOrder=true. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE maria.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.h_out_of_order.tables: [life_a, life_b, life_v]
+PROBE maria.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.i_missing.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.i_missing.result_warnings: []
+PROBE maria.life.i_missing.log_warnings: [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
+PROBE maria.life.i_missing.tables: [life_a, life_b, life_v]
+PROBE maria.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
+PROBE maria.life.j_repeatable_changed.result_warnings: []
+PROBE maria.life.j_repeatable_changed.log_warnings: []
+PROBE maria.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
+PROBE maria.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
+PROBE maria.life.k_failing.outcome: FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42S02 Error Code : 1146 Message : (conn=48) Table 'f2_life.no_such_table' doesn't exist Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql) Line : 2 Statement : Run Flyway...
+PROBE maria.life.k_failing.log_warnings: [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
+PROBE maria.life.k_failing.tables: [life_a, life_b, life_c, life_v]
+PROBE maria.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE maria.life.l_fixed.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE maria.life.l_fixed.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
+PROBE maria.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE maria.life.m_fixed_again.outcome: FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+PROBE maria.life.m_fixed_again.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
+PROBE maria.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE maria.future.a_newer_release.outcome: OK applied=4 initial=null target=9
+PROBE maria.future.a_newer_release.result_warnings: []
+PROBE maria.future.a_newer_release.log_warnings: []
+PROBE maria.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
+PROBE maria.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.future.b_older_release.outcome: OK applied=0 initial=9 target=null
+PROBE maria.future.b_older_release.result_warnings: []
+PROBE maria.future.b_older_release.log_warnings: [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
+PROBE maria.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
+PROBE maria.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.nonempty.outcome: FAIL FlywayException: Found non-empty schema(s) `f2_nonempty` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+PROBE maria.nonempty.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.nonempty.tables: [existing]
+PROBE maria.nonempty.history: [<no history table>]
+PROBE maria.baseline.outcome: OK applied=2 initial=1 target=2
+PROBE maria.baseline.tables: [life_a, life_b, life_v]
+PROBE maria.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]

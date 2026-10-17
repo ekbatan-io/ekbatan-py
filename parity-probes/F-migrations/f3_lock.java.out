@@ -1,0 +1,16 @@
+PROBE pg.concurrent.outcomes: [OK applied=0, OK applied=1]
+PROBE pg.concurrent.tables: [slow_t]
+PROBE pg.concurrent.history: [1|1|slow|SQL|V1__slow.sql|-657010055|postgres|time>=0|true]
+PROBE pg.concurrent.locks_seen: [advisory|18028|4163491309|1|ExclusiveLock|true]
+PROBE pg.concurrent.locks_left_after: []
+PROBE pg.held.outcome: FAIL FlywayException: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk
+PROBE pg.held.seconds_rounded_to_10: 50
+PROBE pg.held.history: [<no history table>]
+PROBE mysql.concurrent.outcomes: [OK applied=0, OK applied=1]
+PROBE mysql.concurrent.tables: [slow_t]
+PROBE mysql.concurrent.history: [1|1|slow|SQL|V1__slow.sql|-1335638295|root|time>=0|true]
+PROBE mysql.concurrent.locks_seen: [flyway--196644676|EXCLUSIVE|GRANTED, flyway--196644676|EXCLUSIVE|PENDING]
+PROBE mysql.concurrent.locks_left_after: []
+PROBE mysql.held.outcome: OK applied=1
+PROBE mysql.held.seconds_rounded_to_10: 70
+PROBE mysql.held.history: [1|1|quick|SQL|V1__quick.sql|-1996852011|root|time>=0|true]

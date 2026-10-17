@@ -1,0 +1,2 @@
+CREATE TABLE life_a (id INT PRIMARY KEY, name VARCHAR(20));
+INSERT INTO life_a VALUES (1, 'x');

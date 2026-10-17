@@ -1,0 +1,40 @@
+PROBE loc.filesystem_prefix.outcome: OK applied=1
+PROBE loc.filesystem_prefix.warnings: []
+PROBE loc.filesystem_prefix.tables: [quick_t]
+PROBE loc.plain_absolute_path.outcome: OK applied=0
+PROBE loc.plain_absolute_path.warnings: [No migrations found. Are your locations set up correctly?]
+PROBE loc.plain_absolute_path.tables: []
+PROBE loc.classpath_prefix.outcome: OK applied=1
+PROBE loc.classpath_prefix.warnings: []
+PROBE loc.classpath_prefix.tables: [quick_t]
+PROBE loc.no_location.outcome: OK applied=0
+PROBE loc.no_location.warnings: [No migrations found. Are your locations set up correctly?]
+PROBE loc.no_location.tables: []
+PROBE loc.missing_folder.outcome: OK applied=0
+PROBE loc.missing_folder.warnings: [Skipping filesystem location: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/no_such_folder (not found), No migrations found. Are your locations set up correctly?]
+PROBE loc.missing_folder.tables: []
+PROBE loc.a_file_not_a_folder.outcome: OK applied=0
+PROBE loc.a_file_not_a_folder.warnings: [Skipping filesystem location: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql (not a directory), No migrations found. Are your locations set up correctly?]
+PROBE loc.a_file_not_a_folder.tables: []
+PROBE loc.two_locations_same_version.outcome: FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/hidden/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql (SQL)
+PROBE loc.two_locations_same_version.warnings: [Migrating default (0:0) failed]
+PROBE loc.two_locations_same_version.tables: []
+PROBE loc.two_locations_same_version_native_form.outcome: FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/hidden/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql (SQL)
+PROBE loc.two_locations_same_version_native_form.warnings: [Migrating default (0:0) failed]
+PROBE loc.two_locations_same_version_native_form.tables: []
+PROBE loc.concurrent_index_no_marker.still_waiting_after_30s: yes, on virtualxid
+PROBE loc.concurrent_index_no_marker.outcome: FAIL FlywayMigrateException: Failed to execute script V2__index.sql -------------------------------------- SQL State : 08006 Error Code : 0 Message : An I/O error occurred while sending to the backend. Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/concurrent_index_pg/V2__index.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/concurrent_index_pg/V2__index.sql) Line : 1 Statement...
+PROBE loc.concurrent_index_no_marker.warnings: [Migration of schema "public" to version "2 - index" [non-transactional] failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
+PROBE loc.concurrent_index_no_marker.tables: [ci]
+PROBE schema.missing_schema.outcome: OK applied=1
+PROBE schema.missing_schema.schemas: [app, public]
+PROBE schema.missing_schema.tables: [app.flyway_schema_history, app.quick_t]
+PROBE schema.missing_schema.history: [0|null|<< Flyway Schema Creation >>|SCHEMA|"app", 1|1|quick|SQL|V1__quick.sql]
+PROBE schema.existing_schema.outcome: OK applied=1
+PROBE schema.existing_schema.schemas: [app, public]
+PROBE schema.existing_schema.tables: [app.flyway_schema_history, app.quick_t]
+PROBE schema.existing_schema.history: [1|1|quick|SQL|V1__quick.sql]
+PROBE loc.script_migration.outcome: OK applied=2
+PROBE loc.script_migration.warnings: []
+PROBE loc.script_migration.tables: [t_v1]
+PROBE loc.script_migration.script_ran: true

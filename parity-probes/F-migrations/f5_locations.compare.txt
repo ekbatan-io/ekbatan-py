@@ -1,0 +1,96 @@
+DIFF loc.a_file_not_a_folder.outcome
+     java:   OK applied=0
+     python: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql
+=    loc.a_file_not_a_folder.tables: []
+DIFF loc.a_file_not_a_folder.warnings
+     java:   [Skipping filesystem location: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql (not a directory), No migrations found. Are your locations set up correctly?]
+     python: []
+DIFF loc.classpath_prefix.outcome
+     java:   OK applied=1
+     python: FAIL ValidationError: no migrations directory at classpath:db/parityF
+DIFF loc.classpath_prefix.tables
+     java:   [quick_t]
+     python: []
+=    loc.classpath_prefix.warnings: []
+DIFF loc.concurrent_index_no_marker.outcome
+     java:   FAIL FlywayMigrateException: Failed to execute script V2__index.sql -------------------------------------- SQL State : 08006 Error Code : 0 Message : An I/O error occurred while sending to the backend. Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/concurrent_index_pg/V2__index.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/concurrent_index_pg/V2__index.sql) Line : 1 Statement...
+     python: FAIL MigrationError: migrating default (0:0) failed in V2__index.sql: ActiveSqlTransaction: CREATE INDEX CONCURRENTLY cannot run inside a transaction block Applied by this run before that: V1__table.sql. Nothing of V2__index.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+DIFF loc.concurrent_index_no_marker.still_waiting_after_30s
+     java:   yes, on virtualxid
+     python: <missing>
+=    loc.concurrent_index_no_marker.tables: [ci]
+DIFF loc.concurrent_index_no_marker.warnings
+     java:   [Migration of schema "public" to version "2 - index" [non-transactional] failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
+     python: []
+DIFF loc.filesystem_prefix.outcome
+     java:   OK applied=1
+     python: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick
+DIFF loc.filesystem_prefix.tables
+     java:   [quick_t]
+     python: []
+=    loc.filesystem_prefix.warnings: []
+DIFF loc.missing_folder.outcome
+     java:   OK applied=0
+     python: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/no_such_folder
+=    loc.missing_folder.tables: []
+DIFF loc.missing_folder.warnings
+     java:   [Skipping filesystem location: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/no_such_folder (not found), No migrations found. Are your locations set up correctly?]
+     python: []
+DIFF loc.no_location.outcome
+     java:   OK applied=0
+     python: FAIL ValidationError: at least one migrations location is required
+=    loc.no_location.tables: []
+DIFF loc.no_location.warnings
+     java:   [No migrations found. Are your locations set up correctly?]
+     python: []
+DIFF loc.plain_absolute_path.outcome
+     java:   OK applied=0
+     python: OK applied=1
+DIFF loc.plain_absolute_path.tables
+     java:   []
+     python: [quick_t]
+DIFF loc.plain_absolute_path.warnings
+     java:   [No migrations found. Are your locations set up correctly?]
+     python: []
+DIFF loc.script_migration.outcome
+     java:   OK applied=2
+     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/script_migration/V2__touch.py: only SQL migrations are supported. A file named like a migration that is not one - a script, an editor's backup - does not belong beside them.
+DIFF loc.script_migration.script_ran
+     java:   true
+     python: false
+DIFF loc.script_migration.tables
+     java:   [t_v1]
+     python: []
+=    loc.script_migration.warnings: []
+DIFF loc.two_locations_same_version.outcome
+     java:   FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/hidden/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql (SQL)
+     python: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick
+=    loc.two_locations_same_version.tables: []
+DIFF loc.two_locations_same_version.warnings
+     java:   [Migrating default (0:0) failed]
+     python: []
+DIFF loc.two_locations_same_version_native_form.outcome
+     java:   FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/hidden/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql (SQL)
+     python: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: version 1: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/hidden/V1__first.sql
+=    loc.two_locations_same_version_native_form.tables: []
+DIFF loc.two_locations_same_version_native_form.warnings
+     java:   [Migrating default (0:0) failed]
+     python: []
+=    schema.existing_schema.history: [1|1|quick|SQL|V1__quick.sql]
+=    schema.existing_schema.outcome: OK applied=1
+=    schema.existing_schema.schemas: [app, public]
+DIFF schema.existing_schema.tables
+     java:   [app.flyway_schema_history, app.quick_t]
+     python: [app.ekbatan_schema_history, app.quick_t]
+DIFF schema.missing_schema.history
+     java:   [0|null|<< Flyway Schema Creation >>|SCHEMA|"app", 1|1|quick|SQL|V1__quick.sql]
+     python: none in app
+DIFF schema.missing_schema.outcome
+     java:   OK applied=1
+     python: FAIL MigrationError: migrating default (0:0) failed: InvalidSchemaName: no schema has been selected to create in LINE 2: CREATE TABLE ekbatan_schema_history ( ^ Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+DIFF schema.missing_schema.schemas
+     java:   [app, public]
+     python: [public]
+DIFF schema.missing_schema.tables
+     java:   [app.flyway_schema_history, app.quick_t]
+     python: []

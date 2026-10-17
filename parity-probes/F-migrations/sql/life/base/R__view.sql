@@ -1,0 +1,1 @@
+CREATE OR REPLACE VIEW life_v AS SELECT id FROM life_a;

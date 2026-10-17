@@ -1,0 +1,39 @@
+PROBE loc.filesystem_prefix.outcome: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick
+PROBE loc.filesystem_prefix.warnings: []
+PROBE loc.filesystem_prefix.tables: []
+PROBE loc.plain_absolute_path.outcome: OK applied=1
+PROBE loc.plain_absolute_path.warnings: []
+PROBE loc.plain_absolute_path.tables: [quick_t]
+PROBE loc.classpath_prefix.outcome: FAIL ValidationError: no migrations directory at classpath:db/parityF
+PROBE loc.classpath_prefix.warnings: []
+PROBE loc.classpath_prefix.tables: []
+PROBE loc.no_location.outcome: FAIL ValidationError: at least one migrations location is required
+PROBE loc.no_location.warnings: []
+PROBE loc.no_location.tables: []
+PROBE loc.missing_folder.outcome: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/no_such_folder
+PROBE loc.missing_folder.warnings: []
+PROBE loc.missing_folder.tables: []
+PROBE loc.a_file_not_a_folder.outcome: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql
+PROBE loc.a_file_not_a_folder.warnings: []
+PROBE loc.a_file_not_a_folder.tables: []
+PROBE loc.two_locations_same_version.outcome: FAIL ValidationError: no migrations directory at filesystem:/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick
+PROBE loc.two_locations_same_version.warnings: []
+PROBE loc.two_locations_same_version.tables: []
+PROBE loc.two_locations_same_version_native_form.outcome: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: version 1: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/quick/V1__quick.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/hidden/V1__first.sql
+PROBE loc.two_locations_same_version_native_form.warnings: []
+PROBE loc.two_locations_same_version_native_form.tables: []
+PROBE loc.concurrent_index_no_marker.outcome: FAIL MigrationError: migrating default (0:0) failed in V2__index.sql: ActiveSqlTransaction: CREATE INDEX CONCURRENTLY cannot run inside a transaction block Applied by this run before that: V1__table.sql. Nothing of V2__index.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+PROBE loc.concurrent_index_no_marker.warnings: []
+PROBE loc.concurrent_index_no_marker.tables: [ci]
+PROBE schema.missing_schema.outcome: FAIL MigrationError: migrating default (0:0) failed: InvalidSchemaName: no schema has been selected to create in LINE 2: CREATE TABLE ekbatan_schema_history ( ^ Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+PROBE schema.missing_schema.schemas: [public]
+PROBE schema.missing_schema.tables: []
+PROBE schema.missing_schema.history: none in app
+PROBE schema.existing_schema.outcome: OK applied=1
+PROBE schema.existing_schema.schemas: [app, public]
+PROBE schema.existing_schema.tables: [app.ekbatan_schema_history, app.quick_t]
+PROBE schema.existing_schema.history: [1|1|quick|SQL|V1__quick.sql]
+PROBE loc.script_migration.outcome: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/script_migration/V2__touch.py: only SQL migrations are supported. A file named like a migration that is not one - a script, an editor's backup - does not belong beside them.
+PROBE loc.script_migration.warnings: []
+PROBE loc.script_migration.tables: []
+PROBE loc.script_migration.script_ran: false

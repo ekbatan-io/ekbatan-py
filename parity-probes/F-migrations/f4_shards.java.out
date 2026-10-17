@@ -1,0 +1,22 @@
+PROBE targets.config_order: [0:0 global/member-0, 1:0 mexico/member-0, 2:0 brazil/member-0]
+PROBE targets.groups_given_2_0_1: [2:0 brazil/member-0, 0:0 global/member-0, 1:0 mexico/member-0]
+PROBE fail.outcome: FAIL FlywayException: Found non-empty schema(s) "public" but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+PROBE fail.ekbatan_lines: [INFO|FlywayMigrator|0:0|global/member-0|Migrating global/member-0 (0:0), INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0) is at version 1 (1 applied), INFO|FlywayMigrator|1:0|mexico/member-0|Migrating mexico/member-0 (1:0), SEVERE|FlywayMigrator|1:0|mexico/member-0|Migrating mexico/member-0 (1:0) failed, SEVERE|FlywayMigrator|null|null|Stopped at mexico/member-0 (1:0); already migrated: [global/member-0]]
+PROBE fail.flyway_lines_present: true
+PROBE fail.flyway_lines_mdc: [0:0 global/member-0, 1:0 mexico/member-0]
+PROBE fail.mdc_after: null null
+PROBE fail.s0.history: [1|1|quick|SQL|V1__quick.sql|-1996852011|postgres|time>=0|true]
+PROBE fail.s1.history: [<no history table>]
+PROBE fail.s2.history: [<no history table>]
+PROBE again.results: [global/member-0 applied=0, mexico/member-0 applied=1, brazil/member-0 applied=1]
+PROBE again.ekbatan_lines: [INFO|FlywayMigrator|0:0|global/member-0|Migrating global/member-0 (0:0), INFO|FlywayMigrator|0:0|global/member-0|global/member-0 (0:0) is at version 1 (0 applied), INFO|FlywayMigrator|1:0|mexico/member-0|Migrating mexico/member-0 (1:0), INFO|FlywayMigrator|1:0|mexico/member-0|mexico/member-0 (1:0) is at version 1 (1 applied), INFO|FlywayMigrator|2:0|brazil/member-0|Migrating brazil/member-0 (2:0), INFO|FlywayMigrator|2:0|brazil/member-0|brazil/member-0 (2:0) is at version 1 (1 applied)]
+PROBE again.flyway_lines_present: true
+PROBE again.flyway_lines_mdc: [0:0 global/member-0, 1:0 mexico/member-0, 2:0 brazil/member-0]
+PROBE single.ekbatan_lines: [INFO|FlywayMigrator|0:0|default|Migrating default (0:0), INFO|FlywayMigrator|0:0|default|default (0:0) is at version 1 (1 applied)]
+PROBE single.flyway_lines_present: true
+PROBE single.flyway_lines_mdc: [0:0 default]
+PROBE target.shard_no_name: 3:1 shard-3-1
+PROBE target.default: 0:0 default
+PROBE refuse.no_targets: FAIL IllegalStateException: at least one Flyway migration target is required
+PROBE refuse.blank_location: FAIL IllegalArgumentException: locations cannot contain blank values
+PROBE refuse.blank_target_name: FAIL IllegalArgumentException: name is required
