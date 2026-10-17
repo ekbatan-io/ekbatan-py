@@ -43,7 +43,9 @@ tools for its REST examples only; this goes one step further.)
 - `codegen` in Poetry's dev group, not the runtime list: the built wheel's metadata shows only
   the runtime extras.
 - The uv projects install `ekbatan` itself as a wheel too (`uv sync --no-editable`), so their
-  tests also check that ekbatan's own package is complete.
+  tests also check that ekbatan's own package is complete. **Found later (EKB-0260):** uv reuses
+  that wheel until ekbatan's version changes, so after the first run the uv projects tested a
+  stale ekbatan. Their test step now reinstalls ekbatan and the scheduler every time.
 - A setuptools build leaves `src/*.egg-info/` behind; the sync check skips it, as git does.
 - `make examples`: **21 of 21 pass** (REST 11 each, sharded 18, saga 14, job worker 9,
   SQLite 19), each in its own environment, each as its wheel installed; the SQLite script runs.

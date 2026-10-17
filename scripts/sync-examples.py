@@ -266,7 +266,10 @@ def makefile(e: Example, build: str) -> str:
     ]
     if build == "uv":
         lines += [
-            f"\tuv sync --no-editable --reinstall-package {e.project} --quiet",
+            # ekbatan and the scheduler too: uv reuses a built wheel until the version changes,
+            # so without these the tests run whatever ekbatan was the first time.
+            f"\tuv sync --no-editable --reinstall-package {e.project} \\",
+            "\t\t--reinstall-package ekbatan --reinstall-package ekbatan-py-db-scheduler --quiet",
             "\tuv run --no-sync pytest --pyargs $(PACKAGE)",
         ]
     elif build == "pip":

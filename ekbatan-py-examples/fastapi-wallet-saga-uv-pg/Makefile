@@ -31,7 +31,8 @@ builders: env
 # The tests run against the project as its wheel, installed - not the source tree - so a
 # file the build leaves out fails here rather than on a server.
 test: $(SRC)/schema.py
-	uv sync --no-editable --reinstall-package fastapi-wallet-saga-pg --quiet
+	uv sync --no-editable --reinstall-package fastapi-wallet-saga-pg \
+		--reinstall-package ekbatan --reinstall-package ekbatan-py-db-scheduler --quiet
 	uv run --no-sync pytest --pyargs $(PACKAGE)
 
 run: $(SRC)/schema.py

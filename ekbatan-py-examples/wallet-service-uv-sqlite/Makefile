@@ -19,7 +19,8 @@ env:
 # The tests run against the project as its wheel, installed - not the source tree - so a
 # file the build leaves out fails here rather than on a server.
 test: env
-	uv sync --no-editable --reinstall-package wallet-service-sqlite --quiet
+	uv sync --no-editable --reinstall-package wallet-service-sqlite \
+		--reinstall-package ekbatan --reinstall-package ekbatan-py-db-scheduler --quiet
 	uv run --no-sync pytest --pyargs $(PACKAGE)
 
 run: env
