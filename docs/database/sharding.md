@@ -286,6 +286,10 @@ wallet_id.minted_at                        # -> datetime, from the v7 timestamp
 
 `ShardedId[Wallet].random()` uses the default shard. Because the timestamp is the high bits, ids sort
 chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
+Comparing two ids (`<`, `sorted`) follows Java's `UUID.compareTo`, which reads each half of the
+uuid as a signed number: version 7 ids sort by time either way, but a random `Id[...]` whose
+first digit is `8`-`f` sorts before one starting `0`-`7`, as in Java (the database's own order
+is unsigned).
 
 ## Custom sharding strategies
 

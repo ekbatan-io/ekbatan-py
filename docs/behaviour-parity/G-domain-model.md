@@ -86,7 +86,7 @@ the text is not measured here.
 | 53 | Empty, garbage or null text refused; upper case read as lower | yes | yes | same | id.of.empty, id.of.garbage, id.of.null, id.of.upper |
 | 54 | `Id` / `ShardedId` print as the bare uuid | yes | yes | same | id.toString, shardedId.toString |
 | 55 | Id equality: same uuid equal; `Id` never equals `ShardedId` or a raw UUID; two models' ids with one uuid equal; hash = uuid's | yes | yes | same | id.equals.*, id.hash.equalsUuidHash |
-| 56 | Ordering of ids whose top bit is set | `80000000-...` sorts first (signed) | sorts last (unsigned) | differs | order.id.*, order.shardedId.msbHighBitVsZero |
+| 56 | Ordering of ids whose top bit is set | `80000000-...` sorts first (signed) | `80000000-...` sorts first (signed) | same (fixed in EKB-0293) | order.id.*, order.shardedId.msbHighBitVsZero |
 | 57 | Ordering of version 7 ids minted in one ms | by low bits, same order | same | same | order.v7.sameMsDifferentLsb |
 | 58 | Typed value prints as | `WalletNumber{x}` | `x` | differs | typed.toString |
 | 59 | Typed value of null refused; equal by type and value; other type not equal; hash by value | yes | yes | same | typed.null, typed.equals.same, typed.equals.otherType, typed.hash.same |

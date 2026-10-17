@@ -493,6 +493,8 @@ java, so camel case". Ledger: [parity-fix/J-json-domain.md](parity-fix/J-json-do
 | the framework's fields are checked in Java's order - `id`, `events`, `state`, `created_date`, `version`, the version's range - then the model's own | which error a row with two mistakes reports should not depend on the port | `Model`/`Entity` constructor, then the subclass's |
 | `increase_version()` with no version set raises `ValidationError("version cannot be null")` | Java's `version + 1` on a null `Long` throws; the same call fails, with a clearer message | an NPE |
 | calling the dataclass constructor directly without a field still raises `TypeError` | that is the call Java does not let you write (its constructor takes the builder); a factory method that calls `cls(...)` must pass `version=1`, as Java's calls `withInitialVersion()` | - |
+| `Id` and `ShardedId` compare as Java's `UUID.compareTo` does: each 64-bit half as a signed number (`EKB-0293`) | a Java and a Python service ordering the same ids agree; version 7 ids are unaffected until the year ~6400. The database's `ORDER BY` stays unsigned, in both ports | `Id.compareTo` / `ShardedId.compareTo` |
+| comparing an `Id` with a `ShardedId` raises `TypeError` | Java's `Comparable<Id>` / `Comparable<ShardedId>` refuse it at compile time; it used to compare the uuids | does not compile |
 
 ## Noticed in the Java, not acted on
 

@@ -45,6 +45,23 @@ from .sharding import (
 __all__ = ["Id", "ShardedId", "TypedValue", "unwrap"]
 
 
+def _java_order(value: _uuid.UUID) -> tuple[int, int]:
+    """The key Java's ``UUID.compareTo`` sorts by: the two 64-bit halves, each as a *signed*
+    number. So an id starting ``8``-``f`` sorts before one starting ``0``, where Python's own
+    ``UUID`` order (and PostgreSQL's) is unsigned. Version 7 ids agree either way until the year
+    ~6400; random version 4 ones disagree half the time."""
+    number = value.int
+    high, low = number >> 64, number & 0xFFFF_FFFF_FFFF_FFFF
+    return (high - (1 << 64) if high >> 63 else high, low - (1 << 64) if low >> 63 else low)
+
+
+def _ordered_as_java(self: Any, other: object) -> bool:
+    """``<`` for two ids of the same class, by Java's ``compareTo``."""
+    if not (isinstance(other, type(self)) or isinstance(self, type(other))):
+        return NotImplemented  # type: ignore[no-any-return]
+    return _java_order(self.value) < _java_order(other.value)  # type: ignore[attr-defined]
+
+
 @total_ordering
 @dataclass(frozen=True, eq=False)
 class TypedValue[T]:
@@ -116,6 +133,9 @@ class Id[M](TypedValue[_uuid.UUID]):
 
     value: _uuid.UUID
 
+    #: Java's ``compareTo``: the uuid's halves compared as signed numbers.
+    __lt__ = _ordered_as_java
+
     @classmethod
     def of(cls, value: _uuid.UUID | str) -> Self:
         if isinstance(value, str):
@@ -160,6 +180,9 @@ class ShardedId[M](TypedValue[_uuid.UUID]):
     """
 
     value: _uuid.UUID
+
+    #: Java's ``compareTo``: the uuid's halves compared as signed numbers.
+    __lt__ = _ordered_as_java
 
     @classmethod
     def of(cls, value: _uuid.UUID | str) -> Self:

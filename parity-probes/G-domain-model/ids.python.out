@@ -42,10 +42,10 @@ PROBE id.equals.shardedIdSameUuid: False
 PROBE id.equals.otherModelSameUuid: True
 PROBE id.hash.equalsUuidHash: True
 PROBE id.equals.rawUuid: False
-PROBE order.id.msbHighBitVsZero: 1
-PROBE order.shardedId.msbHighBitVsZero: 1
-PROBE order.id.lsbVariant10vs00: 1
-PROBE order.id.sorted: ['00000000', '7fffffff', '80000000']
+PROBE order.id.msbHighBitVsZero: -1
+PROBE order.shardedId.msbHighBitVsZero: -1
+PROBE order.id.lsbVariant10vs00: -1
+PROBE order.id.sorted: ['80000000', '00000000', '7fffffff']
 PROBE order.v7.sameMsDifferentLsb: 1
 PROBE typed.toString: x
 PROBE typed.null: ERR ValidationError: WalletNumber value cannot be null

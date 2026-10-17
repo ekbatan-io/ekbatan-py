@@ -225,6 +225,31 @@ def test_comparing_ids_delegates_to_the_uuid():
     assert sorted([high, low]) == [low, high]
 
 
+@pytest.mark.parametrize("kind", [Id, ShardedId])
+def test_ids_sort_as_javas_uuid_compare_to_sorts_them_signed(kind):
+    """Java compares a uuid's two 64-bit halves as signed numbers, so an id whose top bit is
+    set sorts *first*. Python's own `UUID` order is unsigned. Run against Java: the same three
+    ids sort `80000000, 00000000, 7fffffff` there (`parity-probes/G-domain-model/ids.java.out`).
+    """
+    top = kind.of("80000000-0000-4000-8000-000000000000")
+    zero = kind.of("00000000-0000-4000-8000-000000000000")
+    middle = kind.of("7fffffff-0000-4000-8000-000000000000")
+    assert top < zero
+    assert zero > top
+    assert sorted([zero, middle, top]) == [top, zero, middle]
+    # The low half is signed too: variant bits `10` sort before `00`.
+    assert kind.of("00000000-0000-4000-8000-000000000000") < kind.of(
+        "00000000-0000-4000-0000-000000000000"
+    )
+
+
+def test_an_id_and_a_sharded_id_do_not_compare():
+    """Java's `Id` is `Comparable<Id>` and `ShardedId` `Comparable<ShardedId>`: comparing the two
+    does not compile."""
+    with pytest.raises(TypeError):
+        _ = Id.of(uuid4()) < ShardedId.of(uuid4())
+
+
 # -- the shard coordinate, and the bits it has to fit into -------------------------------------
 #
 # Java's ShardIdentifierTest, case for case.
