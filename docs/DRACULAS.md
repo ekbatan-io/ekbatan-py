@@ -44,7 +44,7 @@ whatever is decided about the rest.
 | 2 | The events tables default to the default schema, not `eventlog` | choice (SQLite has no schemas) | yes | H | A5, B4, C |
 | 3 | Migration history is `ekbatan_schema_history` with SHA-256, not Flyway's table and CRC32: the ports cannot migrate one database | forced + choice | partly | H | C |
 | 4 | db-scheduler task data is JSON; Java's default is Java serialization | forced | no | M | D |
-| 5 | Redis lock is a plain key, Redisson uses a hash: mixing ports on one Redis is likely unsafe | forced | partly | M (unverified) | D |
+| 5 | ~~Redis lock is a plain key, Redisson uses a hash: mixing ports on one Redis is likely unsafe~~ **fixed** (`EKB-0267`): Redisson's hash, scripts and unlock message; a Java and a Python service share one lock both ways, run | forced | partly | M (unverified) | D |
 | 6 | ~~Tracer scope `ekbatan` and loggers `ekbatan.*`, not `io.ekbatan.*`; OpenTelemetry optional~~ **fixed** (`EKB-0248`): loggers named after the Java class writing the same lines, scope `io.ekbatan.core`, the OpenTelemetry API a dependency, the migrator's MDC keys | choice | yes | M | C, B |
 | 7 | The scheduler port always writes `priority`; Java leaves it NULL | choice | yes | L | D |
 
@@ -95,7 +95,7 @@ whatever is decided about the rest.
 | 38 | Build the scheduler after `fork()` (gunicorn `--preload`) | forced | no | M | D |
 | 39 | Each server process has its own pools and scheduler | forced | no | M | E |
 | 40 | Handlers run on real OS threads, one batch wide per shard | forced | partly | L | B |
-| 41 | Redis `acquire` polls every 50 ms instead of being woken | forced | partly | L | D |
+| 41 | ~~Redis `acquire` polls every 50 ms instead of being woken~~ **fixed** (`EKB-0267`): waiters subscribe to Redisson's unlock channel, and a bounded wait ends on time | forced | partly | L | D |
 | 42 | CPU-heavy jobs share one core (GIL) | forced | no | L | D |
 
 ### Models, repositories, transactions

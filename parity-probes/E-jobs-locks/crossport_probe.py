@@ -27,6 +27,7 @@ DIR = Path(
     )
 )
 KEYS = ["xport:wallet:abc", "xport:café"]
+WAKE = "xport:wake"
 FIVE_MIN = timedelta(minutes=5)
 BACKENDS = ("pg", "mysql", "mariadb", "redis")
 
@@ -67,6 +68,16 @@ def tries() -> None:
                 got.release()
         except Exception as e:
             p(f"{tag}.python_gets_it_after_java_releases", f"raised {type(e).__name__}")
+    # Redis only: Python is already waiting when Java releases, with a 5-minute TTL on the key,
+    # so only Redisson's unlock message can let it in before the 15 s wait ends.
+    wait_for("java-holding-wake")
+    mark("python-waiting-wake")
+    t0 = time.monotonic()
+    got = ps["redis"].try_acquire(WAKE, timedelta(seconds=15), FIVE_MIN)
+    p("xport.java_holds.redis.wake.python_got", got is not None)
+    p("xport.java_holds.redis.wake.python_woken_under_3s", time.monotonic() - t0 < 3)
+    if got is not None:
+        got.release()
 
 
 def holds() -> None:
@@ -78,6 +89,12 @@ def holds() -> None:
     for lease in leases:
         lease.release()
     p("xport.python_holds.released", True)
+    # Redis only: Java waits on this key, and only our unlock message can wake it in time.
+    wake = ps["redis"].acquire(WAKE, FIVE_MIN)
+    mark("python-holding-wake")
+    wait_for("java-waiting-wake")
+    time.sleep(1)
+    wake.release()
 
 
 def jobs() -> None:

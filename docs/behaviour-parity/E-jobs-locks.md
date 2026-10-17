@@ -23,11 +23,11 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 1 | Key to PostgreSQL advisory-lock number (`wallet:abc`, `café:1`) | `-9133792321015084474`, `8236439431089013590` | same numbers | same | locks `pg.name.*` |
 | 2 | Key to MySQL / MariaDB `GET_LOCK` name (EKB-0244 re-checked) | `813e4046e5b48a46`, `724db6062814c356` | same names | same | locks `mysql/mariadb.name.*` |
 | 3 | Key to Redis key | `ekbatan-lock:wallet:abc` | same | same | locks `redis.name.*` |
-| 4 | What is stored at the Redis key | a hash (Redisson) | a string (`SET NX PX`) | differs | locks `redis.name.*` |
+| 4 | What is stored at the Redis key | a hash (Redisson) | a hash (was: a string; fixed in EKB-0267) | same | locks `redis.name.*` |
 | 5 | Redis key TTL is `maxHold` | 30 s | 30 s | same | locks `redis.ttl_s` |
 | 6 | Java holds, Python tries (PG, MySQL, MariaDB, Redis) | - | Python is kept out, gets it after Java releases | same | crossport `java_holds.*` |
 | 7 | Python holds, Java tries (PG, MySQL, MariaDB) | Java is kept out, gets it after release | - | same | crossport `python_holds.*` |
-| 8 | Python holds, Java tries (Redis) | Java's `tryAcquire` throws `RedisException: WRONGTYPE` | - | differs | crossport `python_holds.redis.*` |
+| 8 | Python holds, Java tries (Redis) | Java is kept out, gets it after release, and Python's release wakes a waiting Java (was: `RedisException: WRONGTYPE`; fixed in EKB-0267) | - | same | crossport `python_holds.redis.*` |
 | 9 | Same thread takes the key again | at once, no backend call | same | same | locks `reenter.fast` |
 | 10 | Another thread while held | kept out | kept out | same | locks `reenter.other_thread_can_acquire` |
 | 11 | `tryAcquire(0)` re-entry | returns a lease | same | same | locks `try_reenter_zero_wait` |
@@ -37,7 +37,7 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 15 | One lease closed twice | no error, released once | same | same | locks `close_twice` |
 | 16 | `tryAcquire` on a held key, 0 / 0.5 / 1 / 1.5 s (PG, MariaDB) | empty after about the wait | same | same | locks `try_held.*` |
 | 17 | MySQL `tryAcquire` with a 500 ms wait | waits 1 s | waits 1 s (was: 0 s; fixed in EKB-0265) | same | locks `mysql.try_held.wait_500ms`, wait `mysql.*` |
-| 18 | Redis `tryAcquire` wait length (1 s, 5 s) | 1 s, 5 s | 1.25 s, 5.75 s | differs | locks `redis.try_held.*`, wait `redis.*` |
+| 18 | Redis `tryAcquire` wait length (1 s, 5 s) | 1 s, 5 s | 1 s, 5 s (was: 1.25 s, 5.75 s; fixed in EKB-0267) | same | locks `redis.try_held.*`, wait `redis.*` |
 | 19 | `tryAcquire` gets it when the holder lets go in time | yes, under 1.5 s | same | same | locks `try_released_in_time` |
 | 20 | `acquire` waits while held, then gets it | yes | same | same | locks `blocking_acquire` |
 | 21 | `maxHold` passes: lock freed, lease not held, close is harmless | yes | same | same | locks `expiry.*` |
@@ -105,6 +105,8 @@ the connection before its `try`, so SQLAlchemy's `OperationalError` escapes, pas
 Java `PostgresKeyedLockProvider.java:119-123` (same in MySQL / MariaDB). Python `locks/sql.py:108`.
 Python can match: open the connection inside the `try`. Cheap.
 
+> **Fixed in EKB-0267:** Redisson's layout and scripts, and a waiter woken by its unlock message. Rerun: `redis.name.*` say `hash`; crossport `python_holds.redis.*` and the new `wake.*` lines are true in both directions.
+
 **4, 8. Redis: Python stores a string, Redisson a hash** (surprise: medium). Same key name, so
 exclusion holds both ways. But when Python holds the key, Java's `tryAcquire` and `acquire` throw
 `RedisException: WRONGTYPE` instead of returning empty or waiting. Java holding and Python trying
@@ -122,6 +124,8 @@ cost, and it ties the port to Redisson's internal format.
 docstring's claim that Java gets 0 s too is wrong. MariaDB keeps fractions in both.
 Java `MySQLKeyedLockProvider.java:164,179`. Python `locks/sql.py:235`.
 Python can match: send the seconds as a `Decimal`. Cheap.
+
+> **Fixed in EKB-0267** (with 4 and 8): the wait runs against a deadline. Rerun: `redis.wait_5000ms.elapsed_bucket_ms: 5000`, as Java.
 
 **18. Redis: Python waits longer than asked** (surprise: low). Python polls every 50 ms and takes
 50 ms off the remaining time per round, without counting the time each Redis call takes, so a

@@ -76,6 +76,12 @@ class ParityECrossPortTest {
         }
         mark("java-released");
         p("xport.java_holds.released", true);
+        // Redis only: Python waits on this key, and only Redisson's unlock message wakes it in time.
+        var wake = ps.get("redis").acquire("xport:wake", FIVE_MIN);
+        mark("java-holding-wake");
+        await("python-waiting-wake");
+        Thread.sleep(1000);
+        wake.close();
         ParityELocksProbeTest.redisson.shutdown();
     }
 
@@ -108,6 +114,19 @@ class ParityECrossPortTest {
             } catch (Exception ex) {
                 p(tag + ".java_gets_it_after_python_releases", "raised " + ex.getClass().getSimpleName());
             }
+        }
+        // Redis only: Java is already waiting when Python releases, with a 5-minute TTL on the key.
+        await("python-holding-wake");
+        mark("java-waiting-wake");
+        var w0 = System.nanoTime();
+        try {
+            var got = ps.get("redis").tryAcquire("xport:wake", Duration.ofSeconds(15), FIVE_MIN);
+            p("xport.python_holds.redis.wake.java_got", got.isPresent());
+            p("xport.python_holds.redis.wake.java_woken_under_3s", System.nanoTime() - w0 < 3_000_000_000L);
+            got.ifPresent(Lease::close);
+        } catch (Exception ex) {
+            p("xport.python_holds.redis.wake.java_got", "raised " + ex.getClass().getSimpleName());
+            System.out.println("DETAIL " + ex);
         }
         ParityELocksProbeTest.redisson.shutdown();
     }

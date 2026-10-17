@@ -175,9 +175,9 @@ PROBE mariadb.conn_drop.close: no-error
 PROBE mariadb.conn_drop.provider_still_works: true
 PROBE mariadb.interrupt_waiting_acquire: no-api
 PROBE-DONE mariadb
-PROBE redis.name.wallet_abc: [ekbatan-lock:wallet:abc|string]
+PROBE redis.name.wallet_abc: [ekbatan-lock:wallet:abc|hash]
 PROBE redis.ttl_s.wallet_abc: 30
-PROBE redis.name.unicode_cafe: [ekbatan-lock:café:1|string]
+PROBE redis.name.unicode_cafe: [ekbatan-lock:café:1|hash]
 PROBE redis.name.after_release: []
 PROBE redis.reenter.fast: true
 PROBE redis.reenter.other_thread_can_acquire: false
@@ -200,9 +200,9 @@ PROBE redis.try_held.wait_0ms.elapsed_bucket_ms: 0
 PROBE redis.try_held.wait_500ms.got: false
 PROBE redis.try_held.wait_500ms.elapsed_bucket_ms: 500
 PROBE redis.try_held.wait_1000ms.got: false
-PROBE redis.try_held.wait_1000ms.elapsed_bucket_ms: 1250
+PROBE redis.try_held.wait_1000ms.elapsed_bucket_ms: 1000
 PROBE redis.try_held.wait_1500ms.got: false
-PROBE redis.try_held.wait_1500ms.elapsed_bucket_ms: 1750
+PROBE redis.try_held.wait_1500ms.elapsed_bucket_ms: 1500
 PROBE redis.try_released_in_time.got: true
 PROBE redis.try_released_in_time.under_1500ms: true
 PROBE redis.blocking_acquire.got_while_held: false

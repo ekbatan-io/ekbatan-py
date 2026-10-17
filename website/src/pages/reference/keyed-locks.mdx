@@ -166,7 +166,7 @@ what makes "uniform across all five" checkable rather than aspirational.
 | `PostgresKeyedLockProvider` | cross-process | `pg_advisory_lock` (session-scoped) | session + watchdog | Auto-released if the session ends — a crashed process or a dropped network connection releases the key without anyone intervening. One connection per lease |
 | `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | `max_wait` is **rounded to whole seconds** — see [below](#mysql-rounds-the-wait-to-whole-seconds) |
 | `MariaDBKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | Same statements as the MySQL one, separate because MariaDB honours sub-second timeouts |
-| `RedisKeyedLockProvider` | the Redis deployment | `SET NX PX` | **TTL** + watchdog | Sub-millisecond hand-off. Single-master only — **not** Redlock |
+| `RedisKeyedLockProvider` | the Redis deployment | Redisson's lock: a hash, its Lua scripts, an unlock message | **TTL** + watchdog | Shares a lock with a Java service on the same Redis. Waiters are woken, not polling. Single-master only — **not** Redlock |
 
 There is **no in-process provider**, as there is none in Java. A lock held in one process's
 memory excludes nothing in another, and a Python service in production is several worker
@@ -181,6 +181,12 @@ the key simply expires and the next caller takes it.
 
 The Redis provider deliberately drives the expiry itself rather than letting a client library's
 own watchdog extend the lease, so the framework's first-acquire-wins rule holds there too.
+
+It stores the lock exactly as Java's Redisson-backed provider does - a hash at
+`ekbatan-lock:<key>`, one field per holder, the TTL set to `max_hold`, and a `0` published on
+`redisson_lock__channel:{ekbatan-lock:<key>}` on release. So a Java service and a Python service
+on one Redis share the lock both ways: either keeps the other out, and a release on one side
+wakes a waiter on the other at once.
 
 The four SQL and in-process providers come from `ekbatan.locks`. The Redis one is imported from
 `ekbatan.locks.redis` and needs the `redis` extra - it is deliberately *not* re-exported from the

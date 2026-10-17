@@ -10,6 +10,8 @@ PROBE xport.java_holds.pg.wallet.python_gets_it_after_java_releases: true
 PROBE xport.java_holds.mysql.wallet.python_gets_it_after_java_releases: true
 PROBE xport.java_holds.mariadb.wallet.python_gets_it_after_java_releases: true
 PROBE xport.java_holds.redis.wallet.python_gets_it_after_java_releases: true
+PROBE xport.java_holds.redis.wake.python_got: true
+PROBE xport.java_holds.redis.wake.python_woken_under_3s: true
 PROBE xport.python_holds.released: true
 PROBE xport.shared_job.java_ran: true
 PROBE xport.shared_job.python_ran: true

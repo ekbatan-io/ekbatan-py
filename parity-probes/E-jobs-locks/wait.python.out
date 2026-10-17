@@ -9,4 +9,4 @@ PROBE mariadb.wait_5000ms.elapsed_bucket_ms: 5000
 PROBE redis.wait_250ms.got: false
 PROBE redis.wait_250ms.elapsed_bucket_ms: 250
 PROBE redis.wait_5000ms.got: false
-PROBE redis.wait_5000ms.elapsed_bucket_ms: 5750
+PROBE redis.wait_5000ms.elapsed_bucket_ms: 5000

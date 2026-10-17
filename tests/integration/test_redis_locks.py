@@ -1,8 +1,9 @@
 """The Redis-backed keyed lock, against a real Redis.
 
 Java's `RedisKeyedLockProviderIntegrationTest` and `RedisKeyedLockProviderLeaseTest`, case for
-case. The three that are about Redisson's `CompletionException` unwrapping have no counterpart -
-that is a detail of the client Java uses, and `redis-py` raises what it raises.
+case, and the Redisson layout a Java service reads and writes. The three that are about
+Redisson's `CompletionException` unwrapping have no counterpart - that is a detail of the client
+Java uses, and `redis-py` raises what it raises.
 
 Nothing here is mocked. A lock that works against a fake is a lock nobody has tested.
 """
@@ -80,7 +81,7 @@ def test_the_default_namespace_is_javas(redis_client, request):
     provider = RedisKeyedLockProvider(redis_client)
     try:
         with provider.acquire(key(request), SHORT):
-            assert redis_client.get(f"ekbatan-lock:{key(request)}") is not None
+            assert redis_client.exists(f"ekbatan-lock:{key(request)}")
     finally:
         provider.close()
 
@@ -194,9 +195,9 @@ def test_max_hold_releases_the_key_on_its_own(provider, redis_client, request):
     provider.acquire(k, timedelta(milliseconds=300))
     stored = f"{provider._prefix}{k}"
 
-    assert redis_client.get(stored) is not None
+    assert redis_client.exists(stored)
     time.sleep(0.6)
-    assert redis_client.get(stored) is None, "the lease expired without anyone unlocking"
+    assert not redis_client.exists(stored), "the lease expired without anyone unlocking"
 
 
 def test_closing_a_lease_deletes_the_key(provider, redis_client, request):
@@ -204,10 +205,10 @@ def test_closing_a_lease_deletes_the_key(provider, redis_client, request):
     stored = f"{provider._prefix}{k}"
 
     lease = provider.acquire(k, SHORT)
-    assert redis_client.get(stored) is not None
+    assert redis_client.exists(stored)
     lease.release()
 
-    assert redis_client.get(stored) is None
+    assert not redis_client.exists(stored)
 
 
 def test_an_expired_lease_does_not_delete_the_next_holders_key(provider, redis_client, request):
@@ -225,7 +226,7 @@ def test_an_expired_lease_does_not_delete_the_next_holders_key(provider, redis_c
     second = provider.acquire(k, SHORT)
     time.sleep(0.3)
 
-    assert redis_client.get(stored) is not None, "the second holder still has its key"
+    assert redis_client.exists(stored), "the second holder still has its key"
     second.release()
 
 
@@ -264,7 +265,7 @@ def test_a_sub_millisecond_hold_still_produces_an_expiring_lease(provider, redis
     provider.acquire(k, timedelta(microseconds=500))
     time.sleep(0.05)
 
-    assert redis_client.get(f"{provider._prefix}{k}") is None, "1ms, not forever"
+    assert not redis_client.exists(f"{provider._prefix}{k}"), "1ms, not forever"
 
 
 def test_a_sub_millisecond_hold_does_not_block_a_later_acquirer(provider, request):
@@ -295,9 +296,9 @@ def test_an_inner_close_does_not_release_the_key(provider, redis_client, request
     inner = provider.acquire(k, SHORT)
     inner.release()
 
-    assert redis_client.get(stored) is not None, "the outer holder still has it"
+    assert redis_client.exists(stored), "the outer holder still has it"
     outer.release()
-    assert redis_client.get(stored) is None
+    assert not redis_client.exists(stored)
 
 
 def test_closing_the_outer_first_keeps_the_key_until_the_inner_closes(
@@ -311,9 +312,9 @@ def test_closing_the_outer_first_keeps_the_key_until_the_inner_closes(
     inner = provider.acquire(k, SHORT)
     outer.release()
 
-    assert redis_client.get(stored) is not None
+    assert redis_client.exists(stored)
     inner.release()
-    assert redis_client.get(stored) is None
+    assert not redis_client.exists(stored)
 
 
 def test_an_inner_max_hold_does_not_shorten_the_outer_lease(provider, redis_client, request):
@@ -326,7 +327,7 @@ def test_an_inner_max_hold_does_not_shorten_the_outer_lease(provider, redis_clie
         with provider.acquire(k, timedelta(milliseconds=100)):
             pass
         time.sleep(0.4)
-        assert redis_client.get(stored) is not None, "the inner hold did not shorten the TTL"
+        assert redis_client.exists(stored), "the inner hold did not shorten the TTL"
         assert redis_client.pttl(stored) > 1000
 
 
@@ -365,7 +366,7 @@ def test_closing_a_lease_twice_is_harmless(provider, redis_client, request):
     lease.release()
     lease.release()
 
-    assert redis_client.get(stored) is None
+    assert not redis_client.exists(stored)
 
 
 def test_closing_the_provider_leaves_open_leases_held(provider, redis_client, request):
@@ -422,8 +423,120 @@ def test_a_backend_failure_on_acquire_is_reported_as_one(provider, request, monk
     """A broken backend and a busy one call for opposite responses, so they must not arrive the
     same way. Contention is `None`; a failure is an exception."""
     monkeypatch.setattr(
-        provider._client, "set", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no redis"))
+        provider, "_lock", lambda **_: (_ for _ in ()).throw(RuntimeError("no redis"))
     )
 
     with pytest.raises(LockAcquisitionError, match="the lock backend failed"):
         provider.acquire(key(request), SHORT)
+
+
+# -- the layout a Java service shares -----------------------------------------------------------
+#
+# Java's provider is a Redisson RLock. A Python holder must look to Redisson exactly like a
+# Redisson holder, or a Java service trying the same key fails with WRONGTYPE instead of waiting.
+
+
+def test_the_lock_is_a_redisson_hash(provider, redis_client, request):
+    """A hash, one field `<client id>:<thread id>` holding the count 1, TTL `max_hold`."""
+    k = key(request)
+    stored = f"{provider._prefix}{k}"
+
+    with provider.acquire(k, timedelta(seconds=30)):
+        assert redis_client.type(stored) in (b"hash", "hash")
+        fields = redis_client.hgetall(stored)
+        assert len(fields) == 1
+        ((field, count),) = fields.items()
+        field = field.decode() if isinstance(field, bytes) else field
+        client_id, thread_id = field.rsplit(":", 1)
+        assert client_id == provider._id
+        assert thread_id == str(threading.get_ident())
+        assert int(count) == 1
+        assert 29_000 < redis_client.pttl(stored) <= 30_000
+
+
+def test_a_release_publishes_redissons_unlock_message(provider, redis_client, request):
+    """`0` on `redisson_lock__channel:{<key>}` is what wakes a Redisson waiter."""
+    k = key(request)
+    pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+    pubsub.subscribe(f"redisson_lock__channel:{{{provider._prefix}{k}}}")
+    try:
+        provider.acquire(k, SHORT).release()
+        message = None
+        end = time.monotonic() + 2
+        while message is None and time.monotonic() < end:
+            message = pubsub.get_message(timeout=0.5)
+        assert message is not None and message["data"] in (b"0", "0")
+    finally:
+        pubsub.close()
+
+
+def test_a_waiter_is_woken_by_the_release_not_by_a_poll(provider, request):
+    """Redisson waiters subscribe; so do these. Hand-off is immediate even with a long TTL."""
+    k = key(request)
+    lease = provider.acquire(k, timedelta(seconds=30))
+    took: list[float] = []
+
+    def waiter():
+        got = provider.try_acquire(k, timedelta(seconds=10), SHORT)
+        took.append(time.monotonic())
+        assert got is not None
+        got.release()
+
+    thread = threading.Thread(target=waiter)
+    thread.start()
+    time.sleep(0.3)
+    released_at = time.monotonic()
+    lease.release()
+    thread.join(10)
+
+    assert took and took[0] - released_at < 0.2, "woken by the unlock message"
+
+
+def test_a_bounded_wait_ends_on_time(provider, request):
+    """Redisson's wait is against a deadline; it does not drift by the time each call takes."""
+    k = key(request)
+    with provider.acquire(k, timedelta(seconds=30)):
+        outcome: list[object] = []
+        started = time.monotonic()
+        thread = threading.Thread(
+            target=lambda: outcome.append(provider.try_acquire(k, timedelta(seconds=1), SHORT))
+        )
+        thread.start()
+        thread.join(10)
+        waited = time.monotonic() - started
+
+    assert outcome == [None]
+    assert 0.95 <= waited < 1.2, f"waited {waited:.2f}s"
+
+
+def test_a_redisson_holder_keeps_a_python_waiter_out_until_it_unlocks(
+    provider, redis_client, request
+):
+    """A Java holder, played with Redisson's own scripts and a foreign client id: Python waits
+    (no WRONGTYPE), and Redisson's unlock - delete plus the `0` message - lets it in at once."""
+    from ekbatan.locks.redis import _LOCK, _UNLOCK
+
+    k = key(request)
+    stored = f"{provider._prefix}{k}"
+    channel = f"redisson_lock__channel:{{{stored}}}"
+    java_owner = "00000000-0000-0000-0000-00000000java:1"
+    assert redis_client.eval(_LOCK, 1, stored, 30_000, java_owner) is None
+
+    assert provider.try_acquire(k, NONE, SHORT) is None
+    took: list[object] = []
+    thread = threading.Thread(
+        target=lambda: took.append(provider.try_acquire(k, timedelta(seconds=10), SHORT))
+    )
+    thread.start()
+    time.sleep(0.3)
+    latch = f"redisson_unlock_latch:{{{stored}}}:x"
+    assert (
+        redis_client.eval(
+            _UNLOCK, 3, stored, channel, latch, 0, 30_000, java_owner, "publish", 13_500
+        )
+        == 1
+    )
+    thread.join(5)
+
+    assert took and took[0] is not None, "the unlock message woke the waiter"
+    took[0].release()

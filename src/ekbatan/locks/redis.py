@@ -9,12 +9,18 @@ answer when the thing being coordinated is not itself a database write.
     with provider.acquire("wallet:" + str(wallet_id), timedelta(seconds=30)) as lease:
         ...
 
-**Single-master only.** Mutual exclusion here is `SET NX PX` against one Redis, exactly as the
-Java implementation's Redisson-backed provider is. That is correct for a single master, including
-Sentinel-managed primary-with-replicas where reads and writes go to the master. It is *not*
-Redlock, so it is not safe under multi-master Redis, and a failover that loses the in-memory key
-loses the lock with it. A deployment that needs more than this needs a Redlock provider, and
-should not pretend this one is it.
+**The lock is Redisson's, byte for byte.** Java's provider is a Redisson ``RLock``, so this one
+writes what Redisson writes and runs the scripts Redisson runs (Redisson 3.39.0, the version
+Java's build pins): a hash at the key, one field ``<client id>:<thread id>`` holding the hold
+count, ``PEXPIRE`` set to ``max_hold``, and on release a ``0`` published on
+``redisson_lock__channel:{<key>}``. So a Java service and a Python service can share one lock:
+either can hold it while the other tries or waits, and a release on one side wakes a waiter on
+the other. A waiter here subscribes to that channel, as Redisson does, instead of polling.
+
+**Single-master only.** That is correct for a single master, including Sentinel-managed
+primary-with-replicas where reads and writes go to the master. It is *not* Redlock, so it is not
+safe under multi-master Redis, and a failover that loses the in-memory key loses the lock with
+it - the same as Java.
 
 The TTL is the release mechanism, not a hint. A holder that dies releases nothing; the key
 expires and the next caller takes it. That is why ``max_hold`` has to be an honest upper bound on
@@ -24,6 +30,8 @@ the work, in both ports.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import uuid
 from datetime import timedelta
 from typing import Any, Self
@@ -40,20 +48,53 @@ LOG = logging.getLogger("io.ekbatan.keyedlock.redis.RedisKeyedLockProvider")
 #: What Java's builder defaults to. The colon is added by the provider.
 DEFAULT_NAMESPACE = "ekbatan-lock"
 
-#: How often a blocking acquire asks again. Redis has no blocking `SET NX`, so waiting is
-#: polling; short enough to feel immediate, long enough not to be a busy loop.
-POLL = timedelta(milliseconds=50)
+#: Redisson's `RedissonLock.tryLockInnerAsync`, verbatim. Takes the lock (or re-enters it for the
+#: same owner field) and returns nil, or returns the key's remaining TTL in milliseconds.
+_LOCK = (
+    "if ((redis.call('exists', KEYS[1]) == 0) "
+    "or (redis.call('hexists', KEYS[1], ARGV[2]) == 1)) then "
+    "redis.call('hincrby', KEYS[1], ARGV[2], 1); "
+    "redis.call('pexpire', KEYS[1], ARGV[1]); "
+    "return nil; "
+    "end; "
+    "return redis.call('pttl', KEYS[1]);"
+)
 
-#: Delete the key only if it still holds *our* token. A plain `DEL` releases whoever holds it
-#: now, which after a TTL expiry is somebody else - and they would then be running unprotected
-#: while believing they held the lock. Java relies on Redisson's owner check for the same reason.
-_RELEASE = """
-if redis.call('get', KEYS[1]) == ARGV[1] then
-    return redis.call('del', KEYS[1])
-else
-    return 0
-end
-"""
+#: Redisson's `RedissonLock.unlockInnerAsync`, verbatim. Counts the owner's hold down; at zero it
+#: deletes the key and publishes the unlock message that wakes waiters, Java's and ours. Returns
+#: nil when this owner no longer holds the key - after a TTL expiry, somebody else may - so it
+#: never deletes another owner's lock. KEYS[3] is a latch that makes a retried unlock idempotent.
+_UNLOCK = (
+    "local val = redis.call('get', KEYS[3]); "
+    "if val ~= false then "
+    "return tonumber(val);"
+    "end; "
+    "if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then "
+    "return nil;"
+    "end; "
+    "local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1); "
+    "if (counter > 0) then "
+    "redis.call('pexpire', KEYS[1], ARGV[2]); "
+    "redis.call('set', KEYS[3], 0, 'px', ARGV[5]); "
+    "return 0; "
+    "else "
+    "redis.call('del', KEYS[1]); "
+    "redis.call(ARGV[4], KEYS[2], ARGV[1]); "
+    "redis.call('set', KEYS[3], 1, 'px', ARGV[5]); "
+    "return 1; "
+    "end; "
+)
+
+#: `LockPubSub.UNLOCK_MESSAGE`.
+UNLOCK_MESSAGE = 0
+
+#: How long the unlock latch lives: Redisson's `(timeout + retryInterval) * retryAttempts` at its
+#: defaults, `(3000 + 1500) * 3` ms.
+_LATCH_MILLIS = 13_500
+
+#: The longest a waiter sleeps before asking again when the key has no TTL to wait out - which a
+#: lock taken by either port never lacks, since both always set one.
+_IDLE_WAIT = timedelta(seconds=5)
 
 RELEASES_FAILED = counter(
     "ekbatan.locks.release_failures",
@@ -65,24 +106,31 @@ RELEASES_FAILED = counter(
 def lease_millis(max_hold: timedelta) -> int:
     """``max_hold`` as whole milliseconds, never zero.
 
-    Redis rejects `PX 0` outright - verified against a real server - and a sub-millisecond
-    ``max_hold`` truncates to exactly that. Java rounds up here for the same reason, where the
-    consequence is worse: Redisson reads a non-positive lease as "no lease" and starts renewing
-    the key for as long as the process lives, which is the opposite of what was asked for.
+    A sub-millisecond ``max_hold`` truncates to 0, and ``PEXPIRE 0`` deletes the key at once - a
+    lock that is gone the moment it is taken. Java rounds up here for a worse reason: Redisson
+    reads a non-positive lease as "no lease" and renews the key for as long as the process lives.
     """
     return max(1, int(max_hold.total_seconds() * 1000))
+
+
+def _prefix_name(prefix: str, name: str) -> str:
+    """Redisson's `RedissonObject.prefixName`: the hash tag keeps a channel on the key's slot."""
+    if "{" in name:
+        return f"{prefix}:{name}"
+    return f"{prefix}:{{{name}}}"
 
 
 class RedisKeyedLockProvider:
     """Mutual exclusion across processes, keyed by a string.
 
-    Re-entry is tracked in this process, as it is for the SQL providers: the first acquire talks
-    to Redis, re-entries only bump a counter, and the outermost release is the one that deletes
-    the key. That is what makes the *outermost* ``max_hold`` govern the TTL - an inner re-entry
-    asking for a shorter one must not shorten the holder's lease.
+    Re-entry is tracked in this process, as it is for the SQL providers and as Java tracks it
+    over Redisson: the first acquire talks to Redis, re-entries only bump a counter, and the
+    outermost release is the one that unlocks. That is what makes the *outermost* ``max_hold``
+    govern the TTL - an inner re-entry asking for a shorter one must not shorten the holder's
+    lease.
     """
 
-    __slots__ = ("_client", "_holder", "_prefix", "_release")
+    __slots__ = ("_client", "_holder", "_id", "_lock", "_prefix", "_release")
 
     def __init__(self, client: Any, *, namespace: str = DEFAULT_NAMESPACE) -> None:
         if not namespace or not namespace.strip():
@@ -90,7 +138,10 @@ class RedisKeyedLockProvider:
         self._client = client
         self._prefix = f"{namespace}:"
         self._holder = KeyedReentrantHolder()
-        self._release = client.register_script(_RELEASE)
+        #: Redisson's client id: one UUID per client, the first half of every owner field.
+        self._id = str(uuid.uuid4())
+        self._lock = client.register_script(_LOCK)
+        self._release = client.register_script(_UNLOCK)
 
     @classmethod
     def builder(cls) -> RedisKeyedLockProviderBuilder:
@@ -102,11 +153,9 @@ class RedisKeyedLockProvider:
         reentered = self._holder.reenter(key)
         if reentered is not None:
             return reentered
-        while True:
-            lease = self._attempt(key, max_hold)
-            if lease is not None:
-                return lease
-            _sleep(POLL)
+        lease = self._wait(key, None, max_hold)
+        assert lease is not None
+        return lease
 
     def try_acquire(self, key: str, max_wait: timedelta, max_hold: timedelta) -> Lease | None:
         """Take the lock if it comes free within ``max_wait``, else ``None``.
@@ -118,16 +167,7 @@ class RedisKeyedLockProvider:
         reentered = self._holder.reenter(key)
         if reentered is not None:
             return reentered
-
-        remaining = max_wait
-        while True:
-            lease = self._attempt(key, max_hold)
-            if lease is not None:
-                return lease
-            if remaining <= timedelta(0):
-                return None
-            _sleep(min(remaining, POLL))
-            remaining -= POLL
+        return self._wait(key, time.monotonic() + max_wait.total_seconds(), max_hold)
 
     def close(self) -> None:
         """Does nothing, as Java's ``close()`` does nothing. Leases still open stay held until
@@ -135,25 +175,67 @@ class RedisKeyedLockProvider:
 
     # ---------------------------------------------------------------- internals
 
-    def _attempt(self, key: str, max_hold: timedelta) -> Lease | None:
-        token = str(uuid.uuid4())
+    def _wait(self, key: str, deadline: float | None, max_hold: timedelta) -> Lease | None:
+        """Redisson's `tryLock(wait, lease)` / `lock(lease)`: try, subscribe, then try again each
+        time an unlock message arrives or the holder's TTL runs out, until the deadline."""
+        owner = f"{self._id}:{threading.get_ident()}"
+        ttl = self._try_lock(key, owner, max_hold)
+        if ttl is None:
+            return self._register(key, owner, max_hold)
+        if deadline is not None and time.monotonic() >= deadline:
+            return None
+
         try:
-            taken = self._client.set(self._prefix + key, token, nx=True, px=lease_millis(max_hold))
+            pubsub = self._client.pubsub(ignore_subscribe_messages=True)
+            pubsub.subscribe(_prefix_name("redisson_lock__channel", self._prefix + key))
         except Exception as error:
             raise LockAcquisitionError(key, f"the lock backend failed: {error}") from error
-        if not taken:
-            return None
-        return self._holder.register(key, (key, token), max_hold, self._give_back)
+        try:
+            while True:
+                ttl = self._try_lock(key, owner, max_hold)
+                if ttl is None:
+                    return self._register(key, owner, max_hold)
+                wait = ttl / 1000 if ttl >= 0 else _IDLE_WAIT.total_seconds()
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return None
+                    wait = min(wait, remaining)
+                _await_unlock(pubsub, key, wait)
+        finally:
+            try:
+                pubsub.close()
+            except Exception:  # pragma: no cover - the connection is already gone
+                LOG.debug("failed to close the unlock subscription", exc_info=True)
 
-    def _give_back(self, payload: tuple[str, str], reason: ReleaseReason) -> None:
-        key, token = payload
+    def _try_lock(self, key: str, owner: str, max_hold: timedelta) -> int | None:
+        try:
+            ttl = self._lock(keys=[self._prefix + key], args=[lease_millis(max_hold), owner])
+        except Exception as error:
+            raise LockAcquisitionError(key, f"the lock backend failed: {error}") from error
+        return None if ttl is None else int(ttl)
+
+    def _register(self, key: str, owner: str, max_hold: timedelta) -> Lease:
+        return self._holder.register(
+            key, (key, owner, lease_millis(max_hold)), max_hold, self._give_back
+        )
+
+    def _give_back(self, payload: tuple[str, str, int], reason: ReleaseReason) -> None:
+        key, owner, millis = payload
         if reason is ReleaseReason.EXPIRED:
             # The watchdog fired, which means `max_hold` has passed - and `max_hold` is exactly
-            # the TTL Redis was given, so the key is already gone or about to be. Sending a
-            # delete here would race a lease somebody else has just taken.
+            # the TTL Redis was given, so the key is already gone or about to be. Sending an
+            # unlock here would race a lease somebody else has just taken. Java does the same.
             return
+        stored = self._prefix + key
+        latch = f"{_prefix_name('redisson_unlock_latch', stored)}:{uuid.uuid4().hex}"
         try:
-            self._release(keys=[self._prefix + key], args=[token])
+            # Unlocked as the owner that took it, so a lease closed from another thread still
+            # releases, as Java's `unlockAsync(acquirerThreadId)` does.
+            result = self._release(
+                keys=[stored, _prefix_name("redisson_lock__channel", stored), latch],
+                args=[UNLOCK_MESSAGE, millis, owner, "publish", _LATCH_MILLIS],
+            )
         except Exception as error:
             # Nothing can release a lock on a server it cannot reach, so the TTL is the only
             # remedy. What matters is that it is not silent: every other holder blocks for up to
@@ -165,12 +247,31 @@ class RedisKeyedLockProvider:
                 key,
                 exc_info=error,
             )
+            return
+        try:
+            # Redisson deletes the latch afterwards too, without checking; it expires anyway.
+            self._client.delete(latch)
+        except Exception:
+            LOG.debug("failed to delete the unlock latch for %r; it expires on its own", key)
+        if result is None:
+            # Java's IllegalMonitorStateException: the TTL ran out first. Nothing is held.
+            LOG.debug("Redis lock for %r was no longer held by this owner", key)
 
 
-def _sleep(delay: timedelta) -> None:
-    import time
-
-    time.sleep(max(0.0, delay.total_seconds()))
+def _await_unlock(pubsub: Any, key: str, seconds: float) -> None:
+    """Block until an unlock message arrives or ``seconds`` pass. Any message on the channel is
+    a reason to try again; a stray one costs a single round trip."""
+    end = time.monotonic() + seconds
+    while True:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            message = pubsub.get_message(timeout=remaining)
+        except Exception as error:
+            raise LockAcquisitionError(key, f"the lock backend failed: {error}") from error
+        if message is not None and message.get("type") == "message":
+            return
 
 
 class RedisKeyedLockProviderBuilder:

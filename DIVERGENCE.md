@@ -1142,24 +1142,34 @@ against this one, each run on Flyway 12 as well as read in its source.
 - **Not here:** undo migrations, a target version, placeholders, callbacks other than
   `afterMigrate`, migrations in code, and `customize`.
 
-## The Redis lock is `SET NX PX` on redis-py, not Redisson
+## The Redis lock is Redisson's layout, written with redis-py
 
-> **forced** - There is no Redisson for Python. The mechanism underneath it is what this does directly.
+> **parity** - Not a divergence any more: the same hash, scripts and unlock message as Redisson, so the ports share one lock.
 
-Java uses Redisson's `RLock`. There is no Redisson for Python, and the mechanism underneath it is
-`SET NX PX` plus a Lua compare-and-delete, which is what this does directly - verified against a
-real Redis: mutual exclusion under 32 contending threads, a TTL that expires on its own, and a
-release that refuses to delete a key it does not own.
+Java uses Redisson's `RLock`. There is no Redisson for Python, so this port writes what Redisson
+writes and runs the scripts Redisson runs, copied from Redisson 3.39.0 (the version Java's build
+pins): a hash at the key with one field `<client id>:<thread id>` holding the hold count,
+`PEXPIRE` set to `max_hold`, and on release a `0` published on `redisson_lock__channel:{<key>}`. A
+waiter subscribes to that channel and retries when a message comes or the holder's TTL runs out,
+as Redisson's does, so a bounded wait ends on time and a hand-off is immediate.
+
+Until `EKB-0267` it was `SET NX PX` with a string value. Exclusion held both ways, but a Java
+`tryAcquire` on a key Python held failed with `WRONGTYPE` instead of waiting. Run with a Java
+and a Python service on one Redis since: each keeps the other out, and a release on either side
+wakes a waiter on the other within a second, with a five-minute TTL on the key.
+
+Not copied: Redisson's `WAIT` for replicas on a replicated (non-single-server) setup, and its
+sharded `SPUBLISH` in cluster mode. This provider takes one `redis.Redis`, which is the
+single-server case.
 
 `redis-py` because it is the only serious candidate that is synchronous (this framework is, and
 `coredis` is async-only), ships `py.typed`, and is actively released - 8.1.0 on 2026-07-30 against
 `valkey`'s 2025-08-11.
 
-Re-entrancy works out the same way for opposite reasons. Java layers its own
-`KeyedReentrantHolder` over Redisson to *correct* it: Redisson is reentrant already, but its
-last-call-wins `leaseTime` would let an inner re-entry shorten the outer holder's TTL. Here the
-same holder *provides* the behaviour, because nothing underneath does. Both make the outermost
-`max_hold` the one that governs.
+Re-entry is counted the same way in both. Java layers its own `KeyedReentrantHolder` over
+Redisson: Redisson's script is reentrant already, but its last-call-wins `leaseTime` would let an
+inner re-entry shorten the outer holder's TTL. Here the same holder sits over the same script, so
+Redis only ever sees a count of 1, and the outermost `max_hold` governs.
 
 ## The lock connection runs in autocommit, as Java's pooled one does
 

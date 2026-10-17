@@ -109,7 +109,8 @@ marked unverified.
 - **Could match Java?** no.
 - **Surprise:** medium
 
-### Redis lock: other key layout than Redisson, so mixing Java and Python on one Redis is unsafe (unverified)
+### ~~Redis lock: other key layout than Redisson, so mixing Java and Python on one Redis is unsafe (unverified)~~ fixed (`EKB-0267`)
+- **Fixed:** the provider writes Redisson 3.39.0's layout with its own Lua scripts: a hash, field `<client id>:<thread id>`, `PEXPIRE` `max_hold`, and `0` on `redisson_lock__channel:{<key>}` on release. Confirmed first: with the old string key, Java's `tryAcquire` threw `RedisException: WRONGTYPE`. Run since, Java and Python on one Redis: each keeps the other out, and each release wakes the other's waiter (crossport probe, `wake.*`).
 - **What:** Python stores the lock as a plain string (`SET NX PX`). Redisson stores it as a hash. With the same namespace and key, Redisson's lock script would likely fail with a `WRONGTYPE` error on a key Python holds, instead of waiting. Python treats a Redisson-held key as busy, which is correct.
 - **Python:** `src/ekbatan/locks/redis.py:140` (`client.set(prefix + key, token, nx=True, px=...)`).
 - **Java:** `ekbatan-keyed-lock-redis/.../RedisKeyedLockProvider.java:72-74` (`redisson.getLock(...).lockInterruptibly(...)`).
@@ -117,7 +118,8 @@ marked unverified.
 - **Could match Java?** partly. Python could write Redisson's hash format with the same Lua scripts. Not tried.
 - **Surprise:** medium (unverified: the Redisson side was not run)
 
-### Redis `acquire` checks every 50 ms instead of being woken up
+### ~~Redis `acquire` checks every 50 ms instead of being woken up~~ fixed (`EKB-0267`)
+- **Fixed:** a waiter subscribes to Redisson's unlock channel and retries on a message or when the holder's TTL ends, against a deadline. A 5 s `try_acquire` now gives up at 5 s, not 5.75 s.
 - **What:** Redisson wakes a waiter through pub/sub when the lock is freed. Python waiters retry `SET NX` every 50 ms, so hand-off can lag by up to 50 ms, and each waiter sends about 20 Redis commands a second.
 - **Python:** `src/ekbatan/locks/redis.py:45` (`POLL = 50ms`), `:105-109`, `:122-130`.
 - **Java:** `RedisKeyedLockProvider.java:74,92` (Redisson `lockInterruptibly` / `tryLock`).
