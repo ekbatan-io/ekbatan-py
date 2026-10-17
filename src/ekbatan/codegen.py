@@ -12,7 +12,8 @@ generation here.
 
     python -m ekbatan.codegen myapp.model --out myapp/builders.py
 
-The output is ordinary Python. Commit it, read it, and regenerate it when a model changes.
+The output is ordinary Python. Commit it, read it, and regenerate it when a model changes. The
+first run works too, before the file exists, though the model already imports it.
 
 Regenerating is not optional discipline, and this docstring used to imply it was: it claimed a
 stale builder was "a type error rather than a silent wrong answer". Measured, it is neither.
@@ -25,12 +26,14 @@ on every compile. ``scripts/check-builders.py`` restores that, in ``make lint``.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import importlib
+import importlib.util
 import sys
 import types
 import typing
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +253,62 @@ def _infer_package(out: Path | None) -> str | None:
     return ".".join(parts) if parts else None
 
 
+def _package_holding(out: Path | None, modules: Sequence[str]) -> str | None:
+    """The package whose directory ``out`` is written into, found from the modules being read.
+
+    The current directory says nothing reliable here: under a ``src/`` layout - what ``uv init``
+    and ``poetry new`` both create - ``src/wallet/builders.py`` would read as package
+    ``src.wallet``. ``wallet.model`` says it is ``wallet``, and where ``wallet`` lives.
+    """
+    if out is None:
+        return None
+    directory = out.resolve().parent
+    for name in modules:
+        parent = name.rpartition(".")[0]
+        while parent:
+            spec = importlib.util.find_spec(parent)
+            locations = spec.submodule_search_locations if spec is not None else None
+            if locations and any(Path(p).resolve() == directory for p in locations):
+                return parent
+            parent = parent.rpartition(".")[0]
+    return None
+
+
+@contextlib.contextmanager
+def _stand_in_for(module_name: str | None) -> Iterator[None]:
+    """Stand in for the builders module while it does not exist yet - a project's first run.
+
+    A model names its builder on its class line, so ``model.py`` imports ``builders.py`` - the
+    file this command is about to write. Without this, the very first run fails on the import of
+    its own output. Each name the model imports from it is an empty class for the duration;
+    nothing is left behind, and once the file exists it is imported as it is.
+    """
+    if module_name is None or module_name in sys.modules:
+        yield
+        return
+    try:
+        exists = importlib.util.find_spec(module_name) is not None
+    except ModuleNotFoundError:
+        exists = False
+    if exists:
+        yield
+        return
+    stand_in = types.ModuleType(module_name)
+    made: dict[str, type] = {}
+
+    def __getattr__(name: str) -> type:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return made.setdefault(name, type(name, (), {"builds": None, "builds_ref": None}))
+
+    stand_in.__getattr__ = __getattr__  # type: ignore[method-assign]
+    sys.modules[module_name] = stand_in
+    try:
+        yield
+    finally:
+        sys.modules.pop(module_name, None)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m ekbatan.codegen",
@@ -264,7 +323,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    source = generate(args.modules, package=args.package or _infer_package(args.out))
+    package = args.package or _package_holding(args.out, args.modules) or _infer_package(args.out)
+    target = f"{package}.{args.out.stem}" if package and args.out is not None else None
+    with _stand_in_for(target):
+        source = generate(args.modules, package=package)
     if args.out is None:
         sys.stdout.write(source)
     else:

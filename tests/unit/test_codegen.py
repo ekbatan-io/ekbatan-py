@@ -189,3 +189,83 @@ def test_a_name_that_cannot_be_looked_up_is_left_as_it_was():
     hint = _concrete_types(Local)["id"]
     assert typing.get_origin(hint) is ShardedId
     assert typing.get_args(hint) == (typing.ForwardRef("Local"),)
+
+
+# -- a new project: src/ layout, and no builders.py yet -----------------------------------------
+
+NEW_MODEL = """
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+from enum import Enum
+
+from ekbatan import Model, ShardedId
+
+from .builders import WalletBuilder
+
+
+class WalletState(Enum):
+    OPENED = "OPENED"
+
+
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
+    balance: Decimal
+"""
+
+
+def a_new_project(root: Path) -> Path:
+    """What `uv init wallet` leaves, plus a model that imports the builders it does not have."""
+    package = root / "src" / "wallet"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "model.py").write_text(NEW_MODEL)
+    return package
+
+
+def run_codegen(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "ekbatan.codegen", *args],
+        capture_output=True,
+        text=True,
+        cwd=root,
+        env={**__import__("os").environ, "PYTHONPATH": str(root / "src")},
+    )
+
+
+def test_the_first_run_works_before_builders_py_exists(tmp_path: Path):
+    """The model imports `builders.py`, the very file this writes. It used to fail on that import
+    - so a new project could never generate its first builders (Dracula bug 6)."""
+    package = a_new_project(tmp_path)
+
+    result = run_codegen(tmp_path, "wallet.model", "--out", "src/wallet/builders.py")
+
+    assert result.returncode == 0, result.stderr
+    assert "class WalletBuilder" in (package / "builders.py").read_text()
+    imported = run_codegen(tmp_path, "wallet.model")  # and now the model imports for real
+    assert imported.returncode == 0, imported.stderr
+
+
+def test_under_a_src_layout_the_package_comes_from_the_module_not_the_folder(tmp_path: Path):
+    """`src/wallet/builders.py` read from the current folder is `src.wallet`; it is `wallet`."""
+    package = a_new_project(tmp_path)
+
+    run_codegen(tmp_path, "wallet.model", "--out", "src/wallet/builders.py")
+
+    source = (package / "builders.py").read_text()
+    assert "from .model import" in source
+    assert 'builds_ref = "wallet.model:Wallet"' in source
+    assert "src.wallet" not in source
+
+
+def test_the_stand_in_is_gone_once_the_file_exists(tmp_path: Path):
+    """A second run imports the real builders.py, as a regeneration always did."""
+    package = a_new_project(tmp_path)
+    run_codegen(tmp_path, "wallet.model", "--out", "src/wallet/builders.py")
+    first = (package / "builders.py").read_text()
+
+    again = run_codegen(tmp_path, "wallet.model", "--out", "src/wallet/builders.py")
+
+    assert again.returncode == 0, again.stderr
+    assert (package / "builders.py").read_text() == first
