@@ -1,8 +1,10 @@
 """Turning committed events into work.
 
 One pass per shard: read the events nothing has fanned out yet whose type somebody subscribes
-to, write one notification per subscriber, and mark those events delivered. All in one
-transaction, so a crash half way leaves the events undelivered rather than the work lost.
+to, write one notification per subscriber, and mark those events delivered. The writes are one
+transaction, so a crash half way leaves the events undelivered rather than the work lost. The
+read is not part of it, as in Java: it takes its own connection. A row read twice - by a lagging
+replica, say - is harmless, because the unique key on (event, handler) drops the second insert.
 
 Fan-out and dispatch are separate stages because they are separate pieces of state.
 ``delivered`` says the event has been turned into work; a notification's state says whether the

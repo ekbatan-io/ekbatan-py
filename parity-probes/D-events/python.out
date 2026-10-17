@@ -124,14 +124,14 @@ PROBE r.find_undelivered: 1
 PROBE r.handling.any: false
 PROBE r.handling.calls: 0
 PROBE t.after_rollback_events: 0
-PROBE t.find_due_sees_own_uncommitted: 1
-PROBE t.find_undelivered_sees_own_uncommitted: 1
+PROBE t.find_due_sees_own_uncommitted: 0
+PROBE t.find_undelivered_sees_own_uncommitted: 0
 PROBE t.mark_delivered_rolled_back: f
 PROBE t.outcome_write_failed.fail_row: PENDING
 PROBE t.outcome_write_failed.ok_calls_after_two_rounds: 2
 PROBE t.outcome_write_failed.ok_row: PENDING
 PROBE t.outcome_write_failed.threw: true
-PROBE t.undelivered_after_mark_in_same_tx: 0
+PROBE t.undelivered_after_mark_in_same_tx: 1
 PROBE x.boundary.calls: [m-13]
 PROBE x.boundary.exact: EXPIRED | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
 PROBE x.boundary.one_second_older: EXPIRED | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00

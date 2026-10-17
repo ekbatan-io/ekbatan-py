@@ -222,3 +222,25 @@ def test_the_timestamps_come_back_naive_utc(notifications):
     (back,) = notifications.find_due(DEFAULT_SHARD, 10, NOW)
     assert back.created_date == NOW
     assert back.created_date.tzinfo is None or back.created_date.tzinfo == UTC
+
+
+# -- which connection a read takes ---------------------------------------------------------------
+
+
+def test_find_undelivered_does_not_join_an_open_transaction(registry, events):
+    """Java's `findUndelivered` reads on a connection of its own, so inside an open transaction
+    it does not see that transaction's uncommitted rows."""
+    with registry.default.transaction():
+        OutboxRepository(registry, EVENTS).add_all_no_result([an_event()], DEFAULT_SHARD)
+        inside = events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)
+    assert inside == [], "find_undelivered joined the open transaction; Java's does not"
+    assert len(events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)) == 1
+
+
+def test_find_due_does_not_join_an_open_transaction(registry, notifications):
+    """Java's `findDue` reads on `db()`, a plain primary connection, never the transaction."""
+    with registry.default.transaction():
+        notifications.add_all_no_result([a_notification()], DEFAULT_SHARD)
+        inside = notifications.find_due(DEFAULT_SHARD, 10, NOW)
+    assert inside == [], "find_due joined the open transaction; Java's does not"
+    assert len(notifications.find_due(DEFAULT_SHARD, 10, NOW)) == 1

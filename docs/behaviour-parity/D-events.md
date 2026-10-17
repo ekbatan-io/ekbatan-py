@@ -37,8 +37,8 @@ and `python.out` (sorted `PROBE` lines). The Probe column below gives the `PROBE
 | 19 | Event whose `event_date` is later than the clock | not delivered until `event_date` | delivered at once | differs | `c.future_event.*` |
 | 20 | Handling order when an older event is fanned out after a newer one | older event first | fan-out order (newer first) | differs | `c.order.*` |
 | 21 | One outcome write fails (a trigger refuses `FAILED`) while a sibling succeeded | sibling stays `SUCCEEDED`; handler called once | whole batch rolled back; sibling back to `PENDING`, its handler called again | differs | `t.outcome_write_failed.*` |
-| 22 | `findUndelivered` inside an open transaction on the shard | does not see the transaction's own rows (0) | sees them (1) | differs | `t.find_undelivered_*`, `t.undelivered_after_mark_in_same_tx` |
-| 23 | `findDue` inside an open transaction on the shard | does not see them (0) | sees them (1) | differs | `t.find_due_sees_own_uncommitted` |
+| 22 | `findUndelivered` inside an open transaction on the shard | does not see the transaction's own rows (0) | same (fixed in EKB-0270) | same | `t.find_undelivered_*`, `t.undelivered_after_mark_in_same_tx` |
+| 23 | `findDue` inside an open transaction on the shard | does not see them (0) | same (fixed in EKB-0270) | same | `t.find_due_sees_own_uncommitted` |
 | 24 | `markDelivered` / inserts join the open transaction and roll back with it | yes | yes | same | `t.mark_delivered_rolled_back`, `t.after_rollback_events` |
 | 25 | Where the reads go when the shard has a replica (replica empty, primary has the rows) | `findUndelivered` replica (fan-out finds nothing); `findDue` primary (handler called) | the other way round: fan-out works, handling finds nothing | differs | `r.*` |
 | 26 | Handlers in a batch, and shards, run at the same time | 5 at once (3 + 2 over two shards) | 5 | same | `c.max_concurrent_handlers` |
@@ -78,7 +78,7 @@ Most surprising first.
 - **Match Java?** yes, small: default a hand-built job to on.
 - **Surprise:** high
 
-### 22, 23. Event repository reads join the open transaction
+### 22, 23. Event repository reads join the open transaction - fixed in EKB-0270
 - **What:** inside an open transaction on the shard, Python's `find_undelivered` and `find_due`
   see that transaction's uncommitted rows. Java's do not: `findUndelivered` uses the replica
   connection and `findDue` a plain primary connection, both outside the transaction. Same class of

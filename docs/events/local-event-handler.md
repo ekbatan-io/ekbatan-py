@@ -213,7 +213,8 @@ dataclass, so the trap does not exist and neither do the two spellings of every 
 Each round:
 
 1. Drain a batch of undelivered events whose `event_type` **currently has a registered handler** -
-   `delivered = FALSE AND event_type IN (...)`, limited, ordered by `event_date`.
+   `delivered = FALSE AND event_type IN (...)`, limited, ordered by `event_date`. The read takes
+   a connection of its own, as Java's does; steps 2 and 3 are one transaction.
 2. For each, insert one notification row per subscribed handler, with the full denormalised
    context: `PENDING`, `attempts = 0`, `next_retry_at = now`.
 3. Mark the source events `delivered = TRUE`.
@@ -242,7 +243,8 @@ Each round:
 
 1. Drain a batch of due notifications **from the primary** - `state IN ('PENDING','FAILED') AND
    next_retry_at <= now`, limited, ordered. From the primary rather than a replica, so a handler
-   is not invoked from a stale row that was already marked complete.
+   is not invoked from a stale row that was already marked complete. Like fan-out's read, it
+   takes a connection of its own and never joins an open transaction, as Java's does not.
 2. **Pre-flight expiry:** if `now > event_date + retention`, go straight to `EXPIRED` without
    invoking the handler. A stale event should not burn anything.
 3. Invoke the handler:

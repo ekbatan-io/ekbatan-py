@@ -6,8 +6,10 @@ module, method for method. Each takes its table, where Java's names ``eventlog.e
 SQLite has none - so the application declares each table once and hands the same one to
 everything that touches it.
 
-Every read and write goes through the shard's open transaction when there is one, as Java's
-``txDbElseDb`` does, so a job that opens one gets all of its statements inside it.
+The writes go through the shard's open transaction when there is one, as Java's
+``txDbElseDb`` does. The two reads do not, as Java's do not: ``find_undelivered`` and
+``find_due`` each take a connection of their own, so inside an open transaction they do not see
+its uncommitted rows.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from sqlalchemy import Connection, Table, select, update
 
 from ..action.outbox import OUTBOX_COLUMNS, EventEntity
 from ..errors import ValidationError
+from ..fetching import Db
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
 from ..sharding import ShardIdentifier
 from .notification import NOTIFICATION_COLUMNS, EventNotification, EventNotificationState
@@ -51,9 +54,21 @@ class _ShardRepository:
             yield conn
 
     @contextmanager
+    def _db(self, shard: ShardIdentifier) -> Iterator[Connection]:
+        """Java's ``db(shard)``: the shard's primary, outside any open transaction. Each
+        statement commits itself."""
+        with Db(self._registry.manager(shard).primary).execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
+            yield conn
+
+    @contextmanager
     def _readonly_db(self, shard: ShardIdentifier) -> Iterator[Connection]:
-        """The shard's replica, or its primary when it has none. Never the open transaction."""
-        with self._registry.manager(shard).connection(readonly=True) as conn:
+        """Java's ``readonlyDb(shard)``: the shard's replica, or its primary when it has none.
+        Never the open transaction."""
+        with Db(self._registry.manager(shard).replica).execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
             yield conn
 
 
@@ -75,15 +90,15 @@ class EventEntityRepository(_ShardRepository):
         marked delivered, so registering a handler later still picks it up - and a sentinel
         row, which has no event type at all, is never selected.
 
-        Read through the shard's open transaction, where Java reads the replica: fan-out selects
-        and marks delivered in one transaction here, so the rows it marks are the rows it read.
+        Read outside any open transaction, as Java's is, so it does not see rows that
+        transaction has written and not yet committed.
         """
         if handled_event_types is None:
             raise ValidationError("handled_event_types cannot be None")
         if not handled_event_types:
             return []
         table = self._table
-        with self._tx_db_else_db(shard) as conn:
+        with self._db(shard) as conn:
             rows = conn.execute(
                 select(table)
                 .where(table.c.delivered.is_(False), table.c.event_type.in_(handled_event_types))
@@ -125,7 +140,8 @@ class EventNotificationRepository(_ShardRepository):
     ) -> list[EventNotification]:
         """Pending or failed notifications whose retry time has come, soonest first.
 
-        Read from the replica, where Java reads the primary.
+        Read outside any open transaction, as Java's is, from the replica, where Java reads
+        the primary.
         """
         table = self._table
         with self._readonly_db(shard) as conn:
