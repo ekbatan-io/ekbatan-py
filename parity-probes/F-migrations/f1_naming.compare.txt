@@ -1,169 +1,88 @@
-DIFF mysql.accept.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true, 2|1.5|underscore version|SQL|V1_5__underscore_version.sql|-32438769|root|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|-200567608|root|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|694507560|root|time>=0|true, 5|2|two|SQL|V2__two.sql|-1656281684|root|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|1556740716|root|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|1978855407|root|time>=0|true, 8|5||SQL|V5__.sql|-1266929617|root|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|306255318|root|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|1709164326|root|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|1258378757|root|time>=0|true, 12|null|a view|SQL|R__a_view.sql|-223021533|root|time>=0|true, 13|null|b view|SQL|R__b_view.sql|1373794442|root|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|980a914715d6b5fae08c3fd3dcd3dbdef11e02c0fa8c9802d456250f1cd097fa|root|time>=0|true, 2|1_5|underscore version|SQL|V1_5__underscore_version.sql|c079c10aacb472e349a6995a22a25e6e8fae5ee99a2bb92d2e035649b87b360b|root|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|27d1a1c4280815cb6b5ab6645d120a446cf3ca423a9f60d459e076dd5f3880bf|root|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|f5621257c270ba8ecf08ba43b08ad467104c36e09b9d15685db61a0f9936ef92|root|time>=0|true, 5|2|two|SQL|V2__two.sql|678d57ac815790bb3cee3b681ae80e125afc7f434076ae6fb7a69bb387f1688a|root|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|6d7ff3100b6bf1e8c84f99fbbd8be11ed28d0e34e7251b2bf43f87ca1157337a|root|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|77a7b1303c83c6c9f1dd185f13a6ee39d3a5544e60d425e1fa7aa36ef619b544|root|time>=0|true, 8|5||SQL|V5__.sql|cf021536698affca5b04ce3e8389d2e0738a25b9c660880362e685ccd63119e9|root|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|e3fb697547977d345b2dc2f2adb04681493a893cc6920646f604920ddf7a3b03|root|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|197b5c3e5796c378d11b9d974a1d227f3f214f3b2859045df8c66758f5dfcdac|root|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|f60c6fc9f431c5d23884ac9387598091f6e2a6b8aa7c51a50c69df6665fcda6a|root|time>=0|true, 12|null|a view|SQL|R__a_view.sql|a543c016bac4a9c1a204e726d59d371c16882dd210b43b8f76dbbc2d38e02882|root|time>=0|true, 13|null|b view|SQL|R__b_view.sql|c8c7320dddc23c5f5ddc38263002a39cfef22c13d1c93ecf1ba8b003110cabe1|root|time>=0|true]
+=    mysql.accept.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true, 2|1.5|underscore version|SQL|V1_5__underscore_version.sql|-32438769|root|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|-200567608|root|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|694507560|root|time>=0|true, 5|2|two|SQL|V2__two.sql|-1656281684|root|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|1556740716|root|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|1978855407|root|time>=0|true, 8|5||SQL|V5__.sql|-1266929617|root|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|306255318|root|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|1709164326|root|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|1258378757|root|time>=0|true, 12|null|a view|SQL|R__a_view.sql|-223021533|root|time>=0|true, 13|null|b view|SQL|R__b_view.sql|1373794442|root|time>=0|true]
 =    mysql.accept.outcome: OK applied=13
 =    mysql.accept.tables: [t_v1, t_v10, t_v1_10, t_v1_5, t_v1_9, t_v2, t_v20, t_v3, t_v4, t_v5, v_a, v_b, v_z]
-DIFF mysql.accept.versions
-     java:   [1, 1.5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
-     python: [1, 1_5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
+=    mysql.accept.versions: [1, 1.5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
 =    mysql.accept.warnings: []
-DIFF mysql.callback.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.callback.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/callback/afterMigrate.sql: Flyway callbacks are not run here. The one this has is yoyo's post-apply hook, which is Flyway's afterMigrate: a file named post-apply.sql runs at the end of every migrate.
-DIFF mysql.callback.tables
-     java:   [t_callback, t_v1]
-     python: []
-DIFF mysql.callback.versions
-     java:   [1]
-     python: <missing>
+=    mysql.callback.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+=    mysql.callback.outcome: OK applied=1
+=    mysql.callback.tables: [t_callback, t_v1]
+=    mysql.callback.versions: [1]
 =    mysql.callback.warnings: []
-DIFF mysql.conf.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.conf.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/conf/V1__first.sql.conf: Flyway's script configuration files are not read here. To run a migration outside a transaction, make `-- transactional: false` its first line.
-DIFF mysql.conf.tables
-     java:   [t_v1]
-     python: []
-DIFF mysql.conf.versions
-     java:   [1]
-     python: <missing>
+=    mysql.conf.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+=    mysql.conf.outcome: OK applied=1
+=    mysql.conf.tables: [t_v1]
+=    mysql.conf.versions: [1]
 =    mysql.conf.warnings: []
-DIFF mysql.delimiter_mysql.history
-     java:   [1|1|proc|SQL|V1__proc.sql|-810009373|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.delimiter_mysql.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/delimiter_mysql/V1__proc.sql: `DELIMITER` is a command of the mysql client, not SQL, and is not understood here. Leave it out: a procedure's or a trigger's BEGIN ... END body is kept whole without it, and every other statement ends at its `;`.
+=    mysql.delimiter_mysql.history: [1|1|proc|SQL|V1__proc.sql|-810009373|root|time>=0|true]
+=    mysql.delimiter_mysql.outcome: OK applied=1
 =    mysql.delimiter_mysql.tables: []
-DIFF mysql.delimiter_mysql.versions
-     java:   [1]
-     python: <missing>
+=    mysql.delimiter_mysql.versions: [1]
 =    mysql.delimiter_mysql.warnings: []
 =    mysql.dup_repeatable.history: [<no history table>]
 DIFF mysql.dup_repeatable.outcome
      java:   FAIL FlywayException: Found more than one repeatable migration with description a b Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a_b.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql (SQL)
-     python: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: repeatable 'a b': /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a_b.sql
+     python: FAIL MigrationError: two migrations are one migration - each version, each repeatable migration's description and each callback's name belongs to one file. Give one of them the next free version, or another name: repeatable 'a b': /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql, /private/tmp/claude-501/-...
 =    mysql.dup_repeatable.tables: []
-DIFF mysql.dup_repeatable.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.dup_repeatable.warnings: [Migrating default (0:0) failed]
 =    mysql.dup_v1_v01.history: [<no history table>]
 DIFF mysql.dup_v1_v01.outcome
      java:   FAIL FlywayException: Found more than one migration with version 01 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V1__first.sql (SQL)
-     python: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: version 01: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V1__first.sql
+     python: FAIL MigrationError: two migrations are one migration - each version, each repeatable migration's description and each callback's name belongs to one file. Give one of them the next free version, or another name: version 01: /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql, /private/tmp/claude-501/-Users-...
 =    mysql.dup_v1_v01.tables: []
-DIFF mysql.dup_v1_v01.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.dup_v1_v01.warnings: [Migrating default (0:0) failed]
 =    mysql.dup_v1_v1.0.history: [<no history table>]
 DIFF mysql.dup_v1_v1.0.outcome
      java:   FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql (SQL)
-     python: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: version 1.0: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1__first.sql
+     python: FAIL MigrationError: two migrations are one migration - each version, each repeatable migration's description and each callback's name belongs to one file. Give one of them the next free version, or another name: version 1.0: /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql, /private/tmp/claude-501/-Use...
 =    mysql.dup_v1_v1.0.tables: []
-DIFF mysql.dup_v1_v1.0.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.dup_v1_v1.0.warnings: [Migrating default (0:0) failed]
 =    mysql.empty.history: []
 =    mysql.empty.outcome: OK applied=0
 =    mysql.empty.tables: []
 =    mysql.empty.versions: []
-DIFF mysql.empty.warnings
-     java:   [No migrations found. Are your locations set up correctly?]
-     python: [default (0:0): no migrations found - are the locations right?]
-DIFF mysql.hidden.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|980a914715d6b5fae08c3fd3dcd3dbdef11e02c0fa8c9802d456250f1cd097fa|root|time>=0|true]
+=    mysql.empty.warnings: [No migrations found. Are your locations set up correctly?]
+=    mysql.hidden.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
 =    mysql.hidden.outcome: OK applied=1
 =    mysql.hidden.tables: [t_v1]
 =    mysql.hidden.versions: [1]
 =    mysql.hidden.warnings: []
-DIFF mysql.long_description.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true, 2|2|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...|SQL|V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql|380028343|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.long_description.outcome
-     java:   OK applied=2
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/long_description/V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql: the description is 210 characters, and the history keeps 200. Shorten the file name.
-DIFF mysql.long_description.tables
-     java:   [t_long, t_v1]
-     python: []
-DIFF mysql.long_description.versions
-     java:   [1, 2]
-     python: <missing>
+=    mysql.long_description.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true, 2|2|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...|SQL|V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql|380028343|root|time>=0|true]
+=    mysql.long_description.outcome: OK applied=2
+=    mysql.long_description.tables: [t_long, t_v1]
+=    mysql.long_description.versions: [1, 2]
 =    mysql.long_description.warnings: []
-DIFF mysql.lowercase_v.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.lowercase_v.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/lowercase_v/v2__lower.sql: a migration's file name must be V<version>__<description>.sql, like V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start with post-apply for a hook. A file that does not match would otherwise be skipped without a word, and never run.
-DIFF mysql.lowercase_v.tables
-     java:   [t_v1]
-     python: []
-DIFF mysql.lowercase_v.versions
-     java:   [1]
-     python: <missing>
+=    mysql.lowercase_v.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+=    mysql.lowercase_v.outcome: OK applied=1
+=    mysql.lowercase_v.tables: [t_v1]
+=    mysql.lowercase_v.versions: [1]
 =    mysql.lowercase_v.warnings: []
-DIFF mysql.misnamed.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.misnamed.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/misnamed/create_stuff.sql: a migration's file name must be V<version>__<description>.sql, like V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start with post-apply for a hook. A file that does not match would otherwise be skipped without a word, and never run.
-DIFF mysql.misnamed.tables
-     java:   [t_v1]
-     python: []
-DIFF mysql.misnamed.versions
-     java:   [1]
-     python: <missing>
+=    mysql.misnamed.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+=    mysql.misnamed.outcome: OK applied=1
+=    mysql.misnamed.tables: [t_v1]
+=    mysql.misnamed.versions: [1]
 =    mysql.misnamed.warnings: []
 =    mysql.non_utf8.history: [<no history table>]
 DIFF mysql.non_utf8.outcome
      java:   FAIL FlywayException: Unable to calculate checksum of V2__latin1.sql Please ensure you have configured the correct file encoding with 'flyway.encoding' or enable 'flyway.detectEncoding' to let Flyway detect it for you
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/non_utf8/V2__latin1.sql is not UTF-8 text: 'utf-8' codec can't decode byte 0xe9 in position 37: invalid continuation byte
+     python: FAIL MigrationError: Unable to calculate checksum of V2__latin1.sql: it is not utf-8 text ('utf-8' codec can't decode byte 0xe9 in position 37: invalid continuation byte). Set its encoding in a .sql.conf file beside it. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
 =    mysql.non_utf8.tables: []
-DIFF mysql.non_utf8.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
-DIFF mysql.placeholder.history
-     java:   []
-     python: [1|1|first|SQL|V1__first.sql|c34a953033500e1a2a335a91b30d58789ffd08a55c49f2daec0159e4a3adc135|root|time>=0|true]
+=    mysql.non_utf8.warnings: [Migrating default (0:0) failed]
+=    mysql.placeholder.history: []
 DIFF mysql.placeholder.outcome
      java:   FAIL FlywayException: Unable to parse statement in /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/placeholder/V1__first.sql at line 1 col 1. See https://rd.gt/3ipi7Pm for more information. No value provided for placeholder: ${unknown_key}. Check your configuration!
-     python: OK applied=1
-DIFF mysql.placeholder.t_ph
-     java:   none
-     python: [${unknown_key}]
-DIFF mysql.placeholder.tables
-     java:   []
-     python: [t_ph]
-DIFF mysql.placeholder.versions
-     java:   <missing>
-     python: [1]
-DIFF mysql.placeholder.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
-DIFF mysql.placeholder_builtin.history
-     java:   [1|1|first|SQL|V1__first.sql|1764619016|root|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|5a1cfae33cf86c6e78b67de31ab4b7b5d7e1d91ecd198a3c3006737fe501bc9b|root|time>=0|true]
+     python: FAIL MigrationError: Unable to parse statement in /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/placeholder/V1__first.sql: No value provided for placeholder: ${unknown_key}. Check your configuration! Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was appl...
+=    mysql.placeholder.t_ph: none
+=    mysql.placeholder.tables: []
+=    mysql.placeholder.warnings: [Migrating default (0:0) failed]
+=    mysql.placeholder_builtin.history: [1|1|first|SQL|V1__first.sql|1764619016|root|time>=0|true]
 =    mysql.placeholder_builtin.outcome: OK applied=1
-DIFF mysql.placeholder_builtin.t_ph
-     java:   [flyway_schema_history]
-     python: [${flyway:table}]
+=    mysql.placeholder_builtin.t_ph: [flyway_schema_history]
 =    mysql.placeholder_builtin.tables: [t_ph]
 =    mysql.placeholder_builtin.versions: [1]
 =    mysql.placeholder_builtin.warnings: []
-DIFF mysql.post_apply.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|980a914715d6b5fae08c3fd3dcd3dbdef11e02c0fa8c9802d456250f1cd097fa|root|time>=0|true]
+=    mysql.post_apply.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
 =    mysql.post_apply.outcome: OK applied=1
-DIFF mysql.post_apply.tables
-     java:   [t_v1]
-     python: [t_post_apply, t_v1]
+=    mysql.post_apply.tables: [t_v1]
 =    mysql.post_apply.versions: [1]
 =    mysql.post_apply.warnings: []
 DIFF mysql.python_file.history
@@ -171,195 +90,106 @@ DIFF mysql.python_file.history
      python: [<no history table>]
 DIFF mysql.python_file.outcome
      java:   OK applied=2
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/python_file/V2__code.py: only SQL migrations are supported. A file named like a migration that is not one - a script, an editor's backup - does not belong beside them.
+     python: FAIL MigrationError: /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/python_file/V2__code.py: only SQL migrations are supported. Flyway would run this file with an interpreter; this migrator does not run programs, so it refuses the file rather than skip a migration a Java service would apply. Already migrated: none. Targets are m...
 DIFF mysql.python_file.tables
      java:   [t_v1]
      python: []
 DIFF mysql.python_file.versions
      java:   [1, 2]
      python: <missing>
-=    mysql.python_file.warnings: []
-DIFF mysql.repeatable_with_version.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.repeatable_with_version.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/repeatable_with_version/R1__x.sql: a repeatable migration has no version - name it R__<description>.sql. Flyway would skip this file, and it would never run.
-DIFF mysql.repeatable_with_version.tables
-     java:   [t_v1]
-     python: []
-DIFF mysql.repeatable_with_version.versions
-     java:   [1]
-     python: <missing>
+DIFF mysql.python_file.warnings
+     java:   []
+     python: [Migrating default (0:0) failed]
+=    mysql.repeatable_with_version.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+=    mysql.repeatable_with_version.outcome: OK applied=1
+=    mysql.repeatable_with_version.tables: [t_v1]
+=    mysql.repeatable_with_version.versions: [1]
 =    mysql.repeatable_with_version.warnings: []
-DIFF mysql.undo.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
-     python: [<no history table>]
-DIFF mysql.undo.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/undo/U1__first.sql: a migration's file name must be V<version>__<description>.sql, like V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start with post-apply for a hook. A file that does not match would otherwise be skipped without a word, and never run.
-DIFF mysql.undo.tables
-     java:   [t_v1]
-     python: []
-DIFF mysql.undo.versions
-     java:   [1]
-     python: <missing>
+=    mysql.undo.history: [1|1|first|SQL|V1__first.sql|77939629|root|time>=0|true]
+=    mysql.undo.outcome: OK applied=1
+=    mysql.undo.tables: [t_v1]
+=    mysql.undo.versions: [1]
 =    mysql.undo.warnings: []
-DIFF pg.accept.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true, 2|1.5|underscore version|SQL|V1_5__underscore_version.sql|-32438769|postgres|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|-200567608|postgres|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|694507560|postgres|time>=0|true, 5|2|two|SQL|V2__two.sql|-1656281684|postgres|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|1556740716|postgres|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|1978855407|postgres|time>=0|true, 8|5||SQL|V5__.sql|-1266929617|postgres|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|306255318|postgres|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|1709164326|postgres|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|1258378757|postgres|time>=0|true, 12|null|a view|SQL|R__a_view.sql|-223021533|postgres|time>=0|true, 13|null|b view|SQL|R__b_view.sql|1373794442|postgres|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|980a914715d6b5fae08c3fd3dcd3dbdef11e02c0fa8c9802d456250f1cd097fa|postgres|time>=0|true, 2|1_5|underscore version|SQL|V1_5__underscore_version.sql|c079c10aacb472e349a6995a22a25e6e8fae5ee99a2bb92d2e035649b87b360b|postgres|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|27d1a1c4280815cb6b5ab6645d120a446cf3ca423a9f60d459e076dd5f3880bf|postgres|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|f5621257c270ba8ecf08ba43b08ad467104c36e09b9d15685db61a0f9936ef92|postgres|time>=0|true, 5|2|two|SQL|V2__two.sql|678d57ac815790bb3cee3b681ae80e125afc7f434076ae6fb7a69bb387f1688a|postgres|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|6d7ff3100b6bf1e8c84f99fbbd8be11ed28d0e34e7251b2bf43f87ca1157337a|postgres|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|77a7b1303c83c6c9f1dd185f13a6ee39d3a5544e60d425e1fa7aa36ef619b544|postgres|time>=0|true, 8|5||SQL|V5__.sql|cf021536698affca5b04ce3e8389d2e0738a25b9c660880362e685ccd63119e9|postgres|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|e3fb697547977d345b2dc2f2adb04681493a893cc6920646f604920ddf7a3b03|postgres|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|197b5c3e5796c378d11b9d974a1d227f3f214f3b2859045df8c66758f5dfcdac|postgres|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|f60c6fc9f431c5d23884ac9387598091f6e2a6b8aa7c51a50c69df6665fcda6a|postgres|time>=0|true, 12|null|a view|SQL|R__a_view.sql|a543c016bac4a9c1a204e726d59d371c16882dd210b43b8f76dbbc2d38e02882|postgres|time>=0|true, 13|null|b view|SQL|R__b_view.sql|c8c7320dddc23c5f5ddc38263002a39cfef22c13d1c93ecf1ba8b003110cabe1|postgres|time>=0|true]
+=    pg.accept.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true, 2|1.5|underscore version|SQL|V1_5__underscore_version.sql|-32438769|postgres|time>=0|true, 3|1.9|nine|SQL|V1.9__nine.sql|-200567608|postgres|time>=0|true, 4|1.10|ten|SQL|V1.10__ten.sql|694507560|postgres|time>=0|true, 5|2|two|SQL|V2__two.sql|-1656281684|postgres|time>=0|true, 6|3|in a subfolder|SQL|sub/V3__in_a_subfolder.sql|1556740716|postgres|time>=0|true, 7|4|capital ext|SQL|V4__capital_ext.SQL|1978855407|postgres|time>=0|true, 8|5||SQL|V5__.sql|-1266929617|postgres|time>=0|true, 9|10|ten major|SQL|V10__ten_major.sql|306255318|postgres|time>=0|true, 10|20|gap after ten|SQL|V20__gap_after_ten.sql|1709164326|postgres|time>=0|true, 11|null|Z capital|SQL|R__Z_capital.sql|1258378757|postgres|time>=0|true, 12|null|a view|SQL|R__a_view.sql|-223021533|postgres|time>=0|true, 13|null|b view|SQL|R__b_view.sql|1373794442|postgres|time>=0|true]
 =    pg.accept.outcome: OK applied=13
 =    pg.accept.tables: [t_v1, t_v10, t_v1_10, t_v1_5, t_v1_9, t_v2, t_v20, t_v3, t_v4, t_v5, v_a, v_b, v_z]
-DIFF pg.accept.versions
-     java:   [1, 1.5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
-     python: [1, 1_5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
+=    pg.accept.versions: [1, 1.5, 1.9, 1.10, 2, 3, 4, 5, 10, 20, R:Z capital, R:a view, R:b view]
 =    pg.accept.warnings: []
-DIFF pg.callback.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [<no history table>]
-DIFF pg.callback.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/callback/afterMigrate.sql: Flyway callbacks are not run here. The one this has is yoyo's post-apply hook, which is Flyway's afterMigrate: a file named post-apply.sql runs at the end of every migrate.
-DIFF pg.callback.tables
-     java:   [t_callback, t_v1]
-     python: []
-DIFF pg.callback.versions
-     java:   [1]
-     python: <missing>
+=    pg.callback.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+=    pg.callback.outcome: OK applied=1
+=    pg.callback.tables: [t_callback, t_v1]
+=    pg.callback.versions: [1]
 =    pg.callback.warnings: []
-DIFF pg.conf.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [<no history table>]
-DIFF pg.conf.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/conf/V1__first.sql.conf: Flyway's script configuration files are not read here. To run a migration outside a transaction, make `-- transactional: false` its first line.
-DIFF pg.conf.tables
-     java:   [t_v1]
-     python: []
-DIFF pg.conf.versions
-     java:   [1]
-     python: <missing>
+=    pg.conf.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+=    pg.conf.outcome: OK applied=1
+=    pg.conf.tables: [t_v1]
+=    pg.conf.versions: [1]
 =    pg.conf.warnings: []
 =    pg.dup_repeatable.history: [<no history table>]
 DIFF pg.dup_repeatable.outcome
      java:   FAIL FlywayException: Found more than one repeatable migration with description a b Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a_b.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql (SQL)
-     python: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: repeatable 'a b': /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_repeatable/R__a_b.sql
+     python: FAIL MigrationError: two migrations are one migration - each version, each repeatable migration's description and each callback's name belongs to one file. Give one of them the next free version, or another name: repeatable 'a b': /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/dup_repeatable/R__a b.sql, /private/tmp/claude-501/-...
 =    pg.dup_repeatable.tables: []
-DIFF pg.dup_repeatable.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    pg.dup_repeatable.warnings: [Migrating default (0:0) failed]
 =    pg.dup_v1_v01.history: [<no history table>]
 DIFF pg.dup_v1_v01.outcome
      java:   FAIL FlywayException: Found more than one migration with version 01 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V1__first.sql (SQL)
-     python: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: version 01: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v01/V1__first.sql
+     python: FAIL MigrationError: two migrations are one migration - each version, each repeatable migration's description and each callback's name belongs to one file. Give one of them the next free version, or another name: version 01: /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/dup_v1_v01/V01__again.sql, /private/tmp/claude-501/-Users-...
 =    pg.dup_v1_v01.tables: []
-DIFF pg.dup_v1_v01.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    pg.dup_v1_v01.warnings: [Migrating default (0:0) failed]
 =    pg.dup_v1_v1.0.history: [<no history table>]
 DIFF pg.dup_v1_v1.0.outcome
      java:   FAIL FlywayException: Found more than one migration with version 1 Offenders: -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1__first.sql (SQL) -> /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql (SQL)
-     python: FAIL MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description: version 1.0: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql, /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/dup_v1_v1.0/V1__first.sql
+     python: FAIL MigrationError: two migrations are one migration - each version, each repeatable migration's description and each callback's name belongs to one file. Give one of them the next free version, or another name: version 1.0: /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/dup_v1_v1.0/V1.0__again.sql, /private/tmp/claude-501/-Use...
 =    pg.dup_v1_v1.0.tables: []
-DIFF pg.dup_v1_v1.0.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    pg.dup_v1_v1.0.warnings: [Migrating default (0:0) failed]
 =    pg.empty.history: []
 =    pg.empty.outcome: OK applied=0
 =    pg.empty.tables: []
 =    pg.empty.versions: []
-DIFF pg.empty.warnings
-     java:   [No migrations found. Are your locations set up correctly?]
-     python: [default (0:0): no migrations found - are the locations right?]
-DIFF pg.hidden.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|980a914715d6b5fae08c3fd3dcd3dbdef11e02c0fa8c9802d456250f1cd097fa|postgres|time>=0|true]
+=    pg.empty.warnings: [No migrations found. Are your locations set up correctly?]
+=    pg.hidden.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
 =    pg.hidden.outcome: OK applied=1
 =    pg.hidden.tables: [t_v1]
 =    pg.hidden.versions: [1]
 =    pg.hidden.warnings: []
-DIFF pg.long_description.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true, 2|2|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...|SQL|V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql|380028343|postgres|time>=0|true]
-     python: [<no history table>]
-DIFF pg.long_description.outcome
-     java:   OK applied=2
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/long_description/V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql: the description is 210 characters, and the history keeps 200. Shorten the file name.
-DIFF pg.long_description.tables
-     java:   [t_long, t_v1]
-     python: []
-DIFF pg.long_description.versions
-     java:   [1, 2]
-     python: <missing>
+=    pg.long_description.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true, 2|2|ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...|SQL|V2__dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.sql|380028343|postgres|time>=0|true]
+=    pg.long_description.outcome: OK applied=2
+=    pg.long_description.tables: [t_long, t_v1]
+=    pg.long_description.versions: [1, 2]
 =    pg.long_description.warnings: []
-DIFF pg.lowercase_v.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [<no history table>]
-DIFF pg.lowercase_v.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/lowercase_v/v2__lower.sql: a migration's file name must be V<version>__<description>.sql, like V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start with post-apply for a hook. A file that does not match would otherwise be skipped without a word, and never run.
-DIFF pg.lowercase_v.tables
-     java:   [t_v1]
-     python: []
-DIFF pg.lowercase_v.versions
-     java:   [1]
-     python: <missing>
+=    pg.lowercase_v.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+=    pg.lowercase_v.outcome: OK applied=1
+=    pg.lowercase_v.tables: [t_v1]
+=    pg.lowercase_v.versions: [1]
 =    pg.lowercase_v.warnings: []
-DIFF pg.misnamed.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [<no history table>]
-DIFF pg.misnamed.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/misnamed/create_stuff.sql: a migration's file name must be V<version>__<description>.sql, like V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start with post-apply for a hook. A file that does not match would otherwise be skipped without a word, and never run.
-DIFF pg.misnamed.tables
-     java:   [t_v1]
-     python: []
-DIFF pg.misnamed.versions
-     java:   [1]
-     python: <missing>
+=    pg.misnamed.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+=    pg.misnamed.outcome: OK applied=1
+=    pg.misnamed.tables: [t_v1]
+=    pg.misnamed.versions: [1]
 =    pg.misnamed.warnings: []
 =    pg.non_utf8.history: [<no history table>]
 DIFF pg.non_utf8.outcome
      java:   FAIL FlywayException: Unable to calculate checksum of V2__latin1.sql Please ensure you have configured the correct file encoding with 'flyway.encoding' or enable 'flyway.detectEncoding' to let Flyway detect it for you
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/non_utf8/V2__latin1.sql is not UTF-8 text: 'utf-8' codec can't decode byte 0xe9 in position 37: invalid continuation byte
+     python: FAIL MigrationError: Unable to calculate checksum of V2__latin1.sql: it is not utf-8 text ('utf-8' codec can't decode byte 0xe9 in position 37: invalid continuation byte). Set its encoding in a .sql.conf file beside it. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
 =    pg.non_utf8.tables: []
-DIFF pg.non_utf8.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
-DIFF pg.placeholder.history
-     java:   []
-     python: [1|1|first|SQL|V1__first.sql|c34a953033500e1a2a335a91b30d58789ffd08a55c49f2daec0159e4a3adc135|postgres|time>=0|true]
+=    pg.non_utf8.warnings: [Migrating default (0:0) failed]
+=    pg.placeholder.history: []
 DIFF pg.placeholder.outcome
      java:   FAIL FlywayException: Unable to parse statement in /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/placeholder/V1__first.sql at line 1 col 1. See https://rd.gt/3ipi7Pm for more information. No value provided for placeholder: ${unknown_key}. Check your configuration!
-     python: OK applied=1
-DIFF pg.placeholder.t_ph
-     java:   none
-     python: [${unknown_key}]
-DIFF pg.placeholder.tables
-     java:   []
-     python: [t_ph]
-DIFF pg.placeholder.versions
-     java:   <missing>
-     python: [1]
-DIFF pg.placeholder.warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
-DIFF pg.placeholder_builtin.history
-     java:   [1|1|first|SQL|V1__first.sql|1764619016|postgres|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|5a1cfae33cf86c6e78b67de31ab4b7b5d7e1d91ecd198a3c3006737fe501bc9b|postgres|time>=0|true]
+     python: FAIL MigrationError: Unable to parse statement in /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/placeholder/V1__first.sql: No value provided for placeholder: ${unknown_key}. Check your configuration! Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was appl...
+=    pg.placeholder.t_ph: none
+=    pg.placeholder.tables: []
+=    pg.placeholder.warnings: [Migrating default (0:0) failed]
+=    pg.placeholder_builtin.history: [1|1|first|SQL|V1__first.sql|1764619016|postgres|time>=0|true]
 =    pg.placeholder_builtin.outcome: OK applied=1
-DIFF pg.placeholder_builtin.t_ph
-     java:   [flyway_schema_history]
-     python: [${flyway:table}]
+=    pg.placeholder_builtin.t_ph: [flyway_schema_history]
 =    pg.placeholder_builtin.tables: [t_ph]
 =    pg.placeholder_builtin.versions: [1]
 =    pg.placeholder_builtin.warnings: []
-DIFF pg.post_apply.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [1|1|first|SQL|V1__first.sql|980a914715d6b5fae08c3fd3dcd3dbdef11e02c0fa8c9802d456250f1cd097fa|postgres|time>=0|true]
+=    pg.post_apply.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
 =    pg.post_apply.outcome: OK applied=1
-DIFF pg.post_apply.tables
-     java:   [t_v1]
-     python: [t_post_apply, t_v1]
+=    pg.post_apply.tables: [t_v1]
 =    pg.post_apply.versions: [1]
 =    pg.post_apply.warnings: []
 DIFF pg.python_file.history
@@ -367,37 +197,23 @@ DIFF pg.python_file.history
      python: [<no history table>]
 DIFF pg.python_file.outcome
      java:   OK applied=2
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/python_file/V2__code.py: only SQL migrations are supported. A file named like a migration that is not one - a script, an editor's backup - does not belong beside them.
+     python: FAIL MigrationError: /private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/py-M/parity-probes/F-migrations/sql/python_file/V2__code.py: only SQL migrations are supported. Flyway would run this file with an interpreter; this migrator does not run programs, so it refuses the file rather than skip a migration a Java service would apply. Already migrated: none. Targets are m...
 DIFF pg.python_file.tables
      java:   [t_v1]
      python: []
 DIFF pg.python_file.versions
      java:   [1, 2]
      python: <missing>
-=    pg.python_file.warnings: []
-DIFF pg.repeatable_with_version.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [<no history table>]
-DIFF pg.repeatable_with_version.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/repeatable_with_version/R1__x.sql: a repeatable migration has no version - name it R__<description>.sql. Flyway would skip this file, and it would never run.
-DIFF pg.repeatable_with_version.tables
-     java:   [t_v1]
-     python: []
-DIFF pg.repeatable_with_version.versions
-     java:   [1]
-     python: <missing>
+DIFF pg.python_file.warnings
+     java:   []
+     python: [Migrating default (0:0) failed]
+=    pg.repeatable_with_version.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+=    pg.repeatable_with_version.outcome: OK applied=1
+=    pg.repeatable_with_version.tables: [t_v1]
+=    pg.repeatable_with_version.versions: [1]
 =    pg.repeatable_with_version.warnings: []
-DIFF pg.undo.history
-     java:   [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
-     python: [<no history table>]
-DIFF pg.undo.outcome
-     java:   OK applied=1
-     python: FAIL MigrationError: /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/undo/U1__first.sql: a migration's file name must be V<version>__<description>.sql, like V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start with post-apply for a hook. A file that does not match would otherwise be skipped without a word, and never run.
-DIFF pg.undo.tables
-     java:   [t_v1]
-     python: []
-DIFF pg.undo.versions
-     java:   [1]
-     python: <missing>
+=    pg.undo.history: [1|1|first|SQL|V1__first.sql|77939629|postgres|time>=0|true]
+=    pg.undo.outcome: OK applied=1
+=    pg.undo.tables: [t_v1]
+=    pg.undo.versions: [1]
 =    pg.undo.warnings: []

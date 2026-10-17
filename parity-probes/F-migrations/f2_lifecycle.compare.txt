@@ -1,516 +1,282 @@
-DIFF maria.baseline.history
-     java:   [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    maria.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    maria.baseline.outcome: OK applied=2 initial=1 target=2
 =    maria.baseline.tables: [life_a, life_b, life_v]
-DIFF maria.future.a_newer_release.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    maria.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    maria.future.a_newer_release.log_warnings: []
 =    maria.future.a_newer_release.outcome: OK applied=4 initial=null target=9
 =    maria.future.a_newer_release.result_warnings: []
 =    maria.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
-DIFF maria.future.b_older_release.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF maria.future.b_older_release.log_warnings
-     java:   [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
-     python: [default (0:0): V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
-DIFF maria.future.b_older_release.outcome
-     java:   OK applied=0 initial=9 target=null
-     python: OK applied=0 initial=9 target=9
-DIFF maria.future.b_older_release.result_warnings
-     java:   []
-     python: [V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+=    maria.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    maria.future.b_older_release.log_warnings: [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
+=    maria.future.b_older_release.outcome: OK applied=0 initial=9 target=null
+=    maria.future.b_older_release.result_warnings: []
 =    maria.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
-DIFF maria.life.a_first.columns
-     java:   installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
-     python: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|varchar|YES, installed_by|varchar|NO, installed_on|varchar|NO, execution_time|int|NO, success|tinyint|NO
-DIFF maria.life.a_first.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF maria.life.a_first.history_tables
-     java:   [flyway_schema_history]
-     python: [ekbatan_schema_history]
-DIFF maria.life.a_first.indexes
-     java:   [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
-     python: [ekbatan_schema_history_s_idx|success, PRIMARY|installed_rank]
-DIFF maria.life.a_first.installed_on_type
-     java:   [timestamp]
-     python: [varchar]
+=    maria.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
+=    maria.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    maria.life.a_first.history_tables: [flyway_schema_history]
+=    maria.life.a_first.indexes: [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
+=    maria.life.a_first.installed_on_type: [timestamp]
 =    maria.life.a_first.log_warnings: []
 =    maria.life.a_first.outcome: OK applied=3 initial=null target=2
 =    maria.life.a_first.result_warnings: []
 =    maria.life.a_first.tables: [life_a, life_b, life_v]
-DIFF maria.life.b_again.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    maria.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    maria.life.b_again.log_warnings: []
-DIFF maria.life.b_again.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    maria.life.b_again.outcome: OK applied=0 initial=2 target=null
 =    maria.life.b_again.result_warnings: []
 =    maria.life.b_again.tables: [life_a, life_b, life_v]
-DIFF maria.life.c_edited.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF maria.life.c_edited.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    maria.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    maria.life.c_edited.log_warnings: [Migrating default (0:0) failed]
 DIFF maria.life.c_edited.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration checksum mismatch for migration version 1 -> Applied to database : -1033942919 -> Resolved locally : 2061709084 Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, fcf00cee7269 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
+     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (checksum -1033942919 then, 2061709084 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one an...
 =    maria.life.c_edited.tables: [life_a, life_b, life_v]
-DIFF maria.life.d_crlf.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    maria.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    maria.life.d_crlf.log_warnings: []
-DIFF maria.life.d_crlf.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    maria.life.d_crlf.outcome: OK applied=0 initial=2 target=null
 =    maria.life.d_crlf.result_warnings: []
 =    maria.life.d_crlf.tables: [life_a, life_b, life_v]
-DIFF maria.life.e_joined.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    maria.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    maria.life.e_joined.log_warnings: []
-DIFF maria.life.e_joined.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, 17b048b577d8 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
-DIFF maria.life.e_joined.result_warnings
-     java:   []
-     python: <missing>
+=    maria.life.e_joined.outcome: OK applied=0 initial=2 target=null
+=    maria.life.e_joined.result_warnings: []
 =    maria.life.e_joined.tables: [life_a, life_b, life_v]
-DIFF maria.life.f_renamed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF maria.life.f_renamed.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    maria.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    maria.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
 DIFF maria.life.f_renamed.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration description mismatch for migration version 1 -> Applied to database : create -> Resolved locally : create renamed Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
      python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 1 was applied as 'create', and its file V1__create_renamed.sql now says 'create renamed'. An applied migration is history: put the old name back - or, if only the name changed, run repair() to record the new one. Already migrated: none. Targets are migrated one at a time, so the rest are u...
 =    maria.life.f_renamed.tables: [life_a, life_b, life_v]
-DIFF maria.life.g_respelled.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    maria.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    maria.life.g_respelled.log_warnings: []
-DIFF maria.life.g_respelled.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    maria.life.g_respelled.outcome: OK applied=0 initial=2 target=null
 =    maria.life.g_respelled.result_warnings: []
 =    maria.life.g_respelled.tables: [life_a, life_b, life_v]
-DIFF maria.life.h_out_of_order.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF maria.life.h_out_of_order.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    maria.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    maria.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
 DIFF maria.life.h_out_of_order.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected resolved migration not applied to database: 1.5. To ignore this migration, set -ignoreMigrationPatterns='*:ignored'. To allow executing this migration, set -outOfOrder=true. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
      python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1_5__late.sql has not been applied, but version 2 already has. Migrations run in version order, so this one would never run in the place its number says: give it a version after 2. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; ...
 =    maria.life.h_out_of_order.tables: [life_a, life_b, life_v]
-DIFF maria.life.i_missing.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF maria.life.i_missing.log_warnings
-     java:   [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
-     python: [default (0:0): V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
-DIFF maria.life.i_missing.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
-DIFF maria.life.i_missing.result_warnings
-     java:   []
-     python: [V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+=    maria.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    maria.life.i_missing.log_warnings: [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
+=    maria.life.i_missing.outcome: OK applied=0 initial=2 target=null
+=    maria.life.i_missing.result_warnings: []
 =    maria.life.i_missing.tables: [life_a, life_b, life_v]
-DIFF maria.life.j_repeatable_changed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true]
+=    maria.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
 =    maria.life.j_repeatable_changed.log_warnings: []
-DIFF maria.life.j_repeatable_changed.outcome
-     java:   OK applied=1 initial=2 target=null
-     python: OK applied=1 initial=2 target=2
+=    maria.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
 =    maria.life.j_repeatable_changed.result_warnings: []
 =    maria.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
-DIFF maria.life.k_failing.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
-DIFF maria.life.k_failing.log_warnings
-     java:   [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
-     python: []
+=    maria.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+=    maria.life.k_failing.log_warnings: [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
 DIFF maria.life.k_failing.outcome
      java:   FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42S02 Error Code : 1146 Message : (conn=48) Table 'f2_life.no_such_table' doesn't exist Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql) Line : 2 Statement : Run Flyway...
-     python: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() has been run. Already migrated: none. Targets are migrated one at a ...
+     python: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") (in V3__half.sql at line 2: INSERT INTO no_such_table VALUES (1)) Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() ha...
 =    maria.life.k_failing.tables: [life_a, life_b, life_c, life_v]
-DIFF maria.life.l_fixed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
-DIFF maria.life.l_fixed.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    maria.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+=    maria.life.l_fixed.log_warnings: [Migrating default (0:0) failed]
 DIFF maria.life.l_fixed.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
 =    maria.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
-DIFF maria.life.m_fixed_again.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
-DIFF maria.life.m_fixed_again.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    maria.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+=    maria.life.m_fixed_again.log_warnings: [Migrating default (0:0) failed]
 DIFF maria.life.m_fixed_again.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
 =    maria.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
 =    maria.nonempty.history: [<no history table>]
-DIFF maria.nonempty.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    maria.nonempty.log_warnings: [Migrating default (0:0) failed]
 DIFF maria.nonempty.outcome
      java:   FAIL FlywayException: Found non-empty schema(s) `f2_nonempty` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
-     python: FAIL MigrationError: default (0:0) already has existing but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this...
+     python: FAIL MigrationError: default (0:0) already has existing but no flyway_schema_history, so nothing says which migrations built it - Flyway refuses it too ("Found non-empty schema(s) `f2_nonempty` but no schema history table"). If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. A...
 =    maria.nonempty.tables: [existing]
-DIFF mysql.baseline.history
-     java:   [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    mysql.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    mysql.baseline.outcome: OK applied=2 initial=1 target=2
 =    mysql.baseline.tables: [life_a, life_b, life_v]
-DIFF mysql.future.a_newer_release.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    mysql.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    mysql.future.a_newer_release.log_warnings: []
 =    mysql.future.a_newer_release.outcome: OK applied=4 initial=null target=9
 =    mysql.future.a_newer_release.result_warnings: []
 =    mysql.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
-DIFF mysql.future.b_older_release.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF mysql.future.b_older_release.log_warnings
-     java:   [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
-     python: [default (0:0): V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
-DIFF mysql.future.b_older_release.outcome
-     java:   OK applied=0 initial=9 target=null
-     python: OK applied=0 initial=9 target=9
-DIFF mysql.future.b_older_release.result_warnings
-     java:   []
-     python: [V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+=    mysql.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    mysql.future.b_older_release.log_warnings: [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
+=    mysql.future.b_older_release.outcome: OK applied=0 initial=9 target=null
+=    mysql.future.b_older_release.result_warnings: []
 =    mysql.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
-DIFF mysql.life.a_first.columns
-     java:   installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
-     python: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|varchar|YES, installed_by|varchar|NO, installed_on|varchar|NO, execution_time|int|NO, success|tinyint|NO
-DIFF mysql.life.a_first.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF mysql.life.a_first.history_tables
-     java:   [flyway_schema_history]
-     python: [ekbatan_schema_history]
-DIFF mysql.life.a_first.indexes
-     java:   [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
-     python: [ekbatan_schema_history_s_idx|success, PRIMARY|installed_rank]
-DIFF mysql.life.a_first.installed_on_type
-     java:   [timestamp]
-     python: [varchar]
+=    mysql.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
+=    mysql.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    mysql.life.a_first.history_tables: [flyway_schema_history]
+=    mysql.life.a_first.indexes: [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
+=    mysql.life.a_first.installed_on_type: [timestamp]
 =    mysql.life.a_first.log_warnings: []
 =    mysql.life.a_first.outcome: OK applied=3 initial=null target=2
 =    mysql.life.a_first.result_warnings: []
 =    mysql.life.a_first.tables: [life_a, life_b, life_v]
-DIFF mysql.life.b_again.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    mysql.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    mysql.life.b_again.log_warnings: []
-DIFF mysql.life.b_again.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    mysql.life.b_again.outcome: OK applied=0 initial=2 target=null
 =    mysql.life.b_again.result_warnings: []
 =    mysql.life.b_again.tables: [life_a, life_b, life_v]
-DIFF mysql.life.c_edited.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF mysql.life.c_edited.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    mysql.life.c_edited.log_warnings: [Migrating default (0:0) failed]
 DIFF mysql.life.c_edited.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration checksum mismatch for migration version 1 -> Applied to database : -1033942919 -> Resolved locally : 2061709084 Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, fcf00cee7269 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
+     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (checksum -1033942919 then, 2061709084 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one an...
 =    mysql.life.c_edited.tables: [life_a, life_b, life_v]
-DIFF mysql.life.d_crlf.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    mysql.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    mysql.life.d_crlf.log_warnings: []
-DIFF mysql.life.d_crlf.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    mysql.life.d_crlf.outcome: OK applied=0 initial=2 target=null
 =    mysql.life.d_crlf.result_warnings: []
 =    mysql.life.d_crlf.tables: [life_a, life_b, life_v]
-DIFF mysql.life.e_joined.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    mysql.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    mysql.life.e_joined.log_warnings: []
-DIFF mysql.life.e_joined.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, 17b048b577d8 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
-DIFF mysql.life.e_joined.result_warnings
-     java:   []
-     python: <missing>
+=    mysql.life.e_joined.outcome: OK applied=0 initial=2 target=null
+=    mysql.life.e_joined.result_warnings: []
 =    mysql.life.e_joined.tables: [life_a, life_b, life_v]
-DIFF mysql.life.f_renamed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF mysql.life.f_renamed.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    mysql.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
 DIFF mysql.life.f_renamed.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration description mismatch for migration version 1 -> Applied to database : create -> Resolved locally : create renamed Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
      python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 1 was applied as 'create', and its file V1__create_renamed.sql now says 'create renamed'. An applied migration is history: put the old name back - or, if only the name changed, run repair() to record the new one. Already migrated: none. Targets are migrated one at a time, so the rest are u...
 =    mysql.life.f_renamed.tables: [life_a, life_b, life_v]
-DIFF mysql.life.g_respelled.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+=    mysql.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
 =    mysql.life.g_respelled.log_warnings: []
-DIFF mysql.life.g_respelled.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    mysql.life.g_respelled.outcome: OK applied=0 initial=2 target=null
 =    mysql.life.g_respelled.result_warnings: []
 =    mysql.life.g_respelled.tables: [life_a, life_b, life_v]
-DIFF mysql.life.h_out_of_order.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF mysql.life.h_out_of_order.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    mysql.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
 DIFF mysql.life.h_out_of_order.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected resolved migration not applied to database: 1.5. To ignore this migration, set -ignoreMigrationPatterns='*:ignored'. To allow executing this migration, set -outOfOrder=true. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
      python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1_5__late.sql has not been applied, but version 2 already has. Migrations run in version order, so this one would never run in the place its number says: give it a version after 2. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; ...
 =    mysql.life.h_out_of_order.tables: [life_a, life_b, life_v]
-DIFF mysql.life.i_missing.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
-DIFF mysql.life.i_missing.log_warnings
-     java:   [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
-     python: [default (0:0): V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
-DIFF mysql.life.i_missing.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
-DIFF mysql.life.i_missing.result_warnings
-     java:   []
-     python: [V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+=    mysql.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+=    mysql.life.i_missing.log_warnings: [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
+=    mysql.life.i_missing.outcome: OK applied=0 initial=2 target=null
+=    mysql.life.i_missing.result_warnings: []
 =    mysql.life.i_missing.tables: [life_a, life_b, life_v]
-DIFF mysql.life.j_repeatable_changed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true]
+=    mysql.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
 =    mysql.life.j_repeatable_changed.log_warnings: []
-DIFF mysql.life.j_repeatable_changed.outcome
-     java:   OK applied=1 initial=2 target=null
-     python: OK applied=1 initial=2 target=2
+=    mysql.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
 =    mysql.life.j_repeatable_changed.result_warnings: []
 =    mysql.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
-DIFF mysql.life.k_failing.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
-DIFF mysql.life.k_failing.log_warnings
-     java:   [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
-     python: []
+=    mysql.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+=    mysql.life.k_failing.log_warnings: [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
 DIFF mysql.life.k_failing.outcome
      java:   FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42S02 Error Code : 1146 Message : Table 'f2_life.no_such_table' doesn't exist Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql) Line : 2 Statement : Run Flyway with -X o...
-     python: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() has been run. Already migrated: none. Targets are migrated one at a ...
+     python: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") (in V3__half.sql at line 2: INSERT INTO no_such_table VALUES (1)) Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() ha...
 =    mysql.life.k_failing.tables: [life_a, life_b, life_c, life_v]
-DIFF mysql.life.l_fixed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
-DIFF mysql.life.l_fixed.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+=    mysql.life.l_fixed.log_warnings: [Migrating default (0:0) failed]
 DIFF mysql.life.l_fixed.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
 =    mysql.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
-DIFF mysql.life.m_fixed_again.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
-DIFF mysql.life.m_fixed_again.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+=    mysql.life.m_fixed_again.log_warnings: [Migrating default (0:0) failed]
 DIFF mysql.life.m_fixed_again.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected failed migration to version 3 (half). Please remove any half-completed changes then run repair to fix the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
 =    mysql.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
 =    mysql.nonempty.history: [<no history table>]
-DIFF mysql.nonempty.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    mysql.nonempty.log_warnings: [Migrating default (0:0) failed]
 DIFF mysql.nonempty.outcome
      java:   FAIL FlywayException: Found non-empty schema(s) `f2_nonempty` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
-     python: FAIL MigrationError: default (0:0) already has existing but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this...
+     python: FAIL MigrationError: default (0:0) already has existing but no flyway_schema_history, so nothing says which migrations built it - Flyway refuses it too ("Found non-empty schema(s) `f2_nonempty` but no schema history table"). If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. A...
 =    mysql.nonempty.tables: [existing]
-DIFF pg.baseline.history
-     java:   [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+=    pg.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
 =    pg.baseline.outcome: OK applied=2 initial=1 target=2
 =    pg.baseline.tables: [life_a, life_b, life_v]
-DIFF pg.future.a_newer_release.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+=    pg.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
 =    pg.future.a_newer_release.log_warnings: []
 =    pg.future.a_newer_release.outcome: OK applied=4 initial=null target=9
 =    pg.future.a_newer_release.result_warnings: []
 =    pg.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
-DIFF pg.future.b_older_release.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-DIFF pg.future.b_older_release.log_warnings
-     java:   [Schema "public" has a version (9) that is newer than the latest available migration (2) !]
-     python: [default (0:0): V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
-DIFF pg.future.b_older_release.outcome
-     java:   OK applied=0 initial=9 target=null
-     python: OK applied=0 initial=9 target=9
-DIFF pg.future.b_older_release.result_warnings
-     java:   []
-     python: [V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+=    pg.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+=    pg.future.b_older_release.log_warnings: [Schema "public" has a version (9) that is newer than the latest available migration (2) !]
+=    pg.future.b_older_release.outcome: OK applied=0 initial=9 target=null
+=    pg.future.b_older_release.result_warnings: []
 =    pg.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
-DIFF pg.life.a_first.columns
-     java:   installed_rank|integer|NO, version|character varying|YES, description|character varying|NO, type|character varying|NO, script|character varying|NO, checksum|integer|YES, installed_by|character varying|NO, installed_on|timestamp without time zone|NO, execution_time|integer|NO, success|boolean|NO
-     python: installed_rank|integer|NO, version|character varying|YES, description|character varying|NO, type|character varying|NO, script|character varying|NO, checksum|character varying|YES, installed_by|character varying|NO, installed_on|character varying|NO, execution_time|integer|NO, success|boolean|NO
-DIFF pg.life.a_first.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-DIFF pg.life.a_first.history_tables
-     java:   [flyway_schema_history]
-     python: [ekbatan_schema_history]
-DIFF pg.life.a_first.indexes
-     java:   [flyway_schema_history_pk CREATE UNIQUE INDEX flyway_schema_history_pk ON public.flyway_schema_history USING btree (installed_rank), flyway_schema_history_s_idx CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success)]
-     python: [ekbatan_schema_history_pkey CREATE UNIQUE INDEX ekbatan_schema_history_pkey ON public.ekbatan_schema_history USING btree (installed_rank), ekbatan_schema_history_s_idx CREATE INDEX ekbatan_schema_history_s_idx ON public.ekbatan_schema_history USING btree (success)]
-DIFF pg.life.a_first.installed_on_type
-     java:   [timestamp without time zone]
-     python: [character varying]
+=    pg.life.a_first.columns: installed_rank|integer|NO, version|character varying|YES, description|character varying|NO, type|character varying|NO, script|character varying|NO, checksum|integer|YES, installed_by|character varying|NO, installed_on|timestamp without time zone|NO, execution_time|integer|NO, success|boolean|NO
+=    pg.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+=    pg.life.a_first.history_tables: [flyway_schema_history]
+=    pg.life.a_first.indexes: [flyway_schema_history_pk CREATE UNIQUE INDEX flyway_schema_history_pk ON public.flyway_schema_history USING btree (installed_rank), flyway_schema_history_s_idx CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success)]
+=    pg.life.a_first.installed_on_type: [timestamp without time zone]
 =    pg.life.a_first.log_warnings: []
 =    pg.life.a_first.outcome: OK applied=3 initial=null target=2
 =    pg.life.a_first.result_warnings: []
 =    pg.life.a_first.tables: [life_a, life_b, life_v]
-DIFF pg.life.b_again.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+=    pg.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
 =    pg.life.b_again.log_warnings: []
-DIFF pg.life.b_again.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    pg.life.b_again.outcome: OK applied=0 initial=2 target=null
 =    pg.life.b_again.result_warnings: []
 =    pg.life.b_again.tables: [life_a, life_b, life_v]
-DIFF pg.life.c_edited.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-DIFF pg.life.c_edited.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    pg.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+=    pg.life.c_edited.log_warnings: [Migrating default (0:0) failed]
 DIFF pg.life.c_edited.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration checksum mismatch for migration version 1 -> Applied to database : -1033942919 -> Resolved locally : 2061709084 Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, fcf00cee7269 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
+     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (checksum -1033942919 then, 2061709084 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one an...
 =    pg.life.c_edited.tables: [life_a, life_b, life_v]
-DIFF pg.life.d_crlf.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+=    pg.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
 =    pg.life.d_crlf.log_warnings: []
-DIFF pg.life.d_crlf.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    pg.life.d_crlf.outcome: OK applied=0 initial=2 target=null
 =    pg.life.d_crlf.result_warnings: []
 =    pg.life.d_crlf.tables: [life_a, life_b, life_v]
-DIFF pg.life.e_joined.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+=    pg.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
 =    pg.life.e_joined.log_warnings: []
-DIFF pg.life.e_joined.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, 17b048b577d8 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
-DIFF pg.life.e_joined.result_warnings
-     java:   []
-     python: <missing>
+=    pg.life.e_joined.outcome: OK applied=0 initial=2 target=null
+=    pg.life.e_joined.result_warnings: []
 =    pg.life.e_joined.tables: [life_a, life_b, life_v]
-DIFF pg.life.f_renamed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-DIFF pg.life.f_renamed.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    pg.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+=    pg.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
 DIFF pg.life.f_renamed.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Migration description mismatch for migration version 1 -> Applied to database : create -> Resolved locally : create renamed Either revert the changes to the migration, or run repair to update the schema history. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
      python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 1 was applied as 'create', and its file V1__create_renamed.sql now says 'create renamed'. An applied migration is history: put the old name back - or, if only the name changed, run repair() to record the new one. Already migrated: none. Targets are migrated one at a time, so the rest are u...
 =    pg.life.f_renamed.tables: [life_a, life_b, life_v]
-DIFF pg.life.g_respelled.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+=    pg.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
 =    pg.life.g_respelled.log_warnings: []
-DIFF pg.life.g_respelled.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
+=    pg.life.g_respelled.outcome: OK applied=0 initial=2 target=null
 =    pg.life.g_respelled.result_warnings: []
 =    pg.life.g_respelled.tables: [life_a, life_b, life_v]
-DIFF pg.life.h_out_of_order.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-DIFF pg.life.h_out_of_order.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    pg.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+=    pg.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
 DIFF pg.life.h_out_of_order.outcome
      java:   FAIL FlywayValidateException: Validate failed: Migrations have failed validation Detected resolved migration not applied to database: 1.5. To ignore this migration, set -ignoreMigrationPatterns='*:ignored'. To allow executing this migration, set -outOfOrder=true. Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
      python: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1_5__late.sql has not been applied, but version 2 already has. Migrations run in version order, so this one would never run in the place its number says: give it a version after 2. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; ...
 =    pg.life.h_out_of_order.tables: [life_a, life_b, life_v]
-DIFF pg.life.i_missing.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
-DIFF pg.life.i_missing.log_warnings
-     java:   [Schema "public" has a version (2) that is newer than the latest available migration (1) !]
-     python: [default (0:0): V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
-DIFF pg.life.i_missing.outcome
-     java:   OK applied=0 initial=2 target=null
-     python: OK applied=0 initial=2 target=2
-DIFF pg.life.i_missing.result_warnings
-     java:   []
-     python: [V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+=    pg.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+=    pg.life.i_missing.log_warnings: [Schema "public" has a version (2) that is newer than the latest available migration (1) !]
+=    pg.life.i_missing.outcome: OK applied=0 initial=2 target=null
+=    pg.life.i_missing.result_warnings: []
 =    pg.life.i_missing.tables: [life_a, life_b, life_v]
-DIFF pg.life.j_repeatable_changed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true]
+=    pg.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
 =    pg.life.j_repeatable_changed.log_warnings: []
-DIFF pg.life.j_repeatable_changed.outcome
-     java:   OK applied=1 initial=2 target=null
-     python: OK applied=1 initial=2 target=2
+=    pg.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
 =    pg.life.j_repeatable_changed.result_warnings: []
 =    pg.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
-DIFF pg.life.k_failing.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true]
-DIFF pg.life.k_failing.log_warnings
-     java:   [Migration of schema "public" to version "3 - half" failed! Changes successfully rolled back., Migrating default (0:0) failed]
-     python: []
+=    pg.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
+=    pg.life.k_failing.log_warnings: [Migration of schema "public" to version "3 - half" failed! Changes successfully rolled back., Migrating default (0:0) failed]
 DIFF pg.life.k_failing.outcome
      java:   FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42P01 Error Code : 0 Message : ERROR: relation "no_such_table" does not exist Position: 13 Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/failing/V3__half.sql) Line : 2 Statement : Run Fly...
-     python: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: UndefinedTable: relation "no_such_table" does not exist LINE 1: INSERT INTO no_such_table VALUES (1); ^ Nothing of V3__half.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+     python: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: UndefinedTable: relation "no_such_table" does not exist LINE 1: INSERT INTO no_such_table VALUES (1) ^ (in V3__half.sql at line 2: INSERT INTO no_such_table VALUES (1)) Nothing of V3__half.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; wha...
 =    pg.life.k_failing.tables: [life_a, life_b, life_v]
-DIFF pg.life.l_fixed.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true]
-DIFF pg.life.l_fixed.log_warnings
-     java:   [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
-     python: []
+=    pg.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
+=    pg.life.l_fixed.log_warnings: [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
 DIFF pg.life.l_fixed.outcome
      java:   FAIL FlywayMigrateException: Failed to execute script R__view.sql ------------------------------------ SQL State : 42P16 Error Code : 0 Message : ERROR: cannot drop columns from view Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql) Line : 1 Statement : Run Flyway with -X option to see the a...
-     python: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view Applied by this run before that: V3__half.sql. Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+     python: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view (in R__view.sql at line 1: CREATE OR REPLACE VIEW life_v AS SELECT id FROM life_a) Applied by this run before that: V3__half.sql. Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and r...
 =    pg.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
-DIFF pg.life.m_fixed_again.history
-     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
-     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true]
-DIFF pg.life.m_fixed_again.log_warnings
-     java:   [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
-     python: []
+=    pg.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
+=    pg.life.m_fixed_again.log_warnings: [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
 DIFF pg.life.m_fixed_again.outcome
      java:   FAIL FlywayMigrateException: Failed to execute script R__view.sql ------------------------------------ SQL State : 42P16 Error Code : 0 Message : ERROR: cannot drop columns from view Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/R__view.sql) Line : 1 Statement : Run Flyway with -X option to see the a...
-     python: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+     python: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view (in R__view.sql at line 1: CREATE OR REPLACE VIEW life_v AS SELECT id FROM life_a) Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
 =    pg.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
 =    pg.nonempty.history: [<no history table>]
-DIFF pg.nonempty.log_warnings
-     java:   [Migrating default (0:0) failed]
-     python: []
+=    pg.nonempty.log_warnings: [Migrating default (0:0) failed]
 DIFF pg.nonempty.outcome
      java:   FAIL FlywayException: Found non-empty schema(s) "public" but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
-     python: FAIL MigrationError: default (0:0) already has existing but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this...
+     python: FAIL MigrationError: default (0:0) already has existing but no flyway_schema_history, so nothing says which migrations built it - Flyway refuses it too ("Found non-empty schema(s) "public" but no schema history table"). If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Alread...
 =    pg.nonempty.tables: [existing]

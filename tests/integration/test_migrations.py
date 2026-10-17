@@ -1713,3 +1713,60 @@ def test_a_repeatable_runs_again_when_a_placeholder_it_uses_changes(backend, req
         f"SELECT checksum FROM {HISTORY_TABLE} WHERE version IS NULL ORDER BY installed_rank DESC",
     )[:1]
     assert stored == flyway_checksum("INSERT INTO runs (name) VALUES ('r-b');")
+
+
+# -- a schema that is not there (item 43 of the parity fix) ---------------------------------------
+
+
+def in_schema(url: str, schema: str) -> str:
+    joiner = "&" if "?" in url else "?"
+    return f"{url}{joiner}options=-csearch_path%3D{schema}"
+
+
+def test_a_schema_that_is_not_there_is_created_and_recorded_as_flyway_does(backend, request, files):
+    """Flyway's `createSchemas`: the schema in the url is created, the history goes in it and
+    its first row - rank 0, `SCHEMA` - names it. Python failed: "no schema has been selected to
+    create in" (row 56 of the scan)."""
+    if backend.dialect != "postgres":
+        pytest.skip("only PostgreSQL connects to a schema that is not there")
+    url = fresh(backend, request)
+    files.add("V1__quick.sql", "CREATE TABLE quick_t (id INTEGER);")
+
+    (result,) = migrate(single(in_schema(url, "app")), files.path)
+
+    assert result.migrate_result.migrations == ("V1__quick.sql",)
+    rows_in_app = query(
+        url,
+        "SELECT installed_rank, version, description, type, script FROM app.flyway_schema_history "
+        "ORDER BY installed_rank",
+    )
+    assert [tuple(r) for r in rows_in_app] == [
+        (0, None, "<< Flyway Schema Creation >>", "SCHEMA", '"app"'),
+        (1, "1", "quick", "SQL", "V1__quick.sql"),
+    ]
+    assert (
+        query(
+            url,
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' "
+            "AND table_name = 'quick_t'",
+        )[0][0]
+        == 1
+    )
+    (again,) = migrate(single(in_schema(url, "app")), files.path)
+    assert again.migrate_result.migrations == (), "and the row reads back as Flyway's own"
+
+
+def test_with_create_schemas_off_a_missing_schema_is_not_created(backend, request, files, caplog):
+    if backend.dialect != "postgres":
+        pytest.skip("only PostgreSQL connects to a schema that is not there")
+    url = fresh(backend, request)
+    files.add("V1__quick.sql", "CREATE TABLE quick_t (id INTEGER);")
+    caplog.set_level(logging.WARNING)
+
+    with pytest.raises(MigrationError):
+        FlywayMigrator.builder().with_data_source(data_source(in_schema(url, "app"))).locations(
+            files.path
+        ).customize(lambda c: c.create_schemas(False)).migrate()
+
+    assert "The configuration option 'createSchemas' is false." in caplog.text
+    assert query(url, "SELECT count(*) FROM pg_namespace WHERE nspname = 'app'")[0][0] == 0

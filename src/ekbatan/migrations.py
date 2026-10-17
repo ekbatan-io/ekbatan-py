@@ -1314,6 +1314,7 @@ class FlywayConfiguration:
         "_baseline_description",
         "_baseline_on_migrate",
         "_baseline_version",
+        "_create_schemas",
         "_encoding",
         "_execute_in_transaction",
         "_installed_by",
@@ -1341,6 +1342,7 @@ class FlywayConfiguration:
         self._execute_in_transaction = True
         self._installed_by: str | None = None
         self._encoding = "utf-8"
+        self._create_schemas = True
         self._placeholders: dict[str, str] = {}
         self._placeholder_replacement = True
         self._placeholder_prefix = "${"
@@ -1353,6 +1355,12 @@ class FlywayConfiguration:
             setattr(other, name, getattr(self, name))
         other._placeholders = dict(self._placeholders)
         return other
+
+    def create_schemas(self, enabled: bool) -> Self:
+        """``createSchemas``: create the schema the connection works in when it is not there,
+        and record that in the history - on."""
+        self._create_schemas = bool(enabled)
+        return self
 
     def placeholders(self, values: Mapping[str, str]) -> Self:
         """``placeholders``: what ``${name}`` in a migration or a callback is replaced with.
@@ -1802,6 +1810,7 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
             model = _validating(session, lambda: _validated(session, scripts))
             _fire(session, "createSchema")
             _fire(session, "beforeCreateSchema")
+            _create_schema(session)
             if not _history_exists(session):
                 model = _prepare_history(session, scripts) or model
             before = model.schema_version
@@ -1963,6 +1972,41 @@ def _prepare_history(session: _Session, scripts: Scripts) -> _Model | None:
         )
     _create_history(session)
     return None
+
+
+def _create_schema(session: _Session) -> None:
+    """Flyway's ``DbSchemas.create``: a schema that is not there is created, with the history
+    table in it and Flyway's rank-0 row saying so - one transaction, where DDL is transactional.
+    With ``create_schemas`` off, Flyway's warning, and the history table then fails to be made.
+    """
+    backend = session.backend
+    if backend.schema_exists(session.schema):
+        return
+    if not session.configuration._create_schemas:
+        _MIGRATE_LOG.warning(
+            "The configuration option 'createSchemas' is false.\n"
+            "However, the schema history table still needs a schema to reside in.\n"
+            "You must manually create a schema for the schema history table to reside in.\n"
+            "See https://rd.gt/4iUkpm1"
+        )
+        return
+    _HISTORY_LOG.info("Creating Schema History table %s ...", session.table)
+    with backend.transaction():
+        backend.create_schema(session.schema)
+        for statement in backend.create_history_script(
+            session.table, session.schema, session.configuration._table
+        ):
+            backend.execute(statement)
+        _insert(
+            session,
+            version=None,
+            description=SCHEMA_CREATION_DESCRIPTION,
+            type="SCHEMA",
+            script=session.schema_shown,
+            checksum=None,
+            execution_time=0,
+            success=True,
+        )
 
 
 def _write_baseline(session: _Session) -> None:
