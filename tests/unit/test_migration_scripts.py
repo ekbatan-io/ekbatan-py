@@ -766,3 +766,60 @@ def test_a_lost_connection_is_said_out_loud(tmp_path):
     )
 
     assert "The connection to the database was lost." in message
+
+
+# -- placeholders: Flyway's PlaceholderReplacingReader -------------------------------------------
+
+
+def test_placeholders_are_replaced_ignoring_case():
+    from ekbatan._flyway_sql import Placeholders, replace_placeholders
+
+    found = replace_placeholders(
+        "CREATE TABLE ${Prefix}_t (v VARCHAR(10) DEFAULT '${value}');",
+        Placeholders({"prefix": "app", "VALUE": ""}),
+    )
+
+    assert found == "CREATE TABLE app_t (v VARCHAR(10) DEFAULT '');"
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("SELECT '${unknown_key}';", "No value provided for placeholder: ${unknown_key}.  Check"),
+        (
+            "SELECT '${flyway:nope}';",
+            "Failed to populate value for default placeholder: ${flyway:nope}",
+        ),
+    ],
+)
+def test_an_unknown_placeholder_fails_with_flyways_words(text, message):
+    from ekbatan._flyway_sql import Placeholders, replace_placeholders
+
+    with pytest.raises(SqlParseError, match=re_escape(message)):
+        replace_placeholders(text, Placeholders({}))
+
+
+def re_escape(text: str) -> str:
+    import re
+
+    return re.escape(text)
+
+
+def test_the_readers_quirks_are_kept():
+    """`$${x}` is left alone - Flyway's reader looks for the prefix only at a character it has
+    not already looked at - and a prefix and suffix of one's own are honoured."""
+    from ekbatan._flyway_sql import Placeholders, replace_placeholders
+
+    assert replace_placeholders("a $${x} b", Placeholders({"x": "1"})) == "a $${x} b"
+    assert replace_placeholders("a [[x]] b", Placeholders({"x": "1"}, "[[", "]]")) == "a 1 b"
+
+
+def test_placeholder_settings_are_flyways_by_default():
+    configuration = FlywayConfiguration()
+    assert (
+        configuration._placeholder_replacement,
+        configuration._placeholder_prefix,
+        configuration._placeholder_suffix,
+        configuration._placeholder_separator,
+        configuration._lock_retry_count,
+    ) == (True, "${", "}", ":", 50)

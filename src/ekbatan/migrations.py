@@ -55,12 +55,13 @@ from __future__ import annotations
 
 import enum
 import logging
+import os
 import re
 import time
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Self
@@ -68,7 +69,14 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Self
 from sqlalchemy import MetaData
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from ._flyway_sql import SqlParseError, Statement, checksum, parser_for
+from ._flyway_sql import (
+    Placeholders,
+    SqlParseError,
+    Statement,
+    checksum,
+    parser_for,
+    replace_placeholders,
+)
 from .config import DataSourceConfig, ShardingConfig
 from .errors import EkbatanError, ValidationError
 from .persistence import DatabaseRegistry
@@ -693,10 +701,82 @@ class _Session:
     scripts: Scripts | None = None
     #: Each callback's statements, parsed once.
     parsed: dict[str, tuple[list[Statement], bool]] = field(default_factory=dict)
+    #: Flyway's built-in placeholders for this database, worked out once it is reached.
+    builtins: dict[str, str] = field(default_factory=dict)
+
+    def placeholders(self, filename: str | None) -> Placeholders:
+        """The configured placeholders and Flyway's built-in ones - ``flyway:filename`` set to
+        the file being read, as Flyway's ``ParsingContext`` sets it."""
+        configuration = self.configuration
+        values: dict[str, str | None] = dict(configuration._placeholders)
+        values.update(self.builtins)
+        if filename is not None:
+            values[f"flyway{configuration._placeholder_separator}filename"] = filename
+        return Placeholders(
+            values,
+            configuration._placeholder_prefix,
+            configuration._placeholder_suffix,
+            configuration._placeholder_separator,
+        )
 
     @property
     def schema_shown(self) -> str:
         return self.backend.quote(self.schema)
+
+
+def _builtin_placeholders(session: _Session) -> dict[str, str]:
+    """Flyway's ``ParsingContext.populate``: ``flyway:defaultSchema``, ``flyway:user``,
+    ``flyway:database``, ``flyway:timestamp``, ``flyway:workingDirectory``, ``flyway:table``
+    and ``flyway:environment``."""
+    configuration, backend = session.configuration, session.backend
+    name = f"flyway{configuration._placeholder_separator}".__add__
+    found = {
+        name("defaultSchema"): session.schema,
+        name("user"): backend.current_user(),
+        name("timestamp"): datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        name("workingDirectory"): os.getcwd(),
+        name("table"): configuration._table,
+        name("environment"): "default",
+    }
+    database = backend.database_name()
+    if database is not None:
+        found[name("database")] = database
+    return found
+
+
+def _replaced(session: _Session, text: str, filename: str, config: ScriptConfig) -> str:
+    """The text with its placeholders replaced, unless replacement is off for it."""
+    enabled = config.placeholder_replacement
+    if enabled is None:
+        enabled = session.configuration._placeholder_replacement
+    if not enabled:
+        return text
+    return replace_placeholders(text.removeprefix("\ufeff"), session.placeholders(filename))
+
+
+def _reached(session: _Session) -> Scripts:
+    """Once the database is reached: Flyway's built-in placeholders for it, and the files as it
+    sees them."""
+    session.builtins = _builtin_placeholders(session)
+    if session.scripts is not None:
+        session.scripts = _resolve(session, session.scripts)
+    return session.scripts or Scripts((), ())
+
+
+def _resolve(session: _Session, scripts: Scripts) -> Scripts:
+    """The files as this database sees them: a repeatable migration's checksum is taken after
+    its placeholders are replaced, as Flyway takes it - so changing a placeholder's value runs it
+    again - with the checksum of the file as written kept as an equally good match."""
+    repeatable = []
+    for script in scripts.repeatable:
+        try:
+            replaced = _replaced(session, script.text, script.filename, script.config)
+        except SqlParseError as error:
+            raise MigrationError(
+                f"Unable to calculate checksum of {script.path}: {error}"
+            ) from None
+        repeatable.append(replace(script, checksum=checksum(replaced)))
+    return scripts._replace(repeatable=tuple(repeatable))
 
 
 def _open_session(
@@ -1173,6 +1253,11 @@ class FlywayConfiguration:
         "_lock_retry_count",
         "_mixed",
         "_output_query_results",
+        "_placeholder_prefix",
+        "_placeholder_replacement",
+        "_placeholder_separator",
+        "_placeholder_suffix",
+        "_placeholders",
         "_table",
         "_validate_migration_naming",
     )
@@ -1189,12 +1274,52 @@ class FlywayConfiguration:
         self._execute_in_transaction = True
         self._installed_by: str | None = None
         self._encoding = "utf-8"
+        self._placeholders: dict[str, str] = {}
+        self._placeholder_replacement = True
+        self._placeholder_prefix = "${"
+        self._placeholder_suffix = "}"
+        self._placeholder_separator = ":"
 
     def copy(self) -> FlywayConfiguration:
         other = FlywayConfiguration()
         for name in self.__slots__:
             setattr(other, name, getattr(self, name))
+        other._placeholders = dict(self._placeholders)
         return other
+
+    def placeholders(self, values: Mapping[str, str]) -> Self:
+        """``placeholders``: what ``${name}`` in a migration or a callback is replaced with.
+        Names are matched ignoring case, as Flyway matches them. Replaces the ones set before,
+        as Flyway's setter does."""
+        self._placeholders = {str(k): "" if v is None else str(v) for k, v in values.items()}
+        return self
+
+    def placeholder_replacement(self, enabled: bool) -> Self:
+        """``placeholderReplacement``: replace placeholders at all - on. A file's ``.conf`` can
+        say otherwise for that file."""
+        self._placeholder_replacement = bool(enabled)
+        return self
+
+    def placeholder_prefix(self, prefix: str) -> Self:
+        """``placeholderPrefix`` - ``${``."""
+        if not prefix:
+            raise ValidationError("placeholder_prefix cannot be empty")
+        self._placeholder_prefix = prefix
+        return self
+
+    def placeholder_suffix(self, suffix: str) -> Self:
+        """``placeholderSuffix`` - ``}``."""
+        if not suffix:
+            raise ValidationError("placeholder_suffix cannot be empty")
+        self._placeholder_suffix = suffix
+        return self
+
+    def placeholder_separator(self, separator: str) -> Self:
+        """``placeholderSeparator``: between ``flyway`` and a built-in's name - ``:``."""
+        if not separator:
+            raise ValidationError("placeholder_separator cannot be empty")
+        self._placeholder_separator = separator
+        return self
 
     def table(self, name: str) -> Self:
         """``table``: the history table's name - ``flyway_schema_history``. A Java service and a
@@ -1557,14 +1682,15 @@ class _Prepared:
 def _parse(
     session: _Session, text: str, where: str, config: ScriptConfig
 ) -> tuple[list[Statement], bool]:
-    """A file's statements, as Flyway's ``ParserSqlScript`` reads them, and whether it runs in
-    a transaction: its ``.conf`` file says, or else every statement must be able to."""
+    """A file's statements, as Flyway's ``ParserSqlScript`` reads them - its placeholders
+    replaced first - and whether it runs in a transaction: its ``.conf`` file says, or else
+    every statement must be able to."""
     backend = session.backend
     parser = parser_for(backend.parser_dialect(), backend.server_version())
     try:
-        statements = parser.parse(text)
+        statements = parser.parse(_replaced(session, text, where.rsplit("/", 1)[-1], config))
     except SqlParseError as error:
-        raise MigrationError(f"{where}: {error}") from None
+        raise MigrationError(f"Unable to parse statement in {where}: {error}") from None
     configuration = session.configuration
     transactional = [s.can_execute_in_transaction for s in statements]
     check = (
@@ -1601,6 +1727,7 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
         session = _open_session(each, configuration, scripts)
         backend = session.backend
         backend.refuse_if_read_only()
+        scripts = _reached(session)
         _fire(session, "afterConnect")
         backend.acquire(session.table, configuration._lock_retry_count)
         try:
@@ -2058,6 +2185,7 @@ def _info_of(
     """Where everything stands, with Flyway's callbacks for the command around it."""
     session = _open_session(each, configuration, scripts)
     try:
+        scripts = _reached(session)
         _fire(session, "afterConnect")
         if events:
             _fire(session, events[0])
@@ -2161,6 +2289,7 @@ def _repair(each: Target, scripts: Scripts, configuration: FlywayConfiguration) 
     backend = session.backend
     try:
         backend.refuse_if_read_only()
+        scripts = _reached(session)
         _fire(session, "afterConnect")
         backend.acquire(session.table, configuration._lock_retry_count)
         try:
@@ -2263,6 +2392,7 @@ def _baseline(
     session = _open_session(each, configuration, scripts)
     try:
         session.backend.refuse_if_read_only()
+        _reached(session)
         _fire(session, "afterConnect")
         _fire(session, "beforeBaseline")
         try:

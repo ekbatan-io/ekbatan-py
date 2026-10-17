@@ -25,6 +25,7 @@ from ekbatan.config import ShardingConfig
 from ekbatan.migrations import (
     HISTORY_TABLE,
     FlywayMigrator,
+    FlywayMigratorBuilder,
     MigrationError,
     MigrationState,
     baseline,
@@ -1640,3 +1641,75 @@ def test_info_repair_and_baseline_run_their_own_callbacks(backend, request, file
         "beforeRepair",
         "afterRepair",
     ]
+
+
+# -- Flyway's placeholders (item 41 of the parity fix) --------------------------------------------
+
+
+def builder(url: str, files: Files) -> FlywayMigratorBuilder:
+    return FlywayMigrator.builder().with_data_source(data_source(url)).locations(files.path)
+
+
+def test_placeholders_are_replaced_as_flyway_replaces_them(backend, request, files):
+    """Configured ones through `customize`, as Java's wrapper takes them, and Flyway's built-in
+    ones (rows 14 and 15 of the scan: Python ran `${...}` as written)."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add(
+        "V2__placeholders.sql",
+        "INSERT INTO runs (name) VALUES ('${greeting}');\n"
+        "INSERT INTO runs (name) VALUES ('${flyway:table}');\n"
+        "INSERT INTO runs (name) VALUES ('${flyway:filename}');\n"
+        "INSERT INTO runs (name) VALUES ('${flyway:defaultSchema}');\n",
+    )
+
+    builder(url, files).customize(lambda c: c.placeholders({"Greeting": "hello"})).migrate()
+
+    schema = {"postgres": "public", "sqlite": "main"}.get(backend.dialect, url.rsplit("/", 1)[-1])
+    assert runs(url) == ["hello", "flyway_schema_history", "V2__placeholders.sql", schema]
+
+
+def test_an_unknown_placeholder_fails_before_anything_is_applied(backend, request, files):
+    """Flyway fails on it; every pending file is read before the first runs, so nothing at all
+    is applied - Flyway would have applied V1 first."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("V2__unknown.sql", "INSERT INTO runs (name) VALUES ('${unknown_key}');")
+
+    with pytest.raises(
+        MigrationError, match=r"No value provided for placeholder: \$\{unknown_key\}"
+    ):
+        migrate(single(url), files.path)
+
+    assert history(url) == [] and "runs" not in tables(url)
+
+
+def test_replacement_can_be_switched_off_whole_or_per_file(backend, request, files):
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("V2__as_written.sql", "INSERT INTO runs (name) VALUES ('${as_written}');")
+    files.add("V2__as_written.sql.conf", "placeholderReplacement=false")
+    files.add("V3__also.sql", "INSERT INTO runs (name) VALUES ('${also}');")
+
+    builder(url, files).customize(lambda c: c.placeholder_replacement(False)).migrate()
+
+    assert runs(url) == ["${as_written}", "${also}"]
+
+
+def test_a_repeatable_runs_again_when_a_placeholder_it_uses_changes(backend, request, files):
+    """Flyway takes a repeatable migration's checksum after replacing its placeholders, so a new
+    value is a change; a versioned migration's checksum is of the file as written."""
+    url = fresh(backend, request)
+    files.add("V1__runs.sql", RUNS[backend.dialect])
+    files.add("V2__versioned.sql", "INSERT INTO runs (name) VALUES ('v-${who}');")
+    files.add("R__repeatable.sql", "INSERT INTO runs (name) VALUES ('r-${who}');")
+
+    for who in ("a", "a", "b"):
+        builder(url, files).customize(lambda c, who=who: c.placeholders({"who": who})).migrate()
+
+    assert runs(url) == ["v-a", "r-a", "r-b"]
+    ((stored,),) = query(
+        url,
+        f"SELECT checksum FROM {HISTORY_TABLE} WHERE version IS NULL ORDER BY installed_rank DESC",
+    )[:1]
+    assert stored == flyway_checksum("INSERT INTO runs (name) VALUES ('r-b');")
