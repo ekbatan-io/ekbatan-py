@@ -428,6 +428,12 @@ A schema named in the url that does not exist is **not** created (scan item 43, 
 `createSchemas`): the user, 2026-10-18, "if an schema does not exist, people should manually create
 it, automatic is not good". The migrator stops with the database's own error.
 
+Left as they are, by the user's decision (2026-10-18), of the parity scan's migration items:
+13-16 (one migration history shared with Java), 39 (files Flyway skips or accepts), 40 (Flyway's
+callbacks), 42 (`classpath:` / `filesystem:` locations), 43 (creating a missing schema) and 44
+(non-transactional migrations stay marked `-- transactional: false`). Items 37 (`EKB-0312`) and
+38 (`EKB-0313`) were matched to Java on top of yoyo.
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails
