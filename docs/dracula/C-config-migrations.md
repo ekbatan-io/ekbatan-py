@@ -27,7 +27,9 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **What:** Java has one ceiling, `maximumPoolSize`. Python has `pool_size` plus `max_overflow`,
   and adds `pool_timeout`, `pool_recycle` (30 min), `pool_pre_ping` (on) and `echo` (print all SQL).
   Java's `minimumIdle`, `idleTimeout` and `leakDetectionThreshold` do not exist - so no warning
-  for a connection held too long.
+  for a connection held too long. **Behaviour fixed** (`EKB-0305`): the pool now runs as Hikari's
+  defaults do - filled to its size in the background, and a connection it cannot open retried
+  until `pool_timeout` (Hikari's 30 s `connectionTimeout`). The settings are still SQLAlchemy's.
 - **Python:** `config.py:65-74`, validation `config.py:88-93`
 - **Java:** `DataSourceConfig.java:52-62`, checks `DataSourceConfig.java:79-101`
 - **Why:** Python forces it - a different pool library with different knobs.

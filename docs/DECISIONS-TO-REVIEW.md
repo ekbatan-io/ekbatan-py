@@ -400,6 +400,25 @@ none of Java's behaviour here is a bug.
 | a hand-built `EventHandlingJob` runs on `FixedDelay(poll delay)`, 1 s by default, and no longer reads `handling.enabled`; it keeps an `enabled=` argument (default `True`), and the examples pass `enabled=config.handling.enabled` (`EKB-0275`) | Java's job always runs and its DI wiring reads the switch by not creating the job. With no DI here, `build()` is the wiring, and `enabled=False` (a `DisabledSchedule`) is the nearest thing to "not created" that still lets one list of jobs be built either way | built |
 | scan rows 14 (a missing handler is not a failed attempt) and 16 (exactly at the retention edge) left as they are | not in items 1-44; the probe still shows them (`e.round*.ghost`, `x.boundary.*`) | built |
 
+## Transactions, actions, config and the pool, as Java's (`EKB-0300`-`EKB-0305`)
+
+Parity-fix group T, 2026-10-17: items 3, 4, 5, 22, 23, 27, 28, 29 and 36 of the importance table,
+each matched to Java. Ledger: [parity-fix/T-transactions-config.md](parity-fix/T-transactions-config.md).
+Judgement calls taken on the way, none asked:
+
+| decision | why | what Java does |
+| --- | --- | --- |
+| a nested `transaction()` on SQLite waits for the file lock and fails with "database is locked" once the outer block has written | SQLite has one writer per file; a second connection cannot write past the first one's lock. It is Java's "the inner block can block on the outer's locks", in SQLite's form | Java has no SQLite |
+| items 22 and 23 are one commit (`EKB-0302`) | both are the executor's construction, in the same lines | - |
+| the unknown shard policy keeps its Python spelling once read (`"use_default_shard"`), and its refusal names Java's (`'useDefaultShard' or 'fail'`) | any spelling now reads, so the message can ask for the one a Java config uses | `UnknownShardPolicy.from`, the same rule and message |
+| the null checks raise `ValidationError`, not a `TypeError` | the port's other argument checks (`registry is required`, `database_registry cannot be None`) raise `ValidationError`; the message is Java's word for word | `NullPointerException` |
+| an entity repository says "Entities collection cannot be null" | Java builds the word as `getDomainTypeName() + "s"`, which gives "Entitys"; this says what Java means (listed below) | "Entitys collection cannot be null" |
+| a batch element that is `None` is refused with "... in collection cannot be null" in every batch call | Java checks the element by name only in `addAll`; elsewhere a null element fails inside jOOQ with no message | - |
+| the pool fills to `pool_size`, not to `pool_size + max_overflow` | `max_overflow` connections are, by SQLAlchemy's definition, opened on demand and closed on return. With the default `max_overflow=0` the two are the same, as Hikari's one maximum | `minimumIdle` defaults to `maximumPoolSize` |
+| after `pool_timeout` the caller gets the driver's own error (`OperationalError`, "password authentication failed ...") | SQLAlchemy wraps a pool error into its own types only if it is the driver's; a new error type here would break every `except OperationalError` | Hikari's `SQLTransientConnectionException` "Connection is not available, request timed out after 30000ms", the driver's error as its cause, wrapped by Ekbatan in `RuntimeException("Failed to acquire connection")` |
+| the filler is one daemon thread per pool, started by `engine_for`; a pool `engine.dispose()` recreates starts filling on its first checkout | Hikari starts at construction; SQLAlchemy recreates the pool on every `dispose()`, and filling that one at once would reopen what was just closed | Hikari fills from construction until `close()` |
+| each failed attempt is logged at DEBUG by `io.ekbatan.core.persistence.ConnectionProvider`, the driver's message only, no traceback | Hikari logs each attempt at DEBUG; the drivers' messages name the user and server, never the password - checked with a marker password in the tests and the probe | `com.zaxxer.hikari.pool.HikariPool` DEBUG "Cannot acquire connection from data source" |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails
@@ -539,3 +558,7 @@ Found by parity-fix group J (`EKB-0290`), run in a throwaway copy of the Java re
   read them back at all. `@JsonValue` on `getValue()` (and a creator) would make them the bare
   uuid a consumer can join on. This port writes Java's current shape.
 
+
+`AbstractRepository`'s null message for a batch is `getDomainTypeName() + "s collection cannot be
+null"`, so an `EntityRepository` says "Entitys collection cannot be null"
+(`AbstractRepository.java:381`). Python says "Entities" (`EKB-0304`).

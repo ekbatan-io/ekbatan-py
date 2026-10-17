@@ -1436,11 +1436,12 @@ at all, and an operator moving across should know which:
 | `dataSourceProperties` | `data_source_properties` | values reach the driver as given rather than as text, and groups and lists are allowed - see below |
 | `driverClassName` | the url's `+driver` | `postgresql+psycopg`, not a separate class name |
 | `maximumPoolSize` | `pool_size` + `max_overflow` | SQLAlchemy splits the ceiling in two and this port leaves the split visible, because an operator tuning a pool needs to see the knobs their own tooling reports on |
-| `minimumIdle` | **none** | `QueuePool` keeps `pool_size` connections and has no separate floor; there is nothing to set |
+| `minimumIdle` | **none** | no setting, but the pool behaves as Hikari's default (`minimumIdle` = the maximum): it fills to `pool_size` in the background from the start, and refills (`EKB-0305`) |
 | `idleTimeout` | **none** | `pool_recycle` is the closest and is *not* the same thing - it caps a connection's total age, not how long it may sit unused |
 | `leakDetectionThreshold` | **none** | SQLAlchemy has no borrowed-too-long warning. A connection held past a threshold goes unreported here |
 | - | `pool_recycle` | maximum age, which Hikari calls `maxLifetime` and this config does not expose |
 | - | `pool_pre_ping` | liveness check on checkout |
+| `connectionTimeout` (not settable in Java; 30 s) | `pool_timeout` (30 s) | how long a caller waits for a connection - also while a connection that cannot be opened is retried, as Hikari does: a wrong password fails after 30 s in both (`EKB-0305`). Java's error is Hikari's "Connection is not available, request timed out" with the driver's as its cause; here it is the driver's own |
 
 The two that cost something are `idleTimeout` and `leakDetectionThreshold`. Neither is a rename
 away; both would have to be written. `leakDetectionThreshold` is the one worth arguing about -

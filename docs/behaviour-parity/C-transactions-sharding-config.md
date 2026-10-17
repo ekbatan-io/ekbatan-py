@@ -99,10 +99,10 @@ Probes and outputs: [`parity-probes/C-transactions-sharding-config/`](../../pari
 | 73 | Manager-level read-only access inside a transaction | no such call; `registry.secondary` reads the replica | `manager.connection(readonly=True)` joins the transaction on the primary | differs | T: `rep.manager_level_readonly_inside_tx_database` |
 | 74 | Repository access with an explicit unregistered shard | `db`/`readonlyDb`: null context; `txDb`: refused | default shard, with a WARN | differs | T: `acc.*_unknown_shard` |
 | 75 | Repository access by an id from an unregistered shard | default + WARN | default + WARN | same | T: `acc.db_by_id_unknown_shard*` |
-| 76 | Open connections after one query, pool of 3 | 3 | 1 | differs | T: `pool.open_connections_after_one_query` |
+| 76 | Open connections after one query, pool of 3 | 3 | same (fixed in EKB-0305) | same | T: `pool.open_connections_after_one_query` |
 | 77 | Connections under load never exceed the configured max | 3 | 3 | same | T: `pool.max_connections_under_load` |
 | 78 | Driver settings reach the server (application name) | yes | yes | same | T: `pool.driver_setting_reaches_server` |
-| 79 | Wrong password: time to fail | about 30 s (pool retries) | under 5 s (at once) | differs | T: `red.wrong_password.seconds_to_fail` |
+| 79 | Wrong password: time to fail | about 30 s (pool retries) | same (fixed in EKB-0305) | same | T: `red.wrong_password.seconds_to_fail` |
 | 80 | Real login with the marker password works; the wrong-password error never holds it | yes | yes | same | T: `red.login_*`, `red.wrong_password.*` |
 | 81 | Printed manager, pool, url, registry never show the password | never | never | same | T: `red.printed_forms.marker` |
 | 82 | All logs at DEBUG (Hikari / SQLAlchemy pool and engine) never hold the password | never; 0 in the whole run output | never; 0 in the whole run output | same | T: `red.all_captured_logs.*` |
@@ -223,13 +223,15 @@ applies the unknown-shard policy and gives the default with a warning. Java
 `AbstractRepository.java:212-214`, `:251-253`, `:300-302`; Python `repository.py:528-535`. Python's
 is the safer answer; Java's looks like a Java gap. Surprise: low.
 
-**76. Idle connections.** After one query on a pool of 3, Java holds 3 connections open (Hikari
+**76. Idle connections.** **Fixed** (`EKB-0305`): the pool fills to its size in the background, as
+Hikari's. Before: after one query on a pool of 3, Java holds 3 connections open (Hikari
 fills to `minimumIdle`, which defaults to the maximum) and Python holds 1 (SQLAlchemy opens on
 demand). Same ceiling under load (row 77). Java `ConnectionProvider.java:119-131`; Python
 `persistence.py:384` (`engine_for`). Python could pre-open connections at start (moderate work).
 Known in part: Dracula 10. Surprise: medium - connection budgets on the database differ.
 
-**79. Wrong password.** Java's pool keeps retrying until Hikari's 30 s connection timeout; Python
+**79. Wrong password.** **Fixed** (`EKB-0305`): retried with Hikari's backoff until `pool_timeout`
+(30 s), the password in no log line. Before: Java's pool keeps retrying until Hikari's 30 s connection timeout; Python
 fails on the first refusal. Java `ConnectionProvider.java:119-131` (Hikari default
 `connectionTimeout`, which `DataSourceConfig` cannot change); Python `persistence.py:384`. Matching
 Java would mean adding a retry loop (moderate); Python's is the faster failure. Surprise: medium -
@@ -242,7 +244,8 @@ no user; Python says nothing and the driver quietly uses the OS user, as Java's 
 
 ## Totals
 
-85 rows: **56 same, 27 differs, 2 read.** Of the 27 differences, 13 were already known - Draculas
+85 rows: **56 same, 27 differs, 2 read.** Since fixed by group T (`EKB-0300`, `EKB-0301`,
+`EKB-0303`, `EKB-0305`): rows 12, 13, 17, 61-64, 66, 76 and 79, so 66 same and 17 differ. Of the 27 differences, 13 were already known - Draculas
 10 (row 76, in part), 18 (35), 19 (24-26), 44 (61-64), 60 (6), 66 (9) and the recorded
 driver-settings decision (19, 39). The other 14 are new: 12, 13, 17, 21, 28, 37, 47, 53, 60, 66, 73, 74,
 79, 84 - plus the row-63 detail of Dracula 44. The ids are compatible both ways: every id minted by one port

@@ -170,4 +170,4 @@ returning `None`; the docstring explains why it does not. Surprise: low.
 
 ## Totals
 
-63 behaviours: 46 same, 12 differs, 5 read.
+63 behaviours: 46 same, 12 differs, 5 read. Since fixed by group T (`EKB-0304`): rows 9 and 10.
