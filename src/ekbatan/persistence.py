@@ -79,8 +79,9 @@ class Transaction:
         """Run one statement and hand back its rows, for mapping.
 
         Forwarded for the same reason :meth:`execute` is: a block inside ``with
-        registry.transaction()`` should read the way one inside a repository does, rather than
-        reaching through :attr:`connection` for every statement.
+        registry.manager(shard).transaction()`` - or ``registry.default.transaction()`` - should
+        read the way one inside a repository does, rather than reaching through
+        :attr:`connection` for every statement.
         """
         return self.connection.rows(statement)
 
