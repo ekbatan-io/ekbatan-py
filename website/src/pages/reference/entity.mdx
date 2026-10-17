@@ -26,7 +26,7 @@ class Entity[ID, S: Enum = GenericState, B: EntityBuilder = EntityBuilder](
 ):
     id: ID
     state: S
-    version: int = 1
+    version: int    # required, as Java's is
 
     @property
     def is_model(self) -> bool: ...        # always False on Entity
@@ -113,6 +113,7 @@ def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
     return cls(
         id=Id[TransferStep].random(),
         state=GenericState.ACTIVE,
+        version=1,
         transfer_id=transfer_id,
         step=step,
     )

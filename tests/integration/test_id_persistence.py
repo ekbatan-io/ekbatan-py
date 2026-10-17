@@ -122,7 +122,12 @@ def sharded_purses(sharded_registry, clock):
 
 def a_purse(id: Id[Purse]) -> Purse:
     return Purse(
-        id=id, state=PurseState.OPEN, currency="EUR", balance=Decimal("100.00"), created_date=NOW
+        id=id,
+        state=PurseState.OPEN,
+        version=1,
+        currency="EUR",
+        balance=Decimal("100.00"),
+        created_date=NOW,
     )
 
 

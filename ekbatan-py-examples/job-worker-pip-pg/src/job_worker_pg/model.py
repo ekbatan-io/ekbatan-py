@@ -170,6 +170,7 @@ class Alert(Entity[Id["Alert"]]):
         return cls(
             id=Id[Alert].random(),
             state=GenericState.ACTIVE,
+            version=1,
             wallet_id=wallet_id,
             recipient=recipient,
             message=message,

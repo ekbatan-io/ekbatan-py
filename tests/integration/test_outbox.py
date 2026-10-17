@@ -210,7 +210,9 @@ def test_the_sentinels_payload_is_sql_null_not_json_null(executor, registry):
     with registry.default.connection(readonly=True) as conn:
         assert conn.execute(select(func.count()).select_from(EVENTS)).scalar() == 1
         table = EVENTS.fullname
-        assert conn.execute(text(f"SELECT count(*) FROM {table} WHERE payload IS NULL")).scalar() == 1
+        assert (
+            conn.execute(text(f"SELECT count(*) FROM {table} WHERE payload IS NULL")).scalar() == 1
+        )
 
 
 def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outbox):

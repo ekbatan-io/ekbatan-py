@@ -35,10 +35,10 @@ the text is not measured here.
 | 2 | `increaseVersion()` adds one | 2 | 2 | same | model.increaseVersion |
 | 3 | Explicit version kept; `withInitialVersion()` after it resets to 1 | 5 / 1 | 5 / 1 | same | model.explicitVersion5, model.withInitialVersionAfter5 |
 | 4 | Version 0 or negative refused at build (Model and Entity) | refused | refused | same | model.version0, model.versionNeg1, entity.version0 |
-| 5 | Version never set | refused: "version cannot be null" | version 1 | differs | model.versionNotSet, entity.versionNotSet |
-| 6 | `increaseVersion()` when no version was set | NPE | version 1 | differs | model.increaseVersionWhenUnset |
+| 5 | Version never set | refused: "version cannot be null" | refused: "version cannot be null" | same (fixed in EKB-0292) | model.versionNotSet, entity.versionNotSet |
+| 6 | `increaseVersion()` when no version was set | NPE | refused: "version cannot be null" | same (fixed in EKB-0292); Java's is an NPE from `version + 1` | model.increaseVersionWhenUnset |
 | 7 | `nextVersion()` at the largest 64-bit version | refused (wraps negative) | 9223372036854775808 | differs | model.versionLongMax.nextVersion |
-| 8 | Base field (`id`, `state`, `createdDate`) whose setter was never called | "id cannot be null" | `TypeError: missing 1 required keyword-only argument: 'id'` | differs | model.missingId, model.missingState, model.missingCreatedDate, entity.missingId |
+| 8 | Base field (`id`, `state`, `createdDate`) whose setter was never called | "id cannot be null" | "id cannot be null" | same (fixed in EKB-0292) | model.missingId, model.missingState, model.missingCreatedDate, entity.missingId |
 | 9 | Base field set to null | "id/state/createdDate/version cannot be null" | same messages | same | model.nullId, model.nullState, model.nullCreatedDate, model.nullVersion, entity.nullId, entity.nullState |
 | 10 | `events(null)` refused | refused | refused | same | model.nullEventsList |
 | 11 | A null event in the list | refused at build | kept as an event | differs | model.nullEventInList |
@@ -71,8 +71,8 @@ the text is not measured here.
 | 38 | Event with null, empty or blank `modelId` refused; `modelId` not trimmed | yes | yes | same | event.nullModelId, event.blankModelId, event.whitespaceModelId, event.modelIdNotTrimmed |
 | 39 | Two events with the same fields are equal | false (identity) | true, even for different `modelId` | differs | event.equalSameFields, event.equalDifferentModelId |
 | 40 | Generated builder builds a full model; copy keeps and changes fields; builder reuse | yes | yes | same | codegen.build, codegen.copy*, codegen.builderReuse |
-| 41 | Generated builder, business-field setter never called | model's own check: "ownerId cannot be null" | `TypeError: missing ... 'owner_id'` | differs | codegen.missingBusinessField, codegen.missingBaseField |
-| 42 | Generated builder, unchecked field never set | null | `TypeError` | differs | codegen.uncheckedFieldUnset |
+| 41 | Generated builder, business-field setter never called | model's own check: "ownerId cannot be null" | model's own check: "owner_id cannot be null" | same (fixed in EKB-0292) | codegen.missingBusinessField, codegen.missingBaseField |
+| 42 | Generated builder, unchecked field never set | null | "memo cannot be null" (field not typed `X \| None`) | differs only by Dracula 53 (a field not typed `X \| None` is checked); the `TypeError` is gone (EKB-0292) | codegen.uncheckedFieldUnset |
 | 43 | Generated builder, setter given null | refused at build | refused at build | same | codegen.nullSetterThenBuild |
 | 44 | Generated builder, setter that does not exist | compile error | `AttributeError` at run time | read: compile-time in Java | codegen.unknownSetter |
 | 45 | Sharded-UUID layout: hand-built ids give the same shard and millisecond in both | same values | same values | same | fixed.* |

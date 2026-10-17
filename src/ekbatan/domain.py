@@ -223,7 +223,12 @@ class EntityBuilder[T, ID = Any, S = Any]:
         return self.set(version=1)
 
     def increase_version(self) -> Self:
-        return self.set(version=int(self._values.get("version", 0)) + 1)
+        """One more than the version set so far - refused when none was, as Java's
+        ``version + 1`` on a null ``Long`` is."""
+        current = self._values.get("version")
+        if current is None:
+            raise ValidationError("version cannot be null")
+        return self.set(version=int(current) + 1)
 
     def copy_base(self, other: Any) -> Self:
         """Take every field from an existing instance - the framework's and your own.
@@ -264,7 +269,22 @@ class EntityBuilder[T, ID = Any, S = Any]:
         return setter
 
     def build(self) -> T:
-        return self._target(**self._values)
+        """The instance, checked by its own ``__post_init__``.
+
+        A field whose setter was never called is passed as ``None`` - what a Java builder field
+        holds until it is set - so it is refused as ``"<field> cannot be null"`` by the same
+        check as one set to ``None``, rather than as the constructor's ``TypeError``.
+        """
+        values = dict(self._values)
+        for declared in dataclasses.fields(self._target):  # type: ignore[arg-type]
+            if (
+                declared.init
+                and declared.name not in values
+                and declared.default is dataclasses.MISSING
+                and declared.default_factory is dataclasses.MISSING
+            ):
+                values[declared.name] = None
+        return self._target(**values)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._target.__name__}, {sorted(self._values)})"
@@ -469,9 +489,13 @@ class Persistable[
     #: What makes two instances the same row at the same version.
     _IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = ("id", "state", "version")
 
+    #: The framework's fields, in the order Java's ``Entity`` constructor checks them.
+    _BASE_CHECKS: ClassVar[tuple[str, ...]] = ("id", "state", "version")
+
     id: ID
     state: S
-    version: int = 1
+    #: Required, as Java's is: a row built without one is refused, not started at 1.
+    version: int
 
     def __eq__(self, other: object) -> bool:
         if other is self:
@@ -515,11 +539,19 @@ class Persistable[
         A subclass that defines its own ``__post_init__`` must call ``super().__post_init__()``
         or it loses these; Java's constructor chaining does that for you and Python's does not.
         """
-        for name in _required(type(self)):
+        required = _required(type(self))
+        # The framework's own fields first, in the order Java's constructor checks them, then
+        # the version's range, then the application's fields - which Java's subclass checks
+        # after `super(builder)` returns.
+        base = [name for name in self._BASE_CHECKS if name in required]
+        for name in base:
             if getattr(self, name) is None:
                 raise ValidationError(f"{name} cannot be null")
         if self.version < 1:
             raise ValidationError(f"version must be greater than or equal to 1, not {self.version}")
+        for name in required:
+            if name not in base and getattr(self, name) is None:
+                raise ValidationError(f"{name} cannot be null")
 
     @property
     def is_model(self) -> bool:
@@ -610,6 +642,9 @@ class Model[
     ``updated_date`` falls back to ``created_date``, again as Java's does - a row that has
     never changed was last updated when it was created.
     """
+
+    #: Java's ``Model`` constructor checks ``events`` second, between ``id`` and ``state``.
+    _BASE_CHECKS: ClassVar[tuple[str, ...]] = ("id", "events", "state", "created_date", "version")
 
     #: Java's `Model.equals` adds the two timestamps to id, state and version.
     _IDENTITY_FIELDS: ClassVar[tuple[str, ...]] = (

@@ -33,7 +33,7 @@ What the base contributes:
 class Model[ID, S: Enum, B: ModelBuilder = ModelBuilder](Persistable[ID, S, B]):
     id: ID
     state: S
-    version: int = 1
+    version: int                           # required, as Java's is
     created_date: datetime                 # required
     updated_date: datetime | None = None   # falls back to created_date
     events: tuple[ModelEvent, ...] = ()

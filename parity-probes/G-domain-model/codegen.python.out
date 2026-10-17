@@ -1,8 +1,8 @@
 PROBE codegen.build: OK 1.00
-PROBE codegen.missingBusinessField: ERR TypeError: Wallet.__init__() missing 1 required keyword-only argument: 'owner_id'
-PROBE codegen.missingBaseField: ERR TypeError: Wallet.__init__() missing 1 required keyword-only argument: 'id'
+PROBE codegen.missingBusinessField: ERR ValidationError: owner_id cannot be null
+PROBE codegen.missingBaseField: ERR ValidationError: id cannot be null
 PROBE codegen.nullSetterThenBuild: ERR ValidationError: owner_id cannot be null
-PROBE codegen.uncheckedFieldUnset: ERR TypeError: Wallet.__init__() missing 1 required keyword-only argument: 'memo'
+PROBE codegen.uncheckedFieldUnset: ERR ValidationError: memo cannot be null
 PROBE codegen.copyKeepsBusinessFields: true,1.00,m
 PROBE codegen.copyChange: 2.00,1.00
 PROBE codegen.builderReuse: OK 1.00,3.00

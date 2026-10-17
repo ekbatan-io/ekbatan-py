@@ -111,7 +111,7 @@ whatever is decided about the rest.
 | 49 | Tables are SQLAlchemy written by hand; `to_row` returns a dict | choice | partly | M | A9 |
 | 50 | Connections come from `with` blocks, are public, and "all shards" gives pairs | forced + convention | partly | M | A10 |
 | 51 | `fetch_one` means "exactly one", not jOOQ's "at most one" | choice | yes | M | A11 |
-| 52 | `version` defaults to 1 | choice | yes | M | A12 |
+| 52 | ~~`version` defaults to 1~~ **fixed** (`EKB-0292`): required, as Java's; a builder never given one refuses with "version cannot be null" | choice | yes | M | A12 |
 | 53 | Every non-optional field is checked for `None` automatically | choice | yes | M | A13 |
 | 54 | A model's own `__post_init__` must call `super().__post_init__()` | forced | no | M | A14 |
 | 55 | An event names its model with a string; forgetting it fails at the first event | forced | partly | M | A15 |

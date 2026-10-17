@@ -186,7 +186,12 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 - **Could match Java?** yes - rename; the docstring already explains the clash.
 - **Surprise:** medium
 
-### 12. `version` defaults to 1
+### 12. ~~`version` defaults to 1~~ fixed (`EKB-0292`)
+
+> Now as Java: no default. A builder never given a version refuses with "version cannot be
+> null", and so does `increase_version()` with none set. Any setter never called is refused by
+> name the same way, not with the constructor's `TypeError`.
+
 - **What:** You can build a model or entity without giving a version and it becomes 1. In Java
   `version` is required: forget `withInitialVersion()` and `build()` throws.
 - **Python:** `domain.py:479` (`version: int = 1`). Ran it: `Wallet(...)` without `version`

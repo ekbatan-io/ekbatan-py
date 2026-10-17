@@ -488,6 +488,11 @@ java, so camel case". Ledger: [parity-fix/J-json-domain.md](parity-fix/J-json-do
 | a JSON key missing on read leaves the field `None`, or its declared default | Jackson leaves a Java field null; a dataclass default is the nearest thing to a Java field initialiser | null; a missing primitive is refused (Python has no primitives) |
 | a value that cannot be read raises `ValidationError` naming the class, field and key | Jackson's `InvalidFormatException` names the type and value | |
 | a number or boolean read into a `str` field becomes its text | Jackson coerces it the same way | |
+| `version` has no default (`EKB-0292`) | Dracula 52: Java refuses a row built without one | `Validate.notNull(builder.version, "version cannot be null")` |
+| a builder passes a field whose setter was never called as `None`, so the row's own check refuses it by name ("id cannot be null"); a field typed `X \| None` with no default becomes `None` | a Java builder field is null until set, and the constructor's `Validate.notNull` names it | the same messages, as `NullPointerException` |
+| the framework's fields are checked in Java's order - `id`, `events`, `state`, `created_date`, `version`, the version's range - then the model's own | which error a row with two mistakes reports should not depend on the port | `Model`/`Entity` constructor, then the subclass's |
+| `increase_version()` with no version set raises `ValidationError("version cannot be null")` | Java's `version + 1` on a null `Long` throws; the same call fails, with a clearer message | an NPE |
+| calling the dataclass constructor directly without a field still raises `TypeError` | that is the call Java does not let you write (its constructor takes the builder); a factory method that calls `cls(...)` must pass `version=1`, as Java's calls `withInitialVersion()` | - |
 
 ## Noticed in the Java, not acted on
 

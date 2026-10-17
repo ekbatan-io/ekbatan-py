@@ -282,6 +282,7 @@ class TransferStep(Entity[Id["TransferStep"]]):
         return cls(
             id=Id[TransferStep].random(),
             state=GenericState.ACTIVE,
+            version=1,
             transfer_id=transfer_id,
             step=step,
         )

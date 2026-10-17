@@ -187,6 +187,7 @@ class Notification(Entity[Id["Notification"], GenericState, NotificationBuilder]
         return cls(
             id=id,
             state=GenericState.ACTIVE,
+            version=1,
             wallet_id=wallet_id,
             kind=kind,
             recipient=recipient,

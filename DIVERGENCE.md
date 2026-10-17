@@ -809,9 +809,17 @@ has and the name is the thing worth matching. `RetryConfig` follows Java rather 
 
 Java's `Model` and `Entity` constructors validate: `id`, `state` and `version` non-null,
 `version >= 1`, `events` non-null and copied. `ModelTest` and `EntityTest` pin each one by
-message. Those checks are here too, in `__post_init__`, for the same reason - without them the
-mistake surfaces as an `IntegrityError` from inside a batched insert, naming a column and a
-driver, several frames from the line that made it.
+message. Those checks are here too, in `__post_init__`, in Java's order (`id`, `events`, `state`,
+`created_date`, `version`, the version's range, then the model's own fields), for the same
+reason - without them the mistake surfaces as an `IntegrityError` from inside a batched insert,
+naming a column and a driver, several frames from the line that made it.
+
+`version` has no default, as Java's has none (`EKB-0292`): forget `with_initial_version()` and
+`build()` refuses with "version cannot be null", and `increase_version()` with none set refuses
+the same way. A setter never called is passed to the constructor as `None`, as a Java builder
+field is null until set, so it is refused by name - "id cannot be null" - rather than with the
+constructor's `TypeError`. Calling the dataclass constructor directly without a field still
+raises `TypeError`: that is the call Java does not let you write.
 
 Two things follow from Python that do not follow from Java. A subclass defining its own
 `__post_init__` must call `super().__post_init__()`, where Java's constructor chaining is

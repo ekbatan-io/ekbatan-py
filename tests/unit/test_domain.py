@@ -118,7 +118,7 @@ def test_an_entity_has_a_builder_too_and_no_timestamps():
     class TransferStep(Entity[UUID, Step]):
         transfer_id: UUID
 
-    step = TransferStep(id=uuid4(), state=Step.COMPLETE, transfer_id=uuid4())
+    step = TransferStep(id=uuid4(), state=Step.COMPLETE, version=1, transfer_id=uuid4())
     # Defined inside a test, so there is nowhere to put a generated builder. `EntityBuilder`
     # by name is the escape hatch `copy()` names when it refuses.
     moved = (
@@ -136,7 +136,7 @@ def test_an_entity_defaults_its_lifecycle_but_a_model_does_not():
     class Marker(Entity[UUID]):
         note: str
 
-    marker = Marker(id=uuid4(), state=GenericState.ACTIVE, note="x")
+    marker = Marker(id=uuid4(), state=GenericState.ACTIVE, version=1, note="x")
     assert marker.state is GenericState.ACTIVE
     assert marker.evolve(state=GenericState.DELETED).is_deleted
 
@@ -363,6 +363,7 @@ def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():
     wallet = ShardedWallet(
         id=uuid4(),
         state=WalletState.OPENED,
+        version=1,
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("100.00"),
@@ -407,6 +408,7 @@ def test_a_model_refuses_to_be_built_without_its_invariants(field, value, messag
     fields = {
         "id": ShardedId[Wallet].random(),
         "state": WalletState.OPENED,
+        "version": 1,
         "owner_id": uuid4(),
         "currency": "EUR",
         "balance": Decimal("1.00"),
@@ -432,6 +434,7 @@ def test_an_optional_field_accepts_none_and_a_required_one_does_not():
     common = {
         "id": ShardedId[Wallet].random(),
         "state": WalletState.OPENED,
+        "version": 1,
         "created_date": NOW,
         "owner_id": uuid4(),
         "currency": "EUR",
@@ -455,6 +458,7 @@ def test_an_entity_refuses_the_same_invariants(field, value, message):
     fields = {
         "id": Id[Notification].random(),
         "state": GenericState.ACTIVE,
+        "version": 1,
         "wallet_id": ShardedId[Wallet].random(),
         "kind": "email",
         "recipient": "someone@example.com",
@@ -473,6 +477,7 @@ def test_a_row_refuses_a_null_event_list():
         Wallet(
             id=ShardedId[Wallet].random(),
             state=WalletState.OPENED,
+            version=1,
             owner_id=uuid4(),
             currency="EUR",
             balance=Decimal("1.00"),
@@ -496,6 +501,7 @@ def test_the_events_a_model_was_built_with_cannot_change_underneath_it():
     wallet = Wallet(
         id=ShardedId[Wallet].random(),
         state=WalletState.OPENED,
+        version=1,
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
@@ -548,7 +554,7 @@ def test_a_model_without_a_typed_builder_refuses_both_routes():
     class Bare(Model[UUID, WalletState]):
         note: str
 
-    row = Bare(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
+    row = Bare(id=uuid4(), state=WalletState.OPENED, version=1, created_date=NOW, note="x")
 
     for call in (lambda: row.copy(), lambda: Bare.builder()):
         with pytest.raises(EkbatanError, match="has not named one"):
@@ -570,12 +576,13 @@ def test_a_hand_written_builder_satisfies_it_as_well_as_a_generated_one():
     class ByHand(Model[UUID, WalletState, NoteBuilder]):
         note: str
 
-    row = ByHand(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
+    row = ByHand(id=uuid4(), state=WalletState.OPENED, version=1, created_date=NOW, note="x")
     assert row.copy().note("y").build().note == "y"
     assert (
         ByHand.builder()
         .id(row.id)
         .state(WalletState.OPENED)
+        .with_initial_version()
         .created_date(NOW)
         .note("z")
         .build()
@@ -590,7 +597,7 @@ def test_the_escape_hatch_the_refusal_names_actually_works():
     class Inline(Model[UUID, WalletState]):
         note: str
 
-    row = Inline(id=uuid4(), state=WalletState.OPENED, created_date=NOW, note="x")
+    row = Inline(id=uuid4(), state=WalletState.OPENED, version=1, created_date=NOW, note="x")
     assert ModelBuilder(Inline).copy_base(row).note("y").build().note == "y"
 
 
@@ -749,3 +756,102 @@ def test_a_model_that_writes_its_own_equality_keeps_it_and_so_do_its_subclasses(
 
     assert ByBalance.__eq__ is not Model.__eq__
     assert Child.__eq__ is ByBalance.__eq__, "the framework does not put its own back"
+
+
+# -- a field whose setter was never called (Java: the builder field is still null) -------------
+
+
+def wallet_builder():
+    from fixtures.builders import wallet
+
+    return wallet()
+
+
+def test_a_builder_never_given_a_version_is_refused_not_started_at_one():
+    """Java's ``Validate.notNull(builder.version, "version cannot be null")``: forgetting
+    ``with_initial_version()`` is a mistake, not a default."""
+    builder = (
+        wallet_builder()
+        .id(ShardedId[Wallet].random())
+        .state(WalletState.OPENED)
+        .owner_id(uuid4())
+        .currency("EUR")
+        .balance(Decimal("1"))
+        .created_date(NOW)
+    )
+    with pytest.raises(ValidationError, match=r"^version cannot be null$"):
+        builder.build()
+
+
+def test_an_entity_builder_never_given_a_version_is_refused():
+    builder = EntityBuilder(Notification).set(
+        id=Id[Notification].random(),
+        state=GenericState.ACTIVE,
+        wallet_id=ShardedId[Wallet].random(),
+        kind="email",
+        recipient="a@b.c",
+    )
+    with pytest.raises(ValidationError, match=r"^version cannot be null$"):
+        builder.build()
+
+
+def test_increase_version_with_no_version_set_is_refused():
+    with pytest.raises(ValidationError, match=r"^version cannot be null$"):
+        wallet_builder().increase_version()
+
+
+@pytest.mark.parametrize(
+    ("given", "message"),
+    [
+        ({}, "id cannot be null"),
+        ({"id"}, "state cannot be null"),
+        ({"id", "state"}, "created_date cannot be null"),
+        ({"id", "state", "created_date"}, "version cannot be null"),
+        ({"id", "state", "created_date", "version"}, "owner_id cannot be null"),
+        ({"id", "state", "created_date", "version", "owner_id"}, "currency cannot be null"),
+    ],
+)
+def test_a_setter_never_called_is_refused_by_name_in_javas_order(given, message):
+    """Java checks ``id``, ``events``, ``state``, ``createdDate``, ``version`` in ``Model``'s
+    constructor, then the model's own fields in its own."""
+    values = {
+        "id": ShardedId[Wallet].random(),
+        "state": WalletState.OPENED,
+        "created_date": NOW,
+        "version": 1,
+        "owner_id": uuid4(),
+    }
+    builder = wallet_builder().set(**{k: v for k, v in values.items() if k in given})
+    with pytest.raises(ValidationError, match=f"^{message}$"):
+        builder.build()
+
+
+def test_the_version_range_is_checked_before_the_models_own_fields():
+    builder = wallet_builder().set(
+        id=ShardedId[Wallet].random(), state=WalletState.OPENED, created_date=NOW, version=0
+    )
+    with pytest.raises(ValidationError, match="version must be greater than or equal to 1"):
+        builder.build()
+
+
+def test_an_optional_field_never_set_is_none():
+    """Java leaves an unchecked field null; here that is a field typed ``X | None``."""
+
+    @dataclass(frozen=True, kw_only=True)
+    class Tagged(Wallet):
+        note: str | None
+
+    built = (
+        ModelBuilder(Tagged)
+        .set(
+            id=ShardedId[Wallet].random(),
+            state=WalletState.OPENED,
+            version=1,
+            created_date=NOW,
+            owner_id=uuid4(),
+            currency="EUR",
+            balance=Decimal("1"),
+        )
+        .build()
+    )
+    assert built.note is None

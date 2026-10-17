@@ -4,12 +4,12 @@ PROBE model.explicitVersion5: 5
 PROBE model.version0: ERR ValidationError: version must be greater than or equal to 1, not 0
 PROBE model.versionNeg1: ERR ValidationError: version must be greater than or equal to 1, not -1
 PROBE model.withInitialVersionAfter5: 1
-PROBE model.versionNotSet: OK 1
-PROBE model.increaseVersionWhenUnset: OK 1
+PROBE model.versionNotSet: ERR ValidationError: version cannot be null
+PROBE model.increaseVersionWhenUnset: ERR ValidationError: version cannot be null
 PROBE model.versionLongMax.nextVersion: OK 9223372036854775808
-PROBE model.missingId: ERR TypeError: SampleModel.__init__() missing 1 required keyword-only argument: 'id'
-PROBE model.missingState: ERR TypeError: SampleModel.__init__() missing 1 required keyword-only argument: 'state'
-PROBE model.missingCreatedDate: ERR TypeError: SampleModel.__init__() missing 1 required keyword-only argument: 'created_date'
+PROBE model.missingId: ERR ValidationError: id cannot be null
+PROBE model.missingState: ERR ValidationError: state cannot be null
+PROBE model.missingCreatedDate: ERR ValidationError: created_date cannot be null
 PROBE model.nullId: ERR ValidationError: id cannot be null
 PROBE model.nullState: ERR ValidationError: state cannot be null
 PROBE model.nullCreatedDate: ERR ValidationError: created_date cannot be null
@@ -58,10 +58,10 @@ PROBE model.isDeleted.deletedState: True
 PROBE entity.withInitialVersion: 1
 PROBE entity.increaseVersion: 2
 PROBE entity.version0: ERR ValidationError: version must be greater than or equal to 1, not 0
-PROBE entity.missingId: ERR TypeError: SampleEntity.__init__() missing 1 required keyword-only argument: 'id'
+PROBE entity.missingId: ERR ValidationError: id cannot be null
 PROBE entity.nullId: ERR ValidationError: id cannot be null
 PROBE entity.nullState: ERR ValidationError: state cannot be null
-PROBE entity.versionNotSet: OK 1
+PROBE entity.versionNotSet: ERR ValidationError: version cannot be null
 PROBE entity.eq.same: True
 PROBE entity.eq.diffState: False
 PROBE entity.eq.diffVersion: False

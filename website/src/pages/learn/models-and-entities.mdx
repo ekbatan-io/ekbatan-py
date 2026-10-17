@@ -83,7 +83,7 @@ deposit of 100 committing as 0.
 
 `kw_only` does two jobs. It stops transposition, because `owner_id` sits next to `currency` and
 `started_date` next to `completion_date`. It also makes the inheritance **legal at all**: the
-base carries `version` and the timestamps, all with defaults, and a subclass field without one
+base carries `updated_date` and `events` with defaults, and a subclass field without one
 would otherwise be *"non-default argument follows default argument"*.
 
 If you are arriving from Django or the SQLAlchemy ORM: what you give up is dirty tracking. There

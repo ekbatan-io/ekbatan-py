@@ -97,7 +97,7 @@ that returns a new `Wallet`. This is not a Python-side invention.
 `kw_only` is doing two jobs, and the second is not optional. It stops transposition, because
 `owner_id` sits next to `currency` and `started_date` next to `completion_date` - adjacent
 same-typed fields that swap silently when passed positionally. It also makes the inheritance
-legal at all: the base carries `version` and the timestamps, all with defaults, and a subclass
+legal at all: the base carries `updated_date` and `events` with defaults, and a subclass
 field without one would otherwise be *"non-default argument follows default argument"*, a
 `TypeError` at class-definition time. Keyword arguments have no order, so that cannot arise.
 
