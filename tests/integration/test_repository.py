@@ -397,8 +397,11 @@ def test_readonly_db_does_not_join_an_open_transaction(backend, clock):
         wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
         with manager.transaction():
             wallets.add(a_wallet())
-            # The built-in read joins the transaction and sees the uncommitted row.
-            assert wallets.count() == 1
+            # The built-in read does not join the transaction, as Java's `db()` does not...
+            assert wallets.count() == 0
+            # ...`tx_db_else_db()` does, and sees the uncommitted row.
+            with wallets.tx_db_else_db() as conn:
+                assert conn.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 1
             # `readonly_db()` does not, and the replica has nothing.
             with wallets.readonly_db() as conn:
                 on_replica = conn.execute(select(func.count()).select_from(WALLETS)).scalar_one()

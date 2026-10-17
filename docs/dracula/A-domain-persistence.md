@@ -110,7 +110,11 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   at runtime.
 - **Surprise:** medium
 
-### 7. Built-in reads join an open transaction
+### 7. ~~Built-in reads join an open transaction~~ fixed (`EKB-0259`)
+
+> Now as Java: `_reader` goes through `db()`, outside any open transaction. Both ports run side
+> by side on PostgreSQL: inside the transaction neither finds the row; after commit both do.
+
 - **What:** `find`, `get`, `find_where`, `count` and so on run inside the transaction if one is
   open on that shard, so they see rows written in it but not yet committed. Java's `findById`,
   `findAll`, `countWhere`… use `db()`, a separate connection outside any transaction, so they don't.

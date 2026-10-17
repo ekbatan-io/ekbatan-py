@@ -146,7 +146,8 @@ def test_a_write_inside_a_transaction_joins_it(registry, wallets):
     )
 
 
-def test_readonly_db_inside_a_transaction_sees_its_writes(registry, wallets):
+def test_a_built_in_read_inside_a_transaction_does_not_see_its_writes(registry, wallets):
+    """As Java's: `findById` and `existsById` go to `db()`, a connection of their own."""
     wallet = Wallet.open(
         id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
@@ -156,10 +157,12 @@ def test_readonly_db_inside_a_transaction_sees_its_writes(registry, wallets):
     )
     with registry.default.transaction():
         wallets.add(wallet)
-        assert wallets.find(wallet.id) is not None, (
-            "a read inside a transaction must see what that transaction wrote, so it cannot "
-            "be served by a replica"
-        )
+        assert wallets.find(wallet.id) is None
+        assert not wallets.exists(wallet.id)
+        # A query of your own on `tx_db_else_db()` joins the transaction and sees the row.
+        with wallets.tx_db_else_db(key=wallet.id) as conn:
+            assert conn.execute(select(WALLETS).where(WALLETS.c.id == wallet.id.value)).first()
+    assert wallets.find(wallet.id) is not None
 
 
 def test_dbs_visits_every_shard(sharded_registry, sharded_wallets):

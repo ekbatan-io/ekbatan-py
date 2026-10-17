@@ -143,7 +143,7 @@ for shard, conn in self.readonly_dbs(): ...
 
 | you want | use |
 | --- | --- |
-| the default read behaviour | the inherited reads - primary-consistent by design |
+| the default read behaviour | the inherited reads - the primary, outside any open transaction, as Java's |
 | a custom read that must be current | `db(...)` or `dbs()` |
 | a custom read where lag is fine | `readonly_db(...)` or `readonly_dbs()` - these **are** the replica |
 | a read that must see this transaction's uncommitted writes | `tx_db_else_db(...)` |
@@ -158,7 +158,7 @@ returns the transaction's connection or `None`, and the transaction owns it.
 
 | you want | use |
 | --- | --- |
-| the default read behaviour | the inherited reads - primary-consistent by design |
+| the default read behaviour | the inherited reads - the primary, outside any open transaction, as Java's |
 | a custom read that must be current | `db(...)` or `dbs()` |
 | a custom read where lag is fine | `readonly_db(...)` or `readonly_dbs()` - these **are** the replica |
 | a read that must see this transaction's uncommitted writes | `tx_db_else_db(...)` |

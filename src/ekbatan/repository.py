@@ -393,14 +393,19 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
     def _reader(
         self, *, key: K | None = None, shard: ShardIdentifier | None = None
     ) -> Iterator[Db]:
-        """What every built-in read uses: the **primary**, joining an open transaction.
+        """What every built-in read uses: :meth:`db` - the **primary**, outside any transaction.
 
-        Private, because it is not a choice - it is the framework reading on your behalf, and
-        the answer has to be the consistent one. Java's built-in reads go to `db()` for the
-        same reason. The public accessors are where *you* choose, and
-        :meth:`readonly_db` is how you say you can live with lag.
+        Exactly Java's: ``findById``, ``findAll``, ``existsById``, ``count`` and the rest go to
+        ``db()``, which never joins an open transaction. So a built-in read inside a
+        transaction does **not** see that transaction's uncommitted writes, and takes a second
+        connection from the pool while the transaction holds the first. A read that must see
+        them is a query of your own on :meth:`tx_db_else_db`.
+
+        Private, because it is not a choice - it is the framework reading on your behalf. The
+        public accessors are where *you* choose, and :meth:`readonly_db` is how you say you can
+        live with lag.
         """
-        with self._manager(key, None, shard).connection() as conn:
+        with self.db(key=key, shard=shard) as conn:
             yield conn
 
     def _readers(self) -> Iterator[tuple[ShardIdentifier, Db]]:
@@ -482,9 +487,9 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
     ) -> Iterator[Db]:
         """The transaction open on this shard, or no transaction at all if there is none.
 
-        What every built-in read and write uses, and what a subclass writing its own query
-        should use. It is why the same repository call reads naturally inside a unit of work
-        and in a script: inside one it joins, outside one each statement commits itself.
+        What every built-in write uses, and what a subclass writing its own query should use
+        when it must see what the open transaction wrote - the built-in reads do not, as
+        Java's do not. Inside a unit of work it joins, outside one each statement commits itself.
 
         It never opens one. A framework that opened a transaction here would be deciding what
         is atomic on the caller's behalf, and getting it wrong in both directions - wrapping a

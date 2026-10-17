@@ -509,14 +509,22 @@ their Java counterparts mean, down to the details that are easy to get wrong:
 - **`dbs()` and `readonly_dbs()` visit only the default shard** when the repository is
   unsharded, so a repository that opted out of sharding cannot scatter onto a sibling's
   databases.
-- **The built-in reads use the primary**, as Java's do. Choosing to accept lag belongs to the
-  caller, who is the only one who knows whether they just wrote the row they are about to read.
+- **The built-in reads use `db()`**, as Java's do: the primary, outside any open transaction.
+  Inside a transaction they do not see its uncommitted writes, and each takes a second
+  connection from the pool. A read that must see them is a query of your own on
+  `tx_db_else_db()`. Choosing to accept lag belongs to the caller, who is the only one who
+  knows whether they just wrote the row they are about to read.
 
 This was not always true. An earlier version of this port made `readonly_db()` mean "a read" and
 default it to the primary, with `replica=True` to opt in - same routing, different name. It was
 recorded here as a neutral difference, which was the mistake: it is a judgement call about whose
 job consistency is, and it belonged in `docs/DECISIONS-TO-REVIEW.md` where it would have been
 argued about rather than filed.
+
+The built-in reads, too, once joined an open transaction and saw its uncommitted rows, while this
+section already said they matched Java. Run side by side on PostgreSQL, Java's `findById` and
+`existsById` inside `inTransaction` did not find a row added there; this port's did. They now go
+through `db()`.
 
 ## A custom query ends with the mapping, as jOOQ's does
 
