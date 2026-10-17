@@ -49,7 +49,7 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 27 | Blank or empty key, zero or negative `maxHold`, negative `maxWait` | refused (`IllegalArgumentException`) | refused (`ValidationError`, a `ValueError`) | same | locks `validate.*` |
 | 28 | SQL session killed under a held lock | others get in, lease still says held, close is quiet, provider keeps working | same | same | locks `conn_drop.*` |
 | 29 | Redis key deleted under the holder | others get in; old holder's close leaves the new owner's key | same | same | locks `redis.conn_drop.*` |
-| 30 | Interrupting a thread waiting in `acquire` | `InterruptedException` | no way to do it | differs | locks `interrupt_waiting_acquire` |
+| 30 | Interrupting a thread waiting in `acquire` | `InterruptedException` | no way to do it (a limit, documented in EKB-0268) | differs | locks `interrupt_waiting_acquire` |
 | 31 | PG: `lock_timeout` on the pooled connection after a timed-out bounded wait | `0` | `0` (was: `200ms` stays on it; fixed in EKB-0263) | same | locks `pg.lock_timeout_after_timed_out_try` |
 | 32 | PG: `lock_timeout` after a bounded wait that got the lock | `0` | `0` | same | locks `pg.lock_timeout_after_acquired_try` |
 | 33 | Database unreachable on `tryAcquire` | `LockAcquisitionException` | `LockAcquisitionError` (was: raw `OperationalError`; fixed in EKB-0264) | same | locks `pg.backend_down.*` |
@@ -139,6 +139,8 @@ Python can match: wait against a monotonic deadline. Cheap.
 `close()` does nothing. Python's releases every lock the provider holds, on every thread.
 Java `KeyedLockProvider.java:125`. Python `locks/sql.py:96-97`, `locks/redis.py:132-133`,
 `locks/_holder.py:181`. Python can match: make it a no-op. Cheap.
+
+> **Kept as a limit in EKB-0268:** Python has no thread interrupt. Documented on the keyed-locks page, with `try_acquire` and a bounded wait as the way to stay stoppable.
 
 **30. A waiting `acquire` cannot be interrupted** (surprise: medium). Known: Dracula D "A waiting
 `acquire` cannot be interrupted". Java throws `InterruptedException` within one 5 s segment.

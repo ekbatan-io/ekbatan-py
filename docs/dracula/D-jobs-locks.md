@@ -94,6 +94,7 @@ marked unverified.
 - **Surprise:** medium
 
 ### A waiting `acquire` cannot be interrupted
+- **Decided (`EKB-0268`): kept as a limit.** A cancel flag would be new API Java does not have, and an asynchronous exception into the waiting thread is a hack. The keyed-locks page says it plainly and points to `try_acquire` with a bounded wait.
 - **What:** Java's `acquire` throws `InterruptedException`. SQL providers check for an interrupt between 5-second segments, and Redis responds at once, so a shutdown can stop a thread that is waiting on a lock. Python's `acquire` loops until it gets the lock, and another thread has no way to stop it.
 - **Python:** `src/ekbatan/locks/sql.py:69-77`, `redis.py:99-109`.
 - **Java:** `KeyedLockProvider.java:94`, `PostgresKeyedLockProvider.java:87-95`, `RedisKeyedLockProvider.java:74` (`lockInterruptibly`).

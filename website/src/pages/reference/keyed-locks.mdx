@@ -259,7 +259,10 @@ segments** instead.
 
 Three consequences:
 
-- **Shutdown latency is up to 5 seconds.** Well inside a typical 30-second budget, not instant.
+- **In Java, an interrupt stops a waiting `acquire` within 5 seconds.** Python has no thread
+  interrupt, so nothing can stop a waiting `acquire` here - on any backend. Code that must be
+  able to stop waiting should call `try_acquire` with a bounded `max_wait`, in a loop that checks
+  its own stop flag. This is a limit of the language, not a choice.
 - **Fairness is best-effort.** Within a segment the waiter is genuinely queued inside the
   database, so hand-off from a releasing holder is immediate - this is not client-side spinning.
   But each new segment re-enters that queue at the *back*, so a long waiter yields position to
