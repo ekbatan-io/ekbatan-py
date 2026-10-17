@@ -24,9 +24,7 @@ src/ekbatan/
   schema.py          the framework's tables, and the column helpers
   errors.py          the exception hierarchy
   clock.py           Clock, SystemClock, VirtualClock
-  migrations.py      SQL migrations, Flyway-compatible: files, checks, history, one call per layout
-  _flyway_sql.py     Flyway's checksum, placeholders and statement parser, ported
-  _migration_backend.py  one connection per database: Flyway's lock, statements, replica check
+  migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
   schemagen.py       table definitions generated from a migrated database
   codegen.py         typed builders, generated per model
   streaming.py       ActionEvent - the consumer-side view of an outbox row

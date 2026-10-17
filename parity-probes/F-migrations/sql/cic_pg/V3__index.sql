@@ -1,1 +1,0 @@
-CREATE INDEX CONCURRENTLY cic_idx ON cic_t (id);

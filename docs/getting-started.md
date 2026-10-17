@@ -30,6 +30,7 @@ Everything optional is an extra, and nothing you do not name is installed:
 | --- | --- | --- |
 | `postgres` | psycopg 3 | your dialect |
 | `mysql`, `mariadb` | PyMySQL | your dialect |
+| `migrations` | yoyo | you want `ekbatan.migrations.migrate` to run your SQL migrations across every shard |
 | `redis` | redis-py | you want the Redis-backed keyed lock rather than the SQL one |
 | `codegen` | testcontainers, psycopg | **development only** - see below |
 

@@ -1,56 +1,210 @@
-=    cross.pg.a1_java_migrates_v1_v2.outcome | cross.pg.b1_python_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
-=    cross.pg.a1_java_migrates_v1_v2.history | cross.pg.b1_python_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true]
-=    cross.pg.a1_java_migrates_v1_v2.tables | cross.pg.b1_python_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
-=    cross.pg.b2_java_migrates_v3.outcome | cross.pg.a2_python_migrates_v3.outcome: OK applied=1 initial=2 target=3
-=    cross.pg.b2_java_migrates_v3.history | cross.pg.a2_python_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true]
-=    cross.pg.b2_java_migrates_v3.tables | cross.pg.a2_python_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
-=    cross.pg.a3_java_migrates_v4.outcome | cross.pg.b3_python_migrates_v4.outcome: OK applied=1 initial=3 target=4
-=    cross.pg.a3_java_migrates_v4.history | cross.pg.b3_python_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
-=    cross.pg.a3_java_migrates_v4.tables | cross.pg.b3_python_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-=    cross.pg.a5_java.validate | cross.pg.a4_python.validate: OK
-=    cross.pg.b4_java.validate | cross.pg.b5_python.validate: OK
-=    cross.pg.a5_java_migrates_again.outcome | cross.pg.a4_python_migrates_again.outcome: OK applied=0 initial=4 target=null
-=    cross.pg.a5_java_migrates_again.history | cross.pg.a4_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
-=    cross.pg.a5_java_migrates_again.tables | cross.pg.a4_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-=    cross.pg.b4_java_migrates_again.outcome | cross.pg.b5_python_migrates_again.outcome: OK applied=0 initial=4 target=null
-=    cross.pg.b4_java_migrates_again.history | cross.pg.b5_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|postgres|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|postgres|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|postgres|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|postgres|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|postgres|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|postgres|time>=0|true]
-=    cross.pg.b4_java_migrates_again.tables | cross.pg.b5_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-BOTH pg at once: java OK applied=0, python OK applied=1 (one applies, one waits)
-=    cross.mysql.a1_java_migrates_v1_v2.outcome | cross.mysql.b1_python_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
-=    cross.mysql.a1_java_migrates_v1_v2.history | cross.mysql.b1_python_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true]
-=    cross.mysql.a1_java_migrates_v1_v2.tables | cross.mysql.b1_python_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
-=    cross.mysql.b2_java_migrates_v3.outcome | cross.mysql.a2_python_migrates_v3.outcome: OK applied=1 initial=2 target=3
-=    cross.mysql.b2_java_migrates_v3.history | cross.mysql.a2_python_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true]
-=    cross.mysql.b2_java_migrates_v3.tables | cross.mysql.a2_python_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
-=    cross.mysql.a3_java_migrates_v4.outcome | cross.mysql.b3_python_migrates_v4.outcome: OK applied=1 initial=3 target=4
-=    cross.mysql.a3_java_migrates_v4.history | cross.mysql.b3_python_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
-=    cross.mysql.a3_java_migrates_v4.tables | cross.mysql.b3_python_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-=    cross.mysql.a5_java.validate | cross.mysql.a4_python.validate: OK
-=    cross.mysql.b4_java.validate | cross.mysql.b5_python.validate: OK
-=    cross.mysql.a5_java_migrates_again.outcome | cross.mysql.a4_python_migrates_again.outcome: OK applied=0 initial=4 target=null
-=    cross.mysql.a5_java_migrates_again.history | cross.mysql.a4_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
-=    cross.mysql.a5_java_migrates_again.tables | cross.mysql.a4_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-=    cross.mysql.b4_java_migrates_again.outcome | cross.mysql.b5_python_migrates_again.outcome: OK applied=0 initial=4 target=null
-=    cross.mysql.b4_java_migrates_again.history | cross.mysql.b5_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
-=    cross.mysql.b4_java_migrates_again.tables | cross.mysql.b5_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-BOTH mysql at once: java OK applied=0, python OK applied=1 (one applies, one waits)
-=    cross.maria.a1_java_migrates_v1_v2.outcome | cross.maria.b1_python_migrates_v1_v2.outcome: OK applied=4 initial=null target=2
-=    cross.maria.a1_java_migrates_v1_v2.history | cross.maria.b1_python_migrates_v1_v2.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true]
-=    cross.maria.a1_java_migrates_v1_v2.tables | cross.maria.b1_python_migrates_v1_v2.tables: [turns_v1, turns_v1_5, turns_v2, turns_view]
-=    cross.maria.b2_java_migrates_v3.outcome | cross.maria.a2_python_migrates_v3.outcome: OK applied=1 initial=2 target=3
-=    cross.maria.b2_java_migrates_v3.history | cross.maria.a2_python_migrates_v3.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true]
-=    cross.maria.b2_java_migrates_v3.tables | cross.maria.a2_python_migrates_v3.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_view]
-=    cross.maria.a3_java_migrates_v4.outcome | cross.maria.b3_python_migrates_v4.outcome: OK applied=1 initial=3 target=4
-=    cross.maria.a3_java_migrates_v4.history | cross.maria.b3_python_migrates_v4.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
-=    cross.maria.a3_java_migrates_v4.tables | cross.maria.b3_python_migrates_v4.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-=    cross.maria.a5_java.validate | cross.maria.a4_python.validate: OK
-=    cross.maria.b4_java.validate | cross.maria.b5_python.validate: OK
-=    cross.maria.a5_java_migrates_again.outcome | cross.maria.a4_python_migrates_again.outcome: OK applied=0 initial=4 target=null
-=    cross.maria.a5_java_migrates_again.history | cross.maria.a4_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
-=    cross.maria.a5_java_migrates_again.tables | cross.maria.a4_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-=    cross.maria.b4_java_migrates_again.outcome | cross.maria.b5_python_migrates_again.outcome: OK applied=0 initial=4 target=null
-=    cross.maria.b4_java_migrates_again.history | cross.maria.b5_python_migrates_again.history: [1|1|first|SQL|V1__first.sql|-1874471390|root|time>=0|true, 2|1.5|underscore|SQL|V1_5__underscore.sql|-1032883808|root|time>=0|true, 3|2|second|SQL|V2__second.sql|161984547|root|time>=0|true, 4|null|turns view|SQL|R__turns_view.sql|-1998696171|root|time>=0|true, 5|3|third|SQL|V3__third.sql|-936808477|root|time>=0|true, 6|4|fourth|SQL|V4__fourth.sql|-518882720|root|time>=0|true]
-=    cross.maria.b4_java_migrates_again.tables | cross.maria.b5_python_migrates_again.tables: [turns_v1, turns_v1_5, turns_v2, turns_v3, turns_v4, turns_view]
-BOTH maria at once: java OK applied=0, python OK applied=1 (one applies, one waits)
-e1 pg: python OK applied=3 under 30 s false, java FAIL FlywayException: Number of retries exceeded while attempting to acquire PostgreSQL advisory lock. Configure the number of retries with the 'lockRetryCount' configuration option: https://rd.gt/3A57jfk
-e1b pg: python OK applied=3 under 30 s true, java OK applied=0
+DIFF cross.mysql.a1_installed_on_sample
+     java:   [2026-10-17 18:23:41]
+     python: <missing>
+DIFF cross.mysql.a1_java_migrates_base.ekbatan_history
+     java:   [<no history table>]
+     python: <missing>
+DIFF cross.mysql.a1_java_migrates_base.flyway_history
+     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+     python: <missing>
+DIFF cross.mysql.a1_java_migrates_base.outcome
+     java:   OK applied=3 initial=null
+     python: <missing>
+DIFF cross.mysql.a1_java_migrates_base.tables
+     java:   [life_a, life_b, life_v]
+     python: <missing>
+DIFF cross.mysql.a2_python_migrates_base_plus_v3.ekbatan_history
+     java:   <missing>
+     python: [<no history table>]
+DIFF cross.mysql.a2_python_migrates_base_plus_v3.flyway_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+DIFF cross.mysql.a2_python_migrates_base_plus_v3.outcome
+     java:   <missing>
+     python: FAIL MigrationError: default (0:0) already has flyway_schema_history, life_a, life_b, life_v but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time,...
+DIFF cross.mysql.a2_python_migrates_base_plus_v3.tables
+     java:   <missing>
+     python: [life_a, life_b, life_v]
+DIFF cross.mysql.a3_python_baselines_at_2_then_migrates.baseline
+     java:   <missing>
+     python: OK
+DIFF cross.mysql.a3_python_baselines_at_2_then_migrates.ekbatan_history
+     java:   <missing>
+     python: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+DIFF cross.mysql.a3_python_baselines_at_2_then_migrates.flyway_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+DIFF cross.mysql.a3_python_baselines_at_2_then_migrates.outcome
+     java:   <missing>
+     python: OK applied=2 initial=2
+DIFF cross.mysql.a3_python_baselines_at_2_then_migrates.tables
+     java:   <missing>
+     python: [life_a, life_b, life_c, life_v]
+DIFF cross.mysql.a4_java_migrates_base_plus_v3.ekbatan_history
+     java:   [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+     python: <missing>
+DIFF cross.mysql.a4_java_migrates_base_plus_v3.flyway_history
+     java:   [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|3|half|SQL|V3__half.sql|-1158503407|root|time>=0|false]
+     python: <missing>
+DIFF cross.mysql.a4_java_migrates_base_plus_v3.outcome
+     java:   FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42S01 Error Code : 1050 Message : Table 'life_c' already exists Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql) Line : 1 Statement : Run Flyway with -X option to see the a...
+     python: <missing>
+DIFF cross.mysql.a4_java_migrates_base_plus_v3.tables
+     java:   [life_a, life_b, life_c, life_v]
+     python: <missing>
+DIFF cross.mysql.a5_final.ekbatan_history
+     java:   <missing>
+     python: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+DIFF cross.mysql.a5_final.flyway_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|3|half|SQL|V3__half.sql|-1158503407|root|time>=0|false]
+DIFF cross.mysql.a5_final.tables
+     java:   <missing>
+     python: [life_a, life_b, life_c, life_v]
+DIFF cross.mysql.b1_installed_on_sample
+     java:   <missing>
+     python: [2026-10-17T18:23:45.123025Z]
+DIFF cross.mysql.b1_python_migrates_base.ekbatan_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+DIFF cross.mysql.b1_python_migrates_base.flyway_history
+     java:   <missing>
+     python: [<no history table>]
+DIFF cross.mysql.b1_python_migrates_base.outcome
+     java:   <missing>
+     python: OK applied=3 initial=None
+DIFF cross.mysql.b1_python_migrates_base.tables
+     java:   <missing>
+     python: [life_a, life_b, life_v]
+DIFF cross.mysql.b2_java_migrates_base_plus_v3.ekbatan_history
+     java:   [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+     python: <missing>
+DIFF cross.mysql.b2_java_migrates_base_plus_v3.flyway_history
+     java:   [<no history table>]
+     python: <missing>
+DIFF cross.mysql.b2_java_migrates_base_plus_v3.outcome
+     java:   FAIL FlywayException: Found non-empty schema(s) `f6_b` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+     python: <missing>
+DIFF cross.mysql.b2_java_migrates_base_plus_v3.tables
+     java:   [life_a, life_b, life_v]
+     python: <missing>
+DIFF cross.mysql.c1_java_outcome
+     java:   FAIL FlywayException: Found non-empty schema(s) `f6_c` but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+     python: <missing>
+DIFF cross.mysql.c1_python_outcome
+     java:   <missing>
+     python: OK applied=1
+DIFF cross.mysql.c2_after_both_at_once.ekbatan_history
+     java:   <missing>
+     python: [1|1|slow|SQL|V1__slow.sql|b49e7c6bc0b81321069a1300b35d3241bc8870355bc64d283e04e17de912dbeb|root|time>=0|true]
+DIFF cross.mysql.c2_after_both_at_once.flyway_history
+     java:   <missing>
+     python: [<no history table>]
+DIFF cross.mysql.c2_after_both_at_once.tables
+     java:   <missing>
+     python: [slow_t]
+DIFF cross.pg.a1_installed_on_sample
+     java:   [2026-10-17 20:23:40.577395]
+     python: <missing>
+DIFF cross.pg.a1_java_migrates_base.ekbatan_history
+     java:   [<no history table>]
+     python: <missing>
+DIFF cross.pg.a1_java_migrates_base.flyway_history
+     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+     python: <missing>
+DIFF cross.pg.a1_java_migrates_base.outcome
+     java:   OK applied=3 initial=null
+     python: <missing>
+DIFF cross.pg.a1_java_migrates_base.tables
+     java:   [life_a, life_b, life_v]
+     python: <missing>
+DIFF cross.pg.a2_python_migrates_base_plus_v3.ekbatan_history
+     java:   <missing>
+     python: [<no history table>]
+DIFF cross.pg.a2_python_migrates_base_plus_v3.flyway_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+DIFF cross.pg.a2_python_migrates_base_plus_v3.outcome
+     java:   <missing>
+     python: FAIL MigrationError: default (0:0) already has flyway_schema_history, life_a, life_b, life_v but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time,...
+DIFF cross.pg.a2_python_migrates_base_plus_v3.tables
+     java:   <missing>
+     python: [life_a, life_b, life_v]
+DIFF cross.pg.a3_python_baselines_at_2_then_migrates.baseline
+     java:   <missing>
+     python: OK
+DIFF cross.pg.a3_python_baselines_at_2_then_migrates.ekbatan_history
+     java:   <missing>
+     python: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+DIFF cross.pg.a3_python_baselines_at_2_then_migrates.flyway_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+DIFF cross.pg.a3_python_baselines_at_2_then_migrates.outcome
+     java:   <missing>
+     python: OK applied=2 initial=2
+DIFF cross.pg.a3_python_baselines_at_2_then_migrates.tables
+     java:   <missing>
+     python: [life_a, life_b, life_c, life_v]
+DIFF cross.pg.a4_java_migrates_base_plus_v3.ekbatan_history
+     java:   [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+     python: <missing>
+DIFF cross.pg.a4_java_migrates_base_plus_v3.flyway_history
+     java:   [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+     python: <missing>
+DIFF cross.pg.a4_java_migrates_base_plus_v3.outcome
+     java:   FAIL FlywayMigrateException: Failed to execute script V3__half.sql ------------------------------------- SQL State : 42P07 Error Code : 0 Message : ERROR: relation "life_c" already exists Location : /Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql (/Users/mike/workspace/ekbatan-py/parity-probes/F-migrations/sql/life/fixed/V3__half.sql) Line : 1 Statement : Run Flyway with -X option to se...
+     python: <missing>
+DIFF cross.pg.a4_java_migrates_base_plus_v3.tables
+     java:   [life_a, life_b, life_c, life_v]
+     python: <missing>
+DIFF cross.pg.a5_final.ekbatan_history
+     java:   <missing>
+     python: [1|2|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+DIFF cross.pg.a5_final.flyway_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+DIFF cross.pg.a5_final.tables
+     java:   <missing>
+     python: [life_a, life_b, life_c, life_v]
+DIFF cross.pg.b1_installed_on_sample
+     java:   <missing>
+     python: [2026-10-17T18:23:45.030808Z]
+DIFF cross.pg.b1_python_migrates_base.ekbatan_history
+     java:   <missing>
+     python: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+DIFF cross.pg.b1_python_migrates_base.flyway_history
+     java:   <missing>
+     python: [<no history table>]
+DIFF cross.pg.b1_python_migrates_base.outcome
+     java:   <missing>
+     python: OK applied=3 initial=None
+DIFF cross.pg.b1_python_migrates_base.tables
+     java:   <missing>
+     python: [life_a, life_b, life_v]
+DIFF cross.pg.b2_java_migrates_base_plus_v3.ekbatan_history
+     java:   [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+     python: <missing>
+DIFF cross.pg.b2_java_migrates_base_plus_v3.flyway_history
+     java:   [<no history table>]
+     python: <missing>
+DIFF cross.pg.b2_java_migrates_base_plus_v3.outcome
+     java:   FAIL FlywayException: Found non-empty schema(s) "public" but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+     python: <missing>
+DIFF cross.pg.b2_java_migrates_base_plus_v3.tables
+     java:   [life_a, life_b, life_v]
+     python: <missing>
+DIFF cross.pg.c1_java_outcome
+     java:   FAIL FlywayException: Found non-empty schema(s) "public" but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.
+     python: <missing>
+DIFF cross.pg.c1_python_outcome
+     java:   <missing>
+     python: OK applied=1
+DIFF cross.pg.c2_after_both_at_once.ekbatan_history
+     java:   <missing>
+     python: [1|1|slow|SQL|V1__slow.sql|6823ff9414d708fc280b3b84b743a0b51db44d75455e709af8fa145a352881a5|postgres|time>=0|true]
+DIFF cross.pg.c2_after_both_at_once.flyway_history
+     java:   <missing>
+     python: [<no history table>]
+DIFF cross.pg.c2_after_both_at_once.tables
+     java:   <missing>
+     python: [slow_t]

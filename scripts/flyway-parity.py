@@ -201,8 +201,8 @@ Files = dict[str, "str | bytes | None"]
 class Step:
     #: Changes to the migrations directory: a path and its content, or `None` to delete it.
     files: Files = field(default_factory=dict)
-    #: Where a tool needs something of its own. Since parity fix M the migrator reads Flyway's
-    #: files as they are, so only Flyway's flags (`flyway_args`) still differ.
+    #: Where a tool spells the same thing its own way - Flyway's `.conf` file is yoyo's
+    #: `-- transactional: false`, Flyway's `afterMigrate.sql` is yoyo's `post-apply.sql`.
     flyway_files: Files = field(default_factory=dict)
     ours_files: Files = field(default_factory=dict)
     #: migrate | repair | baseline | info | validate | sql
@@ -416,7 +416,7 @@ def scenarios() -> list[Scenario]:
             Step(
                 with_runs(d, {"R__x.sql": ran("x")}),
                 flyway_files={"R__x.sql.conf": "executeInTransaction=false\n"},
-                ours_files={"R__x.sql.conf": "executeInTransaction=false\n"},
+                ours_files={"R__x.sql": "-- transactional: false\n" + ran("x")},
                 flyway_args=("-postgresql.transactional.lock=false",),
             )
         ],
@@ -487,7 +487,7 @@ def scenarios() -> list[Scenario]:
             Step(
                 with_runs(d, {"V2__half.sql": ran("V2") + FAIL_PG}),
                 flyway_files={"V2__half.sql.conf": "executeInTransaction=false\n"},
-                ours_files={"V2__half.sql.conf": "executeInTransaction=false\n"},
+                ours_files={"V2__half.sql": "-- transactional: false\n" + ran("V2") + FAIL_PG},
                 flyway_args=("-postgresql.transactional.lock=false",),
             ),
             Step(command="info"),
@@ -714,13 +714,13 @@ def scenarios() -> list[Scenario]:
     )
     s += per_dialect(
         "F18",
-        "afterMigrate: when it runs",
+        "afterMigrate, and yoyo's post-apply: when it runs",
         ("pg",),
         lambda d: [
             Step(
                 with_runs(d, {}),
                 flyway_files={"afterMigrate.sql": ran("after")},
-                ours_files={"afterMigrate.sql": ran("after")},
+                ours_files={"post-apply.sql": ran("after")},
             ),
             Step(),
             Step({"V2__two.sql": ran("V2")}),
@@ -734,12 +734,12 @@ def scenarios() -> list[Scenario]:
             Step(
                 with_runs(d, {}),
                 flyway_files={"afterMigrate.sql": ran("after") + FAIL_PG},
-                ours_files={"afterMigrate.sql": ran("after") + FAIL_PG},
+                ours_files={"post-apply.sql": ran("after") + FAIL_PG},
             ),
             Step(command="info"),
             Step(
                 flyway_files={"afterMigrate.sql": ran("after-fixed")},
-                ours_files={"afterMigrate.sql": ran("after-fixed")},
+                ours_files={"post-apply.sql": ran("after-fixed")},
             ),
         ],
     )
@@ -1053,7 +1053,7 @@ def concurrently(
 
 
 def history(db: Database, handle: str, tool: str) -> list[tuple[Any, ...]] | str:
-    table = "flyway_schema_history"  # both tools' since parity fix M
+    table = "flyway_schema_history" if tool == "flyway" else "ekbatan_schema_history"
     if table not in db.tables(handle):
         return "no history table"
     for columns in (

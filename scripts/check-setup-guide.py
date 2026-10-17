@@ -182,7 +182,7 @@ def script_for(db: str, install: str, items: list[Item], python: Path, shims: Pa
                 parts.append(
                     "python3 -m venv ../installed && "
                     f'../installed/bin/pip install -q -e "{ROOT}/db-scheduler" '
-                    f'"{ROOT}[{extras}]" fastapi && '
+                    f'"{ROOT}[{extras},migrations]" fastapi && '
                     "../installed/bin/pip install -q --no-deps dist/*.whl && "
                     '(cd .. && installed/bin/python -c "'
                     "from wallet.app import MIGRATIONS, Settings; import wallet.repository; "

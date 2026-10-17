@@ -36,7 +36,7 @@ Run in parallel, each in its own worktree of this repository, then merged onto `
 |---|---|---|---|
 | L - locks and jobs | 2, 30, 31, 32, 33, 34, 35 | `EKB-0263`.. | [L](parity-fix/L-locks-jobs.md) |
 | E - events | 11, 12, 17, 18, 19, 20 | `EKB-0270`.. | [E](parity-fix/E-events.md) |
-| M - migrations | 13, 14, 15, 16, 37, 38, 39, 40, 41, 42, 43, 44 | `EKB-0277`.. | [M](parity-fix/M-migrations.md) |
+| M - migrations | 13, 14, 15, 16, 37, 38, 39, 40, 41, 42, 43, 44 | `EKB-0277`.. | reverted - see below |
 | J - JSON, domain, timestamps | 6, 7, 8, 9, 10, 21, 24, 25, 26 | `EKB-0290`.. | [J](parity-fix/J-json-domain.md) |
 | T - transactions, actions, config, repository | 3, 4, 5, 22, 23, 27, 28, 29, 36 | `EKB-0300`.. | [T](parity-fix/T-transactions-config.md) |
 
@@ -48,6 +48,16 @@ Item 1 (a lock lease closed twice) is done: `EKB-0262`.
 |---|---|
 | L | done, merged |
 | E | done, merged |
-| M | done, merged |
+| M | done, merged; reverted by the user's decision (see below) |
 | J | done, merged |
 | T | done, merged |
+
+## Group M reverted (`EKB-0310`)
+
+The user, 2026-10-17: "there is no value of continuing a migration halfly done by a java service,
+you either write a service in java or write it fully in python ... so bring back the yoyo
+migration." Items 13-16 and 37-44 asked for one database to be migrated by both ports, which no
+real service does; the fix replaced a migrator the user had vetted with a hand-written one. That
+was a decision the user should have made, not this run. Everything group M did (`EKB-0277`-
+`EKB-0285`) is reverted; the migrator is the yoyo-based one again, as it was at `EKB-0276`. Items
+13-16 and 37-44 stay open as known, accepted differences (Draculas 3, 15, 80-85).

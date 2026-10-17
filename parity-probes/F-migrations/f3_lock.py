@@ -6,7 +6,7 @@ import time
 
 from common import SQL, cfg, connect, fresh, history, msg, probe, query, tables
 
-from ekbatan.migrations import FlywayMigrator
+from ekbatan.migrations import YoyoMigrator
 
 HOLD_SECONDS = 70
 
@@ -38,7 +38,7 @@ def concurrent(dialect: str) -> str | None:
     def one() -> None:
         start.wait()
         try:
-            r = FlywayMigrator.migrate_data_source(cfg(dialect, db), str(SQL / f"lock_{dialect}"))
+            r = YoyoMigrator.migrate_data_source(cfg(dialect, db), str(SQL / f"lock_{dialect}"))
             outcomes.append(f"OK applied={r.migrations_executed}")
         except Exception as e:
             outcomes.append("FAIL " + msg(e))
@@ -98,7 +98,7 @@ def held(dialect: str, lock: str | None) -> None:
     ready.wait()
     t0 = time.monotonic()
     try:
-        r = FlywayMigrator.migrate_data_source(cfg(dialect, db), str(SQL / "quick"))
+        r = YoyoMigrator.migrate_data_source(cfg(dialect, db), str(SQL / "quick"))
         probe(k + ".outcome", f"OK applied={r.migrations_executed}")
     except Exception as e:
         probe(k + ".outcome", "FAIL " + msg(e))

@@ -44,15 +44,11 @@ the Java while porting go in an openspec change, not a code change.
 - Nothing in `src/` may import a web framework. `tests/test_structure.py` enforces it.
 - The ambient transaction is a `ContextVar`. Work handed to a pool does not inherit it, and that
   is correct.
-- Migrations are Flyway's files - `V<version>__<description>.sql`, `R__<description>.sql`,
-  callbacks, `.sql.conf` - and the migrator writes Flyway's own `flyway_schema_history` and takes
-  Flyway's lock, so a Java service can migrate the same database. Keep it byte-compatible: the
-  checksum, the version text, the rows and the lock key are a contract with Java.
-  `validate_scripts` checks the files with no database. On MySQL and MariaDB keep one schema
-  change per file - each commits on its own, and a failure after one is recorded and blocks until
-  `repair()`. `docs/parity-fix/M-migrations.md` and `docs/behaviour-parity/F-migrations.md` settle
-  the behaviour against Flyway 12; `parity-probes/F-migrations/cross.sh` reruns Java and Python
-  against one database.
+- Migrations are `V<version>__<description>.sql` and `R__<description>.sql` files, run the way
+  Flyway runs them; `validate_scripts` checks them with no database. On MySQL and MariaDB keep
+  one schema change per file - each commits on its own, and a failure after one is recorded and
+  blocks until `repair()`. `docs/MIGRATOR-LEDGER.md` settles every behaviour against Flyway 12;
+  a change to the migrator updates it, and `scripts/flyway-parity.py` reruns the comparison.
 
 ## Workflow
 

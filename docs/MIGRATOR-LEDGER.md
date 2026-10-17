@@ -1,12 +1,5 @@
 # The migrator against Flyway
 
-> **History.** This ledger settled the yoyo-based migrator (`EKB-0233`-`EKB-0235`). Parity fix M
-> (`EKB-0277`-`EKB-0282`) replaced it with a Flyway-compatible one that writes Flyway's own history
-> and takes Flyway's lock; [`parity-fix/M-migrations.md`](parity-fix/M-migrations.md) is the
-> ledger for that, and `docs/database/migrations.md` describes what the migrator does now. The
-> Flyway behaviour recorded below still holds; where a row says this migrator differs, the parity
-> fix ledger says whether it still does.
-
 Java's `FlywayMigrator` runs Flyway with its defaults and nothing else. This port's migrator runs
 SQL files through yoyo. This ledger lists every behaviour of a Flyway `migrate` that a user could
 notice - what runs, in what order, under which lock, on which connection, in which transaction,

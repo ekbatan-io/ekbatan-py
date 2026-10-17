@@ -146,7 +146,9 @@ def test_the_framework_itself_imports_none_of_an_example_s_extras():
     """The other half, and the one that matters: `src/` must not grow a web framework because
     an example has one."""
     # Minus the ones the framework legitimately has: `sqlalchemy` and `db_scheduler` are hard
-    # dependencies. What is left is the web stack, which `src/` must never acquire.
+    # dependencies. What is left is the web stack, which `src/` must never acquire. (yoyo, the
+    # `migrations` extra, is imported only by `ekbatan._yoyo`, which is imported only once
+    # something migrates - so it stays optional without being listed here.)
     forbidden = EXAMPLE_DEPENDENCIES - {
         "ekbatan",
         "sqlalchemy",
@@ -190,10 +192,10 @@ def test_the_layout_is_what_it_claims_to_be():
     assert list((TESTS / "integration").glob("test_*.py")), "the integration suite is not empty"
 
 
-def test_importing_the_migrator_loads_no_database_driver():
-    """`ekbatan._migration_backend` holds everything that talks to a database and is imported
-    only once something migrates, and each driver only when its dialect connects - so importing
-    the migrator needs none of them installed."""
+def test_importing_the_framework_does_not_load_yoyo():
+    """yoyo is the optional `migrations` extra. `ekbatan._yoyo` holds everything that touches
+    it and is imported only once something migrates - so an application that never migrates
+    from files, or migrates with another tool, never needs it installed."""
     import subprocess
 
     done = subprocess.run(
@@ -201,8 +203,7 @@ def test_importing_the_migrator_loads_no_database_driver():
             sys.executable,
             "-c",
             "import sys, ekbatan, ekbatan.migrations, ekbatan.schemagen; "
-            "print(sorted(m for m in sys.modules if m.split('.')[0] in "
-            "('psycopg', 'pymysql', 'ekbatan._migration_backend')))",
+            "print(sorted(m for m in sys.modules if m.split('.')[0] == 'yoyo'))",
         ],
         capture_output=True,
         text=True,
@@ -210,4 +211,4 @@ def test_importing_the_migrator_loads_no_database_driver():
     )
 
     assert done.returncode == 0, done.stderr
-    assert done.stdout.strip() == "[]", f"loaded by a plain import: {done.stdout}"
+    assert done.stdout.strip() == "[]", f"yoyo was loaded by a plain import: {done.stdout}"

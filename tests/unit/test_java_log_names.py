@@ -55,38 +55,22 @@ def test_the_other_modules_too() -> None:
     for path, java in [
         ("persistence.py", "io.ekbatan.core.persistence.TransactionManager"),
         ("persistence.py", "io.ekbatan.core.shard.DatabaseRegistry"),
-        ("_migration_backend.py", "io.ekbatan.flyway.FlywayMigrator"),
+        ("_yoyo.py", "io.ekbatan.flyway.FlywayMigrator"),
         ("locks/redis.py", "io.ekbatan.keyedlock.redis.RedisKeyedLockProvider"),
         ("distributedjobs/__init__.py", "io.ekbatan.distributedjobs.JobRegistry"),
     ]:
         assert f'logging.getLogger("{java}")' in (SRC / path).read_text(), (path, java)
 
 
-#: The Flyway 12 classes whose lines the migrator writes, as Flyway writes them - each name
-#: checked against the class in flyway-core 12.0.0, so `org.flywaydb: WARN` quietens both ports.
-FLYWAY_CLASSES = {
-    "org.flywaydb.core.internal.command.DbMigrate",
-    "org.flywaydb.core.internal.command.DbValidate",
-    "org.flywaydb.core.internal.command.DbBaseline",
-    "org.flywaydb.core.internal.command.DbRepair",
-    "org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory",
-    "org.flywaydb.core.internal.sqlscript.DefaultSqlScriptExecutor",
-    "org.flywaydb.core.internal.resource.ResourceNameValidator",
-    "org.flywaydb.core.internal.callback.SqlScriptCallbackFactory",
-    "org.flywaydb.core.internal.scanner.filesystem.FileSystemScanner",
-}
-
-
-def test_every_logger_is_under_io_ekbatan_or_is_flyways_own() -> None:
-    """So `io.ekbatan: WARN` - the one line a Java config has - silences or opens all of them,
-    and the migrator's Flyway lines answer to `org.flywaydb`, as they do in Java."""
+def test_every_logger_is_under_io_ekbatan() -> None:
+    """So `io.ekbatan: WARN` - the one line a Java config has - silences or opens all of them."""
     names = {
         name
         for path in SRC.rglob("*.py")
         for name in re.findall(r'logging\.getLogger\("([^"]+)"\)', path.read_text())
     }
     assert names, "the scan found no loggers at all"
-    assert {n for n in names if not n.startswith("io.ekbatan.")} <= FLYWAY_CLASSES
+    assert {n for n in names if not n.startswith("io.ekbatan.")} == set()
 
 
 def test_the_tracer_scope_is_javas() -> None:

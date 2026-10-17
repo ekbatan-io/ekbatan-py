@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A wallet service over HTTP on MariaDB, built with Poetry."
 requires-python = ">=3.13"
 dependencies = [
-    "ekbatan[mariadb]",
+    "ekbatan[mariadb,migrations]",
     # ekbatan's own dependency, listed only so that the path below applies to it: Poetry
     # applies [tool.poetry.dependencies] only to what is listed here. Delete with that.
     "ekbatan-py-db-scheduler",

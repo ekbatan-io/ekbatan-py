@@ -24,7 +24,7 @@ all: test
 # repository. Once it is, `pip install --group dev -e .` alone does this.
 $(VENV)/python:
 	$(PYTHON) -m venv .venv
-	$(VENV)/pip install -q -e ../../db-scheduler -e "../..[mysql,codegen]"
+	$(VENV)/pip install -q -e ../../db-scheduler -e "../..[mysql,migrations,codegen]"
 	$(VENV)/pip install -q --group dev -e .
 
 env: $(VENV)/python

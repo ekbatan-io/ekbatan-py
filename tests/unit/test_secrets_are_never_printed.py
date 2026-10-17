@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 
 import ekbatan
-from ekbatan._migration_backend import connection_arguments
 from ekbatan._redact import redact, redact_url
+from ekbatan._yoyo import connection_arguments
 from ekbatan.config import DataSourceConfig, ShardingConfig
 from ekbatan.errors import ValidationError
 from ekbatan.migrations import (

@@ -158,8 +158,8 @@ if config.run_migrations:
     migrate(layout, MIGRATIONS)
 ```
 
-Every shard, one at a time, fail-fast. `migrate` runs plain SQL files the way Flyway runs
-them, as a **library** - there is no config file and no binary, because a config file that has to be found is
+Every shard, one at a time, fail-fast. `migrate` runs plain SQL files through yoyo as a
+**library** - there is no config file and no binary, because a config file that has to be found is
 a config file that is missing in the one environment you did not test.
 
 It refuses to run if an applied migration has since been edited, renamed or deleted, or if a new

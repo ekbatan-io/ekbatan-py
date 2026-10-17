@@ -1,100 +1,98 @@
-"""Getting the schema onto every database, not just the first one - the way Java's Flyway does.
+"""Getting the schema onto every database, not just the first one.
 
 A shard added to configuration and forgotten by the migrator is a database that accepts writes
 right up until the first one touches a column that is not there. Migrating from the same
 configuration the framework routes from is what keeps the two from drifting apart.
 
-Java's counterpart is ``FlywayMigrator``, which runs Flyway 12 with its defaults. This is that
-migrator, written in Python and compatible with Flyway on disk and on the wire: a Java service
-and a Python service can migrate the same database, in either order, taking turns, at the same
-time. No Java and no Flyway are needed to run it::
+Java's counterpart is ``FlywayMigrator``, which runs Flyway with its defaults. This is that, over
+`yoyo <https://ollycope.com/software/yoyo/>`_, used as a library so an application migrates itself
+at startup without any external binary::
 
     from ekbatan.migrations import migrate
 
     migrate(config, "migrations")   # every shard, in order, one at a time, fail-fast
 
-**The files** are Flyway's, read by Flyway's rules - the same names, the same statements, the
-same checksum:
+**The files** are plain SQL, named as Flyway names them, in a directory and any directory under
+it:
 
 - ``V<version>__<description>.sql`` - a **versioned** migration, applied once, in the order of
-  the version *numbers*, so ``V10`` runs after ``V2``. ``V1_5`` is version ``1.5``.
+  the version *numbers*, so ``V10`` runs after ``V2``.
 - ``R__<description>.sql`` - a **repeatable** migration, applied after every versioned one, and
-  again whenever the file changes, in the order of the descriptions.
-- ``<migration>.sql.conf`` beside a migration - Flyway's script configuration:
-  ``executeInTransaction``, ``encoding``, ``placeholderReplacement``.
-- Any other ``.sql`` file is skipped with one line in the log, as Flyway skips it.
+  again whenever the file changes, in the order of the descriptions. For what is replaced whole
+  each time - a view, a function, a procedure.
+- ``post-apply.sql`` (any name starting ``post-apply``) - yoyo's hook, Flyway's ``afterMigrate``:
+  run at the end of every migrate, whether or not anything was pending.
 
-A migration runs in a transaction unless it holds a statement PostgreSQL refuses inside one -
-``CREATE INDEX CONCURRENTLY``, ``VACUUM`` and the rest of Flyway's list - which Flyway's parser
-finds and so does this; ``executeInTransaction=false`` in the ``.conf`` file says it outright.
+A file whose first line is ``-- transactional: false`` runs outside a transaction, which is what
+PostgreSQL's ``CREATE INDEX CONCURRENTLY`` needs.
 
-**The history** is Flyway's ``flyway_schema_history`` table, with Flyway's columns, types, rows
-and ranks, so either port reads what the other wrote.
+**One migrate** does what Flyway's does, in the same order: take the lock; refuse a schema with
+tables in it but no history; compare the files with the history and refuse every disagreement
+before anything runs; apply the pending versioned migrations, then the pending repeatable ones,
+each recorded as it is applied; run the ``post-apply`` hooks; let go of the lock. A migration that
+fails part-way where it cannot be rolled back - on MySQL and MariaDB, or outside a transaction -
+is recorded as failed, and the next run refuses to go on until someone has looked and called
+:func:`repair`, as Flyway refuses.
 
-**The lock** is Flyway's - the same PostgreSQL advisory-lock key, the same MySQL ``GET_LOCK``
-name - so a Java and a Python migrator started at the same moment wait for each other.
+yoyo reads the files and runs their statements. The rest is here, because yoyo on its own gets it
+wrong for a service that runs in more than one process - each measured, not assumed:
 
-**One migrate** does what Flyway's does: take the lock; compare the files with the history and
-refuse every disagreement before anything runs; refuse a schema with tables in it but no history;
-apply the pending versioned migrations, then the pending repeatable ones, each recorded as it is
-applied; let go of the lock. A migration that fails part-way where it cannot be rolled back - on
-MySQL and MariaDB, or outside a transaction - is recorded as failed, and the next run refuses to
-go on until someone has looked and called :func:`repair`, as Flyway refuses.
+- **The lock.** yoyo's is a row in a table: a waiting process gives up after ten seconds, and one
+  killed while holding it leaves every later deploy failing until someone clears it by hand.
+  Here it is a database session lock - ``pg_try_advisory_lock``, ``GET_LOCK`` - which a process
+  waits on for as long as it takes, and which the database drops when the process dies.
+- **One connection.** yoyo applies each migration on a second connection it opens for the
+  purpose, apart from the one that holds its lock. When the lock's connection dies - a network
+  blip, an idle timeout, a proxy - the lock goes and the migration carries on, and a second
+  process runs it again at the same time. Here the lock, the migration and the row recording it
+  share one connection, and die together.
+- **Recording.** yoyo records a migration after applying it, in a separate step; a crash between
+  the two runs it again next time. Here, where the database can roll back a schema change -
+  PostgreSQL, SQLite - the migration and its row in ``ekbatan_schema_history`` commit together.
+- **The checks.** yoyo accepts two files with one version, and an applied file edited, renamed
+  or deleted, without a word. Here each is refused before anything runs, as Flyway refuses it.
+- **A replica.** Each database is checked to be a writable primary before anything else, so a
+  url that reaches a replica, or a proxy that routes to one, is refused rather than migrated.
 
-Where this goes past Flyway, on purpose:
-
-- **One connection** holds the lock, runs each migration and writes its row, so a migration and
-  its row commit together where the database can roll back a schema change, and a lost
-  connection takes the lock with it rather than leaving a migration running unlocked.
-- **A replica** is refused before anything else.
-- **Every pending file is parsed before the first one runs**, so an unknown placeholder or an
-  unfinished statement fails the run with nothing applied.
+The history lives in ``ekbatan_schema_history``, with Flyway's columns: one row per migration
+applied, per repeatable migration each time it is applied, and per failure that could not be
+rolled back.
 """
 
 from __future__ import annotations
 
 import enum
+import hashlib
+import io
 import logging
-import os
 import re
 import time
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager, redirect_stdout
 from contextvars import ContextVar
-from dataclasses import dataclass, field, replace
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Self
 
-from sqlalchemy import MetaData
+from sqlalchemy import Boolean, Column, Index, Integer, MetaData, String, Table
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from ._flyway_sql import (
-    Placeholders,
-    SqlParseError,
-    Statement,
-    checksum,
-    parser_for,
-    replace_placeholders,
-)
 from .config import DataSourceConfig, ShardingConfig
 from .errors import EkbatanError, ValidationError
 from .persistence import DatabaseRegistry
 from .sharding import DEFAULT_SHARD, ShardIdentifier
 
 if TYPE_CHECKING:
-    from ._migration_backend import Backend, ResultSet
+    from ._yoyo import _Common
 
 __all__ = [
     "BASELINE_DESCRIPTION",
-    "DEFAULT_LOCATION",
     "HISTORY_TABLE",
     "MDC_SHARD",
     "MDC_TARGET",
     "BaselineResult",
-    "FlywayConfiguration",
-    "FlywayMigrator",
-    "FlywayMigratorBuilder",
+    "Hook",
     "InfoResult",
     "MigrateResult",
     "MigrationError",
@@ -103,10 +101,12 @@ __all__ = [
     "MigrationState",
     "RepairResult",
     "Result",
-    "ScriptConfig",
     "Target",
+    "YoyoMigrator",
+    "YoyoMigratorBuilder",
     "baseline",
     "emit_ddl",
+    "history_table",
     "info",
     "migrate",
     "migrate_registry",
@@ -114,25 +114,12 @@ __all__ = [
     "repair",
     "target",
     "targets",
-    "validate",
     "validate_scripts",
 ]
 
 LOG = logging.getLogger("io.ekbatan.flyway.FlywayMigrator")
 
-# Flyway's own log lines come from its classes' loggers, so a Java and a Python service can be
-# quietened or turned up by the same names - `org.flywaydb` at WARN quietens both.
-_MIGRATE_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbMigrate")
-_VALIDATE_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbValidate")
-_HISTORY_LOG = logging.getLogger("org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory")
-_SCRIPT_LOG = logging.getLogger("org.flywaydb.core.internal.sqlscript.DefaultSqlScriptExecutor")
-_NAMING_LOG = logging.getLogger("org.flywaydb.core.internal.resource.ResourceNameValidator")
-_BASELINE_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbBaseline")
-_REPAIR_LOG = logging.getLogger("org.flywaydb.core.internal.command.DbRepair")
-_CALLBACK_LOG = logging.getLogger("org.flywaydb.core.internal.callback.SqlScriptCallbackFactory")
-_SCANNER_LOG = logging.getLogger("org.flywaydb.core.internal.scanner.filesystem.FileSystemScanner")
-
-#: Java's `FlywayMigrator.MDC_SHARD`: while a target migrates, each record the migrator logs
+#: Java's `FlywayMigrator.MDC_SHARD`: while a target migrates, each record this module logs
 #: carries its shard as ``group:member`` - ``1:0`` - under this attribute name, so a formatter
 #: written for Java's ``%X{ekbatanShard}`` has ``%(ekbatanShard)s`` here.
 MDC_SHARD = "ekbatanShard"
@@ -140,12 +127,9 @@ MDC_SHARD = "ekbatanShard"
 #: Java's `FlywayMigrator.MDC_TARGET`: the target's name - ``mexico/member-0``.
 MDC_TARGET = "ekbatanTarget"
 
-#: Java's `FlywayMigrator.DEFAULT_LOCATION`, used when no location is given.
-DEFAULT_LOCATION = "classpath:db/migration"
-
 # Python has no MDC. Its standard counterpart is this: the values live in a context variable,
-# which is per thread and per task as the MDC is per thread, and a filter on each of the
-# migrator's loggers copies them onto each record. Outside a migration a record has neither
+# which is per thread and per task as the MDC is per thread, and a filter on this module's
+# logger copies them onto each record it sees. Outside a migration a record has neither
 # attribute, as Java's MDC has neither key - `Formatter(defaults=...)` covers a format that
 # names them.
 _log_context: ContextVar[dict[str, str] | None] = ContextVar("ekbatan_migration_log", default=None)
@@ -158,25 +142,13 @@ class _InLogContext(logging.Filter):
         return True
 
 
-_FILTER = _InLogContext()
-for _logger in (
-    LOG,
-    _MIGRATE_LOG,
-    _VALIDATE_LOG,
-    _HISTORY_LOG,
-    _SCRIPT_LOG,
-    _NAMING_LOG,
-    _BASELINE_LOG,
-    _REPAIR_LOG,
-    _CALLBACK_LOG,
-    _SCANNER_LOG,
-):
-    _logger.addFilter(_FILTER)
+LOG.addFilter(_InLogContext())
 
 
 @contextmanager
 def _in_log_context(each: Target) -> Iterator[None]:
-    """Java's `inLogContext`: the target's shard and name on every record while it migrates."""
+    """Java's `inLogContext`: the target's shard and name on every record while it migrates,
+    and whatever a caller had there put back afterwards, failure or not."""
     token = _log_context.set(
         {MDC_SHARD: f"{each.shard.group}:{each.shard.member}", MDC_TARGET: each.name}
     )
@@ -186,69 +158,35 @@ def _in_log_context(each: Target) -> Iterator[None]:
         _log_context.reset(token)
 
 
-#: Flyway's history table, and its default name.
-HISTORY_TABLE = "flyway_schema_history"
+#: One row per migration applied, per repeatable migration each time it is applied, and per
+#: failure that could not be rolled back - Flyway's ``flyway_schema_history``, under this name.
+HISTORY_TABLE = "ekbatan_schema_history"
 
-#: What Flyway's baseline row says.
-BASELINE_DESCRIPTION = "<< Flyway Baseline >>"
-#: What Flyway's row for the schemas it created says.
-SCHEMA_CREATION_DESCRIPTION = "<< Flyway Schema Creation >>"
+#: What a baseline row says, where Flyway's says ``<< Flyway Baseline >>``.
+BASELINE_DESCRIPTION = "<< Baseline >>"
 
-#: The widths of the history's columns. Longer values are cut to fit, as Flyway cuts them.
+#: Flyway's names. The prefix and the separator are matched as written and the suffix in any
+#: case - Flyway runs ``V2__x.SQL`` as it runs ``V2__x.sql``. The version is digits separated by
+#: ``.`` or ``_``, so ``V1_1`` and ``V1.1`` are one version, and the description may be empty.
+VERSIONED_NAME = re.compile(r"V(?P<version>\d+(?:[._]\d+)*)__(?P<description>.*)(?i:\.sql)")
+REPEATABLE_NAME = re.compile(r"R__(?P<description>.*)(?i:\.sql)")
+#: yoyo's hook: a SQL file whose name starts with ``post-apply``.
+HOOK_NAME = re.compile(r"post-apply.*(?i:\.sql)")
+#: Something that looks like one of the three but is not SQL - ``V3__backfill.py``.
+LOOKS_LIKE_A_MIGRATION = re.compile(r"(V\d+(?:[._]\d+)*__|R__|post-apply).*")
+#: A repeatable migration given a version - ``R1__x.sql``.
+REPEATABLE_WITH_A_VERSION = re.compile(r"R\d[\d._]*__.*(?i:\.sql)")
+#: A Flyway callback - ``afterMigrate.sql``, ``beforeEachMigrate__grants.sql``.
+FLYWAY_CALLBACK = re.compile(r"(?:(?:before|after)[A-Z]\w*?|createSchema)(?:__.*)?(?i:\.sql)")
+#: ``DELIMITER //`` - a command of the mysql client, not SQL.
+DELIMITER = re.compile(r"^\s*DELIMITER\s+\S+\s*$", re.IGNORECASE | re.MULTILINE)
+
+#: The widths of the history's columns, which are Flyway's.
 DESCRIPTION_LIMIT = 200
 SCRIPT_LIMIT = 1000
 
 #: Rows the history keeps for itself rather than for a migration.
-SYNTHETIC = frozenset({"BASELINE", "DELETE", "SCHEMA"})
-
-#: Flyway's callback names, which are also file prefixes: ``afterMigrate.sql``.
-CALLBACK_EVENTS = (
-    "beforeClean",
-    "afterClean",
-    "afterCleanError",
-    "beforeMigrate",
-    "beforeEachMigrate",
-    "beforeEachMigrateStatement",
-    "afterEachMigrateStatement",
-    "afterEachMigrateStatementError",
-    "afterEachMigrate",
-    "afterEachMigrateError",
-    "beforeRepeatables",
-    "afterVersioned",
-    "afterMigrateApplied",
-    "afterMigrate",
-    "afterMigrateError",
-    "beforeUndo",
-    "beforeEachUndo",
-    "beforeEachUndoStatement",
-    "afterEachUndoStatement",
-    "afterEachUndoStatementError",
-    "afterEachUndo",
-    "afterEachUndoError",
-    "afterUndo",
-    "afterUndoError",
-    "beforeValidate",
-    "afterValidate",
-    "afterValidateError",
-    "beforeBaseline",
-    "afterBaseline",
-    "afterBaselineError",
-    "beforeRepair",
-    "afterRepair",
-    "afterRepairError",
-    "beforeInfo",
-    "afterInfo",
-    "afterInfoError",
-    "afterMigrateOperationFinish",
-    "afterInfoOperationFinish",
-    "createSchema",
-    "beforeCreateSchema",
-    "beforeConnect",
-    "afterConnect",
-)
-
-#: Script migrations - files Flyway runs with an interpreter. Refused here; see `_scan`.
-SCRIPT_SUFFIXES = (".py", ".sh", ".bash", ".ps1", ".bat", ".cmd", ".js")
+SYNTHETIC = frozenset({"BASELINE", "DELETE"})
 
 
 class MigrationError(EkbatanError):
@@ -259,181 +197,66 @@ class MigrationError(EkbatanError):
 
 
 def version_key(version: str) -> tuple[int, ...]:
-    """A version as numbers, as Flyway's ``MigrationVersion`` compares it: ``10`` after ``2``,
-    and ``1``, ``01`` and ``1.0`` one version - trailing zero parts are dropped."""
-    parts = [int(part) for part in version.replace("_", ".").split(".")]
+    """A version as numbers, so ``10`` comes after ``2`` and ``1`` equals ``01`` and ``1.0``.
+
+    Trailing zero parts are dropped, as Flyway compares them: ``1.0`` and ``1`` are one version,
+    and two files carrying it are a duplicate.
+    """
+    parts = [int(part) for part in re.split(r"[._]", version)]
     while len(parts) > 1 and parts[-1] == 0:
         parts.pop()
     return tuple(parts)
 
 
-def normalise_version(version: str) -> str:
-    """The version as Flyway writes it in the history: ``1_5`` is ``1.5``, ``0001`` stays."""
-    return version.replace("_", ".")
-
-
-_VERSION = re.compile(r"\d+(?:\.\d+)*")
-
-
 def description_order(description: str) -> bytes:
     """A description as Java's ``String.compareTo`` orders it - by UTF-16 unit, so capitals come
-    before lower case - which is the order Flyway applies repeatable migrations in."""
+    before lower case and ``a b`` before ``a-b`` before ``ab`` - which is the order Flyway applies
+    repeatable migrations in."""
     return description.encode("utf-16-be", "surrogatepass")
 
 
-def abbreviate_description(description: str) -> str:
-    """Flyway's ``AbbreviationUtils.abbreviateDescription``: what fits in the column."""
-    if len(description) <= DESCRIPTION_LIMIT:
-        return description
-    return description[: DESCRIPTION_LIMIT - 3] + "..."
+def checksum(path: Path) -> str:
+    """What the file contains, as a SHA-256 over its text.
+
+    Line endings and a byte-order mark are normalised first: a checkout that turns ``\\n`` into
+    ``\\r\\n`` has not edited the migration, and saying it had would teach people to ignore the
+    one check that matters.
+    """
+    try:
+        text = path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MigrationError(f"{path} is not UTF-8 text: {error}") from None
+    text = text.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def abbreviate_script(script: str) -> str:
-    """Flyway's ``AbbreviationUtils.abbreviateScript``."""
-    if len(script) <= SCRIPT_LIMIT:
-        return script
-    return "..." + script[3:SCRIPT_LIMIT]
+def _load(path: Path) -> Any:
+    from ._yoyo import load_sql
 
-
-class ResourceName(NamedTuple):
-    """Flyway's ``ResourceName``: a file name taken apart by Flyway's rules."""
-
-    prefix: str
-    version: str
-    description: str
-    valid: bool
-    message: str = ""
-
-
-_PREFIXES = sorted(["V", "R", "B", *CALLBACK_EVENTS], key=len, reverse=True)
-
-
-def parse_name(filename: str) -> ResourceName:
-    """Flyway's ``ResourceNameParser``, for the ``.sql`` suffix: the longest matching prefix -
-    ``V``, ``R``, ``B`` or a callback's name - then everything up to the first ``__`` is the
-    version, the rest the description with ``_`` read as a space. ``V1__x.sql`` is valid,
-    ``V__x.sql``, ``Vx__y.sql`` and ``R1__x.sql`` are not, and neither is a name with no known
-    prefix: ``v1__x.sql``, ``U1__x.sql``, ``create_tables.sql``."""
-    stem = filename[:-4] if filename.lower().endswith(".sql") else filename
-    prefix = next((p for p in _PREFIXES if stem.startswith(p)), None)
-    if prefix is None:
-        return ResourceName("", "", "", False, f"Unrecognised migration name format: {filename}")
-    left, separator, right = stem[len(prefix) :].partition("__")
-    if not separator:
-        left, right = stem[len(prefix) :], ""
-    description = right.replace("_", " ")
-    if prefix in ("V", "B"):
-        if not left:
-            return ResourceName(
-                prefix,
-                left,
-                description,
-                False,
-                f"Invalid versioned migration name format: {filename} (It must contain a version "
-                f"and should look like this: {prefix}1.2__{right or 'description'}.sql)",
-            )
-        if not _VERSION.fullmatch(left.replace("_", ".")):
-            return ResourceName(
-                prefix,
-                left,
-                description,
-                False,
-                f"Invalid versioned migration name format: {filename} (could not recognise "
-                f"version number {left})",
-            )
-    elif left:
-        return ResourceName(
-            prefix,
-            left,
-            description,
-            False,
-            f"Invalid repeatable migration / callback name format: {filename} (It cannot "
-            f"contain a version and should look like this: {prefix}__{right or 'description'}.sql)",
-        )
-    return ResourceName(prefix, left, description, True)
-
-
-@dataclass(frozen=True, slots=True)
-class ScriptConfig:
-    """A migration's ``.sql.conf`` file - Flyway's ``SqlScriptMetadata``."""
-
-    #: ``executeInTransaction``: ``None`` lets the statements decide.
-    execute_in_transaction: bool | None = None
-    #: ``encoding``: what the file is written in, when not the configured encoding.
-    encoding: str | None = None
-    #: ``placeholderReplacement``: ``None`` follows the configuration.
-    placeholder_replacement: bool | None = None
-
-
-def _java_properties(text: str) -> dict[str, str]:
-    """``key=value`` lines, as Java's ``Properties`` reads the simple cases: ``#`` and ``!``
-    comments, ``=`` or ``:`` or a space between key and value, both trimmed."""
-    found: dict[str, str] = {}
-    for raw in text.replace("\r\n", "\n").split("\n"):
-        line = raw.strip()
-        if not line or line[0] in "#!":
-            continue
-        match = re.match(r"([^=:\s]+)\s*(?:[=:]\s*|\s+)?(.*)", line)
-        if match:
-            found[match.group(1)] = match.group(2).strip()
-    return found
-
-
-def read_script_config(text: str, where: str) -> ScriptConfig:
-    """A ``.sql.conf`` file, refused where Flyway refuses it: an unknown key, a boolean that is
-    not ``true`` or ``false``, or ``shouldExecute``, which needs a paid Flyway edition."""
-    values = _java_properties(text)
-
-    def boolean(key: str) -> bool | None:
-        value = values.pop(key, None)
-        if value is None:
-            return None
-        if value.lower() not in ("true", "false"):
-            raise MigrationError(
-                f"{where}: Invalid value for {key} (should be either true or false): {value}"
-            )
-        return value.lower() == "true"
-
-    config = ScriptConfig(
-        execute_in_transaction=boolean("executeInTransaction"),
-        encoding=values.pop("encoding", None),
-        placeholder_replacement=boolean("placeholderReplacement"),
-    )
-    if "shouldExecute" in values:
-        raise MigrationError(
-            f"{where}: shouldExecute is a feature of Flyway's paid editions, and Flyway's free "
-            f"edition - which Java's migrator runs - refuses it, so this does too."
-        )
-    if values:
-        noun = "property" if len(values) == 1 else "properties"
-        raise MigrationError(
-            f"{where}: Unknown configuration {noun}: {', '.join(values)}. Please check your "
-            f"script config files"
-        )
-    return config
+    try:
+        return load_sql(str(path))
+    except KeyError:
+        # yoyo reads `-- transactional:` as a key into {"true": ..., "false": ...}.
+        raise MigrationError(f"{path}: `-- transactional:` must be `true` or `false`") from None
 
 
 @dataclass(frozen=True, slots=True)
 class MigrationScript:
     """One migration file, read and checked: versioned, or repeatable when it has no version."""
 
-    #: The version as Flyway writes it - ``1.5`` for ``V1_5__x.sql`` - or ``None`` for a
+    #: The version as written in the file name - ``0001`` for ``V0001__x.sql`` - or ``None`` for a
     #: repeatable migration.
     version: str | None
     #: The description, with underscores as spaces, as Flyway shows it.
     description: str
+    path: Path
+    checksum: str
     #: Where the file is inside its location, as the history records it - ``sub/V2__x.sql``.
-    script: str
-    #: Where the file is, for a person to find it.
-    path: str
-    #: The file's text, decoded.
-    text: str = field(repr=False)
-    #: Flyway's CRC32 checksum, as the history stores it.
-    checksum: int = 0
-    #: For a repeatable migration whose placeholders were replaced: the checksum of the file as
-    #: written, which Flyway also accepts as a match.
-    equivalent_checksum: int | None = None
-    config: ScriptConfig = ScriptConfig()
+    script: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.script:
+            object.__setattr__(self, "script", self.path.name)
 
     @property
     def repeatable(self) -> bool:
@@ -450,15 +273,9 @@ class MigrationScript:
             raise ValueError(f"{self.script} is a repeatable migration and has no version")
         return version_key(self.version)
 
-    @property
-    def filename(self) -> str:
-        return self.script.rsplit("/", 1)[-1]
-
-    def checksum_matches(self, applied: int | None) -> bool:
-        """Flyway's ``checksumMatches``: the checksum, or the one before placeholders."""
-        return applied == self.checksum or (
-            self.equivalent_checksum is not None and applied == self.equivalent_checksum
-        )
+    def load(self) -> Any:
+        """The file as a yoyo migration, its statements split and its directives read."""
+        return _load(self.path)
 
     def __str__(self) -> str:
         if self.version is None:
@@ -467,15 +284,19 @@ class MigrationScript:
 
 
 @dataclass(frozen=True, slots=True)
-class Callback:
-    """A Flyway SQL callback file: ``afterMigrate.sql``, ``beforeEachMigrate__grants.sql``."""
+class Hook:
+    """A ``post-apply`` file - yoyo's hook, and Flyway's ``afterMigrate`` callback.
 
-    event: str
-    description: str
+    Run at the end of every migrate, under the lock, in its own transaction unless it says
+    otherwise, and recorded nowhere: so it runs again next time, whatever happened this time, and
+    has to be written so that it can.
+    """
+
+    path: Path
     script: str
-    path: str
-    text: str = field(repr=False)
-    config: ScriptConfig = ScriptConfig()
+
+    def load(self) -> Any:
+        return _load(self.path)
 
 
 class Scripts(NamedTuple):
@@ -485,224 +306,143 @@ class Scripts(NamedTuple):
     versioned: tuple[MigrationScript, ...]
     #: By description, as Flyway orders them.
     repeatable: tuple[MigrationScript, ...]
-    #: Flyway's SQL callbacks, by description.
-    callbacks: tuple[Callback, ...] = ()
+    #: In location order, then by path.
+    hooks: tuple[Hook, ...]
 
     @property
     def migrations(self) -> tuple[MigrationScript, ...]:
         return self.versioned + self.repeatable
 
 
-@dataclass(frozen=True, slots=True)
-class _Resource:
-    """One file in a location."""
+def validate_scripts(*locations: str | Path) -> tuple[MigrationScript, ...]:
+    """Read every migration in ``locations``, refuse what is wrong, and return them in the order
+    they run: versioned by version, then repeatable by description.
 
-    #: Its path inside the location, ``/``-separated.
-    relative: str
-    #: Where it is, for a person.
-    shown: str
-    read: Callable[[], bytes] = field(repr=False)
+    Needs no database, so a test can call it and fail in CI:
 
+    - a ``.sql`` file that is not ``V<version>__<description>.sql``, ``R__<description>.sql`` or
+      a ``post-apply`` hook - Flyway skips it, and it never runs
+    - two files with the same version, or two repeatable ones with the same description, in one
+      location or across several
+    - a ``.rollback.sql`` file, a Flyway callback or ``.conf`` file, a migration that is not SQL
+    - ``DELIMITER``, and ``-- depends:``
+    - a description too long for the history
 
-_PREFIX = re.compile(r"(?P<prefix>[A-Za-z][A-Za-z0-9+.-]+):(?P<rest>.*)", re.DOTALL)
-
-
-def _location_resources(location: str) -> list[_Resource]:
-    """The files of one location, as Flyway's scanners find them.
-
-    - ``filesystem:<path>`` and a plain path are a folder. A folder that is not there, or a
-      file in its place, is skipped with Flyway's ERROR line and the run carries on - a plain
-      path is never read as a classpath location, which in Java finds nothing and "succeeds".
-    - ``classpath:<package>/<folder>`` is a folder inside an importable package, found through
-      ``importlib.resources``, so it works from an installed wheel. The first part names the
-      top-level package, as a classpath root holds Java's; ``classpath:db/migration``, Java's
-      default, is the ``migration`` folder of a package ``db``. A package that is not there
-      holds nothing, as a classpath location nobody provides holds nothing in Java.
+    Directories are read at any depth, as Flyway reads them, skipping hidden ones. Other files -
+    an ``__init__.py`` that makes a directory a package, a ``README`` - are left alone.
     """
-    match = _PREFIX.fullmatch(location)
-    prefix = match["prefix"].lower() if match else ""
-    if prefix == "classpath":
-        return _classpath_resources(location, match["rest"] if match else "")
-    if prefix == "filesystem":
-        path = match["rest"] if match else location
-    elif match and len(match["prefix"]) > 1:
-        raise ValidationError(
-            f"Unknown prefix for location (should be one of filesystem:, classpath:): {location}"
-        )
-    else:
-        path = location
-    directory = Path(path)
-    problem = (
-        "not found"
-        if not directory.exists()
-        else "not readable"
-        if not os.access(directory, os.R_OK)
-        else "not a directory"
-        if not directory.is_dir()
-        else None
+    return _scan(*locations).migrations
+
+
+def _scan(*locations: str | Path) -> Scripts:
+    if not locations:
+        raise ValidationError("at least one migrations location is required")
+
+    migrations: list[MigrationScript] = []
+    hooks: list[Hook] = []
+    for location in locations:
+        directory = Path(location)
+        if not directory.is_dir():
+            raise ValidationError(f"no migrations directory at {directory}")
+        for path in _files(directory):
+            found = _read(path, directory)
+            if isinstance(found, Hook):
+                hooks.append(found)
+            elif found is not None:
+                migrations.append(found)
+
+    versioned = [m for m in migrations if not m.repeatable]
+    repeatable = [m for m in migrations if m.repeatable]
+    _refuse_duplicates(versioned, repeatable)
+    for path in [*(m.path for m in migrations), *(h.path for h in hooks)]:
+        _refuse_content(path)
+        _load(path)
+    return Scripts(
+        tuple(sorted(versioned, key=lambda m: m.key)),
+        tuple(sorted(repeatable, key=lambda m: description_order(m.description))),
+        tuple(hooks),
     )
-    if problem is not None:
-        _SCANNER_LOG.error("Skipping filesystem location: %s (%s)", path, problem)
-        return []
-    return [
-        _Resource(found.relative_to(directory).as_posix(), str(found), found.read_bytes)
-        for found in sorted(_files(directory))
-    ]
-
-
-def _classpath_resources(location: str, path: str) -> list[_Resource]:
-    from importlib import resources
-
-    parts = [part for part in path.strip("/").split("/") if part]
-    if not parts:
-        raise ValidationError(f"a classpath location names a package: {location}")
-    try:
-        root: Any = resources.files(parts[0])
-    except (ImportError, TypeError, ValueError):
-        LOG.debug("%s: no package %s", location, parts[0])
-        return []
-    folder = root.joinpath(*parts[1:]) if len(parts) > 1 else root
-    if not folder.is_dir():
-        LOG.debug("%s: no folder %s", location, "/".join(parts[1:]))
-        return []
-    found: list[_Resource] = []
-
-    def walk(directory: Any, prefix: str) -> None:
-        for entry in sorted(directory.iterdir(), key=lambda e: e.name):
-            if entry.is_dir():
-                if not entry.name.startswith("."):
-                    walk(entry, f"{prefix}{entry.name}/")
-            elif entry.is_file():
-                found.append(_Resource(f"{prefix}{entry.name}", str(entry), entry.read_bytes))
-
-    walk(folder, "")
-    return found
 
 
 def _files(directory: Path) -> list[Path]:
-    """Every file under ``directory``, at any depth - skipping hidden directories, as Flyway
-    skips ``.hidden/``."""
+    """Every file under ``directory``, at any depth, in a stable order - skipping anything hidden,
+    as Flyway skips ``.hidden/``."""
     found = []
-    for path in directory.iterdir():
-        if path.is_dir():
-            if not path.name.startswith("."):
-                found += _files(path)
-        elif path.is_file():
+    for path in sorted(directory.rglob("*")):
+        if any(part.startswith(".") for part in path.relative_to(directory).parts):
+            continue
+        if path.is_file():
             found.append(path)
     return found
 
 
-def _decode(data: bytes, encoding: str, where: str) -> str:
-    try:
-        return data.decode(encoding)
-    except LookupError:
-        raise MigrationError(f"{where}: unknown encoding {encoding!r}") from None
-    except UnicodeDecodeError as error:
+def _read(path: Path, directory: Path) -> MigrationScript | Hook | None:
+    name = path.name
+    script = path.relative_to(directory).as_posix()
+    lowered = name.lower()
+    if lowered.endswith(".rollback.sql"):
         raise MigrationError(
-            f"Unable to calculate checksum of {where.rsplit('/', 1)[-1]}: it is not {encoding} "
-            f"text ({error}). Set its encoding in a .sql.conf file beside it."
-        ) from None
-
-
-def validate_scripts(*locations: str | Path) -> tuple[MigrationScript, ...]:
-    """Read every migration in ``locations``, refuse what Flyway would refuse, and return them in
-    the order they run: versioned by version, then repeatable by description.
-
-    Needs no database, so a test can call it and fail in CI: two files with one version, two
-    repeatable ones with one description, a file that is not text, a ``.conf`` file Flyway would
-    refuse, a script migration. A file Flyway skips is skipped here too, with Flyway's log line.
-    """
-    return _scan(locations, FlywayConfiguration()).migrations
-
-
-def _scan(locations: Sequence[str | Path], configuration: FlywayConfiguration) -> Scripts:
-    if not locations:
-        raise ValidationError("at least one migrations location is required")
-
-    resources: list[_Resource] = []
-    for location in locations:
-        if not str(location).strip():
-            raise ValidationError("locations cannot contain blank values")
-        resources += _location_resources(str(location))
-
-    conf = {r.shown[: -len(".conf")]: r for r in resources if r.shown.endswith(".sql.conf")}
-    versioned: list[MigrationScript] = []
-    repeatable: list[MigrationScript] = []
-    callbacks: list[Callback] = []
-    invalid: list[str] = []
-    for resource in resources:
-        filename = resource.relative.rsplit("/", 1)[-1]
-        if (
-            filename.lower().endswith(SCRIPT_SUFFIXES)
-            and parse_name(filename.rsplit(".", 1)[0] + ".sql").valid
-            and filename[0] in "VR"
-        ):
+            f"{path}: rollback files are not supported. To undo a migration that has run, add a "
+            f"new one that reverses it - an applied migration is history."
+        )
+    if lowered.endswith(".sql.conf"):
+        raise MigrationError(
+            f"{path}: Flyway's script configuration files are not read here. To run a migration "
+            f"outside a transaction, make `-- transactional: false` its first line."
+        )
+    if lowered.endswith(".sql"):
+        if len(script) > SCRIPT_LIMIT:
             raise MigrationError(
-                f"{resource.shown}: only SQL migrations are supported. Flyway would run this file "
-                f"with an interpreter; this migrator does not run programs, so it refuses the file "
-                f"rather than skip a migration a Java service would apply."
+                f"{path}: the path is longer than the {SCRIPT_LIMIT} characters the history keeps"
             )
-        if not filename.lower().endswith(".sql"):
-            continue
-        name = parse_name(filename)
-        if not name.valid:
-            invalid.append(name.message)
-            continue
-        config = ScriptConfig()
-        conf_file = conf.get(resource.shown)
-        if conf_file is not None:
-            config = read_script_config(
-                _decode(conf_file.read(), "utf-8", conf_file.shown), conf_file.shown
-            )
-        text = _decode(resource.read(), config.encoding or configuration._encoding, resource.shown)
-        if name.prefix == "B":
-            raise MigrationError(
-                f"{resource.shown}: baseline migrations (B<version>__) are not supported. Use "
-                f"versioned migrations, and baseline() for a database that was built another way."
-            )
-        if name.prefix in ("V", "R"):
-            script = MigrationScript(
-                version=normalise_version(name.version) if name.prefix == "V" else None,
-                description=name.description,
-                script=resource.relative,
-                path=resource.shown,
-                text=text,
-                checksum=checksum(text),
-                equivalent_checksum=checksum(text) if name.prefix == "R" else None,
-                config=config,
-            )
-            (versioned if name.prefix == "V" else repeatable).append(script)
-        else:
-            callbacks.append(
-                Callback(
-                    name.prefix, name.description, resource.relative, resource.shown, text, config
+        versioned = VERSIONED_NAME.fullmatch(name)
+        repeatable = None if versioned else REPEATABLE_NAME.fullmatch(name)
+        matched = versioned or repeatable
+        if matched is not None:
+            description = matched["description"].replace("_", " ")
+            if len(description) > DESCRIPTION_LIMIT:
+                # Flyway cuts it to fit, and then cannot find a repeatable migration's row by it:
+                # the next migrate fails, saying the migration is not there. Measured.
+                raise MigrationError(
+                    f"{path}: the description is {len(description)} characters, and the history "
+                    f"keeps {DESCRIPTION_LIMIT}. Shorten the file name."
                 )
+            return MigrationScript(
+                version=versioned["version"] if versioned else None,
+                description=description,
+                path=path,
+                checksum=checksum(path),
+                script=script,
             )
-
-    if invalid:
-        if configuration._validate_migration_naming:
-            raise MigrationError("Invalid SQL filenames found:\n" + "\n".join(invalid))
-        _NAMING_LOG.info(
-            "%d SQL migrations were detected but not run because they did not follow the "
-            "filename convention.",
-            len(invalid),
+        if HOOK_NAME.fullmatch(name):
+            return Hook(path, script)
+        if FLYWAY_CALLBACK.fullmatch(name):
+            raise MigrationError(
+                f"{path}: Flyway callbacks are not run here. The one this has is yoyo's post-apply "
+                f"hook, which is Flyway's afterMigrate: a file named post-apply.sql runs at the "
+                f"end of every migrate."
+            )
+        if REPEATABLE_WITH_A_VERSION.fullmatch(name):
+            raise MigrationError(
+                f"{path}: a repeatable migration has no version - name it R__<description>.sql. "
+                f"Flyway would skip this file, and it would never run."
+            )
+        raise MigrationError(
+            f"{path}: a migration's file name must be V<version>__<description>.sql, like "
+            f"V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start "
+            f"with post-apply for a hook. A file that does not match would otherwise be skipped "
+            f"without a word, and never run."
         )
-        _NAMING_LOG.info(
-            "Set 'validateMigrationNaming' to true to fail fast and see a list of the invalid "
-            "file names."
+    if LOOKS_LIKE_A_MIGRATION.fullmatch(path.stem):
+        raise MigrationError(
+            f"{path}: only SQL migrations are supported. A file named like a migration that is "
+            f"not one - a script, an editor's backup - does not belong beside them."
         )
-    _refuse_duplicates(versioned, repeatable, callbacks)
-    return Scripts(
-        tuple(sorted(versioned, key=lambda m: m.key)),
-        tuple(sorted(repeatable, key=lambda m: description_order(m.description))),
-        tuple(sorted(callbacks, key=lambda c: description_order(c.description))),
-    )
+    return None
 
 
 def _refuse_duplicates(
-    versioned: Sequence[MigrationScript],
-    repeatable: Sequence[MigrationScript],
-    callbacks: Sequence[Callback],
+    versioned: Sequence[MigrationScript], repeatable: Sequence[MigrationScript]
 ) -> None:
     lines: list[str] = []
     by_version: dict[tuple[int, ...], list[MigrationScript]] = {}
@@ -710,30 +450,72 @@ def _refuse_duplicates(
         by_version.setdefault(script.key, []).append(script)
     for found in by_version.values():
         if len(found) > 1:
-            lines.append(f"version {found[0].version}: " + ", ".join(s.path for s in found))
+            lines.append(f"version {found[0].version}: " + ", ".join(str(s.path) for s in found))
     by_description: dict[str, list[MigrationScript]] = {}
     for script in repeatable:
         by_description.setdefault(script.description, []).append(script)
     for found in by_description.values():
         if len(found) > 1:
             lines.append(
-                f"repeatable {found[0].description!r}: " + ", ".join(s.path for s in found)
+                f"repeatable {found[0].description!r}: " + ", ".join(str(s.path) for s in found)
             )
-    by_name: dict[str, list[Callback]] = {}
-    for callback in callbacks:
-        by_name.setdefault(callback.script.rsplit("/", 1)[-1][:-4], []).append(callback)
-    for name, same in by_name.items():
-        if len(same) > 1:
-            lines.append(f"callback {name}: " + ", ".join(c.path for c in same))
     if lines:
         raise MigrationError(
-            "two migrations are one migration - each version, each repeatable migration's "
-            "description and each callback's name belongs to one file. Give one of them the next "
-            "free version, or another name:\n  " + "\n  ".join(lines)
+            "two migrations are one migration - each version, and each repeatable migration's "
+            "description, belongs to one file. Give one of them the next free version, or "
+            "another description:\n  " + "\n  ".join(lines)
+        )
+
+
+def _refuse_content(path: Path) -> None:
+    from yoyo.migrations import read_sql_migration
+
+    try:
+        text = path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MigrationError(f"{path} is not UTF-8 text: {error}") from None
+    if DELIMITER.search(text):
+        raise MigrationError(
+            f"{path}: `DELIMITER` is a command of the mysql client, not SQL, and is not "
+            f"understood here. Leave it out: a procedure's or a trigger's BEGIN ... END body is "
+            f"kept whole without it, and every other statement ends at its `;`."
+        )
+    directives, _, _ = read_sql_migration(str(path))
+    if directives.get("depends", "").strip():
+        raise MigrationError(
+            f"{path}: `-- depends:` is not supported. Migrations run in the order of their "
+            f"version numbers and nothing else; give this one a version after the migrations "
+            f"it depends on."
         )
 
 
 # -- the history -----------------------------------------------------------------------------
+
+
+def history_table(metadata: MetaData, *, name: str = HISTORY_TABLE) -> Table:
+    """Flyway's history table: its columns, its index on ``success``, under this name.
+
+    Two things differ, both on purpose. ``checksum`` is a SHA-256, which sees an edit that joins
+    two lines where Flyway's CRC32 does not. ``installed_on`` is text - an ISO-8601 instant in
+    UTC - rather than a timestamp column, so the row reads the same on every dialect and no
+    driver's idea of a date gets in the way.
+    """
+    return Table(
+        name,
+        metadata,
+        Column("installed_rank", Integer, primary_key=True, autoincrement=False),
+        Column("version", String(50), nullable=True),
+        Column("description", String(DESCRIPTION_LIMIT), nullable=False),
+        Column("type", String(20), nullable=False),
+        Column("script", String(SCRIPT_LIMIT), nullable=False),
+        Column("checksum", String(64), nullable=True),
+        Column("installed_by", String(100), nullable=False),
+        Column("installed_on", String(32), nullable=False),
+        Column("execution_time", Integer, nullable=False),
+        Column("success", Boolean, nullable=False),
+        Index(f"{name}_s_idx", "success"),
+        extend_existing=True,
+    )
 
 
 class _Row(NamedTuple):
@@ -742,9 +524,9 @@ class _Row(NamedTuple):
     description: str
     type: str
     script: str
-    checksum: int | None
+    checksum: str | None
     installed_by: str
-    installed_on: datetime | None
+    installed_on: str
     execution_time: int
     success: bool
 
@@ -758,174 +540,74 @@ class _Row(NamedTuple):
 class _Session:
     """One database, locked, and what everything done to it needs."""
 
-    backend: Backend
+    backend: _Common
     label: str
-    configuration: FlywayConfiguration
-    schema: str = ""
-    table: str = ""
+    output_query_results: bool = True
     installed_by: str = ""
-    #: The files, for the callbacks run along the way.
-    scripts: Scripts | None = None
-    #: Each callback's statements, parsed once.
-    parsed: dict[str, tuple[list[Statement], bool]] = field(default_factory=dict)
-    #: Flyway's built-in placeholders for this database, worked out once it is reached.
-    builtins: dict[str, str] = field(default_factory=dict)
-
-    def placeholders(self, filename: str | None) -> Placeholders:
-        """The configured placeholders and Flyway's built-in ones - ``flyway:filename`` set to
-        the file being read, as Flyway's ``ParsingContext`` sets it."""
-        configuration = self.configuration
-        values: dict[str, str | None] = dict(configuration._placeholders)
-        values.update(self.builtins)
-        if filename is not None:
-            values[f"flyway{configuration._placeholder_separator}filename"] = filename
-        return Placeholders(
-            values,
-            configuration._placeholder_prefix,
-            configuration._placeholder_suffix,
-            configuration._placeholder_separator,
-        )
-
-    @property
-    def schema_shown(self) -> str:
-        return self.backend.quote(self.schema)
 
 
-def _builtin_placeholders(session: _Session) -> dict[str, str]:
-    """Flyway's ``ParsingContext.populate``: ``flyway:defaultSchema``, ``flyway:user``,
-    ``flyway:database``, ``flyway:timestamp``, ``flyway:workingDirectory``, ``flyway:table``
-    and ``flyway:environment``."""
-    configuration, backend = session.configuration, session.backend
-    name = f"flyway{configuration._placeholder_separator}".__add__
-    found = {
-        name("defaultSchema"): session.schema,
-        name("user"): backend.current_user(),
-        name("timestamp"): datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        name("workingDirectory"): os.getcwd(),
-        name("table"): configuration._table,
-        name("environment"): "default",
-    }
-    database = backend.database_name()
-    if database is not None:
-        found[name("database")] = database
-    return found
+def _prepare_history(session: _Session) -> None:
+    """Make sure the history table is there - and refuse the two databases Flyway refuses.
 
-
-def _replaced(session: _Session, text: str, filename: str, config: ScriptConfig) -> str:
-    """The text with its placeholders replaced, unless replacement is off for it."""
-    enabled = config.placeholder_replacement
-    if enabled is None:
-        enabled = session.configuration._placeholder_replacement
-    if not enabled:
-        return text
-    return replace_placeholders(text.removeprefix("\ufeff"), session.placeholders(filename))
-
-
-def _reached(session: _Session) -> Scripts:
-    """Once the database is reached: Flyway's built-in placeholders for it, and the files as it
-    sees them."""
-    session.builtins = _builtin_placeholders(session)
-    if session.scripts is not None:
-        session.scripts = _resolve(session, session.scripts)
-    return session.scripts or Scripts((), ())
-
-
-def _resolve(session: _Session, scripts: Scripts) -> Scripts:
-    """The files as this database sees them: a repeatable migration's checksum is taken after
-    its placeholders are replaced, as Flyway takes it - so changing a placeholder's value runs it
-    again - with the checksum of the file as written kept as an equally good match."""
-    repeatable = []
-    for script in scripts.repeatable:
-        try:
-            replaced = _replaced(session, script.text, script.filename, script.config)
-        except SqlParseError as error:
-            raise MigrationError(
-                f"Unable to calculate checksum of {script.path}: {error}"
-            ) from None
-        repeatable.append(replace(script, checksum=checksum(replaced)))
-    return scripts._replace(repeatable=tuple(repeatable))
-
-
-def _open_session(
-    each: Target, configuration: FlywayConfiguration, scripts: Scripts | None = None
-) -> _Session:
-    backend = _open(each)
-    try:
-        schema = backend.current_schema()
-    except Exception:
-        backend.close()
-        raise
-    return _Session(
-        backend,
-        each.label,
-        configuration,
-        schema=schema,
-        table=backend.quote(schema, configuration._table),
-        scripts=scripts,
-    )
-
-
-def _history_exists(session: _Session) -> bool:
-    return session.backend.table_exists(session.schema, session.configuration._table)
-
-
-def _create_history(session: _Session) -> None:
-    """Flyway's table, with Flyway's statements for this dialect."""
-    _HISTORY_LOG.info("Creating Schema History table %s ...", session.table)
+    A schema with anything in it and no history was built by something else - by hand, by
+    ``create_all``, by another tool. Running every migration from the first against it is either
+    an error on the first ``CREATE TABLE`` or, worse, a partial success. Flyway refuses it and
+    points at ``baseline``; so does this.
+    """
     backend = session.backend
-    with backend.transaction():
-        for statement in backend.create_history_script(
-            session.table, session.schema, session.configuration._table
-        ):
-            backend.execute(statement)
-
-
-def _refuse_another_shape(session: _Session) -> None:
-    expected = {
-        "installed_rank",
-        "version",
-        "description",
-        "type",
-        "script",
-        "checksum",
-        "installed_by",
-        "installed_on",
-        "execution_time",
-        "success",
-    }
-    found = session.backend.columns(session.table)
-    if not expected <= found:
+    if backend.table_exists(HISTORY_TABLE):
+        _refuse_an_old_shape(session)
+        return
+    found = backend.schema_objects()
+    if found:
         raise MigrationError(
-            f"{session.label}: {session.table} does not have Flyway's columns (it lacks "
-            f"{', '.join(sorted(expected - found))}), so it is not a Flyway schema history table "
-            f"and cannot be read as one."
+            f"{session.label} already has {', '.join(found)}"
+            f"{' and more' if len(found) == 5 else ''} but no {HISTORY_TABLE}, so nothing says "
+            f"which migrations built it. If it is what your migrations up to some version make, "
+            f"record that with baseline(version=...) and run again - the migrations after it "
+            f"then run. If it should be empty, this is the wrong database."
+        )
+    _create_history(backend)
+
+
+def _create_history(backend: _Common) -> None:
+    with backend.transaction():
+        _create_history_table(backend)
+
+
+def _create_history_table(backend: _Common) -> None:
+    table = history_table(MetaData())
+    dialect = _dialect(backend.dialect)
+    backend.execute(str(CreateTable(table).compile(dialect=dialect)))
+    for index in table.indexes:
+        backend.execute(str(CreateIndex(index).compile(dialect=dialect)))
+
+
+def _refuse_an_old_shape(session: _Session) -> None:
+    if "installed_rank" not in session.backend.columns(HISTORY_TABLE):
+        raise MigrationError(
+            f"{session.label}: {HISTORY_TABLE} was made by a development build of this migrator "
+            f"from before repeatable migrations, and has a different shape. No release ever made "
+            f"it, so there is nothing to upgrade: drop it, and either drop what its migrations "
+            f"made or record it with baseline(version=...), then run again."
         )
 
 
-def _installed_on(value: Any) -> datetime | None:
-    if value is None or isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
-
-
-def _read_history(session: _Session) -> list[_Row]:
-    rows = session.backend.execute(
+def _read_history(backend: _Common) -> list[_Row]:
+    rows = backend.execute(
         "SELECT installed_rank, version, description, type, script, checksum, installed_by, "
-        f"installed_on, execution_time, success FROM {session.table} ORDER BY installed_rank"
+        f"installed_on, execution_time, success FROM {HISTORY_TABLE} ORDER BY installed_rank"
     ).fetchall()
     return [
         _Row(
             int(row[0]),
-            None if row[1] is None else str(row[1]),
+            row[1],
             row[2] or "",
-            str(row[3]),
-            row[4] or "",
-            None if row[5] is None else int(row[5]),
+            row[3],
+            row[4],
+            row[5],
             row[6] or "",
-            _installed_on(row[7]),
+            row[7],
             int(row[8]),
             bool(row[9]),
         )
@@ -940,31 +622,47 @@ def _insert(
     description: str,
     type: str,
     script: str,
-    checksum: int | None,
+    checksum: str | None,
     execution_time: int,
     success: bool,
 ) -> None:
-    """One row, as Flyway's ``addAppliedMigration`` writes it: ranked after the last - or 0 for
-    the schema-creation row of an empty history - with the description and script cut to fit,
-    and ``installed_on`` left to the database's clock. Called under the lock."""
+    """One row, ranked after the last. Called under the lock, so nothing can take the rank."""
     backend = session.backend
-    last = backend.scalar(f"SELECT MAX(installed_rank) FROM {session.table}")
-    rank = (0 if type == "SCHEMA" else 1) if last is None else int(last) + 1
+    rank = backend.execute(
+        f"SELECT COALESCE(MAX(installed_rank), 0) + 1 FROM {HISTORY_TABLE}"
+    ).fetchone()[0]
     backend.execute(
-        f"INSERT INTO {session.table} (installed_rank, version, description, type, script, "
-        "checksum, installed_by, execution_time, success) VALUES (%s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s)",
-        (
-            rank,
-            version,
-            abbreviate_description(description),
-            type,
-            abbreviate_script(script),
-            checksum,
-            session.installed_by,
-            execution_time,
-            success,
-        ),
+        f"INSERT INTO {HISTORY_TABLE} (installed_rank, version, description, type, script, "
+        "checksum, installed_by, installed_on, execution_time, success) VALUES (:installed_rank, "
+        ":version, :description, :type, :script, :checksum, :installed_by, :installed_on, "
+        ":execution_time, :success)",
+        {
+            "installed_rank": int(rank),
+            "version": version,
+            "description": description,
+            "type": type,
+            "script": script,
+            "checksum": checksum,
+            "installed_by": session.installed_by,
+            "installed_on": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            "execution_time": execution_time,
+            "success": success,
+        },
+    )
+
+
+def _record(
+    session: _Session, script: MigrationScript, started: float, *, success: bool = True
+) -> None:
+    _insert(
+        session,
+        version=script.version,
+        description=script.description,
+        type="SQL",
+        script=script.script,
+        checksum=script.checksum,
+        execution_time=int((time.monotonic() - started) * 1000),
+        success=success,
     )
 
 
@@ -1000,25 +698,25 @@ class MigrationInfo:
     """One migration, or one row of the history, and where it stands - a line of Flyway's
     ``info``."""
 
-    #: ``Versioned``, ``Repeatable``, or empty for a row the history keeps for itself.
+    #: ``Versioned``, ``Repeatable``, or empty for a baseline row.
     category: str
     version: str | None
     description: str
-    #: ``SQL``, ``BASELINE``, ``SCHEMA`` or ``DELETE``.
+    #: ``SQL`` or ``BASELINE``.
     type: str
     script: str
-    checksum: int | None
+    checksum: str | None
     state: MigrationState
     installed_rank: int | None = None
-    installed_on: datetime | None = None
+    installed_on: str | None = None
     installed_by: str | None = None
     execution_time: int | None = None
 
 
 @dataclass(slots=True)
 class _Model:
-    """The files against the history, worked out once and used by migrate, info, validate and
-    repair alike, so they cannot disagree."""
+    """The files against the history, worked out once and used by migrate, info and repair
+    alike, so the three cannot disagree."""
 
     infos: list[MigrationInfo] = field(default_factory=list)
     pending: list[MigrationScript] = field(default_factory=list)
@@ -1041,10 +739,10 @@ class _Model:
 
 _COULD_NOT_ROLL_BACK = (
     "is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB "
-    "keep every schema change on their own, and a migration run outside a transaction keeps "
-    "what it did - so part of it may be in the database. Put the database right by hand, "
-    "finishing what it started or undoing it, then run repair(): that removes the failed row, "
-    "and the next run applies the migration again."
+    "keep every schema change on their own, and a file marked `-- transactional: false` runs "
+    "outside a transaction - so part of it may be in the database. Put the database right by "
+    "hand, finishing what it started or undoing it, then run repair(): that removes the failed "
+    "row, and the next run applies the migration again."
 )
 
 
@@ -1056,8 +754,9 @@ def _failed_and_gone(row: _Row) -> str:
 
 
 def _info(row: _Row, state: MigrationState) -> MigrationInfo:
-    category = ""
-    if row.type not in SYNTHETIC:
+    if row.type == "BASELINE":
+        category = ""
+    else:
         category = "Repeatable" if row.version is None else "Versioned"
     return MigrationInfo(
         category=category,
@@ -1091,11 +790,8 @@ def _model(scripts: Scripts, rows: Sequence[_Row]) -> _Model:
     ``validate`` as ``migrate`` runs it: pending files are not a problem, and neither is anything
     applied by a newer release."""
     model = _Model()
-    for row in rows:
-        if row.type == "SCHEMA":
-            model.infos.append(_info(row, MigrationState.SUCCESS))
     _versioned(model, scripts.versioned, rows)
-    _repeatable(model, scripts.repeatable, [r for r in rows if r.type != "SCHEMA"])
+    _repeatable(model, scripts.repeatable, rows)
     model.infos.sort(key=_info_order)
     return model
 
@@ -1188,14 +884,15 @@ def _versioned(model: _Model, scripts: Sequence[MigrationScript], rows: Sequence
                 f"was removed on purpose, run repair() to record it as deleted."
             )
         elif state is MigrationState.SUCCESS and script is not None:
-            if not script.checksum_matches(row.checksum):
+            if script.checksum != row.checksum:
                 model.misaligned.append((row, script))
                 model.problems.append(
-                    f"{script.script} has changed since it was applied (checksum {row.checksum} "
-                    f"then, {script.checksum} now). An applied migration is history: put the file "
-                    f"back as it was, and make the change in a new migration."
+                    f"{script.script} has changed since it was applied "
+                    f"({(row.checksum or '')[:12]} then, {script.checksum[:12]} now). An applied "
+                    f"migration is history: put the file back as it was, and make the change in "
+                    f"a new migration."
                 )
-            elif abbreviate_description(script.description) != row.description:
+            elif script.description != row.description:
                 model.misaligned.append((row, script))
                 model.problems.append(
                     f"version {row.version} was applied as {row.description!r}, and its file "
@@ -1229,10 +926,7 @@ def _versioned(model: _Model, scripts: Sequence[MigrationScript], rows: Sequence
 
 
 def _repeatable(model: _Model, scripts: Sequence[MigrationScript], rows: Sequence[_Row]) -> None:
-    # Matched by the description as the history holds it - cut to fit - so a long description
-    # finds its own row again. Flyway matches the uncut one, and loses the row; see
-    # DECISIONS-TO-REVIEW.
-    files = {abbreviate_description(script.description): script for script in scripts}
+    files = {script.description: script for script in scripts}
     applied = [row for row in rows if row.version is None]
 
     deleted: set[int] = set()
@@ -1260,7 +954,7 @@ def _repeatable(model: _Model, scripts: Sequence[MigrationScript], rows: Sequenc
             state = MigrationState.MISSING if row.success else MigrationState.MISSING_FAILED
         elif not row.success:
             state = MigrationState.FAILED
-        elif not script.checksum_matches(row.checksum):
+        elif row.checksum != script.checksum:
             state = MigrationState.OUTDATED
         else:
             state = MigrationState.SUCCESS
@@ -1286,183 +980,13 @@ def _repeatable(model: _Model, scripts: Sequence[MigrationScript], rows: Sequenc
             newest_row is not None
             and newest_row.type != "DELETE"
             and newest_row.installed_rank not in deleted
-            and script.checksum_matches(newest_row.checksum)
+            and newest_row.checksum == script.checksum
         )
         if not up_to_date:
             pending.append(script)
     pending.sort(key=lambda s: description_order(s.description))
     model.pending += pending
     model.infos += [_unapplied(script, MigrationState.PENDING) for script in pending]
-
-
-# -- configuration ---------------------------------------------------------------------------
-
-
-class FlywayConfiguration:
-    """The Flyway settings this migrator honours, set as Java's ``customize`` sets them on
-    Flyway's ``FluentConfiguration`` - the same names, in snake case, each returning the
-    configuration so the calls chain::
-
-        FlywayMigrator.builder().with_data_source(ds).customize(
-            lambda c: c.lock_retry_count(-1).table("schema_history")
-        ).migrate()
-
-    Every default is Flyway's.
-    """
-
-    __slots__ = (
-        "_baseline_description",
-        "_baseline_on_migrate",
-        "_baseline_version",
-        "_create_schemas",
-        "_encoding",
-        "_execute_in_transaction",
-        "_installed_by",
-        "_lock_retry_count",
-        "_mixed",
-        "_output_query_results",
-        "_placeholder_prefix",
-        "_placeholder_replacement",
-        "_placeholder_separator",
-        "_placeholder_suffix",
-        "_placeholders",
-        "_table",
-        "_validate_migration_naming",
-    )
-
-    def __init__(self) -> None:
-        self._table = HISTORY_TABLE
-        self._lock_retry_count = 50
-        self._output_query_results = True
-        self._baseline_on_migrate = False
-        self._baseline_version = "1"
-        self._baseline_description = BASELINE_DESCRIPTION
-        self._validate_migration_naming = False
-        self._mixed = False
-        self._execute_in_transaction = True
-        self._installed_by: str | None = None
-        self._encoding = "utf-8"
-        self._create_schemas = True
-        self._placeholders: dict[str, str] = {}
-        self._placeholder_replacement = True
-        self._placeholder_prefix = "${"
-        self._placeholder_suffix = "}"
-        self._placeholder_separator = ":"
-
-    def copy(self) -> FlywayConfiguration:
-        other = FlywayConfiguration()
-        for name in self.__slots__:
-            setattr(other, name, getattr(self, name))
-        other._placeholders = dict(self._placeholders)
-        return other
-
-    def create_schemas(self, enabled: bool) -> Self:
-        """``createSchemas``: create the schema the connection works in when it is not there,
-        and record that in the history - on."""
-        self._create_schemas = bool(enabled)
-        return self
-
-    def placeholders(self, values: Mapping[str, str]) -> Self:
-        """``placeholders``: what ``${name}`` in a migration or a callback is replaced with.
-        Names are matched ignoring case, as Flyway matches them. Replaces the ones set before,
-        as Flyway's setter does."""
-        self._placeholders = {str(k): "" if v is None else str(v) for k, v in values.items()}
-        return self
-
-    def placeholder_replacement(self, enabled: bool) -> Self:
-        """``placeholderReplacement``: replace placeholders at all - on. A file's ``.conf`` can
-        say otherwise for that file."""
-        self._placeholder_replacement = bool(enabled)
-        return self
-
-    def placeholder_prefix(self, prefix: str) -> Self:
-        """``placeholderPrefix`` - ``${``."""
-        if not prefix:
-            raise ValidationError("placeholder_prefix cannot be empty")
-        self._placeholder_prefix = prefix
-        return self
-
-    def placeholder_suffix(self, suffix: str) -> Self:
-        """``placeholderSuffix`` - ``}``."""
-        if not suffix:
-            raise ValidationError("placeholder_suffix cannot be empty")
-        self._placeholder_suffix = suffix
-        return self
-
-    def placeholder_separator(self, separator: str) -> Self:
-        """``placeholderSeparator``: between ``flyway`` and a built-in's name - ``:``."""
-        if not separator:
-            raise ValidationError("placeholder_separator cannot be empty")
-        self._placeholder_separator = separator
-        return self
-
-    def table(self, name: str) -> Self:
-        """``table``: the history table's name - ``flyway_schema_history``. A Java service and a
-        Python one sharing a database must use the same name, or neither sees the other."""
-        if not name or not name.strip():
-            raise ValidationError("table cannot be blank")
-        self._table = name
-        return self
-
-    def lock_retry_count(self, count: int) -> Self:
-        """``lockRetryCount``: how many times to retry PostgreSQL's lock, a second apart, before
-        giving up - 50. ``-1`` waits for as long as it takes. MySQL's lock always waits."""
-        self._lock_retry_count = int(count)
-        return self
-
-    def output_query_results(self, enabled: bool) -> Self:
-        """``outputQueryResults``: log what a ``SELECT`` in a migration returns - on."""
-        self._output_query_results = bool(enabled)
-        return self
-
-    def baseline_on_migrate(self, enabled: bool) -> Self:
-        """``baselineOnMigrate``: baseline a schema with things in it but no history, rather than
-        refuse it - off."""
-        self._baseline_on_migrate = bool(enabled)
-        return self
-
-    def baseline_version(self, version: str) -> Self:
-        """``baselineVersion`` - ``1``."""
-        if not _VERSION.fullmatch(normalise_version(str(version or ""))):
-            raise ValidationError(
-                f"a baseline version is digits separated by . or _, not {version!r}"
-            )
-        self._baseline_version = normalise_version(str(version))
-        return self
-
-    def baseline_description(self, description: str) -> Self:
-        """``baselineDescription`` - ``<< Flyway Baseline >>``."""
-        if not description:
-            raise ValidationError("a baseline needs a description")
-        self._baseline_description = description
-        return self
-
-    def validate_migration_naming(self, enabled: bool) -> Self:
-        """``validateMigrationNaming``: fail on a ``.sql`` file whose name Flyway cannot read,
-        rather than skip it with a line in the log - off."""
-        self._validate_migration_naming = bool(enabled)
-        return self
-
-    def mixed(self, enabled: bool) -> Self:
-        """``mixed``: allow one migration to hold statements that must run outside a
-        transaction beside ones that can run in one - off."""
-        self._mixed = bool(enabled)
-        return self
-
-    def execute_in_transaction(self, enabled: bool) -> Self:
-        """``executeInTransaction``: run each migration in a transaction where it can - on."""
-        self._execute_in_transaction = bool(enabled)
-        return self
-
-    def installed_by(self, user: str | None) -> Self:
-        """``installedBy``: what the history's ``installed_by`` says - the database user."""
-        self._installed_by = user
-        return self
-
-    def encoding(self, encoding: str) -> Self:
-        """``encoding``: what the files are written in - UTF-8."""
-        self._encoding = encoding
-        return self
 
 
 # -- running ---------------------------------------------------------------------------------
@@ -1495,13 +1019,10 @@ class MigrateResult:
 
     #: The highest version applied before this run, or ``None`` for a fresh database.
     initial_schema_version: str | None
-    #: The version of the last versioned migration this run applied, or ``None`` when it applied
-    #: none - Flyway's ``targetSchemaVersion``.
+    #: The highest version applied after it.
     target_schema_version: str | None
     #: The files this run applied, in the order it applied them - versioned, then repeatable.
     migrations: tuple[str, ...]
-    #: Flyway's ``warnings``: what it adds there is for modes this migrator does not have
-    #: (``outOfOrder``), so this stays empty, as Java's does. Warnings go to the log.
     warnings: tuple[str, ...] = ()
 
     @property
@@ -1558,7 +1079,11 @@ class BaselineResult:
 
 
 def targets(config: ShardingConfig) -> list[Target]:
-    """A target per member of the layout, on its ``primaryConfig`` - Java's ``targets``."""
+    """A target per member of the layout, on its ``primaryConfig`` - Java's ``targets``.
+
+    The primary, as Java's Flyway module migrates ``primaryConfig``: the replica follows it, and
+    any other named config on the member is a pool onto the same schema.
+    """
     if config is None:
         raise ValidationError("config is required")
     found: list[Target] = []
@@ -1601,10 +1126,6 @@ def _choose(config: ShardingConfig, shards: Iterable[ShardIdentifier] | None) ->
     return [t for t in chosen if t.shard in wanted]
 
 
-def _locations(locations: Sequence[str | Path]) -> tuple[str | Path, ...]:
-    return tuple(locations) if locations else (DEFAULT_LOCATION,)
-
-
 def migrate(
     config: ShardingConfig,
     *locations: str | Path,
@@ -1620,8 +1141,8 @@ def migrate(
     a migration out one group at a time. A shard the layout does not have is refused rather than
     skipped: a typo there would otherwise read as "nothing to do" and migrate nothing at all.
     """
-    configuration = FlywayConfiguration().output_query_results(output_query_results)
-    return _run(_choose(config, shards), _locations(locations), configuration)
+    scripts = _scan(*locations)
+    return _run(_choose(config, shards), scripts, output_query_results)
 
 
 def migrate_targets(
@@ -1633,33 +1154,18 @@ def migrate_targets(
     chosen = list(migration_targets)
     if not chosen:
         raise ValidationError("at least one migration target is required")
-    configuration = FlywayConfiguration().output_query_results(output_query_results)
-    return _run(chosen, _locations(locations), configuration)
+    return _run(chosen, _scan(*locations), output_query_results)
 
 
-def _each[T](
-    chosen: Sequence[Target],
-    verb: str,
-    action: Callable[[Target], T],
-    *,
-    on_failure: Callable[[Target], object] | None = None,
-    done: list[str] | None = None,
-) -> list[T]:
+def _each[T](chosen: Sequence[Target], verb: str, action: Callable[[Target], T]) -> list[T]:
     """``action`` on each target in turn, stopping at the first that fails - and saying which
     targets were already done, since the database's own error names none of them."""
     results: list[T] = []
-    done = [] if done is None else done
+    done: list[str] = []
     for each in chosen:
         try:
             results.append(action(each))
-        except ValidationError:
-            # A setting or a location that is wrong - not something this target did.
-            if on_failure is not None:
-                on_failure(each)
-            raise
         except Exception as error:
-            if on_failure is not None:
-                on_failure(each)
             message = (
                 str(error)
                 if isinstance(error, MigrationError)
@@ -1674,187 +1180,75 @@ def _each[T](
     return results
 
 
-def _run(
-    chosen: Sequence[Target],
-    locations: Sequence[str | Path],
-    configuration: FlywayConfiguration,
-    *,
-    say_where_it_stopped: bool = True,
-) -> list[Result]:
-    """Java's ``Builder.migrate``: each target in its log context, between Java's two lines -
-    ``Migrating X`` and ``X is at version V (n applied)``, or ``Migrating X failed`` at ERROR -
-    and, when one fails, ``Stopped at X; already migrated: [...]``. Java's single-database
-    ``migrate(DataSourceConfig, ...)`` logs no "stopped at", and neither does this for it.
-
-    The files are read inside the first target's context, as Flyway reads them inside Java's,
-    so a bad file fails that target with Java's lines too - and still before any database is
-    reached.
-    """
-    found: list[Scripts] = []
-
+def _run(chosen: Sequence[Target], scripts: Scripts, output_query_results: bool) -> list[Result]:
     def one(each: Target) -> Result:
-        label = each.label
         with _in_log_context(each):
-            LOG.info("Migrating %s", label)
-            try:
-                if not found:
-                    found.append(_scan(locations, configuration))
-                outcome = _migrate(each, found[0], configuration)
-            except Exception:
-                LOG.error("Migrating %s failed", label)
-                raise
+            outcome = _migrate(each, scripts, output_query_results)
             LOG.info(
                 "%s is at version %s (%d applied)",
-                label,
-                outcome.target_schema_version or outcome.initial_schema_version or "<< empty >>",
+                each.name,
+                outcome.target_schema_version,
                 outcome.migrations_executed,
             )
         return Result(each, outcome)
 
-    done: list[str] = []
-
-    def stopped(each: Target) -> None:
-        if say_where_it_stopped:
-            LOG.error("Stopped at %s; already migrated: [%s]", each.label, ", ".join(done))
-
-    return _each(chosen, "migrated", one, on_failure=stopped, done=done)
+    return _each(chosen, "migrated", one)
 
 
 class _Failed(Exception):
     """A migration failed; ``recorded`` says whether its failure was written down."""
 
-    def __init__(
-        self, error: BaseException, recorded: bool | BaseException, rolled_back: bool
-    ) -> None:
+    def __init__(self, error: BaseException, recorded: bool | BaseException) -> None:
         super().__init__(str(error))
         self.error = error
         self.recorded = recorded
-        self.rolled_back = rolled_back
 
 
-def _open(each: Target) -> Backend:
-    from ._migration_backend import open_backend
+class _HookFailed(Exception):
+    def __init__(self, hook: Hook, error: BaseException) -> None:
+        super().__init__(str(error))
+        self.hook = hook
+        self.error = error
+
+
+def _open(each: Target) -> _Common:
+    from ._yoyo import open_backend
 
     return open_backend(
         each.label, each.data_source.sqlalchemy_url(), each.data_source.data_source_properties
     )
 
 
-def _format_time(millis: int) -> str:
-    """Flyway's ``TimeFormat``: ``00:00.012s``."""
-    return f"{millis // 60000:02d}:{(millis % 60000) // 1000:02d}.{millis % 1000:03d}s"
+def _migrate(each: Target, scripts: Scripts, output_query_results: bool) -> MigrateResult:
+    from ._yoyo import MigrationBackendError
 
-
-@dataclass(slots=True)
-class _Prepared:
-    """A migration's statements, parsed before anything runs, and how it runs."""
-
-    script: MigrationScript
-    statements: list[Statement]
-    in_transaction: bool
-
-
-def _parse(
-    session: _Session, text: str, where: str, config: ScriptConfig
-) -> tuple[list[Statement], bool]:
-    """A file's statements, as Flyway's ``ParserSqlScript`` reads them - its placeholders
-    replaced first - and whether it runs in a transaction: its ``.conf`` file says, or else
-    every statement must be able to."""
-    backend = session.backend
-    parser = parser_for(backend.parser_dialect(), backend.server_version())
-    try:
-        statements = parser.parse(_replaced(session, text, where.rsplit("/", 1)[-1], config))
-    except SqlParseError as error:
-        raise MigrationError(f"Unable to parse statement in {where}: {error}") from None
-    configuration = session.configuration
-    transactional = [s.can_execute_in_transaction for s in statements]
-    check = (
-        not configuration._mixed
-        and config.execute_in_transaction is None
-        and configuration._execute_in_transaction
-    )
-    seen: set[bool] = set()
-    for offending in statements if check else ():
-        seen.add(offending.can_execute_in_transaction)
-        if len(seen) < 2:
-            continue
-        raise MigrationError(
-            f"{where}: Detected both transactional and non-transactional statements within the "
-            f"same migration (even though mixed is false). Offending statement found at line "
-            f"{offending.line}: {offending.sql}"
-            f"{'' if offending.can_execute_in_transaction else ' [non-transactional]'}"
-        )
-    if config.execute_in_transaction is not None:
-        in_transaction = config.execute_in_transaction
-    else:
-        in_transaction = all(transactional) and configuration._execute_in_transaction
-    return statements, in_transaction
-
-
-def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration) -> MigrateResult:
-    from ._migration_backend import MigrationBackendError
-
-    session: _Session | None = None
-    current: _Prepared | None = None
+    label = each.label
+    backend: _Common | None = None
+    current: MigrationScript | None = None
     applied: list[MigrationScript] = []
+    warnings: list[str] = []
     before: str | None = None
+    if not scripts.migrations:
+        warnings.append("no migrations found - are the locations right?")
     try:
-        session = _open_session(each, configuration, scripts)
-        backend = session.backend
+        backend = _open(each)
         backend.refuse_if_read_only()
-        scripts = _reached(session)
-        _fire(session, "afterConnect")
-        backend.acquire(session.table, configuration._lock_retry_count)
+        backend.acquire()
         try:
-            session.installed_by = configuration._installed_by or backend.current_user()
-            model = _validating(session, lambda: _validated(session, scripts))
-            _fire(session, "createSchema")
-            _fire(session, "beforeCreateSchema")
-            _create_schema(session)
-            if not _history_exists(session):
-                model = _prepare_history(session, scripts) or model
+            session = _Session(backend, label, output_query_results, backend.current_user())
+            _prepare_history(session)
+            model = _model(scripts, _read_history(backend))
+            model.refuse(label)
+            warnings += model.warnings
+            for warning in warnings:
+                LOG.warning("%s: %s", label, warning)
             before = model.schema_version
-            prepared = [
-                _Prepared(script, *_parse(session, script.text, script.path, script.config))
-                for script in model.pending
-            ]
-            for callback in scripts.callbacks:
-                _parsed_callback(session, callback)
-            _fire(session, "beforeMigrate")
-            try:
-                _MIGRATE_LOG.info(
-                    "Current version of schema %s: %s",
-                    session.schema_shown,
-                    before or "<< Empty Schema >>",
-                )
-                _log_future(session, scripts, model)
-                started = time.monotonic()
-                versioned = True
-                for one in prepared:
-                    if versioned and one.script.repeatable:
-                        _fire(session, "afterVersioned")
-                        _fire(session, "beforeRepeatables")
-                        versioned = False
-                    current = one
-                    _apply(session, current)
-                    applied.append(current.script)
-                    current = None
-                if versioned:
-                    _fire(session, "afterVersioned")
-                millis = int((time.monotonic() - started) * 1000)
-                _log_summary(session, applied, millis)
-            except Exception:
-                # A failing afterMigrateError callback is logged; the error raised is the one
-                # that failed the run, not the callback's.
-                try:
-                    _fire(session, "afterMigrateError")
-                except _CallbackFailed as callback:
-                    _MIGRATE_LOG.error("%s", callback)
-                raise
-            if applied:
-                _fire(session, "afterMigrateApplied")
-            _fire(session, "afterMigrate")
-            _fire(session, "afterMigrateOperationFinish")
+            LOG.info("%s: current version %s", label, before or "<< empty >>")
+            for current in model.pending:
+                _apply(session, current)
+                applied.append(current)
+            current = None
+            _run_hooks(session, scripts.hooks)
         finally:
             backend.release()
     except MigrationError:
@@ -1863,408 +1257,143 @@ def _migrate(each: Target, scripts: Scripts, configuration: FlywayConfiguration)
         raise MigrationError(str(error)) from error
     except _Failed as failed:
         raise MigrationError(
-            _failure(each.label, session, current, applied, failed)
+            _failure(label, backend, current, applied, failed.error, failed.recorded)
+        ) from failed.error
+    except _HookFailed as failed:
+        ran = f" ({', '.join(s.script for s in applied)})" if applied else ""
+        raise MigrationError(
+            f"migrating {label}: the post-apply hook {failed.hook.script} failed: "
+            f"{type(failed.error).__name__}: {failed.error}. Every migration this run applied is "
+            f"recorded{ran}; the hook runs again at the end of the next run, as Flyway's "
+            f"afterMigrate does."
         ) from failed.error
     except Exception as error:
-        raise MigrationError(
-            _failure(each.label, session, current, applied, _Failed(error, False, False))
-        ) from error
+        raise MigrationError(_failure(label, backend, current, applied, error, False)) from error
     finally:
-        if session is not None:
-            session.backend.close()
+        if backend is not None:
+            backend.close()
 
-    target_version = next((s.version for s in reversed(applied) if s.version is not None), None)
+    target_version = before
+    for script in applied:
+        if script.version is not None and (
+            target_version is None or script.key > version_key(target_version)
+        ):
+            target_version = script.version
+    if applied:
+        LOG.info(
+            "%s: applied %d migration%s%s",
+            label,
+            len(applied),
+            "" if len(applied) == 1 else "s",
+            f", now at version {target_version}" if target_version else "",
+        )
+    else:
+        LOG.info("%s: up to date, nothing to apply", label)
     return MigrateResult(
         initial_schema_version=before,
         target_schema_version=target_version,
         migrations=tuple(s.script for s in applied),
+        warnings=tuple(warnings),
     )
 
 
-def _validating[T](session: _Session, check: Callable[[], T]) -> T:
-    """Flyway's validate callbacks around a check: ``beforeValidate``, then ``afterValidate``
-    or ``afterValidateError``."""
-    _fire(session, "beforeValidate")
-    try:
-        found = check()
-    except MigrationError:
-        _fire(session, "afterValidateError")
-        raise
-    _fire(session, "afterValidate")
-    return found
-
-
-def _validated(session: _Session, scripts: Scripts) -> _Model:
-    """Flyway's ``validate``, as ``migrate`` runs it first: the files against the history,
-    every disagreement refused before anything runs."""
-    started = time.monotonic()
-    rows: list[_Row] = []
-    if _history_exists(session):
-        _refuse_another_shape(session)
-        rows = _read_history(session)
-    else:
-        _HISTORY_LOG.info("Schema history table %s does not exist yet", session.table)
-    model = _model(scripts, rows)
-    model.refuse(session.label)
-    millis = int((time.monotonic() - started) * 1000)
-    count = len(model.infos)
-    if count == 1:
-        _VALIDATE_LOG.info(
-            "Successfully validated 1 migration (execution time %s)", _format_time(millis)
-        )
-    else:
-        _VALIDATE_LOG.info(
-            "Successfully validated %d migrations (execution time %s)", count, _format_time(millis)
-        )
-    if count == 0:
-        _VALIDATE_LOG.warning("No migrations found. Are your locations set up correctly?")
-    return model
-
-
-def _log_future(session: _Session, scripts: Scripts, model: _Model) -> None:
-    """Flyway's lines for a database a newer release migrated: ``DbMigrate`` warns, and carries
-    on."""
-    future = [i for i in model.infos if i.state is MigrationState.FUTURE]
-    failed = [i for i in model.infos if i.state is MigrationState.FUTURE_FAILED]
-    schema, current = session.schema_shown, model.schema_version
-    if future or failed:
-        if not scripts.migrations:
-            _MIGRATE_LOG.error(
-                "Schema %s has version %s, but no migration could be resolved in the "
-                "configured locations !",
-                schema,
-                current,
-            )
-        elif scripts.versioned:
-            _MIGRATE_LOG.warning(
-                "Schema %s has a version (%s) that is newer than the latest available "
-                "migration (%s) !",
-                schema,
-                current,
-                scripts.versioned[-1].version,
-            )
-    if len(failed) == 1:
-        _MIGRATE_LOG.warning(
-            "Schema %s contains a failed future migration to version %s !",
-            schema,
-            failed[0].version,
-        )
-
-
-def _prepare_history(session: _Session, scripts: Scripts) -> _Model | None:
-    """The history table, created - and the two databases Flyway refuses, refused.
-
-    A schema with anything in it and no history was built by something else - by hand, by
-    ``create_all``, by another tool. Running every migration from the first against it is either
-    an error on the first ``CREATE TABLE`` or, worse, a partial success. Flyway refuses it and
-    points at ``baseline``; so does this, unless ``baseline_on_migrate`` says to baseline it.
-    Returns the model again when a baseline changed it.
-    """
-    backend = session.backend
-    found = backend.schema_objects(session.schema)
-    if found:
-        if session.configuration._baseline_on_migrate:
-            _write_baseline(session)
-            return _model(scripts, _read_history(session))
-        raise MigrationError(
-            f"{session.label} already has {', '.join(found)}"
-            f"{' and more' if len(found) == 5 else ''} but no {session.configuration._table}, so "
-            f"nothing says "
-            f'which migrations built it - Flyway refuses it too ("Found non-empty schema(s) '
-            f'{session.schema_shown} but no schema history table"). If it is what your '
-            f"migrations up to some version make, record that with baseline(version=...) and run "
-            f"again - the migrations after it then run. If it should be empty, this is the wrong "
-            f"database."
-        )
-    _create_history(session)
-    return None
-
-
-def _create_schema(session: _Session) -> None:
-    """Flyway's ``DbSchemas.create``: a schema that is not there is created, with the history
-    table in it and Flyway's rank-0 row saying so - one transaction, where DDL is transactional.
-    With ``create_schemas`` off, Flyway's warning, and the history table then fails to be made.
-    """
-    backend = session.backend
-    if backend.schema_exists(session.schema):
-        return
-    if not session.configuration._create_schemas:
-        _MIGRATE_LOG.warning(
-            "The configuration option 'createSchemas' is false.\n"
-            "However, the schema history table still needs a schema to reside in.\n"
-            "You must manually create a schema for the schema history table to reside in.\n"
-            "See https://rd.gt/4iUkpm1"
-        )
-        return
-    _HISTORY_LOG.info("Creating Schema History table %s ...", session.table)
-    with backend.transaction():
-        backend.create_schema(session.schema)
-        for statement in backend.create_history_script(
-            session.table, session.schema, session.configuration._table
-        ):
-            backend.execute(statement)
-        _insert(
-            session,
-            version=None,
-            description=SCHEMA_CREATION_DESCRIPTION,
-            type="SCHEMA",
-            script=session.schema_shown,
-            checksum=None,
-            execution_time=0,
-            success=True,
-        )
-
-
-def _write_baseline(session: _Session) -> None:
-    configuration = session.configuration
-    _create_history(session)
-    with session.backend.transaction():
-        _insert(
-            session,
-            version=configuration._baseline_version,
-            description=configuration._baseline_description,
-            type="BASELINE",
-            script=configuration._baseline_description,
-            checksum=None,
-            execution_time=0,
-            success=True,
-        )
-    _BASELINE_LOG.info(
-        "Successfully baselined schema with version: %s", configuration._baseline_version
-    )
-
-
-def _log_summary(session: _Session, applied: Sequence[MigrationScript], millis: int) -> None:
-    if not applied:
-        _MIGRATE_LOG.info("Schema %s is up to date. No migration necessary.", session.schema_shown)
-        return
-    version = next((s.version for s in reversed(applied) if s.version is not None), None)
-    _MIGRATE_LOG.info(
-        "Successfully applied %d migration%s to schema %s%s (execution time %s)",
-        len(applied),
-        "" if len(applied) == 1 else "s",
-        session.schema_shown,
-        f", now at version v{version}" if version else "",
-        _format_time(millis),
-    )
-
-
-def _migration_text(session: _Session, prepared: _Prepared) -> str:
-    """Flyway's ``toMigrationText``."""
-    script = prepared.script
-    marker = "" if prepared.in_transaction else " [non-transactional]"
-    if script.version is not None:
-        described = f" - {script.description}" if script.description else ""
-        return f'schema {session.schema_shown} to version "{script.version}{described}"{marker}'
-    return f'schema {session.schema_shown} with repeatable migration "{script.description}"{marker}'
-
-
-def _execute(
-    session: _Session,
-    statements: Sequence[Statement],
-    where: str,
-    *,
-    statement_callbacks: bool = False,
-) -> None:
-    """Each statement in turn, its results logged as Flyway logs them - with Flyway's
-    statement callbacks around each, for a migration's statements, not a callback's."""
-    backend = session.backend
-    for statement in statements:
-        if statement_callbacks:
-            _fire(session, "beforeEachMigrateStatement", own_transaction=False)
-        try:
-            if statement.copy_data is not None:
-                backend.copy(statement.sql, statement.copy_data)
-                results: list[ResultSet] = []
-            else:
-                results = backend.run(statement.sql)
-        except Exception as error:
-            if statement_callbacks:
-                _fire(session, "afterEachMigrateStatementError", own_transaction=False)
-            raise _StatementFailed(where, statement, error) from error
-        if statement_callbacks:
-            _fire(session, "afterEachMigrateStatement", own_transaction=False)
-        if session.configuration._output_query_results:
-            for result in results:
-                _SCRIPT_LOG.info("%s", _ascii_table(result))
-
-
-class _CallbackFailed(Exception):
-    def __init__(self, event: str, error: BaseException) -> None:
-        super().__init__(f"Error while executing {event} callback: {error}")
-        self.event = event
-        self.error = error
-
-
-def _parsed_callback(session: _Session, callback: Callback) -> tuple[list[Statement], bool]:
-    if callback.script not in session.parsed:
-        session.parsed[callback.script] = _parse(
-            session, callback.text, callback.path, callback.config
-        )
-    return session.parsed[callback.script]
-
-
-def _fire(session: _Session, event: str, *, own_transaction: bool = True) -> None:
-    """Flyway's SQL callbacks for ``event``, in order of description - each in a transaction
-    of its own where it can run in one, unless it runs inside a migration's
-    (``beforeEachMigrate`` and the rest of the "each" events)."""
-    if session.scripts is None:
-        return
-    backend = session.backend
-    for callback in session.scripts.callbacks:
-        if callback.event != event:
-            continue
-        statements, in_transaction = _parsed_callback(session, callback)
-        _CALLBACK_LOG.info(
-            "Executing SQL callback: %s - %s%s",
-            event,
-            callback.description,
-            "" if in_transaction else " [non-transactional]",
-        )
-        try:
-            if own_transaction and in_transaction and not backend.in_transaction:
-                with backend.transaction():
-                    _execute(session, statements, callback.script)
-            else:
-                _execute(session, statements, callback.script)
-        except Exception as error:
-            raise _CallbackFailed(event, error) from error
-
-
-class _StatementFailed(Exception):
-    def __init__(self, where: str, statement: Statement, error: BaseException) -> None:
-        super().__init__(
-            f"{type(error).__name__}: {error}".rstrip()
-            + f" (in {where} at line {statement.line}: {statement.sql})"
-        )
-        self.where = where
-        self.statement = statement
-        self.error = error
-
-
-def _ascii_table(result: ResultSet) -> str:
-    """Flyway's ``AsciiTable``, as ``outputQueryResults`` prints a result."""
-    columns = list(result.columns)
-    rows = [["" if v is None else str(v) for v in row] for row in result.rows]
-    widths = [len(c) for c in columns]
-    for row in rows:
-        for i, value in enumerate(row):
-            widths[i] = max(widths[i], len(value))
-    ruler = "+" + "".join("-" + "-" * w + "-+" for w in widths) + "\n"
-    header = "|" + "".join(f" {c.ljust(w)} |" for c, w in zip(columns, widths, strict=True)) + "\n"
-    body = "".join(
-        "|" + "".join(f" {v.ljust(w)} |" for v, w in zip(row, widths, strict=True)) + "\n"
-        for row in rows
-    )
-    if not rows:
-        body = "| " + "No rows returned".ljust(len(ruler) - min(len(ruler), 5)) + " |\n"
-    return ruler + header + ruler + body + ruler
-
-
-def _apply(session: _Session, prepared: _Prepared) -> None:
+def _apply(session: _Session, script: MigrationScript) -> None:
     """Run one migration and record it - together, where the database can roll back a schema
     change, so a crash cannot leave it applied and unrecorded. A failure that could not be rolled
     back is recorded as one, as Flyway records it, so the next run stops rather than running it
     again over what it half did."""
-    backend = session.backend
-    script = prepared.script
-    text = _migration_text(session, prepared)
+    backend, label = session.backend, session.label
+    migration = script.load()
+    printed = io.StringIO()
     started = time.monotonic()
-
-    def elapsed() -> int:
-        return int((time.monotonic() - started) * 1000)
-
-    def record(success: bool) -> None:
-        _insert(
-            session,
-            version=script.version,
-            description=script.description,
-            type="SQL",
-            script=script.script,
-            checksum=script.checksum,
-            execution_time=elapsed(),
-            success=success,
-        )
-
-    def run() -> None:
-        _fire(session, "beforeEachMigrate", own_transaction=False)
-        _MIGRATE_LOG.info("Migrating %s", text)
-        _execute(session, prepared.statements, script.script, statement_callbacks=True)
-        _fire(session, "afterEachMigrate", own_transaction=False)
-
+    if script.repeatable:
+        LOG.info("%s: applying repeatable migration %r", label, script.description)
+    else:
+        LOG.info("%s: migrating to version %s - %s", label, script.version, script.description)
     try:
-        if prepared.in_transaction:
-            # One transaction for the migration and its row. On MySQL and MariaDB a schema
-            # change still commits on its own inside it - nothing can stop that - but a
-            # migration that only changes data is recorded atomically there too.
-            with backend.transaction():
-                run()
-                record(True)
-        else:
-            run()
-            with backend.transaction():
-                record(True)
+        # yoyo prints what a SELECT in a migration returns, straight to stdout. Captured here and
+        # handed to the log instead, as Flyway logs it - on by default, as Flyway has it.
+        with redirect_stdout(printed):
+            if migration.use_transactions:
+                # One transaction for the migration and its row. On MySQL and MariaDB a schema
+                # change still commits on its own inside it - nothing can stop that - but a
+                # migration that only changes data is recorded atomically there too.
+                with backend.transaction():
+                    migration.process_steps(backend, "apply")
+                    _record(session, script, started)
+            else:
+                migration.process_steps(backend, "apply")
+                with backend.transaction():
+                    _record(session, script, started)
     except Exception as error:
-        # After the migration's transaction is rolled back, not inside it as Flyway runs it:
-        # there, on PostgreSQL, the aborted transaction fails the callback and its error
-        # replaces the migration's. A failing callback here is logged; the migration's error
-        # is the one raised.
-        try:
-            _fire(session, "afterEachMigrateError")
-        except _CallbackFailed as callback:
-            _MIGRATE_LOG.error("%s", callback)
-        rolled_back = backend.transactional_ddl and prepared.in_transaction
-        failed = f"Migration of {text} failed!"
         recorded: bool | BaseException = False
-        if rolled_back:
-            _MIGRATE_LOG.error("%s Changes successfully rolled back.", failed)
-        else:
-            _MIGRATE_LOG.error("%s Please restore backups and roll back database and code!", failed)
+        if not (backend.has_transactional_ddl and migration.use_transactions):
             try:
                 with backend.transaction():
-                    record(False)
+                    _record(session, script, started, success=False)
                 recorded = True
             except Exception as unrecorded:
                 recorded = unrecorded
-        raise _Failed(error, recorded, rolled_back) from error
+        raise _Failed(error, recorded) from error
+    finally:
+        output = printed.getvalue().rstrip()
+        if output and session.output_query_results:
+            LOG.info("%s: %s returned:\n%s", label, script.script, output)
+
+
+def _run_hooks(session: _Session, hooks: Sequence[Hook]) -> None:
+    backend, label = session.backend, session.label
+    for hook in hooks:
+        migration = hook.load()
+        printed = io.StringIO()
+        try:
+            with redirect_stdout(printed):
+                if migration.use_transactions:
+                    with backend.transaction():
+                        migration.process_steps(backend, "apply")
+                else:
+                    migration.process_steps(backend, "apply")
+        except Exception as error:
+            raise _HookFailed(hook, error) from error
+        finally:
+            output = printed.getvalue().rstrip()
+            if output and session.output_query_results:
+                LOG.info("%s: %s returned:\n%s", label, hook.script, output)
+        LOG.info("%s: ran %s", label, hook.script)
 
 
 def _failure(
     label: str,
-    session: _Session | None,
-    current: _Prepared | None,
+    backend: _Common | None,
+    current: MigrationScript | None,
     applied: Sequence[MigrationScript],
-    failed: _Failed,
+    error: BaseException,
+    recorded: bool | BaseException,
 ) -> str:
     """What happened, where, and what state it left - the underlying error only names a url."""
-    error = failed.error
-    backend = session.backend if session is not None else None
-    where = f" in {current.script.script}" if current is not None else ""
+    where = f" in {current.script}" if current is not None else ""
     parts = [f"migrating {label} failed{where}: {type(error).__name__}: {error}".rstrip()]
-    if isinstance(error, _StatementFailed | _CallbackFailed):
-        parts = [f"migrating {label} failed{where}: {error}"]
     if backend is not None and backend.connection_lost():
         parts.append("The connection to the database was lost.")
     if applied:
         parts.append(f"Applied by this run before that: {', '.join(s.script for s in applied)}.")
     if current is not None and backend is not None:
-        name = current.script.script
-        if failed.rolled_back:
-            parts.append(f"Nothing of {name} remains: it was rolled back as a whole.")
+        if backend.has_transactional_ddl and current.load().use_transactions:
+            parts.append(f"Nothing of {current.script} remains: it was rolled back as a whole.")
         else:
             why = (
                 "MySQL and MariaDB commit each one on its own"
-                if not backend.transactional_ddl
+                if not backend.has_transactional_ddl
                 else "it ran outside a transaction"
             )
-            parts.append(f"Any change {name} had already made stays - {why}.")
-            if failed.recorded is True:
+            parts.append(f"Any change {current.script} had already made stays - {why}.")
+            if recorded is True:
                 parts.append(
                     "It is recorded as failed, so the next run stops here until the database has "
                     "been checked and put right, and repair() has been run."
                 )
             else:
-                reason = "" if failed.recorded is False else f" ({failed.recorded})"
+                reason = "" if recorded is False else f" ({recorded})"
                 parts.append(
                     f"Recording it as failed did not work either{reason}, so the next run would "
                     f"apply it again: check the database before running it."
@@ -2272,7 +1401,7 @@ def _failure(
     return " ".join(parts)
 
 
-# -- info, validate, repair, baseline --------------------------------------------------------
+# -- info, repair, baseline ------------------------------------------------------------------
 
 
 def info(
@@ -2285,93 +1414,28 @@ def info(
     Changes nothing and takes no lock, as Flyway's takes none; ``problems`` is what ``migrate``
     would refuse.
     """
-    configuration = FlywayConfiguration()
-    scripts = _scan(_locations(locations), configuration)
-    return _each(
-        _choose(config, shards), "read", lambda each: _info_of(each, scripts, configuration)
-    )
+    scripts = _scan(*locations)
+    return _each(_choose(config, shards), "read", lambda each: _info_of(each, scripts))
 
 
-def _info_of(
-    each: Target,
-    scripts: Scripts,
-    configuration: FlywayConfiguration,
-    *,
-    events: tuple[str, str, str] | None = ("beforeInfo", "afterInfo", "afterInfoError"),
-) -> InfoResult:
-    """Where everything stands, with Flyway's callbacks for the command around it."""
-    session = _open_session(each, configuration, scripts)
+def _info_of(each: Target, scripts: Scripts) -> InfoResult:
+    backend = _open(each)
     try:
-        scripts = _reached(session)
-        _fire(session, "afterConnect")
-        if events:
-            _fire(session, events[0])
-        try:
-            rows: list[_Row] = []
-            if _history_exists(session):
-                _refuse_another_shape(session)
-                rows = _read_history(session)
-            model = _model(scripts, rows)
-            result = InfoResult(
-                target=each,
-                schema_version=model.schema_version,
-                migrations=tuple(model.infos),
-                problems=tuple(model.problems),
-                warnings=tuple(model.warnings),
-            )
-            if events and events[0] == "beforeValidate":
-                _refuse_invalid(each, result)
-        except Exception:
-            if events:
-                _fire(session, events[2])
-            raise
-        if events:
-            _fire(session, events[1])
-            if events[0] == "beforeInfo":
-                _fire(session, "afterInfoOperationFinish")
-        return result
-    finally:
-        session.backend.close()
-
-
-def validate(
-    config: ShardingConfig,
-    *locations: str | Path,
-    shards: Iterable[ShardIdentifier] | None = None,
-) -> list[InfoResult]:
-    """Flyway's ``validate``: refuse a database whose history disagrees with the files - and,
-    unlike ``migrate``'s own check, one with migrations still pending, as Flyway's ``validate``
-    refuses those too. Changes nothing."""
-    configuration = FlywayConfiguration()
-    scripts = _scan(_locations(locations), configuration)
-    return _each(
-        _choose(config, shards), "validated", lambda each: _validate(each, scripts, configuration)
-    )
-
-
-def _validate(each: Target, scripts: Scripts, configuration: FlywayConfiguration) -> InfoResult:
-    result = _info_of(
-        each,
-        scripts,
-        configuration,
-        events=("beforeValidate", "afterValidate", "afterValidateError"),
-    )
-    count = len(result.migrations)
-    _VALIDATE_LOG.info("Successfully validated %d migration%s", count, "" if count == 1 else "s")
-    return result
-
-
-def _refuse_invalid(each: Target, result: InfoResult) -> None:
-    problems = list(result.problems) + [
-        f"Detected resolved migration not applied to database: "
-        f"{m.version if m.version is not None else m.description} ({m.script})"
-        for m in result.pending
-    ]
-    if problems:
-        raise MigrationError(
-            f"{each.label}: Validate failed: Migrations have failed validation\n  - "
-            + "\n  - ".join(problems)
+        session = _Session(backend, each.label)
+        rows: list[_Row] = []
+        if backend.table_exists(HISTORY_TABLE):
+            _refuse_an_old_shape(session)
+            rows = _read_history(backend)
+        model = _model(scripts, rows)
+        return InfoResult(
+            target=each,
+            schema_version=model.schema_version,
+            migrations=tuple(model.infos),
+            problems=tuple(model.problems),
+            warnings=tuple(model.warnings),
         )
+    finally:
+        backend.close()
 
 
 def repair(
@@ -2391,32 +1455,20 @@ def repair(
     Under the lock, in one transaction. It changes the history only: whatever a failed migration
     half did to the schema is for a person to finish or undo first.
     """
-    configuration = FlywayConfiguration()
-    scripts = _scan(_locations(locations), configuration)
-    return _each(
-        _choose(config, shards), "repaired", lambda each: _repair(each, scripts, configuration)
-    )
+    scripts = _scan(*locations)
+    return _each(_choose(config, shards), "repaired", lambda each: _repair(each, scripts))
 
 
-def _repair(each: Target, scripts: Scripts, configuration: FlywayConfiguration) -> RepairResult:
-    from ._migration_backend import MigrationBackendError
+def _repair(each: Target, scripts: Scripts) -> RepairResult:
+    from ._yoyo import MigrationBackendError
 
     label = each.label
-    session = _open_session(each, configuration, scripts)
-    backend = session.backend
+    backend = _open(each)
     try:
         backend.refuse_if_read_only()
-        scripts = _reached(session)
-        _fire(session, "afterConnect")
-        backend.acquire(session.table, configuration._lock_retry_count)
+        backend.acquire()
         try:
-            _fire(session, "beforeRepair")
-            try:
-                result = _repair_locked(each, scripts, session)
-            except Exception:
-                _fire(session, "afterRepairError")
-                raise
-            _fire(session, "afterRepair")
+            result = _repair_locked(each, scripts, backend)
         finally:
             backend.release()
     except MigrationBackendError as error:
@@ -2430,28 +1482,27 @@ def _repair(each: Target, scripts: Scripts, configuration: FlywayConfiguration) 
         ("realigned", result.aligned),
     ):
         for one in found:
-            _REPAIR_LOG.info("%s: repair %s %s", label, kind, one)
+            LOG.info("%s: repair %s %s", label, kind, one)
     if result.removed:
-        _REPAIR_LOG.warning(
+        LOG.warning(
             "%s: failed migrations were removed from the history; whatever they did to the "
             "schema before failing is still there, and is for a person to finish or undo",
             label,
         )
     if not (result.removed or result.deleted or result.aligned):
-        _REPAIR_LOG.info("%s: nothing to repair", label)
+        LOG.info("%s: nothing to repair", label)
     return result
 
 
-def _repair_locked(each: Target, scripts: Scripts, session: _Session) -> RepairResult:
-    backend = session.backend
-    session.installed_by = session.configuration._installed_by or backend.current_user()
-    if not _history_exists(session):
+def _repair_locked(each: Target, scripts: Scripts, backend: _Common) -> RepairResult:
+    session = _Session(backend, each.label, installed_by=backend.current_user())
+    if not backend.table_exists(HISTORY_TABLE):
         return RepairResult(each)
-    _refuse_another_shape(session)
+    _refuse_an_old_shape(session)
     with backend.transaction():
-        failed = [row for row in _read_history(session) if not row.success]
-        backend.execute(f"DELETE FROM {session.table} WHERE success = %s", (False,))
-        model = _model(scripts, _read_history(session))
+        failed = [row for row in _read_history(backend) if not row.success]
+        backend.execute(f"DELETE FROM {HISTORY_TABLE} WHERE success = :success", {"success": False})
+        model = _model(scripts, _read_history(backend))
         for row in model.missing:
             _insert(
                 session,
@@ -2465,14 +1516,13 @@ def _repair_locked(each: Target, scripts: Scripts, session: _Session) -> RepairR
             )
         for row, script in model.misaligned:
             backend.execute(
-                f"UPDATE {session.table} SET description = %s, type = %s, checksum = %s "
-                "WHERE installed_rank = %s",
-                (
-                    abbreviate_description(script.description),
-                    "SQL",
-                    script.checksum,
-                    row.installed_rank,
-                ),
+                f"UPDATE {HISTORY_TABLE} SET description = :description, checksum = :checksum "
+                "WHERE installed_rank = :installed_rank",
+                {
+                    "description": script.description,
+                    "checksum": script.checksum,
+                    "installed_rank": row.installed_rank,
+                },
             )
     return RepairResult(
         each,
@@ -2497,108 +1547,89 @@ def baseline(
     in it, and - unlike Flyway - where the database is empty, since baselining an empty database
     skips the migrations that would have built it.
     """
-    configuration = (
-        FlywayConfiguration().baseline_version(version).baseline_description(description)
+    if not re.fullmatch(r"\d+(?:[._]\d+)*", version or ""):
+        raise ValidationError(f"a baseline version is digits separated by . or _, not {version!r}")
+    if not description or len(description) > DESCRIPTION_LIMIT:
+        raise ValidationError(f"a baseline needs a description of at most {DESCRIPTION_LIMIT}")
+    return _each(
+        _choose(config, shards), "baselined", lambda each: _baseline(each, version, description)
     )
-    return _each(_choose(config, shards), "baselined", lambda each: _baseline(each, configuration))
 
 
-def _baseline(
-    each: Target, configuration: FlywayConfiguration, scripts: Scripts | None = None
-) -> BaselineResult:
-    session = _open_session(each, configuration, scripts)
-    try:
-        session.backend.refuse_if_read_only()
-        _reached(session)
-        _fire(session, "afterConnect")
-        _fire(session, "beforeBaseline")
-        try:
-            result = _baseline_in(each, configuration, session)
-        except Exception:
-            _fire(session, "afterBaselineError")
-            raise
-        _fire(session, "afterBaseline")
-        return result
-    finally:
-        session.backend.close()
-
-
-def _baseline_in(
-    each: Target, configuration: FlywayConfiguration, session: _Session
-) -> BaselineResult:
-    from ._migration_backend import MigrationBackendError
+def _baseline(each: Target, version: str, description: str) -> BaselineResult:
+    from ._yoyo import MigrationBackendError
 
     label = each.label
-    version = configuration._baseline_version
-    description = configuration._baseline_description
-    backend = session.backend
+    backend = _open(each)
     try:
-        backend.acquire(session.table, configuration._lock_retry_count)
+        backend.refuse_if_read_only()
+        backend.acquire()
         try:
-            session.installed_by = configuration._installed_by or backend.current_user()
-            if _history_exists(session):
-                _refuse_another_shape(session)
-                rows = _read_history(session)
-                marker = next((row for row in rows[:2] if row.type == "BASELINE"), None)
+            session = _Session(backend, label, installed_by=backend.current_user())
+            if backend.table_exists(HISTORY_TABLE):
+                _refuse_an_old_shape(session)
+                rows = _read_history(backend)
+                marker = next((row for row in rows if row.type == "BASELINE"), None)
                 if marker is not None:
                     same = version_key(marker.version or "") == version_key(version)
                     if same and marker.description == description:
-                        _BASELINE_LOG.info(
-                            "Schema history table %s already initialized with (%s,%s). Skipping.",
-                            session.table,
-                            version,
-                            description,
-                        )
+                        LOG.info("%s: already baselined at version %s", label, marker.version)
                         return BaselineResult(each, marker.version or version, description, False)
                     raise MigrationError(
-                        f"{label}: Unable to baseline schema history table {session.table} with "
-                        f"({version},{description}) as it has already been baselined with "
-                        f"({marker.version},{marker.description})"
+                        f"{label} has already been baselined at version {marker.version} "
+                        f"({marker.description!r}), not {version} ({description!r})."
                     )
                 if rows:
                     raise MigrationError(
-                        f"{label}: Unable to baseline schema history table {session.table} as it "
-                        f"already contains migrations - the history already says what built it."
+                        f"{label} already has migrations in its history, so there is nothing to "
+                        f"baseline: the history already says what built it."
                     )
                 raise MigrationError(
-                    f"{label}: Unable to baseline schema history table {session.table} as it "
-                    f"already exists, and is empty. Delete the schema history table, and run "
-                    f"baseline again."
+                    f"{label} has an empty {HISTORY_TABLE}. Drop the table, and baseline again."
                 )
-            if not backend.schema_objects(session.schema):
+            if not backend.schema_objects():
                 raise MigrationError(
                     f"{label} is empty, so there is nothing to baseline - baselining it would "
                     f"skip the migrations that build it. Run migrate instead."
                 )
-            _write_baseline(session)
+            # One transaction for the table and its baseline row, so a failure leaves neither -
+            # where DDL is transactional. MySQL commits the CREATE TABLE on its own.
+            with backend.transaction():
+                _create_history_table(backend)
+                _insert(
+                    session,
+                    version=version,
+                    description=description,
+                    type="BASELINE",
+                    script=description,
+                    checksum=None,
+                    execution_time=0,
+                    success=True,
+                )
         finally:
             backend.release()
     except MigrationBackendError as error:
         raise MigrationError(str(error)) from error
+    finally:
+        backend.close()
+    LOG.info("%s: baselined at version %s", label, version)
     return BaselineResult(each, version, description)
 
 
-class FlywayMigrator:
-    """Java's ``FlywayMigrator``: its static ``migrate`` overloads, ``targets``, ``target`` and
-    ``builder`` - and Flyway's ``info``, ``validate``, ``repair`` and ``baseline``, which Java
-    reaches through Flyway itself.
+class YoyoMigrator:
+    """Java's ``FlywayMigrator``, over yoyo: its static ``migrate`` overloads, ``targets``,
+    ``target`` and ``builder`` - and Flyway's ``info``, ``repair`` and ``baseline``, which Java
+    reaches through Flyway itself."""
 
-    The name is Java's. This is not Flyway and needs no Java: it is a migrator written in
-    Python that reads and writes what Flyway reads and writes."""
-
-    # Java nests these in `FlywayMigrator`; so does this, as well as the module having them.
+    # Java nests these two in `FlywayMigrator`; so does this, as well as the module having them.
     Target = Target
     Result = Result
-    DEFAULT_LOCATION = DEFAULT_LOCATION
-    MDC_SHARD = MDC_SHARD
-    MDC_TARGET = MDC_TARGET
 
     migrate = staticmethod(migrate)
     migrate_targets = staticmethod(migrate_targets)
     targets = staticmethod(targets)
     target = staticmethod(target)
     info = staticmethod(info)
-    validate = staticmethod(validate)
     repair = staticmethod(repair)
     baseline = staticmethod(baseline)
 
@@ -2609,37 +1640,32 @@ class FlywayMigrator:
         output_query_results: bool = True,
     ) -> MigrateResult:
         """Java's ``migrate(DataSourceConfig, locations...)``: one database, outside a layout."""
-        configuration = FlywayConfiguration().output_query_results(output_query_results)
-        (result,) = _run(
-            [target(data_source)],
-            _locations(locations),
-            configuration,
-            say_where_it_stopped=False,
+        (result,) = migrate_targets(
+            [target(data_source)], *locations, output_query_results=output_query_results
         )
         return result.migrate_result
 
     @staticmethod
-    def builder() -> FlywayMigratorBuilder:
-        return FlywayMigratorBuilder()
+    def builder() -> YoyoMigratorBuilder:
+        return YoyoMigratorBuilder()
 
 
-class FlywayMigratorBuilder:
-    """Fluent builder that runs the migration - Java's ``FlywayMigrator.Builder``. Obtain via
-    :meth:`FlywayMigrator.builder`.
+class YoyoMigratorBuilder:
+    """Fluent builder that runs the migration. Obtain via :meth:`YoyoMigrator.builder`.
 
     Java's ``withDataSource``, ``withShardingConfig``, ``withTarget``, ``withTargets``,
-    ``locations``, ``customize`` and ``migrate()``. ``customize`` is handed a
-    :class:`FlywayConfiguration`, as Java's is handed Flyway's ``FluentConfiguration``.
-    ``info()``, ``validate()``, ``repair()`` and ``baseline()`` run Flyway's commands of those
-    names against the same targets.
+    ``locations`` and ``migrate()``. Java's ``customize`` hands over Flyway's own configuration;
+    the one setting that means something here is ``output_query_results``, which is Flyway's
+    ``outputQueryResults``. ``info()``, ``repair()`` and ``baseline()`` run Flyway's commands of
+    those names against the same targets.
     """
 
-    __slots__ = ("_configuration", "_locations", "_targets")
+    __slots__ = ("_locations", "_output_query_results", "_targets")
 
     def __init__(self) -> None:
         self._targets: list[Target] = []
-        self._locations: tuple[str | Path, ...] = (DEFAULT_LOCATION,)
-        self._configuration = FlywayConfiguration()
+        self._locations: tuple[str | Path, ...] = ()
+        self._output_query_results = True
 
     def with_data_source(self, data_source: DataSourceConfig) -> Self:
         return self.with_target(target(data_source))
@@ -2661,24 +1687,11 @@ class FlywayMigratorBuilder:
         return self
 
     def locations(self, *locations: str | Path) -> Self:
-        """Java's ``locations``: replaces them; none at all means ``DEFAULT_LOCATION``."""
-        for location in locations:
-            if location is None or not str(location).strip():
-                raise ValidationError("locations cannot contain blank values")
-        self._locations = _locations(locations)
-        return self
-
-    def customize(self, customizer: Callable[[FlywayConfiguration], object]) -> Self:
-        """Java's ``customize``: change the Flyway settings before the run. Called in the order
-        given, each on the same configuration."""
-        if customizer is None:
-            raise ValidationError("customizer is required")
-        customizer(self._configuration)
+        self._locations = locations
         return self
 
     def output_query_results(self, enabled: bool) -> Self:
-        """Shorthand for ``customize(lambda c: c.output_query_results(enabled))``."""
-        self._configuration.output_query_results(enabled)
+        self._output_query_results = enabled
         return self
 
     def _chosen(self) -> list[Target]:
@@ -2686,38 +1699,29 @@ class FlywayMigratorBuilder:
             raise ValidationError("at least one migration target is required")
         return list(self._targets)
 
-    def _scripts(self) -> Scripts:
-        return _scan(self._locations, self._configuration)
-
     def migrate(self) -> list[Result]:
-        chosen = self._chosen()
-        return _run(chosen, self._locations, self._configuration.copy())
-
-    def info(self) -> list[InfoResult]:
-        scripts, configuration = self._scripts(), self._configuration.copy()
-        return _each(self._chosen(), "read", lambda each: _info_of(each, scripts, configuration))
-
-    def validate(self) -> list[InfoResult]:
-        scripts, configuration = self._scripts(), self._configuration.copy()
-        return _each(
-            self._chosen(), "validated", lambda each: _validate(each, scripts, configuration)
+        return migrate_targets(
+            self._targets, *self._locations, output_query_results=self._output_query_results
         )
 
+    def info(self) -> list[InfoResult]:
+        scripts = _scan(*self._locations)
+        return _each(self._chosen(), "read", lambda each: _info_of(each, scripts))
+
     def repair(self) -> list[RepairResult]:
-        scripts, configuration = self._scripts(), self._configuration.copy()
-        return _each(self._chosen(), "repaired", lambda each: _repair(each, scripts, configuration))
+        scripts = _scan(*self._locations)
+        return _each(self._chosen(), "repaired", lambda each: _repair(each, scripts))
 
     def baseline(
-        self, version: str | None = None, description: str | None = None
+        self, version: str = "1", description: str = BASELINE_DESCRIPTION
     ) -> list[BaselineResult]:
-        configuration = self._configuration.copy()
-        if version is not None:
-            configuration.baseline_version(version)
-        if description is not None:
-            configuration.baseline_description(description)
-        chosen = self._chosen()
-        scripts = self._scripts()
-        return _each(chosen, "baselined", lambda each: _baseline(each, configuration, scripts))
+        if not re.fullmatch(r"\d+(?:[._]\d+)*", version or ""):
+            raise ValidationError(
+                f"a baseline version is digits separated by . or _, not {version!r}"
+            )
+        return _each(
+            self._chosen(), "baselined", lambda each: _baseline(each, version, description)
+        )
 
 
 # -- development helpers ---------------------------------------------------------------------
@@ -2753,7 +1757,11 @@ def emit_ddl(metadata: MetaData, dialect: str) -> str:
 
 
 def _dialect(name: str) -> Any:
-    """The dialect itself, not an engine - so this works without the driver installed."""
+    """The dialect itself, not an engine - so this works without the driver installed.
+
+    Generating Postgres DDL on a machine that only talks to MySQL is a reasonable thing to
+    want, and needing a driver for it would be a surprise with no upside.
+    """
     from sqlalchemy.dialects import mysql, postgresql, sqlite
 
     dialects = {

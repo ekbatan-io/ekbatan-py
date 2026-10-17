@@ -1,1 +1,0 @@
-CREATE OR REPLACE VIEW turns_view AS SELECT 1 AS n;

@@ -6,7 +6,7 @@ from pathlib import Path
 from common import PW, SQL, Captured, cfg, execute, fresh, msg, probe, query, tables, url
 
 from ekbatan.config import DataSourceConfig
-from ekbatan.migrations import HISTORY_TABLE as HISTORY, FlywayMigrator
+from ekbatan.migrations import HISTORY_TABLE as HISTORY, YoyoMigrator
 
 
 def loc(key: str, *locations: str) -> None:
@@ -14,7 +14,7 @@ def loc(key: str, *locations: str) -> None:
     fresh("pg", db)
     with Captured() as log:
         try:
-            r = FlywayMigrator.migrate_data_source(cfg("pg", db), *locations)
+            r = YoyoMigrator.migrate_data_source(cfg("pg", db), *locations)
             probe(f"loc.{key}.outcome", f"OK applied={r.migrations_executed}")
         except Exception as e:
             probe(f"loc.{key}.outcome", "FAIL " + msg(e))
@@ -31,7 +31,7 @@ def schema(key: str, precreate: bool) -> None:
         url=url("pg", db, "?options=-csearch_path%3Dapp"), username="postgres", password=PW
     )
     try:
-        r = FlywayMigrator.migrate_data_source(config, str(SQL / "quick"))
+        r = YoyoMigrator.migrate_data_source(config, str(SQL / "quick"))
         probe(f"schema.{key}.outcome", f"OK applied={r.migrations_executed}")
     except Exception as e:
         probe(f"schema.{key}.outcome", "FAIL " + msg(e))
@@ -68,17 +68,6 @@ def schema(key: str, precreate: bool) -> None:
 
 
 quick = str(SQL / "quick")
-
-# Java's `classpath:db/parityF` is a test resource folder; Python's is the `parityF` folder of a
-# package `db` on sys.path, holding the same file.
-import shutil
-import sys
-import tempfile
-
-_root = Path(tempfile.mkdtemp())
-(_root / "db" / "parityF").mkdir(parents=True)
-shutil.copy(SQL / "quick" / "V1__quick.sql", _root / "db" / "parityF" / "V1__quick.sql")
-sys.path.insert(0, str(_root))
 loc("filesystem_prefix", "filesystem:" + quick)
 loc("plain_absolute_path", quick)
 loc("classpath_prefix", "classpath:db/parityF")

@@ -14,52 +14,47 @@ database (`cross.sh`). This scan fixes nothing.
 
 Probes: **f1** naming and files (PG, MySQL), **f2** history and lifecycle (PG, MySQL, MariaDB),
 **f3** lock (PG, MySQL), **f4** shards, logs and MDC (PG), **f5** locations, schemas, scripts (PG),
-**f6** cross-over (PG, MySQL; rewritten for the fix, PG, MySQL, MariaDB).
-
-**Parity fix M (`EKB-0277`-`EKB-0282`)** made the migrator Flyway-compatible; the rows it changed
-say "fixed in" below, and [`parity-fix/M-migrations.md`](../parity-fix/M-migrations.md) has the
-evidence. The probes were rerun on 57332/57306/57307; their `.python.out` files are the new runs,
-and `f6_cross.*` is the new cross-over: both ports in turn and at once on one database.
+**f6** cross-over (PG, MySQL).
 
 ## Table
 
 | # | Behaviour | Java | Python | Verdict | Probe |
 |---|---|---|---|---|---|
 | 1 | Version order, gaps | 1, 1.5, 1.9, 1.10, 2, 10, 20; gaps fine | same | same | f1 accept |
-| 2 | Version stored for `V1_5__x.sql` | `1.5` | `1.5` | same (fixed in EKB-0277) | f1 accept |
+| 2 | Version stored for `V1_5__x.sql` | `1.5` | `1_5`, as written | differs | f1 accept |
 | 3 | Subfolders, `.SQL`, empty description `V5__.sql` | run; script column `sub/V3__x.sql` | same | same | f1 accept |
 | 4 | Repeatables: after versioned, by description (`Z`, `a`, `b`) | yes | yes | same | f1 accept |
 | 5 | Duplicate version (`V1`+`V1.0`, `V1`+`V01`), duplicate repeatable, same version in two locations | refused before anything runs, no history table | same (own wording) | same | f1 dup_*, f5 two_locations |
 | 6 | Hidden folder `.hidden/` | skipped | skipped | same | f1 hidden |
-| 7 | Misnamed `.sql` (`v2__x`, `create_stuff`, `R1__x`, `U1__x`) | skipped with one INFO line; rest applied | skipped with Flyway's INFO lines; rest applied | same (fixed in EKB-0277) | f1 lowercase_v, misnamed, repeatable_with_version, undo |
-| 8 | `V1__x.sql.conf` beside a migration | read, applied | read, applied | same (fixed in EKB-0277) | f1 conf |
-| 9 | `afterMigrate.sql` | run | run | same (fixed in EKB-0279) | f1 callback |
-| 10 | `post-apply.sql` | ignored | ignored (a skipped name) | same (fixed in EKB-0279) | f1 post_apply |
+| 7 | Misnamed `.sql` (`v2__x`, `create_stuff`, `R1__x`, `U1__x`) | skipped with one INFO line; rest applied | whole run refused, nothing applied | differs | f1 lowercase_v, misnamed, repeatable_with_version, undo |
+| 8 | `V1__x.sql.conf` beside a migration | read, applied | refused | differs | f1 conf |
+| 9 | `afterMigrate.sql` | run | refused | differs | f1 callback |
+| 10 | `post-apply.sql` | ignored | run as a hook | differs | f1 post_apply |
 | 11 | `V2__x.py` | **run with `python`**, recorded type `SCRIPT` | refused | differs | f1 python_file, f5 script_migration |
 | 12 | File not UTF-8 | refused, nothing runs | same | same | f1 non_utf8 |
-| 13 | Description over 200 characters | applied; history cut to 197 + `...` | applied; history cut to 197 + `...` | same (fixed in EKB-0277) | f1 long_description |
-| 14 | Unknown placeholder `${unknown_key}` | fails, nothing applied | fails, nothing applied | same (fixed in EKB-0280) | f1 placeholder |
-| 15 | Built-in placeholder `${flyway:table}` | replaced (`flyway_schema_history`) | replaced (`flyway_schema_history`) | same (fixed in EKB-0280) | f1 placeholder_builtin |
-| 16 | MySQL `DELIMITER //` | applied | applied | same (fixed in EKB-0277) | f1 delimiter_mysql |
+| 13 | Description over 200 characters | applied; history cut to 197 + `...` | refused | differs | f1 long_description |
+| 14 | Unknown placeholder `${unknown_key}` | fails, nothing applied | runs the text as written | differs | f1 placeholder |
+| 15 | Built-in placeholder `${flyway:table}` | replaced (`flyway_schema_history`) | text as written | differs | f1 placeholder_builtin |
+| 16 | MySQL `DELIMITER //` | applied | refused | differs | f1 delimiter_mysql |
 | 17 | Empty folder | warns "No migrations found", empty history table | same | same | f1 empty |
-| 18 | Missing folder, or a file as location | warns, skips it, migrates nothing, succeeds | logs Flyway's ERROR line, skips it, migrates nothing, succeeds | same (fixed in EKB-0281) | f5 missing_folder, a_file_not_a_folder |
-| 19 | No location given | default `classpath:db/migration` | default `classpath:db/migration` (a package `db`) | same (fixed in EKB-0281) | f5 no_location |
-| 20 | `filesystem:` / `classpath:` prefixes | accepted | accepted (`classpath:` = an importable package's folder) | same (fixed in EKB-0281) | f5 filesystem_prefix, classpath_prefix |
-| 21 | A plain absolute path, no prefix | read as classpath: finds nothing, succeeds with 0 applied | the folder, migrated | differs on purpose: Java's trap not copied (EKB-0281; "Noticed in the Java") | f5 plain_absolute_path |
+| 18 | Missing folder, or a file as location | warns, skips it, migrates nothing, succeeds | refused | differs | f5 missing_folder, a_file_not_a_folder |
+| 19 | No location given | default `classpath:db/migration` | refused | differs | f5 no_location |
+| 20 | `filesystem:` / `classpath:` prefixes | accepted | refused | differs | f5 filesystem_prefix, classpath_prefix |
+| 21 | A plain absolute path, no prefix | read as classpath: finds nothing, succeeds with 0 applied | the folder, migrated | differs | f5 plain_absolute_path |
 | 22 | Blank location | refused | refused | same | f4 refuse.blank_location |
-| 23 | PG `CREATE INDEX CONCURRENTLY`, no marker | run outside a transaction, then **hangs** on Flyway's own lock connection (still waiting after 30 s) | run outside a transaction, finishes; V2 recorded | differs on purpose: Java's hang not copied (EKB-0277; "Noticed in the Java") | f5 concurrent_index_no_marker |
-| 24 | History table name | `flyway_schema_history` | `flyway_schema_history` | same (fixed in EKB-0277) | f2 a_first.history_tables |
-| 25 | History columns | 10 columns; `checksum` int, `installed_on` timestamp | 10 columns; Flyway's DDL per dialect | same (fixed in EKB-0277) | f2 a_first.columns |
+| 23 | PG `CREATE INDEX CONCURRENTLY`, no marker | run outside a transaction, then **hangs** on Flyway's own lock connection (still waiting after 30 s) | run in a transaction, fails at once; V1 kept | differs | f5 concurrent_index_no_marker |
+| 24 | History table name | `flyway_schema_history` | `ekbatan_schema_history` | differs | f2 a_first.history_tables |
+| 25 | History columns | 10 columns; `checksum` int, `installed_on` timestamp | same names, order, nulls; `checksum` and `installed_on` text | differs | f2 a_first.columns |
 | 26 | History indexes | pk `installed_rank`, `_s_idx` on `success` | same | same | f2 a_first.indexes |
-| 27 | Checksum of the same file | CRC32 `-1033942919` | CRC32 `-1033942919` | same (fixed in EKB-0277) | f2 history |
+| 27 | Checksum of the same file | CRC32 `-1033942919` | SHA-256 `f6a103a1...` | differs | f2 history |
 | 28 | `installed_by`, `execution_time`, `success`, repeatable row (no version, `SQL`) | db user; >= 0; true | same | same | f2 history |
-| 29 | `installed_on` value | db clock in session time zone: on PG the JVM's zone (`20:23` local when UTC was `18:23`), on MySQL UTC | db clock, column default, in the session time zone | closer (EKB-0277): the column's default, as Flyway; the PostgreSQL session zone is the server's, not a JVM's | f6 a1/b1 installed_on_sample |
-| 30 | Baseline row | v1, `BASELINE`, `<< Flyway Baseline >>` | v1, `BASELINE`, `<< Flyway Baseline >>` | same (fixed in EKB-0277) | f2 baseline |
+| 29 | `installed_on` value | db clock in session time zone: on PG the JVM's zone (`20:23` local when UTC was `18:23`), on MySQL UTC | always UTC, ISO text | differs | f6 a1/b1 installed_on_sample |
+| 30 | Baseline row | v1, `BASELINE`, `<< Flyway Baseline >>` | v1, `BASELINE`, `<< Baseline >>` | differs | f2 baseline |
 | 31 | Re-run: nothing applied, no rows | yes | yes | same | f2 b_again |
-| 32 | Result's target version when nothing ran | `null` | `null` | same (fixed in EKB-0278) | f2 b_again.outcome |
+| 32 | Result's target version when nothing ran | `null` | current version | differs | f2 b_again.outcome |
 | 33 | Applied file edited | refused, nothing runs | same | same | f2 c_edited |
 | 34 | Only line endings changed (CRLF) | accepted | accepted | same | f2 d_crlf |
-| 35 | Two lines joined into one | accepted (CRC unchanged) | accepted (CRC unchanged) | same (fixed in EKB-0277) | f2 e_joined |
+| 35 | Two lines joined into one | accepted (CRC unchanged) | refused | differs | f2 e_joined |
 | 36 | Description renamed / version respelled `V001` | refused / accepted | same | same | f2 f_renamed, g_respelled |
 | 37 | New file older than the newest applied | refused | refused | same | f2 h_out_of_order |
 | 38 | Newest applied file gone, or a newer release's version in the history | warns, carries on | same (also in the result's warnings) | same | f2 i_missing, future |
@@ -69,23 +64,23 @@ and `f6_cross.*` is the new cross-over: both ports in turn and at once on one da
 | 42 | Run after a failed row | refused until repair | same | same | f2 l_fixed, m_fixed_again |
 | 43 | Tables but no history | refused | refused | same | f2 nonempty |
 | 44 | Two migrators of one port at once | one applies, the other waits, 0 applied | same | same | f3 concurrent |
-| 45 | Lock name / key | PG key `18028:4163491309`; MySQL `flyway--196644676` | PG key `18028:4163491309`; MySQL `flyway--196644676` | same (fixed in EKB-0277) | f3 locks_seen |
-| 46 | Lock held elsewhere for 70 s, PG | gives up at 50 s, "Number of retries exceeded" | gives up at 50 s, "Number of retries exceeded" | same (fixed in EKB-0277) | f3 pg.held |
+| 45 | Lock name / key | PG key `18028:4163491309`; MySQL `flyway--196644676` | PG key `3812316770:1925703687`; MySQL `ekbatan-migrate:<db>` | differs | f3 locks_seen |
+| 46 | Lock held elsewhere for 70 s, PG | gives up at 50 s, "Number of retries exceeded" | waits, applies at 70 s | differs | f3 pg.held |
 | 47 | Lock held elsewhere for 70 s, MySQL | waits, applies at 70 s | same | same | f3 mysql.held |
 | 48 | Lock left after the run | none | none | same | f3 locks_left_after |
 | 49 | Shard order, target names (`global/member-0`, `shard-3-1`, `default` at 0:0) | config order | same | same | f4 targets |
 | 50 | One shard failing | first migrated, failing one stops, rest untouched | same | same | f4 fail |
 | 51 | MDC keys `ekbatanShard` / `ekbatanTarget` on each line, cleared after | yes, `1:0` and `mexico/member-0` | same values, as record attributes | same | f4 *.ekbatan_lines, mdc_after |
-| 52 | Start and end log lines | `Migrating X (1:0)`, `X (1:0) is at version 1 (1 applied)` | `Migrating X (1:0)`, `X (1:0) is at version 1 (1 applied)` | same (fixed in EKB-0278) | f4 again.ekbatan_lines |
-| 53 | Failure log lines | ERROR `Migrating X failed`, ERROR `Stopped at X; already migrated: [...]` | ERROR `Migrating X failed`, ERROR `Stopped at X; already migrated: [...]` | same (fixed in EKB-0278) | f4 fail.ekbatan_lines |
+| 52 | Start and end log lines | `Migrating X (1:0)`, `X (1:0) is at version 1 (1 applied)` | no start line; `X is at version 1 (1 applied)` without the shard | differs | f4 again.ekbatan_lines |
+| 53 | Failure log lines | ERROR `Migrating X failed`, ERROR `Stopped at X; already migrated: [...]` | none; the same facts only in the exception text | differs | f4 fail.ekbatan_lines |
 | 54 | No targets / blank target name | refused (`IllegalStateException`, `IllegalArgumentException`) | refused (`ValidationError`) | same | f4 refuse |
 | 55 | A caller's own MDC values put back after | yes | Python has no caller MDC to restore | read: no such thing in Python | - |
-| 56 | PG schema in the url that does not exist | created; history row 0 `<< Flyway Schema Creation >>`, type `SCHEMA` | created; history row 0 `<< Flyway Schema Creation >>`, type `SCHEMA` | same (fixed in EKB-0282) | f5 missing_schema |
+| 56 | PG schema in the url that does not exist | created; history row 0 `<< Flyway Schema Creation >>`, type `SCHEMA` | fails "no schema has been selected to create in" | differs | f5 missing_schema |
 | 57 | PG schema in the url that exists | history and tables go there | same | same | f5 existing_schema |
-| 58 | Java migrated, Python continues | - | continues: applies V3, validate passes | same (fixed in EKB-0277) | f6 a2 |
-| 59 | Python migrated, Java continues | (before the fix: refused, "Found non-empty schema(s)") now continues, validate passes | continues: applies V4, validate passes | same (fixed in EKB-0277) | f6 b2 |
-| 60 | Python baselines a Java database, then both keep going | (before the fix: ran V3 again) now no baseline is needed | no baseline needed; nothing re-applied | same (fixed in EKB-0277) | f6 a3, a4, a5 |
-| 61 | Both ports at once on an empty database | (before the fix: no shared lock, whoever was first won) now one applies, the other waits | one applies, the other waits on Flyway's lock and applies nothing | same (fixed in EKB-0277) | f6 c1, c2 |
+| 58 | Java migrated, Python continues | - | refused: "already has flyway_schema_history, life_a... but no ekbatan_schema_history" | differs | f6 a2 |
+| 59 | Python migrated, Java continues | refused: "Found non-empty schema(s) but no schema history table" | - | differs | f6 b2 |
+| 60 | Python baselines a Java database, then both keep going | then runs V3 again: "life_c already exists"; on MySQL a failed row now blocks Java | applies V3 once | differs | f6 a3, a4, a5 |
+| 61 | Both ports at once on an empty database | no shared lock: whoever is first wins; here Python, and Java refused the schema | - | differs | f6 c1, c2 |
 
 ## Differences
 
@@ -187,7 +182,3 @@ Python (53), a missing PostgreSQL schema (56), `1_5` stored as written (2), `ins
 zone (29), the baseline description (30), the result's target version (32), the shape of the log
 lines (52), the joined-lines checksum (35, known only in MIGRATOR-LEDGER), and that Flyway's
 50-second give-up is PostgreSQL only (46, 47).
-
-After parity fix M: 27 of the 31 differences are `same`; 2 differ on purpose because Java's
-behaviour is a bug (rows 21, 23); row 11 (script migrations) and row 29 (the PostgreSQL session
-time zone of `installed_on`) remain, as limits recorded in `DECISIONS-TO-REVIEW.md`.

@@ -3,7 +3,7 @@ name = "job-worker-pg"
 version = "0.1.0"
 description = "A worker running distributed jobs, no HTTP, built with pip and setuptools."
 requires-python = ">=3.13"
-dependencies = ["ekbatan[postgres]"]
+dependencies = ["ekbatan[postgres,migrations]"]
 
 [dependency-groups]
 dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[postgres]>=4.15"]

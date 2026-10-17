@@ -7,7 +7,6 @@ MySQL 9.4.0 on 53306, MariaDB 11.4 on 53307, all with a throwaway password that 
 from __future__ import annotations
 
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -18,14 +17,9 @@ from ekbatan.config import DataSourceConfig
 
 SQL = Path(__file__).resolve().parent / "sql"
 PW = "parity-pw-F"
-HISTORY = "flyway_schema_history"
+HISTORY = "ekbatan_schema_history"
 
-# The scan ran on 55432/53306/53307; a rerun may pick other ports (PARITY_F_PG_PORT, ...).
-PORTS = {
-    "pg": int(os.environ.get("PARITY_F_PG_PORT", "55432")),
-    "mysql": int(os.environ.get("PARITY_F_MYSQL_PORT", "53306")),
-    "maria": int(os.environ.get("PARITY_F_MARIA_PORT", "53307")),
-}
+PORTS = {"pg": 55432, "mysql": 53306, "maria": 53307}
 
 
 def probe(key: str, value: object) -> None:
@@ -176,23 +170,18 @@ class Captured(logging.Handler):
         self.records.append(record)
         text = re.sub(r"\s+", " ", record.getMessage())
         self.lines.append(
-            f"{record.levelname}|{record.name}|{getattr(record, 'ekbatanShard', 'null')}|"
-            f"{getattr(record, 'ekbatanTarget', 'null')}|{text}"
+            f"{record.levelname}|{record.name}|{getattr(record, 'ekbatanShard', None)}|"
+            f"{getattr(record, 'ekbatanTarget', None)}|{text}"
         )
 
-    # Java's twin listens on `org.flywaydb` and `io.ekbatan`; so does this.
-    NAMES = ("io.ekbatan", "org.flywaydb")
-
     def __enter__(self) -> Captured:
-        for name in self.NAMES:
-            logger = logging.getLogger(name)
-            logger.setLevel(logging.DEBUG)
-            logger.addHandler(self)
+        root = logging.getLogger("io.ekbatan")
+        root.setLevel(logging.DEBUG)
+        root.addHandler(self)
         return self
 
     def __exit__(self, *exc: object) -> None:
-        for name in self.NAMES:
-            logging.getLogger(name).removeHandler(self)
+        logging.getLogger("io.ekbatan").removeHandler(self)
 
     def warnings(self) -> list[str]:
         return [

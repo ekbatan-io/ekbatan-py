@@ -2,239 +2,236 @@ PROBE pg.life.a_first.outcome: OK applied=3 initial=null target=2
 PROBE pg.life.a_first.result_warnings: []
 PROBE pg.life.a_first.log_warnings: []
 PROBE pg.life.a_first.tables: [life_a, life_b, life_v]
-PROBE pg.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.life.a_first.history_tables: [flyway_schema_history]
-PROBE pg.life.a_first.columns: installed_rank|integer|NO, version|character varying|YES, description|character varying|NO, type|character varying|NO, script|character varying|NO, checksum|integer|YES, installed_by|character varying|NO, installed_on|timestamp without time zone|NO, execution_time|integer|NO, success|boolean|NO
-PROBE pg.life.a_first.indexes: [flyway_schema_history_pk CREATE UNIQUE INDEX flyway_schema_history_pk ON public.flyway_schema_history USING btree (installed_rank), flyway_schema_history_s_idx CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success)]
-PROBE pg.life.a_first.installed_on_type: [timestamp without time zone]
-PROBE pg.life.b_again.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.a_first.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.life.a_first.history_tables: [ekbatan_schema_history]
+PROBE pg.life.a_first.columns: installed_rank|integer|NO, version|character varying|YES, description|character varying|NO, type|character varying|NO, script|character varying|NO, checksum|character varying|YES, installed_by|character varying|NO, installed_on|character varying|NO, execution_time|integer|NO, success|boolean|NO
+PROBE pg.life.a_first.indexes: [ekbatan_schema_history_pkey CREATE UNIQUE INDEX ekbatan_schema_history_pkey ON public.ekbatan_schema_history USING btree (installed_rank), ekbatan_schema_history_s_idx CREATE INDEX ekbatan_schema_history_s_idx ON public.ekbatan_schema_history USING btree (success)]
+PROBE pg.life.a_first.installed_on_type: [character varying]
+PROBE pg.life.b_again.outcome: OK applied=0 initial=2 target=2
 PROBE pg.life.b_again.result_warnings: []
 PROBE pg.life.b_again.log_warnings: []
 PROBE pg.life.b_again.tables: [life_a, life_b, life_v]
-PROBE pg.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.life.c_edited.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (checksum -1033942919 then, 2061709084 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one an...
-PROBE pg.life.c_edited.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.life.b_again.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.life.c_edited.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, fcf00cee7269 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
+PROBE pg.life.c_edited.log_warnings: []
 PROBE pg.life.c_edited.tables: [life_a, life_b, life_v]
-PROBE pg.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.life.d_crlf.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.c_edited.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.life.d_crlf.outcome: OK applied=0 initial=2 target=2
 PROBE pg.life.d_crlf.result_warnings: []
 PROBE pg.life.d_crlf.log_warnings: []
 PROBE pg.life.d_crlf.tables: [life_a, life_b, life_v]
-PROBE pg.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.life.e_joined.outcome: OK applied=0 initial=2 target=null
-PROBE pg.life.e_joined.result_warnings: []
+PROBE pg.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.life.e_joined.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, 17b048b577d8 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
 PROBE pg.life.e_joined.log_warnings: []
 PROBE pg.life.e_joined.tables: [life_a, life_b, life_v]
-PROBE pg.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.e_joined.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
 PROBE pg.life.f_renamed.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 1 was applied as 'create', and its file V1__create_renamed.sql now says 'create renamed'. An applied migration is history: put the old name back - or, if only the name changed, run repair() to record the new one. Already migrated: none. Targets are migrated one at a time, so the rest are u...
-PROBE pg.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.life.f_renamed.log_warnings: []
 PROBE pg.life.f_renamed.tables: [life_a, life_b, life_v]
-PROBE pg.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.life.g_respelled.outcome: OK applied=0 initial=2 target=null
+PROBE pg.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.life.g_respelled.outcome: OK applied=0 initial=2 target=2
 PROBE pg.life.g_respelled.result_warnings: []
 PROBE pg.life.g_respelled.log_warnings: []
 PROBE pg.life.g_respelled.tables: [life_a, life_b, life_v]
-PROBE pg.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
 PROBE pg.life.h_out_of_order.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1_5__late.sql has not been applied, but version 2 already has. Migrations run in version order, so this one would never run in the place its number says: give it a version after 2. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; ...
-PROBE pg.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.life.h_out_of_order.log_warnings: []
 PROBE pg.life.h_out_of_order.tables: [life_a, life_b, life_v]
-PROBE pg.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.life.i_missing.outcome: OK applied=0 initial=2 target=null
-PROBE pg.life.i_missing.result_warnings: []
-PROBE pg.life.i_missing.log_warnings: [Schema "public" has a version (2) that is newer than the latest available migration (1) !]
+PROBE pg.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.life.i_missing.outcome: OK applied=0 initial=2 target=2
+PROBE pg.life.i_missing.result_warnings: [V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+PROBE pg.life.i_missing.log_warnings: [default (0:0): V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
 PROBE pg.life.i_missing.tables: [life_a, life_b, life_v]
-PROBE pg.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
+PROBE pg.life.i_missing.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=2
 PROBE pg.life.j_repeatable_changed.result_warnings: []
 PROBE pg.life.j_repeatable_changed.log_warnings: []
 PROBE pg.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
-PROBE pg.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
-PROBE pg.life.k_failing.outcome: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: UndefinedTable: relation "no_such_table" does not exist LINE 1: INSERT INTO no_such_table VALUES (1) ^ (in V3__half.sql at line 2: INSERT INTO no_such_table VALUES (1)) Nothing of V3__half.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; wha...
-PROBE pg.life.k_failing.log_warnings: [Migration of schema "public" to version "3 - half" failed! Changes successfully rolled back., Migrating default (0:0) failed]
+PROBE pg.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true]
+PROBE pg.life.k_failing.outcome: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: UndefinedTable: relation "no_such_table" does not exist LINE 1: INSERT INTO no_such_table VALUES (1); ^ Nothing of V3__half.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+PROBE pg.life.k_failing.log_warnings: []
 PROBE pg.life.k_failing.tables: [life_a, life_b, life_v]
-PROBE pg.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true]
-PROBE pg.life.l_fixed.outcome: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view (in R__view.sql at line 1: CREATE OR REPLACE VIEW life_v AS SELECT id FROM life_a) Applied by this run before that: V3__half.sql. Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and r...
-PROBE pg.life.l_fixed.log_warnings: [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
+PROBE pg.life.k_failing.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true]
+PROBE pg.life.l_fixed.outcome: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view Applied by this run before that: V3__half.sql. Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+PROBE pg.life.l_fixed.log_warnings: []
 PROBE pg.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
-PROBE pg.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
-PROBE pg.life.m_fixed_again.outcome: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view (in R__view.sql at line 1: CREATE OR REPLACE VIEW life_v AS SELECT id FROM life_a) Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
-PROBE pg.life.m_fixed_again.log_warnings: [Migration of schema "public" with repeatable migration "view" failed! Changes successfully rolled back., Migrating default (0:0) failed]
+PROBE pg.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true]
+PROBE pg.life.m_fixed_again.outcome: FAIL MigrationError: migrating default (0:0) failed in R__view.sql: InvalidTableDefinition: cannot drop columns from view Nothing of R__view.sql remains: it was rolled back as a whole. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+PROBE pg.life.m_fixed_again.log_warnings: []
 PROBE pg.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
-PROBE pg.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|-1158503407|postgres|time>=0|true]
+PROBE pg.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|postgres|time>=0|true, 5|3|half|SQL|V3__half.sql|272bd21ebeec9c6e5a8e1083d924b6770e840382c66f1855ab3c266dd1729eab|postgres|time>=0|true]
 PROBE pg.future.a_newer_release.outcome: OK applied=4 initial=null target=9
 PROBE pg.future.a_newer_release.result_warnings: []
 PROBE pg.future.a_newer_release.log_warnings: []
 PROBE pg.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
-PROBE pg.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.future.b_older_release.outcome: OK applied=0 initial=9 target=null
-PROBE pg.future.b_older_release.result_warnings: []
-PROBE pg.future.b_older_release.log_warnings: [Schema "public" has a version (9) that is newer than the latest available migration (2) !]
+PROBE pg.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.future.b_older_release.outcome: OK applied=0 initial=9 target=9
+PROBE pg.future.b_older_release.result_warnings: [V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+PROBE pg.future.b_older_release.log_warnings: [default (0:0): V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
 PROBE pg.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
-PROBE pg.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
-PROBE pg.nonempty.outcome: FAIL MigrationError: default (0:0) already has existing but no flyway_schema_history, so nothing says which migrations built it - Flyway refuses it too ("Found non-empty schema(s) "public" but no schema history table"). If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Alread...
-PROBE pg.nonempty.log_warnings: [Migrating default (0:0) failed]
+PROBE pg.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|postgres|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
+PROBE pg.nonempty.outcome: FAIL MigrationError: default (0:0) already has existing but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this...
+PROBE pg.nonempty.log_warnings: []
 PROBE pg.nonempty.tables: [existing]
 PROBE pg.nonempty.history: [<no history table>]
 PROBE pg.baseline.outcome: OK applied=2 initial=1 target=2
 PROBE pg.baseline.tables: [life_a, life_b, life_v]
-PROBE pg.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|postgres|time>=0|true]
+PROBE pg.baseline.history: [1|1|<< Baseline >>|BASELINE|<< Baseline >>|null|postgres|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|postgres|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|postgres|time>=0|true]
 PROBE mysql.life.a_first.outcome: OK applied=3 initial=null target=2
 PROBE mysql.life.a_first.result_warnings: []
 PROBE mysql.life.a_first.log_warnings: []
 PROBE mysql.life.a_first.tables: [life_a, life_b, life_v]
-PROBE mysql.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.life.a_first.history_tables: [flyway_schema_history]
-PROBE mysql.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
-PROBE mysql.life.a_first.indexes: [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
-PROBE mysql.life.a_first.installed_on_type: [timestamp]
-PROBE mysql.life.b_again.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.a_first.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.life.a_first.history_tables: [ekbatan_schema_history]
+PROBE mysql.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|varchar|YES, installed_by|varchar|NO, installed_on|varchar|NO, execution_time|int|NO, success|tinyint|NO
+PROBE mysql.life.a_first.indexes: [ekbatan_schema_history_s_idx|success, PRIMARY|installed_rank]
+PROBE mysql.life.a_first.installed_on_type: [varchar]
+PROBE mysql.life.b_again.outcome: OK applied=0 initial=2 target=2
 PROBE mysql.life.b_again.result_warnings: []
 PROBE mysql.life.b_again.log_warnings: []
 PROBE mysql.life.b_again.tables: [life_a, life_b, life_v]
-PROBE mysql.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.life.c_edited.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (checksum -1033942919 then, 2061709084 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one an...
-PROBE mysql.life.c_edited.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.b_again.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.life.c_edited.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, fcf00cee7269 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
+PROBE mysql.life.c_edited.log_warnings: []
 PROBE mysql.life.c_edited.tables: [life_a, life_b, life_v]
-PROBE mysql.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.life.d_crlf.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.c_edited.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.life.d_crlf.outcome: OK applied=0 initial=2 target=2
 PROBE mysql.life.d_crlf.result_warnings: []
 PROBE mysql.life.d_crlf.log_warnings: []
 PROBE mysql.life.d_crlf.tables: [life_a, life_b, life_v]
-PROBE mysql.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.life.e_joined.outcome: OK applied=0 initial=2 target=null
-PROBE mysql.life.e_joined.result_warnings: []
+PROBE mysql.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.life.e_joined.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, 17b048b577d8 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
 PROBE mysql.life.e_joined.log_warnings: []
 PROBE mysql.life.e_joined.tables: [life_a, life_b, life_v]
-PROBE mysql.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.e_joined.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
 PROBE mysql.life.f_renamed.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 1 was applied as 'create', and its file V1__create_renamed.sql now says 'create renamed'. An applied migration is history: put the old name back - or, if only the name changed, run repair() to record the new one. Already migrated: none. Targets are migrated one at a time, so the rest are u...
-PROBE mysql.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.f_renamed.log_warnings: []
 PROBE mysql.life.f_renamed.tables: [life_a, life_b, life_v]
-PROBE mysql.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.life.g_respelled.outcome: OK applied=0 initial=2 target=null
+PROBE mysql.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.life.g_respelled.outcome: OK applied=0 initial=2 target=2
 PROBE mysql.life.g_respelled.result_warnings: []
 PROBE mysql.life.g_respelled.log_warnings: []
 PROBE mysql.life.g_respelled.tables: [life_a, life_b, life_v]
-PROBE mysql.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
 PROBE mysql.life.h_out_of_order.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1_5__late.sql has not been applied, but version 2 already has. Migrations run in version order, so this one would never run in the place its number says: give it a version after 2. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; ...
-PROBE mysql.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.h_out_of_order.log_warnings: []
 PROBE mysql.life.h_out_of_order.tables: [life_a, life_b, life_v]
-PROBE mysql.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.life.i_missing.outcome: OK applied=0 initial=2 target=null
-PROBE mysql.life.i_missing.result_warnings: []
-PROBE mysql.life.i_missing.log_warnings: [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
+PROBE mysql.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.life.i_missing.outcome: OK applied=0 initial=2 target=2
+PROBE mysql.life.i_missing.result_warnings: [V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+PROBE mysql.life.i_missing.log_warnings: [default (0:0): V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
 PROBE mysql.life.i_missing.tables: [life_a, life_b, life_v]
-PROBE mysql.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
+PROBE mysql.life.i_missing.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=2
 PROBE mysql.life.j_repeatable_changed.result_warnings: []
 PROBE mysql.life.j_repeatable_changed.log_warnings: []
 PROBE mysql.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
-PROBE mysql.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
-PROBE mysql.life.k_failing.outcome: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") (in V3__half.sql at line 2: INSERT INTO no_such_table VALUES (1)) Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() ha...
-PROBE mysql.life.k_failing.log_warnings: [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
+PROBE mysql.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true]
+PROBE mysql.life.k_failing.outcome: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() has been run. Already migrated: none. Targets are migrated one at a ...
+PROBE mysql.life.k_failing.log_warnings: []
 PROBE mysql.life.k_failing.tables: [life_a, life_b, life_c, life_v]
-PROBE mysql.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-PROBE mysql.life.l_fixed.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
-PROBE mysql.life.l_fixed.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.k_failing.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
+PROBE mysql.life.l_fixed.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+PROBE mysql.life.l_fixed.log_warnings: []
 PROBE mysql.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
-PROBE mysql.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-PROBE mysql.life.m_fixed_again.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
-PROBE mysql.life.m_fixed_again.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
+PROBE mysql.life.m_fixed_again.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+PROBE mysql.life.m_fixed_again.log_warnings: []
 PROBE mysql.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
-PROBE mysql.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE mysql.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
 PROBE mysql.future.a_newer_release.outcome: OK applied=4 initial=null target=9
 PROBE mysql.future.a_newer_release.result_warnings: []
 PROBE mysql.future.a_newer_release.log_warnings: []
 PROBE mysql.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
-PROBE mysql.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.future.b_older_release.outcome: OK applied=0 initial=9 target=null
-PROBE mysql.future.b_older_release.result_warnings: []
-PROBE mysql.future.b_older_release.log_warnings: [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
+PROBE mysql.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.future.b_older_release.outcome: OK applied=0 initial=9 target=9
+PROBE mysql.future.b_older_release.result_warnings: [V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+PROBE mysql.future.b_older_release.log_warnings: [default (0:0): V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
 PROBE mysql.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
-PROBE mysql.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE mysql.nonempty.outcome: FAIL MigrationError: default (0:0) already has existing but no flyway_schema_history, so nothing says which migrations built it - Flyway refuses it too ("Found non-empty schema(s) `f2_nonempty` but no schema history table"). If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. A...
-PROBE mysql.nonempty.log_warnings: [Migrating default (0:0) failed]
+PROBE mysql.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE mysql.nonempty.outcome: FAIL MigrationError: default (0:0) already has existing but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this...
+PROBE mysql.nonempty.log_warnings: []
 PROBE mysql.nonempty.tables: [existing]
 PROBE mysql.nonempty.history: [<no history table>]
 PROBE mysql.baseline.outcome: OK applied=2 initial=1 target=2
 PROBE mysql.baseline.tables: [life_a, life_b, life_v]
-PROBE mysql.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE mysql.baseline.history: [1|1|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
 PROBE maria.life.a_first.outcome: OK applied=3 initial=null target=2
 PROBE maria.life.a_first.result_warnings: []
 PROBE maria.life.a_first.log_warnings: []
 PROBE maria.life.a_first.tables: [life_a, life_b, life_v]
-PROBE maria.life.a_first.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.life.a_first.history_tables: [flyway_schema_history]
-PROBE maria.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|int|YES, installed_by|varchar|NO, installed_on|timestamp|NO, execution_time|int|NO, success|tinyint|NO
-PROBE maria.life.a_first.indexes: [flyway_schema_history_s_idx|success, PRIMARY|installed_rank]
-PROBE maria.life.a_first.installed_on_type: [timestamp]
-PROBE maria.life.b_again.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.a_first.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.life.a_first.history_tables: [ekbatan_schema_history]
+PROBE maria.life.a_first.columns: installed_rank|int|NO, version|varchar|YES, description|varchar|NO, type|varchar|NO, script|varchar|NO, checksum|varchar|YES, installed_by|varchar|NO, installed_on|varchar|NO, execution_time|int|NO, success|tinyint|NO
+PROBE maria.life.a_first.indexes: [ekbatan_schema_history_s_idx|success, PRIMARY|installed_rank]
+PROBE maria.life.a_first.installed_on_type: [varchar]
+PROBE maria.life.b_again.outcome: OK applied=0 initial=2 target=2
 PROBE maria.life.b_again.result_warnings: []
 PROBE maria.life.b_again.log_warnings: []
 PROBE maria.life.b_again.tables: [life_a, life_b, life_v]
-PROBE maria.life.b_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.life.c_edited.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (checksum -1033942919 then, 2061709084 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one an...
-PROBE maria.life.c_edited.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.b_again.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.life.c_edited.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, fcf00cee7269 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
+PROBE maria.life.c_edited.log_warnings: []
 PROBE maria.life.c_edited.tables: [life_a, life_b, life_v]
-PROBE maria.life.c_edited.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.life.d_crlf.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.c_edited.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.life.d_crlf.outcome: OK applied=0 initial=2 target=2
 PROBE maria.life.d_crlf.result_warnings: []
 PROBE maria.life.d_crlf.log_warnings: []
 PROBE maria.life.d_crlf.tables: [life_a, life_b, life_v]
-PROBE maria.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.life.e_joined.outcome: OK applied=0 initial=2 target=null
-PROBE maria.life.e_joined.result_warnings: []
+PROBE maria.life.d_crlf.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.life.e_joined.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1__create.sql has changed since it was applied (f6a103a15ec4 then, 17b048b577d8 now). An applied migration is history: put the file back as it was, and make the change in a new migration. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run ...
 PROBE maria.life.e_joined.log_warnings: []
 PROBE maria.life.e_joined.tables: [life_a, life_b, life_v]
-PROBE maria.life.e_joined.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.e_joined.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
 PROBE maria.life.f_renamed.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 1 was applied as 'create', and its file V1__create_renamed.sql now says 'create renamed'. An applied migration is history: put the old name back - or, if only the name changed, run repair() to record the new one. Already migrated: none. Targets are migrated one at a time, so the rest are u...
-PROBE maria.life.f_renamed.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.f_renamed.log_warnings: []
 PROBE maria.life.f_renamed.tables: [life_a, life_b, life_v]
-PROBE maria.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.life.g_respelled.outcome: OK applied=0 initial=2 target=null
+PROBE maria.life.f_renamed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.life.g_respelled.outcome: OK applied=0 initial=2 target=2
 PROBE maria.life.g_respelled.result_warnings: []
 PROBE maria.life.g_respelled.log_warnings: []
 PROBE maria.life.g_respelled.tables: [life_a, life_b, life_v]
-PROBE maria.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.life.g_respelled.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
 PROBE maria.life.h_out_of_order.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - V1_5__late.sql has not been applied, but version 2 already has. Migrations run in version order, so this one would never run in the place its number says: give it a version after 2. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; ...
-PROBE maria.life.h_out_of_order.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.h_out_of_order.log_warnings: []
 PROBE maria.life.h_out_of_order.tables: [life_a, life_b, life_v]
-PROBE maria.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.life.i_missing.outcome: OK applied=0 initial=2 target=null
-PROBE maria.life.i_missing.result_warnings: []
-PROBE maria.life.i_missing.log_warnings: [Schema `f2_life` has a version (2) that is newer than the latest available migration (1) !]
+PROBE maria.life.h_out_of_order.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.life.i_missing.outcome: OK applied=0 initial=2 target=2
+PROBE maria.life.i_missing.result_warnings: [V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+PROBE maria.life.i_missing.log_warnings: [default (0:0): V2__more.sql (version 2) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
 PROBE maria.life.i_missing.tables: [life_a, life_b, life_v]
-PROBE maria.life.i_missing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=null
+PROBE maria.life.i_missing.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.life.j_repeatable_changed.outcome: OK applied=1 initial=2 target=2
 PROBE maria.life.j_repeatable_changed.result_warnings: []
 PROBE maria.life.j_repeatable_changed.log_warnings: []
 PROBE maria.life.j_repeatable_changed.tables: [life_a, life_b, life_v]
-PROBE maria.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true]
-PROBE maria.life.k_failing.outcome: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") (in V3__half.sql at line 2: INSERT INTO no_such_table VALUES (1)) Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() ha...
-PROBE maria.life.k_failing.log_warnings: [Migration of schema `f2_life` to version "3 - half" failed! Please restore backups and roll back database and code!, Migrating default (0:0) failed]
+PROBE maria.life.j_repeatable_changed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true]
+PROBE maria.life.k_failing.outcome: FAIL MigrationError: migrating default (0:0) failed in V3__half.sql: ProgrammingError: (1146, "Table 'f2_life.no_such_table' doesn't exist") Any change V3__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() has been run. Already migrated: none. Targets are migrated one at a ...
+PROBE maria.life.k_failing.log_warnings: []
 PROBE maria.life.k_failing.tables: [life_a, life_b, life_c, life_v]
-PROBE maria.life.k_failing.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-PROBE maria.life.l_fixed.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
-PROBE maria.life.l_fixed.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.k_failing.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
+PROBE maria.life.l_fixed.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+PROBE maria.life.l_fixed.log_warnings: []
 PROBE maria.life.l_fixed.tables: [life_a, life_b, life_c, life_v]
-PROBE maria.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
-PROBE maria.life.m_fixed_again.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a migration run outside a transaction keeps what it did - so part of it may be in the database. Put the database ...
-PROBE maria.life.m_fixed_again.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.life.l_fixed.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
+PROBE maria.life.m_fixed_again.outcome: FAIL MigrationError: default (0:0): the migrations here do not match what this database has applied, so nothing was run: - version 3 (V3__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put th...
+PROBE maria.life.m_fixed_again.log_warnings: []
 PROBE maria.life.m_fixed_again.tables: [life_a, life_b, life_c, life_v]
-PROBE maria.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true, 4|null|view|SQL|R__view.sql|238788118|root|time>=0|true, 5|3|half|SQL|V3__half.sql|865552512|root|time>=0|false]
+PROBE maria.life.m_fixed_again.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true, 4|null|view|SQL|R__view.sql|d8e67e528fde67b6abe7885c5261892fc6bb3c4983485ad5553ec890dda3915f|root|time>=0|true, 5|3|half|SQL|V3__half.sql|89c509976d7f984a96dd972f125672687e56645b1403d80a525c99ec28f6ef86|root|time>=0|false]
 PROBE maria.future.a_newer_release.outcome: OK applied=4 initial=null target=9
 PROBE maria.future.a_newer_release.result_warnings: []
 PROBE maria.future.a_newer_release.log_warnings: []
 PROBE maria.future.a_newer_release.tables: [life_a, life_b, life_f, life_v]
-PROBE maria.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.future.b_older_release.outcome: OK applied=0 initial=9 target=null
-PROBE maria.future.b_older_release.result_warnings: []
-PROBE maria.future.b_older_release.log_warnings: [Schema `f2_future` has a version (9) that is newer than the latest available migration (2) !]
+PROBE maria.future.a_newer_release.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.future.b_older_release.outcome: OK applied=0 initial=9 target=9
+PROBE maria.future.b_older_release.result_warnings: [V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
+PROBE maria.future.b_older_release.log_warnings: [default (0:0): V9__future.sql (version 9) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.]
 PROBE maria.future.b_older_release.tables: [life_a, life_b, life_f, life_v]
-PROBE maria.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|-1033942919|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|9|future|SQL|V9__future.sql|-878376877|root|time>=0|true, 4|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
-PROBE maria.nonempty.outcome: FAIL MigrationError: default (0:0) already has existing but no flyway_schema_history, so nothing says which migrations built it - Flyway refuses it too ("Found non-empty schema(s) `f2_nonempty` but no schema history table"). If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. A...
-PROBE maria.nonempty.log_warnings: [Migrating default (0:0) failed]
+PROBE maria.future.b_older_release.history: [1|1|create|SQL|V1__create.sql|f6a103a15ec4c6f2b18382ca6ced0e48ca836e03bf6ee0bc3127790f97983977|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|9|future|SQL|V9__future.sql|f02f9713378081df18a72d27baaa152e11aa625af884456e8f6a33b5ddcf29f8|root|time>=0|true, 4|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]
+PROBE maria.nonempty.outcome: FAIL MigrationError: default (0:0) already has existing but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database. Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this...
+PROBE maria.nonempty.log_warnings: []
 PROBE maria.nonempty.tables: [existing]
 PROBE maria.nonempty.history: [<no history table>]
 PROBE maria.baseline.outcome: OK applied=2 initial=1 target=2
 PROBE maria.baseline.tables: [life_a, life_b, life_v]
-PROBE maria.baseline.history: [1|1|<< Flyway Baseline >>|BASELINE|<< Flyway Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|2071755729|root|time>=0|true, 3|null|view|SQL|R__view.sql|-2042472194|root|time>=0|true]
+PROBE maria.baseline.history: [1|1|<< Baseline >>|BASELINE|<< Baseline >>|null|root|time>=0|true, 2|2|more|SQL|V2__more.sql|df0aa817280522fb0e14203aa369e8000e64026f086194c13d4731aa749e6614|root|time>=0|true, 3|null|view|SQL|R__view.sql|04d56c759df9c386ef54cd9c95b8ba90edf68362f816c68c2bbb10edec8a7493|root|time>=0|true]

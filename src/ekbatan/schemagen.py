@@ -71,9 +71,9 @@ FRAMEWORK_TABLES = {
     "scheduled_tasks": "scheduled_tasks_table",
 }
 
-#: Tables that belong to the migration machinery and to nobody else: Flyway's history, which
-#: the migrator and Java's Flyway both write.
-BOOKKEEPING = frozenset({"flyway_schema_history"})
+#: Tables that belong to the migration machinery and to nobody else - this framework's history,
+#: and Flyway's, for a database the Java port migrated.
+BOOKKEEPING = frozenset({"ekbatan_schema_history", "flyway_schema_history"})
 
 #: The `forcedTypes` equivalent: a reflected type, and the helper that carries its per-dialect
 #: variants. Everything not named here is emitted as SQLAlchemy reflected it.
@@ -91,22 +91,21 @@ FORCED = {
 def fingerprint(migrations: Path) -> str:
     """A hash of every migration file, so a stale module can say so.
 
-    Every SQL file the migrator reads - versioned, repeatable and callbacks alike, in any
+    Every SQL file the migrator reads - versioned, repeatable and ``post-apply`` alike, in any
     directory under this one, hidden ones skipped - sorted by path and hashed with its path, so
-    moving one counts as a change. Each file counts by its Flyway checksum, which ignores line
-    endings, so a checkout that turns ``\\n`` into ``\\r\\n`` does not make every generated
+    moving one counts as a change. Line endings are normalised as the migrator's own checksums
+    normalise them, so a checkout that turns ``\\n`` into ``\\r\\n`` does not make every generated
     module stale. Other files - an ``__init__.py``, a ``README`` - are not schema and are not
-    hashed.
+    hashed. For a directory with no subdirectories this is the hash it always was.
     """
-    from ._flyway_sql import checksum
-    from .migrations import _files
+    from .migrations import _files, checksum
 
     digest = hashlib.sha256()
-    for path in sorted(_files(migrations)):
+    for path in _files(migrations):
         if path.suffix.lower() != ".sql":
             continue
         digest.update(path.relative_to(migrations).as_posix().encode())
-        digest.update(str(checksum(path.read_bytes().decode("utf-8"))).encode())
+        digest.update(checksum(path).encode())
     return digest.hexdigest()[:16]
 
 
