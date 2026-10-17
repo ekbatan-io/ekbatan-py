@@ -115,18 +115,9 @@ A constructor field, set by `super().__init__(clock)` and **required**. Use it f
 time-derived inside `perform()`; an action calling `datetime.now()` directly is one that cannot
 be tested at a fixed instant, and whose timestamps disagree with the row it is writing.
 
-Pass **the executor's clock**. The executor checks this at construction and refuses an action
-holding a different one, naming it:
-
-```
-DepositMoneyAction was built with a different clock than this ActionExecutor. Pass the
-executor's clock to every action it runs - a unit of work reading one clock while its rows
-are stamped from another cannot be tested at a fixed instant.
-```
-
-Java cannot make that check: a DI container hands the same `Clock` bean to the action and to the
-executor, so the question never arises. Here the two are wired by hand, which is where they can
-be wired differently.
+Pass **the executor's clock**. Nothing checks it, as in Java: an action built with another clock
+is accepted, reads that clock in `perform()`, and its rows are still stamped from the executor's.
+A test that freezes one and not the other asserts on two different instants.
 
 ### `perform(principal, params)`
 

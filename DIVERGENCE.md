@@ -53,25 +53,15 @@ Now:
 The plan stays ambient in both, and for the same reason: a repository call three frames down has
 to stage onto it without mentioning it. The other two can be passed, so they are.
 
-Two differences remain, and both are forced. The principal is a `str | None` rather than a
+One difference remains, and it is forced. The principal is a `str | None` rather than a
 `java.security.Principal`, because there is no such interface here and inventing one to hold a
-name would be a type for its own sake. And **this port checks that an action holds the
-executor's clock**, at construction, refusing one that does not:
+name would be a type for its own sake.
 
-```
-DepositMoneyAction was built with a different clock than this ActionExecutor.
-```
-
-Java cannot make that check and does not need to: a DI container hands the same `Clock` bean to
-the action and to the executor. There is no container here - `build()` is a function you write -
-so the two are wired separately and can be wired differently. The failure that produces is a
-test that froze the executor's clock, asserted on a timestamp the action took from the system
-clock, and passed on the machine it was written on.
-
-The check runs where actions are registered. Until `EKB-0224` the executor also accepted an
-instance, which went round the registry and so round the check - measured: an action built with a
-different clock ran. Now registration is the only way to run an action, and the check covers
-every one.
+**The clock is not checked, as in Java** (`EKB-0302`). This port used to refuse an executor whose
+actions held a different clock object than its own - and so refused two `SystemClock()` objects,
+a trap with no Java counterpart (Dracula 12). Java's executor never compares them: the action
+reads its own clock in `perform`, and the rows are stamped from the executor's. Pass the same
+clock to both if you want a frozen test to freeze both.
 
 ## An action runs by its type, as Java's runs by its class
 
@@ -89,8 +79,7 @@ The registry is the only way in, in both ports: a caller holding the executor ru
 without holding what it was built with, and everything a service can do is listed in one place.
 
 This port used to accept an instance as well, for tests. Measured before removing it, that form
-ran an action that had never been registered, and ran one built with a different clock - the
-clock check lives where actions are registered, so an instance went past it. Both are refused
+ran an action that had never been registered. An instance is refused
 now: an instance gets a message saying to pass the type, and to use `ActionSpec.of(action)` for
 the test that wanted it, which is what Java's tests use. The framework's own executor tests do
 what Java's `ActionExecutorTest` does - register the case's action on an executor, then run it by

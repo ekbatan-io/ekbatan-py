@@ -6,10 +6,10 @@ PROBE s1.outbox_global: 1
 PROBE s1.outbox_mexico: 0
 PROBE s1.row.namespace: parity.actions
 PROBE s1.row.action_name: CreateAction
-PROBE s1.row.action_params: {"countryCode": "DE"}
+PROBE s1.row.action_params: {"country_code": "DE"}
 PROBE s1.row.model_type: Wallet
 PROBE s1.row.event_type: WalletCreatedEvent
-PROBE s1.row.payload_minus_ids: {"currency": "EUR", "modelName": "Wallet", "initialBalance": 10}
+PROBE s1.row.payload_minus_ids: {"currency": "EUR", "modelName": "Wallet", "initial_balance": "10"}
 PROBE s1.row.delivered: false
 PROBE s1.row.id_uuid_version: 4
 PROBE s1.row.action_id_uuid_version: 4
@@ -29,15 +29,15 @@ PROBE s2.db_balance: 15.0000
 PROBE s2.updated_date_unchanged: true
 PROBE s2.outbox_rows: 1
 PROBE s2.event_type: WalletMoneyDepositedEvent
-PROBE s2.payload_minus_ids: {"amount": 5, "modelName": "Wallet", "newBalance": 15.0000}
-PROBE s2.action_params: {"walletId": "01a14b5e-a23f-784f-8000-3618227a9729"}
+PROBE s2.payload_minus_ids: {"amount": "5", "modelName": "Wallet", "new_balance": "15.0000"}
+PROBE s2.action_params: {"wallet_id": "01a14b42-4e97-76cc-8000-33eace027822"}
 PROBE s3.event_types_in_insert_order: [WalletCreatedEvent, WalletMoneyDepositedEvent]
 PROBE s3.db_version: 1
 PROBE s3.same_action_id: true
 PROBE s4.outbox_rows: 1
 PROBE s4.event_type: null
-PROBE s4.payload: null
-PROBE s4.payload_sql_null: true
+PROBE s4.payload: JSON null
+PROBE s4.payload_sql_null: false
 PROBE s4.model_type: null
 PROBE s4.result_version: 2
 PROBE s4.db_version: 2
@@ -49,7 +49,7 @@ PROBE s5.row.action_name: NothingAction
 PROBE s5.row.action_params: {}
 PROBE s5.row.model_type: null
 PROBE s5.row.event_type: null
-PROBE s5.row.payload_minus_ids: null
+PROBE s5.row.payload_minus_ids: JSON null
 PROBE s5.row.delivered: false
 PROBE s5.row.id_uuid_version: 4
 PROBE s5.row.action_id_uuid_version: 4
@@ -57,7 +57,7 @@ PROBE s5.row.started_le_completion: true
 PROBE s5.row.event_date_eq_completion: true
 PROBE s5.row.started_is_utc_now: true
 PROBE s5.row.model_id_null: true
-PROBE s5.row.payload_sql_null: true
+PROBE s5.row.payload_sql_null: false
 PROBE s6.caller_exception: RuntimeError
 PROBE s6.same_instance: true
 PROBE s6.attempts: 1
@@ -153,7 +153,7 @@ PROBE s31.final_version: 3
 PROBE s32.started_date: 2026-01-01 10:00:00.123456
 PROBE s32.completion_date: 2026-01-01 10:00:00.123456
 PROBE s32.event_date: 2026-01-01 10:00:00.123456
-PROBE s32.action_clock_differs_from_executor_clock: ValidationError
+PROBE s32.action_clock_differs_from_executor_clock: none
 PROBE s33.caller_exception: IntegrityError
 PROBE s33.attempts: 1
 PROBE s34.ns0: refused
@@ -171,15 +171,15 @@ PROBE s35.negative_max_retries: ValidationError
 PROBE s35.negative_delay: ValidationError
 PROBE s35.zero_retries: none
 PROBE s36.duplicate_registration: ValidationError
-PROBE s37.no_event_persister: ValidationError
+PROBE s37.no_event_persister: none
 PROBE s38.empty_repository_registry: ValidationError
 PROBE s38.unknown_type_exception: ValidationError
 PROBE s38.outbox: 0
 PROBE s42.event_types_in_insert_order: [WalletCreatedEvent, WalletMoneyDepositedEvent]
 PROBE s42.three_adds_insert_order_is_staging_order: true
 PROBE s43.caller_exception: RuntimeError
-PROBE s43.wallets_after_outer_rollback: 0
-PROBE s43.outbox_after_outer_rollback: 0
+PROBE s43.wallets_after_outer_rollback: 1
+PROBE s43.outbox_after_outer_rollback: 1
 PROBE s39.pass_chain: none
 PROBE s39.added_count_wrong: AssertionError / Expected 2 addition(s) of Wallet but found 1
 PROBE s39.emitted_missing: AssertionError / Expected at least 1 event of WalletMoneyDepositedEvent but none were emitted

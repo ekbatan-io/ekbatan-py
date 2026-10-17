@@ -16,13 +16,14 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Self
 
-from sqlalchemy import Table
+from sqlalchemy import MetaData, Table
 
 from .._tracing import span
 from ..clock import Clock, SystemClock, to_instant
 from ..errors import CrossShardError, StaleRecordError, ValidationError
 from ..persistence import DatabaseRegistry
 from ..repository import Repository, RepositoryRegistry
+from ..schema import outbox_table
 from ..sharding import ShardIdentifier
 from .action import Action, _Binding
 from .outbox import EventPersister, SingleTableJsonEventPersister
@@ -197,8 +198,7 @@ class ActionExecutor:
 
     So a caller holding the executor runs an action without holding what it was built with, and
     everything a service can do is listed in one place. An instance is refused: it would run
-    whether it was registered or not, and past the check that it reads this executor's clock. A
-    test that wants to run the object it just built uses
+    whether it was registered or not. A test that wants to run the object it just built uses
     :class:`~ekbatan.testing.ActionSpec`, as Java's tests do.
     """
 
@@ -229,12 +229,14 @@ class ActionExecutor:
         self.config = config
         self.actions = actions if isinstance(actions, ActionRegistry) else ActionRegistry(actions)
 
+        # Neither given: the default single-table persister over the framework's own events
+        # table, as Java's builder makes one when no persister is set.
         if outbox is not None:
             self.outbox: EventPersister = outbox
-        elif events is not None:
-            self.outbox = SingleTableJsonEventPersister(registry, events)
         else:
-            raise ValidationError("pass either events=<Table> or outbox=<EventPersister>")
+            self.outbox = SingleTableJsonEventPersister(
+                registry, events if events is not None else outbox_table(MetaData())
+            )
 
         self.changes = ChangePersister(
             repositories
@@ -242,25 +244,6 @@ class ActionExecutor:
             else RepositoryRegistry(repositories),
             self.outbox,
         )
-        self._refuse_a_second_clock()
-
-    def _refuse_a_second_clock(self) -> None:
-        """Every registered action reads the clock this executor stamps rows with.
-
-        The clock is a constructor field on the action, as it is in Java, where a container
-        hands the same bean to both. There is no container here, so the two are wired by hand
-        and can be wired differently - and the failure that produces is a test that froze the
-        executor's clock, asserted on a timestamp the action took from the system clock, and
-        passed on the machine it was written on. Checked once, here, where both are in hand.
-        """
-        wrong = [action for action in self.actions if action.clock is not self.clock]
-        if wrong:
-            named = ", ".join(sorted(type(a).__name__ for a in wrong))
-            raise ValidationError(
-                f"{named} was built with a different clock than this ActionExecutor. Pass the "
-                f"executor's clock to every action it runs - a unit of work reading one clock "
-                f"while its rows are stamped from another cannot be tested at a fixed instant."
-            )
 
     @classmethod
     def builder(cls) -> ActionExecutorBuilder:
@@ -292,8 +275,8 @@ class ActionExecutor:
             raise ValidationError(
                 f"execute takes the action's type, as Java's takes its class - pass "
                 f"{type(action).__name__}, not an instance of it, and register the instance with "
-                f"the executor's ActionRegistry. An instance would run unregistered, and past the "
-                f"check that it reads this executor's clock. To run one you just built in a test, "
+                f"the executor's ActionRegistry. An instance would run unregistered. To run one "
+                f"you just built in a test, "
                 f"use ActionSpec.of(action)."
             )
         running = self.actions.get(action)
@@ -562,15 +545,16 @@ class ActionExecutorBuilder:
         return self
 
     def build(self) -> ActionExecutor:
-        """The executor. Each missing piece is refused by name, as the constructor refuses it."""
-        if self._event_persister is None:
-            raise ValidationError("event_persister is required")
+        """The executor. Each missing piece is refused by name, as the constructor refuses it.
+
+        No ``event_persister``: the default single-table persister, as Java's builder makes.
+        """
         return ActionExecutor(
             namespace=self._namespace,  # type: ignore[arg-type]  # None is refused by name
             registry=self._database_registry,  # type: ignore[arg-type]
             repositories=self._repository_registry,  # type: ignore[arg-type]
             actions=self._action_registry if self._action_registry is not None else (),
-            outbox=self._event_persister,
+            outbox=self._event_persister,  # None: the default persister
             clock=self._clock,
             config=self._default_execution_configuration,
         )

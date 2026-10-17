@@ -24,7 +24,9 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** yes. A hand-built job could default to on, leaving "off" as the config-file default only. That is what the Java split amounts to.
 - **Surprise:** high
 
-### Two `SystemClock()` objects count as "different clocks", and the executor refuses to start
+### ~~Two `SystemClock()` objects count as "different clocks", and the executor refuses to start~~ fixed (`EKB-0302`)
+- **Fixed:** the check is gone, as Java has none. An action built with another clock is accepted;
+  it reads its own clock, and the rows are stamped from the executor's. The text below is what it was.
 - **What:** the executor checks that every registered action holds the *same clock object* it
   holds (`is`, not "same kind"). Build actions with `SystemClock()` and leave the executor's clock
   unset, and the executor makes its own `SystemClock()` and refuses at build time:
@@ -58,9 +60,10 @@ sides. Ordered by surprise, highest first.
   the executor (`events=` or a hand-built `SingleTableJsonEventPersister(registry, EVENTS)`), the
   fan-out job (`events=`, `notifications=`) and the handling job (`notifications=`). The default
   is a table named `events` in the *default* schema. `eventlog` needs `schema="eventlog"`. A
-  Debezium connector set up from the Java docs for `eventlog.events` finds nothing. The executor
+  Debezium connector set up from the Java docs for `eventlog.events` finds nothing. ~~The executor
   builder also *requires* `event_persister(...)`, where Java's builder makes the default persister
-  itself.
+  itself.~~ **Fixed** (`EKB-0302`): with no persister, the builder and the constructor build the
+  default one over `outbox_table(MetaData())`, as Java's builder does.
 - **Python:** `src/ekbatan/schema.py:112` (`schema: str | None = None`), `src/ekbatan/action/executor.py:230-235,564-565`, `src/ekbatan/events/jobs.py:111-112,177`
 - **Java:** `ekbatan-core/.../single_table_json/EventEntityRepository.java:35-38` (`DSL.name("eventlog", ...)`), `ActionExecutor.java:103-105` (default persister)
 - **Why:** a choice. SQLite has no schemas, so the table is passed in rather than named in code. The `schema=None` default follows from that.

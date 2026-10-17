@@ -272,9 +272,28 @@ def test_a_registry_with_no_database_is_refused():
 # -- ActionExecutor -----------------------------------------------------------------------------
 
 
-def test_an_executor_without_an_event_persister_is_refused_by_name():
-    with pytest.raises(ValidationError, match="event_persister is required"):
-        ActionExecutor.builder().namespace("example.wallet").build()
+def test_an_executor_without_an_event_persister_gets_the_default_one():
+    """Java's builder makes a `SingleTableJsonEventPersister` when none is set (Dracula 14)."""
+    from ekbatan.action import SingleTableJsonEventPersister
+    from ekbatan.repository import RepositoryRegistry
+    from fixtures.domain import Wallet
+    from fixtures.repositories import WalletRepository
+    from fixtures.schema import WALLETS
+
+    engine = create_engine("sqlite://")
+    registry = DatabaseRegistry(
+        {ShardIdentifier(0, 0): TransactionManager(ShardIdentifier(0, 0), engine)}
+    )
+    executor = (
+        ActionExecutor.builder()
+        .namespace("example.wallet")
+        .database_registry(registry)
+        .repository_registry(RepositoryRegistry([WalletRepository(Wallet, WALLETS, registry)]))
+        .build()
+    )
+    assert isinstance(executor.outbox, SingleTableJsonEventPersister)
+    assert executor.outbox._event_repository._table.name == "events"
+    engine.dispose()
 
 
 def test_an_executor_without_a_database_registry_is_refused_by_name():

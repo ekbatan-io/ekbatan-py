@@ -109,9 +109,9 @@ stages onto the same plan without mentioning it. The other two can be passed, so
   under concurrency.
 - **`self.plan` must be reached from the thread or task that is running `perform()`.** A
   `ContextVar` is per-context; work handed to a pool does not inherit the binding.
-- **The clock must be the executor's.** The executor checks every registered action at
-  construction and refuses one holding a different clock. Java cannot make that check - a
-  container hands the same bean to both - and here the two are wired by hand.
+- **Pass the executor's clock to the action.** Nothing checks it, as in Java: the action reads
+  its own clock in `perform()` and the rows are stamped from the executor's, so a test that
+  freezes one and not the other asserts on two different instants.
 
 That second point is not a limitation to work around - it is the design. A pool thread that
 outlived the unit of work while holding its connection is exactly the bug this prevents.

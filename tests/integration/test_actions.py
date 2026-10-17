@@ -74,26 +74,26 @@ def test_the_plan_is_gone_afterwards(executor, clock):
         current_plan()
 
 
-def test_an_executor_refuses_an_action_holding_a_different_clock(executor, clock):
-    """The hazard constructor injection buys, caught where both clocks are in hand.
-
-    Java cannot check this: a container hands the same bean to both and the question does not
-    arise. Here the two are wired by hand, and a test that froze one while the action read the
-    other would pass on the machine it was written on.
-    """
-    from ekbatan import ActionRegistry, SystemClock
+def test_an_action_holding_a_different_clock_is_accepted_as_in_java(executor, clock, outbox):
+    """Java's executor never compares the two clocks: the action reads its own, and the rows are
+    stamped from the executor's. Python refused the executor at build (Dracula 12)."""
+    from ekbatan import ActionRegistry, VirtualClock
     from ekbatan.action import ActionExecutor
     from fixtures.schema import EVENTS
 
-    with pytest.raises(ValidationError, match="different clock"):
-        ActionExecutor(
-            namespace="example.wallet",
-            registry=executor.registry,
-            repositories=executor.changes.repositories,
-            actions=ActionRegistry([ReadsTheClockAction(SystemClock())]),
-            events=EVENTS,
-            clock=clock,
-        )
+    elsewhere = VirtualClock(datetime(1999, 1, 1, tzinfo=UTC))
+    other = ActionExecutor(
+        namespace="example.wallet",
+        registry=executor.registry,
+        repositories=executor.changes.repositories,
+        actions=ActionRegistry([ReadsTheClockAction(elsewhere)]),
+        events=EVENTS,
+        clock=clock,
+    )
+
+    assert other.execute(ReadsTheClockAction, None) == datetime(1999, 1, 1, tzinfo=UTC)
+    (row,) = outbox()
+    assert row["completion_date"] == datetime(2026, 1, 1, 10, 0)
 
 
 # --------------------------------------------------------------------------------- retries

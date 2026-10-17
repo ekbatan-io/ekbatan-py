@@ -56,9 +56,9 @@ whatever is decided about the rest.
 | 9 | A Java datasource block does not load: `jdbcUrl`, `maximumPoolSize`, `driverClassName` are unknown keys | choice | partly | H | C |
 | 10 | Pool settings are SQLAlchemy's (`pool_size` + `max_overflow`, `pool_recycle`, `pool_pre_ping`); no `minimumIdle`, `idleTimeout`, leak detection | forced | partly | H | C |
 | 11 | ~~The handling job built by hand never runs unless switched on; Java's always runs~~ **fixed** (`EKB-0275`): a hand-built job runs on a fixed delay, as Java's; `handling.enabled` is read by the wiring, as Java's DI reads it | choice | yes | H | B |
-| 12 | Two `SystemClock()` objects count as different clocks, and the executor refuses to start | choice | partly | H | B |
+| 12 | ~~Two `SystemClock()` objects count as different clocks, and the executor refuses to start~~ **fixed** (`EKB-0302`): the clock check is gone, as Java has none; the action reads its own clock, the rows are stamped from the executor's | choice | partly | H | B |
 | 13 | The app finds its config file by a path it passes; no profiles, no per-key env overrides, no classpath | forced + choice | partly | M | C, E |
-| 14 | You declare the events tables and pass them to the executor and both jobs; the executor builder needs `event_persister(...)` | choice | partly | M | B |
+| 14 | You declare the events tables and pass them to the executor and both jobs; ~~the executor builder needs `event_persister(...)`~~ **fixed** (`EKB-0302`): with no persister the executor builds the default one, as Java's builder does; the jobs still take their tables | choice | partly | M | B |
 | 15 | ~~Migration locations are plain folders: no default, no `classpath:` / `filesystem:`~~ **fixed** (`EKB-0281`): both prefixes, `classpath:` as an importable package's folder, Java's default `classpath:db/migration`, a missing folder skipped as Flyway skips it | forced + choice | partly | M | C, E |
 | 16 | Config files in four formats, INI with `%(ENV_X)s`; no `.properties` | choice | partly | L | C |
 | 17 | Unknown keys under `ekbatan` are refused; Spring ignores them | choice | yes | L | C |

@@ -56,12 +56,12 @@ effect on the database.
 | 38 | `execute` inside `perform` commits on its own; the outer plan is untouched; the outer failing does not undo it | yes | yes | same | s29.* |
 | 39 | Reaching the plan outside an execution, or from a thread started inside one, is refused | refused | refused | same | s30.*, s39.plan_outside |
 | 40 | Two concurrent deposits on one row: one conflicts, is retried, both succeed (3 attempts, balance 12) | yes | yes | same | s31.* |
-| 41 | An action built with a different clock from the executor's | accepted | refused at build | differs | s32.action_clock_differs_from_executor_clock |
+| 41 | An action built with a different clock from the executor's | accepted | same (fixed in EKB-0302) | same | s32.action_clock_differs_from_executor_clock |
 | 42 | Duplicate primary key: the driver's integrity error reaches the caller, not retried | yes | yes | same | s33.* |
 | 43 | Namespace rule (null, blank, hyphen, leading digit, empty segment, trailing dot, newline, non-ASCII refused; `a.b_c`, `_x.y1` accepted) | 11 / 11 | same | same | s34.* |
 | 44 | Retry config refuses negative retries and negative delay; 0 retries is fine | yes | yes | same | s35.* |
 | 45 | Two instances of one action type registered | second replaces first | refused | differs | s36.* |
-| 46 | Executor builder with no event persister | builds the default | refused | differs | s37.* |
+| 46 | Executor builder with no event persister | builds the default | same (fixed in EKB-0302) | same | s37.* |
 | 47 | Executor with an empty repository registry | builds | refused | differs | s38.empty_repository_registry |
 | 48 | A staged type with no repository is refused before anything is written | yes | yes | same | s38.unknown_type_exception, s38.outbox |
 | 49 | Insert order within one action: additions before updates, each in staging order | yes | yes | same | s42.* |
@@ -121,6 +121,7 @@ Most surprising first.
 - **Surprise:** medium.
 
 ### 41. An action built with a different clock is refused (Dracula 12)
+- **Fixed** (`EKB-0302`): accepted, as in Java.
 - **What:** executor on a fixed clock, action on the system clock. Java builds and runs it.
   Python refuses at build: "was built with a different clock than this ActionExecutor".
 - **Java:** `ActionExecutor.java:99,411` (no comparison)
@@ -130,6 +131,7 @@ Most surprising first.
 - **Surprise:** medium.
 
 ### 46. The executor builder needs an event persister (Dracula 14)
+- **Fixed** (`EKB-0302`): the default persister is built, as in Java.
 - **What:** Java's builder makes the default single-table persister when none is given. Python's
   `build()` refuses: "event_persister is required".
 - **Java:** `ActionExecutor.java:103-105`

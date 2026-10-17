@@ -24,8 +24,8 @@ Takes the action's **type**, and runs the instance registered for it — Java's
 constructed object with repositories hanging off it, and everything a service can do is listed in
 its `ActionRegistry`.
 
-An instance is refused, with a message saying so: it would run whether it was registered or not,
-and past the check that it reads the executor's clock. To run an action you just built in a test,
+An instance is refused, with a message saying so: it would run whether it was registered or not.
+To run an action you just built in a test,
 use `ActionSpec.of(action)` — see [Test it without a database](/learn/your-first-action/#test-it-without-a-database).
 
 Construction:
@@ -53,7 +53,7 @@ and positional order for six is a mistake waiting to be made silently.
 | `registry` | the shard layout, which is how the executor finds a database to commit to |
 | `repositories` | what persists each staged type. A type with none is refused when the executor goes to write it, with a message naming the type *and* listing what is registered |
 | `actions` | the registry that maps a class to a constructed instance; optional if you always pass instances |
-| `events` | the outbox `Table` to write to; the one from your generated `schema.py` |
+| `events` | the outbox `Table` to write to; the one from your generated `schema.py`. Left out (and no `outbox=`), the executor writes through the default persister to the framework's own `events` table, as Java's builder makes the default persister when none is set |
 | `clock` | defaults to the system clock. Pass a fixed one in tests and every timestamp becomes assertable |
 
 `registry=None` and `repositories=None` are refused explicitly rather than accepted and dropped

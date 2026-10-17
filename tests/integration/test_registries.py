@@ -124,10 +124,10 @@ def test_an_instance_is_refused_and_the_message_says_what_to_do(executor):
     assert "ActionSpec.of(action)" in message, "and where a test should go instead"
 
 
-def test_an_action_with_another_clock_cannot_reach_the_executor(registry, wallets, notifications):
-    """The instance form skipped the clock check - measured: an action built with a clock of its
-    own ran, reading one instant while its rows were stamped from another. With registration the
-    only way in, the check is the only way in too."""
+def test_an_action_with_another_clock_reaches_the_executor_as_in_java(
+    registry, wallets, notifications
+):
+    """Java's executor builds with actions holding any clock; so does this one now."""
     from datetime import UTC, datetime
 
     from ekbatan import VirtualClock
@@ -135,15 +135,15 @@ def test_an_action_with_another_clock_cannot_reach_the_executor(registry, wallet
     executor_clock = VirtualClock(datetime(2026, 1, 1, tzinfo=UTC))
     elsewhere = VirtualClock(datetime(1999, 1, 1, tzinfo=UTC))
 
-    with pytest.raises(ValidationError, match="built with a different clock"):
-        ActionExecutor(
-            namespace="example.wallet",
-            registry=registry,
-            repositories=[wallets, notifications],
-            actions=[CreateWalletAction(elsewhere)],
-            events=EVENTS,
-            clock=executor_clock,
-        )
+    built = ActionExecutor(
+        namespace="example.wallet",
+        registry=registry,
+        repositories=[wallets, notifications],
+        actions=[CreateWalletAction(elsewhere)],
+        events=EVENTS,
+        clock=executor_clock,
+    )
+    assert built.clock is executor_clock
 
 
 def test_running_an_unregistered_type_names_it(executor):
@@ -204,8 +204,9 @@ def test_the_executor_names_the_argument_it_was_not_given(registry, wallets):
     with pytest.raises(ValidationError, match="repositories is required"):
         ActionExecutor(namespace="x.y", registry=registry, repositories=None, events=EVENTS)
 
-    with pytest.raises(ValidationError, match=r"either events=.* or outbox="):
-        ActionExecutor(namespace="x.y", registry=registry, repositories=[wallets])
+    # Neither events= nor outbox=: the default persister, as Java's builder makes one.
+    built = ActionExecutor(namespace="x.y", registry=registry, repositories=[wallets])
+    assert built.outbox._event_repository._table.name == "events"  # type: ignore[attr-defined]
 
 
 def test_running_nothing_says_so(executor):

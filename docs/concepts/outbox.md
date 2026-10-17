@@ -78,6 +78,11 @@ is what lets two services run in one process against two outboxes - exactly what
 example's tests do. It is also what makes the generated schema module the single source of truth
 for the table's shape.
 
+Leave it out - no `events=` and no `outbox=` - and the executor writes through the default
+persister to the framework's own `events` table definition (`outbox_table`), as Java's builder
+makes its default persister when none is set. Pass it whenever your table has another name or
+schema.
+
 ## The table is a cross-language contract
 
 The columns are the same here and in Java, because a Debezium connector pointed at either one
