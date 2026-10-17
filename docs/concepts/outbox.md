@@ -95,11 +95,12 @@ each other's events:
 | `event_date` | when it happened; the ordering key |
 | `delivered` | the in-process dispatch flag |
 
-One detail is worth knowing because it looks like a mistake: the payload's identity keys are
-written as `modelId` and `modelName`, in Java's spelling rather than this port's. Java's local
-event handler deserialises the payload straight into its event class and refuses one without
-them. This port reads them back under its own names, so a payload written by either side rebuilds
-a complete event here. It is a contract, not an oversight.
+`action_params` and `payload` hold the JSON a Java service writes for the same object, byte for
+byte: Java's field names (`new_balance` is `newBalance`) in declaration order, decimals as JSON
+numbers, times in `java.time`'s forms. The payload starts with `modelId` and `modelName`, as
+Java's does - Java's local event handler deserialises the payload straight into its event class
+and refuses one without them. So either port reads the other's rows; see
+[Models and entities](models-and-entities.md#deserialization-for-in-process-handlers).
 
 ## What the outbox row means
 

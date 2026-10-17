@@ -148,6 +148,33 @@ Two differences in mechanism, neither in behaviour:
 The payload carries both under Java's names, `modelId` and `modelName`, so either port can read a
 row the other wrote.
 
+## The JSON of params and payloads is Java's, byte for byte
+
+> **parity** - since `EKB-0290` the outbox's `action_params` and `payload` are the text Ekbatan's default Jackson 3 mapper writes for the same object. Three corners Python cannot reach are listed below and in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#json-domain-model-and-timestamps-ekb-0290-ekb-0296).
+
+A dataclass field `new_balance` is written `newBalance`, in declaration order (a Java record, or
+an event with Ekbatan's usual `@JsonCreator`); decimals are JSON numbers in `BigDecimal.toString()`
+form; floats in `Double.toString()` form; an aware UTC `datetime` is an `Instant`, another offset
+an `OffsetDateTime`, a naive one a `LocalDateTime`; `date`, `time`, `timedelta` are `LocalDate`,
+`LocalTime`, `Duration`; bytes are base64; `Id` and `ShardedId` are `{"id": ..., "value": ...}`
+and any other `TypedValue` `{"value": ...}`, which is what Jackson makes of Java's getters. Checked
+against Jackson over 50,000 values (`parity-probes/G-domain-model/JsonFormatsParityProbeTest.java`
+and `json_formats_probe.py`): every one the same, except the first corner below.
+
+Reading parses every JSON number as a `Decimal`, so Python loses nothing - including from Java's
+rows, where Java's own reader loses digits (it reads numbers through a `double`; noted for the
+Java side in DECISIONS-TO-REVIEW). Each field is rebuilt as its declared type.
+
+What Python cannot match:
+
+- **An `OffsetDateTime` at offset zero.** Python has one aware `datetime`; at UTC it is written
+  as an `Instant`, whose fraction comes in groups of three (`.400Z`) where Java's
+  `OffsetDateTime` cuts it (`.4Z`). Both read back as the same instant.
+- **A Java class with no `@JsonCreator`** has its keys sorted by Jackson 3. A dataclass always
+  has a constructor, so its keys follow declaration order, as a record's or a creator's do.
+- **A missing key for a Java primitive** (`long`, `double`, `boolean`) is refused by Jackson 3;
+  Python has no primitive types, so a missing key is `None`, as for Java's object types.
+
 ## A typed builder is required in both ports, for different reasons
 
 > **chosen** - both ports require a builder a checker can read; what the *generation* buys differs, and accepting a hand-written one is an addition. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)

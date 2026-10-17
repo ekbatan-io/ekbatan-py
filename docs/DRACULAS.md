@@ -40,7 +40,7 @@ whatever is decided about the rest.
 
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
-| 1 | Event payloads and action params use Python field names (`new_balance`, not `newBalance`), decimals as text, and no pluggable JSON writer | convention + choice | partly | H | A2, B3 |
+| 1 | ~~Event payloads and action params use Python field names (`new_balance`, not `newBalance`), decimals as text~~ **fixed** (`EKB-0290`): the text Java's default Jackson 3 mapper writes, byte for byte - camelCase keys, declaration order, decimals as numbers - checked over 50,000 values; still no pluggable JSON writer | convention + choice | partly | H | A2, B3 |
 | 2 | The events tables default to the default schema, not `eventlog` | choice (SQLite has no schemas) | yes | H | A5, B4, C |
 | 3 | ~~Migration history is `ekbatan_schema_history` with SHA-256, not Flyway's table and CRC32: the ports cannot migrate one database~~ **fixed** (`EKB-0277`): Flyway's `flyway_schema_history`, CRC32, ranks and lock; Java and Python migrate one database in turn and at once, on PostgreSQL, MySQL and MariaDB | forced + choice | partly | H | C |
 | 4 | db-scheduler task data is JSON; Java's default is Java serialization | forced | no | M | D |

@@ -279,7 +279,7 @@ def test_the_identity_fields_are_in_the_payload_under_javas_spelling():
         model_id=str(wallet.id), amount=Decimal("10"), new_balance=Decimal("110")
     )
 
-    assert set(event.payload()) == {"amount", "new_balance", "modelId", "modelName"}
+    assert list(event.payload()) == ["modelId", "modelName", "amount", "newBalance"]
     assert event.payload()["modelId"] == str(wallet.id)
     assert event.payload()["modelName"] == "Wallet"
 

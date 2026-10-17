@@ -101,8 +101,7 @@ def json_column() -> JSON:
 
     Not text holding JSON. The column type is part of what a consumer binds to, and jsonb is
     queryable where a text column is a string somebody has to parse first. The engine is given
-    this library's canonical serialiser, so what lands in it is byte-identical to what the
-    other ports write.
+    this library's serialiser, so what lands in it is the text Java's Ekbatan writes.
     """
     from sqlalchemy.dialects.postgresql import JSONB
 

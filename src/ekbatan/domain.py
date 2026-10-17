@@ -119,31 +119,26 @@ class ModelEvent[M = Any]:
         object.__setattr__(self, "model_name", name)
 
     def payload(self) -> dict[str, Any]:
-        """The event as it is stored. Override to control the wire shape.
+        """The event as it is stored, keyed as Java's Jackson keys it. Override to control the
+        wire shape.
 
-        The two identity fields are in it, under Java's names - ``modelId`` and ``modelName``,
-        not ``model_id`` and ``model_name``. They are also columns of their own, so this is a
-        duplication; it is deliberate, and it is the difference between the two ports being able
-        to read each other's rows and not.
-
-        Java's local event handler deserialises this payload straight into the handler's event
-        class (``objectMapper.treeToValue(notification.payload, handler.eventType())``), and
-        every event class there carries a ``@JsonCreator`` taking ``@JsonProperty("modelId")``
-        which it hands to ``ModelEvent``'s constructor - where ``Validate.notBlank`` refuses a
-        null. A payload written without them therefore does not deserialise on the Java side at
-        all: the delivery fails, retries, and expires.
-
-        A CDC consumer reading `ActionEvent` never needs them here, because that type has its
-        own `modelId` and `modelType` fields read from the columns. The local handler does.
+        ``modelId`` and ``modelName`` first, then every field in declaration order under its
+        Java name - ``new_balance`` is ``newBalance`` - which is the JSON a Java event class
+        with Ekbatan's usual ``@JsonCreator`` (``modelId``, ``modelName``, then its fields)
+        writes. The two identity fields are also columns of their own; they are in the payload
+        because Java's local event handler deserialises it straight into the event class, whose
+        constructor refuses a blank ``modelId``.
         """
+        from ._json import json_name
+
         return {
+            "modelId": self.model_id,
+            "modelName": self.model_name,
             **{
-                f.name: getattr(self, f.name)
+                json_name(f.name): getattr(self, f.name)
                 for f in dataclasses.fields(self)
                 if f.name not in _EVENT_IDENTITY
             },
-            "modelId": self.model_id,
-            "modelName": self.model_name,
         }
 
     @property
@@ -152,8 +147,8 @@ class ModelEvent[M = Any]:
         return type(self).__name__
 
 
-#: Written into the payload under Java's spelling rather than Python's, so the two ports read
-#: each other. Excluded under their own names to avoid carrying both.
+#: Written first in the payload, as `modelId` and `modelName`; skipped among the fields so they
+#: are not written twice.
 _EVENT_IDENTITY = frozenset({"model_id", "model_name"})
 
 

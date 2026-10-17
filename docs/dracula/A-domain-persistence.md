@@ -26,7 +26,8 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   in `to_row` / the column type.
 - **Surprise:** high
 
-### 2. The event payload uses Python field names, decimals as strings, and you can't change the JSON writer
+### 2. ~~The event payload uses Python field names, decimals as strings~~, and you can't change the JSON writer
+- **Fixed** (`EKB-0290`): payloads and params are the text Java's default Jackson 3 mapper writes, byte for byte - `newBalance`, declaration order, decimals as JSON numbers. A pluggable writer is still not offered.
 - **What:** `WalletMoneyDeposited(new_balance=…)` is stored as
   `{"amount":"10.50","modelId":"abc","modelName":"Wallet","new_balance":"20.00"}`. Only
   `modelId`/`modelName` are camelCase; every other key is snake_case. Decimals are strings and keys

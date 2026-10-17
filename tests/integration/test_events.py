@@ -278,7 +278,12 @@ def test_a_handler_may_start_another_unit_of_work(
     written = notifications.all()
     assert len(written) == 1
     assert written[0].recipient == "ada@example.com"
-    assert written[0].message == "deposited 12.50, balance 112.5000"
+    # MySQL's JSON column keeps a number with a fraction as a double, so the scale goes there -
+    # for a Java service too, which writes the same text.
+    if executor.registry.default.primary.dialect.name == "mysql":
+        assert written[0].message == "deposited 12.5, balance 112.5"
+    else:
+        assert written[0].message == "deposited 12.50, balance 112.5000"
 
     # As a set: the rows come back ordered by `event_date`, and the frozen test clock stamps
     # every invocation with the same one. What is being asserted is that all three ran and each

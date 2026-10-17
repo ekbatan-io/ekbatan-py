@@ -118,34 +118,48 @@ named after its fields, so there is nothing to declare.
 
 What the decoder does with each field, driven by its annotation:
 
-| Annotation | Rebuilt from |
-|---|---|
-| `Decimal` | its **string**, at the scale it was written |
-| `datetime` | its ISO-8601 form, back to an aware UTC instant |
-| `UUID` | its canonical text |
-| an `Enum` | its **member name**, never its ordinal |
-| a nested frozen dataclass | recursively, the same way |
-| `list` / `tuple` / `set` / `frozenset` of any of the above | element by element |
-| `T \| None` | the non-`None` arm, when there is exactly one |
+| Annotation | Written as (what Java writes) | Read back as |
+|---|---|---|
+| `Decimal` | a JSON **number**, as `BigDecimal.toString()`: `10.50`, `1E+3` | the same `Decimal`, scale kept |
+| `float` | a number, as `Double.toString()`: `0.1`, `1.0E20` | `float` |
+| `datetime` with UTC | an `Instant`: `"2025-01-01T00:00:00.120Z"` | aware, UTC |
+| `datetime` with another offset | an `OffsetDateTime`: `"...T02:00:00+02:00"` | aware, that offset |
+| `datetime` with no zone | a `LocalDateTime`: `"2025-01-01T10:00:00"` | no zone, as written |
+| `date`, `time`, `timedelta` | `LocalDate`, `LocalTime`, `Duration` (`"PT1.5S"`) | the same type |
+| `bytes` | base64: `"AQL/"` | `bytes` |
+| `UUID` | its text | `UUID` |
+| an `Enum` | its **member name**, never its ordinal | the member |
+| `Id`, `ShardedId` | `{"id": "...", "value": "..."}`, as Jackson writes Java's | the typed id |
+| another `TypedValue` | `{"value": ...}` | the typed value |
+| a nested frozen dataclass | an object, keys as below | recursively, the same way |
+| `list` / `tuple` / `set` / `frozenset` / `dict` of any of the above | array / object | element by element |
+| `T \| None` | | the non-`None` arm, when there is exactly one |
 
-Decimals travel as strings deliberately: a JSON number is a double, and a balance that
-round-trips through one is no longer the balance. Enums travel by name for the same class of
-reason — an ordinal changes meaning the moment somebody inserts a member in the middle, and
-nothing about that change looks dangerous at the time.
+**Keys are Java's field names**: `new_balance` is written `newBalance`, in the order the fields
+are declared - what Jackson writes for a Java event with Ekbatan's usual `@JsonCreator`. A
+`dict` keeps its own keys, in insertion order; nothing is sorted. The text is the same, byte for
+byte, as Java's default Jackson 3 mapper writes for the same object - checked over 50,000
+values in `parity-probes/G-domain-model/`.
+
+**Every JSON number is read as a `Decimal`**, so nothing is lost on the way in, from either
+port. One database is the exception: MySQL's `JSON` type stores a number with a fraction as a
+double, so `50.00` comes back `50.0` there - for a Java service too, which sends the same text.
+Enums travel by name - an ordinal changes meaning the moment somebody inserts a member in the
+middle, and nothing about that change looks dangerous at the time.
 
 Two limits worth knowing:
 
 - **A key the dataclass does not declare is dropped**, not an error. An additive change on the
   producer cannot break a consumer that has not caught up — which is the same tolerance the
-  streaming path has, and for the same reason.
+  streaming path has, and for the same reason. **A key the JSON lacks leaves the field `None`**
+  (or its declared default), as Jackson leaves a Java field null.
 - **A union with more than one non-`None` arm is left as raw JSON.** There is no discriminator in
   the payload to pick an arm with, so the decoder does not guess. Model that as a nested
   dataclass with a `kind` field rather than as a union if a handler needs it typed.
 
-`model_id` and `model_name` arrive under Java's spelling — `modelId`, `modelName` — because its
-local event handler deserialises the payload straight into the event class and refuses one
-without them. They are read back under this port's names, so a payload written by *either* side
-rebuilds a complete event here.
+`model_id` and `model_name` come first, as `modelId` and `modelName`, because Java's local event
+handler deserialises the payload straight into the event class and refuses one without them.
+`modelName` is not read back: it comes off the class line, as Java's comes off `Wallet.class`.
 
 Streaming-only consumers do not go through any of this: they read the JSON off the broker.
 

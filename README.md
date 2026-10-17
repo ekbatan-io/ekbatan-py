@@ -115,7 +115,7 @@ database.
 |---|---|
 | **models and entities** | frozen dataclasses; a change is `evolve(..., emit=...)` |
 | **the plan and the executor** | one transaction per shard, rows then events, retry on a lost race |
-| **the outbox** | one table, canonical JSON, and a seam to replace the whole store |
+| **the outbox** | one table, the JSON Java writes, and a seam to replace the whole store |
 | **repositories** | field-name mapping, optimistic locking, soft deletion, batches as one statement |
 | **sharding** | shard bits in the id, per-shard commits, cross-shard refused by default |
 | **keyed locks** | in-process, Postgres advisory, MySQL and MariaDB `GET_LOCK`; reentrant, watchdogged |

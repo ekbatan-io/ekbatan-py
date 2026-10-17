@@ -1,49 +1,49 @@
-PROBE json.event: {"amount":"10.50","at":"2025-01-01T00:00:00.000000Z","atMicros":"2025-01-01T00:00:00.123456Z","atMillis":"2025-01-01T00:00:00.120000Z","atOffset":"2025-01-01T00:00:00.000000Z","attrs":{"10":3,"9":4,"a":2,"z":1},"clock":"10:15:30","count":1152921504606846976,"day":"2025-01-31","flag":true,"huge":"123456789012345678901234567890.123456789","localAt":"2025-01-01T10:00:00.000000Z","missing":null,"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","negative":"-0.5","nested":{"amount":"5.00","currency":"EUR"},"note":"café € </tag> \"q\" \\ \n \u0001","ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","ratio":"0.1","raw":"0102ff","sci":"1000","state":"OPENED","tags":["b","a"],"tiny":"0.0000001","zero":"0.00"}
-PROBE json.event.pythonDefaultNames: {"amount":"10.50","at_micros":"2025-01-01T00:00:00.123456Z","modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","new_balance":"20.00","owner_id":"f47ac10b-58cc-4372-a567-0e02b2c3d479"}
-PROBE json.event.keyOrder: [amount, at, atMicros, atMillis, atOffset, attrs, clock, count, day, flag, huge, localAt, missing, modelId, modelName, negative, nested, note, ownerId, ratio, raw, sci, state, tags, tiny, zero]
-PROBE json.field.amount: {"v":"10.50"}
-PROBE json.field.at: {"v":"2025-01-01T00:00:00.000000Z"}
-PROBE json.field.atMicros: {"v":"2025-01-01T00:00:00.123456Z"}
-PROBE json.field.atMillis: {"v":"2025-01-01T00:00:00.120000Z"}
-PROBE json.field.atOffset: {"v":"2025-01-01T00:00:00.000000Z"}
-PROBE json.field.attrs: {"v":{"10":3,"9":4,"a":2,"z":1}}
-PROBE json.field.clock: {"v":"10:15:30"}
-PROBE json.field.count: {"v":1152921504606846976}
-PROBE json.field.day: {"v":"2025-01-31"}
-PROBE json.field.flag: {"v":true}
-PROBE json.field.huge: {"v":"123456789012345678901234567890.123456789"}
-PROBE json.field.localAt: {"v":"2025-01-01T10:00:00.000000Z"}
-PROBE json.field.missing: {"v":null}
+PROBE json.event: {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","amount":10.50,"zero":0.00,"sci":1E+3,"tiny":1E-7,"huge":123456789012345678901234567890.123456789,"negative":-0.5,"ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","at":"2025-01-01T00:00:00Z","atMicros":"2025-01-01T00:00:00.123456Z","atMillis":"2025-01-01T00:00:00.120Z","atOffset":"2025-01-01T02:00:00+02:00","localAt":"2025-01-01T10:00:00","day":"2025-01-31","clock":"10:15:30","state":"OPENED","note":"café € </tag> \"q\" \\ \n \u0001","missing":null,"count":1152921504606846976,"ratio":0.1,"flag":true,"tags":["b","a"],"attrs":{"z":1,"a":2,"10":3,"9":4},"nested":{"amount":5.00,"currency":"EUR"},"raw":"AQL/"}
+PROBE json.event.pythonDefaultNames: {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","amount":10.50,"ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","atMicros":"2025-01-01T00:00:00.123456Z","newBalance":20.00}
+PROBE json.event.keyOrder: [modelId, modelName, amount, zero, sci, tiny, huge, negative, ownerId, at, atMicros, atMillis, atOffset, localAt, day, clock, state, note, missing, count, ratio, flag, tags, attrs, nested, raw]
 PROBE json.field.modelId: {"v":"01941f29-7c7b-7abc-8042-123456789abc"}
 PROBE json.field.modelName: {"v":"Wallet"}
-PROBE json.field.negative: {"v":"-0.5"}
-PROBE json.field.nested: {"v":{"amount":"5.00","currency":"EUR"}}
-PROBE json.field.note: {"v":"café € </tag> \"q\" \\ \n \u0001"}
+PROBE json.field.amount: {"v":10.50}
+PROBE json.field.zero: {"v":0.00}
+PROBE json.field.sci: {"v":1E+3}
+PROBE json.field.tiny: {"v":1E-7}
+PROBE json.field.huge: {"v":123456789012345678901234567890.123456789}
+PROBE json.field.negative: {"v":-0.5}
 PROBE json.field.ownerId: {"v":"f47ac10b-58cc-4372-a567-0e02b2c3d479"}
-PROBE json.field.ratio: {"v":"0.1"}
-PROBE json.field.raw: {"v":"0102ff"}
-PROBE json.field.sci: {"v":"1000"}
+PROBE json.field.at: {"v":"2025-01-01T00:00:00Z"}
+PROBE json.field.atMicros: {"v":"2025-01-01T00:00:00.123456Z"}
+PROBE json.field.atMillis: {"v":"2025-01-01T00:00:00.120Z"}
+PROBE json.field.atOffset: {"v":"2025-01-01T02:00:00+02:00"}
+PROBE json.field.localAt: {"v":"2025-01-01T10:00:00"}
+PROBE json.field.day: {"v":"2025-01-31"}
+PROBE json.field.clock: {"v":"10:15:30"}
 PROBE json.field.state: {"v":"OPENED"}
+PROBE json.field.note: {"v":"café € </tag> \"q\" \\ \n \u0001"}
+PROBE json.field.missing: {"v":null}
+PROBE json.field.count: {"v":1152921504606846976}
+PROBE json.field.ratio: {"v":0.1}
+PROBE json.field.flag: {"v":true}
 PROBE json.field.tags: {"v":["b","a"]}
-PROBE json.field.tiny: {"v":"0.0000001"}
-PROBE json.field.zero: {"v":"0.00"}
-PROBE json.idsEvent: {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","shard":{"group":1,"member":2},"walletId":"01941f29-7c7b-7abc-8042-123456789abc","walletNumber":"W-1"}
-PROBE json.params: {"amount":"10.50","memo":null,"requestedAt":"2025-01-01T00:00:00.120000Z","walletId":"01941f29-7c7b-7abc-8042-123456789abc"}
-PROBE json.ownRoundTrip: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale 0) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00+00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={10=3, 9=4, a=2, z=1} | nested=5.00 (scale 2) EUR | raw=str:0102ff
-PROBE json.readOtherPort: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.0000001 (scale 7) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=str:AQL/
-PROBE json.readOtherPort.withoutRaw: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.0000001 (scale 7) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=0102ff
+PROBE json.field.attrs: {"v":{"z":1,"a":2,"10":3,"9":4}}
+PROBE json.field.nested: {"v":{"amount":5.00,"currency":"EUR"}}
+PROBE json.field.raw: {"v":"AQL/"}
+PROBE json.idsEvent: {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","walletId":{"id":"01941f29-7c7b-7abc-8042-123456789abc","value":"01941f29-7c7b-7abc-8042-123456789abc"},"walletNumber":{"value":"W-1"},"shard":{"group":1,"member":2}}
+PROBE json.params: {"walletId":"01941f29-7c7b-7abc-8042-123456789abc","amount":10.50,"requestedAt":"2025-01-01T00:00:00.120Z","memo":null}
+PROBE json.ownRoundTrip: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale -3) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T02:00:00+02:00 | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.00 (scale 2) EUR | raw=0102ff
+PROBE json.readOtherPort: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale -3) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T02:00:00+02:00 | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.00 (scale 2) EUR | raw=0102ff
+PROBE json.readOtherPort.withoutRaw: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale -3) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T02:00:00+02:00 | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.00 (scale 2) EUR | raw=0102ff
 PROBE json.readOtherPortDefaultNames: n/a (Java writes only its field names)
 PROBE in.exact: OK modelId=m amount=1.50 (scale 2) note=n (text)
 PROBE in.unknownField: OK modelId=m amount=1.50 (scale 2) note=n (text)
-PROBE in.missingFields: ERR TypeError: SmallEvent.__init__() missing 2 required keyword-only arguments: 'amount' and 'note'
-PROBE in.missingModelId: ERR TypeError: SmallEvent.__init__() missing 1 required keyword-only argument: 'model_id'
+PROBE in.missingFields: OK modelId=m amount=None note=None (None)
+PROBE in.missingModelId: ERR ValidationError: model_id cannot be None or blank: SmallEvent needs the id of the Wallet it is about - pass model_id=str(self.id). The model_id column is what a consumer correla
 PROBE in.missingModelName: OK modelId=m amount=1.50 (scale 2) note=n (text)
 PROBE in.otherModelName: OK Wallet
-PROBE in.amountNumber: OK modelId=m amount=1.5 (scale 1) note=n (text)
-PROBE in.amountHugeNumber: OK modelId=m amount=123456789012345680000000000000 (scale -13) note=n (text)
+PROBE in.amountNumber: OK modelId=m amount=1.50 (scale 2) note=n (text)
+PROBE in.amountHugeNumber: OK modelId=m amount=123456789012345678901234567890.123456789 (scale 9) note=n (text)
 PROBE in.amountInt: OK modelId=m amount=7 (scale 0) note=n (text)
-PROBE in.amountBadString: ERR InvalidOperation: [<class 'decimal.ConversionSyntax'>]
-PROBE in.noteNumber: OK modelId=m amount=1 (scale 0) note=5 (int)
+PROBE in.amountBadString: ERR ValidationError: SmallEvent.amount: cannot read 'abc' from JSON key 'amount' as Decimal: [<class 'decimal.ConversionSyntax'>]
+PROBE in.noteNumber: OK modelId=m amount=1 (scale 0) note=5 (text)
 PROBE in.nullAmount: OK modelId=m amount=None note=n (text)
 PROBE in.duplicateKey: OK modelId=m amount=2 (scale 0) note=n (text)
-PROBE in.snakeCaseKeys: ERR TypeError: SmallEvent.__init__() missing 1 required keyword-only argument: 'note'
+PROBE in.snakeCaseKeys: OK modelId=m amount=1 (scale 0) note=None (None)

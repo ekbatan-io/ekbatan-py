@@ -196,6 +196,21 @@ class JsonParityProbeTest {
             walletNumber = new WalletNumber("W-1");
             shard = ShardIdentifier.of(1, 2);
         }
+
+        // Ekbatan's events carry a @JsonCreator (modelId, modelName, then the fields), which is
+        // what fixes the key order; without one Jackson 3 sorts the keys alphabetically.
+        @JsonCreator
+        IdsEvent(
+                @JsonProperty("modelId") String modelId,
+                @JsonProperty("modelName") String modelName,
+                @JsonProperty("walletId") ShardedId<Wallet> walletId,
+                @JsonProperty("walletNumber") WalletNumber walletNumber,
+                @JsonProperty("shard") ShardIdentifier shard) {
+            super(modelId, Wallet.class);
+            this.walletId = walletId;
+            this.walletNumber = walletNumber;
+            this.shard = shard;
+        }
     }
 
     public static class SmallEvent extends ModelEvent<Wallet> {
@@ -312,6 +327,13 @@ class JsonParityProbeTest {
         } else {
             p("json.readOtherPortDefaultNames", "python_event_snake.json missing");
         }
+
+        // Java's own loss, and the setting that would stop it (EKB-0291, "Noticed in the Java")
+        var bigMapper = tools.jackson.databind.json.JsonMapper.builder()
+                .enable(tools.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                .build();
+        p("json.ownRoundTrip.withBigDecimalForFloats", err(() -> describe(
+                MAPPER.treeToValue((ObjectNode) bigMapper.readTree(text), ProbeEvent.class))));
 
         // input tolerance
         p("in.exact", err(() -> small(readSmall("{\"modelId\":\"m\",\"modelName\":\"Wallet\",\"amount\":\"1.50\",\"note\":\"n\"}"))));

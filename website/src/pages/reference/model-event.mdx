@@ -65,15 +65,18 @@ Name them in the past tense: an event describes something that already happened.
 
 ## Serialisation
 
-The payload is JSON, written with a canonical encoder and read back into the same class from the
-dataclass's own annotations. Nothing extra is needed for that round trip.
+The payload is JSON, the same text, byte for byte, that Java's default Jackson 3 mapper writes
+for the same event, and it is read back into the same class from the dataclass's own
+annotations. Nothing extra is needed for that round trip.
 
-Two rules the encoder keeps, because two ports have to produce byte-identical JSON for the same
-event:
-
-- **Decimals are strings**, at their stored scale. A JSON number is a double, and a balance that
-  round-trips through one is no longer the balance.
-- **Timestamps are zone-less UTC** to the microsecond, and keys are sorted.
+- **Keys are Java's field names**, in declaration order: `{"modelId": ..., "modelName": "Wallet",
+  "amount": 10.00, "newBalance": 110.00}` for `amount` and `new_balance`.
+- **Decimals are JSON numbers**, as `BigDecimal.toString()` writes them (`10.50`, `1E+3`), and
+  are read back as `Decimal` with their scale. MySQL's `JSON` column keeps a fraction as a
+  double, for Java too.
+- **An aware UTC `datetime` is an `Instant`** (`"2025-01-01T00:00:00.120Z"`), a naive one a
+  `LocalDateTime`; `date`, `time`, `timedelta` and `bytes` take Java's forms too. See
+  [Models and entities](/learn/models-and-entities/) for the full table.
 
 ## Attaching one
 

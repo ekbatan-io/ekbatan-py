@@ -471,6 +471,24 @@ the "migrator against Flyway" calls above wherever the two disagree.
 | The `migrations` and `post-apply` names are not kept as aliases | ekbatan-py is unreleased; no shims | - |
 
 
+## JSON, domain model and timestamps (`EKB-0290`-`EKB-0296`)
+
+Parity-fix group J, 2026-10-17, unattended. The user: "i like the thing to be compatible with
+java, so camel case". Ledger: [parity-fix/J-json-domain.md](parity-fix/J-json-domain.md).
+
+| decision | why | what Java does |
+| --- | --- | --- |
+| params and payload JSON is the text Ekbatan's default Jackson 3 mapper (`JsonMapper.builder().build()`) writes: camelCase keys, declaration order, decimals and floats as numbers in Java's `toString` forms, `java.time` forms, base64 bytes | a Java and a Python service share the outbox; measured equal over 50,000 values | the reference |
+| a field name becomes Java's by dropping each `_` before a letter or digit and raising that character (`new_balance` -> `newBalance`); leading and trailing `_` kept; two fields with one JSON name refused | the obvious mapping, and the only one that round-trips | Java's field names are already camelCase |
+| keys in declaration order, never sorted; `modelId`, `modelName` first in a payload | what Jackson writes for a record or a class with a `@JsonCreator` - Ekbatan's events all have one | Jackson 3 sorts the keys of a class with no creator; a dataclass always has one |
+| an aware `datetime` at UTC is written as an `Instant`, at another offset as an `OffsetDateTime`, a naive one as a `LocalDateTime` | Python has one type for the three; the zone it carries is the only signal. Limit: Java's `OffsetDateTime` at `Z` cuts the fraction (`.4Z`), the `Instant` form groups it (`.400Z`) | three types |
+| `Id` / `ShardedId` written as `{"id": ..., "value": ...}`, another `TypedValue` as `{"value": ...}`; read back from that shape or from a bare value | that is what Jackson writes for Java's getters; Java cannot read either back (no creator), so Python reading both is what Java would mean | see "Noticed in the Java" |
+| every JSON number read as a `Decimal` | a double turns `10.50` into `10.5` and cuts long decimals; reading Java's rows exactly | Java reads through a double; see "Noticed in the Java" |
+| MySQL's JSON column keeps a fraction as a double (`50.00` -> `50.0`), measured | the database's, not the port's: Java sends the same text and gets the same | the same |
+| a JSON key missing on read leaves the field `None`, or its declared default | Jackson leaves a Java field null; a dataclass default is the nearest thing to a Java field initialiser | null; a missing primitive is refused (Python has no primitives) |
+| a value that cannot be read raises `ValidationError` naming the class, field and key | Jackson's `InvalidFormatException` names the type and value | |
+| a number or boolean read into a `str` field becomes its text | Jackson coerces it the same way | |
+
 ## Noticed in the Java, not acted on
 
 - **`RedisKeyedLockProvider` does not wrap a Redis failure** (found by parity group L,
@@ -493,4 +511,20 @@ bits from a `ShardedId` with no version guard, while the `Id` branch beside it h
 | **`afterEachMigrateError` runs inside the failed migration's transaction**, which PostgreSQL has aborted, so the callback fails and its error replaces the migration's | read (`DbMigrate.doMigrateGroup`, `DefaultCallbackExecutor`) | runs it after the rollback |
 | **A repeatable migration with a description over 200 characters loses its row**: stored cut to 197 + `...`, matched uncut, so the next migrate finds a missing row and a file never applied | run earlier (MIGRATOR-LEDGER H07), read again (`MigrationInfoServiceImpl`) | matches by what the history holds |
 | **An unknown placeholder in V2 fails after V1 is applied**: each migration is parsed just before it runs | read (`ParserSqlScript`, `DbMigrate.applyMigrations`) | every pending file is parsed first; nothing is applied |
+
+Found by parity-fix group J (`EKB-0290`), run in a throwaway copy of the Java repo:
+
+- **Decimals lose digits on the way back in.** `JSONBObjectNodeConverter` (and the three other
+  converters in `persistence/jooq/converter/`) read the stored text with a plain `ObjectMapper`,
+  so every JSON number with a fraction becomes a `double`: `10.50` comes back `10.5`, and
+  `123456789012345678901234567890.123456789` comes back `123456789012345680000000000000`. That
+  is what `EventHandlingJob` hands a handler. The fix is one setting on those mappers:
+  `JsonMapper.builder().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build()`.
+  Measured: with it, Java's own round trip keeps every digit and scale (`json.ownRoundTrip.withBigDecimalForFloats`
+  in `parity-probes/G-domain-model/json.java.out`). `JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES`
+  is already off by default in Jackson 3.
+- **Typed ids reach JSON as `{"id": ..., "value": ...}`.** `TypedValue`, `Id` and `ShardedId`
+  have no `@JsonValue`, so Jackson writes their getters, and no `@JsonCreator`, so Jackson cannot
+  read them back at all. `@JsonValue` on `getValue()` (and a creator) would make them the bare
+  uuid a consumer can join on. This port writes Java's current shape.
 

@@ -400,9 +400,8 @@ def engine_for(config: DataSourceConfig) -> Engine:
         "echo": config.echo,
         "future": True,
         "connect_args": dict(config.data_source_properties),
-        # Canonical form is not a preference: decimals as strings at their stored scale,
-        # timestamps zone-less UTC to the microsecond, keys sorted. Two ports must produce
-        # byte-identical JSON for the same event or a consumer cannot join them.
+        # The JSON Java's Ekbatan writes, byte for byte (Java's field names, decimals as
+        # numbers), and read back with every number as a Decimal. See ekbatan._json.
         "json_serializer": dumps,
         "json_deserializer": loads,
     }

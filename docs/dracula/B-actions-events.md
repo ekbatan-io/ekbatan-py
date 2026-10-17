@@ -36,7 +36,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. The check could treat two `SystemClock`s as equal (or `SystemClock` could be a single shared object), which keeps the protection and removes the trap.
 - **Surprise:** high
 
-### Event payloads and action params are written with Python field names (`new_balance`), not Java's (`newBalance`)
+### ~~Event payloads and action params are written with Python field names (`new_balance`), not Java's (`newBalance`)~~ fixed (`EKB-0290`)
+- **Fixed** (`EKB-0290`): written as Java's Jackson writes them - `newBalance`, declaration order, decimals as numbers - byte for byte.
 - **What:** the outbox JSON uses the dataclass field names as they are, so snake_case, with only
   `modelId`/`modelName` in camelCase. Java's Jackson writes `newBalance`. A Java consumer or Java
   handler reading a Python-written row (the ports claim they share one table) will not find its

@@ -94,27 +94,27 @@ the text is not measured here.
 | 61 | Typed values compared with `<` | not `Comparable` | allowed | read: compile-time in Java (Dracula 65) | typed.compare |
 | 62 | Shard coordinates outside 0..255 / 0..63 refused; 255/63 accepted; `DEFAULT` is (0, 0) | yes | yes | same | shard.of.*, shard.default |
 | 63 | A shard prints as | `ShardIdentifier(1, 2)` | `1:2` | differs | shard.toString |
-| 64 | Event and params JSON key names | Java field names | Python field names: `new_balance` | differs | json.event.pythonDefaultNames |
-| 65 | JSON key order | declaration order; map entries as inserted | sorted, maps too | differs | json.event.keyOrder, json.event |
-| 66 | Decimal in JSON | number, as `toString`: `10.50`, `1E+3`, `1E-7` | string, plain: `"10.50"`, `"1000"`, `"0.0000001"` | differs | json.field.amount, .sci, .tiny, .huge |
-| 67 | `Instant` / aware datetime in JSON | shortest: `...00Z`, `...00.120Z` | always 6 digits: `...00.000000Z`, `...00.120000Z` | differs | json.field.at, .atMillis (.atMicros same) |
-| 68 | Time with an offset in JSON | offset kept: `02:00:00+02:00` | moved to UTC: `00:00:00.000000Z` | differs | json.field.atOffset |
-| 69 | Time with no zone in JSON | `2025-01-01T10:00:00` | `2025-01-01T10:00:00.000000Z` (taken as UTC) | differs | json.field.localAt |
+| 64 | Event and params JSON key names | Java field names | Java field names: `newBalance` | same (fixed in EKB-0290) | json.event.pythonDefaultNames |
+| 65 | JSON key order | declaration order; map entries as inserted | declaration order; map entries as inserted | same (fixed in EKB-0290) | json.event.keyOrder, json.event |
+| 66 | Decimal in JSON | number, as `toString`: `10.50`, `1E+3`, `1E-7` | number, as `toString`: `10.50`, `1E+3`, `1E-7` | same (fixed in EKB-0290) | json.field.amount, .sci, .tiny, .huge |
+| 67 | `Instant` / aware datetime in JSON | shortest: `...00Z`, `...00.120Z` | shortest: `...00Z`, `...00.120Z` | same (fixed in EKB-0290) | json.field.at, .atMillis (.atMicros same) |
+| 68 | Time with an offset in JSON | offset kept: `02:00:00+02:00` | offset kept: `02:00:00+02:00` | same (fixed in EKB-0290); at offset zero Python writes the `Instant` form (limit, DECISIONS) | json.field.atOffset |
+| 69 | Time with no zone in JSON | `2025-01-01T10:00:00` | `2025-01-01T10:00:00` | same (fixed in EKB-0290) | json.field.localAt |
 | 70 | Date and time-of-day in JSON | `"2025-01-31"`, `"10:15:30"` | same | same | json.field.day, json.field.clock |
 | 71 | UUID, enum (by name), long, boolean, null, list, nested object keys, text escaping (`\u0001`, `\"`, `é` raw, `</` not escaped) | same text | same text | same | json.field.ownerId, .state, .count, .flag, .missing, .tags, .note, .nested |
-| 72 | Float in JSON | number `0.1` | string `"0.1"` | differs | json.field.ratio |
-| 73 | Bytes in JSON | base64 `"AQL/"` | hex `"0102ff"` | differs | json.field.raw |
-| 74 | Typed id / typed value inside an event | `{"id":..,"value":..}` / `{"value":"W-1"}` | bare `"..."` / `"W-1"` | differs | json.idsEvent |
+| 72 | Float in JSON | number `0.1` | number `0.1` | same (fixed in EKB-0290) | json.field.ratio |
+| 73 | Bytes in JSON | base64 `"AQL/"` | base64 `"AQL/"` | same (fixed in EKB-0290) | json.field.raw |
+| 74 | Typed id / typed value inside an event | `{"id":..,"value":..}` / `{"value":"W-1"}` | `{"id":..,"value":..}` / `{"value":"W-1"}` | same (fixed in EKB-0290) | json.idsEvent |
 | 75 | `ShardIdentifier` inside an event; `modelId` and `modelName` in the payload | `{"group":1,"member":2}`; both present | same | same | json.idsEvent, json.field.modelId, json.field.modelName |
-| 76 | Action params JSON | `{"walletId":..,"amount":10.50,"requestedAt":"...120Z","memo":null}` | `{"amount":"10.50","memo":null,"requestedAt":"...120000Z","walletId":..}` | differs | json.params |
-| 77 | An event read back by its own port | decimals lose scale and digits (`10.5`, huge cut); date, time, bytes come back typed | decimals exact; date, time, bytes come back as text; zone-less time comes back with a zone | differs | json.ownRoundTrip |
-| 78 | An event read by the other port | Python's: all exact, but its hex bytes refused | Java's: decimals lose scale and digits, as in Java; date/time/bytes as text | differs | json.readOtherPort, json.readOtherPort.withoutRaw |
+| 76 | Action params JSON | `{"walletId":..,"amount":10.50,"requestedAt":"...120Z","memo":null}` | `{"walletId":..,"amount":10.50,"requestedAt":"...120Z","memo":null}` | same (fixed in EKB-0290) | json.params |
+| 77 | An event read back by its own port | decimals lose scale and digits (`10.5`, huge cut); date, time, bytes come back typed | decimals exact; date, time, bytes, zone-less time come back typed | date/time/bytes same (fixed in EKB-0290); Java's decimal loss is a Java bug (DECISIONS, "Noticed in the Java") | json.ownRoundTrip |
+| 78 | An event read by the other port | Python's: all exact, but its hex bytes refused | Java's: all exact, typed | Python same as Java reading its own (fixed in EKB-0290); Java's decimal loss is a Java bug | json.readOtherPort, json.readOtherPort.withoutRaw |
 | 79 | Unknown key on read | ignored | ignored | same | in.unknownField |
-| 80 | Missing key on read | field left null | `TypeError: missing ... arguments` | differs | in.missingFields, in.snakeCaseKeys |
+| 80 | Missing key on read | field left null | field left `None` (or its default) | same (fixed in EKB-0290) | in.missingFields, in.snakeCaseKeys |
 | 81 | Missing `modelId` on read refused; `modelName` missing or wrong is ignored (taken from the class) | yes | yes | same | in.missingModelId, in.missingModelName, in.otherModelName |
-| 82 | Decimal sent as a JSON number: scale and digits lost (`1.50` -> `1.5`, huge cut); integer kept | yes | yes | same | in.amountNumber, in.amountHugeNumber, in.amountInt |
+| 82 | Decimal sent as a JSON number: scale and digits lost (`1.50` -> `1.5`, huge cut); integer kept | yes | exact: `1.50`, every digit kept | Java loses digits (Java bug, DECISIONS); Python exact since EKB-0290 | in.amountNumber, in.amountHugeNumber, in.amountInt |
 | 83 | Bad decimal text refused; explicit null accepted; duplicate key: last wins | yes | yes | same | in.amountBadString, in.nullAmount, in.duplicateKey |
-| 84 | A number sent for a text field | turned into text `"5"` | kept as int `5` | differs | in.noteNumber |
+| 84 | A number sent for a text field | turned into text `"5"` | turned into text `"5"` | same (fixed in EKB-0290) | in.noteNumber |
 | 85 | System clock: microseconds (this Mac), UTC, near the wall clock | yes | yes | same | system.* |
 | 86 | Virtual clock starts in real time; advancing a running clock refused | yes | yes | same | virtual.default.*, virtual.resumeFrom.advance |
 | 87 | `pauseAt`: frozen, two reads equal; advance 1.5 s, 1 us, -10 s; offset input stored as the instant | yes | yes | same | virtual.pauseAt.*, virtual.advance* |

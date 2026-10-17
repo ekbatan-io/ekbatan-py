@@ -66,14 +66,15 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
     # The scale is the column's, not the caller's: the wallet came back from a
     # DECIMAL(19,4), so its balance carries four places and the sum does too.
     #
-    # `modelId` and `modelName` are in the payload as well as in their own columns, under Java's
-    # spelling. Java's local event handler deserialises this payload into the handler's event
-    # class, and every event class there refuses one without them.
+    # `modelId` and `modelName` are in the payload as well as in their own columns, as Java
+    # writes them: Java's local event handler deserialises this payload into the handler's event
+    # class, and every event class there refuses one without them. The keys are Java's field
+    # names and the decimals are JSON numbers, as Jackson writes them.
     assert deposited["payload"] == {
-        "amount": "50.00",
-        "new_balance": "150.0000",
         "modelId": str(wallet.id),
         "modelName": "Wallet",
+        "amount": Decimal("50.00"),
+        "newBalance": Decimal("150.0000"),
     }
 
 
@@ -220,9 +221,10 @@ def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
     )
 
     deposited = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
+    # A typed id is written as Jackson writes Java's ShardedId: through its two getters.
     assert deposited["action_params"] == {
-        "wallet_id": str(wallet.id),
-        "amount": "1.00",
+        "walletId": {"id": str(wallet.id), "value": str(wallet.id)},
+        "amount": Decimal("1.00"),
         "recipient": "ada@example.com",
     }, "a consumer can read what the event deliberately does not carry"
 
@@ -254,7 +256,7 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
     assert len({r["action_id"] for r in deposits}) == 2, "two invocations are two units of work"
     # By value, not by position: the clock is frozen for these tests, so both invocations stamp
     # the same event_date and even the across-invocation order is a tie.
-    assert {r["payload"]["amount"] for r in deposits} == {"1.00", "2.00"}
+    assert {r["payload"]["amount"] for r in deposits} == {Decimal("1.00"), Decimal("2.00")}
 
 
 def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, clock):
@@ -271,3 +273,26 @@ def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, cloc
         "an event becomes true when its transaction commits, not when the object was built"
     )
     assert row["started_date"].tzinfo is None
+
+
+def test_decimals_are_json_numbers_and_keep_their_scale_except_on_mysql(
+    executor, wallets, outbox, registry
+):
+    """Java writes a BigDecimal as a JSON number, so this port does too, and reads every number
+    back as a Decimal - nothing is lost on the way in.
+
+    MySQL is the exception, and it is the database's, not the port's: its JSON type keeps a
+    number with a fraction as a double, so ``50.00`` is stored as ``50.0`` (and digits past the
+    17th would go). Java sends the same text, so a Java service sees the same thing.
+    """
+    wallet = a_wallet(executor, "100.00")
+    run(
+        executor,
+        DepositMoneyAction(wallets, executor.clock),
+        DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"),
+    )
+    row = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
+    amount, param = row["payload"]["amount"], row["action_params"]["amount"]
+    assert type(amount) is Decimal and type(param) is Decimal
+    expected = "50.0" if registry.default.primary.dialect.name == "mysql" else "50.00"
+    assert (str(amount), str(param)) == (expected, expected)

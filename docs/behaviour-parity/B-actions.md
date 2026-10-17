@@ -23,8 +23,8 @@ effect on the database.
 | 5 | `delivered` is false on insert | false | false | same | s1.row.delivered |
 | 6 | `started <= completion`, `event_date = completion`, stored as UTC | yes | yes | same | s1.row.*, s5.row.* |
 | 7 | Timestamps come from the executor's clock, microseconds, no zone | `10:00:00.123456` x3 | same | same | s32.* |
-| 8 | `action_params` JSON shape | `{"countryCode": "DE"}` | `{"country_code": "DE"}` | differs | s1.row.action_params, s2.action_params |
-| 9 | Event `payload` JSON shape | camelCase, decimals as numbers | snake_case, decimals as strings | differs | s1.row.payload_minus_ids, s2.payload_minus_ids |
+| 8 | `action_params` JSON shape | `{"countryCode": "DE"}` | `{"countryCode": "DE"}` | same (fixed in EKB-0290) | s1.row.action_params, s2.action_params |
+| 9 | Event `payload` JSON shape | camelCase, decimals as numbers | camelCase, decimals as numbers | same (fixed in EKB-0290) | s1.row.payload_minus_ids, s2.payload_minus_ids |
 | 10 | Update: caller gets the next version; row moves to version+1; `updated_date` untouched | yes | yes | same | s2.* |
 | 11 | Events composed before staging all land, in order, under one `action_id` | 2 rows | 2 rows | same | s3.* |
 | 12 | Update with no new event still writes one row with the event columns empty | yes | yes | same | s4.outbox_rows, s4.event_type, s4.model_type |

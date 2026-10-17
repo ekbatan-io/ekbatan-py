@@ -5,9 +5,8 @@ Path measured is the real one: canonical(event.payload()) is what the outbox han
 and the engine's json_serializer is ekbatan._json.dumps. Reading back is _json.loads (the
 engine's json_deserializer) then _json.decode, as the event dispatcher does.
 
-The main event is declared with Java's camelCase field names, so the JSON *format* can be
-compared byte for byte without the known naming difference (Dracula 1) in the way; the same
-event with Python's usual snake_case names is printed too."""
+The events are declared with Python's usual snake_case field names; since EKB-0290 they are
+written under Java's camelCase names, so the text can be compared with Java's byte for byte."""
 
 from __future__ import annotations
 
@@ -67,12 +66,12 @@ class ProbeEvent(ModelEvent["Wallet"]):
     tiny: Decimal | None = Decimal("0.0000001")
     huge: Decimal | None = Decimal("123456789012345678901234567890.123456789")
     negative: Decimal | None = Decimal("-0.5")
-    ownerId: uuid.UUID | None = OWNER  # noqa: N815
+    owner_id: uuid.UUID | None = OWNER
     at: datetime | None = datetime(2025, 1, 1, tzinfo=UTC)
-    atMicros: datetime | None = datetime(2025, 1, 1, 0, 0, 0, 123456, tzinfo=UTC)  # noqa: N815
-    atMillis: datetime | None = datetime(2025, 1, 1, 0, 0, 0, 120000, tzinfo=UTC)  # noqa: N815
-    atOffset: datetime | None = datetime(2025, 1, 1, 2, 0, tzinfo=timezone(timedelta(hours=2)))  # noqa: N815
-    localAt: datetime | None = datetime(2025, 1, 1, 10, 0)  # noqa: N815
+    at_micros: datetime | None = datetime(2025, 1, 1, 0, 0, 0, 123456, tzinfo=UTC)
+    at_millis: datetime | None = datetime(2025, 1, 1, 0, 0, 0, 120000, tzinfo=UTC)
+    at_offset: datetime | None = datetime(2025, 1, 1, 2, 0, tzinfo=timezone(timedelta(hours=2)))
+    local_at: datetime | None = datetime(2025, 1, 1, 10, 0)
     day: date | None = date(2025, 1, 31)
     clock: time | None = time(10, 15, 30)
     state: WalletState | None = WalletState.OPENED
@@ -97,8 +96,8 @@ class ProbeEventSnake(ModelEvent["Wallet"]):
 
 @dataclass(frozen=True, kw_only=True)
 class IdsEvent(ModelEvent["Wallet"]):
-    walletId: ShardedId = ShardedId.of(MODEL)  # noqa: N815
-    walletNumber: WalletNumber = WalletNumber("W-1")  # noqa: N815
+    wallet_id: ShardedId = ShardedId.of(MODEL)
+    wallet_number: WalletNumber = WalletNumber("W-1")
     shard: ShardIdentifier = ShardIdentifier(1, 2)
 
 
@@ -110,9 +109,9 @@ class SmallEvent(ModelEvent["Wallet"]):
 
 @dataclass(frozen=True)
 class DepositParams:
-    walletId: uuid.UUID  # noqa: N815
+    wallet_id: uuid.UUID
     amount: Decimal
-    requestedAt: datetime  # noqa: N815
+    requested_at: datetime
     memo: str | None
 
 
@@ -134,9 +133,8 @@ def inst(d):
         return "None"
     if not isinstance(d, datetime):
         return f"{type(d).__name__}:{d}"
-    if d.tzinfo is not None:
-        d = d.astimezone(UTC).replace(tzinfo=None)
-    return d.isoformat() + "Z"
+    # As Java prints an Instant.
+    return canonical(d if d.tzinfo is not None else d.replace(tzinfo=UTC))
 
 
 def plain(v, kind):
@@ -145,6 +143,13 @@ def plain(v, kind):
     if not isinstance(v, kind):
         return f"{type(v).__name__}:{v}"
     return v.isoformat()
+
+
+def local(d):
+    """As Java prints a LocalDateTime: seconds left off when they and the fraction are zero."""
+    if not isinstance(d, datetime) or d.tzinfo is not None:
+        return f"{type(d).__name__}:{d}"
+    return d.strftime("%Y-%m-%dT%H:%M") if d.second == 0 and d.microsecond == 0 else canonical(d)
 
 
 def describe(e):
@@ -157,12 +162,12 @@ def describe(e):
         f"tiny={dec(e.tiny)}",
         f"huge={dec(e.huge)}",
         f"negative={dec(e.negative)}",
-        f"ownerId={e.ownerId}",
+        f"ownerId={e.owner_id}",
         f"at={inst(e.at)}",
-        f"atMicros={inst(e.atMicros)}",
-        f"atMillis={inst(e.atMillis)}",
-        f"atOffset={inst(e.atOffset)}",
-        f"localAt={plain(e.localAt, datetime)}",
+        f"atMicros={inst(e.at_micros)}",
+        f"atMillis={inst(e.at_millis)}",
+        f"atOffset={inst(e.at_offset)}",
+        f"localAt={local(e.local_at)}",
         f"day={plain(e.day, date)}",
         f"clock={plain(e.clock, time)}",
         f"state={e.state.name if isinstance(e.state, Enum) else e.state}",

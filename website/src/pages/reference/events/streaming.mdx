@@ -330,8 +330,8 @@ else's.
 ### Payload encoding
 
 The `payload` column holds JSON, which the SMT re-encodes against the per-`event_type` schema you
-configure. What this port writes into that column is what the Java port writes — same canonical
-serialiser, same key order, decimals as strings — so a schema written for one producer encodes
+configure. What this port writes into that column is what the Java port writes — the same text, byte for
+byte: Java's field names, declaration order, decimals as JSON numbers — so a schema written for one producer encodes
 the other's rows without change.
 
 The rule is that **the schema decides the type**, and a value that does not fit **fails, naming

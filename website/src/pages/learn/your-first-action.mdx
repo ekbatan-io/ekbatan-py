@@ -201,13 +201,13 @@ LIMIT 5;
 ```
 
 One row, with `event_type = 'MoneyDepositedEvent'`, `model_type = 'Wallet'` and a payload of
-`{"amount": "10.00", "new_balance": "..."}`. The `wallets` row shows the new balance and
+`{"modelId": "...", "modelName": "Wallet", "amount": 10.00, "newBalance": ...}`. The `wallets` row shows the new balance and
 `version + 1`. Both changed inside **one** transaction — see
 [`events`](/reference/tables/events/) for what every column means.
 
-Decimals are strings in that payload, and deliberately: JSON numbers are doubles, and a balance
-that round-trips through one is no longer the balance. A Java service reading this row gets the
-same string.
+That is the JSON a Java service writes for the same event, byte for byte: Java's field names,
+and decimals as JSON numbers. This port reads every number back as a `Decimal`, so the scale
+survives.
 
 ## What just happened
 
