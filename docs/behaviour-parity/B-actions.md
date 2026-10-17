@@ -28,7 +28,7 @@ effect on the database.
 | 10 | Update: caller gets the next version; row moves to version+1; `updated_date` untouched | yes | yes | same | s2.* |
 | 11 | Events composed before staging all land, in order, under one `action_id` | 2 rows | 2 rows | same | s3.* |
 | 12 | Update with no new event still writes one row with the event columns empty | yes | yes | same | s4.outbox_rows, s4.event_type, s4.model_type |
-| 13 | How an empty `payload` is stored (no-event row) | SQL `NULL` | JSON `null` | differs | s4.payload*, s5.row.payload* |
+| 13 | How an empty `payload` is stored (no-event row) | SQL `NULL` | SQL `NULL` | same (fixed in EKB-0291) | s4.payload*, s5.row.payload* |
 | 14 | Empty plan: one row on the default shard, params `{}`, returns null | yes | yes | same | s5.* |
 | 15 | Principal reaches `perform` (null allowed) and is not stored anywhere | yes | yes | same | s1.principal_seen, s40.* |
 | 16 | `perform` throws: the same exception object reaches the caller, nothing written, no retry | yes | yes | same | s6.* |
@@ -96,7 +96,8 @@ Most surprising first.
   inside an open transaction). Cost: small in code, but it changes Dracula 44 for every caller.
 - **Surprise:** high.
 
-### 8, 9. `action_params` and `payload` JSON use Python field names and decimals as text (Dracula 1)
+### 8, 9. ~~`action_params` and `payload` JSON use Python field names and decimals as text (Dracula 1)~~ fixed in `EKB-0290`
+- **Fixed:** both are now the text Java's Jackson writes; the probe lines are identical.
 - **What:** Java writes `{"countryCode": "DE"}` and `{"initialBalance": 10, "newBalance": 15.0000}`.
   Python writes `{"country_code": "DE"}` and `{"initial_balance": "10", "new_balance": "15.0000"}`.
   `modelId` / `modelName` match. A Java reader of a Python row does not find its fields.
@@ -105,7 +106,8 @@ Most surprising first.
 - **Could match?** yes: camelCase keys and numbers on write, reversed on read. Changes every stored row.
 - **Surprise:** high.
 
-### 13. A row with no event stores JSON `null` in `payload`, not SQL `NULL` (new)
+### 13. ~~A row with no event stores JSON `null` in `payload`, not SQL `NULL` (new)~~ fixed in `EKB-0291`
+- **Fixed:** `json_column()` stores `None` as SQL `NULL`, for the notifications table too; tested on all four dialects.
 - **What:** for the no-event row (empty plan, or an update with no event) Java leaves `payload`
   as SQL `NULL`. Python stores the JSON value `null`: `payload IS NULL` is false, and
   `jsonb_typeof(payload)` is `'null'`. Python reads it back as `None`, so Python is consistent with

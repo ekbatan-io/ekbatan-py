@@ -6,10 +6,10 @@ PROBE s1.outbox_global: 1
 PROBE s1.outbox_mexico: 0
 PROBE s1.row.namespace: parity.actions
 PROBE s1.row.action_name: CreateAction
-PROBE s1.row.action_params: {"country_code": "DE"}
+PROBE s1.row.action_params: {"countryCode": "DE"}
 PROBE s1.row.model_type: Wallet
 PROBE s1.row.event_type: WalletCreatedEvent
-PROBE s1.row.payload_minus_ids: {"currency": "EUR", "modelName": "Wallet", "initial_balance": "10"}
+PROBE s1.row.payload_minus_ids: {"currency": "EUR", "modelName": "Wallet", "initialBalance": 10}
 PROBE s1.row.delivered: false
 PROBE s1.row.id_uuid_version: 4
 PROBE s1.row.action_id_uuid_version: 4
@@ -29,15 +29,15 @@ PROBE s2.db_balance: 15.0000
 PROBE s2.updated_date_unchanged: true
 PROBE s2.outbox_rows: 1
 PROBE s2.event_type: WalletMoneyDepositedEvent
-PROBE s2.payload_minus_ids: {"amount": "5", "modelName": "Wallet", "new_balance": "15.0000"}
-PROBE s2.action_params: {"wallet_id": "01a14b03-b479-7738-8000-e1708edb3c67"}
+PROBE s2.payload_minus_ids: {"amount": 5, "modelName": "Wallet", "newBalance": 15.0000}
+PROBE s2.action_params: {"walletId": "01a14b4d-7494-7d8b-8000-cf2839fef5b7"}
 PROBE s3.event_types_in_insert_order: [WalletCreatedEvent, WalletMoneyDepositedEvent]
 PROBE s3.db_version: 1
 PROBE s3.same_action_id: true
 PROBE s4.outbox_rows: 1
 PROBE s4.event_type: null
-PROBE s4.payload: JSON null
-PROBE s4.payload_sql_null: false
+PROBE s4.payload: null
+PROBE s4.payload_sql_null: true
 PROBE s4.model_type: null
 PROBE s4.result_version: 2
 PROBE s4.db_version: 2
@@ -49,7 +49,7 @@ PROBE s5.row.action_name: NothingAction
 PROBE s5.row.action_params: {}
 PROBE s5.row.model_type: null
 PROBE s5.row.event_type: null
-PROBE s5.row.payload_minus_ids: JSON null
+PROBE s5.row.payload_minus_ids: null
 PROBE s5.row.delivered: false
 PROBE s5.row.id_uuid_version: 4
 PROBE s5.row.action_id_uuid_version: 4
@@ -57,7 +57,7 @@ PROBE s5.row.started_le_completion: true
 PROBE s5.row.event_date_eq_completion: true
 PROBE s5.row.started_is_utc_now: true
 PROBE s5.row.model_id_null: true
-PROBE s5.row.payload_sql_null: false
+PROBE s5.row.payload_sql_null: true
 PROBE s6.caller_exception: RuntimeError
 PROBE s6.same_instance: true
 PROBE s6.attempts: 1

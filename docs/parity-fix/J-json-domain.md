@@ -13,7 +13,7 @@ The user, 2026-10-17: "i like the thing to be compatible with java, so camel cas
 | 8 | Decimals read back from JSON | numbers parsed as `Decimal`; Java's loss recorded for Java | done (Java bug noted) | `EKB-0290` | `test_json_numbers_are_read_as_decimals_so_no_digit_is_lost`; `test_outbox.py::test_decimals_are_json_numbers_and_keep_their_scale_except_on_mysql` on all 4 dialects; probe `json.ownRoundTrip` (Python) equals Java's `json.ownRoundTrip.withBigDecimalForFloats` |
 | 9 | Dates, times, bytes read back as text | restored to the declared type | done | `EKB-0290` | `test_an_event_java_wrote_reads_back_as_its_declared_types`, `test_a_round_trip_restores_dates_times_bytes_and_durations`; `json_formats_probe.py`: 50,009 of Java's values read back exactly |
 | 10 | Timestamps read back without a zone | aware UTC everywhere, as `Instant`; storage unchanged | todo | | |
-| 21 | No-event row stores JSON `null` | SQL `NULL` in every framework JSON column | todo | | |
+| 21 | No-event row stores JSON `null` | SQL `NULL` in every framework JSON column (`json_column()` with `none_as_null`) | done | `EKB-0291` | `test_outbox.py::test_the_sentinels_payload_is_sql_null_not_json_null` fails on the old code on all 4 dialects, passes on the new; B probe `s4.payload_sql_null`, `s5.row.payload_sql_null`: `true`, as Java (and rows 8, 9: `s1.row.action_params`, `s1.row.payload_minus_ids`, `s2.payload_minus_ids` identical to Java's) |
 | 24 | Never-set field raises `TypeError` | "`<field>` cannot be null" from a builder; JSON leaves it null | todo | | |
 | 25 | Random ids sort differently | Java's signed `UUID.compareTo` | todo | | |
 | 26 | Version never set defaults to 1 | refused: "version cannot be null" | todo | | |

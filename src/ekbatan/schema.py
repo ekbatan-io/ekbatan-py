@@ -102,10 +102,13 @@ def json_column() -> JSON:
     Not text holding JSON. The column type is part of what a consumer binds to, and jsonb is
     queryable where a text column is a string somebody has to parse first. The engine is given
     this library's serialiser, so what lands in it is the text Java's Ekbatan writes.
+
+    ``None`` is SQL ``NULL``, as Java leaves it - not the JSON value ``null``, which reads back as
+    ``None`` just the same and which a consumer's ``WHERE payload IS NULL`` does not find.
     """
     from sqlalchemy.dialects.postgresql import JSONB
 
-    return JSON().with_variant(JSONB(), "postgresql")
+    return JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
 
 
 def outbox_table(metadata: MetaData, *, name: str = "events", schema: str | None = None) -> Table:
