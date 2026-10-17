@@ -103,7 +103,7 @@ whatever is decided about the rest.
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
 | 43 | ~~Timestamps are stored without a time zone, `clock.now()` has one: comparing them raises `TypeError`~~ **fixed** (`EKB-0294`): every timestamp the framework hands back is aware UTC, as Java's `Instant`; the stored values are unchanged, so Java reads them as before | choice | partly | H (re-checked by run) | A1 |
-| 44 | A transaction inside a transaction joins the outer one; Java's opens a second | choice | yes | H | A3 |
+| 44 | ~~A transaction inside a transaction joins the outer one; Java's opens a second~~ **fixed** (`EKB-0301`): a nested block opens a second transaction on a second connection, as Java's; an action run inside the caller's transaction commits on its own | choice | yes | H | A3 |
 | 45 | A model names its builder as a type argument, in a different order from Java; leaving it out fails only on `copy()` | forced | partly | H | A4 |
 | 46 | Built-in reads see the open transaction's uncommitted rows | choice | yes | M | A7 |
 | 47 | A repository's key type is the typed id, not the raw UUID | choice | yes | M | A6 |

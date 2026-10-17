@@ -144,17 +144,64 @@ def test_a_rolled_back_transaction_leaves_nothing_behind(manager, registry):
         tx.execute(text(f"drop table {table}"))
 
 
-def test_a_nested_call_joins_rather_than_opening_a_second_transaction(manager):
-    """Where the two ports genuinely differ, and deliberately.
+@pytest.fixture
+def nested_table(manager):
+    """A scratch table for the nesting tests, dropped afterwards."""
+    with manager.connection() as conn:
+        conn.execute(text("create table if not exists tx_nested (n integer)"))
+        conn.execute(text("delete from tx_nested"))
+    yield "tx_nested"
+    with manager.connection() as conn:
+        conn.execute(text("drop table tx_nested"))
 
-    Java's `inTransaction` rebinds its `ScopedValue` and opens a *second* transaction on a
-    *second* connection, which can block on the first one's locks. Joining is what makes "the
-    unit of work commits together" true for a repository call made from inside one.
-    """
-    with manager.transaction() as outer, manager.transaction() as inner:
-        assert inner.connection is outer.connection
+
+def _ns(manager) -> list[int]:
+    with manager.connection() as conn:
+        return sorted(conn.execute(text("select n from tx_nested")).scalars())
+
+
+def test_a_nested_transaction_opens_a_second_one_as_java_does(manager, nested_table):
+    """Java's `inTransaction` rebinds its `ScopedValue` and opens a second transaction on a
+    second connection. Inside it, the current transaction is the inner one; after it, the outer
+    one again."""
+    with manager.transaction() as outer:
+        with manager.transaction() as inner:
+            assert inner.connection is not outer.connection
+            assert manager.current() is inner.connection
+        assert manager.current() is outer.connection
 
     assert manager.current() is None
+
+
+def test_a_nested_transaction_does_not_see_the_outer_ones_rows(manager, nested_table):
+    with manager.transaction() as outer:
+        outer.execute(text("insert into tx_nested (n) values (1)"))
+        with manager.transaction() as inner:
+            seen = inner.execute(text("select count(*) from tx_nested")).scalar()
+    assert seen == 0
+
+
+def test_a_nested_transaction_commits_on_its_own(manager, nested_table):
+    """The inner block's commit stands when the outer block then fails, as in Java."""
+    with contextlib.suppress(RuntimeError), manager.transaction() as outer:
+        with manager.transaction() as inner:
+            inner.execute(text("insert into tx_nested (n) values (2)"))
+        outer.execute(text("insert into tx_nested (n) values (1)"))
+        raise RuntimeError("the outer block fails")
+
+    assert _ns(manager) == [2]
+
+
+def test_a_nested_transaction_rolls_back_on_its_own(manager, nested_table):
+    """An inner block that fails is rolled back even when the outer block catches the error and
+    commits - joined, its rows were committed with the outer ones."""
+    with manager.transaction() as outer:
+        with contextlib.suppress(RuntimeError), manager.transaction() as inner:
+            inner.execute(text("insert into tx_nested (n) values (2)"))
+            raise RuntimeError("the inner block fails")
+        outer.execute(text("insert into tx_nested (n) values (1)"))
+
+    assert _ns(manager) == [1]
 
 
 def test_two_managers_for_one_shard_do_not_share_a_transaction(sharded_registry):

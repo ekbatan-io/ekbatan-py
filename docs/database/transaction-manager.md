@@ -7,7 +7,7 @@ not fit the action shape, batch maintenance with no event worth emitting.
 
 For those, take a transaction manager directly. It is the same primitive the executor uses
 internally: one transaction, one connection, commit-or-roll-back, with the connection bound to
-the calling context so anything you call from inside joins it.
+the calling context so any repository you call from inside joins it.
 
 ## What it owns
 
@@ -58,23 +58,27 @@ of the action machinery: no plan, no outbox row, no retry on a lost version race
 checked exception needs its own functional interface. A `with` block returns whatever you want
 and propagates whatever it likes.
 
-## It joins; it does not nest
+## Do not nest
 
-This is the sharpest divergence in this whole section, and it is in this port's favour.
+**Do not nest.** The framework does not simulate nested transactions or savepoints. A
+`tm.transaction()` inside another one on the same `tm` does not fail loudly: it opens a *second*
+transaction on a *second* pooled connection, with its own commit boundary - exactly as Java's
+`inTransaction` does. That is almost never what you want. Structure your code to do all the work
+inside one outer block.
 
-**Here, opening a transaction on a shard that already has one open joins the existing one.**
-Nothing new is borrowed, nothing new is committed, and the inner block's work lands in the outer
-block's commit. That is what makes "everything in this unit of work commits together" true even
-when a repository three calls down opens its own block.
+What the inner block gets, as in Java:
 
-**In Java it nests** - a second `inTransaction` on the same manager rebinds the `ScopedValue`,
-shadows the outer transaction, and quietly runs on a *second* pooled connection with its own
-commit boundary. Java's own documentation says so and says "do not nest". The failure mode is
-worse than a wrong answer: the inner connection can block on locks the outer one holds, on the
-same thread, which is a deadlock against yourself.
+- it does not see the outer block's uncommitted rows;
+- its commit stands even if the outer block then fails, and its failure rolls back only its own
+  writes;
+- inside it, `tx_db` and `tx_db_else_db` find the inner transaction; after it, the outer one
+  again;
+- a write to a row the outer block has locked waits for a lock the same thread holds - until the
+  database's lock timeout, or for ever where there is none. On SQLite, any inner write after an
+  outer one waits for the file lock and fails with "database is locked".
 
-So the Java rule "structure your code so all the work is in one outer block" is good advice
-there. Here it is not required.
+An action run inside a transaction you opened is the same case: the executor opens its own
+transaction, so the action commits on its own and stays committed if your block then rolls back.
 
 ## Direct usage - a worked example
 
@@ -192,9 +196,8 @@ partial commit would need compensating, use a [saga](../concepts/sagas.md).
 ## Tracing
 
 The block produces an `ekbatan.transaction` span with `ekbatan.shard.group` and
-`ekbatan.shard.member` attributes. **Joining produces no span** - joining is not a transaction
-boundary, and a span there would report a nested duration for something that neither began nor
-committed.
+`ekbatan.shard.member` attributes, one per block - a nested block is a transaction of its own and
+gets its own span, as in Java.
 
 ## See also
 

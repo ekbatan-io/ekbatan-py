@@ -48,7 +48,9 @@ website/             Astro. The only part that does not run through uv
 - Reads filter soft-deleted rows once, in the framework.
 - Mapping is by field name. There is no `from_row` or `to_row` unless a name differs.
 - The ambient transaction is a `ContextVar`, so it is per-thread and per-task.
-- Opening a transaction on a shard that already has one **joins** it. Java nests; this does not.
+- Opening a transaction inside another one opens a **second** transaction on a second
+  connection, as Java's does (`EKB-0301`). Repository calls inside a block join it; nested blocks
+  do not. Do not nest.
 - Cross-shard is refused unless asked for, because atomic-across-databases does not exist.
 
 ## Where the two ports differ

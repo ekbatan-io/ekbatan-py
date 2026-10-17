@@ -40,9 +40,9 @@ Each `executor.execute(...)` produces:
 A single-shard action gives one of each. A cross-shard action gives one transaction span - with
 its nested repository and event spans - **per involved shard**.
 
-**Joining an open transaction produces no span.** Joining is not a transaction boundary, and a
-span there would report a nested duration for something that neither began nor committed. See
-[the transaction manager](/reference/transaction-manager/#it-joins-it-does-not-nest).
+**Every `transaction()` block is a span**, a nested one too: a nested block is a transaction of
+its own, as in Java. A repository call joining the open transaction is not a boundary and makes
+no transaction span. See [the transaction manager](/reference/transaction-manager/#do-not-nest).
 
 ## Attributes
 

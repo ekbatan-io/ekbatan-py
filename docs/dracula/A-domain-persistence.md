@@ -51,7 +51,9 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   own serializer; decimal-as-number would need agreement with the Java side.
 - **Surprise:** high
 
-### 3. Opening a transaction inside a transaction joins the outer one
+### 3. ~~Opening a transaction inside a transaction joins the outer one~~ fixed (`EKB-0301`)
+- **Fixed:** every `transaction()` opens a new transaction on its own connection, as Java's
+  `inTransaction` does; the docs carry Java's "do not nest" warning. The text below is what it was.
 - **What:** `with tm.transaction():` inside another `transaction()` on the same shard hands back
   the *same* connection; nothing commits until the outer block ends. Java's `inTransaction`
   always takes a new connection and opens a second, separate transaction (which commits on its

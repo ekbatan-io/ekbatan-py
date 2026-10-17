@@ -482,3 +482,20 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
     assert any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
         "and the only notice anyone gets was written"
     )
+
+
+# --------------------------------------------------------------------------- inside a transaction
+
+
+def test_an_action_run_inside_an_open_transaction_commits_on_its_own(
+    executor, registry, wallets, outbox
+):
+    """Java's executor opens its own transaction (`inTransactionChecked`) on its own connection,
+    so an action run inside a transaction the caller opened commits by itself and survives the
+    caller's rollback. Joined, it vanished with the caller's transaction."""
+    with pytest.raises(RuntimeError), registry.default.transaction():
+        wallet = _new_wallet(executor, "5.00")
+        raise RuntimeError("the caller's transaction fails")
+
+    assert wallets.get(wallet.id).balance == Decimal("5.0000")
+    assert [row["action_name"] for row in outbox()] == ["CreateWalletAction"]

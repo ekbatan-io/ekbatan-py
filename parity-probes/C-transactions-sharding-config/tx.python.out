@@ -17,14 +17,14 @@ PROBE tx.autocommit.outside_visible_immediately: yes
 PROBE tx.autocommit.first_statement_kept_after_second_fails: yes
 PROBE tx.log.rollback_warn_lines: 1
 PROBE tx.log.rollback_warn_text: WARNING io.ekbatan.core.persistence.TransactionManager - transaction rolled back [shard=0:0]: ValueError
-PROBE tx.nested.same_connection: yes
-PROBE tx.nested.inner_sees_outer_uncommitted: yes
+PROBE tx.nested.same_connection: no
+PROBE tx.nested.inner_sees_outer_uncommitted: no
 PROBE tx.nested.current_after_inner_is_outer: yes
-PROBE tx.nested.inner_row_kept_after_outer_rollback: no
+PROBE tx.nested.inner_row_kept_after_outer_rollback: yes
 PROBE tx.nested.outer_row_kept_after_outer_rollback: no
-PROBE tx.nested.inner_failure_caught.inner_row_kept: yes
+PROBE tx.nested.inner_failure_caught.inner_row_kept: no
 PROBE tx.nested.inner_failure_caught.outer_row_kept: yes
-PROBE tx.nested.inner_updates_row_outer_locked: ok
+PROBE tx.nested.inner_updates_row_outer_locked: blocked (lock timeout)
 PROBE tx.two_managers_same_shard.second_current_inside_first: empty
 PROBE tx.two_managers_same_shard.second_tx_database: replicadb
 PROBE tx.failed_rollback.propagated: boom

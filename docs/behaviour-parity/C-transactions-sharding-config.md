@@ -84,10 +84,10 @@ Probes and outputs: [`parity-probes/C-transactions-sharding-config/`](../../pari
 | 58 | Another thread started inside a transaction | sees none | sees none | same | T: `tx.current.other_thread_inside` |
 | 59 | Outside a transaction each statement commits by itself | yes | yes | same | T: `tx.autocommit.*` |
 | 60 | Rollback log line | WARN, same logger, `[shard=(0,0)]: IllegalStateException` | same level and logger, `[shard=0:0]: ValueError` | differs | T: `tx.log.*` |
-| 61 | Transaction inside a transaction: connection, sees outer's rows | second connection, sees nothing | same connection, sees them | differs | T: `tx.nested.same_connection`, `inner_sees_outer_uncommitted` |
-| 62 | Inner committed, then outer fails | inner row kept | inner row gone | differs | T: `tx.nested.*after_outer_rollback` |
-| 63 | Inner fails, outer catches it and commits | inner row gone | inner row committed | differs | T: `tx.nested.inner_failure_caught.*` |
-| 64 | Inner writes a row the outer has locked | blocks (lock timeout here; forever without one) | fine | differs | T: `tx.nested.inner_updates_row_outer_locked` |
+| 61 | Transaction inside a transaction: connection, sees outer's rows | second connection, sees nothing | same (fixed in EKB-0301) | same | T: `tx.nested.same_connection`, `inner_sees_outer_uncommitted` |
+| 62 | Inner committed, then outer fails | inner row kept | same (fixed in EKB-0301) | same | T: `tx.nested.*after_outer_rollback` |
+| 63 | Inner fails, outer catches it and commits | inner row gone | same (fixed in EKB-0301) | same | T: `tx.nested.inner_failure_caught.*` |
+| 64 | Inner writes a row the outer has locked | blocks (lock timeout here; forever without one) | same (fixed in EKB-0301) | same | T: `tx.nested.inner_updates_row_outer_locked` |
 | 65 | After the inner block, current is the outer | yes | yes | same | T: `tx.nested.current_after_inner_is_outer` |
 | 66 | Two managers for the same shard (here different databases): the second inside the first's transaction | sees none; opens its own on its own database | same (fixed in EKB-0300) | same | T: `tx.two_managers_same_shard.*` |
 | 67 | Rollback fails (connection killed): original error out, connection thrown away and logged, row gone, next transaction fine | yes | yes | same | T: `tx.failed_rollback.*` (message differs by row 53) |
@@ -188,7 +188,8 @@ low for a Python reader, but a Java `catch (MyException e)` around `inTransactio
 `TransactionManager.java:187-191`; Python `persistence.py:189-193`. Cheap to
 match the shard format; log scrapers are the only ones who notice. Surprise: low.
 
-**61-64. A transaction inside a transaction joins.** Python joins the open one: same connection,
+**61-64. A transaction inside a transaction joins.** **Fixed** (`EKB-0301`): Python now opens a
+second transaction on a second connection, as Java. Before: Python joined the open one: same connection,
 the inner block sees the outer's rows, an inner "commit" is undone by an outer failure, a failed
 inner block whose error the outer catches still gets its rows committed, and an inner write never
 blocks on the outer's lock. Java opens a second transaction on a second connection: it sees

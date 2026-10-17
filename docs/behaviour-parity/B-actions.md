@@ -65,7 +65,7 @@ effect on the database.
 | 47 | Executor with an empty repository registry | builds | refused | differs | s38.empty_repository_registry |
 | 48 | A staged type with no repository is refused before anything is written | yes | yes | same | s38.unknown_type_exception, s38.outbox |
 | 49 | Insert order within one action: additions before updates, each in staging order | yes | yes | same | s42.* |
-| 50 | `execute` inside a transaction the caller opened, which then rolls back | action stays committed | action rolled back too | differs | s43.* |
+| 50 | `execute` inside a transaction the caller opened, which then rolls back | action stays committed | same (fixed in EKB-0301) | same | s43.* |
 | 51 | `ActionSpec`: a passing chain passes | yes | yes | same | s39.pass_chain |
 | 52 | `ActionSpec` failure messages (count, missing event, missing update, no changes, totals, no events, not emitted) | word for word | word for word | same | s39.*_wrong, s39.*missing, s39.no_* |
 | 53 | `ActionSpec`: events match subclasses; additions match the exact class | yes | yes | same | s39.emitted_base_class_count, s39.added_base_class |
@@ -87,6 +87,7 @@ its rows a second time. Turn retries off for cross-shard actions that are not sa
 Most surprising first.
 
 ### 50. `execute` inside an open transaction joins it (Dracula 44)
+- **Fixed** (`EKB-0301`): the executor's transaction is now always its own, as Java's.
 - **What:** the caller opens a transaction on the shard, runs an action inside it, then rolls
   back. Java: the action committed on its own connection and stays (1 wallet, 1 outbox row).
   Python: the action's writes joined the caller's transaction and vanished with it (0 and 0).

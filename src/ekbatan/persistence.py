@@ -128,27 +128,24 @@ class TransactionManager:
 
     @contextmanager
     def transaction(self) -> Iterator[Transaction]:
-        """Open a transaction on this shard, or join the one already open on it.
+        """Open a transaction on this shard: a connection of its own, committed or rolled back
+        when the block ends.
 
         The counterpart to Java's ``inTransaction`` - a ``with`` block rather than a callback,
         which is why there is one of these where Java needs four overloads for value-returning,
         void, checked and unchecked blocks.
 
-        Joining rather than nesting is deliberate: a repository call inside a unit of work must
-        land in the same transaction as everything else the unit of work did, or the promise
-        that it all commits together is not one. Java's opens a second transaction on a second
-        connection instead, which can block against the first one's locks.
+        **Every call opens a new transaction, as Java's does - even inside another one.** The
+        inner block borrows a second connection, commits or rolls back on its own, and does not
+        see the outer block's uncommitted rows; inside it, ``tx_db`` and ``tx_db_else_db`` find
+        the inner transaction, and after it the outer one again. So do not nest: write all the
+        work of one unit in one block. An inner block that writes a row the outer one has
+        locked waits for a lock the same thread holds, until the database's lock timeout - or
+        for ever, where there is none.
 
         Anything inside the block reaching for ``tx_db`` or ``tx_db_else_db`` on this shard
         finds this transaction and joins it, without being handed anything.
         """
-        existing = self.current()
-        if existing is not None:
-            # No span: joining is not a transaction boundary, and one here would report a
-            # nested duration for something that neither began nor committed.
-            yield Transaction(existing, self.shard, self.dialect)
-            return
-
         with (
             span(
                 "ekbatan.transaction",
