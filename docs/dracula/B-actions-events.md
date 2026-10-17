@@ -223,6 +223,7 @@ sides. Ordered by surprise, highest first.
 - **Why:** a choice left behind. `EKB-0224` removed the instance form, and this message was not updated.
 - **Could match Java?** yes. Drop the clause.
 - **Surprise:** low
+- **Fixed** (`EKB-0252`): the clause is dropped.
 
 ### The action registry refuses a second instance of the same type
 - **What:** registering two instances of one action class raises. Java's builder does `put`, so

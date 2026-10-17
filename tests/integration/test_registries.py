@@ -154,6 +154,18 @@ def test_running_an_unregistered_type_names_it(executor):
         executor.execute(DepositThenFailAction, None)  # type: ignore[arg-type]
 
 
+def test_the_unregistered_message_gives_only_advice_that_works(executor):
+    """It used to add "or pass the instance to execute()", which `execute` then refuses - a
+    clause left over from before `EKB-0224` removed that form (Dracula bug 5)."""
+    from fixtures.actions import DepositThenFailAction
+
+    with pytest.raises(ValidationError) as raised:
+        executor.execute(DepositThenFailAction, None)  # type: ignore[arg-type]
+    message = str(raised.value)
+    assert "Register it on the ActionRegistry" in message
+    assert "pass the instance" not in message
+
+
 def test_registering_the_class_rather_than_an_instance_is_refused():
     """The commonest way to get this wrong, and it would otherwise fail much later."""
     with pytest.raises(ValidationError, match="CreateWalletAction is a class, not an instance"):

@@ -26,7 +26,7 @@ whatever is decided about the rest.
 | 2 | ~~Quartz cron: a numeric day-of-week runs a day late (`2` is Monday in Java, Tuesday here)~~ **fixed** (`EKB-0246`): QUARTZ patterns are read as cron-utils reads them and converted for croniter; checked against cron-utils' own answers for 56,477 recorded cases | run, re-checked (`PORTING.md` records it) | D |
 | 3 | ~~Keyed locks are held per OS thread, so two asyncio tasks on one loop both get "the same" lock~~ **fixed** (`EKB-0250`): taking a lock on an event loop's thread is refused; ekbatan is synchronous, so call it from a worker thread | run | D |
 | 4 | ~~The handler registry accepts three clashes Java refuses: one handler twice, two event classes with one name, an alias equal to another handler's name~~ **fixed** (`EKB-0251`): Java's `withHandler` ported check for check, with its messages; Java's registry tests ported case for case | run | B |
-| 5 | The "not registered" error says "pass the instance to execute()", which `execute` then refuses | run | B |
+| 5 | ~~The "not registered" error says "pass the instance to execute()", which `execute` then refuses~~ **fixed** (`EKB-0252`): the clause is gone; the message only says to register the action | run | B |
 | 6 | The setup guide's commands do not run as written: unquoted extras in zsh, wrong package layout for `uv init`, `uvicorn wallet.api:app` with no `app`, a compose service that does not exist, `MIGRATIONS` never defined, a Makefile watching `*.py` migrations | run (two), read | E |
 | 7 | The guide says to gitignore `schema.py`; a hatchling-built wheel then leaves it out silently | run | E |
 | 8 | `DIVERGENCE.md` says the built-in reads match Java; they read inside the open transaction and Java's do not | run | A |

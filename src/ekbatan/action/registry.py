@@ -71,10 +71,9 @@ class ActionRegistry:
             return self._by_type[action_type]
         except KeyError:
             raise ValidationError(
-                f"no instance of {action_type.__name__} is registered, so it cannot be run "
-                f"by type. Register it on the ActionRegistry the executor was built with, or "
-                f"pass the instance to execute(); it currently holds "
-                f"{sorted(a.__name__ for a in self._by_type) or 'nothing'}."
+                f"no instance of {action_type.__name__} is registered, so it cannot be run. "
+                f"Register it on the ActionRegistry the executor was built with; it currently "
+                f"holds {sorted(a.__name__ for a in self._by_type) or 'nothing'}."
             ) from None
 
     @property
