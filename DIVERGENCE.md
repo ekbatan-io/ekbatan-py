@@ -623,7 +623,8 @@ the same session. The fallback was never the problem; its silence was. It now lo
 fires, and `unknown_shard_policy="fail"` / `unknownShardPolicy: fail` turns it into an error for
 a deployment that holds the whole layout - on reads as well as writes, because the policy is
 applied where routing resolves. Omitting it selects `USE_DEFAULT_SHARD` in both, so nothing
-changes for anyone who does not ask.
+changes for anyone who does not ask. The value is read the same way in both (`EKB-0303`): any case,
+any separators, empty means the default.
 
 ### What this section used to say, and why it was wrong
 

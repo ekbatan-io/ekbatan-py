@@ -332,9 +332,46 @@ def test_unknown_shard_policy_defaults_to_use_default_shard_when_nobody_names_on
 
 
 def test_unknown_shard_policy_refuses_a_value_that_is_neither():
-    with pytest.raises(ValidationError, match="must be 'use_default_shard' or 'fail'"):
+    """Java's message, which names the camelCase spelling."""
+    with pytest.raises(ValidationError, match="must be 'useDefaultShard' or 'fail', not 'raise'"):
         ShardingConfig(
             default_shard=GLOBAL,
             groups=(group(0, "g", member(0, a_source())),),
             unknown_shard_policy="raise",  # type: ignore[arg-type]
         )
+
+
+@pytest.mark.parametrize(
+    ("given", "read"),
+    [
+        ("useDefaultShard", "use_default_shard"),
+        ("UseDefaultShard", "use_default_shard"),
+        ("use_default_shard", "use_default_shard"),
+        ("USE-DEFAULT-SHARD", "use_default_shard"),
+        ("use default shard", "use_default_shard"),
+        ("fail", "fail"),
+        ("FAIL", "fail"),
+        (" fail ", "fail"),
+        ("", "use_default_shard"),
+        ("   ", "use_default_shard"),
+        (None, "use_default_shard"),
+    ],
+)
+def test_unknown_shard_policy_is_read_as_java_reads_it(given, read):
+    """Java's `UnknownShardPolicy.from` keeps only the letters, in any case, and reads null or
+    blank as the default. `useDefaultShard` - the spelling Java's own error message asks for -
+    was refused here."""
+    layout = ShardingConfig(
+        default_shard=GLOBAL,
+        groups=(group(0, "g", member(0, a_source())),),
+        unknown_shard_policy=given,  # type: ignore[arg-type]
+    )
+    assert layout.unknown_shard_policy == read
+    built = (
+        ShardingConfig.builder()
+        .default_shard(GLOBAL)
+        .with_group(group(0, "g", member(0, a_source())))
+        .unknown_shard_policy(given)
+        .build()
+    )
+    assert built.unknown_shard_policy == read

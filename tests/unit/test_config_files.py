@@ -539,3 +539,20 @@ def test_a_broken_file_is_refused_without_quoting_it(tmp_path, name, text):
     message = refused(tmp_path, name, text)
 
     assert "not valid" in message or "not a valid" in message
+
+
+@pytest.mark.parametrize(
+    ("written_as", "read"),
+    [
+        ("useDefaultShard", "use_default_shard"),
+        ("UseDefaultShard", "use_default_shard"),
+        ("' fail '", "fail"),
+        ("''", "use_default_shard"),
+        ("", "use_default_shard"),
+    ],
+)
+def test_the_policy_in_a_file_is_read_as_java_reads_it(tmp_path, written_as, read):
+    """A Java `application.yml` written as Java documents it - `useDefaultShard` - loads, and a
+    padded or empty value reads as Java's does."""
+    text = YAML.replace("unknown-shard-policy: fail", f"unknown-shard-policy: {written_as}")
+    assert loaded(tmp_path, "ekbatan.yaml", text).unknown_shard_policy == read

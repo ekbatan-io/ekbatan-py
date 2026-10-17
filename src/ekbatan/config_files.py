@@ -397,9 +397,10 @@ def _sharding(node: Any, path: str) -> ShardingConfig:
     settings: dict[str, Any] = {}
     if "unknown_shard_policy" in entries:
         policy_key, policy = entries["unknown_shard_policy"]
-        settings["unknown_shard_policy"] = (
-            _text(policy, f"{path}.{policy_key}").lower().replace("-", "_")
-        )
+        # Read as Java reads it (`ShardingConfig` normalises): any case, any separators, and an
+        # empty value is the default.
+        if policy is not None:
+            settings["unknown_shard_policy"] = _text(policy, f"{path}.{policy_key}")
     return _validated(
         path,
         lambda: ShardingConfig(

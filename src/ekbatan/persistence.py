@@ -24,6 +24,7 @@ from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
 from ._tracing import span
 from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
+from .config import _unknown_shard_policy as _policy
 from .errors import ValidationError
 from .fetching import Db, FetchResult
 from .sharding import ShardIdentifier
@@ -284,7 +285,7 @@ class DatabaseRegistry:
             raise ValidationError(f"a shard is registered under the wrong key: {listed}")
         self._managers = dict(managers)
         self.default_shard = default_shard
-        self.unknown_shard_policy = unknown_shard_policy
+        self.unknown_shard_policy = _policy(unknown_shard_policy)
         self.dialect = self._managers[default_shard].dialect
 
     @classmethod
@@ -470,7 +471,7 @@ class DatabaseRegistryBuilder:
         self, unknown_shard_policy: Literal["use_default_shard", "fail"] | None
     ) -> Self:
         """``None`` means the default, ``"use_default_shard"`` - as Java's null does."""
-        self._unknown_shard_policy = unknown_shard_policy or "use_default_shard"
+        self._unknown_shard_policy = _policy(unknown_shard_policy)
         return self
 
     def build(self) -> DatabaseRegistry:

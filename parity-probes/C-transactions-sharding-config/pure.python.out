@@ -43,18 +43,18 @@ PROBE sid.default: 0:0
 PROBE policy.yaml.fail: fail
 PROBE policy.yaml.FAIL: fail
 PROBE policy.yaml.Fail: fail
-PROBE policy.yaml.useDefaultShard: error
+PROBE policy.yaml.useDefaultShard: use_default_shard
 PROBE policy.yaml.use_default_shard: use_default_shard
 PROBE policy.yaml.USE-DEFAULT-SHARD: use_default_shard
 PROBE policy.yaml.use-default-shard: use_default_shard
-PROBE policy.yaml.UseDefaultShard: error
-PROBE policy.yaml.padded_fail: error
-PROBE policy.yaml.empty_string: error
-PROBE policy.yaml.null_value: error
+PROBE policy.yaml.UseDefaultShard: use_default_shard
+PROBE policy.yaml.padded_fail: fail
+PROBE policy.yaml.empty_string: use_default_shard
+PROBE policy.yaml.null_value: use_default_shard
 PROBE policy.yaml.shrug: error
 PROBE policy.yaml.omitted: use_default_shard
 PROBE policy.yaml.shrug.msg_names_both_values: yes
-PROBE policy.config_builder_null: error: unknown_shard_policy must be 'use_default_shard' or 'fail', not None
+PROBE policy.config_builder_null: use_default_shard
 PROBE policy.config_builder_omitted: use_default_shard
 PROBE yaml.default_shard: 0:0
 PROBE yaml.groups: 2

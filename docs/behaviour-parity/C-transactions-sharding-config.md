@@ -35,12 +35,12 @@ Probes and outputs: [`parity-probes/C-transactions-sharding-config/`](../../pari
 | 9 | Printed shard | `ShardIdentifier(1, 2)` | `1:2` | differs | P: `sid.str_1_2` |
 | 10 | Shard equality, hash, default 0:0 | yes | yes | same | P: `sid.equal`, `sid.hash_equal`, `sid.default` |
 | 11 | Policy spelled `fail`, `FAIL`, `Fail`, `use_default_shard`, `USE-DEFAULT-SHARD`, `use-default-shard` | read | read | same | P: `policy.yaml.*` |
-| 12 | Policy spelled `useDefaultShard` / `UseDefaultShard` | read | refused | differs | P: `policy.yaml.useDefaultShard` |
-| 13 | Policy `' fail '`, `''`, empty value | fail / default / default | all refused | differs | P: `policy.yaml.padded_fail`, `empty_string`, `null_value` |
+| 12 | Policy spelled `useDefaultShard` / `UseDefaultShard` | read | same (fixed in EKB-0303) | same | P: `policy.yaml.useDefaultShard` |
+| 13 | Policy `' fail '`, `''`, empty value | fail / default / default | same (fixed in EKB-0303) | same | P: `policy.yaml.padded_fail`, `empty_string`, `null_value` |
 | 14 | Policy left out | use default shard | same | same | P: `policy.yaml.omitted` |
 | 15 | Unknown policy value | refused, names both values | same | same | P: `policy.yaml.shrug*` |
 | 16 | `null` policy on the registry builder | default | default | same | P: `reg.null_policy` |
-| 17 | `null` policy on the config builder | default | refused | differs | P: `policy.config_builder_null` |
+| 17 | `null` policy on the config builder | default | same (fixed in EKB-0303) | same | P: `policy.config_builder_null` |
 | 18 | Full YAML layout loads to the same values (shards, names, pools, replica, named configs, absent name/username) | yes | yes | same | P: `yaml.*` (first 14) |
 | 19 | Driver setting values from YAML | all text (`"10"`, `"true"`) | typed (10, true) | differs | P: `yaml.dsp.*`, `dsc.dsp.number_kept_as` |
 | 20 | Driver setting names kept as written | yes | yes | same | P: `yaml.dsp.names_kept` |
@@ -123,7 +123,8 @@ match by dropping the check (cheap), but the check is safer. Known: Dracula 60. 
 60). Java `ShardIdentifier.java:74`; Python `sharding.py:70`. Matching is one line. Known: Dracula
 66. Surprise: low.
 
-**12. `useDefaultShard` is refused.** Java strips everything but letters, so `useDefaultShard` -
+**12. `useDefaultShard` is refused.** **Fixed** (`EKB-0303`, with 13 and 17): Python now reads the
+policy exactly as Java's `UnknownShardPolicy.from`. Before: Java strips everything but letters, so `useDefaultShard` -
 the spelling Java's own error message asks for - is read; Python only lower-cases and turns `-`
 into `_`, so camelCase is refused. Java `UnknownShardPolicy.java:45-47`; Python
 `config_files.py:401`, `config.py:291`. Python could match by normalising as Java does (cheap).

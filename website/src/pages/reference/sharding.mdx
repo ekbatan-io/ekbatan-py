@@ -365,6 +365,10 @@ ShardingConfig(
 ValidationError: shard 9:9 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
 ```
 
+The value is read as Java reads it: case and separators do not matter, so `fail`, `FAIL`,
+`useDefaultShard`, `use_default_shard` and `USE-DEFAULT-SHARD` all work, in code and in a
+config file; an empty value, or `None`, is the default.
+
 It is applied where routing resolves, so it covers **reads and writes alike** — `find(id)` on an
 unregistered shard raises just as `add(model)` does. Leave it alone if your deployment is a
 **subset** of the layout: turning it on there refuses exactly the foreign-id reads the fallback

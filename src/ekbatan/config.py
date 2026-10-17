@@ -288,11 +288,9 @@ class ShardingConfig:
         if not self.groups:
             raise ValidationError("at least one group is required")
 
-        if self.unknown_shard_policy not in ("use_default_shard", "fail"):
-            raise ValidationError(
-                "unknown_shard_policy must be 'use_default_shard' or 'fail', "
-                f"not {self.unknown_shard_policy!r}"
-            )
+        object.__setattr__(
+            self, "unknown_shard_policy", _unknown_shard_policy(self.unknown_shard_policy)
+        )
 
         # Java does not check this: a repeated (group, member) there builds a second pool,
         # overwrites the first in the registry's map, and leaves it open with nothing holding it.
@@ -366,6 +364,25 @@ class ShardingConfig:
                 ),
             ),
         )
+
+
+def _unknown_shard_policy(value: str | None) -> Literal["use_default_shard", "fail"]:
+    """Read a policy as Java's ``UnknownShardPolicy.from`` does.
+
+    Case and separators do not matter - everything but letters is dropped - so ``fail``,
+    ``FAIL``, ``useDefaultShard``, ``use_default_shard`` and ``USE-DEFAULT-SHARD`` all read.
+    ``None``, empty or blank is the default, ``"use_default_shard"``.
+    """
+    if value is None or not value.strip():
+        return "use_default_shard"
+    normalised = re.sub(r"[^a-z]", "", value.strip().lower())
+    if normalised == "usedefaultshard":
+        return "use_default_shard"
+    if normalised == "fail":
+        return "fail"
+    raise ValidationError(
+        f"unknown_shard_policy must be 'useDefaultShard' or 'fail', not {value!r}"
+    )
 
 
 def split_login(url: str) -> tuple[str, str | None, str | None]:
@@ -592,10 +609,9 @@ class ShardingConfigBuilder:
         self._groups.append(group)
         return self
 
-    def unknown_shard_policy(
-        self, unknown_shard_policy: Literal["use_default_shard", "fail"]
-    ) -> Self:
-        self._unknown_shard_policy = unknown_shard_policy
+    def unknown_shard_policy(self, unknown_shard_policy: str | None) -> Self:
+        """Spelled any way Java reads it; ``None`` or blank means the default, as Java's null."""
+        self._unknown_shard_policy = unknown_shard_policy  # type: ignore[assignment]
         return self
 
     def build(self) -> ShardingConfig:
