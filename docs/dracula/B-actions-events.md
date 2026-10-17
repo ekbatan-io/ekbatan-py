@@ -88,6 +88,7 @@ sides. Ordered by surprise, highest first.
 - **Python:** `src/ekbatan/events/handler.py:109-124` (only blank name and a different instance under the same name are refused)
 - **Java:** `ekbatan-events/local-event-handler/.../EventHandlerRegistry.java:99-139`
 - **Why:** a choice (an omission). The Python checks were written for names only.
+- **Fixed** (`EKB-0251`): `EventHandlerRegistry.add` is Java's `withHandler` check for check - one lookup table for names and aliases, the short-name collision, the alias checks - with Java's messages; `EventHandlerRegistryBuilderTest` is ported case for case in `tests/unit/test_event_handler_registry.py`.
 - **Could match Java?** yes. Port Java's three checks into `add`.
 - **Surprise:** medium
 

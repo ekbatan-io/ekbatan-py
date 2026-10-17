@@ -349,7 +349,7 @@ def test_a_duplicate_handler_name_is_refused_on_the_line_that_adds_it():
     builder = EventHandlerRegistry.builder().with_handler(
         RecordingHandler("same", WalletMoneyDepositedEvent)
     )
-    with pytest.raises(ValidationError, match="both called 'same'"):
+    with pytest.raises(ValidationError, match="Handler name or alias already registered: same"):
         builder.with_handler(RecordingHandler("same", WalletMoneyDepositedEvent))
 
 

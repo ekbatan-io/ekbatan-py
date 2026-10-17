@@ -313,6 +313,15 @@ Decided with the user on 2026-10-17 (Dracula bug 3).
 | a keyed lock taken on an asyncio event loop's thread raises `ValidationError`, instead of becoming async-aware | ekbatan is synchronous throughout; a holder per task alone would freeze the loop, and an async lock API is beyond Java. Worker threads (`def` endpoints, `asyncio.to_thread`) make each request its own holder, as in Java | the user |
 | the check runs only if asyncio has been imported | without it no loop can be running; one dictionary lookup otherwise | built |
 
+## The event handler registry, as Java's (`EKB-0251`)
+
+Asked by the user on 2026-10-17: Dracula bug 4, exactly as Java.
+
+| decision | why | who |
+| --- | --- | --- |
+| `EventHandlerRegistry.add` ported from Java's `withHandler`, check for check and in its order: blank name, missing event type, a name or alias already taken (one table for both, which also refuses one handler twice), two classes behind one short name, a blank alias, an alias equal to the handler's name | the same mistakes stopped at startup as in Java | the user |
+| Java's messages, word for word; `ValidationError` for Java's `IllegalArgumentException` / NPE | a search for the Java message finds the Python one; the exception type follows the port's convention (Dracula 57) | built |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

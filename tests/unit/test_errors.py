@@ -86,7 +86,7 @@ class TestEveryBlankCheckAgrees:
             RedisKeyedLockProvider(FakeRedis(), namespace=blank)
 
     def test_an_event_handler_name(self, blank: str) -> None:
-        with pytest.raises(ValidationError, match="blank name"):
+        with pytest.raises(ValidationError, match=r"handler\.name cannot be blank"):
             EventHandlerRegistry().add(BlankNamed(blank))
 
     def test_an_event_job_name(self, blank: str) -> None:

@@ -68,7 +68,9 @@ retry lifecycle.
 The registry keys subscriptions by the event class's **name**, matching `events.event_type`. It
 allows several handlers per event class and **rejects two different event classes with the same
 name**, because those are indistinguishable in the outbox. Handler names and aliases must be
-globally unique.
+globally unique - so the same handler registered twice is refused too. Each is checked as the
+handler is added, in Java's order and with Java's messages, so the refusal points at the line
+that added it.
 
 ### Renaming a handler safely
 
