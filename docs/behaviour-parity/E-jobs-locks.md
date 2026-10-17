@@ -31,9 +31,9 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 9 | Same thread takes the key again | at once, no backend call | same | same | locks `reenter.fast` |
 | 10 | Another thread while held | kept out | kept out | same | locks `reenter.other_thread_can_acquire` |
 | 11 | `tryAcquire(0)` re-entry | returns a lease | same | same | locks `try_reenter_zero_wait` |
-| 12 | Inner lease closed three times, outer still open | lock stays held | lock is **released**; another thread gets in | differs | locks `inner_close_x3.*` |
-| 13 | Inner lease's `isHeld` after its own close | false | true | differs | locks `inner_close_once.inner_held` |
-| 14 | Outer closed first, inner open | outer `isHeld` false, lock kept | outer `held` true, lock kept | differs | locks `outer_first.*` |
+| 12 | Inner lease closed three times, outer still open | lock stays held | lock stays held (was: released; fixed in EKB-0262) | same | locks `inner_close_x3.*` |
+| 13 | Inner lease's `isHeld` after its own close | false (was: true; fixed in EKB-0262) | same | locks `inner_close_once.inner_held` |
+| 14 | Outer closed first, inner open | outer `isHeld` false, lock kept | outer `held` false, lock kept (was: true; fixed in EKB-0262) | same | locks `outer_first.*` |
 | 15 | One lease closed twice | no error, released once | same | same | locks `close_twice` |
 | 16 | `tryAcquire` on a held key, 0 / 0.5 / 1 / 1.5 s (PG, MariaDB) | empty after about the wait | same | same | locks `try_held.*` |
 | 17 | MySQL `tryAcquire` with a 500 ms wait | waits 1 s | waits 0 s | differs | locks `mysql.try_held.wait_500ms`, wait `mysql.*` |
@@ -75,6 +75,8 @@ dependencies in `java-build.gradle.kts.diff`) and a `.java.out` / `.python.out` 
 | 53 | A Java and a Python registry sharing one `scheduled_tasks` | one row, both ran it, never at the same time | same | same | crossport `shared_job.*` |
 
 ## Differences
+
+> **Fixed in EKB-0262:** each lease now remembers it was closed, as Java's `HeldLease` does. Rerun on all four backends: every `inner_close_*` and `outer_first.*` line matches Java.
 
 **12-14. A Python lease has no "closed" mark of its own** (surprise: high). In Java each lease
 remembers it was closed, so closing an inner lease again does nothing and its `isHeld` turns
@@ -147,7 +149,7 @@ fixed by EKB-0250. Java has nothing like an event loop thread. No action.
 
 ## Totals
 
-53 rows: 37 same, 14 differs, 2 read. Of the 14 differing rows, 5 are already-known Draculas
+53 rows: 40 same, 11 differs, 2 read (rows 12-14 fixed in EKB-0262; at the scan, 37 same and 14 differ). Of the 14 differing rows, 5 are already-known Draculas
 (26, 30, 34, 38, 47) and 2 confirm a Dracula that had never been run (4, 8: Redis key layout).
 The other 7 are new: the lease close mark (12-14), the MySQL 500 ms wait (17), the Redis wait
 overshoot (18), the PostgreSQL `lock_timeout` leak (31) and the unwrapped connection error (33).

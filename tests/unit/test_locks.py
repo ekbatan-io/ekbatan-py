@@ -249,3 +249,33 @@ def test_releasing_everything_at_once_frees_each_outermost_hold():
     holder.release_all()
 
     assert sorted(released) == ["pa", "pb"]
+
+
+def test_closing_an_inner_lease_twice_does_not_free_the_outer_hold():
+    """As Java's `HeldLease`: each lease remembers it was closed. Counting the hold down on
+    every close let a second close of the inner lease free the key under the outer region."""
+    import threading
+
+    from ekbatan.locks._holder import KeyedReentrantHolder
+
+    holder = KeyedReentrantHolder()
+    released: list[str] = []
+    outer = holder.register("k", "payload", HOLD, lambda p, r: released.append(r.value))
+    inner = holder.reenter("k")
+    assert inner is not None
+
+    inner.release()
+    inner.release()
+
+    assert released == [], "the outer region still holds the key"
+    assert outer.held
+    assert not inner.held, "a closed lease reports itself, not the whole hold"
+    seen_from_another_thread: list[object] = []
+    worker = threading.Thread(target=lambda: seen_from_another_thread.append(holder.reenter("k")))
+    worker.start()
+    worker.join()
+    assert seen_from_another_thread == [None], "another thread is a different holder"
+
+    outer.release()
+    outer.release()
+    assert released == ["CLOSED"], "the outermost close frees it, once"

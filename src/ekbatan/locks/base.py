@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import sys
+import threading
 from datetime import timedelta
 from types import TracebackType
 from typing import Protocol, runtime_checkable
@@ -56,20 +57,32 @@ class Lease:
     Every acquisition returns its own lease, re-entries included, and each must be closed once.
     ``with`` does that; cleanup running from two places - a scope exit and an error path - is
     why closing twice may not raise.
+
+    Each lease remembers that it was closed, as Java's ``HeldLease`` does. Without that, closing
+    an inner lease twice counted the hold down twice: the second close freed the key while the
+    outer region still held it, and another thread walked in.
     """
 
-    __slots__ = ("_holding",)
+    __slots__ = ("_closed", "_gate", "_holding")
 
     def __init__(self, holding: _Hold) -> None:
         self._holding = holding
+        self._gate = threading.Lock()
+        self._closed = False
 
     @property
     def held(self) -> bool:
-        """False after release, and false once the hold limit has fired - even for an inner
-        lease nobody has closed yet."""
-        return self._holding.held
+        """False once this lease is closed, and false once the hold limit has fired - even for
+        an inner lease nobody has closed yet."""
+        return not self._closed and self._holding.held
 
     def release(self) -> None:
+        # The check and the set together, as Java's compareAndSet: two threads closing the same
+        # lease at once must not both count the hold down.
+        with self._gate:
+            if self._closed:
+                return
+            self._closed = True
         self._holding.release_one()
 
     def __enter__(self) -> Lease:
