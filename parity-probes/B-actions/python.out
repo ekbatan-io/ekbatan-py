@@ -30,7 +30,7 @@ PROBE s2.updated_date_unchanged: true
 PROBE s2.outbox_rows: 1
 PROBE s2.event_type: WalletMoneyDepositedEvent
 PROBE s2.payload_minus_ids: {"amount": 5, "modelName": "Wallet", "newBalance": 15.0000}
-PROBE s2.action_params: {"walletId": "01a14b4d-7494-7d8b-8000-cf2839fef5b7"}
+PROBE s2.action_params: {"walletId": "01a14b5e-a23f-784f-8000-3618227a9729"}
 PROBE s3.event_types_in_insert_order: [WalletCreatedEvent, WalletMoneyDepositedEvent]
 PROBE s3.db_version: 1
 PROBE s3.same_action_id: true

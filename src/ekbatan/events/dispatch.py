@@ -25,7 +25,7 @@ from sqlalchemy import Table
 
 from .._json import decode
 from .._metrics import counter, histogram
-from ..clock import Clock, SystemClock, to_storage
+from ..clock import Clock, SystemClock, to_instant
 from ..domain import ModelEvent
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
@@ -168,7 +168,7 @@ class EventDispatch:
 
     def _drain_shard(self, shard: ShardIdentifier) -> int:
         repository = self._notification_repository
-        due = repository.find_due(shard, self._batch, to_storage(self._clock.now()))
+        due = repository.find_due(shard, self._batch, to_instant(self._clock.now()))
         if not due:
             return 0
 
@@ -191,7 +191,7 @@ class EventDispatch:
         #
         # One `now` for the whole batch, again as Java's `postInvokeNow` is. Resolved per row it
         # would differ by microseconds and no two rows could ever share a statement.
-        now = to_storage(self._clock.now())
+        now = to_instant(self._clock.now())
         outcomes = [self._retry_or_expire(outcome, now) for outcome in outcomes]
         buckets: dict[tuple[str, timedelta | None], list[Any]] = defaultdict(list)
         for outcome in outcomes:
@@ -211,7 +211,7 @@ class EventDispatch:
         return len(outcomes)
 
     def _deliver(self, row: EventNotification) -> _Outcome:
-        now = to_storage(self._clock.now())
+        now = to_instant(self._clock.now())
         attempts = row.attempts + 1
 
         if self._expired(row.event_date, now):
@@ -267,7 +267,7 @@ class EventDispatch:
         )
         HANDLED.add(1, {"outcome": "succeeded", "handler": row.handler_name})
         DELIVERY_LAG.record(
-            (to_storage(self._clock.now()) - row.event_date).total_seconds(),
+            (to_instant(self._clock.now()) - row.event_date).total_seconds(),
             {"handler": row.handler_name},
         )
         return _Outcome(row.id, SUCCEEDED)

@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Any, Self
 
 from .._builder import FieldBuilder
+from ..clock import to_instant, to_storage
 from ..errors import ValidationError
 
 __all__ = [
@@ -54,6 +55,15 @@ NOTIFICATION_COLUMNS = (
     "model_type",
     "event_type",
     "payload",
+    "event_date",
+)
+
+_NOTIFICATION_DATES = (
+    "next_retry_at",
+    "created_date",
+    "updated_date",
+    "started_date",
+    "completion_date",
     "event_date",
 )
 
@@ -115,6 +125,9 @@ class EventNotification:
         # hand.
         if self.attempts < 0:
             raise ValidationError("attempts cannot be negative")
+        # Aware UTC, as Java's `Instant`s are, however the row was read.
+        for name in _NOTIFICATION_DATES:
+            object.__setattr__(self, name, to_instant(getattr(self, name)))
 
     @classmethod
     def builder(cls) -> EventNotificationBuilder:
@@ -131,6 +144,8 @@ class EventNotification:
         """The values to insert, keyed by column; the state by name, as Java stores it."""
         values = {name: getattr(self, name) for name in NOTIFICATION_COLUMNS}
         values["state"] = self.state.value
+        for name in _NOTIFICATION_DATES:
+            values[name] = to_storage(values[name])
         return values
 
 

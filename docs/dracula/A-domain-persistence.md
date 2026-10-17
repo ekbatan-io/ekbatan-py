@@ -12,7 +12,12 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 
 ---
 
-### 1. A model's timestamps become naive datetimes (no time zone)
+### 1. ~~A model's timestamps become naive datetimes (no time zone)~~ fixed (`EKB-0294`)
+
+> Now as Java's `Instant`: a model's dates, and every timestamp read back from any database,
+> are aware UTC `datetime`s, so they equal what was written and compare with `clock.now()`.
+> The columns still hold the zone-less UTC time, exactly what Java stores.
+
 - **What:** Whatever `created_date` / `updated_date` you pass, the model keeps a datetime with
   the zone removed, moved to UTC. `12:00+02:00` goes in and `datetime(…, 10, 0)` with no zone
   comes out. `clock.now()` returns a datetime *with* a zone, so `wallet.created_date < clock.now()`

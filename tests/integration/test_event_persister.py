@@ -229,9 +229,10 @@ def test_the_timestamps_are_the_ones_the_invocation_was_given(write, registry):
     write(ItemCreated(model_id=an_id(), description="a"))
 
     (row,) = rows(registry)
-    assert row["started_date"] == STARTED.replace(tzinfo=None)
-    assert row["completion_date"] == COMPLETED.replace(tzinfo=None)
-    assert row["event_date"] == COMPLETED.replace(tzinfo=None), "the event's own time"
+    assert row["started_date"] == STARTED
+    assert row["completion_date"] == COMPLETED
+    assert row["event_date"] == COMPLETED, "the event's own time"
+    assert row["started_date"].tzinfo is UTC, "read back aware, as Java reads an Instant"
 
 
 # -- what it refuses ----------------------------------------------------------------------------

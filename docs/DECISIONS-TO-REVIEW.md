@@ -495,6 +495,10 @@ java, so camel case". Ledger: [parity-fix/J-json-domain.md](parity-fix/J-json-do
 | calling the dataclass constructor directly without a field still raises `TypeError` | that is the call Java does not let you write (its constructor takes the builder); a factory method that calls `cls(...)` must pass `version=1`, as Java's calls `withInitialVersion()` | - |
 | `Id` and `ShardedId` compare as Java's `UUID.compareTo` does: each 64-bit half as a signed number (`EKB-0293`) | a Java and a Python service ordering the same ids agree; version 7 ids are unaffected until the year ~6400. The database's `ORDER BY` stays unsigned, in both ports | `Id.compareTo` / `ShardedId.compareTo` |
 | comparing an `Id` with a `ShardedId` raises `TypeError` | Java's `Comparable<Id>` / `Comparable<ShardedId>` refuse it at compile time; it used to compare the uuids | does not compile |
+| every timestamp the framework hands back is an aware UTC `datetime`, Java's `Instant` (`EKB-0294`): a model's dates, rows read through a repository (any `datetime` field), through `timestamp_column()`, the outbox and notification rows, `ActionEvent` | Dracula 43: a value read back now equals the one written and compares with `clock.now()` | `Instant` everywhere |
+| the stored values are unchanged: zone-less columns holding the UTC time | that is what Java writes (measured 2026-10-06 on PostgreSQL, MySQL, MariaDB); B probe `s32.*` still prints Java's exact stored text | `InstantConverter` |
+| a `datetime` with no zone given to a model or bound to a column is taken as UTC, not refused | Java's `Instant` has no zone-less form, so there is no Java behaviour to copy; refusing would break every `datetime(2026, 1, 1)` in tests and scripts | - |
+| `timestamp_column()` is now a type that converts on the way in and out; the framework also converts explicitly in its own row mapping | so a table declared with a plain `DateTime` (a hand-written schema, the test fixture's `wallets`) reads back aware too | - |
 
 ## Noticed in the Java, not acted on
 

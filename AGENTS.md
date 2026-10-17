@@ -113,11 +113,13 @@ Models and entities are `@dataclass(frozen=True, kw_only=True)`. `copy()` return
 `evolve()` is the framework's own shorthand and domain code should prefer `copy()` so every
 change in an application reads the same way.
 
-### Timestamps are UTC and carry no zone
+### Timestamps: zone-less UTC columns, aware UTC values
 
-`TIMESTAMP WITH TIME ZONE` shifts values by the session's offset, and two readers of one row then
-disagree about when the thing happened. `timestamp_column()` also pins microsecond precision,
-because MySQL's bare `DATETIME` silently truncates to whole seconds.
+The columns carry no zone and hold the UTC wall-clock time, as Java's Ekbatan stores an
+`Instant`. Every timestamp the framework hands back is an aware `datetime` in UTC, as Java's is
+an `Instant` (`to_instant`); `to_storage` drops the zone only on the way into a column.
+`timestamp_column()` does both and also pins microsecond precision, because MySQL's bare
+`DATETIME` silently truncates to whole seconds.
 
 ### The ambient transaction lives in a `ContextVar`
 

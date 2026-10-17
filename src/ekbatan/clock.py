@@ -14,7 +14,7 @@ from typing import Protocol, runtime_checkable
 
 from .errors import EkbatanError
 
-__all__ = ["Clock", "SystemClock", "VirtualClock", "to_storage"]
+__all__ = ["Clock", "SystemClock", "VirtualClock", "to_instant", "to_storage"]
 
 
 @runtime_checkable
@@ -129,16 +129,20 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+def to_instant(value: datetime) -> datetime:
+    """An instant as the framework hands every timestamp back: aware, in UTC - Java's ``Instant``.
+
+    A value with no zone is taken as UTC, which is what the timestamp columns hold. So a
+    timestamp read back equals the one written, and compares with ``clock.now()``.
+    """
+    return _as_utc(value)
+
+
 def to_storage(value: datetime) -> datetime:
     """Normalise an instant to what the timestamp columns hold: UTC, no zone, microseconds.
 
-    The columns are deliberately zone-less. A ``TIMESTAMP WITH TIME ZONE`` shifts values by the
-    session's offset, and two readers of one row then disagree about when the thing happened.
-    So the offset is applied here, once, and discarded - the stored value is UTC by
-    construction rather than by everyone remembering.
-
-    Microseconds because that is what Postgres and MariaDB store. A value that does not survive
-    its own round trip is a bug waiting for a test to find it, usually months later and in an
-    equality check that has nothing to do with time.
+    The columns are zone-less, as Java's are, and Java writes an ``Instant`` into them as its
+    UTC wall-clock time; this writes the same value. Only the stored form drops the zone: every
+    timestamp the framework hands back is aware (:func:`to_instant`).
     """
     return _as_utc(value).replace(tzinfo=None)

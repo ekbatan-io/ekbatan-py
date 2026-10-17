@@ -33,7 +33,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Self
 
-from .clock import to_storage
+from .clock import to_instant
 from .errors import EkbatanError, ValidationError
 
 __all__ = [
@@ -678,15 +678,15 @@ class Model[
         # `created_date` is required, and `super().__post_init__()` has already refused a null
         # one - its annotation is `datetime`, not `datetime | None`.
         #
-        # Java: `.truncatedTo(MICROS)` on the way in, so what the row holds is what the column
-        # holds. Here that means UTC with the zone dropped - an aware value stored as-is would
-        # not compare equal to the same instant read back.
-        object.__setattr__(self, "created_date", to_storage(self.created_date))
+        # Java keeps an `Instant`; here that is an aware UTC datetime, so the model's timestamps
+        # compare with `clock.now()` and equal the same instant read back. A value with no zone
+        # is taken as UTC. (`datetime` has microseconds only: Java's `.truncatedTo(MICROS)`.)
+        object.__setattr__(self, "created_date", to_instant(self.created_date))
         # Java: `builder.updatedDate != null ? ... : this.createdDate`.
         object.__setattr__(
             self,
             "updated_date",
-            self.created_date if self.updated_date is None else to_storage(self.updated_date),
+            self.created_date if self.updated_date is None else to_instant(self.updated_date),
         )
 
     @property

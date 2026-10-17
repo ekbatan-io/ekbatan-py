@@ -100,8 +100,13 @@ pattern.
 
 ## Always UTC
 
-Every timestamp this framework writes is UTC, and it is stored in a column with **no zone**.
-That is enforced across the project and is not negotiable per table.
+Every timestamp this framework writes is UTC, and it is stored in a column with **no zone** -
+the UTC wall-clock time, which is exactly what Java's Ekbatan stores for an `Instant`. That is
+enforced across the project and is not negotiable per table.
+
+Every timestamp the framework hands **back** is an aware `datetime` in UTC, as Java's is an
+`Instant`: a model's dates, an outbox or notification row read back, `clock.now()`. So a value
+read back equals the value written, on every database, and compares with `clock.now()`.
 
 - **`TIMESTAMP`, never `TIMESTAMPTZ`.** `TIMESTAMP WITH TIME ZONE` shifts values by the session's
   offset, and two readers of one row then disagree about when the thing happened.

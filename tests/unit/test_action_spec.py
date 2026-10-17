@@ -16,7 +16,6 @@ from typing import Self
 import pytest
 
 from ekbatan import Action, ActionSpec, Clock, VirtualClock
-from ekbatan.clock import to_storage
 from ekbatan.domain import Model, ModelBuilder, ModelEvent
 from ekbatan.ids import Id
 
@@ -206,7 +205,7 @@ def test_assert_added_single_with_verifier(clock):
     def verify(model: TestModel) -> None:
         assert model.name == "my-wallet"
         assert model.state is TestState.ACTIVE
-        assert model.created_date == to_storage(JAN_1), "stored zone-less, in UTC"
+        assert model.created_date == JAN_1, "an aware UTC instant, as Java's Instant"
 
     (
         ActionSpec.of(CreateAction(clock))
@@ -569,7 +568,7 @@ def test_create_both_full_verification(clock):
 
     def verify_model(model: TestModel) -> None:
         assert model.name == "widget"
-        assert model.created_date == to_storage(june_1)
+        assert model.created_date == june_1
 
     (
         ActionSpec.of(CreateBothAction(clock))

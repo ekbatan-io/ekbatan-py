@@ -855,3 +855,26 @@ def test_an_optional_field_never_set_is_none():
         .build()
     )
     assert built.note is None
+
+
+# -- timestamps are instants (Java's `Instant`) -------------------------------------------------
+
+
+def test_a_models_timestamps_are_aware_utc_and_compare_with_the_clock():
+    from datetime import UTC, timedelta, timezone
+
+    from ekbatan.clock import VirtualClock
+
+    clock = VirtualClock(NOW)
+    wallet = Wallet.open(
+        id=ShardedId[Wallet].random(),
+        owner_id=uuid4(),
+        currency="EUR",
+        balance=Decimal("1"),
+        created_date=clock.now(),
+    )
+    assert wallet.created_date == clock.now()
+    assert wallet.created_date.tzinfo is UTC
+    assert wallet.created_date < clock.now() + timedelta(seconds=1), "no TypeError"
+    moved = wallet.copy().updated_date(NOW.astimezone(timezone(timedelta(hours=2)))).build()
+    assert moved.updated_date == NOW and moved.updated_date.tzinfo is UTC, "moved to UTC"

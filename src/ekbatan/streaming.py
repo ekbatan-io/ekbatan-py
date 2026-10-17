@@ -72,6 +72,13 @@ class ActionEvent:
     #: consumer has no use for it; it is here because it is a column and the row is the contract.
     delivered: bool = False
 
+    def __post_init__(self) -> None:
+        # Aware UTC, as Java's `Instant`s are, when a row hands back zone-less timestamps.
+        for name in ("started_date", "completion_date", "event_date"):
+            value = getattr(self, name)
+            if isinstance(value, datetime) and value.tzinfo is None:
+                object.__setattr__(self, name, value.replace(tzinfo=UTC))
+
     @classmethod
     def builder(cls) -> ActionEventBuilder:
         return ActionEventBuilder()

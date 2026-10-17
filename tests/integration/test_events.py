@@ -661,7 +661,7 @@ def test_a_new_notification_is_due_at_its_event_s_date_not_at_fan_out_time(
 
     wallet = a_wallet(executor)
     deposit(executor, wallets, wallet)
-    event_date = clock.now().replace(tzinfo=None)
+    event_date = clock.now()
     clock.pause_at(clock.now() - timedelta(hours=1))
 
     email = succeeding("email")

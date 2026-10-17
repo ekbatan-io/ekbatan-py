@@ -15,7 +15,6 @@ import pytest
 
 from ekbatan import RetryConfig, current_plan
 from ekbatan.action import ActionPlan
-from ekbatan.clock import to_storage
 from ekbatan.errors import EkbatanError, ValidationError
 from ekbatan.events import backoff
 from ekbatan.ids import ShardedId
@@ -111,7 +110,7 @@ def test_staging_hands_back_the_row_you_passed(clock):
         balance=Decimal("1"),
         created_date=clock.now(),
     )
-    assert fresh.created_date == to_storage(clock.now())
+    assert fresh.created_date == clock.now()
     assert fresh.updated_date == fresh.created_date, "unset, so it falls back to created_date"
 
     staged = plan.add(fresh)

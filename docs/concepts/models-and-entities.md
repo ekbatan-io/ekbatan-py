@@ -222,9 +222,9 @@ Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.n
 ```
 
 `updated_date` falls back to `created_date` — a row that has never changed was last updated when
-it was created. Both are normalised to zone-less UTC on the way in, the analogue of Java's
-`.truncatedTo(MICROS)`: an aware value stored as-is would not compare equal to the same instant
-read back.
+it was created. Both are kept as aware UTC `datetime`s, as Java keeps `Instant`s: a value with
+another offset is moved to UTC, one with no zone is taken as UTC. So `wallet.created_date`
+compares with `clock.now()`, and equals the same instant read back from any database.
 
 **Nothing moves `updated_date` but you.** Neither the plan nor the repository touches it on a
 write, exactly as nothing in Java's `ekbatan-core` writes `updatedDate`. Move it on the changes

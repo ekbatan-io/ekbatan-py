@@ -24,6 +24,7 @@ from sqlalchemy import Connection, Table, func, insert, select
 from .._builder import FieldBuilder
 from .._json import canonical
 from .._tracing import span
+from ..clock import to_instant, to_storage
 from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..persistence import DatabaseRegistry
@@ -52,6 +53,8 @@ OUTBOX_COLUMNS = (
     "event_date",
     "delivered",
 )
+
+_OUTBOX_DATES = ("started_date", "completion_date", "event_date")
 
 
 @dataclass(frozen=True, kw_only=True, slots=True, eq=False)
@@ -96,6 +99,9 @@ class EventEntity:
         # an older, looser rule unreadable - and wedge the fan-out job on that row for good.
         if not isinstance(self.namespace, str) or not self.namespace.strip():
             raise ValidationError("namespace cannot be blank")
+        # Aware UTC, as Java's `Instant`s are, however the row was read.
+        for name in _OUTBOX_DATES:
+            object.__setattr__(self, name, to_instant(getattr(self, name)))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, EventEntity):
@@ -149,8 +155,11 @@ class EventEntity:
         return cls(**{name: getattr(row, name) for name in OUTBOX_COLUMNS})
 
     def to_row(self) -> dict[str, Any]:
-        """The values to insert, keyed by column."""
-        return {name: getattr(self, name) for name in OUTBOX_COLUMNS}
+        """The values to insert, keyed by column; timestamps as the columns hold them."""
+        values = {name: getattr(self, name) for name in OUTBOX_COLUMNS}
+        for name in _OUTBOX_DATES:
+            values[name] = to_storage(values[name])
+        return values
 
 
 class EventEntityBuilder(FieldBuilder[EventEntity]):

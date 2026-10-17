@@ -417,8 +417,12 @@ this.updatedDate = builder.updatedDate != null ? builder.updatedDate.truncatedTo
 
 and its factories pass `clock.instant()` in. This port now does the same three things:
 `created_date` is required and refused when null, `updated_date` falls back to it, and both are
-normalised on the way in - `to_storage` is the analogue of `truncatedTo(MICROS)`, since an aware
-value stored as-is would not compare equal to the same instant read back.
+kept as aware UTC `datetime`s, Python's `Instant` (`EKB-0294`): a value with another offset is
+moved to UTC and one with no zone is taken as UTC. `datetime` holds microseconds only, so
+`truncatedTo(MICROS)` has nothing to do. Every read hands back the same aware UTC value -
+the repository's reader, `timestamp_column()`, the outbox and notification rows - so a value
+read back equals the one written and compares with `clock.now()`. The columns stay zone-less
+and hold the UTC time, as Java's do.
 
 For a while this port left both unset and stamped them from the executor's clock when the change
 was staged, on the grounds that two lines which are the same every time and wrong occasionally do

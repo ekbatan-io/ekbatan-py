@@ -28,12 +28,12 @@ PROBE model.noEventsEmpty: 0
 PROBE model.callerListMutatedAfterBuild: 1
 PROBE model.createdDate.micros: 2025-01-01T00:00:00.123456Z
 PROBE model.createdDate.plus2: 2025-01-01T00:00:00Z
-PROBE model.createdDate.hasZone: False
+PROBE model.createdDate.hasZone: True
 PROBE model.updatedDefaultsToCreated: True
 PROBE model.updatedExplicit: 2025-06-01T00:00:00Z
 PROBE model.updatedBeforeCreated: OK 2020-01-01T00:00:00Z
 PROBE model.createdNaiveInput: OK 2025-01-01T00:00:00Z
-PROBE model.createdDateVsClockNow.compare: ERR TypeError: can't compare offset-naive and offset-aware datetimes
+PROBE model.createdDateVsClockNow.compare: OK True
 PROBE model.copy.fields: True,True,True,True,3,1
 PROBE model.copy.eventsIndependent: 1,2
 PROBE model.copy.businessFields: L,X

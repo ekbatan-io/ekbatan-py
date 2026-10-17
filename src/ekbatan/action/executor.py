@@ -19,7 +19,7 @@ from typing import Any, Self
 from sqlalchemy import Table
 
 from .._tracing import span
-from ..clock import Clock, SystemClock, to_storage
+from ..clock import Clock, SystemClock, to_instant
 from ..errors import CrossShardError, StaleRecordError, ValidationError
 from ..persistence import DatabaseRegistry
 from ..repository import Repository, RepositoryRegistry
@@ -308,7 +308,7 @@ class ActionExecutor:
             started_at = time.monotonic()
             LOG.info("executing %s [principal=%s]", name, principal or "")
             while True:
-                started = to_storage(self.clock.now())
+                started = to_instant(self.clock.now())
                 # A fresh plan per attempt. If it survived a failed one, the retry would commit
                 # the first attempt's staged changes on top of its own - two deposits for one
                 # call.
@@ -454,7 +454,7 @@ class ActionExecutor:
                 action_name=action_name,
                 params=params,
                 started=started,
-                completed=to_storage(self.clock.now()),
+                completed=to_instant(self.clock.now()),
                 action_id=action_id,
             )
 

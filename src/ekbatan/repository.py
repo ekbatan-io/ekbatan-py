@@ -49,7 +49,7 @@ from sqlalchemy import (
 )
 
 from ._tracing import span
-from .clock import Clock, SystemClock, to_storage
+from .clock import Clock, SystemClock, to_instant, to_storage
 from .domain import DELETED, Entity, Model, Persistable
 from .errors import (
     CrossShardError,
@@ -1141,6 +1141,9 @@ def _reader_for(hint: Any) -> Callable[[Any], Any]:
             return lambda v: None if v is None else (v if isinstance(v, origin) else origin(v))
         if issubclass(origin, Enum):
             return lambda v: None if v is None else (v if isinstance(v, Enum) else origin[str(v)])
+        if issubclass(origin, datetime):
+            # An aware UTC datetime, as Java reads an `Instant`, whatever the column type.
+            return lambda v: None if v is None else to_instant(v)
     return _identity
 
 

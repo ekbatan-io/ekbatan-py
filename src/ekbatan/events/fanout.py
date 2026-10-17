@@ -21,7 +21,7 @@ from datetime import timedelta
 from sqlalchemy import Table
 
 from .._metrics import counter
-from ..clock import Clock, SystemClock, to_storage
+from ..clock import Clock, SystemClock, to_instant
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
 from ._across import Concurrently
@@ -109,7 +109,7 @@ class EventFanout:
             if not events:
                 return 0
 
-            now = to_storage(self._clock.now())
+            now = to_instant(self._clock.now())
             notifications = [
                 EventNotification.builder()
                 .id(uuid.uuid4())

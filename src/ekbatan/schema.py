@@ -19,8 +19,8 @@ puts them too: `V0001__eventlog.sql`.
 
 Two rules that outlive any one dialect:
 
-- **Timestamps carry no zone.** A ``TIMESTAMP WITH TIME ZONE`` shifts values by the session's
-  offset and two readers of one row then disagree about when the thing happened.
+- **Timestamp columns carry no zone**, as Java's do; the values read back are aware UTC
+  ``datetime``\ s, as Java's are ``Instant``\ s.
 - **``model_id`` is a string.** Not every model is keyed by a UUID; typing it as one would
   exclude every aggregate keyed by an account number or an ISIN.
 """
@@ -28,6 +28,8 @@ Two rules that outlive any one dialect:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     CHAR,
@@ -42,7 +44,8 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
-from sqlalchemy.types import TypeDecorator
+from sqlalchemy.engine import Dialect
+from sqlalchemy.types import TypeDecorator, TypeEngine
 
 __all__ = [
     "json_column",
@@ -54,19 +57,52 @@ __all__ = [
 ]
 
 
-def timestamp_column() -> DateTime:
+class _UtcTimestamp(TypeDecorator[datetime]):
+    """A zone-less timestamp column that is UTC on the way in and aware UTC on the way out.
+
+    Stored exactly as Java stores an ``Instant`` - its UTC wall-clock time - and read back as
+    one: an aware ``datetime`` in UTC, so the value read equals the value written and compares
+    with ``clock.now()``. A value bound with no zone is taken as UTC; one with a zone is moved
+    to UTC first, never shifted by the session's offset.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Dialect) -> TypeEngine[Any]:
+        if dialect.name in ("mysql", "mariadb"):
+            from sqlalchemy.dialects import mysql
+
+            # MySQL's bare DATETIME keeps whole seconds and silently drops the rest.
+            return dialect.type_descriptor(mysql.DATETIME(fsp=6))
+        return dialect.type_descriptor(DateTime())
+
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        from .clock import to_storage
+
+        return None if value is None else to_storage(value)
+
+    def process_result_value(self, value: Any, dialect: Dialect) -> datetime | None:
+        from .clock import to_instant
+
+        if value is None:
+            return None
+        if isinstance(value, str):  # SQLite under a raw text() query
+            value = datetime.fromisoformat(value)
+        return to_instant(value)
+
+
+def timestamp_column() -> _UtcTimestamp:
     """The type every timestamp column has: UTC, no zone, microsecond precision.
 
-    The zone is left off deliberately - ``TIMESTAMP WITH TIME ZONE`` shifts values by the
-    session's offset, and two readers of one row then disagree about when the thing happened.
+    The zone is left off the column, as Java's columns leave it off; the value read back is an
+    aware UTC ``datetime``, as Java's is an ``Instant``.
 
     The precision is not decoration. MySQL's bare ``DATETIME`` stores whole seconds and
     silently drops the rest, so a value written at 10:00:00.123456 reads back as 10:00:00 and
     every ordering derived from it is wrong in a way nothing reports.
     """
-    from sqlalchemy.dialects import mysql
-
-    return DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb")
+    return _UtcTimestamp()
 
 
 class _CanonicalUuid(TypeDecorator[uuid.UUID]):

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
 
-from ekbatan.clock import VirtualClock, to_storage
+from ekbatan.clock import VirtualClock
 from ekbatan.errors import EntityNotFoundError, StaleRecordError
 from ekbatan.ids import Id, ShardedId
 from ekbatan.persistence import DatabaseRegistry
@@ -57,7 +57,8 @@ def test_an_inserted_row_reads_back_exactly(wallets, clock):
         "the instant the model was built with is the instant that was written - the "
         "repository does not supply one, as Java's does not"
     )
-    assert found.created_date.tzinfo is None, "timestamps are stored zone-less, in UTC"
+    assert found.created_date.tzinfo is UTC, "read back aware, as Java reads an Instant"
+    assert found.created_date - clock.now() == NOW - clock.now(), "comparable with the clock"
 
 
 def test_a_row_read_back_carries_no_events(wallets):
@@ -615,8 +616,8 @@ def test_an_update_leaves_updated_date_alone(wallets, clock):
     # Setting it is the caller's, and it survives the write untouched.
     at = clock.now()
     marked = wallets.update(wallets.get(a.id).copy().updated_date(at).build())
-    assert wallets.get(a.id).updated_date == to_storage(at)
-    assert marked.updated_date == to_storage(at)
+    assert wallets.get(a.id).updated_date == at
+    assert marked.updated_date == at
 
 
 # A value that only reaches the database through a type mapper. Java's `Dummy` carries an

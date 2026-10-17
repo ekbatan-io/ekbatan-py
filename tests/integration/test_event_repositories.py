@@ -20,7 +20,7 @@ from ekbatan.events.repository import EventEntityRepository, EventNotificationRe
 from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS
 
-NOW = datetime(2026, 3, 1, 12, 0)
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 
 
 def an_event(event_type: str | None = "WalletCreatedEvent", minutes: int = 0) -> EventEntity:
@@ -215,13 +215,15 @@ def test_marking_nothing_touches_nothing(notifications):
     notifications.mark_failed_bucket([], NOW, NOW, DEFAULT_SHARD)
 
 
-def test_the_timestamps_come_back_naive_utc(notifications):
-    """The storage convention every other table here follows."""
+def test_the_timestamps_come_back_aware_utc(notifications):
+    """As Java's come back as `Instant`s: equal to what was written, comparable with
+    `clock.now()`."""
     notification = a_notification()
     notifications.add_all_no_result([notification], DEFAULT_SHARD)
     (back,) = notifications.find_due(DEFAULT_SHARD, 10, NOW)
     assert back.created_date == NOW
-    assert back.created_date.tzinfo is None or back.created_date.tzinfo == UTC
+    assert back.created_date.tzinfo is UTC
+    assert back.event_date.tzinfo is UTC
 
 
 # -- which connection a read takes ---------------------------------------------------------------

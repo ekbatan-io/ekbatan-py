@@ -52,7 +52,7 @@ the text is not measured here.
 | 19 | No events by default | 0 | 0 | same | model.noEventsEmpty |
 | 20 | `createdDate` kept to the microsecond | `.123456Z` | `.123456Z` | same | model.createdDate.micros (Java also cuts nanos: model.createdDate.nanos) |
 | 21 | A `+02:00` time is stored as the same instant | `00:00:00Z` | `00:00:00Z` | same | model.createdDate.plus2 |
-| 22 | The model's timestamp can be compared with the clock's now | true | `TypeError` (zone dropped) | differs | model.createdDateVsClockNow.compare, model.createdDate.hasZone |
+| 22 | The model's timestamp can be compared with the clock's now | true | true | same (fixed in EKB-0294) | model.createdDateVsClockNow.compare, model.createdDate.hasZone |
 | 23 | A time with no zone passed as `createdDate` | cannot happen (`Instant`) | taken as UTC | read: Java's type has no zone-less form | model.createdNaiveInput |
 | 24 | `updatedDate` defaults to `createdDate`; explicit one kept; earlier than created accepted | yes | yes | same | model.updatedDefaultsToCreated, model.updatedExplicit, model.updatedBeforeCreated |
 | 25 | `copy()` carries id, state, both dates, version, events, business fields | yes | yes | same | model.copy.fields, model.copy.businessFields, model.copy.isNewInstance |
