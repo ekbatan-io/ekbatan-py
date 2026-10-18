@@ -54,6 +54,11 @@ all three REST databases' uv projects; those are not generated from one another.
 - A keyed lock lease must span `executor.execute(...)`, not just the read.
 - Generated `schema.py` is gitignored. Never commit one, and never edit one.
 
+- **UTC everywhere**, the framework's strong recommendation: an example takes time from the clock
+  (`self.now()`, `clock.now()`), never `datetime.now()`; its migrations use `TIMESTAMP` (PostgreSQL)
+  or `DATETIME(6)` (MySQL, MariaDB), never `TIMESTAMPTZ`; its database runs in UTC. See
+  `docs/database/multi-database.md#always-utc`.
+
 ## Workflow
 
 1. `ls ekbatan-py-examples` to see the matrix.

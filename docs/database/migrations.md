@@ -50,6 +50,10 @@ repair(layout, "migrations")      # after a migration failed half-way - see belo
 baseline(layout, version="3")     # a database that existed before its migrations - see below
 ```
 
+**Timestamp columns: `TIMESTAMP` on PostgreSQL, `DATETIME(6)` on MySQL and MariaDB, holding UTC** -
+never `TIMESTAMPTZ`, never bare `DATETIME`. That is the framework's strong recommendation, with the
+reasons and the database setting in [Always UTC](multi-database.md#always-utc).
+
 ## The files
 
 ```

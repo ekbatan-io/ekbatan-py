@@ -130,6 +130,10 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
 Frozen, so a deposit returns a new wallet rather than mutating one. `with_event` is the entire
 outbox API from a domain author's point of view.
 
+**Time is UTC.** A model's dates come from the framework's clock (`self.now()` in an action),
+an aware UTC `datetime`, and are stored in zone-less columns. That is the strong recommendation
+everywhere - in your code and on the database - see [Always UTC](database/multi-database.md#always-utc).
+
 ### 2. A repository
 
 ```python

@@ -141,8 +141,10 @@ right by hand and `repair()` called. One per file keeps a failure from leaving a
 Several statements in one file are otherwise fine: the migrator splits a file itself - a
 procedure's `BEGIN ... END` body included, written without `DELIMITER`.
 
-**Set the container timezone to UTC.** `TZ=UTC`, or `serverTimezone=UTC` on the url. Without it,
-`DATETIME` columns shift silently between write and read.
+**Run the server in UTC**, `TZ=UTC` on the container, or put each session on UTC with
+`data_source_properties={"init_command": "SET time_zone = '+00:00'"}`. Ekbatan's own values do not
+shift either way, but `NOW()`, `CURRENT_TIMESTAMP` and column defaults follow the server's zone. See
+[Always UTC](multi-database.md#always-utc).
 
 ## See also
 

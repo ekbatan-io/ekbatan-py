@@ -120,6 +120,18 @@ an `Instant` (`to_instant`); `to_storage` drops the zone only on the way into a 
 `timestamp_column()` does both and also pins microsecond precision, because MySQL's bare
 `DATETIME` silently truncates to whole seconds.
 
+**UTC everywhere is the framework's strong recommendation** - not enforced, but assumed
+throughout, so code, docs and examples must follow it and say so:
+
+- in Python, time comes from the clock (`clock.now()`, `self.now()` in an action), aware UTC;
+  never `datetime.now()` or a naive `datetime`;
+- columns are zone-less: `TIMESTAMP` on PostgreSQL, `DATETIME(6)` on MySQL and MariaDB; never
+  `TIMESTAMPTZ`, never bare `DATETIME`;
+- the database runs in UTC, or each session is put on it through `data_source_properties`
+  (`options: -c TimeZone=UTC`, `init_command: SET time_zone = '+00:00'`).
+
+The user's guide is `docs/database/multi-database.md#always-utc`.
+
 ### The ambient transaction lives in a `ContextVar`
 
 Java binds it to a `ScopedValue`. A `ContextVar` is per-thread *and* per-async-task, so the same

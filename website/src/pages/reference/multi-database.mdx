@@ -102,24 +102,40 @@ pattern.
 
 ## Always UTC
 
-Every timestamp this framework writes is UTC, and it is stored in a column with **no zone** -
-the UTC wall-clock time, which is exactly what Java's Ekbatan stores for an `Instant`. That is
-enforced across the project and is not negotiable per table.
+**Strongly recommended.** Not enforced - nothing refuses another zone - but every part of Ekbatan
+is built for it, and leaving it is where time bugs come from. Three parts:
 
-Every timestamp the framework hands **back** is an aware `datetime` in UTC, as Java's is an
-`Instant`: a model's dates, an outbox or notification row read back, `clock.now()`. So a value
-read back equals the value written, on every database, and compares with `clock.now()`.
+1. **In your code, UTC.** Take the time from the framework's clock - `self.now()` in an action,
+   `clock.now()` elsewhere - which is an aware `datetime` in UTC, as Java's is an `Instant`. Not
+   `datetime.now()`, which is local, and not a naive `datetime`. Convert to a person's local time
+   only where it is shown to them.
+2. **In the columns, no zone.** `TIMESTAMP` (`WITHOUT TIME ZONE`) on PostgreSQL, `DATETIME(6)` on
+   MySQL and MariaDB, holding the UTC wall-clock time - exactly what Java's Ekbatan stores for an
+   `Instant`. `timestamp_column()` gives you this, and every timestamp the framework reads back
+   is an aware UTC `datetime` again, so a value read back equals the value written and compares
+   with `clock.now()`.
+   - **Not `TIMESTAMPTZ`.** It turns the session's zone into part of every write and read: two
+     readers with different session zones disagree about when the thing happened.
+   - **Not bare `DATETIME`** on MySQL and MariaDB: it truncates to whole seconds, silently, and
+     the outbox's only ordering key is a timestamp.
+3. **On the database, UTC.** The values Ekbatan writes do not shift whatever the server's zone -
+   measured on all three databases - but the database's **own** clock does: `NOW()`,
+   `CURRENT_TIMESTAMP`, a column `DEFAULT`. SQL that mixes those with Ekbatan's columns is off by
+   the zone's offset. Run the server in UTC (`TZ=UTC` on the container; PostgreSQL's
+   `timezone = 'UTC'`), or set it per connection in `data_source_properties`:
 
-- **`TIMESTAMP`, never `TIMESTAMPTZ`.** `TIMESTAMP WITH TIME ZONE` shifts values by the session's
-  offset, and two readers of one row then disagree about when the thing happened.
-- **`DATETIME(6)`, never bare `DATETIME`**, on MySQL and MariaDB. The bare form truncates to
-  whole seconds, silently - and the outbox's only ordering key is a timestamp.
-- **Set the server to UTC.** `TZ=UTC` on the container, or `serverTimezone=UTC` on the URL.
-- **CI runs the PostgreSQL suite a second time under a non-UTC process**, because that is where
-  a driver inferring a zoned type shows up and nowhere else.
+   ```python
+   # PostgreSQL
+   DataSourceConfig(url=..., data_source_properties={"options": "-c TimeZone=UTC"})
+   # MySQL and MariaDB
+   DataSourceConfig(url=..., data_source_properties={"init_command": "SET time_zone = '+00:00'"})
+   ```
 
-`timestamp_column()` handles all of this. The one place the framework steps off the rule is
-`scheduled_tasks`, which is db-scheduler's own schema - see
+   Both measured against a server set to `Asia/Tehran`: the session then reports UTC.
+
+CI runs the PostgreSQL suite a second time under a non-UTC process, because that is where a driver
+inferring a zoned type would show up and nowhere else. The one place the framework steps off the
+rule is `scheduled_tasks`, which is db-scheduler's own schema - see
 [that table's page](/reference/tables/scheduled-tasks/) for the measured consequence of getting it wrong.
 
 ## Schema vs database

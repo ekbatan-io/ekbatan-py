@@ -39,6 +39,10 @@ the Java while porting go in an openspec change, not a code change.
   documented. SQLite is not a production dialect and proves less than it looks like it proves.
 - `timestamp_column()`, never a zoned type. `DATETIME(6)`, never bare `DATETIME`. Columns hold
   the zone-less UTC time; every timestamp handed back is an aware UTC `datetime` (Java's `Instant`).
+- **UTC everywhere is the strong recommendation**, in code, docs and examples alike: time from the
+  clock (`clock.now()`, `self.now()`), never `datetime.now()` or a naive `datetime`; `TIMESTAMP`,
+  never `TIMESTAMPTZ`; the database in UTC or each session put on it via `data_source_properties`.
+  Say so wherever timestamps come up. Guide: `docs/database/multi-database.md#always-utc`.
 - Params and payload JSON is the text Java's default Jackson 3 mapper writes, byte for byte
   (camelCase keys, decimals as numbers); `ekbatan._json` and `parity-probes/G-domain-model/` hold it.
 - Nothing in `src/` may import a web framework. `tests/test_structure.py` enforces it.

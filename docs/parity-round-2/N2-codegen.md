@@ -21,7 +21,7 @@ repeated. Sources and outputs: [`parity-probes/round2-N2/`](../../parity-probes/
 
 | # | Difference (plain, one line) | Java | Python | Verdict | Why (one line) | Evidence |
 |---|---|---|---|---|---|---|
-| 1 | A PostgreSQL `TIMESTAMPTZ` column is given the zone-less type, so a write is shifted by the session's time zone | `OffsetDateTime`, exact | stored 08:30 UTC for 12:00 UTC when the session zone is Asia/Tehran; read back wrong | fix | silent wrong data on any non-UTC session; one line to stop forcing zoned timestamps | run: `jooq-pg.java.out` zoned_ts; `schemagen_runtime.python.out` pg.timestamptz.* |
+| 1 | A PostgreSQL `TIMESTAMPTZ` column is given the zone-less type, so a write is shifted by the session's time zone | `OffsetDateTime`, exact | stored 08:30 UTC for 12:00 UTC when the session zone is Asia/Tehran; read back wrong | leave (user, 2026-10-18) | outside the framework's UTC recommendation; was: silent wrong data on any non-UTC session; one line to stop forcing zoned timestamps | run: `jooq-pg.java.out` zoned_ts; `schemagen_runtime.python.out` pg.timestamptz.* |
 | 2 | A `VARCHAR(36)` column named `*_id` is turned into a uuid column, on every database | `String` (Java forces only `CHAR(36)`, only on MySQL) | uuid column; on PostgreSQL `WHERE ext_id = :uuid` fails "operator does not exist: character varying = uuid" | fix | breaks queries on a plain text id; narrow the guess to Java's | run: `jooq-pg.java.out`, `jooq-mysql.java.out` ext_id; `schemagen_runtime.python.out` pg.varchar36Id.* |
 | 3 | `copy()` (and `wallet(source)`) crash on a model with a derived field (`field(init=False)`) | derived field recomputed by the constructor; copy works | `TypeError: Wallet.__init__() got an unexpected keyword argument 'label'` | fix | a Java derived field ported the natural way breaks every update of that model | run: `builder.*.out` copyModelWithDerivedField, factoryFromSource |
 | 4 | `schemagen` writes a `schema.py` that cannot be imported when a table has a common type | `Byte` (BOOLEAN on MySQL/MariaDB), generated enum class, `byte[]`, `String[]`, `String` (MariaDB JSON) | `ImportError`/`TypeError`: emits `TINYINT`, `ENUM`, `BYTEA`, `LONGTEXT` from `sqlalchemy` (not there) and `ARRAY()` with no item type | fix | any BOOLEAN column on MySQL/MariaDB stops the app importing; emit importable types | run: `schemagen_import.python.out`, `py-schema/*/schema.py`, `jooq-*.java.out` |
@@ -54,6 +54,10 @@ example migrations generate a `schema.py` that imports on all three databases
 (`py-schema-from-java/run.out`).
 
 ## Details: the `fix` rows
+
+> **Leave, by the user's decision (2026-10-18):** `TIMESTAMPTZ` is outside the framework's strong
+> recommendation - UTC in code, zone-less `TIMESTAMP` columns, the database in UTC
+> (`docs/database/multi-database.md#always-utc`). A schema that follows it never meets this.
 
 **1. `TIMESTAMPTZ` forced to the zone-less type.** Java: the example's forced type
 `.withIncludeTypes("TIMESTAMP")` does not match `TIMESTAMP WITH TIME ZONE`, so jOOQ gives
