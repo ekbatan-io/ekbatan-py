@@ -23,7 +23,7 @@ from typing import Any
 from ..domain import Model, ModelEvent, Persistable
 from ..errors import ValidationError
 from ..persistence import Transaction
-from ..repository import Repository, RepositoryRegistry
+from ..repository import AnyRepository, RepositoryRegistry
 from .outbox import EventPersister
 from .plan import PersistableChanges
 
@@ -44,7 +44,7 @@ class _ChangePersisterCore:
         self.repositories = repositories
         self.outbox = outbox
 
-    def repository_for(self, model_type: type) -> Repository[Any]:
+    def repository_for(self, model_type: type) -> AnyRepository:
         """The repository that writes this model, or a refusal naming it.
 
         Reached through here as well as directly, because the executor needs a repository to

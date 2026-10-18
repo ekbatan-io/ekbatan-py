@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from sqlalchemy import (
     ColumnElement,
@@ -63,6 +63,9 @@ from .fetching import Db
 from .ids import TypedValue
 from .persistence import DatabaseRegistry, _ShardRegistry
 from .sharding import NoShardingStrategy, ShardIdentifier, ShardingStrategy
+
+if TYPE_CHECKING:
+    from .aio.repository import AsyncRepository
 
 __all__ = [
     "EntityRepository",
@@ -1285,6 +1288,12 @@ class EntityRepository[M: Entity[Any, Any], K](AbstractRepository[M, K]):
         super().__init__(_must_be_entity(model_type), *args, **kwargs)
 
 
+#: What a :class:`RepositoryRegistry` holds: a sync repository, or an ``ekbatan.aio`` one. A
+#: service's executor writes through one kind; the registry is a map from model type to
+#: repository and calls neither, so one class serves both.
+type AnyRepository = Repository[Any] | AsyncRepository[Any]
+
+
 class RepositoryRegistry:
     """Which repository writes which model.
 
@@ -1305,8 +1314,8 @@ class RepositoryRegistry:
 
     __slots__ = ("_by_model",)
 
-    def __init__(self, repositories: Iterable[Repository[Any]] = ()) -> None:
-        self._by_model: dict[type, Repository[Any]] = {}
+    def __init__(self, repositories: Iterable[AnyRepository] = ()) -> None:
+        self._by_model: dict[type, AnyRepository] = {}
         for repo in repositories:
             self._add(repo)
 
@@ -1315,7 +1324,7 @@ class RepositoryRegistry:
         """A builder, for registrations that declare what they are."""
         return RepositoryRegistryBuilder()
 
-    def _add(self, repo: Repository[Any]) -> None:
+    def _add(self, repo: AnyRepository) -> None:
         model_type = repo.model_type
         existing = self._by_model.get(model_type)
         if existing is not None and existing is not repo:
@@ -1329,7 +1338,7 @@ class RepositoryRegistry:
             )
         self._by_model[model_type] = repo
 
-    def repository(self, model_type: type) -> Repository[Any]:
+    def repository(self, model_type: type) -> AnyRepository:
         """The repository that writes this model, or a refusal naming it.
 
         Java's returns null here, which reaches the caller as a NullPointerException naming
@@ -1355,7 +1364,7 @@ class RepositoryRegistry:
     def __contains__(self, model_type: object) -> bool:
         return model_type in self._by_model
 
-    def __iter__(self) -> Iterator[Repository[Any]]:
+    def __iter__(self) -> Iterator[AnyRepository]:
         return iter(self._by_model.values())
 
     def __len__(self) -> int:
@@ -1372,9 +1381,9 @@ class RepositoryRegistryBuilder:
     __slots__ = ("_repositories",)
 
     def __init__(self) -> None:
-        self._repositories: list[Repository[Any]] = []
+        self._repositories: list[AnyRepository] = []
 
-    def with_model_repository(self, repository: Repository[Any]) -> Self:
+    def with_model_repository(self, repository: AnyRepository) -> Self:
         """Register a repository for a :class:`~ekbatan.domain.Model`.
 
         The model type is not passed alongside it - it is already on the repository, and two
@@ -1384,12 +1393,12 @@ class RepositoryRegistryBuilder:
         """
         return self._checked(repository, Model, "Model", "with_entity_repository")
 
-    def with_entity_repository(self, repository: Repository[Any]) -> Self:
+    def with_entity_repository(self, repository: AnyRepository) -> Self:
         """Register a repository for an :class:`~ekbatan.domain.Entity` - state whose changes
         are not events."""
         return self._checked(repository, Entity, "Entity", "with_model_repository")
 
-    def with_repositories(self, repositories: Iterable[Repository[Any]]) -> Self:
+    def with_repositories(self, repositories: Iterable[AnyRepository]) -> Self:
         """Register a collection, sorting each into model or entity by what it holds.
 
         For a container that has already collected them, where nobody is in a position to
@@ -1408,7 +1417,7 @@ class RepositoryRegistryBuilder:
 
     def _checked(
         self,
-        repository: Repository[Any],
+        repository: AnyRepository,
         expected: type,
         named: str,
         instead: str,

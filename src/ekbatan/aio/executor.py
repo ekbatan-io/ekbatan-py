@@ -72,12 +72,12 @@ class AsyncActionExecutor(_ExecutorCore):
             self.outbox = AsyncSingleTableJsonEventPersister(
                 registry, events if events is not None else outbox_table(MetaData())
             )
-        # The sync RepositoryRegistry, reused: it is a map from model type to repository and
-        # never calls one, so it holds an async repository as well as a sync one.
+        # The one RepositoryRegistry: a map from model type to repository that never calls
+        # one, so it holds an async repository as well as a sync one.
         self.changes = AsyncChangePersister(
             repositories
             if isinstance(repositories, RepositoryRegistry)
-            else RepositoryRegistry(repositories),  # type: ignore[arg-type]
+            else RepositoryRegistry(repositories),
             self.outbox,
         )
 
