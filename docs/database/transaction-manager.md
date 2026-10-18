@@ -53,20 +53,17 @@ of the action machinery: no plan, no outbox row, no retry on a lost version race
 `fetch(mapper)` family a repository uses, described in [Repositories](repositories.md#examples).
 `tx.connection` is the `Db` underneath, for everything else SQLAlchemy offers.
 
-**One `with` block where Java has four overloads.** Java needs `inTransaction` and
-`inTransactionChecked`, each in a value-returning and a void form, because a lambda that throws a
-checked exception needs its own functional interface. A `with` block returns whatever you want
-and propagates whatever it likes.
+**One `with` block covers every case.** The block can compute and keep any value you want, and
+an exception of any kind leaves it, rolling the transaction back on the way.
 
 ## Do not nest
 
 **Do not nest.** The framework does not simulate nested transactions or savepoints. A
 `tm.transaction()` inside another one on the same `tm` does not fail loudly: it opens a *second*
-transaction on a *second* pooled connection, with its own commit boundary - exactly as Java's
-`inTransaction` does. That is almost never what you want. Structure your code to do all the work
+transaction on a *second* pooled connection, with its own commit boundary. That is almost never what you want. Structure your code to do all the work
 inside one outer block.
 
-What the inner block gets, as in Java:
+What the inner block gets:
 
 - it does not see the outer block's uncommitted rows;
 - its commit stands even if the outer block then fails, and its failure rolls back only its own
@@ -91,9 +88,9 @@ transaction, so the action commits on its own and stays committed if your block 
 The transaction is begun, committed and rolled back by hand rather than through SQLAlchemy's own
 `with conn.begin()`. That context manager rolls back for you, but it has nowhere to report that
 **the rollback itself** failed - and SQLAlchemy then returns the connection to the pool and hands
-it to the next caller, still carrying whatever the rollback did not undo. Java refuses to do that:
-a failed rollback marks the transaction dirty and the connection is evicted rather than released.
-So does this.
+it to the next caller, still carrying whatever the rollback did not undo. This framework refuses
+to do that: a failed rollback marks the transaction dirty and the connection is evicted rather
+than released.
 
 The reasoning behind the eviction is worth knowing because it is counter-intuitive: restoring
 autocommit on a connection whose transaction may still be open **is itself a commit**. psycopg
@@ -120,8 +117,8 @@ block's own uncommitted writes, use `tx.execute` / `tx.rows` or a repository met
 The mechanism is the ambient transaction, and it is worth being precise about it because it is
 what makes a repository call read the same inside a unit of work and outside one.
 
-Opening a transaction binds its connection to a `ContextVar`, keyed by the manager - as Java
-keeps one `ScopedValue` per manager. A second manager for the same shard (another registry, or
+Opening a transaction binds its connection to a `ContextVar`, keyed by the manager. A second
+manager for the same shard (another registry, or
 one built on a member's `jobsConfig`) sees no transaction there and opens its own, on its own
 database. Every repository
 write goes through `tx_db_else_db(...)`, which looks in that binding first: inside the block it
@@ -170,9 +167,8 @@ Inside a `tm.transaction()` block these hand you that transaction's connection i
 read written this way joins rather than opening a second one.
 
 Outside one, no transaction is opened and nothing is bound — the connection runs in
-`AUTOCOMMIT`, so each statement stands on its own and commits itself. That is the behaviour Java
-gets for free from JDBC, where `db()` is a context over a DataSource with auto-commit left on.
-SQLAlchemy will not do it by default: an `execute` outside a transaction quietly begins one, and
+`AUTOCOMMIT`, so each statement stands on its own and commits itself. The framework sets this
+on purpose, because SQLAlchemy will not do it by default: an `execute` outside a transaction quietly begins one, and
 a connection closed without `commit` rolls it back, so a write would simply vanish.
 
 `readonly=True` asks for the replica and falls back to the primary when a shard has none. It is
@@ -197,7 +193,7 @@ partial commit would need compensating, use a [saga](../concepts/sagas.md).
 
 The block produces an `ekbatan.transaction` span with `ekbatan.shard.group` and
 `ekbatan.shard.member` attributes, one per block - a nested block is a transaction of its own and
-gets its own span, as in Java.
+gets its own span.
 
 ## See also
 

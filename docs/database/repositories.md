@@ -16,11 +16,11 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 
 ## The four classes
 
-Java's names, and Java's layering:
+Four classes, in layers:
 
 | class | what it is |
 | --- | --- |
-| `Repository[M]` | the promise: what the framework asks of a repository, and all it asks. A `Protocol`, as Java's is an interface - so anything that keeps it can be registered |
+| `Repository[M]` | the promise: what the framework asks of a repository, and all it asks. A `Protocol` - so anything that keeps it can be registered |
 | `AbstractRepository[M, K]` | the SQL implementation of that promise. Abstract: `to_row` and `from_row` are yours |
 | `ModelRepository[M, K]` | extend this for a model |
 | `EntityRepository[M, K]` | extend this for an entity |
@@ -29,10 +29,8 @@ An application extends `ModelRepository` or `EntityRepository` and nothing else.
 
 ## Write the mapping
 
-Every repository writes `to_row` and `from_row`. Java declares `fromRecord` and `toRecord`
-abstract on `AbstractRepository`, so a repository that has not written them does not compile;
-there is no compile step here, so a repository without them **cannot be created** - the mistake
-shows at startup, not on the first request:
+Every repository writes `to_row` and `from_row`. A repository without them **cannot be
+created** - the mistake shows at startup, not on the first request:
 
 ```
 WalletRepository cannot be created: from_row() and to_row() have not been written, and the
@@ -54,14 +52,12 @@ Where a name or a shape differs, write the mapping out instead.
 
 **This was the default until `EKB-0217`, and being the default is what made it wrong.** Rename a
 column without renaming the field and the mapping silently stopped matching - no error, no
-warning, a repository that had quietly stopped round-tripping. Java gets a compile error for the
-same mistake. The two lines are the difference between a mapping somebody chose and one nobody
+warning, a repository that had quietly stopped round-tripping. The two lines are the difference between a mapping somebody chose and one nobody
 can find.
 
-What you still do not write is the *bridge*. Java lists every column twice because jOOQ hands it
-a generated record type; `columns_by_field_name` needs writing once in the framework rather than
-once per repository, because a dataclass knows its fields. Choosing it is yours; implementing it
-is not.
+What you still do not write is the *bridge*: you do not list every column twice.
+`columns_by_field_name` is written once in the framework rather than once per repository, because
+a dataclass knows its fields. Choosing it is yours; implementing it is not.
 
 ## Inherited CRUD surface
 
@@ -117,7 +113,7 @@ Several criteria are `AND`ed. For anything else, build the expression yourself a
 
 ### No offset pagination, deliberately
 
-There is no `all(offset, limit)` and no `find_where(..., offset, limit)`, in either port. Offset
+There is no `all(offset, limit)` and no `find_where(..., offset, limit)`. Offset
 pagination does not work across shards - "rows 100 to 120" has no meaning when the rows are on
 four databases and each has its own ordering. Use keyset or temporal pagination, written on the
 concrete repository where you know the ordering key.
@@ -143,7 +139,7 @@ for shard, conn in self.readonly_dbs(): ...
 
 | you want | use |
 | --- | --- |
-| the default read behaviour | the inherited reads - the primary, outside any open transaction, as Java's |
+| the default read behaviour | the inherited reads - the primary, outside any open transaction |
 | a custom read that must be current | `db(...)` or `dbs()` |
 | a custom read where lag is fine | `readonly_db(...)` or `readonly_dbs()` - these **are** the replica |
 | a read that must see this transaction's uncommitted writes | `tx_db_else_db(...)` |
@@ -158,7 +154,7 @@ returns the transaction's connection or `None`, and the transaction owns it.
 
 | you want | use |
 | --- | --- |
-| the default read behaviour | the inherited reads - the primary, outside any open transaction, as Java's |
+| the default read behaviour | the inherited reads - the primary, outside any open transaction |
 | a custom read that must be current | `db(...)` or `dbs()` |
 | a custom read where lag is fine | `readonly_db(...)` or `readonly_dbs()` - these **are** the replica |
 | a read that must see this transaction's uncommitted writes | `tx_db_else_db(...)` |
@@ -195,7 +191,7 @@ def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
 ```
 
 `conn.rows(statement)` hands back a `FetchResult`, and each of its terminals takes the mapper -
-so the mapping is the last thing you read, as it is in the Java port's `fetch(this::fromRecord)`.
+so the mapping is the last thing you read.
 
 | | |
 | --- | --- |
@@ -211,9 +207,8 @@ so the mapping is the last thing you read, as it is in the Java port's `fetch(th
 The difference between `fetch_first` and `fetch_one_or_none` is what a *second* row means:
 ignored by the first, an error to the second. Pick the one that matches your invariant.
 
-The names deliberately do not follow jOOQ's, which is the one place this parts from it. There,
-`fetchOne` means *at most one* and `fetchAny` means *the first* - so a `fetch_one` that did not
-mean "fetch one" would be a trap.
+Each name says what it promises: `fetch_one` means exactly one, and a terminal that allows none
+or takes the first of several says so in its name.
 
 The mapper is any callable, not only `from_row`, so a projection is the same call with a
 different argument:
@@ -231,7 +226,7 @@ with self.tx_db_else_db(key=wallet_id) as conn:
     return conn.execute(delete(WALLETS).where(self.id_matches(wallet_id))).rowcount == 1
 ```
 
-Scatter-gather flattens, the same shape as Java's `readonlyDbs().stream().flatMap(...)`:
+Scatter-gather is a flattening comprehension over the shards:
 
 ```python
 return [
@@ -251,7 +246,7 @@ return [
 
 The inherited reads add the soft-delete predicate. A statement you build yourself does not - the
 filter is not a table property, it is something the repository applies on the way to a query it
-built. Write it out, as the Java repository writes `.and(WALLETS.STATE.ne(...))`:
+built. Write it out:
 
 ```python
 select(WALLETS).where(

@@ -76,8 +76,7 @@ collaborators.** There is nothing else a container would have been doing for you
 
 ## 1. Settings
 
-The Ekbatan settings live in `ekbatan.yaml`, in the same keys as Java's `application.yml` - see
-[Config files](database/config-files.md):
+The Ekbatan settings live in `ekbatan.yaml` - see [Config files](database/config-files.md):
 
 ```yaml
 ekbatan:
@@ -107,8 +106,8 @@ ekbatan:
 ```
 
 The url and login are placeholders with defaults, so one file runs everywhere and running the
-module works against a local server with no setup. What Java has no key for stays in a small
-`Settings`:
+module works against a local server with no setup. What is this service's own, rather than
+Ekbatan's, stays in a small `Settings`:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -120,9 +119,8 @@ class Settings:
     run_migrations: bool = os.environ.get("WALLET_MIGRATE", "1") != "0"
 ```
 
-`job_workers` has no Java counterpart at all. There, db-scheduler is handed
-`Executors.newVirtualThreadPerTaskExecutor()` and the worker count is unbounded. Here they are
-real OS threads, so the number is a decision. See [Concurrency](runtime/concurrency.md).
+`job_workers` is how many threads run job bodies. They are real OS threads, so the number is a
+decision, not a default to forget. See [Concurrency](runtime/concurrency.md).
 
 ## 2. The layout: which databases, and which is the default
 
@@ -131,7 +129,7 @@ ekbatan = load_ekbatan_config(config.config_file, environ=config.environ)
 layout = ekbatan.sharding
 ```
 
-Java's layout, level for level - the same keys as its `application.yml`. The same
+Groups of shards, each shard a member with named connection settings. The same
 `ShardingConfig` can be built in code instead, with `ShardingConfig.builder()`; the file is what
 the examples use. One group with one member
 is the ordinary case and costs nothing. Add members or groups to shard; see
@@ -147,8 +145,8 @@ jobs_engine = engine_for(member.config_for("jobsConfig"))
 lock_engine = engine_for(member.config_for("lockConfig"))
 ```
 
-Java's `ConnectionProvider.hikariConnectionProvider(member.configFor("jobsConfig"))`. They are
-yours, so dispose them in `close()`, after the scheduler and the locks have stopped.
+Each is an ordinary SQLAlchemy engine built from that member's settings. They are yours, so
+dispose them in `close()`, after the scheduler and the locks have stopped.
 
 ## 3. Migrations, before anything opens a pool
 
@@ -162,7 +160,7 @@ Every shard, one at a time, fail-fast. `migrate` runs plain SQL files through yo
 a config file that is missing in the one environment you did not test.
 
 It refuses to run if an applied migration has since been edited, renamed or deleted, or if a new
-one is older than one already applied - as Flyway refuses. Several replicas starting at once is
+one is older than one already applied. Several replicas starting at once is
 safe: each database is locked while it is migrated, one process migrates and the rest wait. See [Migrations](database/migrations.md).
 
 Ordering matters: run this before anything opens a pool against a schema that may not exist yet.
@@ -253,7 +251,7 @@ jobs = (
                        notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
         EventHandlingJob(registry, handlers,
                          notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running,
-                         # Java's DI creates this job only when the switch is on.
+                         # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled),
         PayStipendJob(executor, wallets),
     ])
@@ -270,8 +268,8 @@ and `jobs.start()` runs the pipeline. Leave them out and events accumulate unrea
 
 ### Three pools, and why
 
-This is the part worth copying into a real deployment, and the part the Java examples also carry
-(under a `lockConfig` slot in `application.yml`).
+This is the part worth copying into a real deployment: three pools, each a named config on the
+member (`primaryConfig`, `jobsConfig`, `lockConfig`).
 
 | pool | sized for | why it is separate |
 | --- | --- | --- |
@@ -299,14 +297,13 @@ Each block above is removable on its own:
 
 ## No annotations, and nothing is discovered
 
-There is no `@EkbatanAction` here and there is nothing scanning your package for one. The
+There is no decorator to mark an action and nothing scanning your package for one. The
 framework knows about exactly what you put in a registry. That is a real trade:
 
 - An action you forget to register fails at `execute` with a clear error, at runtime, not at
-  startup and not at compile time. Java's Micronaut integration would have caught it during
-  compilation.
+  startup.
 - Against that: you can read this file and know what the program contains, which you cannot do
-  with a classpath scan.
+  when a scan decides.
 
 The registries are builders rather than plain lists so a duplicate registration is refused
 rather than silently overwriting - which is the one class of mistake a list would let through.

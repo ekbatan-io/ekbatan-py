@@ -2,9 +2,9 @@
 
 How the schema gets into every database, including the shards, before anything opens a pool.
 
-Migrations are **plain SQL files**, named and run the way Flyway names and runs them - Flyway is
-what Java's `FlywayMigrator` uses. They are run by **[yoyo](https://ollycope.com/software/yoyo/)**,
-used as a library, so an application migrates itself at startup with no external binary and no
+Migrations are **plain SQL files** with a version in their name, `V0001__create_wallets.sql`, run
+in version order. They are run by **[yoyo](https://ollycope.com/software/yoyo/)**, used as a
+library, so an application migrates itself at startup with no external binary and no
 config file to find. What this framework adds on top is everything yoyo alone does not do, or
 gets wrong for a service that runs in more than one process: a real lock, checks that the files
 match what each database has applied, a history written in the same transaction as the
@@ -27,16 +27,16 @@ Each shard's `primaryConfig` is migrated - the replica follows it, and any other
 the member is a pool onto the same schema. Shards go **one at a time, in configuration order**,
 and the run stops at the first failure, naming the shard **and what had already been migrated** -
 half a migrated cluster is a state an operator has to reason about, and the database's own error
-only names a connection. It is logged as well, at ERROR on `io.ekbatan.flyway.FlywayMigrator`, as
-Java logs it: `Migrating mexico/member-0 (1:0) failed`, then `Stopped at mexico/member-0 (1:0);
+only names a connection. It is logged as well, at ERROR on the migrator's logger
+`io.ekbatan.flyway.FlywayMigrator`: `Migrating mexico/member-0 (1:0) failed`, then `Stopped at mexico/member-0 (1:0);
 already migrated: [global/member-0]`. A shard in `shards=` that the configuration does not have is **refused**,
 not skipped: a typo in a shard list should not quietly migrate nothing.
 
 It returns a `Result` per shard: the target, and what migrating it did - the version before, the
 version after, the files applied and any warnings.
 
-The rest of Java's `FlywayMigrator` is here too, under the same names, and Flyway's `info`,
-`repair` and `baseline`, which Java reaches through Flyway itself:
+The migrator can also be reached one database at a time, or through a builder, and three more
+calls look after the history - `info`, `repair` and `baseline`:
 
 ```python
 from ekbatan.migrations import YoyoMigrator, baseline, info, repair
@@ -72,19 +72,18 @@ migrations/
   and `V1.0` are one version.
 - **`R__<description>.sql`** - a **repeatable** migration: applied after every versioned one, and
   applied again whenever the file changes. See [below](#repeatable-migrations).
-- **`post-apply.sql`**, or any name starting `post-apply` - yoyo's hook, which is Flyway's
-  `afterMigrate`: run at the end of **every** migrate, whether or not anything was pending, and
+- **`post-apply.sql`**, or any name starting `post-apply` - yoyo's hook: run at the end of **every** migrate, whether or not anything was pending, and
   recorded nowhere. Write it so it can run again - grants, refreshing a view.
-- **Subdirectories are read**, at any depth, as Flyway reads them; hidden ones (`.git/`) are not.
+- **Subdirectories are read**, at any depth; hidden ones (`.git/`) are not.
   The history records the path inside the directory, `2026/V0003__backfill_currency.sql`.
-- **`.SQL`** works as `.sql` does - Flyway runs both.
+- **`.SQL`** works as `.sql` does.
 - **Several statements per file** are fine: yoyo splits the file into statements itself, on every
   database. A body with `;` inside stays one statement - a PostgreSQL function in `$$`, a MySQL
   procedure or trigger in `BEGIN ... END`, a SQLite trigger. MySQL's `DELIMITER` is a command of
   the mysql client, not SQL: leave it out.
 - **`-- transactional: false`** as the first line runs the file outside a transaction, for a
-  statement that refuses to run inside one - PostgreSQL's `CREATE INDEX CONCURRENTLY`. It is
-  Flyway's `executeInTransaction=false`, spelled as yoyo spells it:
+  statement that refuses to run inside one - PostgreSQL's `CREATE INDEX CONCURRENTLY`. The marker
+  is yoyo's own:
 
   ```sql
   -- transactional: false
@@ -95,16 +94,17 @@ migrations/
 
 Refused, before any database is touched:
 
-- a `.sql` file whose name does not match - Flyway skips one, and it then never runs
+- a `.sql` file whose name does not match - skipping it would mean it silently never runs
 - two files with the same version, or two repeatable ones with the same description
   (`R__a_b.sql` and `R__a b.sql` are both "a b"), in one directory or across several
 - a repeatable file with a version, `R1__x.sql`
-- a description longer than 200 characters - the history keeps 200. Flyway cuts it to fit and
-  then cannot match a repeatable migration to its row, so its next run fails
+- a description longer than 200 characters - the history keeps 200, and a description cut to fit
+  could no longer be matched to its row, so a repeatable migration's next run would fail
 - a `.rollback.sql` file - to undo a migration that has run, add a new one that reverses it
 - a migration that is not SQL, such as `V2__backfill.py`
-- a Flyway callback file (`afterMigrate.sql`) or script configuration file (`V2__x.sql.conf`) -
-  the error names what to use instead
+- a callback file such as `afterMigrate.sql`, or a per-file settings file such as
+  `V2__x.sql.conf` - the error names what to use instead (`post-apply.sql`,
+  `-- transactional: false`)
 - `DELIMITER`, and a `-- depends:` line - the order is the version order, and nothing else
 
 Other files - an `__init__.py` that makes the directory a package, a `README` - are left alone.
@@ -126,7 +126,7 @@ build instead of the deploy. Every example has this test.
 
 ## One run, start to end
 
-What one `migrate` does to one database, in Flyway's order:
+What one `migrate` does to one database, in order:
 
 1. Take the database's migration lock - see [several processes at once](#several-processes-at-once).
 2. If there is no history table and the schema has anything in it, **refuse** - see
@@ -154,16 +154,16 @@ SELECT owner_id, SUM(balance) AS total FROM wallets GROUP BY owner_id;
 - **They run again whenever the file changes** - its checksum differs from the one recorded when
   it last ran. A changed line ending is not a change. Each run adds a row to the history; the
   older rows stay.
-- **In order of description**, compared as Java compares strings, as Flyway does: capitals before
-  lower case, and `a` before `a b` before `a-b` before `ab`. When one needs another - a view over
+- **In order of description**, compared one character at a time by character code: capitals
+  before lower case, and `a` before `a b` before `a-b` before `ab`. When one needs another - a view over
   a view - name them so they sort in that order.
 - **Write them to replace**: `CREATE OR REPLACE`, or `DROP ... IF EXISTS` and then `CREATE`, so
   running one again over what the last run made works. SQLite has no `CREATE OR REPLACE VIEW`.
-- **A repeatable migration whose file is gone is refused**, as Flyway refuses it. If it was removed
+- **A repeatable migration whose file is gone is refused.** If it was removed
   on purpose, `repair()` records that - and drop the view or function it made in a versioned
   migration, since nothing else will.
 
-Two things Flyway does with them that are worth knowing, because this does them too:
+Two things about them worth knowing before a rolling deploy:
 
 - **An older release started after a newer one applies its own, older content again**, over the
   newer. Whichever release migrates last decides what the view looks like - so during a rolling
@@ -176,9 +176,9 @@ Two things Flyway does with them that are worth knowing, because this does them 
 
 ## What each database has applied
 
-Each database keeps a history in **`ekbatan_schema_history`**, with Flyway's columns: the order it
+Each database keeps a history in **`ekbatan_schema_history`**, one row per run: the order it
 was applied in (`installed_rank`), its version (none for a repeatable migration), description,
-type, file, a checksum of what the file contained, who applied it, when, how long it took, and
+type, file, a SHA-256 checksum of what the file contained, who applied it, when, how long it took, and
 whether it succeeded. Before anything runs, the files are compared with it, and each of these is
 **refused, with nothing applied**:
 
@@ -186,14 +186,13 @@ whether it succeeded. Before anything runs, the files are compared with it, and 
   file, and nothing can know which of the two its rows match. A different line ending or a
   byte-order mark is not an edit - a checkout that turns `\n` into `\r\n` changed nothing.
 - **an applied migration whose description changed.** Changing only how its version is written
-  (`V2` to `V0002`) or which directory it is in is not a change, as it is not in Flyway.
+  (`V2` to `V0002`) or which directory it is in is not a change.
 - **an applied migration whose file is gone.**
 - **a new migration older than one already applied.** It would never run in the place its number
   says; give it a version after the newest applied one.
 - **a migration that failed half-way on an earlier run** - see [repair](#a-migration-that-failed-half-way-repair).
 
-All of them are reported at once. Two cases are let through, with a warning, as Flyway lets them
-through: **a migration applied by a newer release** - newer than every file here - and one that
+All of them are reported at once. Two cases are let through, with a warning: **a migration applied by a newer release** - newer than every file here - and one that
 **failed when a newer release applied it**. That is an older release starting against a database
 a newer one migrated, and refusing it would stop a rollback of the application from starting at
 all.
@@ -208,15 +207,14 @@ at any point leaves neither: the migration is rolled back as a whole, and the ne
 from the start.
 
 **On MySQL and MariaDB every schema change commits on its own**, the moment it runs, whatever
-transaction it is in. No migration tool can change that - Flyway cannot either. So a migration that
-fails *after* a schema change leaves that change behind. It is **recorded as failed**, as Flyway
-records it, and the next run stops there until someone has looked - running it again over what
+transaction it is in. No migration tool can change that. So a migration that fails *after* a
+schema change leaves that change behind. It is **recorded as failed**, and the next run stops there until someone has looked - running it again over what
 it half did could apply half of it twice. The advice for those two databases is **one schema
 change per migration file**. A migration that only changes data is recorded atomically there too.
 
 A file marked `-- transactional: false` runs outside a transaction on every database, and is
 recorded once it has finished. If it fails, it is recorded as failed, on every database. A crash
-between it finishing and it being recorded runs it again next time - in Flyway too - so write such
+between it finishing and it being recorded runs it again next time, so write such
 a file to be safe to run twice: `CREATE INDEX CONCURRENTLY IF NOT EXISTS`.
 
 ## A migration that failed half-way: repair
@@ -229,8 +227,8 @@ The error says which migration, and the next run says it again, until:
 3. **Run `repair()`**, which removes the failed row.
 4. **Run `migrate`** - the migration is applied again, from the start.
 
-`repair()` is Flyway's, step for step, under the lock and in one transaction. It changes the
-history only, never the schema:
+`repair()` runs under the lock and in one transaction. It changes the history only, never the
+schema:
 
 - it removes the rows of failed migrations;
 - it marks an applied migration whose file is gone as deleted - one a newer release applied is
@@ -242,7 +240,7 @@ history only, never the schema:
 ## A database these migrations did not build: baseline
 
 A database that already has tables - built by hand, by `create_all`, by another tool - and no
-history is **refused**, as Flyway refuses it: running every migration from the first against it is
+history is **refused**: running every migration from the first against it is
 either an error on the first `CREATE TABLE` or, worse, a partial success.
 
 If the database is what your migrations up to some version make, record that:
@@ -252,8 +250,8 @@ baseline(layout, version="3")
 ```
 
 Migrations up to and including version 3 never run there; the ones after do. `baseline` is
-refused where the history already has anything in it, and - unlike Flyway - on an empty database,
-where it would only skip the migrations that build it.
+refused where the history already has anything in it, and on an empty database, where it would
+only skip the migrations that build it.
 
 ## Where each migration stands: info
 
@@ -272,7 +270,7 @@ Versioned  3     backfill         Pending
 Repeatable None  wallet totals    Pending
 ```
 
-The states are Flyway's: Pending, Success, Failed, Outdated (a repeatable migration whose file
+The states are Pending, Success, Failed, Outdated (a repeatable migration whose file
 has changed since), Superseded (an earlier run of one), Missing, Future (applied by a newer
 release), Ignored (not applied, and older than one that was), Deleted, Baseline, Below Baseline.
 `info` changes nothing and takes no lock; its `problems` are what `migrate` would refuse.
@@ -291,10 +289,8 @@ find nothing left to do.
   `<database>-ekbatan-migrate.lock`. Not on Windows, where SQLite migrations are not protected
   against each other.
 
-The lock is held for the whole run. Flyway takes it once per migration and reads the history
-again each time, so its processes can share out the work; the outcome is the same - every
-migration applied once, in order - and so is the rule that matters: **the history is always read
-under the lock**. A changed repeatable migration is applied by one process, not by each; a failure
+The lock is held for the whole run, and the checks run under it: **the history is always read
+under the lock**, so every migration is applied once, in order. A changed repeatable migration is applied by one process, not by each; a failure
 is recorded once, and the processes behind it refuse rather than try again.
 
 A waiting process **waits as long as it takes** and says so in the log every thirty seconds.
@@ -321,12 +317,15 @@ and MariaDB - and a replica is refused rather than migrated.
 ## What a migration's queries return
 
 A `SELECT` in a migration has its result **logged, at `INFO`, on the
-`io.ekbatan.flyway.FlywayMigrator` logger** - as Flyway logs it - rather than printed. Turn it off with
+`io.ekbatan.flyway.FlywayMigrator` logger** rather than printed. Turn it off with
 `migrate(..., output_query_results=False)`, or `.output_query_results(False)` on the builder: a
 migration that selects real rows logs them.
 
 What the database says beside a statement - PostgreSQL's notices, MySQL's and MariaDB's warnings,
-such as a table that did not exist to be dropped - is logged at `WARNING`, as Flyway logs it.
+such as a table that did not exist to be dropped - is logged at `WARNING`.
+
+The logger's name looks like a Java class because it is shared with Ekbatan for Java, so one
+logging setting covers both - see [Running beside a Java service](../beside-java.md#traces-and-logs).
 
 ## Writing the first migration
 
@@ -387,27 +386,14 @@ call: the examples do it at startup because it makes them runnable, and a large 
 runs it as its own step - a release phase, a job before the pods start - which is what
 `run_migrations` being a setting is for.
 
-## Differences from Flyway
+## Not supported
 
-Every behaviour above was run on Flyway 12 - the Java port's version - as well as read in its
-source; [the migrator ledger](../MIGRATOR-LEDGER.md) has each one, and
-`scripts/flyway-parity.py` runs the two side by side. Where this differs, it is on purpose:
-
-- **One connection for everything, on every database**, and a lock that waits as long as it
-  takes. Flyway on PostgreSQL uses two connections and gives up after about fifty seconds.
-- **The lock is held for the whole run** rather than per migration; the checks run under it.
-- **A misnamed `.sql` file is refused**, where Flyway skips it; so is `DELIMITER`, which yoyo does
-  not understand, and a description too long for the history.
-- **`-- transactional: false`** where Flyway has a `.conf` file or detects the statement itself.
-- **`baseline` refuses an empty database.**
-- **The history's checksum is a SHA-256**, which notices two lines joined into one where Flyway's
-  does not, and the table is named for the framework, not for Flyway.
-
-Not here at all: placeholders (`${...}`), callbacks other than `afterMigrate`, undo migrations, a
-target version, and migrations written in code.
+Placeholders (`${...}`), callbacks other than `post-apply`, undo migrations, migrating up to a
+chosen version, and migrations written in code.
 
 ## See also
 
 - [schemagen](schemagen.md) - which runs your migrations into a container and reflects the result
 - [Framework tables](tables.md) - what has to exist
 - [Sharding](sharding.md) - the configuration this reads
+- [Running beside a Java service](../beside-java.md#migrations) - when a Java service shares the database

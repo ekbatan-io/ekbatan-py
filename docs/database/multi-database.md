@@ -9,10 +9,9 @@ all the work.
 
 ## Column-type cheatsheet
 
-Java's counterpart to this page is a grid of Java types against DDL types against
-`SQLDataType` expressions against jOOQ converters - seven converters, and which one you need
-depends on the dialect. Here that collapses, because a SQLAlchemy type decorator already knows
-how to render itself per dialect.
+Three helpers cover the columns whose type differs between databases. Each is a SQLAlchemy type
+that already knows how to render itself on each dialect, so you pick the helper and not the
+dialect.
 
 ```python
 from ekbatan.schema import json_column, timestamp_column, uuid_column
@@ -52,7 +51,8 @@ native `UUID` too, and this framework still writes `CHAR(36)` there — see belo
 
 `BINARY(16)` is half the size and the obvious optimisation. It is not what this framework does,
 and the reason is that the outbox is read by things that are not this framework: `psql`, a
-Debezium connector, a Java service on the same database, a support engineer with a SQL prompt.
+Debezium connector, a service in another language on the same database, a support engineer
+with a SQL prompt.
 A `BINARY(16)` `model_id` is unreadable to every one of them, and unjoinable against any column
 that is not also `BINARY(16)`.
 
@@ -62,8 +62,10 @@ receive.
 
 SQLAlchemy's own default for a dialect with no uuid type is `CHAR(32)` — the hex with the
 hyphens stripped. This framework overrides that, and the bug it avoids is worth stating plainly:
-a Java service writing `d5143465-787a-...` and a Python service writing `d5143465787a...` cannot
-join on `model_id`, **and neither notices**, because both queries succeed and return nothing.
+one writer storing `d5143465-787a-...` and another storing `d5143465787a...` cannot join on
+`model_id`, **and neither notices**, because both queries succeed and return nothing. The
+hyphenated text is also what a Java service sharing the tables writes - see
+[Running beside a Java service](../beside-java.md#ids).
 
 ### Why MariaDB `JSON` needs the type forced
 
@@ -81,14 +83,10 @@ column's `json_valid` check from `information_schema` and writes `json_column()`
 fixes `BIGINT(display_width=20)`, which MariaDB reports for a plain bigint and which does not
 even import. MySQL reports `JSON` correctly and needs neither.
 
-### Repository field definitions, and why there are none here
+### One table for every dialect
 
-Java's answer to this page is three parallel sets of field constants — `PG_*`, `MARIADB_*`,
-`MYSQL_*` — for the columns whose type differs, selected in the constructor by
-`dialect.family()`. jOOQ binds a field to a concrete `SQLDataType`, so a cross-dialect
-repository has to carry one of each.
-
-Here there is nothing to select. `with_variant()` puts the per-dialect rendering inside the type:
+A repository does not choose column types by dialect. `with_variant()` puts the per-dialect
+rendering inside the type:
 
 ```python
 Uuid().with_variant(_CanonicalUuid(), "mysql", "mariadb")
@@ -96,8 +94,7 @@ JSON().with_variant(JSONB(), "postgresql")
 ```
 
 One `Table`, one repository, and the engine picks the rendering at statement-compile time. That
-is the whole of the difference, and it is why this page is a cheatsheet where Java's is a
-pattern.
+is why this page is a short cheatsheet and not a pattern to follow in every repository.
 
 ## Always UTC
 
@@ -105,12 +102,11 @@ pattern.
 is built for it, and leaving it is where time bugs come from. Three parts:
 
 1. **In your code, UTC.** Take the time from the framework's clock - `self.now()` in an action,
-   `clock.now()` elsewhere - which is an aware `datetime` in UTC, as Java's is an `Instant`. Not
+   `clock.now()` elsewhere - which is an aware `datetime` in UTC. Not
    `datetime.now()`, which is local, and not a naive `datetime`. Convert to a person's local time
    only where it is shown to them.
 2. **In the columns, no zone.** `TIMESTAMP` (`WITHOUT TIME ZONE`) on PostgreSQL, `DATETIME(6)` on
-   MySQL and MariaDB, holding the UTC wall-clock time - exactly what Java's Ekbatan stores for an
-   `Instant`. `timestamp_column()` gives you this, and every timestamp the framework reads back
+   MySQL and MariaDB, holding the UTC wall-clock time. `timestamp_column()` gives you this, and every timestamp the framework reads back
    is an aware UTC `datetime` again, so a value read back equals the value written and compares
    with `clock.now()`.
    - **Not `TIMESTAMPTZ`.** It turns the session's zone into part of every write and read: two
@@ -152,10 +148,11 @@ On MySQL and MariaDB "schema" and "database" are the same thing, so `schema="eve
 The grant cannot live in a migration - the migrator connects as that user, and a user cannot
 grant itself anything.
 
-**This port defaults to no schema at all**, because a Python service usually owns its database
-outright and one fewer namespace is one fewer thing to configure. Pass `schema="eventlog"` when
-you want Java's layout - which you do if a Java service shares the database. See
-[Framework tables](tables.md).
+**This framework defaults to no schema at all**, because a Python service usually owns its
+database outright and one fewer namespace is one fewer thing to configure. Pass a schema, such as
+`schema="eventlog"`, when you want the tables kept apart - see
+[Framework tables](tables.md). A Java service sharing the database expects exactly
+that one: [Running beside a Java service](../beside-java.md#what-to-set).
 
 ## Partial indexes (PostgreSQL only)
 

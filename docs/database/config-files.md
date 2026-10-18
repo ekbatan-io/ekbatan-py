@@ -19,7 +19,8 @@ library beyond PyYAML is involved: TOML, JSON and INI are read by Python's own `
 
 ## The layout
 
-It is the Java port's, under `ekbatan.sharding`, so one file reads the same in both:
+The databases sit under `ekbatan.sharding`: groups of shards, each shard a member with one or
+more named connection settings.
 
 ```yaml
 ekbatan:
@@ -45,12 +46,14 @@ ekbatan:
                 pool-size: 8
 ```
 
-- Keys may be kebab-case or camelCase, as Java accepts: `default-shard` or `defaultShard`,
+- Keys may be kebab-case or camelCase: `default-shard` or `defaultShard`,
   `primary-config` or `primaryConfig`. A datasource's own keys may also be snake_case, its names
   in code: `pool_size`.
 - Names inside `data-source-properties` are a driver's and are kept exactly as written.
 - Anything outside `ekbatan.sharding` is left alone, so the file can hold your own settings too.
   A key under it that means nothing is refused, with its path.
+- A Java service built on Ekbatan for Java reads the same keys, so one file can describe both -
+  see [Running beside a Java service](../beside-java.md#the-config-file).
 
 The same layout in TOML, JSON and INI:
 
@@ -108,8 +111,8 @@ INI has one level of sections, so a group is a dotted section name and a list it
 
 ## The whole `ekbatan` section
 
-`load_ekbatan_config` reads everything the Java examples keep under `ekbatan` in
-`application.yml`, in the same keys, and returns one `EkbatanConfig`:
+`load_ekbatan_config` reads everything under `ekbatan` - the namespace, the shard layout, the jobs
+and the local event handler - and returns one `EkbatanConfig`:
 
 ```python
 from ekbatan.config_files import load_ekbatan_config
@@ -122,7 +125,7 @@ jobs_builder = job_registry().with_config(ekbatan.jobs)
 handling_builder = (
     EventHandlingJob.builder()
     .config(ekbatan.local_event_handler)
-    # The job does not read the switch, as Java's does not; the wiring does.
+    # The job does not read the switch itself; the wiring does.
     .enabled(ekbatan.local_event_handler.handling.enabled)
 )
 ```
@@ -141,14 +144,13 @@ ekbatan:
 
 | Key | Becomes | When the file has none |
 |---|---|---|
-| `namespace` | `ekbatan.namespace` | `default`, as in Java |
+| `namespace` | `ekbatan.namespace` | `default` |
 | `sharding` | `ShardingConfig` | refused: it is required |
 | `jobs` | `JobsConfig`: `polling-interval`, `heartbeat-interval`, `shutdown-max-wait` | framework defaults |
 | `local-event-handler` | `LocalEventHandlerConfig`: `fanout-poll-delay`, `fanout-batch-size`, `handling-poll-delay`, `handling-batch-size`, `handling-max-backoff-cap`, `handling-retention-window`, `handling.enabled` | framework defaults; handling off |
 
-- **Durations are ISO-8601 text**, exactly what Java's `Duration.parse` accepts: `PT10S`,
-  `PT0.5S`, `PT5M`, `P1DT2H`. A bare number or Spring's `10s` is refused, as Java's binder refuses
-  it.
+- **Durations are ISO-8601 text**: `PT10S`, `PT0.5S`, `PT5M`, `P1DT2H`. A bare number or a short
+  form such as `10s` is refused.
 - **A key under `ekbatan` that means nothing is refused**, with its path, so a misspelt
   `local-event-handler.handling.enable` fails at startup instead of leaving handling off. Keys
   outside `ekbatan` are left alone, so the file can hold the application's own settings too.
@@ -161,11 +163,11 @@ Each format uses its own style:
 
 | Format | Placeholder | With a default |
 |---|---|---|
-| YAML, TOML, JSON | `${DB_PASSWORD}` - Spring's syntax | `${DB_PORT:5432}`; `${DB_PASSWORD:}` for an empty one |
+| YAML, TOML, JSON | `${DB_PASSWORD}` | `${DB_PORT:5432}`; `${DB_PASSWORD:}` for an empty one |
 | INI | `%(ENV_DB_PASSWORD)s` - Supervisor's convention | none - INI's syntax has no default |
 
-- **A variable that is not set, with no default, stops the load**, naming the variable - as Spring
-  does. Nothing quietly becomes the empty string.
+- **A variable that is not set, with no default, stops the load**, naming the variable. Nothing
+  quietly becomes the empty string.
 - **A variable that is set but empty is used as given**: an empty password is a valid one.
 - **A filled-in value is inserted as it is** and never read again, so a password holding `%` or `$`
   works.

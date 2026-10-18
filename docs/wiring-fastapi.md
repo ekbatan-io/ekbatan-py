@@ -73,8 +73,7 @@ def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
 
 The framework is synchronous - there is no `async` or `await` anywhere in `src/`. FastAPI runs a
 plain `def` endpoint **in a threadpool**, so a blocking database call there blocks one worker
-thread and nothing else. That is the same bargain Java gets from virtual threads, arrived at
-differently.
+thread and nothing else. Each request waits on its own thread, and the others carry on.
 
 An `async def` endpoint runs **on the event loop**, and a blocking call there stops the entire
 loop - every other request on that worker, not just this one. Measured: a 0.5s framework call
@@ -91,10 +90,9 @@ wallet = await run_in_threadpool(service.wallets.get, wallet_id)
 The example service is written with plain `def` throughout, which is why it needs no
 `to_thread` anywhere.
 
-**None of this applies under gevent** - where a blocking call yields and costs nothing, the way
-a virtual thread's does. But gevent serves **WSGI**, and FastAPI is ASGI, so a FastAPI service
-cannot have it. If your front end is Flask or Django, see
-[Concurrency](runtime/concurrency.md#gevent-the-closest-thing-to-virtual-threads-and-it-needs-nothing-from-us).
+**None of this applies under gevent** - where a blocking call yields to other work and costs
+nothing. But gevent serves **WSGI**, and FastAPI is ASGI, so a FastAPI service cannot have it. If
+your front end is Flask or Django, see the gevent section of [Concurrency](runtime/concurrency.md).
 
 See [Concurrency](runtime/concurrency.md).
 
@@ -143,8 +141,8 @@ with lease:
 Three things here.
 
 **The lease spans `execute`, not just the read.** It has to cover `perform()` *and* the
-executor's commit, or the race it exists to prevent reopens in the gap. This is Java's
-`try (var lease = lockProvider.acquire(...))` around the same call, written as a `with`.
+executor's commit, or the race it exists to prevent reopens in the gap. The `with` block holds
+the lease for exactly that long and lets go however the block ends.
 
 **`try_acquire`, not `acquire`.** An HTTP request must not block forever. A lease that cannot be
 had within the wait comes back as `None` - which is *contention*, not a failure, and the two are
@@ -171,7 +169,7 @@ class WalletResponse(BaseModel):
 ```
 
 `Wallet` carries a version, timestamps and an event list. A client needs none of them and should
-not break when one changes. Java's examples draw the same line with a `WalletResponse` record.
+not break when one changes.
 
 One subtlety the example documents at length: **quantize money at the boundary.** What an action
 *returns* is the model it staged, at whatever scale the caller passed in; what a later read
