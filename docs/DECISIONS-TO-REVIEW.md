@@ -730,7 +730,7 @@ The plan and the results are in `docs/ASYNC-LEDGER.md`.
 
 ## async (professional)
 
-The trial above, finished: branch `async-trial`, `EKB-0356` to `EKB-0362`. The plan and the
+The trial above, finished: branch `async-trial`, `EKB-0356` to `EKB-0363`. The plan and the
 measurements are in `docs/ASYNC-LEDGER.md`; the reader's page is `docs/runtime/async.md`.
 
 ### Decided by the user

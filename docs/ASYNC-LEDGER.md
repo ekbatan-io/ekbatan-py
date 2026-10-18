@@ -19,7 +19,7 @@ The design the user approved:
   code differs only where it awaits the database;
 - a service is all-sync or all-async; no mixing inside one transaction;
 - `to_row` / `from_row` stay plain `def`;
-- drivers are optional extras; the trial adds `asyncpg` only. SQLAlchemy's public asyncio API
+- drivers are optional extras: the trial added `asyncpg` only; the finished work has one per database (`postgres-async`, `mysql-async`, `mariadb-async`, `sqlite-async`). SQLAlchemy's public asyncio API
   (`create_async_engine`, `AsyncConnection`), nothing private.
 
 State: `trial` = built and tested in this trial. `todo` = needed for the professional
@@ -318,3 +318,74 @@ drivers and docs rather than core code.
 - **mixing**: nothing stops an application from building both a sync and an async registry over
   the same database; it works (separate pools) but one transaction cannot span them. The docs
   must say so.
+
+## Professional implementation (2026-10-18, `EKB-0357`-`EKB-0363`)
+
+Every `todo` row above is done, except E5 and E6 (keyed locks and handlers inside async
+actions), deferred by the user. Decisions: `docs/DECISIONS-TO-REVIEW.md#async-professional`.
+
+### What was added after the trial
+
+- **drivers**: asyncpg, aiomysql, aiosqlite as extras `postgres-async`, `mysql-async`,
+  `mariadb-async`, `sqlite-async`; a url naming a sync driver or none connects through the async
+  default (`async_url`); libpq's `options` / `application_name` / `connect_timeout` / `sslmode`
+  translated for asyncpg, so `options: -c TimeZone=UTC` works on it;
+- **reads**: `find_one_where`, `find_many`, `exists`, `exists_where`, `count`, `dbs()`,
+  `readonly_dbs()`; reads across shards run at once (`TaskGroup`), all or nothing;
+- **wiring**: `AsyncDatabaseRegistryBuilder`, `AsyncActionExecutorBuilder` (shared generic builder
+  cores), `AsyncEventEntityRepository`, `AsyncActionSpec`, `async_run_action`; `count_statements`
+  takes an async registry; `RepositoryRegistry` typed for either kind;
+- **tests**: 19 integration modules run both ways through `tests/modes.py`; native async tests in
+  `tests/integration/test_async.py` (pool cap, shards at once, failing shard, `dbs()`, timeouts,
+  UTC sessions, gathering); unit tests for drivers, translation, surface parity, the testing
+  helpers; async driver rows in `tests/driver_settings.tsv`;
+- **docs**: `docs/runtime/async.md` and `docs/going-async.md` with their website pages, setup-guide
+  step 19, install and dialect pages, concurrency and FastAPI pages, `AGENTS.md`,
+  `DIVERGENCE.md`, `SHORTCOMINGS.md`;
+- **examples**: `fastapi-wallet-rest-{uv,pip,poetry}-async-{pg,mariadb}`.
+
+### Final runs (all 2026-10-18)
+
+The suite, `pytest -o addopts=""` per database. Main is `0dc624e`, run from a clean copy; the
+branch is `EKB-0362`. "base tests" are main's tests, matched by id on the branch's sync run
+(`scripts`-free comparison of the two junit files).
+
+| database | main | branch: main's tests | branch: new sync tests | branch: async runs | branch total |
+| --- | --- | --- | --- | --- | --- |
+| SQLite | 1811 passed, 59 skipped | all 1811 pass | 17 pass (sync half of `test_async_parity`, one ledger test) | 287 passed, 13 skipped | 2115 passed, 72 skipped |
+| PostgreSQL | 1973 passed, 13 skipped | all 1973 pass | 18 pass | 300 passed | 2291 passed, 12 skipped |
+| MySQL | 1976 passed, 14 skipped | all 1976 pass | 18 pass | 300 passed | 2294 passed, 13 skipped |
+| MariaDB | 1986 passed, 12 skipped | all 1986 pass | 18 pass | 300 passed | 2304 passed, 11 skipped |
+
+No test of main's failed or disappeared (four ids gained `[sync]`, nothing else). Four that skip on
+main passed on the branch run only because the tracing SDK was installed in that environment;
+with it removed they skip, as on main. Async skips on SQLite: no passwords, no pool, one writer
+at a time. `make test-gevent` (SQLite): 1853 passed, async runs skipped. `make lint`: clean
+(ruff, mypy `--strict` over `src` and 9 examples, links, divergence, builders, examples in step,
+API claims, docs/website pairs). Website: `npm run build` 57 pages, `npm run check` clean.
+Examples: both async examples, uv, pip and Poetry, 15 passed each.
+
+### Benchmark, with the pool timeout
+
+`scripts/bench-async.py`, 2000 deposits per row, pool 40, PostgreSQL 17 in a local container,
+one laptop. ops/s, p50, p99; timed-out requests counted, not timed.
+
+**`pool_timeout` 30 s (the default)** - nothing timed out
+
+| N | sync API, 40 threads | asyncpg | psycopg async |
+| ---: | --- | --- | --- |
+| 1 | 199, 4.5 ms, 9.7 ms | 128, 7.2 ms, 15.8 ms | 196, 4.6 ms, 11.2 ms |
+| 50 | 626, 75 ms, 149 ms | 977, 47 ms, 92 ms | 716, 65 ms, 141 ms |
+| 200 | 581, 342 ms, 427 ms | 955, 123 ms, 786 ms | 780, 162 ms, 922 ms |
+| 1000 | 576, 1621 ms, 1839 ms | 874, 587 ms, 2196 ms | 796, 773 ms, 2382 ms |
+
+**`pool_timeout` 0.5 s**
+
+| N | sync API, 40 threads | asyncpg | psycopg async |
+| ---: | --- | --- | --- |
+| 200 | 0 timed out; 622, 317 ms, 375 ms | 84 timed out; 860, 138 ms, 609 ms | 37 timed out; 901, 139 ms, 563 ms |
+| 1000 | 0 timed out; 625, 1557 ms, 1674 ms | 967 timed out; 805, 399 ms, 797 ms | 743 timed out; 786, 653 ms, 967 ms |
+
+A lone request on asyncpg is slower than on psycopg: pre-ping costs 1.4 ms (asyncpg) to 2.4 ms
+(psycopg async) per deposit, and without it asyncpg is still about 1.5 ms slower (4.3 against
+2.9 ms). Under load asyncpg leads.
