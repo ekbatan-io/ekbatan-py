@@ -59,10 +59,13 @@ These were compared by creating both versions of each table and diffing them, no
 | --- | --- |
 | column names, order, nullability | **yes** |
 | PostgreSQL types | **yes** |
-| MySQL types | **yes**. The Java migration adds `CHARACTER SET ascii` to the uuid columns - smaller indexes, the same text |
-| MariaDB `id`, `action_id` | **no.** The Java migration uses MariaDB's native `UUID` type; this framework writes `CHAR(36)`. See below |
-| schema | **no, unless you set it.** Java uses `eventlog`; pass `schema="eventlog"` to match |
-| index names | `ix_events_action_id` here, `idx_events_action_id` in Java. Only a name |
+| MySQL types | **yes** (see below) |
+| MariaDB `id`, `action_id` | **no**: `UUID` in Java, `CHAR(36)` here (see below) |
+| schema | **no, unless you set it**: pass `schema="eventlog"` |
+| index names | **no**: `idx_events_action_id` in Java, `ix_events_action_id` here - only a name |
+
+**On MySQL** the Java migration adds `CHARACTER SET ascii` to the uuid columns. That makes the
+indexes smaller; the text stored is the same.
 
 **MariaDB's native `UUID` does not get in the way, and that was checked.** Against a table
 created by the Java migration, this framework writes a uuid and reads back the same value, and
