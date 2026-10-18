@@ -5,7 +5,7 @@ Linked from the top-level [README](../README.md). Each section has its own index
 **Start here**
 
 - **[Concepts](concepts/README.md)** - the dual-write trap, the outbox, actions, models and
-  entities, sagas, sharding. Language-neutral; the same ideas hold in the Java port
+  entities, sagas, sharding
 - **[Getting started](getting-started.md)** - install, the extras, the generators, your first
   action
 
@@ -23,6 +23,8 @@ Linked from the top-level [README](../README.md). Each section has its own index
 
 - **[Concurrency](runtime/concurrency.md)** - threads, the GIL, asyncio, gevent, and pool sizing
 - **[Observability](runtime/observability.md)** - spans, attributes, metrics, what to alert on
+- **[Running beside a Java service](beside-java.md)** - sharing tables, locks, events and ids
+  with a Java service
 - **[Releasing](../RELEASE.md)** - how a release is cut
 
 **About the port**

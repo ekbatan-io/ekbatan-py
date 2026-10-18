@@ -6,6 +6,7 @@
 // preserve the brutalist identity end-to-end — same ink background, paper
 // text, yellow accent headings, mono uppercase tracking-widest.
 const privacyHref = `${import.meta.env.BASE_URL}privacy/`;
+const besideJavaHref = `${import.meta.env.BASE_URL}reference/beside-java/`;
 ---
 
 <footer class="bg-ink text-paper">
@@ -57,11 +58,9 @@ const privacyHref = `${import.meta.env.BASE_URL}privacy/`;
                 </li>
                 <li>
                     <a
-                        href="https://ekbatan-io.github.io/ekbatan/"
-                        target="_blank"
-                        rel="noreferrer"
+                        href={besideJavaHref}
                         class="hover:bg-yellow hover:text-ink px-1 transition-colors"
-                        >The Java port ↗</a
+                        >Running beside Java</a
                     >
                 </li>
                 <li>
