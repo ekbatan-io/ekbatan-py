@@ -311,16 +311,26 @@ def makefile(e: Example, build: str) -> str:
     lines += [env]
     needs = "$(SRC)/schema.py" if e.image else "env"
     if e.image:
+        # `make test` installs the built wheel over the editable install, so without
+        # PYTHONPATH the generators would import that copy - stale the moment a module is
+        # added or changed (a new converters.py, a field on the model). uv keeps the editable
+        # install, so needs none.
+        gen = py if build == "uv" else f"PYTHONPATH=src {py}"
         lines += [
             "# A container starts when a migration or the settings changed, and not otherwise.",
             "# The settings - where, which image, forced types - are [tool.ekbatan.schemagen].",
+            *(
+                []
+                if build == "uv"
+                else ["# PYTHONPATH=src: read the source, not the wheel `make test` installed."]
+            ),
             "$(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) pyproject.toml | env",
-            f"\t{py} ekbatan.schemagen",
+            f"\t{gen} ekbatan.schemagen",
             "",
             "schema: $(SRC)/schema.py",
             "",
             "builders: env",
-            f"\t{py} ekbatan.codegen $(PACKAGE).model --out $(SRC)/builders.py",
+            f"\t{gen} ekbatan.codegen $(PACKAGE).model --out $(SRC)/builders.py",
             "",
         ]
     lines += [

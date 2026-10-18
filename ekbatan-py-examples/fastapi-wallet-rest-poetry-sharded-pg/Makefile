@@ -20,13 +20,14 @@ env:
 
 # A container starts when a migration or the settings changed, and not otherwise.
 # The settings - where, which image, forced types - are [tool.ekbatan.schemagen].
+# PYTHONPATH=src: read the source, not the wheel `make test` installed.
 $(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) pyproject.toml | env
-	poetry run python -m ekbatan.schemagen
+	PYTHONPATH=src poetry run python -m ekbatan.schemagen
 
 schema: $(SRC)/schema.py
 
 builders: env
-	poetry run python -m ekbatan.codegen $(PACKAGE).model --out $(SRC)/builders.py
+	PYTHONPATH=src poetry run python -m ekbatan.codegen $(PACKAGE).model --out $(SRC)/builders.py
 
 # The tests run against the project as its wheel, installed - not the source tree - so a
 # file the build leaves out fails here rather than on a server.

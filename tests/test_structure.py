@@ -133,9 +133,13 @@ def test_an_example_depends_on_nothing_but_the_framework_and_its_declared_extras
     allowed = EXAMPLE_DEPENDENCIES | set(sys.stdlib_module_names)
     for path in example_sources():
         package = path.relative_to(EXAMPLES).parts[0]
+        # Its own package, by name: the generated schema.py imports the example's converters
+        # by the dotted path pyproject.toml gives schemagen.
+        src = EXAMPLES / package / "src"
+        own = {p.name for p in src.iterdir() if p.is_dir()} if src.is_dir() else set()
         for module in imported_modules(path):
             root = module.split(".")[0]
-            assert root in allowed or module.startswith(f"examples.{package}"), (
+            assert root in allowed | own or module.startswith(f"examples.{package}"), (
                 f"{path.relative_to(ROOT)} imports {module!r}; an example may use the framework, "
                 f"the standard library, and what the example projects declare - see "
                 f"EXAMPLE_DEPENDENCIES in this file"
