@@ -13,10 +13,9 @@ The pieces every user of this framework touches. Read them in this order.
 - **[Sharding](sharding.md)** - two axes, three strategies, and why cross-shard is refused by
   default
 
-These are language-neutral: the same ideas hold in
-[the Java port](https://github.com/ekbatan-io/ekbatan), and the two interoperate on the same
-tables. Where this port's answer genuinely differs, the page says so and links to
-[DIVERGENCE.md](../../DIVERGENCE.md).
+These ideas do not depend on the language. A Python service and a Java service built on Ekbatan
+for Java can even share the same tables - see
+[Running beside a Java service](../beside-java.md).
 
 For wiring and operations rather than ideas, see [Getting started](../getting-started.md),
 [Wiring](../wiring.md) and [Concurrency](../runtime/concurrency.md).

@@ -122,8 +122,7 @@ Three rules:
 
 One instance per class, shared by every concurrent invocation. Its only state is what the
 constructor set. Per-execution state — the plan, the clock, the principal — is bound into a
-**`ContextVar`** for the duration of `perform()`. The Java port binds the same thing to a
-`ScopedValue`.
+**`ContextVar`** for the duration of `perform()`.
 
 So an action must not have mutable instance state, and `self.plan` must be reached from the
 thread or task running `perform()`.
@@ -182,10 +181,10 @@ in review and everybody hits in production.
 
 **Matching looks through the cause chain**, so a driver wrapping a conflict is still recognised.
 
-**Matching is by `isinstance`, so a subclass matches.** This is a real divergence from the Java
-port, which matches the exception class *exactly* — a policy for `RuntimeException` there does
-not catch an `IllegalStateException`. Here a policy for `EkbatanError` catches every framework
-error. Order is the only precedence rule, so put narrow policies first.
+**Matching is by exact class, so a subclass does not match.** A policy for `EkbatanError` does
+not catch a `StaleRecordError` — name the class that is actually thrown. Which failures retry is
+then written down in one place, rather than widened by whatever subclasses exist. Order is the
+only precedence rule, so put narrow policies first.
 
 **A retry replays the whole action from phase 1, with a fresh plan.** Side effects outside the
 plan — logging, counters, an HTTP call — replay too. Keep `perform()` pure.

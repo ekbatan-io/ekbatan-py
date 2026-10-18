@@ -49,8 +49,6 @@ SECTION_OK = {
     "When to use Entity rather than Model",
     "Suggested next steps",
     "Next",
-    "perform(principal, params) - here, perform(params)",
-    "perform(principal, params) — here, perform(params)",
     "plan",
     "clock",
     "perform(principal, params)",

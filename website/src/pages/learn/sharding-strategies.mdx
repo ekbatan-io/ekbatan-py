@@ -66,8 +66,8 @@ and from then on the id and its shard are bonded for the row's lifetime. Choosin
 call — typically the create action maps something you already know (tenant, region, regulatory
 class) onto a shard.
 
-The layout is a cross-language contract: the same bits, in the same places, so a Java service
-and a Python one reading the same id agree about where the row lives.
+The layout is fixed - the same bits, in the same places - so every service reading the id agrees
+about where the row lives, including a [Java service sharing the database](/reference/beside-java/#ids).
 
 > Use it when each row's shard is decidable from what you know at creation and you will never
 > move rows between shards. That covers most cases.

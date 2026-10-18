@@ -140,10 +140,9 @@ CREATE TABLE events (
 );
 ```
 
-MariaDB 10.7+ has a native 16-byte `UUID` type and the Java port's DDL uses it. This port emits
-`CHAR(36)` because SQLAlchemy does not render the native one. **Interop is unaffected, and that
-was checked**: against a table created with the Java DDL, this port writes a uuid and reads back
-an identical value.
+MariaDB 10.7+ has a native 16-byte `UUID` type. This framework writes `CHAR(36)`, because
+SQLAlchemy does not render the native one. **A table that uses the native type works too, and
+that was checked**: the framework writes a uuid into it and reads back the same value.
 
 Note also that MariaDB stores `JSON` as `LONGTEXT` with a check constraint. Invisible when you
 declare the column; very visible when something *reflects* it, which is why
@@ -196,8 +195,9 @@ The outbox is **just a table**. Anything that can read it can consume it.
 no CDC. Right for a monolith or an internal service.
 
 **CDC to Kafka** — point Debezium at `events`. The transform that routes rows runs **inside
-Kafka Connect, in a JVM**, whichever language wrote the row, so a Python service uses the same
-artifact a Java one does. There is no Python counterpart to build and none is planned.
+Kafka Connect**, which is a Java program whatever language wrote the row, so you use the
+ready-made transform JARs and build nothing in Python - see
+[Streaming the events](/reference/beside-java/#streaming-the-events).
 
 Both can run against the same outbox at once. Fan-out flips `delivered` from false to true,
 producing `UPDATE` rows; the transforms drop non-insert operations, so those flips never become
@@ -205,7 +205,7 @@ Kafka messages.
 
 ## One trap worth knowing
 
-`event_date` is the only ordering key — there is no ordinal column, in either port. Under a real
+`event_date` is the only ordering key — there is no ordinal column. Under a real
 clock that is fine. Under a **frozen** clock every row of a run ties and the order falls back to
 a random uuid. The test suite fell into this more than once.
 

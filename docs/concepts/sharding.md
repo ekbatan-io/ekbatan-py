@@ -59,8 +59,9 @@ The shard is chosen **at creation**: `ShardedId[Wallet].generate(shard)`, and fr
 shard are bonded for the row's life. Choosing it is your call - typically a small selector
 mapping tenant, region or regulatory class to a shard, inside the create action.
 
-This layout is a **cross-language contract**. An id minted by a Java service and one minted here
-have their shard in the same bits, so either can route the other's rows.
+The layout is fixed - the same bits, in the same places - so every service reading the id agrees
+about where the row lives, including a
+[Java service sharing the database](../beside-java.md#ids).
 
 > Use it when each row's shard is decidable from what you know at creation time and you will
 > never move rows between shards. That covers most cases.
@@ -112,13 +113,12 @@ free.
 
 Worth knowing before you plan a large deployment, and recorded in
 [SHORTCOMINGS.md](../SHORTCOMINGS.md) rather than left to be discovered: a scatter read across N
-shards, and the event fan-out round, visit shards **one at a time**. Java forks a virtual thread
-per shard and does them at once.
+shards, and the event fan-out round, visit shards **one at a time**, not all at once.
 
 On eight shards a fan-out round therefore takes eight batches' time rather than one. Rounds are
 short - the work per shard is one bounded batch - so it has not bitten, and the fix is a pool
-around the existing per-shard drain rather than a redesign. But it is a real difference from
-Java, and eight shards is where you would first feel it.
+around the existing per-shard drain rather than a redesign. Eight shards is where you would
+first feel it.
 
 ## What sharding doesn't solve
 

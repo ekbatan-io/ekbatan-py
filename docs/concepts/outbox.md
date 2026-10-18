@@ -79,15 +79,14 @@ example's tests do. It is also what makes the generated schema module the single
 for the table's shape.
 
 Leave it out - no `events=` and no `outbox=` - and the executor writes through the default
-persister to the framework's own `events` table definition (`outbox_table`), as Java's builder
-makes its default persister when none is set. Pass it whenever your table has another name or
-schema.
+persister to the framework's own `events` table definition (`outbox_table`). Pass it whenever
+your table has another name or schema.
 
-## The table is a cross-language contract
+## The table's columns
 
-The columns are the same here and in Java, because a Debezium connector pointed at either one
-must produce the same topic. That is what makes a Java service and a Python service able to read
-each other's events:
+The columns are fixed, because everything that reads the outbox binds to them - a Debezium
+connector, the in-process handlers, or
+[a Java service sharing the table](../beside-java.md#the-shared-tables):
 
 | | |
 | --- | --- |
@@ -100,12 +99,11 @@ each other's events:
 | `event_date` | when it happened; the ordering key |
 | `delivered` | the in-process dispatch flag |
 
-`action_params` and `payload` hold the JSON a Java service writes for the same object, byte for
-byte: Java's field names (`new_balance` is `newBalance`) in declaration order, decimals as JSON
-numbers, times in `java.time`'s forms. The payload starts with `modelId` and `modelName`, as
-Java's does - Java's local event handler deserialises the payload straight into its event class
-and refuses one without them. So either port reads the other's rows; see
-[Models and entities](models-and-entities.md#deserialization-for-in-process-handlers).
+`action_params` and `payload` hold JSON: field names in camelCase (`new_balance` is
+`newBalance`) in declaration order, decimals as JSON numbers, times as ISO-8601 text, and the
+payload starts with `modelId` and `modelName`. That shape is what a Java consumer of the same
+rows reads - see [Event payloads](../beside-java.md#event-payloads). How a handler reads a payload
+back is on [Models and entities](models-and-entities.md#modelevent).
 
 ## What the outbox row means
 
@@ -123,10 +121,10 @@ with retry and expiry. No broker, no CDC. This is the right shape for a monolith
 service, and it is what every example here uses.
 
 **CDC to Kafka.** Point Debezium at `events` and ship rows to per-event-type topics. The
-transform that does the routing runs **inside Kafka Connect, in a JVM**, whichever language wrote
-the row - so a Python service uses the same `ekbatan-debezium-smt` artifact a Java one does.
-There is no Python counterpart to build, and none is planned. What this port owes is the row
-format above.
+transform that does the routing runs **inside Kafka Connect**, which is a Java program whatever
+language wrote the row, so you use the ready-made transform JARs and build nothing in Python -
+see [Streaming the events](../beside-java.md#streaming-the-events). What this framework owes is
+the row format above.
 
 Both can run against the same outbox at once. In-process fan-out flips `delivered` from false to
 true, producing `UPDATE` rows; the Kafka transforms drop non-insert operations, so those flips
@@ -134,7 +132,7 @@ are invisible downstream.
 
 ## One trap worth knowing
 
-`event_date` is the only ordering key — there is no ordinal column, in either port. Under a real
+`event_date` is the only ordering key — there is no ordinal column. Under a real
 clock that is fine. Under a **frozen** clock every row of a run ties and the order falls back to
 a random uuid. The test suite fell into this more than once.
 

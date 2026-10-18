@@ -30,8 +30,8 @@ The staging methods are generic in the thing staged, so `plan.add(wallet)` is a 
 a `Persistable`. That is the whole reason for the type parameter — without it every staged value
 would need a cast back to the type you already knew it was.
 
-`bool(plan)` is Java's `hasChanges()`. There is no separate method because Python already has the
-protocol for it, and the executor uses the same call.
+`bool(plan)` says whether anything is staged. There is no separate method because Python already
+has the protocol for it, and the executor uses the same call.
 
 ## Single-writer; not thread-safe
 

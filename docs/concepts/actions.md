@@ -97,10 +97,9 @@ framework plumbing in the middle of domain code.
 One instance per class, for the life of the application, shared by every concurrent invocation.
 Its only state is what the constructor set.
 
-Three per-invocation values, and the same three mechanisms Java uses for them: the **clock** is
-a constructor field, the **principal** is a parameter of `perform()`, and only the **plan** is
-ambient - bound into a **`ContextVar`** for the duration of `perform()`, where Java uses a
-`ScopedValue`.
+Three per-invocation values, each held a different way: the **clock** is a constructor field,
+the **principal** is a parameter of `perform()`, and only the **plan** is ambient - bound into a
+**`ContextVar`** for the duration of `perform()`.
 
 The plan is ambient because it cannot be anything else: a repository call three frames down
 stages onto the same plan without mentioning it. The other two can be passed, so they are. So:
@@ -109,7 +108,7 @@ stages onto the same plan without mentioning it. The other two can be passed, so
   under concurrency.
 - **`self.plan` must be reached from the thread or task that is running `perform()`.** A
   `ContextVar` is per-context; work handed to a pool does not inherit the binding.
-- **Pass the executor's clock to the action.** Nothing checks it, as in Java: the action reads
+- **Pass the executor's clock to the action.** Nothing checks it: the action reads
   its own clock in `perform()` and the rows are stamped from the executor's, so a test that
   freezes one and not the other asserts on two different instants.
 
@@ -167,11 +166,11 @@ named for what it counts because `attempts=1` running twice is the sort of thing
 in review and everybody hits in production.
 
 **Matching looks through the cause chain,** so a driver wrapping a conflict is still recognised.
-It follows `__cause__` - what `raise ... from err` sets - and nothing else, which is exactly what
-Java's `getCause()` walk reaches. An error raised inside an `except` block *without* `from` is
-not followed: Python records that link as `__context__` for free, and Java has no equivalent.
+It follows `__cause__` - what `raise ... from err` sets - and nothing else. An error raised
+inside an `except` block *without* `from` is not followed: Python records that link as
+`__context__` on its own, whether or not anyone meant the two errors to be related.
 
-**Matching is by exact class, as Java's is.** A policy for `EkbatanError` does **not** catch a
+**Matching is by exact class.** A policy for `EkbatanError` does **not** catch a
 `StaleRecordError`. Name the class that is actually thrown - a policy on a class that is only
 ever raised as one of its subclasses matches nothing and says nothing about it. Order is the
 only precedence rule, so put narrow policies first.

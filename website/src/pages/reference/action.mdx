@@ -44,8 +44,8 @@ Dependencies come through `__init__`, once, in the wiring. An action with no par
 invoked with `None`; a bare scalar is refused, because a string in the `action_params` column is
 unreadable six months later.
 
-**Nothing discovers this class.** Java marks an action `@EkbatanAction` so its DI integrations
-can find and register it; here you put the instance in an `ActionRegistry` yourself:
+**Nothing discovers this class.** No decorator, no scanning: you put the instance in an
+`ActionRegistry` yourself:
 
 ```python
 actions = (
@@ -115,7 +115,7 @@ A constructor field, set by `super().__init__(clock)` and **required**. Use it f
 time-derived inside `perform()`; an action calling `datetime.now()` directly is one that cannot
 be tested at a fixed instant, and whose timestamps disagree with the row it is writing.
 
-Pass **the executor's clock**. Nothing checks it, as in Java: an action built with another clock
+Pass **the executor's clock**. Nothing checks it: an action built with another clock
 is accepted, reads that clock in `perform()`, and its rows are still stamped from the executor's.
 A test that freezes one and not the other asserts on two different instants.
 
@@ -125,8 +125,8 @@ Your logic. Read what you need, build the new immutable objects, stage them, ret
 It must be free of side effects you would not want repeated — a retry replays it whole.
 
 `principal` is whoever the caller named — `executor.execute(action, params, principal="ada")` —
-and `None` when nobody did. It is a parameter rather than ambient state, as in Java: a helper
-that needs it is passed it, like any other value.
+and `None` when nobody did. It is a parameter rather than ambient state: a helper that needs it
+is passed it, like any other value.
 
 It is **not persisted**. No column of [`events`](/reference/tables/events/) holds it; it reaches
 the log line and the `ekbatan.action.principal` span attribute. If "who did this" has to survive,
@@ -156,9 +156,9 @@ executor.execute(DepositMoneyAction, params, config=config)
 
 - **`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice.
 - **Matching looks through the cause chain**, so a driver wrapping a conflict still matches —
-  `__cause__` only, which is what Java's `getCause()` reaches. An error raised inside an
+  `__cause__` only, which is what `raise ... from err` sets. An error raised inside an
   `except` block without `from` is not followed.
-- **Matching is by exact class**, as Java's is. A policy for `EkbatanError` does not catch a
+- **Matching is by exact class.** A policy for `EkbatanError` does not catch a
   `StaleRecordError` — name the class that is thrown. Order is the only precedence rule —
   put narrow policies first.
 - **A retry replays the whole action from phase one, with a fresh plan.**

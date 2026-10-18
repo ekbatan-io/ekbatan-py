@@ -62,8 +62,7 @@ no coordinator to ask.** The markers each step writes *are* the state, and the e
 
 ## What a saga costs a client: 202, not 200
 
-This is the part that has no counterpart in the Java page, and it is the first thing a caller
-notices.
+This is the first thing a caller notices.
 
 ```
 POST /wallets/{id}/transfers   ->  202 Accepted, + transfer_id + status_url
