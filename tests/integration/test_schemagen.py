@@ -565,6 +565,27 @@ def test_a_column_is_forced_to_a_user_type_by_its_name(
         db.dispose()
 
 
+def test_a_user_type_leaves_the_stale_module_guard_working(
+    tmp_path: Path, backend: Backend, dialect: str, user_types: str
+) -> None:
+    """Importing a user type must not change where the module looks for its migrations - it once
+    wrote the type's module there instead, and the guard then found no directory and kept quiet."""
+    _ledger(
+        tmp_path,
+        backend,
+        dialect,
+        ForcedType(user_type=f"{user_types}.Money(2)", include_expression=r".*\.amount"),
+    )
+    written = (tmp_path / "app" / "schema.py").read_text()
+    assert 'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "../migrations")' in written
+    (tmp_path / "migrations" / "V0099__more.sql").write_text(
+        "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);"
+    )
+
+    with pytest.raises(ValidationError, match="Regenerate it"):
+        load(tmp_path / "app" / "schema.py")
+
+
 def _an_id(dialect: str) -> Any:
     return uuid.uuid4() if dialect != "sqlite" else uuid.uuid4().hex
 

@@ -477,8 +477,8 @@ def _module_text(
         imports.append("from sqlalchemy.types import NullType")
     if writer.helpers:
         imports.append(f"from ekbatan.schema import {', '.join(sorted(writer.helpers))}")
-    for (module, name), alias in sorted(writer.aliases.items()):
-        imports.append(f"from {module} import {name}" + (f" as {alias}" if alias != name else ""))
+    for (source, name), alias in sorted(writer.aliases.items()):
+        imports.append(f"from {source} import {name}" + (f" as {alias}" if alias != name else ""))
     imports.append("from ekbatan.schemagen import check_fingerprint")
 
     def joined(blocks: Iterable[str]) -> str:
