@@ -103,4 +103,7 @@ Track A, 2026-10-18:
   every table fits at 1400 px; at 390 px the page does not scroll sideways and the mapping
   tables wrap (page-scoped style). The sticky database picker is bounded to the mapping section.
   `npm run check` fails on `reference/wiring` ESCAPES, as it does on `d97999d` - not this track.
+- **Final runs** on `EKB-0329`: `make lint` clean; `make examples` 21 of 21 examples passed and
+  the SQLite run finished (poetry is not installed on this machine; it ran through a `uvx poetry`
+  shim on `PATH`, nothing added to any project); `npm run build` 54 pages.
 
