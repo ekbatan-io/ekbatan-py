@@ -34,6 +34,7 @@ from .config import LocalEventHandlerConfig
 from .dispatch import DEFAULT_MAX_BACKOFF, DEFAULT_RETENTION, EventDispatch
 from .fanout import EventFanout
 from .handler import EventHandlerRegistry
+from .loop import HandlerLoop
 
 __all__ = ["EventFanoutJob", "EventHandlingJob"]
 
@@ -182,6 +183,7 @@ class EventHandlingJob(DistributedJob):
         clock: Clock | None = None,
         name: str = HANDLING_JOB_NAME,
         enabled: bool = True,
+        handler_loop: HandlerLoop | None = None,
     ) -> None:
         tuning = config or LocalEventHandlerConfig()
         self._name = _valid_name(name, type(self).__name__)
@@ -195,6 +197,7 @@ class EventHandlingJob(DistributedJob):
             batch_size=tuning.handling_batch_size or DEFAULT_HANDLING_BATCH_SIZE,
             retention=tuning.handling_retention_window or DEFAULT_RETENTION,
             max_backoff=tuning.handling_max_backoff_cap or DEFAULT_MAX_BACKOFF,
+            handler_loop=handler_loop,
         )
 
     @classmethod
@@ -322,7 +325,17 @@ class EventFanoutJobBuilder(_JobBuilder):
 class EventHandlingJobBuilder(_JobBuilder):
     """Obtain via :meth:`EventHandlingJob.builder`."""
 
-    __slots__ = ()
+    __slots__ = ("_handler_loop",)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._handler_loop: HandlerLoop | None = None
+
+    def handler_loop(self, loop: HandlerLoop) -> Self:
+        """The loop async handlers run on - yours to close, after what the handlers await on it.
+        Without one the dispatch makes its own."""
+        self._handler_loop = loop
+        return self
 
     def build(self) -> EventHandlingJob:
         self._required(
@@ -341,6 +354,7 @@ class EventHandlingJobBuilder(_JobBuilder):
             clock=self._clock,
             name=self._name if self._name is not None else HANDLING_JOB_NAME,
             enabled=self._enabled if self._enabled is not None else True,
+            handler_loop=self._handler_loop,
         )
 
 

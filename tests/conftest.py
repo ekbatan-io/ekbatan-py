@@ -68,6 +68,11 @@ def pytest_generate_tests(metafunc: Any) -> None:
     modes = getattr(metafunc.module, "MODES", None)
     if modes and "mode" in metafunc.fixturenames:
         metafunc.parametrize("mode", modes, indirect=True)
+    # A module whose handlers run both ways says so with `HANDLER_KINDS = ("sync", "async")`:
+    # in the async half `pipeline` registers each handler as an async one (fixtures.handlers).
+    kinds = getattr(metafunc.module, "HANDLER_KINDS", None)
+    if kinds and "handler_kind" in metafunc.fixturenames:
+        metafunc.parametrize("handler_kind", kinds, indirect=True)
     if "dialect" in metafunc.fixturenames:
         chosen = requested_dialects(metafunc.config)
         metafunc.parametrize("dialect", chosen, scope="session", ids=list(chosen))
@@ -373,13 +378,23 @@ def outbox(registry: DatabaseRegistry) -> Any:
 
 
 @pytest.fixture
-def pipeline(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
-    """Fan-out and dispatch over a registry, wired to a fresh handler registry."""
+def handler_kind(request: Any) -> str:
+    """``"sync"``, or ``"async"`` in the second run of a module with ``HANDLER_KINDS``."""
+    return str(getattr(request, "param", "sync"))
+
+
+@pytest.fixture
+def pipeline(registry: DatabaseRegistry, clock: VirtualClock, handler_kind: str) -> Iterator[Any]:
+    """Fan-out and dispatch over a registry, wired to a fresh handler registry - each handler
+    made async first in the async half of a module with ``HANDLER_KINDS``."""
     from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
+    from fixtures.handlers import of_kind
     from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS
 
+    built: list[Any] = []
+
     def build(*handlers: Any, **dispatch_options: Any) -> Any:
-        subscriptions = EventHandlerRegistry(handlers)
+        subscriptions = EventHandlerRegistry([of_kind(handler_kind, h) for h in handlers])
         fanout = EventFanout(
             registry,
             subscriptions,
@@ -394,9 +409,12 @@ def pipeline(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
             clock=clock,
             **dispatch_options,
         )
+        built.append(dispatch)
         return fanout, dispatch
 
-    return build
+    yield build
+    for dispatch in built:
+        dispatch.close()
 
 
 @pytest.fixture

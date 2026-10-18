@@ -41,16 +41,16 @@ One extra per database, beside the sync one:
 uv add "ekbatan[postgres,postgres-async,migrations]"
 ```
 
-Keep the sync extra. Migrations, `schemagen`, event handlers, distributed jobs and keyed locks
-are sync, and connect through the sync driver.
+Keep the sync extra. Migrations, `schemagen`, distributed jobs and the event fan-out and
+dispatch jobs are sync, and connect through the sync driver.
 
 ## What is async, and what is not
 
 | | |
 | --- | --- |
-| **async** - awaited | `AsyncDatabaseRegistry`, `AsyncTransactionManager`, `AsyncDb`, `AsyncTransaction`; `AsyncModelRepository`, `AsyncEntityRepository`, `AbstractAsyncRepository`; `AsyncAction`; `AsyncActionExecutor`; `AsyncSingleTableJsonEventPersister`; `AsyncActionSpec`, `async_run_action` |
+| **async** - awaited | `AsyncDatabaseRegistry`, `AsyncTransactionManager`, `AsyncDb`, `AsyncTransaction`; `AsyncModelRepository`, `AsyncEntityRepository`, `AbstractAsyncRepository`; `AsyncAction`; `AsyncActionExecutor`; `AsyncSingleTableJsonEventPersister`; `AsyncActionSpec`, `async_run_action`; the keyed locks in `ekbatan.aio.locks`; an event handler's `async def handle` |
 | **shared** - the same objects in both | models, entities, events, `ActionPlan`, ids, sharding strategies, `ActionRegistry`, `RepositoryRegistry`, `ExecutionConfiguration`, config and config files, `ekbatan.schema`, `count_statements` |
-| **sync**, on threads | event fan-out and dispatch, event handlers, distributed jobs, keyed locks, migrations, `schemagen` |
+| **sync**, on threads | event fan-out and dispatch (they run either kind of handler), distributed jobs, migrations, `schemagen` |
 
 `to_row` and `from_row` stay plain `def`: mapping waits on nothing.
 
@@ -218,21 +218,94 @@ never see each other's transaction.
 - **`asyncio.timeout(...)`** around `await executor.execute(...)` is a cancellation: whether it
   fires during `perform` or while the transaction is open, nothing is committed.
 
-## Event handlers, jobs and keyed locks stay sync
+## Keyed locks, around the unit of work
 
-Fan-out and dispatch run handlers on their own threads, a batch at a time, away from the event
-loop; distributed jobs run on worker threads. They read the same `events` and
-`event_notifications` tables, so they work beside an async request path unchanged - but through
-the sync API: a sync `DatabaseRegistry` built from the same layout file, a sync `ActionExecutor`
-and sync actions for whatever the handlers do.
+The caller takes the lock around `await executor.execute(...)`, as on the sync side - the lock
+spans `perform` and the commit, and the action knows nothing about it:
 
-**Keyed locks are not provided inside an async unit of work yet.** Rely on the optimistic lock:
-a deposit that loses the version check is run again on a fresh read (once, by default), and one
-that still loses is a `StaleRecordError` - a 409 for the caller to retry. Work that needs a lock
-belongs in a handler or a job, which are sync.
+```python
+from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
+
+locks = AsyncPostgresKeyedLockProvider.builder().engine(async_engine_for(lock_config)).build()
+
+async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
+    wallet = await executor.execute(DepositMoneyAction, params)
+
+lease = await locks.try_acquire(key, max_wait=timedelta(seconds=5), max_hold=timedelta(seconds=30))
+if lease is None:
+    ...                                   # someone else has it: a 503 with Retry-After
+async with lease:
+    ...
+```
+
+The same backends as the sync providers, holding the same keys - `AsyncPostgresKeyedLockProvider`,
+`AsyncMySQLKeyedLockProvider`, `AsyncMariaDBKeyedLockProvider`, and `AsyncRedisKeyedLockProvider`
+on redis-py's own `redis.asyncio` in `ekbatan.aio.locks.redis` - so an async service, a sync one
+and a Java one contend for one lock. The same rules: `max_hold` bounds every hold, `try_acquire`
+answers contention with `None` and a broken backend with `LockAcquisitionError`, a blank key is
+refused, a lease may be released twice, the outermost hold's `max_hold` governs.
+
+- **The holder is the task.** A task that takes a key it holds re-enters; any other task waits -
+  one it started inside the held region included, `asyncio.gather` too.
+- **Waiting does not block the loop.** Other requests run while one waits for a lease.
+- **A wait that is cancelled or timed out** gives its connection back closed, so no lock can be
+  left behind on a pooled connection; a cancelled holder releases on its way out of `async with`.
+- **A SQL lease holds an async connection** for its whole hold: give the locks a pool of their
+  own (`lockConfig`), sized for the leases held at once.
+
+The sync providers refuse to be taken on an event loop's thread, and say to use these.
+
+## Event handlers, after the unit of work
+
+A handler never runs inside an action. The action commits its rows and its events; later, fan-out
+and dispatch - jobs on their own threads - pick the events up and run the handlers, a batch at a
+time. That is the same whatever kind the request path is.
+
+A handler's `handle` may be `async def`, to await an `AsyncActionExecutor`:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "wallet-deposit-alert"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
+```
+
+Dispatch runs an async handler on its **handler loop** - one event loop on a thread of its own,
+open for as long as the dispatch is - while the delivery thread waits for it; a batch of async
+handlers runs on that loop at the same time. Success, retry, backoff and expiry are decided
+exactly as for a sync handler, from what the handler returned or raised. A registry may hold
+both kinds.
+
+**What an async handler awaits belongs to the handler loop.** An async pool is bound to the loop
+it is used on, so give the handlers a registry and executor of their own (the examples use a
+`handlersConfig` pool), and close them on that loop at shutdown, before the loop:
+
+```python
+handler_loop = HandlerLoop()
+job = (
+    EventHandlingJob.builder()
+    .registry(events_registry)                  # sync: fan-out and dispatch read the queue
+    .handlers(handlers)
+    .notifications(EVENT_NOTIFICATIONS)
+    .handler_loop(handler_loop)
+    .build()
+)
+# at shutdown, after the jobs have stopped:
+handler_loop.run(handler_registry.aclose())
+handler_loop.close()
+```
+
+Without `.handler_loop(...)` the dispatch makes its own, started only when an async handler first
+runs. Fan-out and dispatch themselves read and write the `events` and `event_notifications`
+tables through a sync registry, built from the same layout file.
 
 The `fastapi-wallet-rest-uv-async-pg` and `fastapi-wallet-rest-uv-async-mariadb` examples are
-this shape: async requests, a sync handler, three pools.
+this shape: async requests under an async keyed lock, an async handler, four pools.
 
 ## One kind per service
 
@@ -270,7 +343,7 @@ gevent is covered in [Concurrency](/reference/runtime/concurrency/#gevent-cheap-
 
 ## Reference
 
-Everything is in `ekbatan.aio`:
+Everything is in `ekbatan.aio`, its `locks` package, and two names in `ekbatan.events`:
 
 | name | what it is |
 | --- | --- |
@@ -285,6 +358,8 @@ Everything is in `ekbatan.aio`:
 | `AsyncSingleTableJsonEventPersister`, `AsyncEventPersister` | the outbox write, and its protocol |
 | `AsyncChangePersister` | writes one shard's slice of a plan |
 | `AsyncActionSpec`, `async_run_action` | testing without a database |
+| `ekbatan.aio.locks`: `AsyncPostgresKeyedLockProvider`, `AsyncMySQLKeyedLockProvider`, `AsyncMariaDBKeyedLockProvider`, `AsyncKeyedLockProvider`, `AsyncLease`; `ekbatan.aio.locks.redis`: `AsyncRedisKeyedLockProvider` | keyed locks, taken around `await executor.execute(...)` |
+| `ekbatan.events`: `AsyncEventHandler`, `HandlerLoop` | an event handler with `async def handle`, and the loop dispatch runs it on |
 | `async_engine_for`, `async_url`, `ASYNC_DEFAULT_DRIVERS` | the async pool for one config, and which driver it uses |
 
 ## See also

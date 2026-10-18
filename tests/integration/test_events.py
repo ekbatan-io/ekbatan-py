@@ -28,6 +28,10 @@ from fixtures.handlers import (
     succeeding,
 )
 
+#: Every test runs with sync handlers and again with async ones - see `pipeline`. Dispatch's
+#: outcomes, retries, backoff and expiry must not tell the two apart.
+HANDLER_KINDS = ("sync", "async")
+
 
 def a_wallet(executor, balance="100.00"):
     return run(
@@ -568,9 +572,10 @@ def test_a_batch_invokes_its_handlers_concurrently(executor, wallets, pipeline, 
 
 
 def test_one_notification_is_delivered_inline_with_no_thread(
-    executor, wallets, pipeline, notifications_in
+    executor, wallets, pipeline, notifications_in, handler_kind
 ):
-    """The quiet batch, which is most of them. A pool would be built and never used."""
+    """The quiet batch, which is most of them. A pool would be built and never used. (An async
+    handler runs on the handler loop; the delivery pool is still never built.)"""
     import threading
 
     ran_on: list[str] = []
@@ -586,7 +591,9 @@ def test_one_notification_is_delivered_inline_with_no_thread(
     dispatch.drain_once()
 
     assert notifications_in() == {"SUCCEEDED": 1}
-    assert ran_on == [threading.current_thread().name]
+    assert all(pool._pool is None for pool in dispatch._delivery.values()), "no delivery pool"
+    if handler_kind == "sync":
+        assert ran_on == [threading.current_thread().name]
 
 
 def test_a_batch_of_outcomes_is_one_update_per_bucket_not_one_per_row(

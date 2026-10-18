@@ -1,0 +1,238 @@
+"""Async event handlers, natively: an ``async def handle`` that awaits an ``ekbatan.aio`` executor.
+
+`test_events.py` runs every dispatch scenario with sync handlers and again with async ones
+(`HANDLER_KINDS`). What is here is what only the async kind has:
+
+- a handler awaiting a real `AsyncActionExecutor`, on an async registry that lives on the
+  handler loop - built for the handlers, closed on that loop;
+- the handlers of one batch running on the one loop at the same time;
+- a handler raising what asyncio would let stop the loop - and the loop going on;
+- who closes the loop: the dispatch that made it, never one it was handed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from decimal import Decimal
+from typing import Any
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import func, select
+
+from conftest import GLOBAL, NOT_UNDER_GEVENT, _registry, under_gevent
+from ekbatan.aio import AsyncActionExecutor, AsyncDatabaseRegistry
+from ekbatan.events import (
+    EventDispatch,
+    EventEnvelope,
+    EventFanout,
+    EventHandlerRegistry,
+    HandlerLoop,
+)
+from ekbatan.ids import ShardedId
+from fixtures.actions import (
+    AsyncNotifyAction,
+    CreateWalletAction,
+    CreateWalletParams,
+    DepositMoneyAction,
+    DepositParams,
+    NotifyParams,
+)
+from fixtures.domain import Notification, Wallet, WalletMoneyDepositedEvent
+from fixtures.executing import run
+from fixtures.handlers import succeeding
+from fixtures.repositories import AsyncNotificationRepository
+from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS, NOTIFICATIONS
+
+pytestmark = pytest.mark.skipif(under_gevent(), reason=NOT_UNDER_GEVENT)
+
+
+def a_deposit(executor: Any, wallets: Any) -> None:
+    wallet = run(
+        executor,
+        CreateWalletAction(executor.clock),
+        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100")),
+    )
+    run(
+        executor,
+        DepositMoneyAction(wallets, executor.clock),
+        DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@example.com"),
+    )
+
+
+def wired(registry: Any, clock: Any, *handlers: Any, **options: Any) -> tuple[Any, Any]:
+    subscriptions = EventHandlerRegistry(handlers)
+    fanout = EventFanout(
+        registry, subscriptions, events=EVENTS, notifications=EVENT_NOTIFICATIONS, clock=clock
+    )
+    dispatch = EventDispatch(
+        registry, subscriptions, notifications=EVENT_NOTIFICATIONS, clock=clock, **options
+    )
+    return fanout, dispatch
+
+
+class NotifyingHandler:
+    """Awaits an async executor: the shape an async handler is for."""
+
+    name = "async-deposit-notification"
+    event_type = WalletMoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
+        await self.executor.execute(
+            AsyncNotifyAction,
+            NotifyParams(
+                wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
+                kind="MONEY_DEPOSITED",
+                recipient=str(envelope.action_params.get("recipient", "")),
+                message=f"deposited {envelope.event.amount}",
+            ),
+        )
+
+
+def test_an_async_handler_awaits_an_async_executor_on_the_handler_loop(
+    backend, dialect, registry, executor, wallets, clock, notifications_in
+):
+    if dialect == "sqlite":
+        pytest.skip("SQLite takes one writer at a time; two pools over one file contend")
+    loop = HandlerLoop()
+    # The handlers' own async registry and executor, used only on the handler loop.
+    handler_registry = _registry(backend, {GLOBAL: "ekbatan_main"}, kind=AsyncDatabaseRegistry)
+    notifications = AsyncNotificationRepository(
+        Notification, NOTIFICATIONS, handler_registry, clock=clock
+    )
+    handler_executor = AsyncActionExecutor(
+        namespace="example.wallet",
+        registry=handler_registry,
+        repositories=[notifications],
+        actions=[AsyncNotifyAction(clock)],
+        events=EVENTS,
+        clock=clock,
+    )
+    fanout, dispatch = wired(registry, clock, NotifyingHandler(handler_executor), handler_loop=loop)
+    try:
+        a_deposit(executor, wallets)
+        fanout.drain_once()
+        assert dispatch.drain_once() == 1
+
+        assert notifications_in() == {"SUCCEEDED": 1}
+        with registry.default.connection(readonly=True) as conn:
+            written = conn.execute(select(func.count()).select_from(NOTIFICATIONS)).scalar()
+        assert written == 1, "the async unit of work the handler awaited committed"
+        assert dispatch.handler_loop is loop
+    finally:
+        dispatch.close()
+        assert loop.running, "a loop handed in is its owner's to close"
+        loop.run(handler_registry.aclose())  # on the loop its connections belong to
+        loop.close()
+    assert not loop.running
+
+
+class Sleeping:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.event_type = WalletMoneyDepositedEvent
+        self.loops: list[Any] = []
+
+    async def handle(self, envelope: EventEnvelope[Any]) -> None:
+        self.loops.append(asyncio.get_running_loop())
+        await asyncio.sleep(0.4)
+
+
+def test_one_batch_of_async_handlers_runs_on_one_loop_at_once(
+    registry, executor, wallets, clock, notifications_in
+):
+    handlers = [Sleeping(f"sleeper-{n}") for n in range(5)]
+    fanout, dispatch = wired(registry, clock, *handlers)
+    try:
+        a_deposit(executor, wallets)
+        fanout.drain_once()
+        started = time.monotonic()
+        dispatch.drain_once()
+        took = time.monotonic() - started
+
+        assert notifications_in() == {"SUCCEEDED": 5}
+        assert took < 1.5, f"five 0.4s handlers took {took:.2f}s: they ran one after another"
+        assert len({id(h.loops[0]) for h in handlers}) == 1, "all on the one handler loop"
+    finally:
+        dispatch.close()
+    assert not dispatch.handler_loop.running, "the dispatch closed the loop it made"
+
+
+class Interrupting:
+    name = "interrupter"
+    event_type = WalletMoneyDepositedEvent
+
+    async def handle(self, envelope: EventEnvelope[Any]) -> None:
+        raise KeyboardInterrupt("from a handler")
+
+
+def test_a_handler_raising_keyboard_interrupt_fails_its_row_and_the_loop_goes_on(
+    registry, executor, wallets, clock, notifications_in, caplog
+):
+    """asyncio stops a loop that a task lets a KeyboardInterrupt out of. The handler loop
+    carries it back to the delivery thread instead - which records the failure at ERROR, as for
+    a sync handler - and the next handler still runs."""
+    ok = succeeding("ok")
+    fanout, dispatch = wired(registry, clock, Interrupting())
+    later_fanout, later_dispatch = wired(registry, clock, ok, handler_loop=dispatch.handler_loop)
+    try:
+        a_deposit(executor, wallets)
+        fanout.drain_once()
+        with caplog.at_level(logging.ERROR):
+            dispatch.drain_once()
+        assert notifications_in() == {"FAILED": 1}
+        assert any("threw Error KeyboardInterrupt" in r.getMessage() for r in caplog.records)
+
+        a_deposit(executor, wallets)  # a fresh event, for the second registry
+        later_fanout.drain_once()
+        later_dispatch.drain_once()
+        assert ok.calls == 1, "the loop survived it"
+    finally:
+        later_dispatch.close()
+        dispatch.close()
+
+
+def test_a_closed_loop_refuses_work_and_closing_twice_is_harmless():
+    loop = HandlerLoop()
+
+    async def answer() -> int:
+        return 42
+
+    assert loop.run(answer()) == 42
+    loop.close()
+    loop.close()
+    coro = answer()
+    with pytest.raises(RuntimeError, match="closed"):
+        loop.run(coro)
+    coro.close()
+    HandlerLoop().close()  # never started
+
+
+def test_work_cancelled_by_closing_the_loop_reaches_the_caller_as_a_cancellation():
+    import threading
+
+    loop = HandlerLoop()
+    raised: list[BaseException] = []
+    started = threading.Event()
+
+    async def forever() -> None:
+        started.set()
+        await asyncio.sleep(60)
+
+    def caller() -> None:
+        try:
+            loop.run(forever())
+        except BaseException as error:
+            raised.append(error)
+
+    thread = threading.Thread(target=caller)
+    thread.start()
+    started.wait(5)
+    loop.close()
+    thread.join(5)
+    assert len(raised) == 1 and isinstance(raised[0], asyncio.CancelledError)

@@ -119,12 +119,12 @@ def test_a_deposit_moves_the_balance(client: TestClient) -> None:
     assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "125.50"
 
 
-def test_the_deposit_event_reaches_the_sync_handler_and_writes_an_alert(
+def test_the_deposit_event_reaches_the_async_handler_and_writes_an_alert(
     client: TestClient,
 ) -> None:
-    """The async request commits the deposit and its event; fan-out and dispatch - on their own
-    threads - run the sync handler, which starts its own unit of work. Polled, because those are
-    real background jobs on a real schedule."""
+    """The async request commits the deposit and its event; after it, fan-out and dispatch - on
+    their own threads - run the async handler on the handler loop, and it awaits its own unit of
+    work. Polled, because those are real background jobs on a real schedule."""
     wallet_id = open_wallet(client)
     client.post(
         f"/wallets/{wallet_id}/deposits",
@@ -217,10 +217,10 @@ def test_closing_a_wallet_twice_is_not_an_error(client: TestClient) -> None:
     assert second.json()["state"] == "CLOSED"
 
 
-def test_concurrent_deposits_on_one_wallet_lose_nothing(client: TestClient) -> None:
-    """Without a keyed lock the optimistic lock decides: a deposit that loses the race is run
-    again on a fresh read, and one that loses twice is a 409 for the caller to retry. Whatever
-    the mix, every 200 is in the balance and nothing else is."""
+def test_concurrent_deposits_are_serialised_by_the_keyed_lock(client: TestClient) -> None:
+    """The async keyed lock around the unit of work: eight deposits at once on one wallet, each
+    request's task waiting its turn on the event loop. Every one lands - none is a 409 - and
+    the balance is exact."""
     wallet_id = open_wallet(client, "0.00")
 
     def deposit(_: int) -> int:
@@ -233,10 +233,8 @@ def test_concurrent_deposits_on_one_wallet_lose_nothing(client: TestClient) -> N
     with ThreadPoolExecutor(max_workers=8) as pool:
         codes = list(pool.map(deposit, range(8)))
 
-    assert set(codes) <= {200, 409}, codes
-    assert codes.count(200) >= 1
-    balance = client.get(f"/wallets/{wallet_id}").json()["balance"]
-    assert balance == f"{codes.count(200)}.00", "exactly the deposits that were answered 200"
+    assert codes == [200] * 8, "the lock made every caller wait rather than lose"
+    assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "8.00"
 
 
 def test_many_requests_at_once_each_commit(client: TestClient) -> None:
@@ -248,30 +246,44 @@ def test_many_requests_at_once_each_commit(client: TestClient) -> None:
     assert len(set(created)) == 30
 
 
-def test_requests_run_on_asyncpg_and_the_handler_on_psycopg(client: TestClient) -> None:
-    """One url in `ekbatan.yaml`, two drivers: the async default for the request pool, the
-    sync driver the url names for the handler's."""
+def test_requests_and_the_handler_run_on_asyncpg_and_the_jobs_on_psycopg(
+    client: TestClient,
+) -> None:
+    """One url in `ekbatan.yaml`, two drivers: the async default for the requests, the lock and
+    the handler, the sync driver the url names for what polls."""
     running = service(client)
 
     assert running.registry.dialect == "postgres"
     assert running.registry.default.primary.url.get_driver_name() == "asyncpg"
-    assert running.handler_registry.default.primary.url.get_driver_name() == "psycopg"
+    assert running.lock_engine.url.get_driver_name() == "asyncpg"
+    assert running.handler_registry.default.primary.url.get_driver_name() == "asyncpg"
+    assert running.events_registry.default.primary.url.get_driver_name() == "psycopg"
+    assert type(running.locks).__name__ == "AsyncPostgresKeyedLockProvider"
 
 
 def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) -> None:
-    """The namespace, the three pools and the driver settings all come from `ekbatan.yaml` -
-    including `options: -c TimeZone=UTC`, which asyncpg takes as a server setting."""
+    """The namespace, the four pools and the driver settings all come from `ekbatan.yaml` -
+    including the setting that puts each session on UTC, on every pool and both drivers. The
+    handler's pool is asked on the handler loop, where it lives."""
     running = service(client)
     requests = running.registry.default.primary.sync_engine.pool
-    handlers = running.handler_registry.default.primary.pool
+    locks = running.lock_engine.sync_engine.pool
+    handlers = running.handler_registry.default.primary.sync_engine.pool
 
     assert running.executor.namespace == "example.fastapi_wallet_rest_async_pg"
-    assert (requests.size(), handlers.size(), running.jobs_engine.pool.size()) == (10, 5, 8)  # type: ignore[attr-defined]
-    assert scalar(client, text("SELECT current_setting('application_name')")) == "wallet-service"
+    sizes = (requests.size(), locks.size(), handlers.size(), running.jobs_engine.pool.size())  # type: ignore[attr-defined]
+    assert sizes == (10, 5, 5, 8)
     assert scalar(client, text("SELECT current_setting('TimeZone')")) == "UTC"
-    for pool in (running.handler_registry.default.primary, running.jobs_engine):
-        with pool.connect() as connection:
-            assert connection.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
+
+    async def zone_on(engine: Any) -> Any:
+        async with engine.connect() as connection:
+            return (await connection.execute(text("SELECT current_setting('TimeZone')"))).scalar()
+
+    assert on_the_app_loop(client, lambda: zone_on(running.lock_engine)) == "UTC"
+    handler_engine = running.handler_registry.default.primary
+    assert running.handler_loop.run(zone_on(handler_engine)) == "UTC"
+    with running.jobs_engine.connect() as connection:
+        assert connection.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:

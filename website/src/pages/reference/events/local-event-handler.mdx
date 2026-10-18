@@ -71,6 +71,54 @@ name**, because those are indistinguishable in the outbox. Handler names and ali
 globally unique - so the same handler registered twice is refused too. Each is checked as the
 handler is added, so the refusal points at the line that added it.
 
+A handler runs **after** the action that emitted its event has committed - later, on dispatch's
+own threads - never inside the action.
+
+### An async handler
+
+`handle` may be `async def`, for a handler that awaits an `ekbatan.aio` executor:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
+```
+
+Dispatch still claims and records notifications on its threads. It runs an async handler on its
+**handler loop** - one event loop on a thread of its own, for as long as the dispatch is open -
+while the delivery thread waits; a batch of async handlers runs on that loop at the same time.
+Success, retry, backoff, expiry and the log lines are exactly a sync handler's, from what the
+handler returned or raised. One registry may hold both kinds; `AsyncEventHandler` is the protocol.
+
+What an async handler awaits belongs to that loop: an async pool is bound to the loop it is used
+on. Give the handlers a registry and executor of their own, hand the job the loop, and close them
+on it at shutdown:
+
+```python
+handler_loop = HandlerLoop()
+handling = (
+    EventHandlingJob.builder()
+    .registry(registry)
+    .handlers(handlers)
+    .notifications(EVENT_NOTIFICATIONS)
+    .handler_loop(handler_loop)
+    .build()
+)
+
+# at shutdown, once the jobs have stopped
+handler_loop.run(handler_registry.aclose())
+handler_loop.close()
+```
+
+Without `.handler_loop(...)` the dispatch makes its own, started only when an async handler
+first runs and closed with the dispatch.
+
 ### Renaming a handler safely
 
 It is the durable subscription id written on every notification row. Rename the class freely;

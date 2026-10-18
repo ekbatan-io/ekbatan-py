@@ -9,6 +9,8 @@ from .config import (
 from .dispatch import EventDispatch
 from .fanout import EventFanout
 from .handler import (
+    AnyEventHandler,
+    AsyncEventHandler,
     EventEnvelope,
     EventEnvelopeBuilder,
     EventHandler,
@@ -16,9 +18,12 @@ from .handler import (
     EventHandlerRegistryBuilder,
 )
 from .jobs import EventFanoutJob, EventHandlingJob
+from .loop import HandlerLoop
 from .notification import EventNotificationState, backoff
 
 __all__ = [
+    "AnyEventHandler",
+    "AsyncEventHandler",
     "EventDispatch",
     "EventEnvelope",
     "EventEnvelopeBuilder",
@@ -29,6 +34,7 @@ __all__ = [
     "EventHandlerRegistryBuilder",
     "EventHandlingJob",
     "EventNotificationState",
+    "HandlerLoop",
     "HandlingConfig",
     "HandlingConfigBuilder",
     "LocalEventHandlerConfig",

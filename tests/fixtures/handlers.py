@@ -7,6 +7,7 @@ whose deployment discovers, all at once, that it cannot.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -108,3 +109,36 @@ class MoneyDepositedEventHandler:
 
 def on_close(name: str = "closer") -> RecordingHandler:
     return RecordingHandler(name, WalletClosedEvent)
+
+
+class AsyncTwin:
+    """A handler made async for the async half of a run with ``HANDLER_KINDS``: the same name,
+    event type and aliases, and an ``async def handle`` that awaits the sync body on a worker
+    thread - so dispatch takes the async path (its handler loop) while the body, its counters and
+    what it raises stay the sync handler's. A blocking body awaited this way does not hold up the
+    loop's other handlers.
+    """
+
+    def __init__(self, sync: Any) -> None:
+        self.sync = sync
+
+    @property
+    def name(self) -> str:
+        return str(self.sync.name)
+
+    @property
+    def event_type(self) -> type:
+        event_type: type = self.sync.event_type
+        return event_type
+
+    @property
+    def aliases(self) -> Any:
+        return getattr(self.sync, "aliases", ())
+
+    async def handle(self, envelope: EventEnvelope[Any]) -> None:
+        await asyncio.to_thread(self.sync.handle, envelope)
+
+
+def of_kind(kind: str, handler: Any) -> Any:
+    """``handler`` itself for ``"sync"``; its :class:`AsyncTwin` for ``"async"``."""
+    return handler if kind == "sync" else AsyncTwin(handler)

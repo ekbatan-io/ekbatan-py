@@ -8,6 +8,11 @@ database can honestly make.
 A handler is written against an :class:`EventEnvelope` and nothing else. That is deliberate:
 the day the handler outgrows in-process dispatch, the same body has to compile against a broker
 consumer, and it can only do that if everything it needed arrived in the envelope.
+
+A handler runs after the action that emitted its event has committed - later, on dispatch's own
+threads, never inside the action. Its ``handle`` may be ``async def`` (:class:`AsyncEventHandler`),
+to await an ``ekbatan.aio`` executor: dispatch then runs it on its handler loop, and decides
+success, retry and expiry from it exactly as for a sync one.
 """
 
 from __future__ import annotations
@@ -23,6 +28,8 @@ from ..domain import ModelEvent
 from ..errors import ValidationError
 
 __all__ = [
+    "AnyEventHandler",
+    "AsyncEventHandler",
     "EventEnvelope",
     "EventEnvelopeBuilder",
     "EventHandler",
@@ -90,6 +97,29 @@ class EventHandler[E: ModelEvent](Protocol):
         ...
 
 
+@runtime_checkable
+class AsyncEventHandler[E: ModelEvent](Protocol):
+    """A handler whose ``handle`` is a coroutine - for one that awaits an ``ekbatan.aio``
+    executor. The same ``name``, ``event_type`` and ``aliases`` as :class:`EventHandler`.
+
+    It runs on dispatch's handler loop (``ekbatan.events.HandlerLoop``), a batch at a time; what
+    it awaits must belong to that loop. Raising records a failure and schedules a retry, as for a
+    sync handler.
+    """
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def event_type(self) -> type[E]: ...
+
+    async def handle(self, envelope: EventEnvelope[E]) -> None: ...
+
+
+#: Either kind; a registry holds both.
+type AnyEventHandler = EventHandler[Any] | AsyncEventHandler[Any]
+
+
 class EventHandlerRegistry:
     """Which handlers subscribe to what.
 
@@ -104,10 +134,10 @@ class EventHandlerRegistry:
 
     def __init__(self, handlers: object = ()) -> None:
         #: Java's ``handlersByLookupName``: every name and every alias, each once.
-        self._by_lookup: dict[str, EventHandler[Any]] = {}
+        self._by_lookup: dict[str, AnyEventHandler] = {}
         #: Java's ``eventTypesBySimpleName``.
         self._types_by_short_name: dict[str, type] = {}
-        self._by_event: dict[str, list[EventHandler[Any]]] = {}
+        self._by_event: dict[str, list[AnyEventHandler]] = {}
         for handler in handlers:  # type: ignore[attr-defined]
             self.add(handler)
 
@@ -115,7 +145,7 @@ class EventHandlerRegistry:
     def builder(cls) -> EventHandlerRegistryBuilder:
         return EventHandlerRegistryBuilder()
 
-    def add(self, handler: EventHandler[Any]) -> EventHandlerRegistry:
+    def add(self, handler: AnyEventHandler) -> EventHandlerRegistry:
         """Java's ``withHandler``, check for check."""
         if handler is None:
             raise ValidationError("handler cannot be None")
@@ -170,10 +200,10 @@ class EventHandlerRegistry:
         """
         return sorted(self._by_event)
 
-    def subscribers(self, event_type: str) -> list[EventHandler[Any]]:
+    def subscribers(self, event_type: str) -> list[AnyEventHandler]:
         return list(self._by_event.get(event_type, ()))
 
-    def by_name(self, name: str) -> EventHandler[Any] | None:
+    def by_name(self, name: str) -> AnyEventHandler | None:
         """Resolve a queued row's handler name, following a rename if one was declared."""
         return self._by_lookup.get(name)
 
@@ -255,16 +285,16 @@ class EventHandlerRegistryBuilder:
     __slots__ = ("_checked", "_handlers")
 
     def __init__(self) -> None:
-        self._handlers: list[EventHandler[Any]] = []
+        self._handlers: list[AnyEventHandler] = []
         # Added to as each handler arrives, only so it is refused on the line that added it.
         self._checked = EventHandlerRegistry()
 
-    def with_handler(self, handler: EventHandler[Any]) -> Self:
+    def with_handler(self, handler: AnyEventHandler) -> Self:
         self._checked.add(handler)
         self._handlers.append(handler)
         return self
 
-    def with_handlers(self, handlers: Iterable[EventHandler[Any]]) -> Self:
+    def with_handlers(self, handlers: Iterable[AnyEventHandler]) -> Self:
         if handlers is None:
             raise ValidationError("handlers cannot be None")
         for handler in handlers:

@@ -62,11 +62,11 @@ the whole file back.
 | MariaDB | [`fastapi-wallet-rest-uv-async-mariadb`](fastapi-wallet-rest-uv-async-mariadb/) | [`fastapi-wallet-rest-pip-async-mariadb`](fastapi-wallet-rest-pip-async-mariadb/) | [`fastapi-wallet-rest-poetry-async-mariadb`](fastapi-wallet-rest-poetry-async-mariadb/) |
 
 The same service with its request path on `ekbatan.aio`: `async def` endpoints that await an
-`AsyncActionExecutor` and async repositories, on asyncpg or aiomysql. The event handler and the
-jobs stay sync, on threads, through a sync registry built from the same `ekbatan.yaml` - whose
-urls name the sync driver; the async registry connects through the async default for the same
-database. No keyed lock on the deposit: the optimistic lock decides, and a deposit that loses
-twice is a 409. Each session runs in UTC by the documented setting, which asyncpg receives as its
+`AsyncActionExecutor` and async repositories, on asyncpg or aiomysql, and the deposit under an
+async keyed lock. The event handler is `async def`: it runs after the deposit, on dispatch's
+handler loop, awaiting an executor of its own. The jobs that poll stay on threads, through a sync
+registry built from the same `ekbatan.yaml` - whose urls name the sync driver; the async side
+connects through the async default for the same database. Each session runs in UTC by the documented setting, which asyncpg receives as its
 own `server_settings`. Java has no counterpart: its virtual threads make a blocking API cheap.
 
 ## Outside the database matrix

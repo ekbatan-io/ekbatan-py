@@ -3,46 +3,49 @@
 Which database, which pools, which handlers, which jobs. Nothing above this file knows any of
 it - `api.py` is handed a built `WalletService` and asks it for work.
 
-**Two sides, one database, one config file.** The HTTP requests run on `ekbatan.aio`: an
-`AsyncDatabaseRegistry`, async repositories, an `AsyncActionExecutor`, and every endpoint an
-`async def` that awaits. Event handlers and jobs run on threads, as they always do, through the
-sync API. Both are built from the same `ekbatan.yaml`, and the urls in it name the sync driver -
-psycopg, or PyMySQL: the sync side connects with it, and the async registry reads the same url
-as naming the database only and connects through that database's async default - asyncpg, or
-aiomysql.
+**Async where it waits, threads where they poll, one config file.** The HTTP requests run on
+`ekbatan.aio`: an `AsyncDatabaseRegistry`, async repositories, an `AsyncActionExecutor`, an async
+keyed lock, and every endpoint an `async def` that awaits. The event handler is `async def` too
+and awaits an executor of its own. What polls - db-scheduler, and the fan-out and dispatch jobs it
+runs - stays on threads, through the sync API. All of it is built from the same `ekbatan.yaml`,
+and the urls in it name the sync driver - psycopg, or PyMySQL: the sync side connects with it,
+and the async side reads the same url as naming the database only and connects through that
+database's async default - asyncpg, or aiomysql.
 
-Three pools, each sized for what uses it:
+Four pools, each sized for what uses it:
 
 **Requests** get `primaryConfig`, async. It is also the cap on requests waiting on the
 database: past `pool_size` they queue for a connection, and one that waits longer than
 `pool_timeout` fails rather than queueing for ever. Limit what reaches the app at the server
 too - see `__main__.py`.
 
-**Handlers** get `handlersConfig`, sync - dispatch runs a batch of them at once on threads.
+**Locks** get `lockConfig`, async. A keyed lock holds its connection for as long as the lease
+is held - that is what the lock *is* - so a lease taken during a request would otherwise sit on
+a request connection. Size it for the leases held at once, not for traffic.
 
-**Jobs** get `jobsConfig`. db-scheduler polls continuously and writes a heartbeat; sharing a
-pool means a burst can starve that heartbeat, and an execution whose heartbeat stops is
-declared dead and run again somewhere else.
+**The handler** gets `handlersConfig`, async, used only on dispatch's handler loop: an async pool
+belongs to the loop it is used on, so the handler's is its own, and it is closed on that loop.
 
-Keyed locks are not used here: a lock held across an async unit of work is not provided yet.
-The deposit relies on the optimistic lock instead - see `api.py`.
+**Jobs** get `jobsConfig`, sync: db-scheduler, and the fan-out and dispatch jobs' reads and
+writes of the queue. db-scheduler writes a heartbeat; size the pool past the job workers so a
+job body never holds the last connection.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy import Engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ekbatan import (
-    ActionExecutor,
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    SingleTableJsonEventPersister,
     TransactionManager,
     engine_for,
 )
@@ -50,17 +53,26 @@ from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
     AsyncSingleTableJsonEventPersister,
+    AsyncTransactionManager,
+    async_engine_for,
+)
+from ekbatan.aio.locks import (
+    AsyncKeyedLockProvider,
+    AsyncMariaDBKeyedLockProvider,
+    AsyncMySQLKeyedLockProvider,
+    AsyncPostgresKeyedLockProvider,
+    AsyncSqlKeyedLockProvider,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config import DataSourceConfig, ShardMemberConfig
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import JobRegistry, job_registry
-from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob
+from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob, HandlerLoop
 from ekbatan.migrations import migrate
 
 from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction
 from .handlers import MoneyDepositedEventHandler, RaiseAlertAction
-from .repository import AlertRepository, HandlerAlertRepository, WalletRepository
+from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS
 
 #: Where the migration files live - `V<version>__<description>.sql`.
@@ -68,6 +80,14 @@ MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 #: The service's Ekbatan settings - database layout, namespace, event handling - in one file.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
+
+#: The keyed lock each database holds. The same code serves this example on PostgreSQL and on
+#: MariaDB, so it picks by the database the registry is on.
+LOCKS: dict[str, type[AsyncSqlKeyedLockProvider]] = {
+    "postgres": AsyncPostgresKeyedLockProvider,
+    "mysql": AsyncMySQLKeyedLockProvider,
+    "mariadb": AsyncMariaDBKeyedLockProvider,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,9 +111,15 @@ class WalletService:
     wallets: WalletRepository
     alerts: AlertRepository
     executor: AsyncActionExecutor
-    #: The handler side, sync, on threads.
-    handler_registry: DatabaseRegistry
-    handler_executor: ActionExecutor
+    #: The deposit's keyed lock, async, over `lockConfig`.
+    locks: AsyncKeyedLockProvider
+    lock_engine: AsyncEngine
+    #: The handler side: its own async registry and executor, used only on `handler_loop`.
+    handler_loop: HandlerLoop
+    handler_registry: AsyncDatabaseRegistry
+    handler_executor: AsyncActionExecutor
+    #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over `events_registry`.
+    events_registry: DatabaseRegistry
     jobs: JobRegistry
     #: Built from `jobsConfig`; the registries own only what they built, so this is disposed
     #: here.
@@ -105,10 +131,16 @@ class WalletService:
         self.jobs.start()
 
     async def aclose(self) -> None:
-        # Order matters: stop taking work before closing what the work runs on.
-        self.jobs.stop()
+        # Order matters: stop taking work before closing what the work runs on. Stopping the
+        # jobs waits for a dispatch in flight, so it runs on a thread, off this loop.
+        await asyncio.to_thread(self.jobs.stop)
+        # The handler's pool belongs to the handler loop: closed there, then the loop.
+        await asyncio.to_thread(self.handler_loop.run, self.handler_registry.aclose())
+        self.handler_loop.close()
+        self.events_registry.close()
         self.jobs_engine.dispose()
-        self.handler_registry.close()
+        self.locks.close()
+        await self.lock_engine.dispose()
         await self.registry.aclose()
 
 
@@ -152,25 +184,34 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         .build()
     )
 
-    # -- the handler side ---------------------------------------------------------------------
     member = layout.groups[0].members[0]
-    handlers_engine = engine_for(_required(member, "handlersConfig"))
+    lock_engine = async_engine_for(_required(member, "lockConfig"))
+    locks = LOCKS[registry.dialect].builder().engine(lock_engine).build()
+
+    # -- the handler side ---------------------------------------------------------------------
+    # Async, on dispatch's handler loop: an async pool belongs to the loop it is used on, so the
+    # handler's registry is its own. Building it opens no connection; the loop's first use does.
+    handler_loop = HandlerLoop()
     handler_registry = (
-        DatabaseRegistry.builder()
-        .with_default_database(TransactionManager(layout.default_shard, handlers_engine))
+        AsyncDatabaseRegistry.builder()
+        .with_default_database(
+            AsyncTransactionManager(
+                layout.default_shard, async_engine_for(_required(member, "handlersConfig"))
+            )
+        )
         .build()
     )
     handler_executor = (
-        ActionExecutor.builder()
+        AsyncActionExecutor.builder()
         .namespace(ekbatan.namespace)
         .database_registry(handler_registry)
         .repository_registry(
             RepositoryRegistry.builder()
-            .with_entity_repository(HandlerAlertRepository(handler_registry, clock=running))
+            .with_entity_repository(AlertRepository(handler_registry, clock=running))
             .build()
         )
         .action_registry(ActionRegistry.builder().with_action(RaiseAlertAction(running)).build())
-        .event_persister(SingleTableJsonEventPersister(handler_registry, EVENTS))
+        .event_persister(AsyncSingleTableJsonEventPersister(handler_registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -179,16 +220,27 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         .with_handler(MoneyDepositedEventHandler(handler_executor))
         .build()
     )
-    events_config = ekbatan.local_event_handler
+
+    # -- what polls, on threads -----------------------------------------------------------------
     jobs_engine = engine_for(_required(member, "jobsConfig"))
+    events_registry = (
+        DatabaseRegistry.builder()
+        .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+        .build()
+    )
+    events_config = ekbatan.local_event_handler
 
     return WalletService(
         registry=registry,
         wallets=wallets,
         alerts=alerts,
         executor=executor,
+        locks=locks,
+        lock_engine=lock_engine,
+        handler_loop=handler_loop,
         handler_registry=handler_registry,
         handler_executor=handler_executor,
+        events_registry=events_registry,
         jobs_engine=jobs_engine,
         jobs=(
             job_registry()
@@ -196,7 +248,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
             .with_jobs(
                 [
                     EventFanoutJob.builder()
-                    .registry(handler_registry)
+                    .registry(events_registry)
                     .handlers(handlers)
                     .events(EVENTS)
                     .notifications(EVENT_NOTIFICATIONS)
@@ -204,8 +256,11 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                     .clock(running)
                     .build(),
                     EventHandlingJob.builder()
-                    .registry(handler_registry)
+                    .registry(events_registry)
                     .handlers(handlers)
+                    # The loop the async handler runs on - ours, so `aclose` can close the
+                    # handler's pool on it first.
+                    .handler_loop(handler_loop)
                     .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     # Off unless `handling.enabled` is set in `ekbatan.yaml`.

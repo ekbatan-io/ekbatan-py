@@ -15,11 +15,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
@@ -37,6 +38,14 @@ from .actions import (
 )
 from .app import Settings, WalletService, build
 from .model import Wallet
+
+#: How long a deposit may wait for the wallet's lock, and how long it may hold it.
+#:
+#: `max_hold` is not a timeout on your code - it is the promise that the lock is released even
+#: if this process dies holding it. Set it above the worst case for the work inside, and
+#: `max_wait` to something a caller is willing to wait rather than be refused.
+LOCK_WAIT = timedelta(seconds=5)
+LOCK_HOLD = timedelta(seconds=30)
 
 
 class OpenWalletRequest(BaseModel):
@@ -155,23 +164,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
     async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
-        """A deposit, under the optimistic lock.
+        """A deposit, serialised per wallet by a keyed lock taken around the unit of work.
 
-        Two deposits racing on one wallet: the second loses the version check, and the executor
-        runs it again on a fresh read - once, by default (`ExecutionConfiguration`). One that
-        still loses comes back as a 409, and the caller retries. Nothing is ever lost or written
-        twice; under heavy contention on one wallet some callers are asked to retry.
+        The lease spans **both** `perform()` and the executor's commit. Optimistic locking alone
+        would be correct here - a concurrent deposit would lose the version check and, past its
+        retry, be a 409 - but correct by *failing*. Taking the key first means the second caller
+        waits and then succeeds. The holder is this request's task: another request's task
+        waits, on the event loop, without blocking it.
         """
-        return WalletResponse.of(
-            await service.executor.execute(
-                DepositMoneyAction,
-                DepositParams(
-                    wallet_id=ShardedId[Wallet](wallet_id),
-                    amount=body.amount,
-                    recipient=body.recipient,
-                ),
+        # `try_acquire`, not `acquire`: a request must not wait for ever. None is contention,
+        # not a failure - a 503 with Retry-After.
+        lease = await service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
+        if lease is None:
+            raise HTTPException(
+                status_code=503,
+                detail="that wallet is busy; retry",
+                headers={"Retry-After": "1"},
             )
-        )
+        async with lease:
+            return WalletResponse.of(
+                await service.executor.execute(
+                    DepositMoneyAction,
+                    DepositParams(
+                        wallet_id=ShardedId[Wallet](wallet_id),
+                        amount=body.amount,
+                        recipient=body.recipient,
+                    ),
+                )
+            )
 
     @app.post("/wallets/{wallet_id}/closure", response_model=WalletResponse)
     async def close_wallet(wallet_id: UUID, service: Service) -> WalletResponse:
@@ -183,7 +203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/wallets/{wallet_id}/alerts", response_model=list[AlertResponse])
     async def read_alerts(wallet_id: UUID, service: Service) -> list[AlertResponse]:
-        """What the event handler wrote, on its own thread, without anybody asking it to."""
+        """What the event handler wrote, after the deposit, without anybody asking it to."""
         return [
             AlertResponse(
                 id=alert.id.value,

@@ -135,8 +135,11 @@ things to add over the sync service:
   once, to a 503 with `Retry-After`.
 - **A cap at the door.** `uvicorn --limit-concurrency 50` answers 503 itself past 50 open
   requests, before they reach the app. Keep it a small multiple of the pool.
-- **The handlers and jobs stay sync.** They run on threads through a sync registry built from
-  the same config file; only the request path is async.
+- **A keyed lock around the unit of work**, from `ekbatan.aio.locks`: `async with
+  locks.acquire(key, max_hold):` around `await executor.execute(...)`. Its holder is the task.
+- **Handlers run after the action, on dispatch's threads.** A handler may be `async def` and await
+  an executor of its own on dispatch's handler loop; fan-out, dispatch and the jobs stay on
+  threads through a sync registry built from the same config file.
 
 [Going async](/learn/async/) walks through it, and
 [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) runs

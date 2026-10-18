@@ -1504,12 +1504,16 @@ sync API in a 40-thread pool once 50 or more requests are in flight.
 What a Java service sees does not change. The rows, the outbox rows and their JSON are written by
 the same code in both APIs - statements, routing, the optimistic lock, soft delete, the event
 rows and the sentinel row are shared, not copied - so a Java consumer cannot tell which API wrote
-a row. Event fan-out and dispatch, distributed jobs and keyed locks have no async version: they
-run on threads through the sync API, as in Java, and share their tables with Java unchanged.
+a row. Event fan-out and dispatch and distributed jobs have no async version: they run on
+threads through the sync API, as in Java, and share their tables with Java unchanged. A handler
+dispatch runs may be `async def` - it runs on dispatch's handler loop, and its outcomes are
+recorded as a sync handler's. The keyed locks have async twins in `ekbatan.aio.locks`, holding
+the same keys as the sync providers and Java's, so all three contend for one lock.
 
-Two differences inside the async API, both deliberate: a read across shards asks every shard at
-once (Java's, like this port's sync one, asks them one after another), and a keyed lock cannot
-be held across an async unit of work yet. The full page is `docs/runtime/async.md`.
+Differences inside the async API, each deliberate: a read across shards asks every shard at once
+(Java's, like this port's sync one, asks them one after another); an async lock's holder is the
+task, where Java's is the thread; and a cancelled wait for an async lock closes its connection.
+The full page is `docs/runtime/async.md`.
 
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 

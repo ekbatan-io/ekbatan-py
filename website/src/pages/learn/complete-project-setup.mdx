@@ -996,7 +996,8 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 
 Endpoints are plain `def`, not `async def`: FastAPI runs a `def` on a worker thread, where a
 blocking database call blocks one thread. This project uses the sync API, and on the event loop
-itself a keyed lock is refused. For `async def` endpoints on the async API, see
+itself a sync keyed lock is refused. For `async def` endpoints on the async API - with its own
+keyed lock - see
 [step 19](#19-going-async-optional).
 
 ## 15. The test
@@ -1204,8 +1205,7 @@ The [examples index](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-
 
 The project above serves each request on a worker thread through the sync API. To make the
 request path natively async instead - `async def` endpoints that await the database - add the
-async driver beside the sync one, which migrations, `schemagen`, the event handler and the job
-keep using:
+async driver beside the sync one, which migrations, `schemagen` and the jobs keep using:
 
 <div data-install="uv">
 
@@ -1308,12 +1308,12 @@ Then, file by file - every change is in the async examples, which pass their own
 
 | file | what changes |
 | --- | --- |
-| `repository.py` | the mapping moves into a small class both kinds share; the request path's repositories extend `AsyncModelRepository` / `AsyncEntityRepository`, and your own queries become `async def`; the handler keeps one sync repository |
+| `repository.py` | the mapping moves into a small class the repository takes it from; the repositories extend `AsyncModelRepository` / `AsyncEntityRepository`, and your own queries become `async def` |
 | `actions.py` | `AsyncAction`, `async def perform`, `await` on each read |
-| `handlers.py` | unchanged in spirit: a sync handler and the sync action it runs |
-| `app.py` | an `AsyncDatabaseRegistry` and an `AsyncActionExecutor` for requests, built from the same `ekbatan.yaml`; a sync registry for the handler and the jobs; `await service.aclose()` |
-| `api.py` | `async def` endpoints that `await`, a 503 for a full pool; no keyed lock - the optimistic lock decides |
-| `ekbatan.yaml` | the same urls; one more pool, `handlersConfig`; the UTC setting, which asyncpg reads too |
+| `handlers.py` | `async def handle`, awaiting an async executor of its own; the action it runs is an `AsyncAction` |
+| `app.py` | an `AsyncDatabaseRegistry` and an `AsyncActionExecutor` for requests, built from the same `ekbatan.yaml`; an async keyed lock; the handler's own async registry on a `HandlerLoop`; a sync registry for fan-out, dispatch and the jobs; `await service.aclose()` |
+| `api.py` | `async def` endpoints that `await`, a 503 for a full pool; the deposit under `async with` an async keyed lock |
+| `ekbatan.yaml` | the same urls; one more pool, `handlersConfig`, for the handler; the UTC setting on every pool, which asyncpg reads too |
 | `__main__.py` | `limit_concurrency`, the cap at the door |
 
 The urls stay the sync ones: the async registry reads `postgresql+psycopg://` as "this

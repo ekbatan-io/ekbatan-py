@@ -14,6 +14,7 @@ nothing in the logs says so.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from collections import defaultdict
@@ -32,7 +33,8 @@ from ..domain import ModelEvent
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
 from ._across import Concurrently
-from .handler import EventEnvelope, EventHandler, EventHandlerRegistry
+from .handler import AnyEventHandler, EventEnvelope, EventHandlerRegistry
+from .loop import HandlerLoop
 from .notification import EventNotification, backoff
 from .repository import EventNotificationRepository
 
@@ -108,15 +110,23 @@ class _Outcome:
 
 
 class EventDispatch:
-    """Delivers notifications to handlers, at least once."""
+    """Delivers notifications to handlers, at least once.
+
+    A handler whose ``handle`` is ``async def`` runs on ``handler_loop`` - one long-lived event
+    loop on a thread of its own - while the delivery thread waits for it; everything else is the
+    same for both kinds. Without a ``handler_loop`` the dispatch makes one, started only when an
+    async handler first runs, and closes it in :meth:`close`.
+    """
 
     __slots__ = (
         "_batch",
         "_clock",
         "_delivery",
+        "_handler_loop",
         "_handlers",
         "_max_backoff",
         "_notification_repository",
+        "_owns_loop",
         "_registry",
         "_retention",
         "_shards",
@@ -132,8 +142,11 @@ class EventDispatch:
         batch_size: int = 100,
         retention: timedelta = DEFAULT_RETENTION,
         max_backoff: timedelta = DEFAULT_MAX_BACKOFF,
+        handler_loop: HandlerLoop | None = None,
     ) -> None:
         self._registry = registry
+        self._owns_loop = handler_loop is None
+        self._handler_loop = handler_loop or HandlerLoop()
         self._handlers = handlers
         self._notification_repository = EventNotificationRepository(registry, notifications)
         self._clock = clock or SystemClock()
@@ -157,11 +170,19 @@ class EventDispatch:
         """
         return sum(self._shards.run(self._registry.shards, self._drain_shard))
 
+    @property
+    def handler_loop(self) -> HandlerLoop:
+        """The loop async handlers run on."""
+        return self._handler_loop
+
     def close(self) -> None:
-        """Let the shard and handler pools' threads go."""
+        """Let the shard and handler pools' threads go - and the handler loop, when this
+        dispatch made it. One handed in is its owner's to close."""
         self._shards.close()
         for pool in self._delivery.values():
             pool.close()
+        if self._owns_loop:
+            self._handler_loop.close()
 
     def drain_until_idle(self, *, limit: int = 1000) -> int:
         total = 0
@@ -242,7 +263,11 @@ class EventDispatch:
 
         started = time.monotonic()
         try:
-            handler.handle(self._envelope(handler, row, attempts))
+            handled = handler.handle(self._envelope(handler, row, attempts))
+            if inspect.isawaitable(handled):
+                # An async handler: run on the handler loop while this thread waits, so the
+                # outcome below is decided from it exactly as from a sync one.
+                self._handler_loop.run(handled)
         except BaseException as error:
             HANDLER_DURATION.record(
                 time.monotonic() - started,
@@ -330,7 +355,7 @@ class EventDispatch:
         return event_date + self._retention <= now
 
     def _envelope(
-        self, handler: EventHandler[Any], row: EventNotification, attempt: int
+        self, handler: AnyEventHandler, row: EventNotification, attempt: int
     ) -> EventEnvelope[ModelEvent]:
         event_type = handler.event_type
         payload = row.payload or {}

@@ -34,7 +34,8 @@ ekbatan:
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 10
                 poolTimeout: 5
-              # The event handler, on threads: dispatch runs a batch of handlers at once.
+              # The event handler's units of work, async, on dispatch's handler loop - a batch
+              # of handlers at once.
               handlersConfig:
                 dataSourceProperties:
                   init_command: SET time_zone = '+00:00'
@@ -42,8 +43,18 @@ ekbatan:
                 username: ${WALLET_DATABASE_USERNAME:root}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 5
-              # The scheduler. At least the job worker threads plus three: a job body holding
-              # the last connection would starve the heartbeat.
+              # Held lock leases, async: one connection per lease that can be held at once.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
+                url: ${WALLET_DATABASE_URL:mariadb+pymysql://localhost:3306/wallet}
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
+              # The scheduler, and the fan-out and dispatch jobs' reads and writes of the
+              # queue. At least the job worker threads plus three: a job body holding the last
+              # connection would starve the heartbeat.
               jobsConfig:
                 # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:

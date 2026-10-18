@@ -80,9 +80,10 @@ src/ekbatan/
   accounting.py      statement counting, so the performance claims are checkable
   action/            action.py, plan.py, executor.py, registry.py, persister.py, outbox.py
   aio/               native asyncio: persistence, repository, action, executor, persister,
-                     outbox, testing - the async twins, on the sync modules' private cores
-  events/            handler.py, fanout.py, dispatch.py, jobs.py, notification.py, config.py
-  locks/             base.py, sql.py, redis.py, inprocess.py, _holder.py
+                     outbox, testing, locks/ - the async twins, on the sync modules' private cores
+  events/            handler.py, fanout.py, dispatch.py, jobs.py, notification.py, config.py,
+                     loop.py (the handler loop async handlers run on)
+  locks/             base.py, sql.py, redis.py, _holder.py, _deadlines.py
   distributedjobs/   DistributedJob, JobRegistry, JobsConfig
 db-scheduler/        a separate distribution: the port of kagkarlsson/db-scheduler
 ekbatan-py-examples/ nine examples x uv/pip/Poetry: 27 standalone projects
@@ -154,10 +155,16 @@ There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them o
 - **Same public surface.** A public method added to a sync class needs its async twin;
   `tests/unit/test_async_engine.py` compares the two surfaces and fails otherwise. Names carry
   the `Async` prefix; `to_row` / `from_row` stay plain `def` on both.
-- **What stays sync, on threads:** event fan-out and dispatch, handlers, distributed jobs, keyed
-  locks, migrations, `schemagen`. An async service builds a sync registry beside its async one,
-  from the same layout file, for those. A keyed lock inside an async unit of work is deferred
-  by the user - do not add one unasked.
+- **What stays sync, on threads:** event fan-out and dispatch, distributed jobs, migrations,
+  `schemagen`. An async service builds a sync registry beside its async one, from the same layout
+  file, for those.
+- **Keyed locks** have async twins in `ekbatan.aio.locks` (PG, MySQL, MariaDB, Redis on
+  `redis.asyncio`), on the sync providers' cores (`_HoldingCore`, `_HolderCore`, `_LeaseCore`,
+  the statement and result helpers in `locks/sql.py` and `locks/redis.py`). The caller takes the
+  lock around `await executor.execute(...)`; the holder is the task.
+- **Event handlers run after the action**, on dispatch's threads, never inside it. A handler may
+  be `async def`: dispatch runs it on its `HandlerLoop` (one loop on its own thread) and records
+  the outcome exactly as for a sync handler. What an async handler awaits belongs to that loop.
 - **Drivers.** A url naming a sync driver, or none, connects through the database's async
   default (`async_url`, `ASYNC_DEFAULT_DRIVERS`: asyncpg, aiomysql, aiosqlite); an async driver
   in the url is kept. For asyncpg, libpq's `options` / `application_name` / `connect_timeout` /
@@ -168,8 +175,10 @@ There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them o
   error with a note naming it, never a group, never partial rows. `dbs()` / `readonly_dbs()`
   stay sequential.
 - **Tests run both ways.** A test module sets `MODES = ("sync", "async")` and `tests/modes.py`
-  runs each test a second time against `ekbatan.aio` through a blocking portal; a test's own
-  actions get async twins with `twin`, `stager_twin` or `rebased`. What the harness cannot say -
+  runs each test a second time against `ekbatan.aio` through a blocking portal, every call a
+  thread makes in one task of its own; a test's own actions get async twins with `twin`,
+  `stager_twin` or `rebased`. A module with `HANDLER_KINDS = ("sync", "async")` runs its event
+  tests with sync handlers and again with async ones (`pipeline`, `fixtures.handlers.of_kind`). What the harness cannot say -
   tasks, cancellation, timeouts, the pool cap, concurrent shard reads - is in
   `tests/integration/test_async.py`, written as coroutines. Any change to the sync suite must
   leave its sync counts unchanged.

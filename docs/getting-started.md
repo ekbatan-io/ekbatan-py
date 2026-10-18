@@ -249,7 +249,8 @@ asyncio service whose `async def` endpoints await the database, add the async dr
 sync one - `"ekbatan[postgres,postgres-async,migrations]"`, `mysql-async`, `mariadb-async` or
 `sqlite-async` - and build the request path on `ekbatan.aio`: `AsyncModelRepository`,
 `AsyncAction` with `async def perform`, and an `AsyncActionExecutor` you `await`. Models, events,
-migrations and the generated schema do not change, and event handlers and jobs stay sync. The
+migrations and the generated schema do not change; the keyed lock has an async twin in
+`ekbatan.aio.locks`, an event handler may be `async def`, and the jobs stay on threads. The
 file-by-file walk is [Going async](going-async.md), and the reference is
 [Native asyncio](runtime/async.md).
 

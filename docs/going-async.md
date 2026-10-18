@@ -1,6 +1,6 @@
 # Going async
 
-Take a wallet service whose endpoints are async def and make its request path natively async with ekbatan.aio: the same models, events and rules, with every database call awaited. Its event handlers and jobs stay as they are, on threads.
+Take a wallet service whose endpoints are async def and make its request path natively async with ekbatan.aio: the same models, events and rules, with every database call awaited. Its handler becomes async too; the jobs that poll stay on threads.
 
 This walks through what changes, file by file. The finished service is the
 `fastapi-wallet-rest-uv-async-pg` example (and `fastapi-wallet-rest-uv-async-mariadb`), which
@@ -16,12 +16,14 @@ passes its own tests; every snippet here is from it. The full reference is
 | actions on the request path | `AsyncAction`, `async def perform`, awaited reads | what they stage |
 | the executor | `AsyncActionExecutor`, awaited | its namespace, retries, cross-shard rule |
 | endpoints | `async def`, awaiting | the DTOs, the error mapping |
-| event handlers and jobs | | sync, on threads, through the sync API |
-| `ekbatan.yaml` | one more pool for the handlers | the urls, the logins, the settings |
+| the keyed lock | the async provider, `async with` around `await executor.execute(...)` | the key, `max_wait`, `max_hold` |
+| event handlers | `async def handle`, awaiting an async executor of their own | name, event type, envelope; run after the action, by dispatch |
+| jobs, fan-out, dispatch | | sync, on threads |
+| `ekbatan.yaml` | one more pool, for the handler | the urls, the logins, the settings |
 
 ## 1. Add the async driver
 
-Beside the sync one: migrations, `schemagen`, the handlers and the jobs still use it.
+Beside the sync one: migrations, `schemagen` and the jobs still use it.
 
 ```sh
 uv add "ekbatan[postgres,postgres-async,migrations]"        # PostgreSQL: asyncpg
@@ -30,8 +32,8 @@ uv add "ekbatan[mariadb,mariadb-async,migrations]"          # MariaDB: aiomysql 
 
 ## 2. The repositories
 
-The mapping is plain functions, so write it once and give it to both kinds of repository - the
-async ones the requests use, and the sync one the handler writes through:
+The mapping is plain functions, so write it once in a small class the repository takes it
+from:
 
 ```python
 class WalletRows:
@@ -51,11 +53,9 @@ class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet
         async for _, conn in self.readonly_dbs():
             total += Decimal(str((await conn.execute(query)).scalar_one()))
         return total
-
-
-class HandlerAlertRepository(AlertRows, EntityRepository[Alert, Id[Alert]]):
-    """The handler runs on a thread, so the one repository it writes through is sync."""
 ```
+
+The handler writes alerts through the same `AlertRepository`, built over its own registry.
 
 Every inherited read and write - `get`, `find_where`, `add`, `update`, `count` - is now a
 coroutine, and a read across shards asks them all at once.
@@ -78,7 +78,7 @@ class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
 
 What it stages, and therefore what is committed and which events are written, is unchanged.
 
-## 4. Two registries from one file
+## 4. The registries, from one file
 
 The urls in `ekbatan.yaml` keep naming the sync driver. The sync side connects with it; the async
 registry reads the same url as naming the database only and connects through its async default.
@@ -99,22 +99,35 @@ executor = (
     .build()
 )
 
-handlers_engine = engine_for(member.config_for("handlersConfig"))   # the handler: psycopg
-handler_registry = (
+lock_engine = async_engine_for(member.config_for("lockConfig"))      # the lock's leases
+locks = AsyncPostgresKeyedLockProvider.builder().engine(lock_engine).build()
+
+handler_loop = HandlerLoop()                                          # where the handler runs
+handler_registry = (                                                  # the handler: asyncpg
+    AsyncDatabaseRegistry.builder()
+    .with_default_database(AsyncTransactionManager(
+        layout.default_shard, async_engine_for(member.config_for("handlersConfig"))))
+    .build()
+)
+
+jobs_engine = engine_for(member.config_for("jobsConfig"))            # what polls: psycopg
+events_registry = (
     DatabaseRegistry.builder()
-    .with_default_database(TransactionManager(layout.default_shard, handlers_engine))
+    .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
     .build()
 )
 ```
 
-The handler's executor is the sync `ActionExecutor` over `handler_registry`, with the sync
-`RaiseAlertAction`; fan-out and dispatch are built over `handler_registry` too, exactly as in a
-sync service. Close the async registry with `await registry.aclose()`.
+The handler's executor is an `AsyncActionExecutor` over `handler_registry`, with an async
+`RaiseAlertAction`; the handling job is given `handler_loop`, and fan-out and dispatch are built
+over `events_registry`. At shutdown: stop the jobs, close the handler's registry on its loop
+(`handler_loop.run(handler_registry.aclose())`), close the loop, then
+`await registry.aclose()`.
 
 ## 5. The settings file
 
-One pool more, for the handlers, and the session time zone set the documented way - written as
-libpq spells it, which asyncpg receives as its own `server_settings`:
+One pool more, for the handler, and the session time zone set the documented way on every pool -
+written as libpq spells it, which asyncpg receives as its own `server_settings`:
 
 ```yaml
 primaryConfig:                     # requests, on ekbatan.aio
@@ -124,7 +137,12 @@ primaryConfig:                     # requests, on ekbatan.aio
   url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
   poolSize: 10
   poolTimeout: 5
-handlersConfig:                    # the event handler, on threads
+handlersConfig:                    # the event handler, on its handler loop
+  dataSourceProperties:
+    options: -c TimeZone=UTC
+  url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+  poolSize: 5
+lockConfig:                        # held lock leases, one connection each
   dataSourceProperties:
     options: -c TimeZone=UTC
   url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
@@ -159,13 +177,40 @@ async def _too_busy(request: Request, error: Exception) -> JSONResponse:
 
 Never call the sync API from one of these: it would block the event loop for every request.
 
-## 7. Locks: the optimistic lock instead
+## 7. The keyed lock, around the unit of work
 
-A keyed lock held across an async unit of work is not provided yet, so the async deposit takes
-none. The optimistic lock keeps it correct: a deposit that loses the version check is run again
-on a fresh read, once by default, and one that still loses is a `StaleRecordError` - a 409 the
-caller retries. Nothing is lost or written twice. Work that must hold a lock belongs in a handler
-or a job.
+The deposit takes the wallet's key around `await executor.execute(...)`, as the sync service
+does - with the async provider, whose holder is the request's task:
+
+```python
+lease = await service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
+if lease is None:
+    raise HTTPException(status_code=503, detail="that wallet is busy; retry",
+                        headers={"Retry-After": "1"})
+async with lease:
+    return WalletResponse.of(await service.executor.execute(DepositMoneyAction, params))
+```
+
+A second deposit on the same wallet waits its turn on the event loop, without blocking it, and
+then succeeds.
+
+## 7b. The handler
+
+It runs after the deposit has committed - fan-out and dispatch pick the event up on their own
+threads - and it may be `async def`. Dispatch runs it on the handler loop, where it awaits its
+own executor:
+
+```python
+class MoneyDepositedEventHandler:
+    name = "wallet-deposit-alert"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
+```
 
 ## 8. Run it, with a cap at the door
 
@@ -197,5 +242,5 @@ checked.assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
 ## Next
 
 - [Native asyncio](runtime/async.md) - drivers, the pool, reads across shards, timeouts, and
-  what stays sync
+  keyed locks and handlers
 - [Concurrency](runtime/concurrency.md) - when threads are just as good

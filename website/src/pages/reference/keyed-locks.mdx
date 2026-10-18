@@ -143,15 +143,44 @@ work to is a different identity and will block on a key you hold. That is not a
 bug to work around: if the child could inherit the hold, "this key is held by one holder" would
 stop being true.
 
-### Not on an event loop
+### Not on an event loop - use the async providers there
 
-**Taking a lock on an asyncio event loop's own thread is refused** with a `ValidationError`.
+**Taking a sync lock on an asyncio event loop's own thread is refused** with a `ValidationError`.
 There, every request shares the one thread, so a second request would count as the same holder
 and walk straight into the first one's lock - and a request that did have to wait would freeze
-the loop, the holder included. Keyed locks are sync, and `ekbatan.aio` has no async lock yet; call
-one from a worker thread, where each request is its own holder again: a plain `def` endpoint, which
-FastAPI and Starlette already run on one, or `await asyncio.to_thread(...)` from an `async def`.
-Threaded servers and gevent are unaffected.
+the loop, the holder included. Threaded servers and gevent are unaffected.
+
+On an event loop, use the async providers in `ekbatan.aio.locks`. Their holder is the **task**,
+and waiting for a lease does not block the loop. Taken the same way - by the caller, around the
+unit of work:
+
+```python
+from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
+
+locks = AsyncPostgresKeyedLockProvider.builder().engine(async_engine_for(lock_config)).build()
+
+async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
+    wallet = await executor.execute(DepositMoneyAction, params)
+```
+
+| sync | async (`ekbatan.aio.locks`) |
+| --- | --- |
+| `PostgresKeyedLockProvider` | `AsyncPostgresKeyedLockProvider` |
+| `MySQLKeyedLockProvider` | `AsyncMySQLKeyedLockProvider` |
+| `MariaDBKeyedLockProvider` | `AsyncMariaDBKeyedLockProvider` |
+| `RedisKeyedLockProvider` (`ekbatan.locks.redis`) | `AsyncRedisKeyedLockProvider` (`ekbatan.aio.locks.redis`), over `redis.asyncio.Redis` |
+
+The same contract, rule for rule: `acquire` waits as long as it takes (awaited, or entered with
+`async with`), `try_acquire` returns `None` on contention, `max_hold` bounds every hold, the
+outermost hold's `max_hold` governs, a lease may be released twice, and both sides take the same
+keys - an async holder, a sync one and a Java one contend for one lock. A task that takes a key it
+holds re-enters; any other task waits, one it started inside the held region included. A wait
+that is cancelled or times out closes its connection rather than return it, so a lock granted in
+that instant cannot be left on a pooled connection; on Redis the release is sent for that owner
+instead. The hold limit runs on the event loop rather than on a watchdog thread.
+
+From sync code on an async server, the sync providers still work from a worker thread: a plain
+`def` endpoint, which FastAPI and Starlette already run on one, or `await asyncio.to_thread(...)`.
 
 One shared helper owns the per-`(thread, key)` counter, the watchdog timer and the
 release arbitration, so each backend implements only a low-level acquire and release. That is

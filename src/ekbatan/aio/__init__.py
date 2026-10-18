@@ -6,8 +6,9 @@ and ``perform``. Everything else - models, events, plans, builders, ids, shardin
 config, migrations - is shared with the sync API as it is, and so is every rule: the
 statements, the routing, the optimistic lock, soft delete and the retry policy are one copy.
 
-A service is all-sync or all-async on its request path. Event handlers, distributed jobs and
-keyed locks stay sync, on threads, beside it. Needs an async driver: the ``postgres-async``,
+A service is all-sync or all-async on its request path. The keyed locks' async twins are in
+``ekbatan.aio.locks``; an event handler may be ``async def``. Event fan-out and dispatch and
+distributed jobs stay sync, on threads, beside it. Needs an async driver: the ``postgres-async``,
 ``mysql-async``, ``mariadb-async`` or ``sqlite-async`` extra.
 """
 

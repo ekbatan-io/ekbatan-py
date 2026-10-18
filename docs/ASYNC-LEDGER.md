@@ -417,12 +417,12 @@ Decisions: `docs/DECISIONS-TO-REVIEW.md#async-follow-ups`.
 | L6 | same names and rules as sync: timeouts, max hold, namespace, key validation | done - shared cores: `_HoldingCore`, `_HolderCore`, `_LeaseCore`, `check_arguments`, statements and result readers in `locks/sql.py`, scripts/channel/latch/namespace checks in `locks/redis.py`; surface test pairs added |
 | L7 | marker password never printed (Redis url included) | done - `test_a_keyed_lock_on_that_login_prints_no_password` (PG/MySQL/MariaDB, both modes) and `test_a_password_in_the_redis_url_is_never_printed` (a Redis wanting a marker password; both modes); each proven able to fail |
 | L8 | lock tests run both ways on four databases (and Redis) | done - `test_locks.py`, `test_redis_locks.py` with `MODES`; native `test_async_locks.py` (task holder, cancelled/timed-out waits, cancelled holder); proven able to fail (thread as holder) |
-| H1 | an event handler may be `async def handle`; dispatch owns one long-lived loop on a thread of its own | todo |
-| H2 | retry, backoff, dead letter identical for both kinds | todo |
-| H3 | handler tests run both ways on four databases | todo |
-| H4 | async examples: async keyed lock on the deposit, async handler | todo |
-| H5 | docs wording: handlers run after the action on their own threads; locks are taken by the caller around `execute` | todo |
-| H6 | docs and website pages (async, keyed locks, event handlers, AGENTS.md, setup guide) | todo |
+| H1 | an event handler may be `async def handle`; dispatch owns one long-lived loop on a thread of its own | done - `AsyncEventHandler` protocol, `ekbatan.events.HandlerLoop`; dispatch runs an awaitable `handle` result on the loop while the delivery thread waits; `EventDispatch(handler_loop=)`, `EventHandlingJob.builder().handler_loop(...)`; a dispatch without one makes its own, lazily, and closes it |
+| H2 | retry, backoff, dead letter identical for both kinds | done - the same `_deliver` path decides the outcome; a cancellation reaches it as `CancelledError` and a `KeyboardInterrupt` is carried back instead of stopping the loop, so the log lines (WARN / ERROR) are a sync handler's |
+| H3 | handler tests run both ways on four databases | done - `test_events.py` with `HANDLER_KINDS` (every scenario with sync handlers and again with async ones); native `test_async_handlers.py` (a real `AsyncActionExecutor` on the handler loop, a batch at once on one loop, `KeyboardInterrupt`, who closes the loop); proven able to fail (dispatch ignoring the awaitable) |
+| H4 | async examples: async keyed lock on the deposit, async handler | done - `try_acquire` + `async with` on the deposit (`lockConfig` pool), `async def handle` awaiting its own `AsyncActionExecutor` on `handlersConfig`, a `HandlerLoop` closed after the handler's registry; eight concurrent deposits now all 200 |
+| H5 | docs wording: handlers run after the action on their own threads; locks are taken by the caller around `execute` | done - every "not provided yet" / "stay sync" / "no keyed lock" sentence found by grep rewritten: async page, going-async, keyed locks, local event handler, FastAPI wiring, getting started, setup guide, DIVERGENCE, SHORTCOMINGS, AGENTS, `ekbatan.aio` docstring, example READMEs |
+| H6 | docs and website pages (async, keyed locks, event handlers, AGENTS.md, setup guide) | done - docs and website pairs edited together; `make lint` clean, website `npm run build` (57 pages) and `npm run check` clean |
 
 ### F3 - psycopg's async mode under the suite
 
@@ -448,3 +448,18 @@ files split by id: an id with `async` among its parameters is an async run):
 **F1 examples** (2026-10-19, `make` in each, Poetry through `uvx poetry`): `fastapi-wallet-rest`
 pg / mysql / mariadb 16 passed each build; sharded-pg 20; saga-pg 17; job-worker-pg 10;
 async-pg and async-mariadb 15 - uv, pip and Poetry alike.
+
+**After F2** (`EKB-0366`, same method; every base sync id found again and still passing,
+checked id by id with the `sync` parameter dropped):
+
+| database | sync | async |
+| --- | --- | --- |
+| SQLite | 628 passed, 68 skipped (base 619 / 62) | 312 passed, 35 skipped |
+| PostgreSQL | 800 passed, 12 skipped (base 785 / 12) | 345 passed, 2 skipped |
+| MySQL | 803 passed, 13 skipped (base 788 / 13) | 346 passed, 1 skipped |
+| MariaDB | 813 passed, 11 skipped (base 798 / 11) | 346 passed, 1 skipped |
+
+New SQLite skips: the lock suites (no advisory lock on SQLite) and the async handler test that
+needs two writers. The async examples, uv / pip / Poetry on PostgreSQL and MariaDB: 15 passed
+each.
+

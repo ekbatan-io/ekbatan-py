@@ -4,11 +4,10 @@ A repository is where a query that means something to the business lives. The fr
 reads - by id, by predicate, counting, existence - are inherited, so what is left here is the
 handful of questions this application actually asks.
 
-**Two kinds, one mapping.** The HTTP requests run on `ekbatan.aio`, so their repositories are
-the async ones: every read and write is awaited. The event handler runs on a thread, as handlers
-do, so the one repository it writes through is the sync one. `to_row` and `from_row` are plain
-functions either way, so each mapping is written once, in a small class both kinds take it
-from.
+**All async.** The HTTP requests and the event handler both run on `ekbatan.aio`, so every
+repository here is an async one: every read and write is awaited. The handler's alerts go through
+the same `AlertRepository`, built over the handler's own registry. `to_row` and `from_row` are
+plain functions; each mapping is written once, in a small class the repository takes it from.
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ from uuid import UUID
 
 from sqlalchemy import Row, func, select
 
-from ekbatan import DatabaseRegistry, EntityRepository
 from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
 from ekbatan.clock import Clock, to_storage
 from ekbatan.domain import GenericState
@@ -129,10 +127,3 @@ class AlertRepository(AlertRows, AsyncEntityRepository[Alert, Id[Alert]]):
 
     async def find_for_wallet(self, wallet_id: ShardedId[Wallet]) -> list[Alert]:
         return await self.find_where(ALERTS.c.wallet_id == wallet_id.value)
-
-
-class HandlerAlertRepository(AlertRows, EntityRepository[Alert, Id[Alert]]):
-    """Alerts, written by the event handler - which runs on a thread, so this one is sync."""
-
-    def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(Alert, ALERTS, registry, clock=clock)
