@@ -24,6 +24,9 @@ from fixtures.actions import (
 from fixtures.domain import Wallet
 from fixtures.executing import run
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 
 def a_wallet(executor, balance="100.00"):
     return run(

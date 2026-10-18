@@ -11,7 +11,10 @@ The two exceptions are written out for each mode, because what they test is the 
 model itself: two transactions open at once on threads, and on tasks. Cancellation has no sync
 counterpart and is async only.
 
-`ekbatan.aio` is trialled on PostgreSQL through asyncpg, so the async runs skip elsewhere.
+The async runs use each database's default async driver: asyncpg, aiomysql, aiosqlite.
+
+Most of the suite runs both ways through `tests/modes.py`; what is here is what that harness
+cannot say - the scenarios written as coroutines, and tasks running at once on one loop.
 """
 
 from __future__ import annotations
@@ -57,15 +60,13 @@ from fixtures.logins import data_source
 from fixtures.repositories import AsyncWalletRepository, WalletRepository
 from fixtures.schema import EVENTS, WALLETS
 
-MODES = ("sync", "async")
+PARITY_MODES = ("sync", "async")
 MAIN = "ekbatan_parity"
 SHARDS = {GLOBAL: "ekbatan_parity_global", MEXICO: "ekbatan_parity_mexico"}
 
 
-@pytest.fixture(params=MODES)
-def mode(request: Any, dialect: str) -> str:
-    if request.param == "async" and dialect != "postgres":
-        pytest.skip("ekbatan.aio is trialled on PostgreSQL (asyncpg) only")
+@pytest.fixture(params=PARITY_MODES)
+def mode(request: Any) -> str:
     return str(request.param)
 
 
@@ -216,7 +217,7 @@ async def service(
         )
         executor_type: Any = ActionExecutor
     else:
-        registry = _registry(backend, names, kind=AsyncDatabaseRegistry, driver="asyncpg")
+        registry = _registry(backend, names, kind=AsyncDatabaseRegistry)
         wallets = AsyncWalletRepository(Wallet, WALLETS, registry, sharding=sharding, clock=clock)
         kinds = (
             AsyncCreateWalletAction,
@@ -603,10 +604,10 @@ def test_a_cancelled_task_rolls_its_transaction_back(mode, backend, clock):
 def test_an_async_registry_never_shows_its_password(mode, backend, dialect):
     if mode == "sync":
         pytest.skip("the sync side has its own: test_secrets_stay_secret.py")
+    if dialect == "sqlite":
+        pytest.skip("SQLite has no passwords")
     marker = "Mk-7f3a-SECRET-pw"
-    real = backend.url("ekbatan_parity_secret")
-    _, _, rest = real.partition("://")
-    plain = data_source(f"postgresql+asyncpg://{rest}")
+    plain = data_source(backend.url("ekbatan_parity_secret"))
     # The real login, with the marker as its password: a refused connection, whose error must
     # not repeat it either.
     config = type(plain)(url=plain.url, username=plain.username, password=marker, pool_size=1)

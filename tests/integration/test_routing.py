@@ -14,17 +14,23 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Row, func, select
+from sqlalchemy import Row, create_engine, event, func, select
 
+from ekbatan import Transaction
+from ekbatan.action import Action, ActionExecutor
 from ekbatan.clock import to_storage
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.ids import ShardedId
+from ekbatan.persistence import DatabaseRegistry, TransactionManager
 from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Wallet, WalletState
 from fixtures.executing import run
 from fixtures.repositories import WalletRepository
 from fixtures.schema import EVENTS, WALLETS
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -296,9 +302,6 @@ class _ByCurrency:
 
 
 def _executor_over(registry, repo, clock):
-    from ekbatan.action import ActionExecutor
-    from fixtures.schema import EVENTS
-
     return ActionExecutor(
         namespace="example.wallet",
         registry=registry,
@@ -318,8 +321,6 @@ class OpenWalletParams:
 
 
 def _open_wallet(currency, clock):
-    from ekbatan.action import Action
-
     class OpenWalletAction(Action[OpenWalletParams, Wallet]):
         def perform(self, principal: str | None, params):
             return self.plan.add(
@@ -367,11 +368,12 @@ def test_state_and_its_events_land_on_one_shard(sharded_registry, clock):
     )
 
 
-def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, clock):
+def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, clock, mode):
     """Java's findOneWhere short-circuits; a fan-out that always visits every shard turns a
-    one-row lookup into one query per database for the whole life of the deployment."""
-    from sqlalchemy import event
+    one-row lookup into one query per database for the whole life of the deployment.
 
+    `ekbatan.aio` asks every shard at once instead - one round trip's wait, one query per
+    shard - and reads the answers in shard order, so the row found is the same."""
     repo = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
@@ -389,20 +391,19 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
     for shard in sharded_registry.shards:
         event.listen(sharded_registry.manager(shard).primary, "before_cursor_execute", watch(shard))
 
+    asked = {GLOBAL: 1, MEXICO: 0} if mode == "sync" else {GLOBAL: 1, MEXICO: 1}
     assert repo.find_one_where(WALLETS.c.currency == "SEK") is not None
-    assert selects == {GLOBAL: 1, MEXICO: 0}
+    assert selects == asked
 
-    selects[GLOBAL] = 0
+    selects.update(dict.fromkeys(selects, 0))
     assert repo.exists_where(WALLETS.c.currency == "SEK") is True
-    assert selects == {GLOBAL: 1, MEXICO: 0}
+    assert selects == asked
 
 
 # ------------------------------------------- the repository opens no transaction of its own
 
 
 def _statements(engine):
-    from sqlalchemy import event
-
     seen: list[str] = []
     event.listen(
         engine,
@@ -429,8 +430,6 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
     wallets.add(wallet)
 
     assert seen == ["INSERT"], "one statement, no BEGIN of the framework's own"
-
-    from sqlalchemy import create_engine
 
     # `str(url)` masks the password as `***`, which connects only to a server that has
     # none - the reason this read passed on SQLite and failed on all three real servers.
@@ -469,8 +468,6 @@ def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
 def test_the_block_is_told_which_shard_it_is_on(sharded_registry, clock):
     """Java hands its block a DSLContext bound to one shard's connection. The counterpart here
     is a Transaction, which says the same and can also be asked which shard that is."""
-    from ekbatan import Transaction
-
     repo = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
@@ -498,11 +495,6 @@ def test_the_block_is_told_which_shard_it_is_on(sharded_registry, clock):
 def test_a_manager_filed_under_the_wrong_shard_is_refused(registry):
     """Two answers to 'which shard is this?' - the key routing uses, and the one every
     transaction stamps on its outbox row. Nothing downstream could tell them apart."""
-    from sqlalchemy import create_engine
-
-    from ekbatan import DatabaseRegistry, TransactionManager
-    from ekbatan.errors import ValidationError
-
     with pytest.raises(ValidationError, match="registered under the wrong key"):
         DatabaseRegistry({GLOBAL: TransactionManager(MEXICO, create_engine("sqlite://"))}, GLOBAL)
 
@@ -546,8 +538,6 @@ def test_one_database_needs_no_election_and_two_do(registry):
     """Java's builder makes `withDefaultDatabase` optional for a single database and mandatory
     beyond that. Saying which of one is the default is a line that can only be written
     correctly; saying which of two is a decision only the operator can make."""
-    from ekbatan.persistence import DatabaseRegistry
-
     only = registry.manager(registry.default_shard)
     assert DatabaseRegistry({only.shard: only}).default_shard == only.shard
 
@@ -616,14 +606,13 @@ def test_a_batch_mixing_the_default_shard_with_an_unregistered_one_is_allowed(sh
 
 
 @pytest.fixture
-def strict_wallets(clock):
+def strict_wallets(clock, mode, portal):
     """Two sqlite shards that refuse a third, rather than quietly widening the default.
 
     Its own registry rather than the shared fixture, because the policy is fixed when the
     registry is built - which is the point of it: an operator decides once, per deployment.
     """
     from ekbatan.config import DataSourceConfig, ShardingConfig
-    from ekbatan.persistence import DatabaseRegistry
     from fixtures.config import group, member
     from fixtures.schema import metadata
 
@@ -639,13 +628,16 @@ def strict_wallets(clock):
     )
     for shard in (GLOBAL, MEXICO):
         with registry.manager(shard).primary.begin() as connection:
-            metadata.create_all(connection)
+            if mode == "sync":
+                metadata.create_all(connection)
+            else:
+                connection.run_sync(metadata.create_all)
     try:
         yield WalletRepository(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
         )
     finally:
-        registry.close()
+        registry.close() if mode == "sync" else registry.aclose()
 
 
 def test_unknown_shard_policy_fail_refuses_a_write_to_an_unregistered_shard(strict_wallets):

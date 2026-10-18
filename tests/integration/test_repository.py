@@ -5,11 +5,12 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import create_engine, event
 
-from ekbatan.clock import VirtualClock
+from ekbatan.clock import VirtualClock, to_storage
 from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
-from ekbatan.persistence import DatabaseRegistry
+from ekbatan.persistence import DatabaseRegistry, TransactionManager
 from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Notification, Wallet, WalletState
@@ -22,6 +23,9 @@ from fixtures.repositories import (
     WalletRepository,
 )
 from fixtures.schema import NOTIFICATIONS, WALLETS
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 
 @pytest.fixture
@@ -135,7 +139,6 @@ def test_a_stale_batch_update_raises_and_keeps_what_it_matched(wallets):
 
 def test_a_batch_is_one_statement(wallets, registry):
     seen: list[tuple[str, bool]] = []
-    from sqlalchemy import event
 
     @event.listens_for(registry.default.primary, "before_cursor_execute")
     def record(conn, cursor, statement, parameters, context, executemany):
@@ -338,7 +341,6 @@ def test_a_table_must_be_able_to_hold_the_row_it_is_given(registry):
 def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
     """A replica answers with what it has replicated so far. `add()` then `find()` has to
     find the row, so no built-in read is allowed to be served by one."""
-    from ekbatan.persistence import TransactionManager
     from ekbatan.sharding import ShardIdentifier
     from fixtures.schema import metadata
 
@@ -346,8 +348,6 @@ def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
     for name in (written, lagging):
         backend.prepare(name, metadata)
         backend.truncate(name, metadata)
-
-    from sqlalchemy import create_engine
 
     shard = ShardIdentifier(0, 0)
     manager = TransactionManager(
@@ -379,9 +379,8 @@ def test_readonly_db_does_not_join_an_open_transaction(backend, clock):
     Joining would be a promise the connection cannot keep - a replica has not seen what the
     open transaction wrote - so it must read the replica even from inside one.
     """
-    from sqlalchemy import create_engine, func, select
+    from sqlalchemy import func, select
 
-    from ekbatan.persistence import TransactionManager
     from ekbatan.sharding import ShardIdentifier
     from fixtures.schema import metadata
 
@@ -415,9 +414,6 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
     Without the guard, a repository that opted out of sharding would still visit every database
     a sibling repository happens to use - and would find rows that are none of its business.
     """
-    from sqlalchemy import create_engine
-
-    from ekbatan.persistence import TransactionManager
     from ekbatan.sharding import ShardIdentifier
     from fixtures.schema import metadata
 
@@ -440,7 +436,8 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
         # Put a row on the other shard behind the repository's back. Stamped by hand because
         # `add()` would route it back to the default shard, which is the thing being tested.
         row = wallets.to_row(a_wallet("99.00"))
-        row["created_date"] = row["updated_date"] = clock.now()
+        # Zone-less, as the column holds it: asyncpg refuses an aware value for a TIMESTAMP.
+        row["created_date"] = row["updated_date"] = to_storage(clock.now())
         with managers[other].connection() as conn:
             conn.execute(WALLETS.insert(), row)
 
@@ -497,7 +494,7 @@ def test_a_write_hands_back_the_same_shape_on_every_dialect(wallets, registry):
     assert type(stored) is type(updated) is Wallet
 
 
-def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(wallets, monkeypatch):
+def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(wallets, monkeypatch, mode):
     """Java raises IllegalStateException rather than StaleRecordException here.
 
     The distinction is load-bearing: the executor retries a stale record, and an update keyed
@@ -513,7 +510,15 @@ def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(wallets, monk
         rowcount = 2
 
     stored = wallets.add(a_wallet())
-    monkeypatch.setattr(Connection, "execute", lambda self, *a, **k: TwoRowsMatched())
+    if mode == "sync":
+        monkeypatch.setattr(Connection, "execute", lambda self, *a, **k: TwoRowsMatched())
+    else:
+        from sqlalchemy.ext.asyncio import AsyncConnection
+
+        async def execute(self: object, *a: object, **k: object) -> TwoRowsMatched:
+            return TwoRowsMatched()
+
+        monkeypatch.setattr(AsyncConnection, "execute", execute)
 
     with pytest.raises(EkbatanError) as raised:
         wallets.update_no_result(stored.deposit(Decimal("1.00")))

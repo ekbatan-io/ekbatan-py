@@ -15,6 +15,10 @@ from fixtures.actions import DepositParams
 from fixtures.domain import NOW, Wallet
 from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
+from modes import stager_twin
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
@@ -34,6 +38,9 @@ class DepositAction(Action[DepositParams, Wallet]):
 
     def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         return self.plan.update(self.wallet.deposit(params.amount))
+
+
+stager_twin(DepositAction)
 
 
 def test_nothing_reaches_a_database(registry, clock):

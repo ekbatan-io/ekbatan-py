@@ -16,10 +16,14 @@ import pytest
 from sqlalchemy import event, select
 
 from ekbatan.ids import ShardedId
+from fixtures.actions import CreateWalletAction, CreateWalletParams
 from fixtures.domain import NOW, Wallet
 from fixtures.executing import run
 from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 
 @pytest.fixture
@@ -298,8 +302,6 @@ def test_a_write_with_no_returning_still_costs_one_statement(wallets, sql):
 def test_a_unit_of_work_does_not_pay_to_read_its_own_writes_back(executor, wallets, sql):
     """The plan already holds what was staged and the events came off those, so the executor
     has no use for the written rows."""
-    from fixtures.actions import CreateWalletAction, CreateWalletParams
-
     sql.clear()
     run(
         executor,

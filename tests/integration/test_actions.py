@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from uuid import uuid4
 import pytest
 
 from ekbatan import Action, Clock, ExecutionConfiguration, RetryConfig, current_plan
+from ekbatan.action import ActionExecutor
 from ekbatan.errors import (
     ConnectivityError,
     EkbatanError,
@@ -25,9 +27,14 @@ from fixtures.actions import (
     CreateWalletParams,
     DepositMoneyAction,
     DepositParams,
+    TwinAction,
 )
 from fixtures.domain import NOW, Wallet
 from fixtures.executing import run
+from modes import stager_twin, twin
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 
 def a_wallet(executor):
@@ -77,6 +84,10 @@ class OpensWithANoteAction(Action[NoteParams, Wallet]):
         )
 
 
+stager_twin(ReadsTheClockAction)
+stager_twin(OpensWithANoteAction)
+
+
 class _PlainNote:
     def __init__(self) -> None:
         self.text = "hello"
@@ -103,6 +114,9 @@ class ReadsThePrincipalAction(Action[None, str | None]):
         return principal
 
 
+stager_twin(ReadsThePrincipalAction)
+
+
 def test_an_action_knows_who_asked(executor):
     assert run(executor, ReadsThePrincipalAction(executor.clock), None, principal="ada") == "ada"
     assert run(executor, ReadsThePrincipalAction(executor.clock), None) is None
@@ -118,7 +132,6 @@ def test_an_action_holding_a_different_clock_is_accepted_as_in_java(executor, cl
     """Java's executor never compares the two clocks: the action reads its own, and the rows are
     stamped from the executor's. Python refused the executor at build (Dracula 12)."""
     from ekbatan import ActionRegistry, VirtualClock
-    from ekbatan.action import ActionExecutor
     from fixtures.schema import EVENTS
 
     elsewhere = VirtualClock(datetime(1999, 1, 1, tzinfo=UTC))
@@ -152,6 +165,9 @@ class FailsWithAction(Action[None, str]):
         if self.errors:
             raise self.errors.pop(0)
         return "done"
+
+
+stager_twin(FailsWithAction)
 
 
 def test_each_kind_of_failure_gets_its_own_policy(executor):
@@ -366,26 +382,41 @@ def test_retries_can_be_switched_off_entirely(executor):
 
 
 class CollapsesAction(Action[None, None]):
+    def __init__(self, failure: BaseException, clock: Clock) -> None:
+        super().__init__(clock)
+        self.failure = failure
+
     def perform(self, principal: str | None, params: None) -> None:
-        raise KeyboardInterrupt("the runtime pulled the rug")
+        raise self.failure
 
 
-def test_a_failure_that_is_not_an_ordinary_error_is_still_reported(executor, caplog, outbox):
+stager_twin(CollapsesAction)
+
+
+def not_an_error(mode: str, message: str) -> BaseException:
+    """What is not an ordinary error: a KeyboardInterrupt on a thread; on asyncio a cancelled
+    task - a KeyboardInterrupt raised inside a task stops the event loop itself."""
+    return KeyboardInterrupt(message) if mode == "sync" else asyncio.CancelledError(message)
+
+
+def test_a_failure_that_is_not_an_ordinary_error_is_still_reported(executor, caplog, outbox, mode):
     """Catching only Exception meant one of these was recorded as neither success nor failure:
     no log line, no span status, nothing - while the unit of work had certainly failed."""
+    failure = not_an_error(mode, "the runtime pulled the rug")
     with (
         caplog.at_level(logging.ERROR, logger="io.ekbatan.core.action.ActionExecutor"),
-        pytest.raises(KeyboardInterrupt),
+        pytest.raises(type(failure)),
     ):
-        run(executor, CollapsesAction(executor.clock), None)
+        run(executor, CollapsesAction(failure, executor.clock), None)
 
     assert any("CollapsesAction failed" in r.getMessage() for r in caplog.records)
     assert outbox() == [], "and nothing was committed"
 
 
-def test_such_a_failure_is_never_retried(executor):
-    action = FailsWithAction(KeyboardInterrupt("stop"), clock=executor.clock)
-    with pytest.raises(KeyboardInterrupt):
+def test_such_a_failure_is_never_retried(executor, mode):
+    failure = not_an_error(mode, "stop")
+    action = FailsWithAction(failure, clock=executor.clock)
+    with pytest.raises(type(failure)):
         run(
             executor,
             action,
@@ -420,6 +451,29 @@ class ComposesThenStagesAction(Action[DepositParams, Wallet]):
 
     def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount).deposit(params.amount))
+
+
+@twin(StagesTwiceAction)
+class AsyncStagesTwiceAction(TwinAction[DepositParams, Wallet]):
+    def __init__(self, wallets, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        once = self.plan.update(wallet.deposit(params.amount))
+        return self.plan.update(once.deposit(params.amount))
+
+
+@twin(ComposesThenStagesAction)
+class AsyncComposesThenStagesAction(TwinAction[DepositParams, Wallet]):
+    def __init__(self, wallets, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount).deposit(params.amount))
 
 

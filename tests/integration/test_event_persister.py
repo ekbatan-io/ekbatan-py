@@ -22,6 +22,9 @@ from ekbatan.errors import ValidationError
 from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.schema import EVENTS
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 STARTED = datetime(2026, 1, 15, 10, 0, tzinfo=UTC)
 COMPLETED = datetime(2026, 1, 15, 10, 0, 1, tzinfo=UTC)
 

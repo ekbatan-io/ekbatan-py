@@ -18,6 +18,9 @@ from ekbatan.repository import AbstractRepository
 from fixtures.domain import Wallet
 from fixtures.schema import WALLETS
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 
 def test_a_repository_that_has_not_written_the_mapping_cannot_be_created(registry, clock):
     """Java declares `fromRecord` and `toRecord` abstract, so a repository without them does not

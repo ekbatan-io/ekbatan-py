@@ -19,6 +19,9 @@ from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.migrating import fresh
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 PROBE = "ekbatan-file-probe"
 
 #: A setting each dialect reports back, as in `test_data_source_properties.py`.
@@ -107,7 +110,7 @@ def file_for(form: str, url: str, username: str | None, setting: tuple[str, str]
 
 
 @pytest.mark.parametrize("form", ["yaml", "toml", "json", "ini"])
-def test_a_layout_from_a_file_logs_in_migrates_and_connects(backend, request, tmp_path, form):
+def test_a_layout_from_a_file_logs_in_migrates_and_connects(backend, request, tmp_path, form, mode):
     url, username, password = split_login(fresh(backend, request, f"_{form}"))
     name, value, read_back = SETTING.get(backend.dialect, (None, None, "SELECT 1"))
     setting = (name, value) if name else None
@@ -125,6 +128,6 @@ def test_a_layout_from_a_file_logs_in_migrates_and_connects(backend, request, tm
             reported = connection.execute(text(read_back)).scalar()
             assert connection.execute(text("SELECT count(*) FROM seen")).scalar() == 0
     finally:
-        registry.close()
+        registry.close() if mode == "sync" else registry.aclose()
 
     assert reported == (PROBE if name else 1)

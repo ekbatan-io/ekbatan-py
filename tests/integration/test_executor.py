@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -14,6 +16,7 @@ from ekbatan import (
     ExecutionConfiguration,
     ShardIdentifier,
 )
+from ekbatan.aio import AsyncAction
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import CrossShardError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
@@ -27,6 +30,10 @@ from fixtures.actions import (
 from fixtures.domain import NOW, Notification, Wallet, WalletMoneyDepositedEvent
 from fixtures.executing import run
 from fixtures.schema import EVENTS
+from modes import stager_twin, twin
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -49,6 +56,28 @@ class FlakyDepositAction(Action[DepositParams, Wallet]):
     def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         self.attempts += 1
         wallet = self.wallets.get(params.wallet_id)
+        staged = self.plan.update(wallet.deposit(params.amount))
+        if self.remaining:
+            self.remaining -= 1
+            raise StaleRecordError("someone else got there first")
+        return staged
+
+
+@twin(FlakyDepositAction)
+class AsyncFlakyDepositAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: Any, clock: Clock, failures: int = 1) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+        self.remaining = failures
+        self.attempts = 0
+
+    @property
+    def name(self) -> str:
+        return "FlakyDepositAction"
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        self.attempts += 1
+        wallet = await self.wallets.get(params.wallet_id)
         staged = self.plan.update(wallet.deposit(params.amount))
         if self.remaining:
             self.remaining -= 1
@@ -172,6 +201,9 @@ class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
         )
 
 
+stager_twin(CreateOnBothShardsAction)
+
+
 def test_a_unit_of_work_spanning_shards_is_refused_before_anything_is_written(
     sharded, sharded_registry
 ):
@@ -238,9 +270,11 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
 
     Impostor.__name__ = "WalletMoneyDepositedEvent"
 
+    _new_wallet(executor)
+    wallet = wallets.all()[0]
+
     class EmitColliding(Action[None, None]):
         def perform(self, principal: str | None, params: None) -> None:
-            wallet = wallets.all()[0]
             self.plan.update(
                 wallet.evolve(
                     emit=[
@@ -252,7 +286,6 @@ def test_two_event_types_with_one_name_are_refused(executor, wallets, outbox):
                 )
             )
 
-    _new_wallet(executor)
     before = len(outbox())
 
     with pytest.raises(ValidationError, match="collision"):
@@ -290,7 +323,7 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
 
 
 def test_the_event_store_can_be_replaced_without_touching_anything_else(
-    registry, wallets, clock, outbox
+    registry, wallets, clock, outbox, mode
 ):
     """Rule 7: extension without forking. The seam is inside the transaction."""
     written: list[tuple[str, list[ModelEvent]]] = []
@@ -309,11 +342,15 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
         ) -> None:
             written.append((action_name, list(model_events)))
 
+    class AsyncRecording(Recording):
+        async def persist_action_events(self, *args) -> None:  # type: ignore[override]
+            super().persist_action_events(*args)
+
     executor = ActionExecutor(
         namespace="example.wallet",
         registry=registry,
         repositories=[wallets],
-        outbox=Recording(),
+        outbox=Recording() if mode == "sync" else AsyncRecording(),
         clock=clock,
     )
     wallet = _new_wallet(executor)
@@ -330,7 +367,7 @@ def test_the_event_store_can_be_replaced_without_touching_anything_else(
 
 
 def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_exception(
-    sharded, sharded_registry, caplog, monkeypatch
+    sharded, sharded_registry, caplog, monkeypatch, mode
 ):
     """Java's comment on this catch block is the whole reason it is a `Throwable`:
 
@@ -346,17 +383,24 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
 
     executor, _ = sharded
     calls = {"n": 0}
-    real = type(executor)._commit_shard
+    real = executor.__class__._commit_shard
+    # On asyncio the realistic one is a cancelled task: the event loop itself stops on a
+    # KeyboardInterrupt raised inside a task.
+    killer = (
+        KeyboardInterrupt("the pod is going away")
+        if mode == "sync"
+        else asyncio.CancelledError("the request was cancelled")
+    )
 
     def second_shard_dies(self, shard, *args, **kwargs):
         calls["n"] += 1
         if calls["n"] == 2:
-            raise KeyboardInterrupt("the pod is going away")
+            raise killer
         return real(self, shard, *args, **kwargs)
 
-    monkeypatch.setattr(type(executor), "_commit_shard", second_shard_dies)
+    monkeypatch.setattr(executor.__class__, "_commit_shard", second_shard_dies)
 
-    with caplog.at_level(logging.ERROR), pytest.raises(KeyboardInterrupt):
+    with caplog.at_level(logging.ERROR), pytest.raises(type(killer)):
         run(
             executor,
             CreateOnBothShardsAction(executor.clock),
@@ -386,7 +430,7 @@ def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
     def first_shard_dies(self, shard, *args, **kwargs):
         raise RuntimeError("the very first shard failed")
 
-    monkeypatch.setattr(type(executor), "_commit_shard", first_shard_dies)
+    monkeypatch.setattr(executor.__class__, "_commit_shard", first_shard_dies)
 
     with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
         run(
@@ -431,6 +475,31 @@ class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
         )
         stale = self.wallets.get(params.wallet_id)
         # Two versions behind, so the `WHERE version = ?` matches nothing.
+        self.plan.update(stale.evolve(version=stale.version + 5).deposit(Decimal("1.00")))
+        return None
+
+
+@twin(CreateOnGlobalThenFailOnMexicoAction)
+class AsyncCreateOnGlobalThenFailOnMexicoAction(AsyncAction[StaleOnMexico, None]):
+    def __init__(self, wallets: Any, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    @property
+    def name(self) -> str:
+        return "CreateOnGlobalThenFailOnMexicoAction"
+
+    async def perform(self, principal: str | None, params: StaleOnMexico) -> None:
+        self.plan.add(
+            Wallet.open(
+                id=ShardedId[Wallet].generate(GLOBAL),
+                owner_id=uuid4(),
+                currency="EUR",
+                balance=Decimal("1.00"),
+                created_date=self.clock.now(),
+            )
+        )
+        stale = await self.wallets.get(params.wallet_id)
         self.plan.update(stale.evolve(version=stale.version + 5).deposit(Decimal("1.00")))
         return None
 

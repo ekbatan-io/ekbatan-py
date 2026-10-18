@@ -19,6 +19,7 @@ nothing there is parametrised, and the whole of it runs in about a second.
 
 from __future__ import annotations
 
+import importlib
 import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -31,7 +32,9 @@ import pytest
 # here on purpose - see tests/test_structure.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import modes
 from backends import ALL_DIALECTS, Backend, requested_dialects, start
+from ekbatan.aio import AsyncDatabaseRegistry
 from ekbatan.clock import VirtualClock
 from ekbatan.config import (
     ShardGroupConfig,
@@ -44,6 +47,7 @@ from ekbatan.sharding import ShardIdentifier
 from fixtures.logins import data_source
 from fixtures.repositories import NotificationRepository, WalletRepository
 from fixtures.schema import metadata
+from modes import Portal
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -59,6 +63,11 @@ def pytest_addoption(parser: Any) -> None:
 
 
 def pytest_generate_tests(metafunc: Any) -> None:
+    # A module that runs on `ekbatan.aio` too says so with `MODES = ("sync", "async")`; see
+    # tests/modes.py. Every other module runs once, sync, under its usual ids.
+    modes = getattr(metafunc.module, "MODES", None)
+    if modes and "mode" in metafunc.fixturenames:
+        metafunc.parametrize("mode", modes, indirect=True)
     if "dialect" in metafunc.fixturenames:
         chosen = requested_dialects(metafunc.config)
         metafunc.parametrize("dialect", chosen, scope="session", ids=list(chosen))
@@ -119,6 +128,44 @@ def backend(dialect: str, tmp_path_factory: Any) -> Iterator[Backend]:
 
 
 @pytest.fixture
+def mode(request: Any) -> str:
+    """``"sync"``, or ``"async"`` in the second run of a module with ``MODES``."""
+    return str(getattr(request, "param", "sync"))
+
+
+@pytest.fixture
+def portal(mode: str) -> Iterator[Portal | None]:
+    """The event loop an async run's objects live on; ``None`` in a sync run."""
+    if mode != "async":
+        yield None
+        return
+    made = Portal()
+    modes.CURRENT.append(made)
+    try:
+        yield made
+    finally:
+        modes.CURRENT.pop()
+        made.close()
+
+
+@pytest.fixture(autouse=True)
+def _async_names(request: Any, mode: str, monkeypatch: Any) -> None:
+    """In an async run, rebind the module's names to their async twins - see tests/modes.py."""
+    if mode != "async" or not getattr(request.module, "MODES", None):
+        return
+    request.getfixturevalue("portal")
+    modes.unwrap_on_add(monkeypatch)
+    modes.rebind(request.module, monkeypatch)
+    for name in modes.SUPPORT_MODULES:
+        modes.rebind(importlib.import_module(name), monkeypatch)
+
+
+def of_mode(mode: str, sync: Any) -> Any:
+    """``sync`` in a sync run; its async twin, made blocking, in an async run."""
+    return sync if mode == "sync" else modes.portaled(modes.TWINS[sync])
+
+
+@pytest.fixture
 def clock() -> VirtualClock:
     return VirtualClock(datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC))
 
@@ -132,9 +179,10 @@ def _registry(
 ) -> Any:
     """A registry over freshly emptied databases.
 
-    ``kind`` and ``driver`` are for ``ekbatan.aio``'s suite: an ``AsyncDatabaseRegistry`` over
-    the same databases, its urls naming an async driver (``asyncpg``) in place of the sync one.
-    The schema is still migrated and emptied on the sync driver, as everywhere else.
+    ``kind`` is for ``ekbatan.aio``'s runs: an ``AsyncDatabaseRegistry`` over the same databases.
+    The urls stay the sync ones - the async registry connects through each database's default
+    async driver in their place - and ``driver`` names a driver of its own instead. The schema
+    is still migrated and emptied on the sync driver, as everywhere else.
     """
     for name in names.values():
         backend.prepare(name, metadata)
@@ -167,39 +215,55 @@ def _registry(
     return kind.from_config(config)
 
 
+def _either_registry(
+    backend: Backend, names: dict[ShardIdentifier, str], portal: Portal | None
+) -> Iterator[Any]:
+    """A sync registry, or - in an async run - an async one over the same databases, through
+    each database's default async driver, made blocking."""
+    if portal is None:
+        with _registry(backend, names) as reg:
+            yield reg
+        return
+    made = _registry(backend, names, kind=AsyncDatabaseRegistry)
+    try:
+        yield portal.wrap(made)
+    finally:
+        portal.call(made.aclose())
+
+
 @pytest.fixture
-def registry(backend: Backend) -> Iterator[DatabaseRegistry]:
+def registry(backend: Backend, portal: Portal | None) -> Iterator[DatabaseRegistry]:
     """One database."""
-    with _registry(backend, {GLOBAL: "ekbatan_main"}) as reg:
-        yield reg
+    yield from _either_registry(backend, {GLOBAL: "ekbatan_main"}, portal)
 
 
 @pytest.fixture
-def sharded_registry(backend: Backend) -> Iterator[DatabaseRegistry]:
+def sharded_registry(backend: Backend, portal: Portal | None) -> Iterator[DatabaseRegistry]:
     """Two databases, so routing and isolation are real rather than simulated."""
-    with _registry(backend, {GLOBAL: "ekbatan_global", MEXICO: "ekbatan_mexico"}) as reg:
-        yield reg
+    yield from _either_registry(
+        backend, {GLOBAL: "ekbatan_global", MEXICO: "ekbatan_mexico"}, portal
+    )
 
 
 @pytest.fixture
-def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
+def wallets(registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
     from fixtures.domain import Wallet
     from fixtures.schema import WALLETS
 
-    return WalletRepository(Wallet, WALLETS, registry, clock=clock)
+    return of_mode(mode, WalletRepository)(Wallet, WALLETS, registry, clock=clock)
 
 
 @pytest.fixture
-def notifications(registry: DatabaseRegistry, clock: VirtualClock) -> Any:
+def notifications(registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
     from fixtures.domain import Notification
     from fixtures.schema import NOTIFICATIONS
 
-    return NotificationRepository(Notification, NOTIFICATIONS, registry, clock=clock)
+    return of_mode(mode, NotificationRepository)(Notification, NOTIFICATIONS, registry, clock=clock)
 
 
 @pytest.fixture
 def executor(
-    registry: DatabaseRegistry, clock: VirtualClock, wallets: Any, notifications: Any
+    registry: DatabaseRegistry, clock: VirtualClock, wallets: Any, notifications: Any, mode: str
 ) -> Any:
     from ekbatan.action import ActionExecutor, ActionRegistry, SingleTableJsonEventPersister
     from ekbatan.repository import RepositoryRegistry
@@ -216,8 +280,12 @@ def executor(
     # own: the executor runs an action by type, as Java's does, so the fixture handler and job
     # reach these by name. An action a single test builds for itself goes through
     # `fixtures.executing.run`, which registers it on an executor like this one.
+    def of(sync: Any) -> Any:
+        return of_mode(mode, sync)
+
     return (
-        ActionExecutor.builder()
+        of(ActionExecutor)
+        .builder()
         .namespace("example.wallet")
         .database_registry(registry)
         .repository_registry(
@@ -228,31 +296,31 @@ def executor(
         )
         .action_registry(
             ActionRegistry.builder()
-            .with_action(CreateWalletAction(clock))
-            .with_action(DepositMoneyAction(wallets, clock))
-            .with_action(CloseWalletAction(wallets, clock))
-            .with_action(TransferMoneyAction(wallets, clock))
-            .with_action(NotifyAction(clock))
+            .with_action(of(CreateWalletAction)(clock))
+            .with_action(of(DepositMoneyAction)(wallets, clock))
+            .with_action(of(CloseWalletAction)(wallets, clock))
+            .with_action(of(TransferMoneyAction)(wallets, clock))
+            .with_action(of(NotifyAction)(clock))
             .build()
         )
-        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
+        .event_persister(of(SingleTableJsonEventPersister)(registry, EVENTS))
         .clock(clock)
         .build()
     )
 
 
 @pytest.fixture
-def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock) -> Any:
+def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
     """An executor over two databases, routing by the shard encoded in each id."""
     from ekbatan.action import ActionExecutor
     from ekbatan.sharding import EmbeddedBitsShardingStrategy
     from fixtures.domain import Wallet
     from fixtures.schema import EVENTS, WALLETS
 
-    repo = WalletRepository(
+    repo = of_mode(mode, WalletRepository)(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
-    executor = ActionExecutor(
+    executor = of_mode(mode, ActionExecutor)(
         namespace="example.wallet",
         registry=sharded_registry,
         repositories=[repo],

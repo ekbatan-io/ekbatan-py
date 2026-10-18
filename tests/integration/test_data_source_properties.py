@@ -17,6 +17,9 @@ from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.logins import single
 from fixtures.migrating import fresh, query
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 PROBE = "ekbatan-probe-7"
 
 #: The setting, the query that reads it back, and the migration that records it - per dialect.

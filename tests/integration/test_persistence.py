@@ -17,6 +17,9 @@ from sqlalchemy import Connection, text
 from ekbatan.persistence import TransactionManager
 from ekbatan.sharding import ShardIdentifier
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
 

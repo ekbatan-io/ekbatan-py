@@ -28,6 +28,9 @@ from fixtures.domain import Notification, Wallet
 from fixtures.repositories import WalletRepository
 from fixtures.schema import EVENTS
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 # ------------------------------------------------------------------ repositories
 
 
@@ -116,11 +119,12 @@ def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
 def test_an_instance_is_refused_and_the_message_says_what_to_do(executor):
     """Java's `execute` takes a class, so an unregistered action cannot run. Taking an instance
     here let one run anyway - registered or not."""
+    instance = CreateWalletAction(executor.clock)
     with pytest.raises(ValidationError) as refused:
-        executor.execute(CreateWalletAction(executor.clock), None)  # type: ignore[arg-type]
+        executor.execute(instance, None)  # type: ignore[arg-type]
 
     message = str(refused.value)
-    assert "pass CreateWalletAction, not an instance of it" in message
+    assert f"pass {type(instance).__name__}, not an instance of it" in message
     assert "ActionSpec.of(action)" in message, "and where a test should go instead"
 
 
@@ -173,8 +177,9 @@ def test_registering_the_class_rather_than_an_instance_is_refused():
 
 
 def test_two_instances_of_one_action_are_refused(wallets, clock):
-    with pytest.raises(ValidationError, match="two instances of DepositMoneyAction"):
-        ActionRegistry([DepositMoneyAction(wallets, clock), DepositMoneyAction(wallets, clock)])
+    first, second = DepositMoneyAction(wallets, clock), DepositMoneyAction(wallets, clock)
+    with pytest.raises(ValidationError, match=f"two instances of {type(first).__name__}"):
+        ActionRegistry([first, second])
 
 
 def test_the_same_instance_twice_is_not_a_conflict(wallets, clock):

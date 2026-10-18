@@ -16,6 +16,7 @@ from ekbatan import AbstractRepository, Action, Clock
 from ekbatan.aio import AsyncAction
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
+from modes import twin
 
 from .domain import Notification, Wallet
 
@@ -154,17 +155,22 @@ class DepositThenFailAction(Action[DepositParams, Wallet]):
 
 # ---------------------------------------------------------------- the same, on ekbatan.aio
 #
-# Twins of the actions above, for `test_async_parity.py`, which runs each scenario on the sync
-# executor and on the async one. Each body is its sync twin's with `await` on the reads.
+# Twins of the actions above, for the tests that run each scenario on the sync executor and on
+# the async one. Each body is its sync twin's with `await` on the reads, and each keeps its sync
+# twin's name, so both write the same `action_name` and one assertion covers both - what `name`
+# is for: a name kept stable across a rename.
 
 
-class AsyncCreateWalletAction(AsyncAction[CreateWalletParams, Wallet]):
+class TwinAction[P, R](AsyncAction[P, R]):
+    """An async twin, named as its sync twin is: the class name without ``Async``."""
+
     @property
     def name(self) -> str:
-        # The sync twin's name, so both write the same `action_name` and one assertion
-        # covers both. What `name` is for: a name kept stable across a rename.
-        return "CreateWalletAction"
+        return type(self).__name__.removeprefix("Async")
 
+
+@twin(CreateWalletAction)
+class AsyncCreateWalletAction(TwinAction[CreateWalletParams, Wallet]):
     async def perform(self, principal: str | None, params: CreateWalletParams) -> Wallet:
         return self.plan.add(
             Wallet.open(
@@ -177,28 +183,67 @@ class AsyncCreateWalletAction(AsyncAction[CreateWalletParams, Wallet]):
         )
 
 
-class AsyncDepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+@twin(DepositMoneyAction)
+class AsyncDepositMoneyAction(TwinAction[DepositParams, Wallet]):
     def __init__(self, wallets: Any, clock: Clock) -> None:
         super().__init__(clock)
         self.wallets = wallets
-
-    @property
-    def name(self) -> str:
-        return "DepositMoneyAction"
 
     async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = await self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
-class AsyncDepositThenFailAction(AsyncAction[DepositParams, Wallet]):
+@twin(CloseWalletAction)
+class AsyncCloseWalletAction(TwinAction[WalletIdParams, Wallet]):
     def __init__(self, wallets: Any, clock: Clock) -> None:
         super().__init__(clock)
         self.wallets = wallets
 
-    @property
-    def name(self) -> str:
-        return "DepositThenFailAction"
+    async def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        closed = wallet.close()
+        return self.plan.update(closed) if closed is not wallet else wallet
+
+
+@twin(TransferMoneyAction)
+class AsyncTransferMoneyAction(TwinAction[TransferParams, tuple[Wallet, Wallet]]):
+    def __init__(self, wallets: Any, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: TransferParams) -> tuple[Wallet, Wallet]:
+        source = await self.wallets.get(params.from_wallet_id)
+        destination = await self.wallets.get(params.to_wallet_id)
+        if source.currency != destination.currency:
+            raise ValidationError(
+                f"cannot transfer {source.currency} into a {destination.currency} wallet"
+            )
+        return (
+            self.plan.update(source.withdraw(params.amount)),
+            self.plan.update(destination.deposit(params.amount)),
+        )
+
+
+@twin(NotifyAction)
+class AsyncNotifyAction(TwinAction[NotifyParams, Notification]):
+    async def perform(self, principal: str | None, params: NotifyParams) -> Notification:
+        return self.plan.add(
+            Notification.create(
+                id=Id[Notification].random(),
+                wallet_id=params.wallet_id,
+                kind=params.kind,
+                recipient=params.recipient,
+                message=params.message,
+            )
+        )
+
+
+@twin(DepositThenFailAction)
+class AsyncDepositThenFailAction(TwinAction[DepositParams, Wallet]):
+    def __init__(self, wallets: Any, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
 
     async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = await self.wallets.get(params.wallet_id)

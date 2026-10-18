@@ -299,10 +299,10 @@ def async_engine_for(config: DataSourceConfig) -> AsyncEngine:
     that waits longer than ``pool_timeout`` for a connection fails with SQLAlchemy's
     ``TimeoutError`` rather than queueing for ever.
 
-    The driver is :func:`async_url`'s. ``data_source_properties`` reach it as given, with one
-    translation: asyncpg has no libpq ``options``, so ``-c name=value`` settings there become
-    asyncpg's ``server_settings`` - which is what keeps the documented UTC setup,
-    ``options: -c TimeZone=UTC``, working on asyncpg.
+    The driver is :func:`async_url`'s. ``data_source_properties`` reach it as given, except
+    that libpq's own spellings are made asyncpg's (see :func:`_asyncpg_connect_args`): above
+    all ``options``, whose ``-c name=value`` settings become asyncpg's ``server_settings`` -
+    which is what keeps the documented UTC setup, ``options: -c TimeZone=UTC``, working.
     """
     url = async_url(config)
     kwargs = _engine_kwargs(config)
@@ -311,29 +311,71 @@ def async_engine_for(config: DataSourceConfig) -> AsyncEngine:
     return create_async_engine(url, **kwargs)
 
 
-def _asyncpg_connect_args(given: Mapping[str, Any]) -> dict[str, Any]:
-    """``data_source_properties`` for asyncpg: libpq's ``options`` read into ``server_settings``.
+#: libpq settings that asyncpg spells another way, and the asyncpg argument each becomes.
+#: ``application_name`` is a server setting; ``connect_timeout`` is asyncpg's ``timeout``, in
+#: seconds; asyncpg's ``ssl`` takes libpq's ``sslmode`` words as they are.
+_LIBPQ_AS_ASYNCPG = {"connect_timeout": "timeout", "sslmode": "ssl"}
 
-    Only ``-c name=value`` (and ``--name=value``) is understood - it is the only thing
-    ``options`` carries that asyncpg has a place for. Anything else in it is refused by what it
-    is, never by repeating it: every ``data_source_properties`` value is treated as a secret.
+
+def _asyncpg_connect_args(given: Mapping[str, Any]) -> dict[str, Any]:
+    """``data_source_properties`` written for libpq, made asyncpg's - so one layout file serves
+    a service's sync registry (psycopg) and its async one (asyncpg).
+
+    - ``options``: its ``-c name=value`` (and ``--name=value``) settings go to
+      ``server_settings``. Anything else in it is refused: asyncpg has no place for it.
+    - ``application_name`` goes to ``server_settings``.
+    - ``connect_timeout`` becomes ``timeout`` and ``sslmode`` becomes ``ssl``.
+
+    Everything else reaches asyncpg as given. A refusal says what is wrong, never repeating a
+    value: every ``data_source_properties`` value is treated as a secret.
     """
     args = dict(given)
-    options = args.pop("options", None)
-    if options is None:
+    settings = _server_settings_from_options(args.pop("options", None))
+    if "application_name" in args:
+        settings["application_name"] = str(args.pop("application_name"))
+    for libpq, asyncpg in _LIBPQ_AS_ASYNCPG.items():
+        if libpq not in args:
+            continue
+        if asyncpg in args:
+            raise ValidationError(
+                f"data_source_properties sets both {libpq!r} and {asyncpg!r}, which are one "
+                f"setting on asyncpg; set one of them"
+            )
+        value = args.pop(libpq)
+        args[asyncpg] = float(value) if libpq == "connect_timeout" else value
+    if not settings:
         return args
+    given_settings = args.get("server_settings") or {}
+    if not isinstance(given_settings, Mapping):
+        raise ValidationError(
+            "data_source_properties 'server_settings' must be a group of name: value"
+        )
+    both = sorted(set(settings) & set(given_settings))
+    if both:
+        raise ValidationError(
+            f"data_source_properties sets {', '.join(both)} both as a libpq setting and in "
+            f"'server_settings'; set each in one place"
+        )
+    args["server_settings"] = {**given_settings, **settings}
+    return args
+
+
+def _server_settings_from_options(options: object) -> dict[str, str]:
+    """libpq's ``options``, read into server settings: ``-c name=value`` and ``--name=value``."""
+    if options is None:
+        return {}
     if not isinstance(options, str):
         raise ValidationError(
             "data_source_properties 'options' must be text for asyncpg: libpq's "
             "'-c name=value' settings"
         )
-    settings: dict[str, str] = {}
     try:
         words = shlex.split(options)
     except ValueError:
         raise ValidationError(
             "data_source_properties 'options' has an unclosed quote or a trailing backslash"
         ) from None
+    settings: dict[str, str] = {}
     while words:
         word = words.pop(0)
         if word == "-c" and words:
@@ -352,16 +394,4 @@ def _asyncpg_connect_args(given: Mapping[str, Any]) -> dict[str, Any]:
                 "data_source_properties 'options' holds a '-c' setting without 'name=value'"
             )
         settings[name.strip().replace("-", "_")] = value
-    given_settings = args.get("server_settings") or {}
-    if not isinstance(given_settings, Mapping):
-        raise ValidationError(
-            "data_source_properties 'server_settings' must be a group of name: value"
-        )
-    both = sorted(set(settings) & set(given_settings))
-    if both:
-        raise ValidationError(
-            f"data_source_properties sets {', '.join(both)} in both 'options' and "
-            f"'server_settings'; set each in one place"
-        )
-    args["server_settings"] = {**given_settings, **settings}
-    return args
+    return settings

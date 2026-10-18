@@ -17,13 +17,16 @@ from sqlalchemy import insert, select, text
 
 from ekbatan.ids import ShardedId
 from fixtures.domain import Wallet
+from fixtures.repositories import WalletRepository
 from fixtures.schema import EVENTS
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 PLUS_TWO = timezone(timedelta(hours=2))
 
 
 def test_a_model_read_back_equals_what_was_written_and_compares_with_the_clock(registry, clock):
-    from fixtures.repositories import WalletRepository
     from fixtures.schema import WALLETS
 
     wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)

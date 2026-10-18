@@ -33,6 +33,10 @@ from ekbatan import AbstractRepository, Model
 from ekbatan.clock import to_storage
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
+from modes import rebased
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 GLOBAL = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
@@ -67,14 +71,19 @@ class Purse(Model[Id["Purse"], PurseState]):
 
 def _prepare(registry):
     """This module brings its own table, so it creates and empties it itself - the shared
-    fixture only knows about the wallet application's."""
+    fixture only knows about the wallet application's. `run_sync` on an async connection, as
+    SQLAlchemy's asyncio API says: DDL helpers are sync."""
     for shard in registry.shards:
         engine = registry.manager(shard).primary
-        metadata.create_all(engine)
         with engine.begin() as conn:
+            if hasattr(conn, "run_sync"):
+                conn.run_sync(metadata.create_all)
+            else:
+                metadata.create_all(conn)
             conn.execute(PURSES.delete())
 
 
+@rebased
 class PurseRepository(AbstractRepository[Purse, Id[Purse]]):
     """The mapping written out, as Java's `fromRecord` / `toRecord` are.
 

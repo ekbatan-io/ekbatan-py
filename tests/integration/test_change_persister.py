@@ -22,6 +22,9 @@ from ekbatan.ids import Id, ShardedId
 from fixtures.domain import Notification, Wallet
 from fixtures.schema import EVENTS
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 NOW = datetime(2026, 1, 1, 10, 0, 0)
 
 

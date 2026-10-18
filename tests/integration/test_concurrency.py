@@ -43,6 +43,9 @@ from fixtures.domain import NOW, Wallet
 from fixtures.executing import run
 from fixtures.repositories import WalletRepository
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 WORKERS = 8
 
 

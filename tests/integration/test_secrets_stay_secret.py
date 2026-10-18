@@ -20,6 +20,9 @@ from ekbatan.persistence import DatabaseRegistry
 from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.migrating import fresh, query
 
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
+
 SECRET = "Zq7-s3cret-pw-for-tests"
 WRONG = "Wr0ng-Zq7-pw-for-tests"
 USER = "ekbatan_secret_user"

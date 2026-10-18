@@ -24,11 +24,16 @@ from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Wallet, WalletState
 from fixtures.schema import WALLETS
+from modes import rebased
+
+#: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
+MODES = ("sync", "async")
 
 HERE = ShardIdentifier(0, 0)
 MEXICO = ShardIdentifier(1, 0)
 
 
+@rebased
 class WalletRepository(AbstractRepository[Wallet, ShardedId[Wallet]]):
     """What a user writes when the built-in finders run out."""
 

@@ -19,11 +19,12 @@ from typing import Any
 
 from sqlalchemy import Row
 
-from ekbatan.aio import AsyncModelRepository
+from ekbatan.aio import AbstractAsyncRepository, AsyncEntityRepository, AsyncModelRepository
 from ekbatan.clock import to_storage
 from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
 from ekbatan.repository import AbstractRepository, EntityRepository, ModelRepository
+from modes import twin
 
 from .domain import Notification, Wallet, WalletState
 
@@ -124,5 +125,43 @@ class NotificationEntityRepository(
     pass
 
 
-class AsyncWalletRepository(_WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
-    """The same mapping, on ``ekbatan.aio`` - for the suite that runs each scenario both ways."""
+# ---------------------------------------------------------------- the same, on ekbatan.aio
+#
+# The same mapping on the async bases. `modes.twin` files each as its sync class's twin, so a
+# test module that runs both ways (`MODES`) builds these in its async run.
+
+
+@twin(WalletRepository)
+class AsyncWalletRepository(_WalletRows, AbstractAsyncRepository[Wallet, ShardedId[Wallet]]):
+    pass
+
+
+@twin(NotificationRepository)
+class AsyncNotificationRepository(
+    _NotificationRows, AbstractAsyncRepository[Notification, Id[Notification]]
+):
+    pass
+
+
+@twin(WalletModelRepository)
+class AsyncWalletModelRepository(_WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    pass
+
+
+@twin(NotificationModelRepository)
+class AsyncNotificationModelRepository(
+    _NotificationRows, AsyncModelRepository[Notification, Id[Notification]]
+):
+    pass
+
+
+@twin(WalletEntityRepository)
+class AsyncWalletEntityRepository(_WalletRows, AsyncEntityRepository[Wallet, ShardedId[Wallet]]):
+    pass
+
+
+@twin(NotificationEntityRepository)
+class AsyncNotificationEntityRepository(
+    _NotificationRows, AsyncEntityRepository[Notification, Id[Notification]]
+):
+    pass
