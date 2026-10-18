@@ -82,9 +82,9 @@ The key names are Java's, spelling included, so one layout describes both ports.
 | `url` | - | a SQLAlchemy url; the dialect is read from it. No login in it |
 | `username` | None | the user to log in as; never blank |
 | `password` | None | the login password; the empty string is valid |
-| `pool_size` | 10 | connections kept open - the pool fills to this many in the background as soon as it is built |
+| `pool_size` | 10 | connections kept |
 | `max_overflow` | 0 | connections beyond `pool_size`. Zero is deliberate - see below |
-| `pool_timeout` | 30.0 | seconds a caller waits for a connection, free or still being opened |
+| `pool_timeout` | 30.0 | seconds to wait for one |
 | `pool_recycle` | 1800 | retire a connection after this many seconds |
 | `pool_pre_ping` | True | check a connection is alive before handing it out |
 | `data_source_properties` | `{}` | extra driver settings, handed over as given |
@@ -95,15 +95,6 @@ opened on demand and closed on return, so a burst that exceeds `pool_size` silen
 burst of connection *establishment* against the database - which is the expensive part, and
 exactly when you can least afford it. A fixed pool makes the limit visible as waiting rather than
 invisible as latency.
-
-**The pool runs as Java's Hikari pool does with Ekbatan's settings.** It fills to `pool_size` in
-the background as soon as it is built - Hikari's `minimumIdle` defaults to the maximum - and
-refills when a connection is thrown away; a pool of 3 holds 3 open connections a moment after
-start, query or not. A connection that cannot be opened - a wrong password, a database not up
-yet - is retried with Hikari's backoff (10 ms, doubling up to 5 s), and the caller fails with the
-driver's error only when `pool_timeout` is up: 30 s by default, Hikari's `connectionTimeout`. The
-pool keeps trying in the background until it is disposed. The password is never logged while it
-retries.
 
 The same layout can be read from a YAML, TOML, JSON or INI file: see [Config files](config-files.md).
 
@@ -150,9 +141,8 @@ connect with the same login and the same settings.
 treated as a secret. Printing a `DataSourceConfig`, or anything that holds one - a layout, a member,
 a migration result - shows `***` in their place. `log.info(layout)` is safe to write.
 
-There is no setting for Hikari's `idleTimeout` or `minimumIdle`: the pool behaves as Hikari's
-defaults (`minimumIdle` equal to the maximum, so `idleTimeout` never applies), and retirement is
-by age. See [SHORTCOMINGS.md](../SHORTCOMINGS.md).
+There is no counterpart to Hikari's `idleTimeout` or `minimumIdle`; retirement here is by age
+rather than by idleness. See [SHORTCOMINGS.md](../SHORTCOMINGS.md).
 
 ## Sharded models and repositories
 

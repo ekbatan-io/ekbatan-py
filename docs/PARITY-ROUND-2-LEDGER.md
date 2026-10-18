@@ -44,3 +44,6 @@ and its fixes [`PARITY-FIX-LEDGER.md`](PARITY-FIX-LEDGER.md).
 R0: 174 round-1 differences now match Java, no fix broke, and the suite passed on every database
 (2,649). N5: the round-1 fixes work together. **Needs you**: log message wording (N3), and the
 pool's pre-opened connections skipping `pool_pre_ping` (N6 - a real bug from `EKB-0305`).
+
+The pool finding was resolved by undoing `EKB-0305` (items 28-29) in `EKB-0318`, by the user's
+decision: SQLAlchemy's standard pool, with its own `pool_pre_ping`, is back.

@@ -76,8 +76,7 @@ effect on the database.
 | 58 | The plan has no delete; a soft delete is an update | no delete | no delete | read | API shape: neither `ActionPlan` has the method |
 | 59 | An action can rename itself in `action_name` (Dracula 69) | cannot | `name` property | read | API shape: Java has no hook to run |
 
-**Totals: 59 behaviours, 46 same, 10 differs, 3 read.** Since fixed by group T (`EKB-0301`,
-`EKB-0302`): rows 41, 46 and 50, so 49 same and 7 differ.
+**Totals: 59 behaviours, 46 same, 10 differs, 3 read.**
 
 Not a difference, but worth knowing in both ports (row 29): with `allowCrossShard` and the
 default retry, a partial commit is retried as a whole, so the shard that already committed gets

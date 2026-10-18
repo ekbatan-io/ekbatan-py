@@ -50,13 +50,13 @@ PROBE acc.readonly_unknown_shard: testdb
 PROBE acc.txDb_unknown_shard: Optional.empty
 PROBE acc.db_by_id_unknown_shard: testdb
 PROBE acc.db_by_id_unknown_shard.warned: yes
-PROBE pool.open_connections_after_one_query: 3
+PROBE pool.open_connections_after_one_query: 1
 PROBE pool.max_connections_under_load: 3
 PROBE pool.driver_setting_reaches_server: yes
 PROBE red.login_with_marker_password: yes
 PROBE red.printed_forms.marker: no
 PROBE red.wrong_password.failed: yes
-PROBE red.wrong_password.seconds_to_fail: about 30
+PROBE red.wrong_password.seconds_to_fail: under 5
 PROBE red.wrong_password.marker_in_error: no
 PROBE red.wrong_password.error_names_auth: yes
 PROBE red.no_username.logs_in_as_os_user: yes

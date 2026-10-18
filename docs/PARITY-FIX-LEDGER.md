@@ -68,3 +68,6 @@ already migrated: [...]`, at ERROR. The other items of group M stay open by the 
 Then undone (2026-10-18, `EKB-0314`): following Flyway's PostgreSQL-only limit copied an accident
 of Flyway's code and makes long migrations crash the instances waiting behind them; the migrator
 waits as long as it takes on every database, as before.
+
+Items 28 and 29 undone (2026-10-18, `EKB-0318`): the custom pool overrode SQLAlchemy internals and
+its pre-opened connections skipped `pool_pre_ping`; the standard pool is back.

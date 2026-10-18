@@ -13,9 +13,6 @@ would corrupt both.
 from __future__ import annotations
 
 import logging
-import threading
-import time
-import weakref
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -24,9 +21,6 @@ from types import MappingProxyType
 from typing import Any, Literal, Self
 
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
-from sqlalchemy import exc as sa_exc
-from sqlalchemy.pool import ConnectionPoolEntry, QueuePool
-from sqlalchemy.util import queue as sa_queue
 
 from ._logtext import java_list, java_shard, java_shard_pair
 from ._tracing import span
@@ -48,7 +42,6 @@ __all__ = [
 # port - `io.ekbatan.core.persistence: DEBUG` - applies here unchanged.
 LOG = logging.getLogger("io.ekbatan.core.persistence.TransactionManager")
 REGISTRY_LOG = logging.getLogger("io.ekbatan.core.shard.DatabaseRegistry")
-POOL_LOG = logging.getLogger("io.ekbatan.core.persistence.ConnectionProvider")
 
 # Keyed by the manager, not by its shard - as Java keeps one `ScopedValue` per manager. Two
 # managers for the same shard (another registry, or one built on a member's `jobsConfig`) are two
@@ -397,164 +390,6 @@ class DatabaseRegistry:
         return f"DatabaseRegistry({len(self._managers)} shard(s), default={self.default_shard})"
 
 
-# Hikari's numbers, as Java's pool runs them: a failed connection attempt is retried after 10 ms,
-# then twice as long each time up to 5 s; a connection just added is followed by a 30 ms pause;
-# and with nothing to do the filler looks again every 30 s, as Hikari's housekeeper does.
-_FIRST_BACKOFF = 0.01
-_MAX_BACKOFF = 5.0
-_AFTER_ADD = 0.03
-_HOUSEKEEPING = 30.0
-
-
-class _FillingPool(QueuePool):
-    """SQLAlchemy's ``QueuePool``, run the way Java's Hikari pool runs with Ekbatan's settings.
-
-    Two things Hikari does that ``QueuePool`` does not, both measured on Java's pool:
-
-    - **It fills to the maximum in the background.** Hikari's ``minimumIdle`` defaults to the
-      maximum pool size, so a pool of 3 holds 3 open connections a moment after it is built,
-      whether or not anything has asked for one. ``QueuePool`` opens one per request. Here a
-      thread fills the pool to ``pool_size`` (overflow connections still open on demand, as
-      ``max_overflow`` says) and refills it when a connection is thrown away.
-    - **A connection that cannot be opened is retried until** ``pool_timeout``. Hikari's
-      ``connectionTimeout`` (30 s) is how long a caller waits for a connection, and while it
-      waits the pool keeps trying - a wrong password fails after 30 s, not at once. Here the
-      caller's own attempt failing makes it wait, up to ``pool_timeout``, for the filler - which
-      retries with Hikari's backoff - and only then raises the driver's error.
-
-    The filler keeps trying for as long as the pool is open, as Hikari's does: a pool with a
-    wrong password logs in again every 5 seconds until it is disposed.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._filler: threading.Thread | None = None
-        self._filler_lock = threading.Lock()
-        self._closed = False
-        # A connection the filler is opening is counted by `QueuePool` as checked out - it has
-        # taken its slot - but nobody holds it. Reported apart, so `checkedout()` means what it
-        # says while the pool fills.
-        self._opening = 0
-        # Held by the filler thread as well as the pool, so the thread can wait on them without
-        # holding the pool itself - an abandoned pool is then collected and its thread ends.
-        self._stop = threading.Event()
-        self._wake = threading.Event()
-
-    def start_filling(self) -> None:
-        """Start the background filler, once. :func:`engine_for` calls it as the pool is built,
-        as Hikari starts filling at construction; a pool recreated by ``engine.dispose()`` starts
-        it on its first checkout instead, so disposing does not reopen what it just closed."""
-        if self._filler is not None and self._filler.is_alive():
-            return
-        with self._filler_lock:
-            if self._closed or (self._filler is not None and self._filler.is_alive()):
-                return
-            self._filler = threading.Thread(
-                target=_fill,
-                args=(weakref.ref(self), self._stop, self._wake),
-                name="ekbatan-pool-filler",
-                daemon=True,
-            )
-            self._filler.start()
-
-    def _do_get(self) -> ConnectionPoolEntry:
-        self.start_filling()
-        deadline = time.monotonic() + self._timeout
-        try:
-            return super()._do_get()
-        except sa_exc.TimeoutError:
-            # Every connection is out and none came back in `pool_timeout`: already waited.
-            raise
-        except Exception:
-            # The attempt to open one failed. Hikari's caller would still be waiting, and the
-            # pool still trying: wait for the filler, which retries with backoff, until the
-            # caller's time is up - then raise what the driver said.
-            self._wake.set()
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0 or self._closed:
-                    raise
-                try:
-                    return self._pool.get(True, remaining)
-                except sa_queue.Empty:
-                    continue
-
-    def _dec_overflow(self) -> Any:
-        # A connection was thrown away (or never opened): the filler has one to replace.
-        done = super()._dec_overflow()
-        self._wake.set()
-        return done
-
-    def dispose(self) -> None:
-        self._closed = True
-        self._stop.set()
-        self._wake.set()
-        super().dispose()
-
-    def checkedout(self) -> int:
-        return super().checkedout() - self._opening
-
-    def _wanted(self) -> bool:
-        """Hikari's ``shouldContinueCreating`` with ``minimumIdle`` at the maximum: open while the
-        pool holds fewer than ``pool_size`` connections."""
-        return not self._closed and self._overflow < 0
-
-    def _add_one(self) -> bool:
-        """Open one connection into the pool. False when the attempt failed."""
-        if not self._inc_overflow():
-            return True
-        self._opening += 1
-        try:
-            record = self._create_connection()
-        except Exception as error:
-            self._opening -= 1
-            super()._dec_overflow()  # not through ours: a failure is not a reason to wake
-            # The driver's message names the user and the server, never the password; it is
-            # still logged without its traceback, at DEBUG, as Hikari logs each attempt.
-            POOL_LOG.debug(
-                "connection add failed, retrying with backoff: %s: %s",
-                type(error).__name__,
-                error,
-            )
-            return False
-        # Before the put, so the count can only ever be one too high for an instant, never low.
-        self._opening -= 1
-        if self._closed:
-            record.close()
-            super()._dec_overflow()
-            return True
-        try:
-            self._pool.put(record, False)
-        except sa_queue.Full:
-            record.close()
-            super()._dec_overflow()
-        return True
-
-
-def _fill(
-    pool_ref: weakref.ref[_FillingPool], stop: threading.Event, wake: threading.Event
-) -> None:
-    """The filler: Hikari's ``PoolEntryCreator`` loop, plus its housekeeper's periodic look."""
-    backoff = _FIRST_BACKOFF
-    while not stop.is_set():
-        pool = pool_ref()
-        if pool is None:
-            return
-        if pool._wanted():
-            added = pool._add_one()
-            del pool
-            if added:
-                backoff = _FIRST_BACKOFF
-                stop.wait(_AFTER_ADD)
-            else:
-                stop.wait(backoff)
-                backoff = min(backoff * 2, _MAX_BACKOFF)
-            continue
-        del pool
-        wake.wait(_HOUSEKEEPING)
-        wake.clear()
-
-
 def engine_for(config: DataSourceConfig) -> Engine:
     """A pool for one :class:`~ekbatan.config.DataSourceConfig` - Java's
     ``ConnectionProvider.hikariConnectionProvider(config)``.
@@ -579,23 +414,15 @@ def engine_for(config: DataSourceConfig) -> Engine:
         "json_serializer": dumps,
         "json_deserializer": loads,
     }
-    if config.dialect == "sqlite":
-        return create_engine(config.sqlalchemy_url(), **kwargs)
-    kwargs |= {
-        "poolclass": _FillingPool,
-        "pool_size": config.pool_size,
-        "max_overflow": config.max_overflow,
-        "pool_timeout": config.pool_timeout,
-        "pool_recycle": config.pool_recycle,
-        "pool_pre_ping": config.pool_pre_ping,
-    }
-    engine = create_engine(config.sqlalchemy_url(), **kwargs)
-    # Filling from the start, as Hikari does: the pool holds `pool_size` open connections a
-    # moment after it is built, and a database it cannot reach is retried from then on.
-    pool = engine.pool
-    if isinstance(pool, _FillingPool):
-        pool.start_filling()
-    return engine
+    if config.dialect != "sqlite":
+        kwargs |= {
+            "pool_size": config.pool_size,
+            "max_overflow": config.max_overflow,
+            "pool_timeout": config.pool_timeout,
+            "pool_recycle": config.pool_recycle,
+            "pool_pre_ping": config.pool_pre_ping,
+        }
+    return create_engine(config.sqlalchemy_url(), **kwargs)
 
 
 def insert_ignoring_duplicates(
