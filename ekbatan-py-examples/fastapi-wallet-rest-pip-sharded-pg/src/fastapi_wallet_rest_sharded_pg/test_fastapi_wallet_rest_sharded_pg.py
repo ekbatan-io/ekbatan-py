@@ -392,6 +392,9 @@ def test_the_service_runs_on_the_layout_in_ekbatan_yaml(service: ShardedWallets)
         with service.registry.manager(shard).primary.connect() as conn:
             reported = conn.execute(text("SELECT current_setting('application_name')"))
             assert reported.scalar() == "wallet-service"
+            # `options: -c TimeZone=UTC`: every session on UTC, whatever the server's default.
+            zone = conn.execute(text("SELECT current_setting('TimeZone')")).scalar()
+            assert zone == "UTC"
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs():

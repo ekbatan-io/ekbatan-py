@@ -17,7 +17,8 @@ Needs `poetry` 2 on the path.
 The settings are in `ekbatan.yaml`, in the same keys as Java's `application.yml`: the layout
 with the scheduler's own `jobsConfig` pool, the namespace, `jobs.pollingInterval: PT10S` and
 `local-event-handler.handling.enabled`. Durations are ISO-8601, as Java's `Duration.parse` reads
-them.
+them. Each pool puts its sessions on UTC with `options: -c TimeZone=UTC`, whatever the server's
+default.
 
 ## What it shows
 

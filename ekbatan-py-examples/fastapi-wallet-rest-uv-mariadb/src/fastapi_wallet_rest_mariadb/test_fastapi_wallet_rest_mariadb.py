@@ -21,7 +21,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.pool import NullPool
 from testcontainers.community.mysql import MySqlContainer
 
 from ekbatan.config import split_login
@@ -49,19 +50,23 @@ def database() -> Iterator[str]:
         yield f"mariadb+pymysql://{rest}"
 
 
+def environ_for(database: str) -> dict[str, str]:
+    """The placeholders `ekbatan.yaml` reads, filled from the container: its url and login."""
+    url, username, password = split_login(database)
+    return {
+        "WALLET_DATABASE_URL": url,
+        "WALLET_DATABASE_USERNAME": username or "",
+        "WALLET_DATABASE_PASSWORD": password or "",
+    }
+
+
 @pytest.fixture
 def client(database: str) -> Iterator[TestClient]:
     from .api import create_app
 
     # The container's url carries its login; `ekbatan.yaml` keeps it apart, as a deployment does,
     # and reads all three from the placeholders filled here.
-    url, username, password = split_login(database)
-    environ = {
-        "WALLET_DATABASE_URL": url,
-        "WALLET_DATABASE_USERNAME": username or "",
-        "WALLET_DATABASE_PASSWORD": password or "",
-    }
-    app = create_app(Settings(environ=environ, job_workers=3))
+    app = create_app(Settings(environ=environ_for(database), job_workers=3))
     # `with TestClient(...)` is what runs the lifespan - and therefore the migrations, the
     # pools and the scheduler. Without the `with`, none of that happens and every test here
     # would fail against an empty database.
@@ -294,6 +299,41 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     with primary.connect() as connection:
         # `init_command` under `dataSourceProperties`, reaching the server.
         assert connection.execute(text("SELECT @@SESSION.innodb_lock_wait_timeout")).scalar() == 10
+
+
+def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) -> None:
+    """The third part of the UTC rule: each session is put on UTC by `ekbatan.yaml`
+    (`time_zone = '+00:00'` in every pool's `init_command`), not by the server's default. The
+    server's own default is moved to Tehran's offset first: a plain connection then reports it -
+    the control - and every pool the service builds reports UTC."""
+    from .app import build
+
+    admin = create_engine(database, isolation_level="AUTOCOMMIT", poolclass=NullPool)
+    with admin.connect() as connection:
+        previous = connection.execute(text("SELECT @@global.time_zone")).scalar()
+        connection.execute(text("SET GLOBAL time_zone = '+03:30'"))
+    try:
+        with admin.connect() as connection:
+            control = connection.execute(text("SELECT @@session.time_zone")).scalar()
+        assert control == "+03:30", "the control: off UTC without the setting"
+
+        service = build(Settings(environ=environ_for(database)))
+        try:
+            pools = [
+                service.registry.manager(DEFAULT_SHARD).primary,
+                service.jobs_engine,
+                service.lock_engine,
+            ]
+            for pool in pools:
+                with pool.connect() as connection:
+                    zone = connection.execute(text("SELECT @@session.time_zone")).scalar()
+                    assert zone == "+00:00", pool
+        finally:
+            service.close()
+    finally:
+        with admin.connect() as connection:
+            connection.execute(text(f"SET GLOBAL time_zone = '{previous}'"))
+        admin.dispose()
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs():

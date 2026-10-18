@@ -389,3 +389,62 @@ one laptop. ops/s, p50, p99; timed-out requests counted, not timed.
 A lone request on asyncpg is slower than on psycopg: pre-ping costs 1.4 ms (asyncpg) to 2.4 ms
 (psycopg async) per deposit, and without it asyncpg is still about 1.5 ms slower (4.3 against
 2.9 ms). Under load asyncpg leads.
+
+## Follow-ups (2026-10-19, `EKB-0364` on)
+
+Asked on 2026-10-19: three follow-ups, in order - UTC in the older examples, async keyed locks
+and async event handlers (E5, E6, now requested), and the suite on psycopg's own async mode.
+Decisions: `docs/DECISIONS-TO-REVIEW.md#async-follow-ups`.
+
+### F1 - UTC in the examples
+
+| # | Item | State |
+|---|---|---|
+| U1 | find every example whose layout sets no session time zone | done - grep of every `ekbatan.yaml`: the six sync server examples (`fastapi-wallet-rest-{pg,mysql,mariadb,sharded-pg}`, `fastapi-wallet-saga-pg`, `job-worker-pg`) set none; the two async ones set it on two of their three pools (not `jobsConfig`); SQLite has no session zone |
+| U2 | set it on every pool of each (`options: -c TimeZone=UTC`, `init_command ... time_zone = '+00:00'`), written once in the uv project and synced | done - every pool of all eight server examples, uv projects edited, pip/Poetry written by `sync-examples.py`; READMEs and the setup guide's step 4 say so |
+| U3 | a test per database (pg, mysql, mariadb) proving the service's pools report UTC against a server whose default is not UTC, with the control | done - `test_every_pool_runs_in_utc_even_on_a_server_that_does_not` in `fastapi-wallet-rest-{pg,mysql,mariadb}`: server default moved to Tehran, control reports it, every pool `build()` makes reports UTC; proven able to fail (setting removed from `lockConfig` -> `'Asia/Tehran' == 'UTC'`). The other five check their pools report UTC |
+| U4 | every changed example's own `make`, uv/pip/Poetry | done - 24 projects green (counts in Runs) |
+
+### F2 - async keyed locks and async handlers
+
+| # | Item | State |
+|---|---|---|
+| L1 | `AsyncKeyedLockProvider` protocol and `AsyncKeyedLock` | todo |
+| L2 | async in-memory provider, on the sync one's core | todo |
+| L3 | async PostgreSQL advisory provider | todo |
+| L4 | async MySQL / MariaDB `GET_LOCK` provider | todo |
+| L5 | async Redis provider on `redis.asyncio` | todo |
+| L6 | same names and rules as sync: timeouts, max hold, namespace, key validation | todo |
+| L7 | marker password never printed (Redis url included) | todo |
+| L8 | lock tests run both ways on four databases (and Redis) | todo |
+| H1 | an event handler may be `async def handle`; dispatch owns one long-lived loop on a thread of its own | todo |
+| H2 | retry, backoff, dead letter identical for both kinds | todo |
+| H3 | handler tests run both ways on four databases | todo |
+| H4 | async examples: async keyed lock on the deposit, async handler | todo |
+| H5 | docs wording: handlers run after the action on their own threads; locks are taken by the caller around `execute` | todo |
+| H6 | docs and website pages (async, keyed locks, event handlers, AGENTS.md, setup guide) | todo |
+
+### F3 - psycopg's async mode under the suite
+
+| # | Item | State |
+|---|---|---|
+| P1 | a way to run the async runs on `postgresql+psycopg_async` | todo |
+| P2 | the whole PostgreSQL suite through it; fix what fails | todo |
+| P3 | the UTC session test and the marker-password test on psycopg async | todo |
+| P4 | Makefile / CI target | todo |
+
+### Runs
+
+**Before** (clean `5d8f268`, copied out with `git archive`, `pytest tests/integration`, junit
+files split by id: an id with `async` among its parameters is an async run):
+
+| database | sync | async |
+| --- | --- | --- |
+| SQLite | 619 passed, 62 skipped | 243 passed, 10 skipped |
+| PostgreSQL | 785 passed, 12 skipped | 253 passed |
+| MySQL | 788 passed, 13 skipped | 253 passed |
+| MariaDB | 798 passed, 11 skipped | 253 passed |
+
+**F1 examples** (2026-10-19, `make` in each, Poetry through `uvx poetry`): `fastapi-wallet-rest`
+pg / mysql / mariadb 16 passed each build; sharded-pg 20; saga-pg 17; job-worker-pg 10;
+async-pg and async-mariadb 15 - uv, pip and Poetry alike.

@@ -16,7 +16,8 @@ Built with **uv**. The same project with [pip and setuptools](../fastapi-wallet-
 <!-- /build -->
 
 The database, the namespace and the event handling switch are in `ekbatan.yaml`, in the same
-keys as Java's `application.yml`. As in Java, the whole saga depends on
+keys as Java's `application.yml`; each pool puts its sessions on UTC with
+`options: -c TimeZone=UTC`, whatever the server's default. As in Java, the whole saga depends on
 `local-event-handler.handling.enabled: true`: every step after the first is started by a handler,
 run by the fan-out and handling jobs in the background. Switch it off and the saga stops after
 step one.

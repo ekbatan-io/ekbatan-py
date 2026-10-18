@@ -20,8 +20,10 @@ ekbatan:
             name: global
             configs:
               primaryConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   application_name: wallet-service
+                  options: -c TimeZone=UTC
                 url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
@@ -29,6 +31,9 @@ ekbatan:
               # The scheduler's own pool. One scheduler serves every shard, polling this database;
               # the fan-out and handling jobs it runs reach every shard through the registry.
               jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
                 url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
@@ -40,8 +45,10 @@ ekbatan:
             name: mexico
             configs:
               primaryConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   application_name: wallet-service
+                  options: -c TimeZone=UTC
                 url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5432/shard_mexico}
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}

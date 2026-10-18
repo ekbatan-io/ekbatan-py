@@ -269,8 +269,9 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     assert (requests.size(), handlers.size(), running.jobs_engine.pool.size()) == (10, 5, 8)  # type: ignore[attr-defined]
     assert scalar(client, text("SELECT current_setting('application_name')")) == "wallet-service"
     assert scalar(client, text("SELECT current_setting('TimeZone')")) == "UTC"
-    with running.handler_registry.default.primary.connect() as connection:
-        assert connection.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
+    for pool in (running.handler_registry.default.primary, running.jobs_engine):
+        with pool.connect() as connection:
+            assert connection.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:

@@ -47,6 +47,9 @@ ekbatan:
               # The scheduler. At least the job worker threads plus three: a job body holding
               # the last connection would starve the heartbeat.
               jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
                 url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}

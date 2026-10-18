@@ -21,9 +21,10 @@ ekbatan:
               primaryConfig:
                 # Extra driver settings, each name exactly as the driver spells it; handed to the
                 # driver beside the url, never printed.
-                # init_command runs once on each new connection.
+                # init_command runs once on each new connection; time_zone puts the session on UTC,
+                # as the columns hold UTC wall-clock time.
                 dataSourceProperties:
-                  init_command: SET SESSION innodb_lock_wait_timeout=10
+                  init_command: SET SESSION innodb_lock_wait_timeout=10, time_zone = '+00:00'
                 url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:root}
@@ -33,6 +34,9 @@ ekbatan:
               # connection would starve the heartbeat, and an execution whose heartbeat stops is
               # declared dead and run again elsewhere. Warned at startup if short.
               jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
                 url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:root}
@@ -40,6 +44,9 @@ ekbatan:
                 poolSize: 8
               # Held lock leases. One connection per lease that can be held at once.
               lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
                 url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:root}

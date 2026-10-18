@@ -362,5 +362,11 @@ def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(database: str, tmp_path
         with worker.registry.default.primary.connect() as conn:
             reported = conn.execute(text("SELECT current_setting('application_name')"))
             assert reported.scalar() == "wallet-worker"
+        # `options: -c TimeZone=UTC` on both pools: every session on UTC, whatever the server's
+        # default.
+        for pool in (worker.registry.default.primary, worker.jobs_engine):
+            with pool.connect() as conn:
+                zone = conn.execute(text("SELECT current_setting('TimeZone')")).scalar()
+                assert zone == "UTC"
     finally:
         worker.close()

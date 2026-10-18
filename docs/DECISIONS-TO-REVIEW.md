@@ -775,3 +775,19 @@ measurements are in `docs/ASYNC-LEDGER.md`; the reader's page is `docs/runtime/a
 | psycopg's async mode is accepted when the url names it, but the suite does not run on it | not a default; covered by a unit test and by the benchmark |
 | X3 (MDC-like log context) and X5 (metrics) not built for async | the sync request path has neither |
 | `DIVERGENCE.md` records `ekbatan.aio` as **chosen**, linking here | Java has no async API; the user decided this port needs one |
+
+## async follow-ups
+
+Three follow-ups to the work above, asked on 2026-10-19: UTC in the older examples, async keyed
+locks and async event handlers, and the suite on psycopg's own async mode. Ledger:
+`docs/ASYNC-LEDGER.md#follow-ups-2026-10-19-ekb-0364-on`.
+
+### Judgement calls
+
+| decision | why |
+| --- | --- |
+| **UTC in the examples: every pool, not only the request pool** - `primaryConfig`, `jobsConfig`, `lockConfig` (and `handlersConfig`) each get the setting; the async examples' `jobsConfig` gained it too | the rule is "each session is put on UTC"; db-scheduler's `scheduled_tasks` and a lock's session are sessions too, and a pool left out is the one whose `NOW()` is off |
+| on MySQL and MariaDB the request pool's existing `init_command` became one `SET SESSION innodb_lock_wait_timeout=10, time_zone = '+00:00'` | `init_command` takes one statement in PyMySQL; one `SET` with two assignments keeps both settings |
+| "change the template in `sync-examples.py`": the layouts are not templated - `ekbatan.yaml` is copied byte for byte from the uv project - so the uv projects were edited and the script wrote the pip and Poetry copies | the script's own rule ("edit only the uv ones"); nothing in the template mentions the layout |
+| the off-UTC proof is one test per database, in `fastapi-wallet-rest-{pg,mysql,mariadb}`: it moves the server's default to Tehran (`ALTER DATABASE ... SET TimeZone`, `SET GLOBAL time_zone = '+03:30'`), checks the control, builds the service with `build()` (not started) and asks each of its pools; the other five examples only check their pools report UTC on a UTC container | the user asked for at least one per database; building the real service, not a hand-made engine, is what shows the example's file does it |
+| the setup guide's step 4 gained a paragraph on the UTC setting | it shows these very files (imported from the examples), so it now shows the setting and should say why |

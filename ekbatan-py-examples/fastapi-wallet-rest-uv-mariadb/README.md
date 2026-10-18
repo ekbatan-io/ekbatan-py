@@ -96,8 +96,9 @@ connection starves the heartbeat), and held lock leases a third (a lease *is* a 
 connection).
 
 **`ekbatan.yaml`** - what the Java examples keep in `application.yml`, in the same keys: the
-three pools as `primaryConfig`, `jobsConfig` and `lockConfig`, a driver setting under
-`dataSourceProperties`, the namespace, and `local-event-handler.handling.enabled`. The url and
+three pools as `primaryConfig`, `jobsConfig` and `lockConfig`, driver settings under
+`dataSourceProperties` - `time_zone = '+00:00'` in `init_command` on every pool puts each session on UTC, whatever
+the server's default (the test proves it against a server set to Tehran) - the namespace, and `local-event-handler.handling.enabled`. The url and
 login are `${NAME:default}` placeholders, so the file runs as it is against a local server and
 the test fills them from its container.
 

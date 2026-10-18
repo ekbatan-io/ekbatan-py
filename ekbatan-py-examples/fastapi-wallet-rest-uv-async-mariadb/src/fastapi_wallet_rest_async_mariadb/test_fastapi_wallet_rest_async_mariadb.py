@@ -272,8 +272,9 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     assert running.executor.namespace == "example.fastapi_wallet_rest_async_mariadb"
     assert (requests.size(), handlers.size(), running.jobs_engine.pool.size()) == (10, 5, 8)  # type: ignore[attr-defined]
     assert scalar(client, text("SELECT @@session.time_zone")) == "+00:00"
-    with running.handler_registry.default.primary.connect() as connection:
-        assert connection.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
+    for pool in (running.handler_registry.default.primary, running.jobs_engine):
+        with pool.connect() as connection:
+            assert connection.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:

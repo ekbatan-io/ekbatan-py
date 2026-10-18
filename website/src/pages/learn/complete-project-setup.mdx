@@ -348,6 +348,11 @@ thread and a job body holding the last connection starves it. `lockConfig` holds
 leases, one connection each for as long as the lease is held. `app.py` (step 9) builds the last
 two with `engine_for` and disposes them.
 
+**Every session in UTC, on every pool.** `options: -c TimeZone=UTC` on PostgreSQL,
+`time_zone = '+00:00'` in `init_command` on MySQL and MariaDB. The columns hold UTC wall-clock
+time; this puts the database's own clock - `NOW()`, a column default - on UTC too, whatever the
+server's default zone is. See [Always UTC](/reference/multi-database/#always-utc).
+
 **The namespace** is written into every outbox row, which is what lets two applications share
 one database without reading each other's events. Change it after the fact and the rows already
 written are, correctly, no longer yours.

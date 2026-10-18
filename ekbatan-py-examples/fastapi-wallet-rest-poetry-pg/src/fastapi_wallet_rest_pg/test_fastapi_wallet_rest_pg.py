@@ -20,7 +20,9 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
 from testcontainers.postgres import PostgresContainer
 
 from ekbatan.config import split_login
@@ -43,19 +45,23 @@ def database() -> Iterator[str]:
         yield container.get_connection_url()
 
 
+def environ_for(database: str) -> dict[str, str]:
+    """The placeholders `ekbatan.yaml` reads, filled from the container: its url and login."""
+    url, username, password = split_login(database)
+    return {
+        "WALLET_DATABASE_URL": url,
+        "WALLET_DATABASE_USERNAME": username or "",
+        "WALLET_DATABASE_PASSWORD": password or "",
+    }
+
+
 @pytest.fixture
 def client(database: str) -> Iterator[TestClient]:
     from .api import create_app
 
     # The container's url carries its login; `ekbatan.yaml` keeps it apart, as a deployment does,
     # and reads all three from the placeholders filled here.
-    url, username, password = split_login(database)
-    environ = {
-        "WALLET_DATABASE_URL": url,
-        "WALLET_DATABASE_USERNAME": username or "",
-        "WALLET_DATABASE_PASSWORD": password or "",
-    }
-    app = create_app(Settings(environ=environ, job_workers=3))
+    app = create_app(Settings(environ=environ_for(database), job_workers=3))
     # `with TestClient(...)` is what runs the lifespan - and therefore the migrations, the
     # pools and the scheduler. Without the `with`, none of that happens and every test here
     # would fail against an empty database.
@@ -289,6 +295,41 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
         # `application_name` under `dataSourceProperties`, reaching the server.
         reported = connection.execute(text("SELECT current_setting('application_name')"))
         assert reported.scalar() == "wallet-service"
+
+
+def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) -> None:
+    """The third part of the UTC rule: each session is put on UTC by `ekbatan.yaml`
+    (`options: -c TimeZone=UTC` on every pool), not by the server's default. The database's own
+    default is moved to Tehran first: a plain connection then reports Tehran - the control - and
+    every pool the service builds reports UTC."""
+    from .app import build
+
+    name = make_url(database).database
+    admin = create_engine(database, isolation_level="AUTOCOMMIT", poolclass=NullPool)
+    with admin.connect() as connection:
+        connection.execute(text(f"ALTER DATABASE {name} SET TimeZone = 'Asia/Tehran'"))
+    try:
+        with admin.connect() as connection:
+            control = connection.execute(text("SELECT current_setting('TimeZone')")).scalar()
+        assert control == "Asia/Tehran", "the control: off UTC without the setting"
+
+        service = build(Settings(environ=environ_for(database)))
+        try:
+            pools = [
+                service.registry.manager(DEFAULT_SHARD).primary,
+                service.jobs_engine,
+                service.lock_engine,
+            ]
+            for pool in pools:
+                with pool.connect() as connection:
+                    zone = connection.execute(text("SELECT current_setting('TimeZone')")).scalar()
+                    assert zone == "UTC", pool
+        finally:
+            service.close()
+    finally:
+        with admin.connect() as connection:
+            connection.execute(text(f"ALTER DATABASE {name} RESET TimeZone"))
+        admin.dispose()
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs():

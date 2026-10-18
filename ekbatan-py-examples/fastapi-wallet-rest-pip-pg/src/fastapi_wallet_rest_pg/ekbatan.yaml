@@ -21,9 +21,11 @@ ekbatan:
               primaryConfig:
                 # Extra driver settings, each name exactly as the driver spells it; handed to the
                 # driver beside the url, never printed.
-                # Postgres shows application_name in pg_stat_activity.
+                # Postgres shows application_name in pg_stat_activity; options puts every session
+                # on UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   application_name: wallet-service
+                  options: -c TimeZone=UTC
                 url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
@@ -33,6 +35,9 @@ ekbatan:
               # connection would starve the heartbeat, and an execution whose heartbeat stops is
               # declared dead and run again elsewhere. Warned at startup if short.
               jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
                 url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
@@ -40,6 +45,9 @@ ekbatan:
                 poolSize: 8
               # Held lock leases. One connection per lease that can be held at once.
               lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
                 url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}

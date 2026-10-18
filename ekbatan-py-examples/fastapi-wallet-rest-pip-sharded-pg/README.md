@@ -102,7 +102,7 @@ in the table, and through the API.
 | `model.py` | `WalletId(ShardedId)`, and nothing else about sharding |
 | `schema.py` | no shard column anywhere; every database holds the same tables |
 | `repository.py` | one repository over every shard, and what a query without an id costs |
-| `ekbatan.yaml` | the only file that knows how many databases there are, in the keys of Java's `application.yml` |
+| `ekbatan.yaml` | the only file that knows how many databases there are, in the keys of Java's `application.yml`; every pool on UTC (`options: -c TimeZone=UTC`) |
 | `app.py` | the wiring, reading the layout from `ekbatan.yaml` |
 
 ## Three things the tests pin
