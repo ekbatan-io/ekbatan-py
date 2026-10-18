@@ -74,7 +74,7 @@ class WalletResponse(BaseModel):
         return cls(
             id=wallet.id.value,
             owner_id=wallet.owner_id,
-            currency=wallet.currency,
+            currency=wallet.currency.code,
             # Quantized, and not only for tidiness. What an action *returns* is the model it
             # staged, at whatever scale the caller handed in; what a later read returns is the
             # column's scale, which here is four places. So `POST /wallets` would answer
@@ -229,7 +229,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             AlertResponse(
                 id=alert.id.value,
                 wallet_id=alert.wallet_id.value,
-                recipient=alert.recipient,
+                recipient=alert.recipient.address,
                 message=alert.message,
             )
             for alert in service.alerts.find_for_wallet(ShardedId[Wallet](wallet_id))

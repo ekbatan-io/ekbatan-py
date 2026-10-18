@@ -18,18 +18,21 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from testcontainers.community.mysql import MySqlContainer
 
 from ekbatan.config import split_login
+from ekbatan.ids import ShardedId
 from ekbatan.migrations import validate_scripts
 from ekbatan.sharding import DEFAULT_SHARD
 
 from .app import MIGRATIONS, Settings
+from .model import Currency, EmailAddress, Wallet
+from .schema import EVENTS
 
 OWNER = "11111111-1111-1111-1111-111111111111"
 
@@ -133,6 +136,76 @@ def test_the_deposit_event_reaches_the_handler_and_writes_an_alert(client: TestC
     assert alerts, "the handler never ran; fan-out or dispatch is not running"
     assert alerts[0]["recipient"] == "ada@example.com", "read off the action's parameters"
     assert "10.00" in alerts[0]["message"]
+
+
+def test_the_currency_is_a_currency_in_python_and_text_in_the_database(
+    client: TestClient,
+) -> None:
+    """The forced type that picks every `CHAR(3)` column, end to end: the repository reads a
+    `Currency`, the table holds `EUR`, and the outbox and the API both say `EUR`."""
+    wallet_id = open_wallet(client)
+    service = client.app.state.service
+
+    wallet = service.wallets.get(ShardedId[Wallet](UUID(wallet_id)))
+    assert wallet.currency == Currency("EUR"), "read back through CurrencyConverter"
+    with service.registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+        stored = connection.execute(
+            text("SELECT currency FROM wallets WHERE id = :id"), {"id": wallet_id}
+        ).scalar_one()
+        opened = connection.execute(
+            select(EVENTS.c.payload).where(
+                EVENTS.c.model_id == wallet_id, EVENTS.c.event_type == "WalletOpenedEvent"
+            )
+        ).scalar_one()
+    assert stored == "EUR", "the column holds the plain code"
+    assert opened["currency"] == "EUR", "and so does the event"
+    assert client.get(f"/wallets/{wallet_id}").json()["currency"] == "EUR"
+
+
+def test_a_currency_that_is_not_three_capitals_is_a_400(client: TestClient) -> None:
+    refused = client.post(
+        "/wallets", json={"owner_id": OWNER, "currency": "eur", "opening_balance": "1.00"}
+    )
+    assert refused.status_code == 400, refused.text
+    assert "three capital letters" in refused.json()["detail"]
+
+
+def test_the_recipient_is_an_email_address_in_python_and_text_in_the_database(
+    client: TestClient,
+) -> None:
+    """The forced type that picks `alerts.recipient` by name, end to end."""
+    wallet_id = open_wallet(client)
+    client.post(
+        f"/wallets/{wallet_id}/deposits", json={"amount": "1.00", "recipient": "ada@example.com"}
+    )
+    service = client.app.state.service
+
+    deadline = time.monotonic() + 30
+    alerts = []
+    while not alerts and time.monotonic() < deadline:
+        alerts = service.alerts.find_for_wallet(ShardedId[Wallet](UUID(wallet_id)))
+        time.sleep(0.2)
+
+    assert alerts, "the handler never ran"
+    assert alerts[0].recipient == EmailAddress("ada@example.com"), "read back as an EmailAddress"
+    with service.registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+        stored = connection.execute(
+            text("SELECT recipient FROM alerts WHERE wallet_id = :id"), {"id": wallet_id}
+        ).scalar_one()
+    assert stored == "ada@example.com", "the column holds the plain address"
+    assert client.get(f"/wallets/{wallet_id}/alerts").json()[0]["recipient"] == "ada@example.com"
+
+
+def test_a_deposit_for_a_bad_address_is_a_400_and_moves_nothing(client: TestClient) -> None:
+    """Refused at the deposit, not later in the handler where it would fail on every retry."""
+    wallet_id = open_wallet(client)
+
+    refused = client.post(
+        f"/wallets/{wallet_id}/deposits", json={"amount": "1.00", "recipient": "nobody"}
+    )
+
+    assert refused.status_code == 400, refused.text
+    assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "100.00"
 
 
 def test_a_missing_wallet_is_a_404_not_a_500(client: TestClient) -> None:

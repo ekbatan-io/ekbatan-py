@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ekbatan.domain import GenericState  # noqa: F401
     from ekbatan.ids import Id, ShardedId  # noqa: F401
 
-    from .model import StepName, TransferStep, Wallet, WalletState  # noqa: F401
+    from .model import Currency, StepName, TransferStep, Wallet, WalletState  # noqa: F401
 
 
 class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
@@ -31,7 +31,7 @@ class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
     def owner_id(self, value: UUID) -> Self:
         return self.set(owner_id=value)
 
-    def currency(self, value: str) -> Self:
+    def currency(self, value: Currency) -> Self:
         return self.set(currency=value)
 
     def balance(self, value: Decimal) -> Self:

@@ -30,6 +30,9 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
         Three of the eight are conversions rather than copies, and each is a decision about how
         the value is stored: a typed id goes in as its `uuid`, an enum as its `name` rather
         than its value, and a timestamp through `to_storage`, which is what drops the zone.
+
+        `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
+        turns it into text, and turns the text back into a `Currency` on every read.
         """
         return {
             "id": wallet.id.value,
@@ -73,13 +76,15 @@ class TransferStepRepository(EntityRepository[TransferStep, Id[TransferStep]]):
     """
 
     def to_row(self, step: TransferStep) -> dict[str, Any]:
-        """Five columns. `step` is an enum, so it goes in by name like any other."""
+        """Five columns. `step` goes in as the `StepName` it is: the column's converter in
+        `schema.py` writes its name, and reads a `StepName` back. `state` is still written by
+        hand, because the framework reads that column as text."""
         return {
             "id": step.id.value,
             "version": step.version,
             "state": step.state.name,
             "transfer_id": step.transfer_id,
-            "step": step.step.name,
+            "step": step.step,
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> TransferStep:
@@ -89,7 +94,7 @@ class TransferStepRepository(EntityRepository[TransferStep, Id[TransferStep]]):
             version=values["version"],
             state=GenericState[values["state"]],
             transfer_id=values["transfer_id"],
-            step=StepName[values["step"]],
+            step=values["step"],
         )
 
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
@@ -104,9 +109,9 @@ class TransferStepRepository(EntityRepository[TransferStep, Id[TransferStep]]):
         which is exactly the lie the 202 exists to avoid telling.
 
         `conn.rows(...)` rather than `conn.execute(...)`, because these rows become objects.
-        The mapper is a lambda rather than `from_row`: this projects one column into an enum,
-        not a whole row into a `TransferStep`.
+        The mapper is a lambda rather than `from_row`: this takes one column, not a whole row
+        into a `TransferStep` - and the column's converter has already made it a `StepName`.
         """
         statement = select(TRANSFER_STEPS.c.step).where(TRANSFER_STEPS.c.transfer_id == transfer_id)
         with self.db() as conn:
-            return conn.rows(statement).fetch(lambda row: StepName(row.step))
+            return conn.rows(statement).fetch(lambda row: row.step)

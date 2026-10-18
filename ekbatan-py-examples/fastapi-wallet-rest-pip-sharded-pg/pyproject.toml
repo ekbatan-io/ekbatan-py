@@ -23,5 +23,15 @@ migrations = "src/fastapi_wallet_rest_sharded_pg/migrations"
 out = "src/fastapi_wallet_rest_sharded_pg/schema.py"
 image = "postgres:17-alpine"
 
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_sharded_pg.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_sharded_pg.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+
 [tool.pytest.ini_options]
 addopts = "-q"

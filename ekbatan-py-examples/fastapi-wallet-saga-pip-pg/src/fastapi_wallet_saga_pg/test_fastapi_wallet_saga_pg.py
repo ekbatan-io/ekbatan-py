@@ -32,8 +32,8 @@ from .actions import (
     TransferResult,
 )
 from .app import MIGRATIONS, SagaService, build
-from .model import StepName, Wallet
-from .schema import EVENT_NOTIFICATIONS, EVENTS
+from .model import Currency, StepName, Wallet
+from .schema import EVENT_NOTIFICATIONS, EVENTS, TRANSFER_STEPS
 
 
 @pytest.fixture(scope="module")
@@ -261,6 +261,54 @@ def test_a_replayed_delivery_does_not_credit_twice(service: SagaService) -> None
     assert service.steps.steps_of(result.transfer_id) == [StepName.CREDIT], "still one"
 
 
+def test_the_step_is_a_step_name_in_python_and_text_in_the_database(
+    service: SagaService,
+) -> None:
+    """The forced type that picks `transfer_steps.step` by name: a `StepName` both ways - in a
+    row read back and in a query's condition - and the plain name in the table."""
+    source, destination = a_wallet(service, "100.00"), a_wallet(service, "0.00")
+    result = transfer(service, source, destination.id, "30.00")
+    settled(service)
+
+    [marker] = service.steps.find_where(TRANSFER_STEPS.c.transfer_id == result.transfer_id)
+    assert marker.step is StepName.CREDIT
+    refunds = service.steps.find_where(
+        TRANSFER_STEPS.c.transfer_id == result.transfer_id,
+        TRANSFER_STEPS.c.step == StepName.REFUND,
+    )
+    assert refunds == [], "the condition's StepName went through the converter too"
+    with service.registry.default.connection(readonly=True) as conn:
+        stored = conn.execute(
+            text("SELECT step FROM transfer_steps WHERE transfer_id = :id"),
+            {"id": result.transfer_id},
+        ).scalar_one()
+    assert stored == "CREDIT"
+
+
+def test_the_currency_is_a_currency_in_python_and_text_in_the_database(
+    service: SagaService,
+) -> None:
+    """The forced type that picks every `CHAR(3)` column by its type. The wallet holds a
+    `Currency`; the column and the transfer's event hold the plain code."""
+    source, destination = a_wallet(service, "100.00"), a_wallet(service, "0.00")
+    transfer(service, source, destination.id, "30.00")
+    settled(service)  # so the steps it starts do not land in the next test
+
+    assert service.wallets.get(source.id).currency == Currency("EUR")
+    with service.registry.default.connection(readonly=True) as conn:
+        stored = conn.execute(
+            text("SELECT currency FROM wallets WHERE id = :id"), {"id": source.id.value}
+        ).scalar_one()
+        initiated = conn.execute(
+            select(EVENTS.c.payload).where(
+                EVENTS.c.model_id == str(source.id.value),
+                EVENTS.c.event_type == "TransferInitiatedEvent",
+            )
+        ).scalar_one()
+    assert stored == "EUR"
+    assert initiated["currency"] == "EUR"
+
+
 def test_a_transfer_larger_than_the_balance_never_starts(service: SagaService) -> None:
     """Refused by the domain, in step one, before any event exists - so there is nothing to
     compensate and no saga to run."""
@@ -369,6 +417,14 @@ def test_a_failed_transfer_reports_itself_refunded(client) -> None:
     assert status["state"] == "REFUNDED"
     assert status["steps"] == ["CREDIT", "REFUND"]
     assert client.get(f"/wallets/{source['id']}").json()["balance"] == "100.00", "made whole"
+
+
+def test_a_currency_that_is_not_three_capitals_is_a_400(client) -> None:
+    refused = client.post(
+        "/wallets", json={"owner_id": str(uuid4()), "currency": "usd", "opening_balance": "1.00"}
+    )
+    assert refused.status_code == 400, refused.text
+    assert open_via_http(client)["currency"] == "EUR"
 
 
 def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service: SagaService) -> None:

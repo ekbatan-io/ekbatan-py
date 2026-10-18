@@ -27,6 +27,7 @@ aggregate, which is what an audit query gets to rely on.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -38,6 +39,28 @@ from ekbatan.errors import ValidationError
 from ekbatan.ids import Id
 
 from .builders import WalletBuilder
+
+
+@dataclass(frozen=True)
+class Currency:
+    """A three-letter currency code, such as EUR. Checked once, here, so a wallet never holds
+    "eur" or "EURO".
+
+    The `currency` column is plain text. `schema.py` hands back a `Currency` because of a forced
+    type in `pyproject.toml`: every `CHAR(3)` column goes through `CurrencyConverter`, in
+    `converters.py`.
+    """
+
+    code: str
+
+    def __post_init__(self) -> None:
+        if not re.fullmatch("[A-Z]{3}", self.code):
+            raise ValidationError(
+                f"a currency is three capital letters, such as EUR: {self.code!r}"
+            )
+
+    def __str__(self) -> str:
+        return self.code
 
 
 class WalletState(Enum):
@@ -106,7 +129,7 @@ class TransferRefundedEvent(ModelEvent["Wallet"]):
 @dataclass(frozen=True, kw_only=True)
 class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
-    currency: str
+    currency: Currency
     balance: Decimal
 
     @classmethod
@@ -114,7 +137,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         cls,
         *,
         owner_id: UUID,
-        currency: str,
+        currency: Currency,
         balance: Decimal,
         id: ShardedId[Wallet] | None = None,
         created_date: datetime,
@@ -133,7 +156,9 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
                 WalletOpenedEvent(
                     model_id=str(wallet_id),
                     owner_id=owner_id,
-                    currency=currency,
+                    # Events carry the plain code: what a consumer reads is "EUR", the same
+                    # text the column holds.
+                    currency=currency.code,
                     opening_balance=balance,
                 )
             )
@@ -173,7 +198,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
                     from_wallet_id=self.id.value,
                     to_wallet_id=to.value,
                     amount=amount,
-                    currency=self.currency,
+                    currency=self.currency.code,
                 )
             )
             .build()
@@ -201,7 +226,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         """Why this wallet cannot take the transfer, or None if it can."""
         if self.state is not WalletState.OPENED:
             return f"destination wallet is {self.state.name}"
-        if self.currency != event.currency:
+        if self.currency.code != event.currency:
             return f"destination holds {self.currency}, transfer is {event.currency}"
         return None
 
@@ -250,6 +275,9 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
 
 class StepName(Enum):
     """Named for the *step*, not for how it turned out.
+
+    The `step` column is plain text. A forced type in `pyproject.toml` picks it by name, and
+    `StepNameConverter`, in `converters.py`, turns the text into one of these and back.
 
     `CREDIT` is staged by `CompleteTransferAction` whether the credit happened or the transfer was
     failed instead, because what the marker guards is "step two has run for this transfer" -

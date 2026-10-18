@@ -14,13 +14,15 @@ from uuid import UUID
 from ekbatan import Action, Clock
 from ekbatan.ids import ShardedId
 
-from .model import Alert, Wallet
+from .model import Alert, Currency, EmailAddress, Wallet
 from .repository import WalletRepository
 
 
 @dataclass(frozen=True, kw_only=True)
 class OpenWalletParams:
     owner_id: UUID
+    #: Plain text, as are all parameters: they are written to the outbox as JSON. The action
+    #: turns it into a `Currency`, which refuses anything but three capital letters.
     currency: str
     opening_balance: Decimal
 
@@ -51,7 +53,7 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
         return self.plan.add(
             Wallet.open(
                 owner_id=params.owner_id,
-                currency=params.currency,
+                currency=Currency(params.currency),
                 balance=params.opening_balance,
                 created_date=self.clock.now(),
             )
@@ -64,6 +66,9 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         self.wallets = wallets
 
     def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        # The address is checked now, so a deposit whose alert could never be written is
+        # refused here rather than failing in the handler later, over and over.
+        EmailAddress(params.recipient)
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
@@ -88,7 +93,7 @@ class RaiseAlertAction(Action[RaiseAlertParams, Alert]):
         return self.plan.add(
             Alert.create(
                 wallet_id=params.wallet_id,
-                recipient=params.recipient,
+                recipient=EmailAddress(params.recipient),
                 message=params.message,
             )
         )

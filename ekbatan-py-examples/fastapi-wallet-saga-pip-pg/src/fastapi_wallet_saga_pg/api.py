@@ -62,7 +62,7 @@ class WalletResponse(BaseModel):
         return cls(
             id=wallet.id.value,
             owner_id=wallet.owner_id,
-            currency=wallet.currency,
+            currency=wallet.currency.code,
             balance=wallet.balance.quantize(MONEY),
             state=wallet.state.name,
         )

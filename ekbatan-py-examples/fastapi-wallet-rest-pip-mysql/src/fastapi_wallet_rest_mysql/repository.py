@@ -52,6 +52,9 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
         Three of the eight are conversions rather than copies, and each is a decision about how
         the value is stored: a typed id goes in as its `uuid`, an enum as its `name` rather
         than its value, and a timestamp through `to_storage`, which is what drops the zone.
+
+        `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
+        turns it into text, and turns the text back into a `Currency` on every read.
         """
         return {
             "id": wallet.id.value,
@@ -172,7 +175,8 @@ class AlertRepository(EntityRepository[Alert, Id[Alert]]):
     """
 
     def to_row(self, alert: Alert) -> dict[str, Any]:
-        """Six columns, and no timestamps - an entity carries none."""
+        """Six columns, and no timestamps - an entity carries none. `recipient` is an
+        `EmailAddress` both ways; its converter in `schema.py` does the text."""
         return {
             "id": alert.id.value,
             "version": alert.version,

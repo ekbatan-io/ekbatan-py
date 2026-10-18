@@ -23,5 +23,15 @@ migrations = "src/job_worker_pg/migrations"
 out = "src/job_worker_pg/schema.py"
 image = "postgres:17-alpine"
 
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "job_worker_pg.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "job_worker_pg.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+
 [tool.pytest.ini_options]
 addopts = "-q"

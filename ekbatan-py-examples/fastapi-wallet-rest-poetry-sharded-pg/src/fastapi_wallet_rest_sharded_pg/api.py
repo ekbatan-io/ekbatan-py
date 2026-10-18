@@ -71,7 +71,7 @@ class WalletResponse(BaseModel):
         return cls(
             id=wallet.id.value,
             owner_id=wallet.owner_id,
-            currency=wallet.currency,
+            currency=wallet.currency.code,
             balance=wallet.balance.quantize(MONEY),
             state=wallet.state.name,
             shard=str(wallet.id.shard),
@@ -203,7 +203,7 @@ def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
             AlertResponse(
                 id=alert.id.value,
                 wallet_id=alert.wallet_id.value,
-                recipient=alert.recipient,
+                recipient=alert.recipient.address,
                 message=alert.message,
             )
             for alert in service.alerts.find_for_wallet(ShardedId[Wallet](wallet_id))

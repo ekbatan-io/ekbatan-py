@@ -31,6 +31,55 @@ BUILD_NAMES = {"uv": "uv", "pip": "pip and setuptools", "poetry": "Poetry"}
 
 
 @dataclass(frozen=True)
+class Forced:
+    """One `[[tool.ekbatan.schemagen.forced-types]]` block. `{package}` is the example's."""
+
+    why: str  # the comment above it, one line
+    keys: tuple[tuple[str, str], ...]  # (key, value) in order, written as TOML strings
+
+    def toml(self, package: str) -> str:
+        lines = [f"# {self.why}", "[[tool.ekbatan.schemagen.forced-types]]"]
+        for key, value in self.keys:
+            text = value.replace("{package}", package).replace("\\", "\\\\")
+            lines.append(f'{key} = "{text}"')
+        return "\n".join(lines) + "\n\n"
+
+
+#: The wallet's two: every CHAR(3) column is a currency code, picked by type; the alert's
+#: recipient is an email address, picked by name. Both turn text into a class of the app's own.
+WALLET_FORCED = (
+    Forced(
+        "Every CHAR(3) column is a currency code, so the rule picks columns by their type.",
+        (
+            ("converter", "{package}.converters.CurrencyConverter"),
+            ("include-types", r"CHAR\(3\)"),
+        ),
+    ),
+    Forced(
+        "One column, picked by its name.",
+        (
+            ("converter", "{package}.converters.EmailAddressConverter"),
+            ("include-expression", r"alerts\.recipient"),
+        ),
+    ),
+)
+
+
+#: The saga's two: the same currency rule, and the step marker's name read as the `StepName`
+#: enum, picked by name.
+SAGA_FORCED = (
+    WALLET_FORCED[0],
+    Forced(
+        "One column, picked by its name: the saga's step, as the StepName enum.",
+        (
+            ("converter", "{package}.converters.StepNameConverter"),
+            ("include-expression", r"transfer_steps\.step"),
+        ),
+    ),
+)
+
+
+@dataclass(frozen=True)
 class Example:
     app: str  # fastapi-wallet-rest
     db: str  # pg, mysql, mariadb, sqlite
@@ -41,6 +90,7 @@ class Example:
     variant: str = ""  # sharded
     image: str | None = "postgres:17-alpine"  # None: schema.py is hand-written, no container
     containers: str | None = "postgres"  # the testcontainers extra, if the test starts one
+    forced: tuple[Forced, ...] = WALLET_FORCED  # schemagen's forced types, when it has an image
 
     def directory(self, build: str) -> Path:
         parts = [self.app, build, *([self.variant] if self.variant else []), self.db]
@@ -91,6 +141,7 @@ MATRIX = (
         "fastapi_wallet_saga_pg",
         "A transfer across two databases, as a saga",
         ("postgres", "migrations"),
+        forced=SAGA_FORCED,
     ),
     Example(
         "job-worker",
@@ -146,7 +197,7 @@ def schemagen(e: Example) -> str:
         "[tool.ekbatan.schemagen]\n"
         f'migrations = "src/{e.package}/migrations"\n'
         f'out = "src/{e.package}/schema.py"\n'
-        f'image = "{e.image}"\n\n'
+        f'image = "{e.image}"\n\n' + "".join(f.toml(e.package) for f in e.forced)
     )
 
 

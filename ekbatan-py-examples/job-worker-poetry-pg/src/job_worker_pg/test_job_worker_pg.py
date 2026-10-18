@@ -30,6 +30,7 @@ from ekbatan.clock import SystemClock
 from ekbatan.config import split_login
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import job_registry
+from ekbatan.errors import ValidationError
 from ekbatan.events import (
     EventFanoutJob,
     EventHandlerRegistry,
@@ -47,7 +48,7 @@ from .actions import (
 from .app import CONFIG_FILE, MIGRATIONS, build
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob, WalletReportJob
-from .model import Wallet
+from .model import Currency, EmailAddress, Wallet
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
 
@@ -280,7 +281,26 @@ def test_the_job_to_handler_chain_runs_inside_one_worker(worker: Harness) -> Non
 
     alerts = worker.alerts.find_for_wallet(wallet.id)
     assert alerts, "the deposit event reached the handler, which wrote an alert"
-    assert alerts[0].recipient == "stipend@example.com", "read off the job's own parameters"
+    assert alerts[0].recipient == EmailAddress("stipend@example.com"), "off the job's parameters"
+    with worker.registry.default.connection(readonly=True) as conn:
+        stored = conn.execute(text("SELECT DISTINCT recipient FROM alerts")).scalar_one()
+    assert stored == "stipend@example.com", "an EmailAddress in Python, plain text in the table"
+
+
+def test_the_currency_is_a_currency_in_python_and_text_in_the_database(worker: Harness) -> None:
+    """The forced type that picks every `CHAR(3)` column by its type."""
+    wallet = a_wallet(worker)
+
+    assert worker.wallets.get(wallet.id).currency == Currency("EUR")
+    with worker.registry.default.connection(readonly=True) as conn:
+        stored = conn.execute(text("SELECT currency FROM wallets")).scalar_one()
+    assert stored == "EUR"
+
+    with pytest.raises(ValidationError, match="three capital letters"):
+        worker.executor.execute(
+            OpenWalletAction,
+            OpenWalletParams(owner_id=uuid4(), currency="eur", opening_balance=Decimal("1.00")),
+        )
 
 
 def test_the_read_only_job_writes_nothing(worker: Harness) -> None:

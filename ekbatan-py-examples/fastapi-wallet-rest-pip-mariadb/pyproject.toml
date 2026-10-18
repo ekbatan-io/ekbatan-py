@@ -23,5 +23,15 @@ migrations = "src/fastapi_wallet_rest_mariadb/migrations"
 out = "src/fastapi_wallet_rest_mariadb/schema.py"
 image = "mariadb:11.4"
 
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_mariadb.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_mariadb.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+
 [tool.pytest.ini_options]
 addopts = "-q"

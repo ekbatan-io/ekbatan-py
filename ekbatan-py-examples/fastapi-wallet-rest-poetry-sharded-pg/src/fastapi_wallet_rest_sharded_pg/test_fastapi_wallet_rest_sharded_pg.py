@@ -16,7 +16,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +24,7 @@ from sqlalchemy import create_engine, text
 
 from ekbatan.config import split_login
 from ekbatan.errors import CrossShardError
+from ekbatan.ids import ShardedId
 from ekbatan.migrations import validate_scripts
 
 from .actions import (
@@ -37,7 +38,7 @@ from .actions import (
     TransferWithinShardAction,
 )
 from .app import MIGRATIONS, ShardedWallets, build
-from .model import Wallet
+from .model import Currency, EmailAddress, Wallet
 
 
 @pytest.fixture(scope="module")
@@ -213,6 +214,18 @@ def test_reaching_a_second_shard_is_refused_rather_than_half_committed(
     assert service.wallets.get(destination.id).balance == Decimal("0.0000")
 
 
+def test_the_currency_is_a_currency_in_python_and_text_on_its_database(
+    service: ShardedWallets,
+) -> None:
+    """The forced type that picks every `CHAR(3)` column, on the shard the wallet lives on."""
+    mexican = a_wallet(service, "MX")
+
+    assert service.wallets.get(mexican.id).currency == Currency("EUR")
+    with service.registry.manager(MEXICO).connection(readonly=True) as conn:
+        stored = conn.execute(text("SELECT currency FROM wallets")).scalar_one()
+    assert stored == "EUR", "the column holds the plain code"
+
+
 def test_a_per_shard_total_is_a_question_about_databases(service: ShardedWallets) -> None:
     a_wallet(service, "MX", "10.00")
     a_wallet(service, "GL", "25.00")
@@ -308,7 +321,31 @@ def test_a_deposit_on_any_shard_reaches_the_handler(client: TestClient) -> None:
 
     assert len(alerts) == 1, "the handler never ran; fan-out or handling is not running"
     assert alerts[0]["recipient"] == "mexico@example.com"
+    # The forced type that picks `alerts.recipient` by name: an EmailAddress in Python, the
+    # plain address in the table. Alerts all live on the default shard.
+    service = client.app.state.service
+    [alert] = service.alerts.find_for_wallet(ShardedId[Wallet](UUID(mexican["id"])))
+    assert alert.recipient == EmailAddress("mexico@example.com")
+    with service.registry.manager(GLOBAL).connection(readonly=True) as conn:
+        stored = conn.execute(
+            text("SELECT recipient FROM alerts WHERE wallet_id = :id"), {"id": mexican["id"]}
+        ).scalar_one()
+    assert stored == "mexico@example.com"
     assert alerts[0]["message"].startswith("Deposit of 7.00 received.")
+
+
+def test_a_bad_currency_or_a_bad_address_is_a_400(client: TestClient) -> None:
+    refused = client.post(
+        "/wallets", json={"owner_id": str(uuid4()), "currency": "eur", "opening_balance": "1.00"}
+    )
+    assert refused.status_code == 400, refused.text
+
+    mexican = open_via_http(client, "MX", "10.00")
+    refused = client.post(
+        f"/wallets/{mexican['id']}/deposits", json={"amount": "1.00", "recipient": "nobody"}
+    )
+    assert refused.status_code == 400, refused.text
+    assert client.get(f"/wallets/{mexican['id']}").json()["balance"] == "10.00", "nothing moved"
 
 
 def test_a_transfer_within_one_shard_succeeds(client: TestClient) -> None:

@@ -15,13 +15,22 @@ from uuid import UUID
 from ekbatan import Action, Clock
 from ekbatan.ids import ShardedId
 
-from .model import StepName, TransferFailedEvent, TransferInitiatedEvent, TransferStep, Wallet
+from .model import (
+    Currency,
+    StepName,
+    TransferFailedEvent,
+    TransferInitiatedEvent,
+    TransferStep,
+    Wallet,
+)
 from .repository import WalletRepository
 
 
 @dataclass(frozen=True, kw_only=True)
 class OpenWalletParams:
     owner_id: UUID
+    #: Plain text, as are all parameters: they are written to the outbox as JSON. The action
+    #: turns it into a `Currency`, which refuses anything but three capital letters.
     currency: str
     opening_balance: Decimal
 
@@ -69,7 +78,7 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
         return self.plan.add(
             Wallet.open(
                 owner_id=params.owner_id,
-                currency=params.currency,
+                currency=Currency(params.currency),
                 balance=params.opening_balance,
                 created_date=self.clock.now(),
             )
