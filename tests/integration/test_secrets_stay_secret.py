@@ -46,7 +46,7 @@ def with_secret_user(admin_url: str, dialect: str) -> str:
 
 
 def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
-    backend, request, tmp_path, caplog, capsys
+    backend, request, tmp_path, caplog, capsys, mode
 ):
     if backend.dialect == "sqlite":
         pytest.skip("SQLite has no passwords")
@@ -73,7 +73,7 @@ def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
             written.append(repr(connection.execute(text("SELECT name FROM runs")).all()))
         written.append(repr(registry))
     finally:
-        registry.close()
+        registry.close() if mode == "sync" else registry.aclose()
 
     (migrations / "V3__broken.sql").write_text("INSERT INTO nowhere VALUES (1);")
     with pytest.raises(MigrationError) as failed:

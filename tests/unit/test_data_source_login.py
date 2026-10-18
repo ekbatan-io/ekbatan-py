@@ -291,6 +291,29 @@ def test_the_ledger_covers_every_psycopg_and_pymysql_setting():
     assert named(pymysql.connections.Connection.__init__) <= by_driver["pymysql"]
 
 
+def test_the_ledger_covers_every_async_driver_setting():
+    """asyncpg, aiomysql and aiosqlite: `ekbatan.aio`'s default drivers. aiosqlite hands every
+    setting but its own to sqlite3.connect(), which the test below covers."""
+    import aiomysql
+    import aiosqlite
+    import asyncpg
+
+    def named(function: object) -> set[str]:
+        return {
+            p.name
+            for p in inspect.signature(function).parameters.values()  # type: ignore[arg-type]
+            if p.kind is not p.VAR_KEYWORD
+        }
+
+    by_driver: dict[str, set[str]] = {}
+    for row in ledger():
+        by_driver.setdefault(row["driver"], set()).add(row["setting"])
+
+    assert named(asyncpg.connect) <= by_driver["asyncpg"]
+    assert named(aiomysql.connect) <= by_driver["aiomysql"]
+    assert named(aiosqlite.connect) <= by_driver["aiosqlite"]
+
+
 def test_the_ledger_covers_every_sqlite3_setting():
     """sqlite3 refuses an unknown keyword, so each ledger name is proved by being accepted."""
     names = {row["setting"] for row in ledger() if row["driver"] == "sqlite3"}

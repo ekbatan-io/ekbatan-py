@@ -28,7 +28,7 @@ import pytest
 import sqlalchemy.exc
 from sqlalchemy import create_engine, event, func, select, text
 
-from conftest import GLOBAL, MEXICO, _registry
+from conftest import GLOBAL, MEXICO, NOT_UNDER_GEVENT, _registry, under_gevent
 from ekbatan.aio import AsyncActionExecutor, AsyncDatabaseRegistry, AsyncDb
 from ekbatan.ids import ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
@@ -43,6 +43,8 @@ from fixtures.domain import NOW, Wallet
 from fixtures.logins import data_source, single
 from fixtures.repositories import AsyncWalletRepository, WalletRepository
 from fixtures.schema import EVENTS, WALLETS, metadata
+
+pytestmark = pytest.mark.skipif(under_gevent(), reason=NOT_UNDER_GEVENT)
 
 
 def a_wallet(shard: Any = GLOBAL, balance: str = "10") -> Wallet:
@@ -207,7 +209,9 @@ def slow_reads(delays: dict[str, float], seen: dict[str, Any]) -> Iterator[None]
     try:
         yield
     finally:
-        AsyncDb.execute = real  # type: ignore[method-assign]
+        # Removed, not assigned back: `execute` is AsyncConnection's, and a copy left on AsyncDb
+        # would hide every later patch of AsyncConnection.execute from it.
+        del AsyncDb.execute
 
 
 @asynccontextmanager

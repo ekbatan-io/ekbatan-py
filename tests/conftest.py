@@ -127,10 +127,25 @@ def backend(dialect: str, tmp_path_factory: Any) -> Iterator[Backend]:
         started.stop()
 
 
+def under_gevent() -> bool:
+    """Whether `make test-gevent` monkey-patched this process."""
+    monkey = sys.modules.get("gevent.monkey")
+    return bool(monkey is not None and monkey.is_module_patched("threading"))
+
+
+#: Why an async run is skipped under gevent. Measured: aiosqlite's worker threads become
+#: greenlets that block the event loop's own thread, and units of work stall at the pool.
+#: gevent and asyncio are two answers to the same question; a service picks one.
+NOT_UNDER_GEVENT = "ekbatan.aio does not run under gevent's monkey-patching: a service picks one"
+
+
 @pytest.fixture
 def mode(request: Any) -> str:
     """``"sync"``, or ``"async"`` in the second run of a module with ``MODES``."""
-    return str(getattr(request, "param", "sync"))
+    chosen = str(getattr(request, "param", "sync"))
+    if chosen == "async" and under_gevent():
+        pytest.skip(NOT_UNDER_GEVENT)
+    return chosen
 
 
 @pytest.fixture

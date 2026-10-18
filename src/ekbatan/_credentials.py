@@ -11,10 +11,10 @@ in one, and reading it the way SQLAlchemy reads it means a setting is refused ex
 would reach the driver.
 
 Which setting names hold a user name or a secret is decided once, for every setting of every
-driver this port connects through - psycopg (and the libpq under it), PyMySQL and sqlite3 - in
-the ledger ``tests/driver_settings.tsv``. The names here are its refused part, and a test fails
-when the two disagree. Names are matched ignoring case and spaces, as Java matches them; a
-setting with no value carries nothing.
+driver this port connects through - psycopg (and the libpq under it), PyMySQL and sqlite3, and
+``ekbatan.aio``'s asyncpg, aiomysql and aiosqlite - in the ledger ``tests/driver_settings.tsv``.
+The names here are its refused part, and a test fails when the two disagree. Names are matched
+ignoring case and spaces, as Java matches them; a setting with no value carries nothing.
 """
 
 from __future__ import annotations

@@ -33,7 +33,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, func, insert, select
 
-from conftest import GLOBAL, MEXICO, _registry
+from conftest import GLOBAL, MEXICO, NOT_UNDER_GEVENT, _registry, under_gevent
 from ekbatan import Action
 from ekbatan.action import ActionExecutor, ExecutionConfiguration
 from ekbatan.aio import (
@@ -67,6 +67,8 @@ SHARDS = {GLOBAL: "ekbatan_parity_global", MEXICO: "ekbatan_parity_mexico"}
 
 @pytest.fixture(params=PARITY_MODES)
 def mode(request: Any) -> str:
+    if request.param == "async" and under_gevent():
+        pytest.skip(NOT_UNDER_GEVENT)
     return str(request.param)
 
 

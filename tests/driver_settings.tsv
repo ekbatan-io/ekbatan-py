@@ -104,3 +104,53 @@ sqlite3	Python 3.14	factory	other	sqlite3.connect() setting; SQLite has no login
 sqlite3	Python 3.14	cached_statements	other	sqlite3.connect() setting; SQLite has no login
 sqlite3	Python 3.14	uri	other	sqlite3.connect() setting; SQLite has no login
 sqlite3	Python 3.14	autocommit	other	sqlite3.connect() setting; SQLite has no login
+asyncpg	asyncpg 0.32.0	dsn	other	a whole connection string; can hold a user and a password
+asyncpg	asyncpg 0.32.0	host	other	default None
+asyncpg	asyncpg 0.32.0	port	other	default None
+asyncpg	asyncpg 0.32.0	user	login-user	the user to log in as
+asyncpg	asyncpg 0.32.0	password	login-password	the login password
+asyncpg	asyncpg 0.32.0	passfile	other	a file the password is read from
+asyncpg	asyncpg 0.32.0	service	other	default None
+asyncpg	asyncpg 0.32.0	servicefile	other	default None
+asyncpg	asyncpg 0.32.0	database	other	default None
+asyncpg	asyncpg 0.32.0	loop	other	asyncpg's own setting
+asyncpg	asyncpg 0.32.0	timeout	other	default 60
+asyncpg	asyncpg 0.32.0	statement_cache_size	other	default 100
+asyncpg	asyncpg 0.32.0	max_cached_statement_lifetime	other	default 300
+asyncpg	asyncpg 0.32.0	max_cacheable_statement_size	other	default 15360
+asyncpg	asyncpg 0.32.0	command_timeout	other	default None
+asyncpg	asyncpg 0.32.0	ssl	other	default None
+asyncpg	asyncpg 0.32.0	direct_tls	other	default None
+asyncpg	asyncpg 0.32.0	connection_class	other	default <class 'asyncpg.connection.Connection'>
+asyncpg	asyncpg 0.32.0	record_class	other	default <class 'asyncpg.protocol.record.Record'>
+asyncpg	asyncpg 0.32.0	server_settings	other	default None
+asyncpg	asyncpg 0.32.0	target_session_attrs	other	default None
+asyncpg	asyncpg 0.32.0	krbsrvname	other	default None
+asyncpg	asyncpg 0.32.0	gsslib	other	default None
+aiomysql	aiomysql 0.3.2	host	other	default 'localhost'
+aiomysql	aiomysql 0.3.2	user	login-user	the user to log in as
+aiomysql	aiomysql 0.3.2	password	login-password	the login password
+aiomysql	aiomysql 0.3.2	db	other	default None
+aiomysql	aiomysql 0.3.2	port	other	default 3306
+aiomysql	aiomysql 0.3.2	unix_socket	other	default None
+aiomysql	aiomysql 0.3.2	charset	other	default ''
+aiomysql	aiomysql 0.3.2	sql_mode	other	default None
+aiomysql	aiomysql 0.3.2	read_default_file	other	default None
+aiomysql	aiomysql 0.3.2	conv	other	default {16: <function through at 0x10acabed0>, 1: <class 'int'>, 2: <class 'int'>, 3: <class 'int'>, 4: <class 'float'>, 5: <class 'float'>, 8: <class 'int'>, 9: <class 'int'>, 13: <class 'int'>, 7: <function convert_datetime at 0x10acabc10>, 12: <function convert_datetime at 0x10acabc10>, 11: <function convert_timedelta at 0x10acabcc0>, 10: <function convert_date at 0x10acabe20>, 252: <function through at 0x10acabed0>, 249: <function through at 0x10acabed0>, 250: <function through at 0x10acabed0>, 251: <function through at 0x10acabed0>, 254: <function through at 0x10acabed0>, 253: <function through at 0x10acabed0>, 15: <function through at 0x10acabed0>, 0: <class 'decimal.Decimal'>, 246: <class 'decimal.Decimal'>}
+aiomysql	aiomysql 0.3.2	use_unicode	other	default None
+aiomysql	aiomysql 0.3.2	client_flag	other	default 0
+aiomysql	aiomysql 0.3.2	cursorclass	other	default <class 'aiomysql.cursors.Cursor'>
+aiomysql	aiomysql 0.3.2	init_command	other	default None
+aiomysql	aiomysql 0.3.2	connect_timeout	other	default None
+aiomysql	aiomysql 0.3.2	read_default_group	other	default None
+aiomysql	aiomysql 0.3.2	autocommit	other	default False
+aiomysql	aiomysql 0.3.2	echo	other	default False
+aiomysql	aiomysql 0.3.2	local_infile	other	default False
+aiomysql	aiomysql 0.3.2	loop	other	default None
+aiomysql	aiomysql 0.3.2	ssl	other	default None
+aiomysql	aiomysql 0.3.2	auth_plugin	other	default ''
+aiomysql	aiomysql 0.3.2	program_name	other	default ''
+aiomysql	aiomysql 0.3.2	server_public_key	other	default None
+aiosqlite	aiosqlite 0.22.1	database	other	aiosqlite.connect() setting; every other one goes to sqlite3.connect()
+aiosqlite	aiosqlite 0.22.1	iter_chunk_size	other	aiosqlite.connect() setting; every other one goes to sqlite3.connect()
+aiosqlite	aiosqlite 0.22.1	loop	other	aiosqlite.connect() setting; every other one goes to sqlite3.connect()

@@ -39,7 +39,7 @@ SETTINGS = {
 SETTINGS["mariadb"] = SETTINGS["mysql"]
 
 
-def test_driver_settings_reach_the_pool_and_the_migrator(backend, request, tmp_path):
+def test_driver_settings_reach_the_pool_and_the_migrator(backend, request, tmp_path, mode):
     if backend.dialect == "sqlite":
         pytest.skip("no setting of sqlite3 that the database reports back")
     properties, read_back, migration = SETTINGS[backend.dialect]
@@ -55,13 +55,13 @@ def test_driver_settings_reach_the_pool_and_the_migrator(backend, request, tmp_p
         with registry.manager(DEFAULT_SHARD).primary.connect() as connection:
             in_the_pool = connection.execute(text(read_back)).scalar()
     finally:
-        registry.close()
+        registry.close() if mode == "sync" else registry.aclose()
 
     assert in_the_pool == PROBE
     assert [row[0] for row in query(url, "SELECT what FROM seen")] == [PROBE], "the migrator too"
 
 
-def test_without_the_settings_neither_sees_the_probe(backend, request, tmp_path):
+def test_without_the_settings_neither_sees_the_probe(backend, request, tmp_path, mode):
     """The control: the probe comes from the settings, not from the database's defaults."""
     if backend.dialect == "sqlite":
         pytest.skip("no setting of sqlite3 that the database reports back")
@@ -78,7 +78,7 @@ def test_without_the_settings_neither_sees_the_probe(backend, request, tmp_path)
         with registry.manager(DEFAULT_SHARD).primary.connect() as connection:
             in_the_pool = connection.execute(text(read_back)).scalar()
     finally:
-        registry.close()
+        registry.close() if mode == "sync" else registry.aclose()
 
     assert in_the_pool != PROBE
     assert [row[0] for row in query(url, "SELECT what FROM seen")] != [PROBE]
