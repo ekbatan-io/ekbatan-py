@@ -481,3 +481,92 @@ def test_the_documented_utc_setup_puts_each_async_session_on_utc(backend, dialec
             # asyncpg's own spelling works as well, for a layout only async code reads.
             native = {"server_settings": {"TimeZone": "UTC"}}
             assert session_zone(backend, name, native) == "UTC"
+
+
+# --------------------------------------------------------- awaiting several things at once
+
+
+class ReadsTwoAtOnceAction(TwinAction[tuple[str, str], tuple[Wallet, Wallet]]):
+    """Reads two wallets with `asyncio.gather` in `perform` - outside any transaction, so each
+    read takes a connection of its own."""
+
+    def __init__(self, wallets: Any, clock: Any) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: Any) -> tuple[Wallet, Wallet]:
+        first, second = await asyncio.gather(
+            self.wallets.get(params["first"]), self.wallets.get(params["second"])
+        )
+        return first, second
+
+
+@contextmanager
+def connections_out(registry: AsyncDatabaseRegistry, seen: dict[str, int]) -> Iterator[None]:
+    """The most connections out of the default pool at once, while the block runs."""
+    pool = registry.default.primary.sync_engine.pool
+    seen.update(out=0, most=0)
+
+    def checkout(*_: Any) -> None:
+        seen["out"] += 1
+        seen["most"] = max(seen["most"], seen["out"])
+
+    def checkin(*_: Any) -> None:
+        seen["out"] -= 1
+
+    event.listen(pool, "checkout", checkout)
+    event.listen(pool, "checkin", checkin)
+    try:
+        yield
+    finally:
+        event.remove(pool, "checkout", checkout)
+        event.remove(pool, "checkin", checkin)
+
+
+def test_reads_gathered_in_perform_each_take_a_connection(backend, clock):
+    async def scenario() -> None:
+        registry = one_database(backend, "ekbatan_async_gather")
+        try:
+            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            a, b = await wallets.add(a_wallet()), await wallets.add(a_wallet())
+            executor = AsyncActionExecutor(
+                namespace="example.wallet",
+                registry=registry,
+                repositories=[wallets],
+                actions=[ReadsTwoAtOnceAction(wallets, clock)],
+                events=EVENTS,
+                clock=clock,
+            )
+            seen: dict[str, Any] = {}
+            # Each SELECT waits 0.2 s first, so two that run at once are seen at once.
+            with slow_reads({"ekbatan_async_gather": 0.2}, seen):
+                first, second = await executor.execute(
+                    ReadsTwoAtOnceAction, {"first": a.id, "second": b.id}
+                )
+            assert (first.id, second.id) == (a.id, b.id)
+            assert seen["most"] == 2, "the two reads ran at once, each on a connection of its own"
+        finally:
+            await registry.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_statements_gathered_inside_one_transaction_take_turns(backend, clock):
+    """Inside a transaction every statement joins its one connection, so statements gathered
+    there run one after another - SQLAlchemy queues them - and all of them commit together. No
+    error, and no speed-up: a transaction is one connection."""
+
+    async def scenario() -> None:
+        registry = one_database(backend, "ekbatan_async_turns")
+        try:
+            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            seen: dict[str, int] = {}
+            with connections_out(registry, seen):
+                async with registry.default.transaction():
+                    await asyncio.gather(*(wallets.add(a_wallet()) for _ in range(3)))
+            assert seen["most"] == 1
+            assert await wallets.count() == 3
+        finally:
+            await registry.aclose()
+
+    asyncio.run(scenario())
