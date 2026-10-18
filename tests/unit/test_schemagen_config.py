@@ -7,11 +7,13 @@ same things against real databases are in `tests/integration/test_schemagen*.py`
 
 from __future__ import annotations
 
+import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import CHAR, VARCHAR, Column, DateTime, MetaData, Table
+from sqlalchemy import CHAR, INTEGER, VARCHAR, Column, DateTime, MetaData, Table
 from sqlalchemy.dialects import mysql, postgresql
 
 from ekbatan.errors import ValidationError
@@ -52,10 +54,14 @@ name = "Text"
 include-expression = ".*\\\\.notes"
 
 [[tool.ekbatan.schemagen.forced-types]]
-user-type = "app.types:Money(4)"
+converter = "app.converters:MoneyConverter(4)"
 include-types = "DECIMAL.*"
 exclude-expression = "rate"
 nullability = "NOT_NULL"
+
+[[tool.ekbatan.schemagen.forced-types]]
+sqlalchemy-type = "pgvector.sqlalchemy.Vector(3)"
+include-types = "VECTOR.*"
 """,
     )
     config = load_config(path)
@@ -74,11 +80,12 @@ nullability = "NOT_NULL"
     assert config.forced_types == (
         ForcedType(name="Text", include_expression=r".*\.notes"),
         ForcedType(
-            user_type="app.types:Money(4)",
+            converter="app.converters:MoneyConverter(4)",
             include_types="DECIMAL.*",
             exclude_expression="rate",
             nullability="NOT_NULL",
         ),
+        ForcedType(sqlalchemy_type="pgvector.sqlalchemy.Vector(3)", include_types="VECTOR.*"),
     )
     assert config.all_forced_types == config.forced_types, "defaults off: only the user's"
 
@@ -108,9 +115,18 @@ def test_a_file_with_no_table_is_ignored_unless_named(tmp_path: Path) -> None:
         ('includes = "("', "includes '\\(' is not a regular expression"),
         ('[[tool.ekbatan.schemagen.forced-types]]\nname = "Text"', "needs include-expression"),
         (
-            '[[tool.ekbatan.schemagen.forced-types]]\nname = "Text"\nuser-type = "a.B"\n'
+            '[[tool.ekbatan.schemagen.forced-types]]\nname = "Text"\nconverter = "a.B"\n'
             'include-types = "X"',
-            "exactly one of name and user-type",
+            "exactly one of name, converter and sqlalchemy-type, got name='Text', converter='a.B'",
+        ),
+        (
+            '[[tool.ekbatan.schemagen.forced-types]]\ninclude-types = "X"',
+            "exactly one of name, converter and sqlalchemy-type, got none",
+        ),
+        (
+            '[[tool.ekbatan.schemagen.forced-types]]\nuser-type = "a.Money"\ninclude-types = "X"',
+            "user-type is now two keys. Use converter for your own class with from_db and "
+            "to_db, or sqlalchemy-type for a ready-made SQLAlchemy type",
         ),
         (
             '[[tool.ekbatan.schemagen.forced-types]]\nname = "Text"\ninclude-type = "X"',
@@ -132,7 +148,9 @@ def test_a_file_with_no_table_is_ignored_unless_named(tmp_path: Path) -> None:
         "schemas not names",
         "bad regex",
         "no include",
-        "name and user-type",
+        "name and converter",
+        "no target",
+        "the old user-type key",
         "typo in a forced type",
         "bad forced regex",
         "bad nullability",
@@ -275,7 +293,7 @@ def test_a_name_is_a_helper_or_a_sqlalchemy_type(name: str, source: str) -> None
     [
         ("Txet", "is not a SQLAlchemy type"),
         ("uuid_column(1)", "takes no arguments"),
-        ("myapp.Money", "your own type goes in user-type"),
+        ("myapp.Money", "your own class goes in converter, a library's type in sqlalchemy-type"),
         ("String(len(x))", "arguments must be plain values"),
         ("MetaData", "not a column type"),
     ],
@@ -286,8 +304,8 @@ def test_a_wrong_name_is_refused_naming_itself(name: str, message: str) -> None:
 
 
 @pytest.fixture
-def user_types(tmp_path: Path) -> Path:
-    """A package of the user's own types, importable as `myapp_types_*`."""
+def user_types(tmp_path: Path) -> Iterator[Path]:
+    """A package of the user's own types and converters, importable as `unit_user_types`."""
     package = tmp_path / "unit_user_types"
     package.mkdir()
     (package / "__init__.py").write_text("")
@@ -305,6 +323,28 @@ def user_types(tmp_path: Path) -> Path:
         "AMOUNT = Numeric(19, 4)\n"
         "NOT_A_TYPE = 3\n"
     )
+    (package / "converters.py").write_text(
+        "from decimal import Decimal\n"
+        "from sqlalchemy import Numeric\n\n"
+        "class MoneyConverter:\n"
+        "    def __init__(self, places: int = 2):\n"
+        "        self.places = places\n"
+        "    def from_db(self, value):\n"
+        "        return value\n"
+        "    def to_db(self, value):\n"
+        "        return value\n\n"
+        "def money(places: int = 2):\n"
+        "    return MoneyConverter(places)\n\n"
+        "SHARED = MoneyConverter()\n\n"
+        "class OnlyFromDb:\n"
+        "    def from_db(self, value):\n"
+        "        return value\n\n"
+        "def not_a_converter():\n"
+        "    return 3\n\n"
+        "def needs_two(a, b):\n"
+        "    return MoneyConverter()\n\n"
+        "TYPE = Numeric(19, 2)\n"
+    )
     sys.path.insert(0, str(tmp_path))
     yield package
     sys.path.remove(str(tmp_path))
@@ -313,7 +353,7 @@ def user_types(tmp_path: Path) -> Path:
 
 
 @pytest.mark.parametrize(
-    ("user_type", "source"),
+    ("sqlalchemy_type", "source"),
     [
         ("unit_user_types.money.Money", "Money()"),
         ("unit_user_types.money:Money", "Money()"),
@@ -323,30 +363,96 @@ def user_types(tmp_path: Path) -> Path:
     ],
     ids=["class", "colon form", "with arguments", "a function", "an instance"],
 )
-def test_a_user_type_is_imported_by_its_dotted_path(
-    user_types: Path, user_type: str, source: str
+def test_a_sqlalchemy_type_is_imported_by_its_dotted_path(
+    user_types: Path, sqlalchemy_type: str, source: str
 ) -> None:
-    emitted = resolve(ForcedType(user_type=user_type, include_types="X"))
+    emitted = resolve(ForcedType(sqlalchemy_type=sqlalchemy_type, include_types="X"))
 
     assert emitted.source == source
     assert emitted.imports == {("unit_user_types.money", source.split("(")[0])}
 
 
 @pytest.mark.parametrize(
-    ("user_type", "message"),
+    ("sqlalchemy_type", "message"),
     [
         ("unit_user_types.nope.Money", "cannot import unit_user_types.nope"),
         ("unit_user_types.money.Nope", "has no Nope"),
         ("unit_user_types.money.NOT_A_TYPE", "is not a type"),
         ("unit_user_types.money.AMOUNT(2)", "is a type instance"),
         ("Money", "must be a dotted path"),
+        (
+            "unit_user_types.converters.MoneyConverter",
+            "has from_db and to_db, so it goes in converter",
+        ),
     ],
 )
-def test_a_wrong_user_type_is_refused_naming_itself(
-    user_types: Path, user_type: str, message: str
+def test_a_wrong_sqlalchemy_type_is_refused_naming_itself(
+    user_types: Path, sqlalchemy_type: str, message: str
 ) -> None:
     with pytest.raises(ValidationError, match=message):
-        resolve(ForcedType(user_type=user_type, include_types="X"))
+        resolve(ForcedType(sqlalchemy_type=sqlalchemy_type, include_types="X"))
+
+
+@pytest.mark.parametrize(
+    ("converter", "source"),
+    [
+        ("unit_user_types.converters.MoneyConverter", "MoneyConverter()"),
+        ("unit_user_types.converters:MoneyConverter", "MoneyConverter()"),
+        ("unit_user_types.converters.MoneyConverter(4)", "MoneyConverter(4)"),
+        ("unit_user_types.converters.MoneyConverter(places=4)", "MoneyConverter(places=4)"),
+        ("unit_user_types.converters.money(3)", "money(3)"),
+        ("unit_user_types.converters.SHARED", "SHARED"),
+    ],
+    ids=["class", "colon form", "with arguments", "keyword", "a function", "an instance"],
+)
+def test_a_converter_is_imported_by_its_dotted_path(
+    user_types: Path, converter: str, source: str
+) -> None:
+    emitted = resolve(ForcedType(converter=converter, include_types="X"))
+
+    assert emitted.source == source
+    assert emitted.imports == {("unit_user_types.converters", source.split("(")[0])}
+
+
+@pytest.mark.parametrize(
+    ("converter", "message"),
+    [
+        ("unit_user_types.nope.MoneyConverter", "cannot import unit_user_types.nope"),
+        ("unit_user_types.converters.Nope", "has no Nope"),
+        (
+            "unit_user_types.converters.OnlyFromDb",
+            r"OnlyFromDb has no from_db\(\) and to_db\(\). A converter is any class with "
+            r"from_db\(value\) and to_db\(value\)",
+        ),
+        ("unit_user_types.converters.not_a_converter", "builds int, which has no from_db"),
+        ("unit_user_types.converters.needs_two", "could not be built: TypeError"),
+        ("unit_user_types.converters.SHARED(2)", "is a converter already; drop the"),
+        ("unit_user_types.converters.TYPE", "a SQLAlchemy type goes in sqlalchemy-type"),
+        ("unit_user_types.money.Money", "a SQLAlchemy type goes in sqlalchemy-type"),
+        ("MoneyConverter", "must be a dotted path to a converter"),
+        ("unit_user_types.converters.MoneyConverter(x)", "arguments must be plain values"),
+    ],
+    ids=[
+        "no module",
+        "no name",
+        "lacks to_db",
+        "factory returns something else",
+        "cannot be built",
+        "instance called",
+        "a type instance",
+        "a TypeDecorator",
+        "not dotted",
+        "not a literal",
+    ],
+)
+def test_a_wrong_converter_is_refused_naming_itself(
+    user_types: Path, converter: str, message: str
+) -> None:
+    with pytest.raises(
+        ValidationError, match=re.escape(f"the forced converter {converter!r}")
+    ) as raised:
+        resolve(ForcedType(converter=converter, include_types="X"))
+    assert raised.match(message)
 
 
 # -- the type table, on types built by hand ------------------------------------------------
@@ -424,7 +530,7 @@ def test_the_uuid_guess_is_mysql_s_and_mariadb_s_only() -> None:
     assert 'Column("ext_id", VARCHAR(length=36))' in on_mysql, "VARCHAR is never guessed"
 
 
-def test_a_user_type_named_like_a_sqlalchemy_type_is_aliased(
+def test_a_sqlalchemy_type_named_like_sqlalchemy_s_own_is_aliased(
     user_types: Path, tmp_path: Path
 ) -> None:
     (user_types / "clash.py").write_text(
@@ -432,7 +538,9 @@ def test_a_user_type_named_like_a_sqlalchemy_type_is_aliased(
     )
     table = Table("t", MetaData(), Column("a", VARCHAR(5)), Column("b", postgresql.JSON()))
     config = SchemagenConfig(
-        forced_types=(ForcedType(user_type="unit_user_types.clash.JSON", include_expression="a"),)
+        forced_types=(
+            ForcedType(sqlalchemy_type="unit_user_types.clash.JSON", include_expression="a"),
+        )
     )
 
     text = render(
@@ -447,3 +555,90 @@ def test_a_user_type_named_like_a_sqlalchemy_type_is_aliased(
     assert "from unit_user_types.clash import JSON as unit_user_types_clash_JSON" in text
     assert 'Column("a", unit_user_types_clash_JSON())' in text
     assert 'Column("b", JSON(none_as_null=True))' in text, "SQLAlchemy's JSON is still SQLAlchemy's"
+
+
+def _rendered(*forced: ForcedType, dialect: str = "postgresql", **columns: object) -> str:
+    table = Table("t", MetaData(), Column("id", INTEGER(), primary_key=True))
+    for name, type_ in columns.items():
+        table.append_column(Column(name, type_))  # type: ignore[arg-type]
+    return render(
+        [table],
+        framework=[],
+        migrations_fingerprint="x",
+        module=None,
+        dialect=dialect,
+        config=SchemagenConfig(forced_types=forced),
+    )
+
+
+def test_a_converter_keeps_the_column_s_own_type(user_types: Path) -> None:
+    """The column's database type stays; the converter is wrapped around it, and the module
+    imports both the helper and the converter - and runs."""
+    text = _rendered(
+        ForcedType(
+            converter="unit_user_types.converters.MoneyConverter(4)",
+            include_expression=r".*\.amount",
+        ),
+        amount=postgresql.NUMERIC(19, 4),
+        rate=postgresql.NUMERIC(19, 4),
+    )
+
+    assert 'Column("amount", converted(NUMERIC(precision=19, scale=4), MoneyConverter(4)))' in text
+    assert 'Column("rate", NUMERIC(precision=19, scale=4))' in text, "only the named column"
+    assert "from ekbatan.schema import converted" in text
+    assert "from unit_user_types.converters import MoneyConverter" in text
+    namespace: dict[str, object] = {"__file__": "schema.py"}
+    exec(compile(text, "schema.py", "exec"), namespace)
+    amount = namespace["T"].c.amount.type  # type: ignore[attr-defined]
+    assert repr(amount).startswith("converted(NUMERIC(precision=19, scale=4), <")
+
+
+def test_a_converter_wraps_what_the_column_would_otherwise_be(user_types: Path) -> None:
+    """Under a converter, the column is what it would be without it: Ekbatan's timestamp and
+    json helpers, or the user's own `name` listed after it. A second converter is not stacked."""
+    text = _rendered(
+        ForcedType(converter="unit_user_types.converters.SHARED", include_types="TIMESTAMP"),
+        ForcedType(converter="unit_user_types.converters.money", include_expression="body"),
+        ForcedType(converter="unit_user_types.converters.money(5)", include_expression="body"),
+        ForcedType(name="Text", include_expression="body"),
+        at=DateTime(),
+        body=VARCHAR(10),
+    )
+
+    assert 'Column("at", converted(timestamp_column(), SHARED))' in text
+    assert 'Column("body", converted(Text(), money()))' in text
+
+
+def test_a_converter_named_like_a_sqlalchemy_type_is_aliased(
+    user_types: Path,
+) -> None:
+    (user_types / "clash.py").write_text(
+        "class JSON:\n"
+        "    def from_db(self, value):\n"
+        "        return value\n"
+        "    def to_db(self, value):\n"
+        "        return value\n"
+    )
+    text = _rendered(
+        ForcedType(converter="unit_user_types.clash.JSON", include_expression="doc"),
+        doc=postgresql.JSON(),
+    )
+
+    assert "from unit_user_types.clash import JSON as unit_user_types_clash_JSON" in text
+    assert (
+        'Column("doc", converted(JSON(none_as_null=True), unit_user_types_clash_JSON()))' in text
+    ), "SQLAlchemy's JSON inside, the user's outside"
+
+
+def test_a_type_with_no_spelling_is_noted_only_when_rendering_by_hand(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A real run always has the database's spelling and writes `sql_type(...)`; `render()` on a
+    table built by hand may not, and says so rather than guessing."""
+    from sqlalchemy.types import NullType
+
+    with caplog.at_level("WARNING", logger="io.ekbatan.schemagen"):
+        text = _rendered(odd=NullType())
+
+    assert 'Column("odd", NullType())' in text
+    assert "t.odd is NullType, a type with no known spelling" in caplog.text

@@ -439,8 +439,8 @@ def test_another_schema_is_noted_and_generated_when_named(
 
 @pytest.fixture
 def user_types(tmp_path: Path) -> Iterator[str]:
-    """The user's own types, in a package of their own: Java's userType + converter, which a
-    TypeDecorator is in one class."""
+    """Ready-made SQLAlchemy types, as a library brings them (for `sqlalchemy-type`), and one
+    plain converter (for `converter`), in a package of their own."""
     package = f"my_types_{uuid.uuid4().hex[:8]}"
     root = tmp_path / "user"
     (root / package).mkdir(parents=True)
@@ -500,6 +500,16 @@ def xml():
 
 def inet6():
     return Spelled("INET6")
+
+
+class MoneyConverter:
+    """A plain converter: no SQLAlchemy in it."""
+
+    def from_db(self, value):
+        return value.quantize(Decimal("0.01"))
+
+    def to_db(self, value):
+        return value
 '''
     )
     sys.path.insert(0, str(root))
@@ -532,16 +542,16 @@ def _ledger(
     return load(out), url, column_sources(text_)
 
 
-def test_a_column_is_forced_to_a_user_type_by_its_name(
+def test_a_column_is_forced_to_a_sqlalchemy_type_by_its_name(
     tmp_path: Path, backend: Backend, dialect: str, user_types: str
 ) -> None:
-    """Java's `includeExpression` with a `userType` and converter: `.*\\.amount` becomes the
-    application's Money, by dotted path - and a value goes through it on the real database."""
+    """Java's `includeExpression` with a `userType`: `.*\\.amount` becomes a ready-made
+    SQLAlchemy type, by dotted path - and a value goes through it on the real database."""
     module, url, sources = _ledger(
         tmp_path,
         backend,
         dialect,
-        ForcedType(user_type=f"{user_types}.Money(2)", include_expression=r".*\.amount"),
+        ForcedType(sqlalchemy_type=f"{user_types}.Money(2)", include_expression=r".*\.amount"),
     )
 
     assert sources[("LEDGER", "amount")] == "Money(2)"
@@ -565,18 +575,21 @@ def test_a_column_is_forced_to_a_user_type_by_its_name(
         db.dispose()
 
 
-def test_a_user_type_leaves_the_stale_module_guard_working(
-    tmp_path: Path, backend: Backend, dialect: str, user_types: str
+@pytest.mark.parametrize("target", ["sqlalchemy-type", "converter"])
+def test_an_imported_type_leaves_the_stale_module_guard_working(
+    tmp_path: Path, backend: Backend, dialect: str, user_types: str, target: str
 ) -> None:
-    """Importing a user type must not change where the module looks for its migrations - it once
-    wrote the type's module there instead, and the guard then found no directory and kept quiet."""
-    _ledger(
-        tmp_path,
-        backend,
-        dialect,
-        ForcedType(user_type=f"{user_types}.Money(2)", include_expression=r".*\.amount"),
+    """Importing a type or a converter must not change where the module looks for its
+    migrations - the import loop once wrote the imported module there instead, and the guard
+    then found no directory and kept quiet."""
+    forced = (
+        ForcedType(sqlalchemy_type=f"{user_types}.Money(2)", include_expression=r".*\.amount")
+        if target == "sqlalchemy-type"
+        else ForcedType(converter=f"{user_types}.MoneyConverter", include_expression=r".*\.amount")
     )
+    _ledger(tmp_path, backend, dialect, forced)
     written = (tmp_path / "app" / "schema.py").read_text()
+    assert f"from {user_types} import " in written, "the module imports the user's own"
     assert 'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "../migrations")' in written
     (tmp_path / "migrations" / "V0099__more.sql").write_text(
         "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);"
@@ -601,22 +614,22 @@ def test_a_column_is_forced_by_its_sql_type(
 ) -> None:
     """Java's `includeTypes`: each database's own case.
 
-    - PostgreSQL `XML`, MariaDB `INET6`: types SQLAlchemy cannot read, made usable - and
-      buildable by create_all - with a type of the application's.
+    - PostgreSQL `XML`, MariaDB `INET6`: types SQLAlchemy has no class for, given a ready-made
+      type of the application's (without one they are `sql_type(...)`, see the type matrix).
     - MySQL `BINARY(16)` named `*_id`: Java's `UuidBinaryConverter`, as a TypeDecorator.
     - SQLite `CHAR(32)` named `*_id`: a uuid, which SQLite cannot say on its own.
     """
     case = {
         "postgres": (
             "doc",
-            ForcedType(user_type=f"{user_types}.xml", include_types="XML"),
+            ForcedType(sqlalchemy_type=f"{user_types}.xml", include_types="XML"),
             "xml()",
             "<a>1</a>",
         ),
         "mysql": (
             "account_id",
             ForcedType(
-                user_type=f"{user_types}.UuidBinary",
+                sqlalchemy_type=f"{user_types}.UuidBinary",
                 include_types=r"BINARY\(16\)",
                 include_expression=".*_id",
             ),
@@ -625,7 +638,7 @@ def test_a_column_is_forced_by_its_sql_type(
         ),
         "mariadb": (
             "address",
-            ForcedType(user_type=f"{user_types}.inet6", include_types="INET6"),
+            ForcedType(sqlalchemy_type=f"{user_types}.inet6", include_types="INET6"),
             "inet6()",
             "::1",
         ),
@@ -720,7 +733,9 @@ def test_a_wrong_forced_type_fails_before_any_database_starts(
             source,
             tmp_path / "schema.py",
             config=SchemagenConfig(
-                forced_types=(ForcedType(user_type="nowhere_at_all.Money", include_types="X"),)
+                forced_types=(
+                    ForcedType(sqlalchemy_type="nowhere_at_all.Money", include_types="X"),
+                )
             ),
         )
 

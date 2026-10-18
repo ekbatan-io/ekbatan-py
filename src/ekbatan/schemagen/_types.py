@@ -14,9 +14,10 @@ What reflection reports but nobody declared is dropped: MariaDB's display widths
 kept: length, precision, scale, ``unsigned``, fractional seconds, collation, enum values, an
 array's item type.
 
-A type SQLAlchemy cannot read at all (PostgreSQL ``xml``, MariaDB ``INET6``) has no faithful
-Python, and that is said rather than guessed: it is written as ``NullType()`` with a note, and a
-forced type is the way to give it one.
+A type SQLAlchemy cannot read at all (PostgreSQL ``xml``, MariaDB ``INET6``, pgvector's
+``vector(3)``) is written as the database spells it, ``sql_type("xml")``: ``create_all`` builds
+the same column, and values come as the driver gives them. A converter turns them into a class
+of your own.
 """
 
 from __future__ import annotations
@@ -337,10 +338,15 @@ _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 def resolve(forced: ForcedType) -> Emitted:
     """A forced type's target as source, checked by building it - so a typo fails here, naming
-    the forced type, and not later as a generated module that does not import."""
+    the forced type, and not later as a generated module that does not import.
+
+    For a ``converter`` this is the converter alone (``MoneyConverter()``); the column's own
+    type is wrapped around it when the column is written."""
     if forced.name is not None:
         return _resolve_name(forced.name)
-    return _resolve_user_type(str(forced.user_type))
+    if forced.converter is not None:
+        return _resolve_converter(forced.converter)
+    return _resolve_sqlalchemy_type(str(forced.sqlalchemy_type))
 
 
 def _split_call(text: str, what: str) -> tuple[str, str | None]:
@@ -351,7 +357,7 @@ def _split_call(text: str, what: str) -> tuple[str, str | None]:
     try:
         call = ast.parse(f"f({rest}", mode="eval").body
     except SyntaxError:
-        raise ValidationError(f"{what} {text!r} is not a type, or a type with arguments") from None
+        raise ValidationError(f"{what} {text!r} is not a name, or a name with arguments") from None
     assert isinstance(call, ast.Call)
     for node in [*call.args, *(k.value for k in call.keywords)]:
         try:
@@ -382,7 +388,7 @@ def _resolve_name(name: str) -> Emitted:
     if dot and dialect not in DIALECT_MODULES:
         raise ValidationError(
             f"{what} {name!r}: a dialect type is written mysql.X, postgresql.X or sqlite.X; "
-            "your own type goes in user-type"
+            "your own class goes in converter, a library's type in sqlalchemy-type"
         )
     if not _IDENTIFIER.fullmatch(type_name):
         raise ValidationError(f"{what} {name!r} is not a type name")
@@ -399,10 +405,9 @@ def _resolve_name(name: str) -> Emitted:
     return Emitted(source)
 
 
-@cache
-def _resolve_user_type(user_type: str) -> Emitted:
-    what = "the forced user-type"
-    head, args = _split_call(user_type, what)
+def _import(path: str, what: str, kind: str) -> tuple[str, str, str | None, Any]:
+    """A dotted path, imported: its module, its name, its arguments, and the object itself."""
+    head, args = _split_call(path, what)
     if ":" in head:
         module_name, _, attribute = head.partition(":")
     else:
@@ -410,39 +415,88 @@ def _resolve_user_type(user_type: str) -> Emitted:
     parts = module_name.split(".") if module_name else []
     if not parts or not all(_IDENTIFIER.fullmatch(p) for p in [*parts, attribute]):
         raise ValidationError(
-            f"{what} {user_type!r} must be a dotted path to a type: myapp.types.Money, or "
-            "myapp.types:Money"
+            f"{what} {path!r} must be a dotted path to a {kind}: myapp.module.Name, or "
+            "myapp.module:Name"
         )
     try:
         module = importlib.import_module(module_name)
     except Exception as error:
         raise ValidationError(
-            f"{what} {user_type!r}: cannot import {module_name}: {type(error).__name__}: {error}. "
-            "schemagen imports it to check the type, so it must import without the generated "
-            "schema - keep your types in a module that does not import it"
+            f"{what} {path!r}: cannot import {module_name}: {type(error).__name__}: {error}. "
+            f"schemagen imports it to check the {kind}, so it must import without the generated "
+            f"schema - keep your {kind}s in a module that does not import it"
         ) from None
     try:
         target = getattr(module, attribute)
     except AttributeError:
-        raise ValidationError(f"{what} {user_type!r}: {module_name} has no {attribute}") from None
+        raise ValidationError(f"{what} {path!r}: {module_name} has no {attribute}") from None
+    return module_name, attribute, args, target
 
-    if isinstance(target, TypeEngine):
+
+def _is_converter(value: object) -> bool:
+    return callable(getattr(value, "from_db", None)) and callable(getattr(value, "to_db", None))
+
+
+@cache
+def _resolve_converter(path: str) -> Emitted:
+    what = "the forced converter"
+    module_name, attribute, args, target = _import(path, what, "converter")
+    imports = frozenset({(module_name, attribute)})
+    lacks = (
+        f"{what} {path!r}: {attribute} has no from_db() and to_db(). A converter is any class "
+        "with from_db(value) and to_db(value)"
+    )
+    if isinstance(target, TypeEngine) or (
+        isinstance(target, type) and issubclass(target, TypeEngine)
+    ):
+        raise ValidationError(f"{lacks}; a SQLAlchemy type goes in sqlalchemy-type")
+    if not isinstance(target, type) and _is_converter(target):
         if args is not None:
             raise ValidationError(
-                f"{what} {user_type!r}: {attribute} is a type instance; drop the ()"
+                f"{what} {path!r}: {attribute} is a converter already; drop the ()"
             )
-        return Emitted(attribute, frozenset({(module_name, attribute)}))
+        return Emitted(attribute, imports)
+    if isinstance(target, type) and not _is_converter(target):
+        raise ValidationError(lacks)
     if not callable(target):
-        raise ValidationError(f"{what} {user_type!r}: {attribute} is not a type")
+        raise ValidationError(lacks)
     try:
         built = eval(f"t({args or ''})", {"__builtins__": {}}, {"t": target})
     except Exception as error:
         raise ValidationError(
-            f"{what} {user_type!r} could not be built: {type(error).__name__}: {error}"
+            f"{what} {path!r} could not be built: {type(error).__name__}: {error}"
+        ) from None
+    if not _is_converter(built):
+        raise ValidationError(
+            f"{what} {path!r} builds {type(built).__name__}, which has no from_db() and to_db()"
+        )
+    return Emitted(f"{attribute}({args or ''})", imports)
+
+
+@cache
+def _resolve_sqlalchemy_type(path: str) -> Emitted:
+    what = "the forced sqlalchemy-type"
+    module_name, attribute, args, target = _import(path, what, "type")
+    imports = frozenset({(module_name, attribute)})
+    if isinstance(target, TypeEngine):
+        if args is not None:
+            raise ValidationError(f"{what} {path!r}: {attribute} is a type instance; drop the ()")
+        return Emitted(attribute, imports)
+    if not callable(target):
+        raise ValidationError(f"{what} {path!r}: {attribute} is not a type")
+    try:
+        built = eval(f"t({args or ''})", {"__builtins__": {}}, {"t": target})
+    except Exception as error:
+        raise ValidationError(
+            f"{what} {path!r} could not be built: {type(error).__name__}: {error}"
         ) from None
     if not isinstance(built, TypeEngine):
-        raise ValidationError(
-            f"{what} {user_type!r} builds {type(built).__name__}, not a SQLAlchemy type - a "
-            "TypeDecorator subclass, a TypeEngine, or a function returning one"
+        hint = (
+            "; it has from_db and to_db, so it goes in converter"
+            if _is_converter(built)
+            else " - a TypeDecorator subclass, a TypeEngine, or a function returning one"
         )
-    return Emitted(f"{attribute}({args or ''})", frozenset({(module_name, attribute)}))
+        raise ValidationError(
+            f"{what} {path!r} builds {type(built).__name__}, not a SQLAlchemy type{hint}"
+        )
+    return Emitted(f"{attribute}({args or ''})", imports)

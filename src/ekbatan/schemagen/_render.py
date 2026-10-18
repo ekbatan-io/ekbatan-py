@@ -86,18 +86,38 @@ class _Writer:
             names.append(f"{relation.schema_name}.{table}.{column.name}")
         types = type_names(column.type, raw, self.dialect, extra)
 
-        forced: ForcedType | None = None
-        for candidate in self.config.all_forced_types:
+        matching = [
+            candidate
+            for candidate in self.config.all_forced_types
             if candidate.matches(
                 dialect=self.reflected.dialect_name,
                 names=names,
                 types=types,
                 nullable=bool(column.nullable),
-            ):
-                forced = candidate
-                break
-
+            )
+        ]
+        forced = matching[0] if matching else None
         where = f"{relation.key}.{column.name}"
+        if forced is None or forced.converter is None:
+            return self._plain_type(where, column, forced, raw, is_json)
+        # A converter keeps the column's own type and wraps itself around it: the type the
+        # column would have without this forced type - the next one that matches and is not a
+        # converter, else the type table's.
+        inner = next((c for c in matching if c.converter is None), None)
+        impl = self._plain_type(where, column, inner, raw, is_json)
+        self.helpers.add("converted")
+        return f"converted({impl}, {self.use(resolve(forced))})"
+
+    def _plain_type(
+        self,
+        where: str,
+        column: Column[Any],
+        forced: ForcedType | None,
+        raw: str | None,
+        is_json: bool,
+    ) -> str:
+        """The column's type with no converter: a forced name or SQLAlchemy type, or the type
+        table's, or - for a type SQLAlchemy cannot read - the database's own spelling."""
         emitted: Emitted | None
         if forced is not None:
             emitted = resolve(forced)
@@ -106,12 +126,18 @@ class _Writer:
             emitted = Emitted("JSON(none_as_null=True)")
         else:
             emitted = emit_type(column.type, self.reflected.dialect_name)
-            if emitted is None:
-                spelled = raw or type(column.type).__name__
+            if emitted is None and raw:
+                # A type SQLAlchemy has no class for: written as the database spells it, so
+                # create_all builds the same column.
+                emitted = Emitted(
+                    f"sql_type({lit(raw)})", frozenset({("ekbatan.schema", "sql_type")})
+                )
+            elif emitted is None:
+                # Only when the database's spelling is not known - render() on tables built by
+                # hand, never a real run.
                 self.notes.append(
-                    f"{where} is {spelled}, a type SQLAlchemy cannot read: written as NullType(), "
-                    "which create_all cannot build. Force it to a type (a forced type with "
-                    f'include-types = "{re.escape(spelled.upper())}")'
+                    f"{where} is {type(column.type).__name__}, a type with no known spelling: "
+                    "written as NullType(), which create_all cannot build"
                 )
                 emitted = Emitted("NullType()")
             elif (
@@ -409,6 +435,8 @@ def _reserved() -> set[str]:
         | set(HELPERS)
         | set(FRAMEWORK_TABLES.values())
         | {
+            "converted",
+            "sql_type",
             "metadata",
             "view_metadata",
             "check_fingerprint",

@@ -16,7 +16,8 @@ Two tracks, run in parallel in separate worktrees, merged onto `main` at the end
 The user writes a plain class with two methods; no SQLAlchemy in it. `None` never reaches it.
 
 ```python
-from ekbatan.schema import Converter          # optional base, for type hints only
+# the base class is optional, for type hints only
+from ekbatan.schema import Converter
 
 class MoneyConverter(Converter[Decimal, Money]):
     def from_db(self, value: Decimal) -> Money: return Money(value)

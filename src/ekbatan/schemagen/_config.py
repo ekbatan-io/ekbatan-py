@@ -30,9 +30,14 @@ class ForcedType:
     - ``name``: one of the framework's helpers (``uuid_column``, ``json_column``,
       ``timestamp_column``) or a SQLAlchemy type, written as in Python - ``Text``,
       ``String(36)``, ``Numeric(19, 4)``, ``postgresql.INET``. jOOQ's ``withName``.
-    - ``user_type``: your own type, by dotted path - ``myapp.types.Money`` or
-      ``myapp.types:Money``, with arguments if it takes any (``myapp.types.Money(4)``). A
-      ``TypeDecorator`` is jOOQ's ``userType`` and ``converter`` in one class.
+    - ``converter``: your own converter, by dotted path - ``myapp.converters.MoneyConverter``
+      or ``myapp.converters:MoneyConverter``, with arguments if it takes any. Any object with
+      ``from_db`` and ``to_db``. The column keeps its own database type and the converter is
+      wrapped around it: ``converted(NUMERIC(precision=19, scale=4), MoneyConverter())``.
+      jOOQ's ``userType`` + ``converter``.
+    - ``sqlalchemy_type``: a ready-made SQLAlchemy type, by dotted path -
+      ``pgvector.sqlalchemy.Vector(3)``. A ``TypeEngine``, a ``TypeDecorator``, or a function
+      returning one.
 
     Which columns - regular expressions that must match the **whole** text, as jOOQ's do:
 
@@ -49,7 +54,8 @@ class ForcedType:
     """
 
     name: str | None = None
-    user_type: str | None = None
+    converter: str | None = None
+    sqlalchemy_type: str | None = None
     include_expression: str | None = None
     include_types: str | None = None
     exclude_expression: str | None = None
@@ -60,9 +66,11 @@ class ForcedType:
     dialects: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if (self.name is None) == (self.user_type is None):
+        given = [t for t in (self.name, self.converter, self.sqlalchemy_type) if t is not None]
+        if len(given) != 1:
             raise ValidationError(
-                f"a forced type needs exactly one of name and user-type, got {self._what()}"
+                "a forced type needs exactly one of name, converter and sqlalchemy-type, got "
+                + (", ".join(self._targets()) or "none")
             )
         if self.include_expression is None and self.include_types is None:
             raise ValidationError(
@@ -86,13 +94,24 @@ class ForcedType:
                 "use ALL, NULL or NOT_NULL"
             )
 
+    def _targets(self) -> list[str]:
+        return [
+            f"{key}={value!r}"
+            for key, value in (
+                ("name", self.name),
+                ("converter", self.converter),
+                ("sqlalchemy-type", self.sqlalchemy_type),
+            )
+            if value is not None
+        ]
+
     def _what(self) -> str:
-        return f"name={self.name!r}" if self.name is not None else f"user-type={self.user_type!r}"
+        return ", ".join(self._targets())
 
     @property
     def target(self) -> str:
         """What the columns become, as written."""
-        return self.name if self.name is not None else str(self.user_type)
+        return str(self.name or self.converter or self.sqlalchemy_type)
 
     def matches(
         self,
@@ -214,7 +233,8 @@ _KEYS = {
 }
 _FORCED_KEYS = {
     "name",
-    "user-type",
+    "converter",
+    "sqlalchemy-type",
     "include-expression",
     "include-types",
     "exclude-expression",
@@ -299,6 +319,11 @@ def config_from_table(table: Mapping[str, Any], *, base: Path, source: str) -> S
 def _forced_type(entry: object, where: str) -> ForcedType:
     if not isinstance(entry, dict):
         raise ValidationError(f"{where}: must be a table, got {entry!r}")
+    if "user-type" in entry:
+        raise ValidationError(
+            f"{where}: user-type is now two keys. Use converter for your own class with "
+            "from_db and to_db, or sqlalchemy-type for a ready-made SQLAlchemy type"
+        )
     unknown = sorted(set(entry) - _FORCED_KEYS)
     if unknown:
         raise ValidationError(f"{where}: unknown key(s) {unknown}; known: {sorted(_FORCED_KEYS)}")
@@ -308,7 +333,8 @@ def _forced_type(entry: object, where: str) -> ForcedType:
     try:
         return ForcedType(
             name=entry.get("name"),
-            user_type=entry.get("user-type"),
+            converter=entry.get("converter"),
+            sqlalchemy_type=entry.get("sqlalchemy-type"),
             include_expression=entry.get("include-expression"),
             include_types=entry.get("include-types"),
             exclude_expression=entry.get("exclude-expression"),

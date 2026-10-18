@@ -27,7 +27,7 @@ The build-time settings live where a Python project keeps them, in ``pyproject.t
     image = "postgres:17-alpine"
 
     [[tool.ekbatan.schemagen.forced-types]]
-    user-type = "myapp.types.Money"
+    converter = "myapp.converters.MoneyConverter"
     include-expression = ".*\\\\.amount"
 
 A command-line flag wins over the file. See :class:`ForcedType` and :class:`SchemagenConfig`.

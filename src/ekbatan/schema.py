@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import (
     CHAR,
@@ -45,13 +45,16 @@ from sqlalchemy import (
     Uuid,
 )
 from sqlalchemy.engine import Dialect
-from sqlalchemy.types import TypeDecorator, TypeEngine
+from sqlalchemy.types import TypeDecorator, TypeEngine, UserDefinedType
 
 __all__ = [
+    "Converter",
+    "converted",
     "json_column",
     "notifications_table",
     "outbox_table",
     "scheduled_tasks_table",
+    "sql_type",
     "timestamp_column",
     "uuid_column",
 ]
@@ -145,6 +148,141 @@ def json_column() -> JSON:
     from sqlalchemy.dialects.postgresql import JSONB
 
     return JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+
+
+class Converter[DbT, UserT](Protocol):
+    """Turns a column's value into your own value and back. **Optional** - for type hints only.
+
+    Any object with these two methods is a converter; it does not have to inherit from this.
+    ``DbT`` is what the column gives (a ``Decimal`` from ``NUMERIC``, a ``str`` from text);
+    ``UserT`` is your own class. ``None`` never reaches either method: a ``NULL`` stays ``None``.
+
+        class MoneyConverter(Converter[Decimal, Money]):
+            def from_db(self, value: Decimal) -> Money:
+                return Money(value)
+
+            def to_db(self, value: Money) -> Decimal:
+                return value.amount
+    """
+
+    def from_db(self, value: DbT) -> UserT:
+        """The column's value, as your own value."""
+        ...
+
+    def to_db(self, value: UserT) -> DbT:
+        """Your own value, as the column's value."""
+        ...
+
+
+class _Same:
+    """A cache-key part that is equal only to itself: the converter, by identity.
+
+    Used for a converter that cannot be hashed (a plain ``@dataclass`` is one). It holds the
+    converter, so the id cannot be reused while a cache entry still refers to it.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def __hash__(self) -> int:
+        return id(self.value)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Same) and other.value is self.value
+
+
+class Converted[DbT, UserT](TypeDecorator[UserT]):
+    """A column of type ``impl`` whose values pass through ``converter``. Built by
+    :func:`converted`; see there."""
+
+    impl: TypeEngine[Any] | type[TypeEngine[Any]] = TypeEngine  # replaced in __init__
+    cache_ok = True
+
+    def __init__(
+        self, impl: TypeEngine[DbT] | type[TypeEngine[DbT]], converter: Converter[DbT, UserT]
+    ) -> None:
+        for method in ("from_db", "to_db"):
+            if not callable(getattr(converter, method, None)):
+                raise TypeError(
+                    f"{converter!r} is not a converter: it has no {method}() method. A converter "
+                    "is any object with from_db(value) and to_db(value)"
+                )
+        super().__init__()
+        self.impl = impl() if isinstance(impl, type) else impl
+        self.converter = converter
+
+    @property
+    def _static_cache_key(self) -> Any:
+        """What SQLAlchemy keys its statement cache on: this class, the column type, and the
+        converter.
+
+        The converter by its own ``==`` and hash when it has them - a plain class compares by
+        identity, so two instances never share a cached statement, whatever state they hold -
+        and by identity when it cannot be hashed. Keying on the converter's class alone would
+        be wrong: ``Scaled(2)`` and ``Scaled(4)`` would share one statement's bind processing.
+        """
+        from sqlalchemy.sql.cache_key import NO_CACHE
+
+        inner = self.impl_instance._static_cache_key
+        if inner is NO_CACHE:
+            return NO_CACHE
+        try:
+            hash(self.converter)
+            token: object = self.converter
+        except TypeError:
+            token = _Same(self.converter)
+        return (self.__class__, ("impl", inner), ("converter", token))
+
+    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
+        return None if value is None else self.converter.to_db(value)
+
+    def process_result_value(self, value: Any, dialect: Dialect) -> Any:
+        return None if value is None else self.converter.from_db(value)
+
+    def __repr__(self) -> str:
+        return f"converted({self.impl_instance!r}, {self.converter!r})"
+
+
+def converted[DbT, UserT](
+    impl: TypeEngine[DbT] | type[TypeEngine[DbT]], converter: Converter[DbT, UserT]
+) -> Converted[DbT, UserT]:
+    """A column type that keeps the database type ``impl`` and hands you your own values.
+
+    ``converter`` is any object with ``from_db`` and ``to_db``; ``None`` (SQL ``NULL``) is
+    passed through and never reaches it. Comparisons convert too: ``column == Money("9.99")``
+    and ``column.op("<->")(value)`` send ``to_db(value)``.
+
+        Column("amount", converted(NUMERIC(precision=19, scale=4), MoneyConverter()))
+        Column("embedding", converted(sql_type("vector(3)"), VectorConverter()))
+    """
+    return Converted(impl, converter)
+
+
+class _SqlType(UserDefinedType[Any]):
+    """A column type given as the database spells it - ``vector(3)``, ``xml``, ``inet6``."""
+
+    cache_ok = True
+
+    def __init__(self, spelling: str) -> None:
+        self.spelling = spelling
+
+    def get_col_spec(self, **kw: Any) -> str:
+        return self.spelling
+
+    def __repr__(self) -> str:
+        return f"sql_type({self.spelling!r})"
+
+
+def sql_type(spelling: str) -> TypeEngine[Any]:
+    """A column type SQLAlchemy has no class for, written as the database spells it.
+
+    ``create_all`` builds the column with exactly this text, so ``sql_type("vector(3)")`` makes a
+    ``vector(3)`` column. Values go in and come out as the database driver gives them - usually
+    text; wrap it in :func:`converted` to get your own class.
+    """
+    return _SqlType(spelling)
 
 
 def outbox_table(metadata: MetaData, *, name: str = "events", schema: str | None = None) -> Table:

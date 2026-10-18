@@ -143,6 +143,10 @@ POSTGRES = (
     ),
     Case("oid", "OID", "postgresql.OID()", 42),
     Case("enum", "mood", 'Enum("happy", "sad", name="mood")', "sad"),
+    # Types SQLAlchemy has no class for: written as PostgreSQL spells them, so create_all builds
+    # the same column, and the value is what the driver gives - text. No `=` for either.
+    Case("xml", "XML", 'sql_type("xml")', "<a>1</a>", where=False),
+    Case("point", "POINT", 'sql_type("point")', "(1,2)", where=False),
 )
 
 MYSQL = (
@@ -233,6 +237,8 @@ MARIADB = (
     *MYSQL,
     # MariaDB's own UUID type: no forced type, as in Java's MariaDB build.
     Case("uuid", "UUID", "UUID()", ID),
+    # A type SQLAlchemy has no class for: written as MariaDB spells it, read back as text.
+    Case("inet6", "INET6", 'sql_type("inet6")', "2001:db8::1"),
 )
 
 SQLITE = (
