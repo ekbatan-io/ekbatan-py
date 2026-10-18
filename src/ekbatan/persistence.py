@@ -14,16 +14,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
-from contextvars import ContextVar
+from contextlib import AbstractContextManager, contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal, Self
+from typing import Any, Literal, Protocol, Self
 
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
 from ._logtext import java_list, java_shard, java_shard_pair
-from ._tracing import span
+from ._tracing import Span, span
 from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from .config import _unknown_shard_policy as _policy
 from .errors import ValidationError
@@ -51,16 +51,55 @@ REGISTRY_LOG = logging.getLogger("io.ekbatan.core.shard.DatabaseRegistry")
 # Default None rather than an empty dict: a mutable default on a ContextVar is shared by every
 # context that never set one, and the day something mutates it in place is the day two requests
 # start sharing a connection.
-_ambient: ContextVar[Mapping[TransactionManager, Db] | None] = ContextVar(
-    "ekbatan_tx", default=None
-)
+#
+# One variable for both kinds of manager: `ekbatan.aio`'s keeps its open transactions here too,
+# keyed by itself. The key is the manager, so a sync and an async manager can never find each
+# other's connection - and a service is one or the other anyway.
+_ambient: ContextVar[Mapping[object, Any] | None] = ContextVar("ekbatan_tx", default=None)
 
-_NONE: Mapping[TransactionManager, Db] = MappingProxyType({})
+_NONE: Mapping[object, Any] = MappingProxyType({})
 
 
-def _open() -> Mapping[TransactionManager, Db]:
+def _open() -> Mapping[object, Any]:
     """The transactions open on this thread or task."""
     return _ambient.get() or _NONE
+
+
+def _join(manager: object, conn: Any) -> Token[Mapping[object, Any] | None]:
+    """Make ``conn`` the ambient transaction of ``manager`` until the token is reset."""
+    return _ambient.set({**_open(), manager: conn})
+
+
+def _transaction_span(shard: ShardIdentifier) -> AbstractContextManager[Span]:
+    """The span around one transaction - the same name and attributes for sync and async."""
+    return span(
+        "ekbatan.transaction",
+        {"ekbatan.shard.group": shard.group, "ekbatan.shard.member": shard.member},
+    )
+
+
+def _log_started(shard: ShardIdentifier) -> None:
+    LOG.debug("Transaction started [shard=%s]", java_shard_pair(shard))
+
+
+def _log_committed(shard: ShardIdentifier) -> None:
+    LOG.debug("Transaction committed [shard=%s]", java_shard_pair(shard))
+
+
+def _log_evicting(shard: ShardIdentifier) -> None:
+    LOG.warning(
+        "Evicting connection from pool - rollback or autocommit-reset failed "
+        "leaving it in unknown state [shard=%s]",
+        java_shard_pair(shard),
+    )
+
+
+def _log_rolled_back(shard: ShardIdentifier, error: BaseException) -> None:
+    LOG.warning(
+        "Transaction rolled back [shard=%s]: %s",
+        java_shard_pair(shard),
+        type(error).__name__,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,17 +187,8 @@ class TransactionManager:
         Anything inside the block reaching for ``tx_db`` or ``tx_db_else_db`` on this shard
         finds this transaction and joins it, without being handed anything.
         """
-        with (
-            span(
-                "ekbatan.transaction",
-                {
-                    "ekbatan.shard.group": self.shard.group,
-                    "ekbatan.shard.member": self.shard.member,
-                },
-            ),
-            Db(self.primary) as conn,
-        ):
-            token = _ambient.set({**_open(), self: conn})
+        with _transaction_span(self.shard), Db(self.primary) as conn:
+            token = _join(self, conn)
             # Begin, commit and roll back by hand rather than through `with conn.begin()`. The
             # context manager rolls back for us, but it has nowhere to say that the rollback
             # *itself* failed - and SQLAlchemy then returns that connection to the pool and
@@ -167,13 +197,13 @@ class TransactionManager:
             # connection is evicted rather than released.
             tx = conn.begin()
             try:
-                LOG.debug("Transaction started [shard=%s]", java_shard_pair(self.shard))
+                _log_started(self.shard)
                 yield Transaction(conn, self.shard, self.dialect)
                 # Inside the try, as Java's is: a commit that fails is a transaction that has
                 # to be rolled back like any other, and if that rollback fails too the
                 # connection is in the same unknown state.
                 tx.commit()
-                LOG.debug("Transaction committed [shard=%s]", java_shard_pair(self.shard))
+                _log_committed(self.shard)
             except BaseException as error:
                 # BaseException: a cancellation still rolled the transaction back, and a log
                 # that omitted it would be worse than none. The span needs nothing here - an
@@ -185,17 +215,9 @@ class TransactionManager:
                     # and failed. Invalidating closes the physical connection, which makes the
                     # server discard anything still open on it - and stops the pool offering
                     # it to somebody else.
-                    LOG.warning(
-                        "Evicting connection from pool - rollback or autocommit-reset failed "
-                        "leaving it in unknown state [shard=%s]",
-                        java_shard_pair(self.shard),
-                    )
+                    _log_evicting(self.shard)
                     conn.invalidate()
-                LOG.warning(
-                    "Transaction rolled back [shard=%s]: %s",
-                    java_shard_pair(self.shard),
-                    type(error).__name__,
-                )
+                _log_rolled_back(self.shard, error)
                 raise
             finally:
                 _ambient.reset(token)
@@ -207,7 +229,8 @@ class TransactionManager:
         transaction is kept is this module's business, so asking is a method rather than a
         reach into it from outside.
         """
-        return _open().get(self)
+        current: Db | None = _open().get(self)
+        return current
 
     @contextmanager
     def connection(self, *, readonly: bool = False) -> Iterator[Db]:
@@ -249,14 +272,30 @@ class TransactionManager:
         return f"TransactionManager({self.label}, {self.dialect})"
 
 
-class DatabaseRegistry:
-    """Every database the framework can reach, keyed by shard."""
+class _ShardManager(Protocol):
+    """What the registry needs of a manager - true of a sync and an async one alike."""
+
+    @property
+    def shard(self) -> ShardIdentifier: ...
+
+    @property
+    def dialect(self) -> str: ...
+
+
+class _ShardRegistry[TM: _ShardManager]:
+    """The map from a shard to its manager, and every rule about it, for both kinds of registry.
+
+    :class:`DatabaseRegistry` holds :class:`TransactionManager` s and ``ekbatan.aio``'s
+    ``AsyncDatabaseRegistry`` holds async ones. Which shards exist, which is the default, where
+    an unknown one goes and what a misfiled one is are the same questions with the same answers,
+    so they are answered once, here. Only building a manager and closing one differ.
+    """
 
     __slots__ = ("_managers", "default_shard", "dialect", "unknown_shard_policy")
 
     def __init__(
         self,
-        managers: Mapping[ShardIdentifier, TransactionManager],
+        managers: Mapping[ShardIdentifier, TM],
         default_shard: ShardIdentifier | None = None,
         unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard",
     ) -> None:
@@ -289,11 +328,7 @@ class DatabaseRegistry:
         self.dialect = self._managers[default_shard].dialect
 
     @classmethod
-    def builder(cls) -> DatabaseRegistryBuilder:
-        return DatabaseRegistryBuilder()
-
-    @classmethod
-    def from_config(cls, config: ShardingConfig) -> DatabaseRegistry:
+    def from_config(cls, config: ShardingConfig) -> Self:
         """Build the registry. ``ShardingConfig`` has already refused a default shard that
         names nothing, so no engine is created for a layout that cannot work."""
         managers = {
@@ -302,19 +337,11 @@ class DatabaseRegistry:
         return cls(managers, config.default_shard, config.unknown_shard_policy)
 
     @staticmethod
-    def _manager(
-        shard: ShardIdentifier, member: ShardMemberConfig, dialect: str
-    ) -> TransactionManager:
-        """Java's loop body in ``fromConfig``: the primary's pool, and the secondary's if the
-        member has one. Any other named config on the member is the application's to build."""
-        primary = engine_for(member.primary_config())
-        secondary = member.secondary_config()
-        replica = engine_for(secondary) if secondary is not None else None
-        return TransactionManager(
-            shard, primary, replica, dialect=dialect, label=member.name or str(shard)
-        )
+    def _manager(shard: ShardIdentifier, member: ShardMemberConfig, dialect: str) -> TM:
+        """One member's manager, built from its config. Each kind of registry writes this."""
+        raise NotImplementedError
 
-    def manager(self, shard: ShardIdentifier) -> TransactionManager:
+    def manager(self, shard: ShardIdentifier) -> TM:
         try:
             return self._managers[shard]
         except KeyError:
@@ -361,8 +388,44 @@ class DatabaseRegistry:
         return tuple(self._managers)
 
     @property
-    def default(self) -> TransactionManager:
+    def default(self) -> TM:
         return self._managers[self.default_shard]
+
+    @staticmethod
+    def _close_failed(shard: ShardIdentifier, exc: BaseException) -> None:
+        REGISTRY_LOG.warning(
+            "Failed to close TransactionManager for shard %s: %s",
+            java_shard(shard),
+            f"{type(exc).__name__}: {exc}",
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}({len(self._managers)} shard(s), default={self.default_shard})"
+        )
+
+
+class DatabaseRegistry(_ShardRegistry[TransactionManager]):
+    """Every database the framework can reach, keyed by shard."""
+
+    __slots__ = ()
+
+    @classmethod
+    def builder(cls) -> DatabaseRegistryBuilder:
+        return DatabaseRegistryBuilder()
+
+    @staticmethod
+    def _manager(
+        shard: ShardIdentifier, member: ShardMemberConfig, dialect: str
+    ) -> TransactionManager:
+        """Java's loop body in ``fromConfig``: the primary's pool, and the secondary's if the
+        member has one. Any other named config on the member is the application's to build."""
+        primary = engine_for(member.primary_config())
+        secondary = member.secondary_config()
+        replica = engine_for(secondary) if secondary is not None else None
+        return TransactionManager(
+            shard, primary, replica, dialect=dialect, label=member.name or str(shard)
+        )
 
     def close(self) -> None:
         """Dispose every pool. One failing shard does not strand the rest."""
@@ -371,11 +434,7 @@ class DatabaseRegistry:
             try:
                 manager.close()
             except Exception as exc:
-                REGISTRY_LOG.warning(
-                    "Failed to close TransactionManager for shard %s: %s",
-                    java_shard(shard),
-                    f"{type(exc).__name__}: {exc}",
-                )
+                self._close_failed(shard, exc)
                 first = first or exc
         if first is not None:
             raise first
@@ -385,9 +444,6 @@ class DatabaseRegistry:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
-
-    def __repr__(self) -> str:
-        return f"DatabaseRegistry({len(self._managers)} shard(s), default={self.default_shard})"
 
 
 def engine_for(config: DataSourceConfig) -> Engine:
@@ -403,9 +459,15 @@ def engine_for(config: DataSourceConfig) -> Engine:
 
     The engine is the caller's: dispose it when you are done with it.
     """
+    return create_engine(config.sqlalchemy_url(), **_engine_kwargs(config))
+
+
+def _engine_kwargs(config: DataSourceConfig) -> dict[str, Any]:
+    """Everything but the url an engine is built with - one answer for a sync engine and for
+    ``ekbatan.aio``'s async one, so the two pools cannot be configured differently."""
     from ._json import dumps, loads
 
-    kwargs: dict[str, object] = {
+    kwargs: dict[str, Any] = {
         "echo": config.echo,
         "future": True,
         "connect_args": dict(config.data_source_properties),
@@ -422,7 +484,7 @@ def engine_for(config: DataSourceConfig) -> Engine:
             "pool_recycle": config.pool_recycle,
             "pool_pre_ping": config.pool_pre_ping,
         }
-    return create_engine(config.sqlalchemy_url(), **kwargs)
+    return kwargs
 
 
 def insert_ignoring_duplicates(

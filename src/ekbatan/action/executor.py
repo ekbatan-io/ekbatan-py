@@ -13,13 +13,14 @@ import re
 import time
 import uuid
 from collections.abc import Iterable, Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any, Self
 
 from sqlalchemy import MetaData, Table
 
 from .._logtext import java_list, java_shard
-from .._tracing import span
+from .._tracing import Span, span
 from ..clock import Clock, SystemClock, to_instant
 from ..errors import CrossShardError, StaleRecordError, ValidationError
 from ..persistence import DatabaseRegistry
@@ -189,33 +190,40 @@ class ExecutionConfigurationBuilder:
         )
 
 
-class ActionExecutor:
-    """Runs units of work.
+class _ExecutorCore:
+    """Everything an executor is apart from waiting on the database - shared by
+    :class:`ActionExecutor` and ``ekbatan.aio``'s ``AsyncActionExecutor``.
 
-    An action is named by its type and found in the executor's
-    :class:`~ekbatan.action.registry.ActionRegistry`, as Java's is by its class::
-
-        executor.execute(CloseWallet, WalletIdParams(wallet_id=id))
-
-    So a caller holding the executor runs an action without holding what it was built with, and
-    everything a service can do is listed in one place. An instance is refused: it would run
-    whether it was registered or not. A test that wants to run the object it just built uses
-    :class:`~ekbatan.testing.ActionSpec`, as Java's tests do.
+    Which action runs, which retry policy applies and when to give up, how a plan is split by
+    shard, when a unit of work is refused for spanning shards, and what is logged and put on
+    the span at each step: one copy. Each executor adds only ``execute``, ``_commit`` and
+    ``_commit_shard``, which are the lines that call ``perform`` and open a transaction - and
+    which are the only lines where the two differ.
     """
 
     __slots__ = ("actions", "changes", "clock", "config", "namespace", "outbox", "registry")
 
-    def __init__(
+    #: The kind of action this executor runs. A service is all-sync or all-async, so an
+    #: executor refuses the other kind where it is built rather than handing back a coroutine
+    #: nobody awaits.
+    _RUNS: type = Action
+
+    namespace: str
+    registry: Any
+    clock: Clock
+    config: ExecutionConfiguration
+    actions: ActionRegistry
+    outbox: Any
+    changes: Any
+
+    def _setup(
         self,
-        *,
         namespace: str,
-        registry: DatabaseRegistry,
-        repositories: RepositoryRegistry | Iterable[Repository[Any]],
-        actions: ActionRegistry | Iterable[Action[Any, Any]] = (),
-        events: Table | None = None,
-        outbox: EventPersister | None = None,
-        clock: Clock | None = None,
-        config: ExecutionConfiguration = DEFAULT,
+        registry: Any,
+        repositories: Any,
+        actions: ActionRegistry | Iterable[Any],
+        clock: Clock | None,
+        config: ExecutionConfiguration,
     ) -> None:
         self.namespace = _valid_namespace(namespace)
         # Named here, as Java names them in its builder. `registry=None` was accepted and the
@@ -229,47 +237,26 @@ class ActionExecutor:
         self.clock = clock or SystemClock()
         self.config = config
         self.actions = actions if isinstance(actions, ActionRegistry) else ActionRegistry(actions)
-
-        # Neither given: the default single-table persister over the framework's own events
-        # table, as Java's builder makes one when no persister is set.
-        if outbox is not None:
-            self.outbox: EventPersister = outbox
-        else:
-            self.outbox = SingleTableJsonEventPersister(
-                registry, events if events is not None else outbox_table(MetaData())
+        wrong = [type(a).__name__ for a in self.actions if not isinstance(a, self._RUNS)]
+        if wrong:
+            raise ValidationError(
+                f"{type(self).__name__} runs {self._RUNS.__name__}s, and was given "
+                f"{', '.join(sorted(wrong))}. A service is all-sync or all-async: register "
+                f"an Action with ActionExecutor and an AsyncAction with AsyncActionExecutor."
             )
-
-        self.changes = ChangePersister(
-            repositories
-            if isinstance(repositories, RepositoryRegistry)
-            else RepositoryRegistry(repositories),
-            self.outbox,
-        )
-
-    @classmethod
-    def builder(cls) -> ActionExecutorBuilder:
-        return ActionExecutorBuilder()
 
     @property
     def repositories(self) -> RepositoryRegistry:
         """The registry the executor writes through."""
-        return self.changes.repositories
+        repositories: RepositoryRegistry = self.changes.repositories
+        return repositories
 
-    # ------------------------------------------------------------------ running
+    # ------------------------------------------------------------- the shared steps
 
-    def execute[P, R](
-        self,
-        action: type[Action[P, R]],
-        params: P,
-        *,
-        principal: str | None = None,
-        config: ExecutionConfiguration | None = None,
-    ) -> R:
-        """Run one unit of work and commit what it staged.
-
-        Java's ``execute(principal, DepositMoneyAction.class, params)``: the action is named by
-        its type, and the registered instance is the one that runs.
-        """
+    def _running(
+        self, action: Any, config: ExecutionConfiguration | None
+    ) -> tuple[Any, ExecutionConfiguration]:
+        """The registered instance for ``action``, and the policy for this call."""
         if action is None:
             raise ValidationError("an action type is required, registered with the executor")
         if not isinstance(action, type):
@@ -280,88 +267,76 @@ class ActionExecutor:
                 f"you just built in a test, "
                 f"use ActionSpec.of(action)."
             )
-        running = self.actions.get(action)
-        policy = config or self.config
-        name = running.name
-        retried = 0
+        return self.actions.get(action), config or self.config
 
-        with span(
+    @staticmethod
+    def _started(name: str, principal: str | None) -> AbstractContextManager[Span]:
+        """The span around one invocation, every attempt inside it."""
+        LOG.info("Executing %s [principal=%s]", name, principal or "")
+        return span(
             "ekbatan.action.execute",
             {"ekbatan.action.name": name, "ekbatan.action.principal": principal or ""},
-        ) as execution:
-            started_at = time.monotonic()
-            LOG.info("Executing %s [principal=%s]", name, principal or "")
-            while True:
-                started = to_instant(self.clock.now())
-                # A fresh plan per attempt. If it survived a failed one, the retry would commit
-                # the first attempt's staged changes on top of its own - two deposits for one
-                # call.
-                plan = ActionPlan(self.clock)
-                try:
-                    with span("ekbatan.action.perform"), _Binding(plan):
-                        result = running.perform(principal, params)
-                    self._commit(name, plan, params, started, policy)
-                except BaseException as error:
-                    # BaseException, not Exception. Something that is not an ordinary error -
-                    # a cancellation, a failure the runtime raises - still failed this unit of
-                    # work, and catching only Exception meant it was recorded as neither a
-                    # success nor a failure: no log line, no span status, nothing.
-                    match = policy.policy_for(error) if isinstance(error, Exception) else None
-                    if match is not None and retried < match[0].max_retries:
-                        retried += 1
-                        chosen, cause = match
-                        RETRY_LOG.warning(
-                            "Retrying %s (retry %d/%d) due to %s: %s",
-                            name,
-                            retried,
-                            chosen.max_retries,
-                            type(cause).__name__,
-                            cause,
-                        )
-                        execution.set({"ekbatan.action.retry.count": retried})
-                        execution.event(
-                            "retry",
-                            {"retry.count": retried, "retry.exception": type(cause).__name__},
-                        )
-                        time.sleep(chosen.delay)
-                        continue
-                    execution.failed(error, outcome="ekbatan.action.outcome")
-                    LOG.error("%s failed: %s: %s", name, type(error).__name__, error)
-                    raise
-                else:
-                    execution.set(
-                        {"ekbatan.action.outcome": "success", "ekbatan.action.retry.count": retried}
-                    )
-                    LOG.info(
-                        "%s completed in %dms [principal=%s]",
-                        name,
-                        int((time.monotonic() - started_at) * 1000),
-                        principal or "",
-                    )
-                    return result
+        )
 
-    # ---------------------------------------------------------------- committing
+    @staticmethod
+    def _retry_delay(
+        policy: ExecutionConfiguration,
+        error: BaseException,
+        retried: int,
+        name: str,
+        execution: Span,
+    ) -> float | None:
+        """How long to wait before attempt ``retried + 2``, or ``None`` to give up.
 
-    def _commit(
+        Giving up is recorded here - the span's outcome and the error line - so the caller
+        only has to re-raise.
+        """
+        # BaseException, not Exception. Something that is not an ordinary error - a
+        # cancellation, a failure the runtime raises - still failed this unit of work, and
+        # catching only Exception meant it was recorded as neither a success nor a failure:
+        # no log line, no span status, nothing.
+        match = policy.policy_for(error) if isinstance(error, Exception) else None
+        if match is not None and retried < match[0].max_retries:
+            chosen, cause = match
+            RETRY_LOG.warning(
+                "Retrying %s (retry %d/%d) due to %s: %s",
+                name,
+                retried + 1,
+                chosen.max_retries,
+                type(cause).__name__,
+                cause,
+            )
+            execution.set({"ekbatan.action.retry.count": retried + 1})
+            execution.event(
+                "retry",
+                {"retry.count": retried + 1, "retry.exception": type(cause).__name__},
+            )
+            return chosen.delay
+        execution.failed(error, outcome="ekbatan.action.outcome")
+        LOG.error("%s failed: %s: %s", name, type(error).__name__, error)
+        return None
+
+    @staticmethod
+    def _succeeded(
+        name: str, principal: str | None, retried: int, started_at: float, execution: Span
+    ) -> None:
+        execution.set({"ekbatan.action.outcome": "success", "ekbatan.action.retry.count": retried})
+        LOG.info(
+            "%s completed in %dms [principal=%s]",
+            name,
+            int((time.monotonic() - started_at) * 1000),
+            principal or "",
+        )
+
+    def _shards_to_commit(
         self,
         action_name: str,
         plan: ActionPlan,
-        params: Any,
-        started: Any,
         policy: ExecutionConfiguration,
-    ) -> None:
-        with span("ekbatan.action.persist") as persisting:
-            self._flush(action_name, plan, params, started, policy, persisting)
-
-    def _flush(
-        self,
-        action_name: str,
-        plan: ActionPlan,
-        params: Any,
-        started: Any,
-        policy: ExecutionConfiguration,
-        persisting: Any,
-    ) -> None:
+        persisting: Span,
+    ) -> dict[ShardIdentifier, dict[type, PersistableChanges]]:
+        """The plan split by shard, once it has been allowed to span them - or a refusal,
+        before anything is written."""
         by_shard = self._group_by_shard(plan)
         LOG.debug(
             "Resolved %d entity types across %d shards [shards=%s]",
@@ -399,64 +374,44 @@ class ActionExecutor:
                 len(by_shard),
                 java_list(java_shard(s) for s in by_shard),
             )
+        return by_shard
 
-        action_id = uuid.uuid4()
-        committed: list[ShardIdentifier] = []
-
-        for shard, slices in by_shard.items():
-            try:
-                self._commit_shard(shard, slices, action_name, action_id, params, started)
-                committed.append(shard)
-            except BaseException as error:
-                # BaseException, and Java's comment on the same line says why: "Caught as
-                # Exception, an Error on shard B produced partially-committed data in silence."
-                # A KeyboardInterrupt between two commits - a pod going away mid-action - is
-                # the realistic one here, and it must not decide whether the alarm is raised.
-                if committed:
-                    # The documented consequence of opting in, and the only notice anyone gets.
-                    persisting.set(
-                        {
-                            "ekbatan.shard.partial_commit_failure": True,
-                            "ekbatan.shard.committed_shards": java_list(
-                                java_shard(x) for x in committed
-                            ),
-                            "ekbatan.shard.failed_shard": java_shard(shard),
-                        }
-                    )
-                    LOG.error(
-                        "CRITICAL: Cross-shard action %s PARTIALLY COMMITTED! Committed shards: "
-                        "%s, Failed shard: %s. Error: %s: %s. Data on committed shards remains "
-                        "persisted and will NOT roll back automatically.",
-                        action_name,
-                        java_list(java_shard(s) for s in committed),
-                        java_shard(shard),
-                        type(error).__name__,
-                        error,
-                        exc_info=error,
-                    )
-                raise
-
-    def _commit_shard(
-        self,
-        shard: ShardIdentifier,
-        staged: Mapping[type, PersistableChanges],
+    @staticmethod
+    def _partially_committed(
         action_name: str,
-        action_id: uuid.UUID,
-        params: Any,
-        started: Any,
+        committed: list[ShardIdentifier],
+        shard: ShardIdentifier,
+        error: BaseException,
+        persisting: Span,
     ) -> None:
-        """One shard, one transaction. What goes in it is the persister's business."""
-        with self.registry.manager(shard).transaction() as tx:
-            self.changes.persist(
-                tx,
-                staged,
-                namespace=self.namespace,
-                action_name=action_name,
-                params=params,
-                started=started,
-                completed=to_instant(self.clock.now()),
-                action_id=action_id,
-            )
+        """Raise the alarm if a shard failed after another had already committed.
+
+        Called for any failure, BaseException included, and Java's comment on the same line
+        says why: "Caught as Exception, an Error on shard B produced partially-committed data
+        in silence." A KeyboardInterrupt - or a cancelled task - between two commits is the
+        realistic one here, and it must not decide whether the alarm is raised.
+        """
+        if not committed:
+            return
+        # The documented consequence of opting in, and the only notice anyone gets.
+        persisting.set(
+            {
+                "ekbatan.shard.partial_commit_failure": True,
+                "ekbatan.shard.committed_shards": java_list(java_shard(x) for x in committed),
+                "ekbatan.shard.failed_shard": java_shard(shard),
+            }
+        )
+        LOG.error(
+            "CRITICAL: Cross-shard action %s PARTIALLY COMMITTED! Committed shards: "
+            "%s, Failed shard: %s. Error: %s: %s. Data on committed shards remains "
+            "persisted and will NOT roll back automatically.",
+            action_name,
+            java_list(java_shard(s) for s in committed),
+            java_shard(shard),
+            type(error).__name__,
+            error,
+            exc_info=error,
+        )
 
     def _group_by_shard(
         self, plan: ActionPlan
@@ -481,8 +436,148 @@ class ActionExecutor:
                     target[model.id] = model
         return grouped
 
-    def _repository(self, model_type: type) -> Repository[Any]:
+    def _repository(self, model_type: type) -> Any:
         return self.changes.repository_for(model_type)
+
+
+class ActionExecutor(_ExecutorCore):
+    """Runs units of work.
+
+    An action is named by its type and found in the executor's
+    :class:`~ekbatan.action.registry.ActionRegistry`, as Java's is by its class::
+
+        executor.execute(CloseWallet, WalletIdParams(wallet_id=id))
+
+    So a caller holding the executor runs an action without holding what it was built with, and
+    everything a service can do is listed in one place. An instance is refused: it would run
+    whether it was registered or not. A test that wants to run the object it just built uses
+    :class:`~ekbatan.testing.ActionSpec`, as Java's tests do.
+    """
+
+    __slots__ = ()
+
+    registry: DatabaseRegistry
+    outbox: EventPersister
+    changes: ChangePersister
+
+    def __init__(
+        self,
+        *,
+        namespace: str,
+        registry: DatabaseRegistry,
+        repositories: RepositoryRegistry | Iterable[Repository[Any]],
+        actions: ActionRegistry | Iterable[Action[Any, Any]] = (),
+        events: Table | None = None,
+        outbox: EventPersister | None = None,
+        clock: Clock | None = None,
+        config: ExecutionConfiguration = DEFAULT,
+    ) -> None:
+        self._setup(namespace, registry, repositories, actions, clock, config)
+
+        # Neither given: the default single-table persister over the framework's own events
+        # table, as Java's builder makes one when no persister is set.
+        if outbox is not None:
+            self.outbox = outbox
+        else:
+            self.outbox = SingleTableJsonEventPersister(
+                registry, events if events is not None else outbox_table(MetaData())
+            )
+
+        self.changes = ChangePersister(
+            repositories
+            if isinstance(repositories, RepositoryRegistry)
+            else RepositoryRegistry(repositories),
+            self.outbox,
+        )
+
+    @classmethod
+    def builder(cls) -> ActionExecutorBuilder:
+        return ActionExecutorBuilder()
+
+    # ------------------------------------------------------------------ running
+
+    def execute[P, R](
+        self,
+        action: type[Action[P, R]],
+        params: P,
+        *,
+        principal: str | None = None,
+        config: ExecutionConfiguration | None = None,
+    ) -> R:
+        """Run one unit of work and commit what it staged.
+
+        Java's ``execute(principal, DepositMoneyAction.class, params)``: the action is named by
+        its type, and the registered instance is the one that runs.
+        """
+        running, policy = self._running(action, config)
+        name = running.name
+        retried = 0
+
+        with self._started(name, principal) as execution:
+            started_at = time.monotonic()
+            while True:
+                started = to_instant(self.clock.now())
+                # A fresh plan per attempt. If it survived a failed one, the retry would commit
+                # the first attempt's staged changes on top of its own - two deposits for one
+                # call.
+                plan = ActionPlan(self.clock)
+                try:
+                    with span("ekbatan.action.perform"), _Binding(plan):
+                        result: R = running.perform(principal, params)
+                    self._commit(name, plan, params, started, policy)
+                except BaseException as error:
+                    delay = self._retry_delay(policy, error, retried, name, execution)
+                    if delay is None:
+                        raise
+                    retried += 1
+                    time.sleep(delay)
+                else:
+                    self._succeeded(name, principal, retried, started_at, execution)
+                    return result
+
+    # ---------------------------------------------------------------- committing
+
+    def _commit(
+        self,
+        action_name: str,
+        plan: ActionPlan,
+        params: Any,
+        started: Any,
+        policy: ExecutionConfiguration,
+    ) -> None:
+        with span("ekbatan.action.persist") as persisting:
+            by_shard = self._shards_to_commit(action_name, plan, policy, persisting)
+            action_id = uuid.uuid4()
+            committed: list[ShardIdentifier] = []
+            for shard, slices in by_shard.items():
+                try:
+                    self._commit_shard(shard, slices, action_name, action_id, params, started)
+                    committed.append(shard)
+                except BaseException as error:
+                    self._partially_committed(action_name, committed, shard, error, persisting)
+                    raise
+
+    def _commit_shard(
+        self,
+        shard: ShardIdentifier,
+        staged: Mapping[type, PersistableChanges],
+        action_name: str,
+        action_id: uuid.UUID,
+        params: Any,
+        started: Any,
+    ) -> None:
+        """One shard, one transaction. What goes in it is the persister's business."""
+        with self.registry.manager(shard).transaction() as tx:
+            self.changes.persist(
+                tx,
+                staged,
+                namespace=self.namespace,
+                action_name=action_name,
+                params=params,
+                started=started,
+                completed=to_instant(self.clock.now()),
+                action_id=action_id,
+            )
 
 
 def _valid_namespace(namespace: str) -> str:

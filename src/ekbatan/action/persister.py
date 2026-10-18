@@ -32,12 +32,13 @@ __all__ = ["ChangePersister"]
 LOG = logging.getLogger("io.ekbatan.core.action.persister.ChangePersister")
 
 
-class ChangePersister:
-    """Flushes staged changes to storage, inside a transaction somebody else opened."""
+class _ChangePersisterCore:
+    """What to write and in which order - shared by :class:`ChangePersister` and
+    ``ekbatan.aio``'s ``AsyncChangePersister``, which differ only in awaiting each write."""
 
     __slots__ = ("outbox", "repositories")
 
-    def __init__(self, repositories: RepositoryRegistry, outbox: EventPersister) -> None:
+    def __init__(self, repositories: RepositoryRegistry, outbox: Any) -> None:
         if not len(repositories):
             raise ValidationError("at least one repository is required")
         self.repositories = repositories
@@ -50,6 +51,40 @@ class ChangePersister:
         route a row long before it needs one to write it, and both should fail the same way.
         """
         return self.repositories.repository(model_type)
+
+    def _writes(
+        self, changes: Mapping[type, PersistableChanges]
+    ) -> tuple[list[ModelEvent], list[tuple[Any, list[Any], list[Any]]]]:
+        """The events to record, and per model type its repository, additions and updates.
+
+        In the plan's order, which is the order the rows are written in: models first, then
+        the events they produced, all on one connection.
+        """
+        events: list[ModelEvent] = []
+        LOG.debug(
+            "Persisting %d additions, %d updates",
+            sum(len(c.additions) for c in changes.values()),
+            sum(len(c.updates) for c in changes.values()),
+        )
+        writes: list[tuple[Any, list[Any], list[Any]]] = []
+        for model_type, staged in changes.items():
+            repo = self.repository_for(model_type)
+            if issubclass(model_type, Model):
+                events += _events_of(staged.additions.values())
+                events += _events_of(staged.updates.values())
+            writes.append((repo, list(staged.additions.values()), list(staged.updates.values())))
+        return events, writes
+
+
+class ChangePersister(_ChangePersisterCore):
+    """Flushes staged changes to storage, inside a transaction somebody else opened."""
+
+    __slots__ = ()
+
+    outbox: EventPersister
+
+    def __init__(self, repositories: RepositoryRegistry, outbox: EventPersister) -> None:
+        super().__init__(repositories, outbox)
 
     def persist(
         self,
@@ -68,26 +103,16 @@ class ChangePersister:
         The shard is not a separate argument: the transaction is already on one, and two ways
         to say which would eventually disagree.
         """
-        events: list[ModelEvent] = []
-        LOG.debug(
-            "Persisting %d additions, %d updates",
-            sum(len(c.additions) for c in changes.values()),
-            sum(len(c.updates) for c in changes.values()),
-        )
-
-        for model_type, staged in changes.items():
-            repo = self.repository_for(model_type)
-            if issubclass(model_type, Model):
-                events += _events_of(staged.additions.values())
-                events += _events_of(staged.updates.values())
+        events, writes = self._writes(changes)
+        for repo, additions, updates in writes:
             # The no-result variants deliberately. What was staged is already in hand and the
             # events came off it, so nothing here reads a written row back - asking the
             # database to return every one of them would be paid on every unit of work for
             # nothing. A caller who wants the rows back calls the repository itself.
-            if staged.additions:
-                repo.add_all_no_result(list(staged.additions.values()))
-            if staged.updates:
-                repo.update_all_no_result(list(staged.updates.values()))
+            if additions:
+                repo.add_all_no_result(additions)
+            if updates:
+                repo.update_all_no_result(updates)
 
         self.outbox.persist_action_events(
             namespace,

@@ -21,7 +21,7 @@ from collections.abc import Iterable, Iterator
 from typing import Any, Self
 
 from ..errors import ValidationError
-from .action import Action
+from .action import _ActionCore
 
 __all__ = ["ActionRegistry", "ActionRegistryBuilder"]
 
@@ -38,8 +38,8 @@ class ActionRegistry:
 
     __slots__ = ("_by_type",)
 
-    def __init__(self, actions: Iterable[Action[Any, Any]] = ()) -> None:
-        self._by_type: dict[type, Action[Any, Any]] = {}
+    def __init__(self, actions: Iterable[_ActionCore[Any, Any]] = ()) -> None:
+        self._by_type: dict[type, _ActionCore[Any, Any]] = {}
         for action in actions:
             self._add(action)
 
@@ -47,7 +47,7 @@ class ActionRegistry:
     def builder(cls) -> ActionRegistryBuilder:
         return ActionRegistryBuilder()
 
-    def _add(self, action: Action[Any, Any]) -> None:
+    def _add(self, action: _ActionCore[Any, Any]) -> None:
         if isinstance(action, type):
             # The commonest way to get this wrong, and it would otherwise register the class
             # object under `type` and fail much later with nothing pointing here.
@@ -65,10 +65,14 @@ class ActionRegistry:
             )
         self._by_type[action_type] = action
 
-    def get[P, R](self, action_type: type[Action[P, R]]) -> Action[P, R]:
-        """The instance registered for this type, or a refusal naming it."""
+    def get[A: _ActionCore[Any, Any]](self, action_type: type[A]) -> A:
+        """The instance registered for this type, or a refusal naming it.
+
+        Typed by the class asked for, so the answer is that class - an ``Action`` or an
+        ``AsyncAction`` - and its ``perform`` keeps its own signature.
+        """
         try:
-            return self._by_type[action_type]
+            return self._by_type[action_type]  # type: ignore[return-value]
         except KeyError:
             raise ValidationError(
                 f"no instance of {action_type.__name__} is registered, so it cannot be run. "
@@ -84,7 +88,7 @@ class ActionRegistry:
     def __contains__(self, action_type: object) -> bool:
         return action_type in self._by_type
 
-    def __iter__(self) -> Iterator[Action[Any, Any]]:
+    def __iter__(self) -> Iterator[_ActionCore[Any, Any]]:
         return iter(self._by_type.values())
 
     def __len__(self) -> int:
@@ -101,9 +105,9 @@ class ActionRegistryBuilder:
     __slots__ = ("_actions",)
 
     def __init__(self) -> None:
-        self._actions: list[Action[Any, Any]] = []
+        self._actions: list[_ActionCore[Any, Any]] = []
 
-    def with_action(self, action: Action[Any, Any]) -> Self:
+    def with_action(self, action: _ActionCore[Any, Any]) -> Self:
         """Register one instance, keyed by its own type.
 
         The type is not passed alongside it. Java needs the class token because that is how it
@@ -113,7 +117,7 @@ class ActionRegistryBuilder:
         self._actions.append(action)
         return self
 
-    def with_actions(self, actions: Iterable[Action[Any, Any]]) -> Self:
+    def with_actions(self, actions: Iterable[_ActionCore[Any, Any]]) -> Self:
         """Register a collection - for a container that has already gathered them."""
         self._actions.extend(actions)
         return self

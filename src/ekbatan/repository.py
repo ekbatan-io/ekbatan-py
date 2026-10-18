@@ -61,7 +61,7 @@ from .errors import (
 )
 from .fetching import Db
 from .ids import TypedValue
-from .persistence import DatabaseRegistry, TransactionManager
+from .persistence import DatabaseRegistry, _ShardRegistry
 from .sharding import NoShardingStrategy, ShardIdentifier, ShardingStrategy
 
 __all__ = [
@@ -77,6 +77,12 @@ _PRIOR = "_prior_version"
 
 #: Large enough that SQLAlchemy never pages a RETURNING insert of its own accord.
 _NO_PAGING = 1_000_000
+
+#: SQLAlchemy otherwise splits a RETURNING insert into pages of a thousand rows. That is a
+#: batching decision, and batching is the caller's - three pages outside a transaction are three
+#: commits, so a failure on the third would leave two thirds written from a split nobody asked
+#: for. One statement, or the server's parameter ceiling, same as the other port.
+_ONE_STATEMENT = {"insertmanyvalues_page_size": _NO_PAGING}
 
 
 def _no_row_mapping(target: type, missing: Sequence[str]) -> str:
@@ -181,14 +187,17 @@ class Repository[M: Persistable[Any, Any]](Protocol):
     def all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
 
 
-class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
-    """Rows of one table, as models - Java's ``AbstractRepository``.
+class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
+    """Everything a repository is apart from waiting on the database - shared by
+    :class:`AbstractRepository` and ``ekbatan.aio``'s ``AbstractAsyncRepository``.
 
-    Abstract for Java's reason: ``to_row`` and ``from_row`` are the repository's to write, and a
-    repository without them cannot be created at all - the nearest this language comes to the
-    compile error Java gives. Applications extend :class:`ModelRepository` or
-    :class:`EntityRepository`, which say which kind of thing the table holds.
+    The construction checks, the mapping, the shard routing, the soft-delete filter, every
+    statement and what its answer means: one copy. A subclass adds only the methods that run a
+    statement, and those are the only lines in which the sync and async repositories differ.
     """
+
+    #: Named in the refusal a half-written subclass gets.
+    _EXTEND = "ModelRepository or EntityRepository"
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         # Python's own refusal names the missing methods and stops there. This one names them and
@@ -199,7 +208,7 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
                 raise TypeError(_no_row_mapping(cls, missing))
             raise TypeError(
                 f"{cls.__name__} cannot be created: it does not implement {', '.join(missing)}. "
-                f"Extend ModelRepository or EntityRepository, which implement everything but "
+                f"Extend {cls._EXTEND}, which implement everything but "
                 f"to_row and from_row."
             )
         return super().__new__(cls)
@@ -208,7 +217,7 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
         self,
         model_type: type[M],
         table: Table,
-        registry: DatabaseRegistry,
+        registry: _ShardRegistry[Any],
         *,
         sharding: ShardingStrategy | None = None,
         clock: Clock | None = None,
@@ -353,159 +362,14 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
             raise CrossShardError(first, second)
         return shards.pop()
 
-    @contextmanager
-    def db(
-        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Db]:
-        """A writer connection for one shard, outside any transaction. Each statement commits.
-
-        It does **not** join an open transaction. That is occasionally what you want - a write
-        that must survive the surrounding rollback, an audit row - and almost always not, so
-        reach for :meth:`tx_db_else_db` unless you specifically mean to be outside. Writing to
-        a row your own open transaction already holds will also block until one of them gives
-        up, which is the other reason this is the deliberate choice rather than the default.
-        """
-        with Db(self._manager(key, model, shard).primary).execution_options(
-            isolation_level="AUTOCOMMIT"
-        ) as conn:
-            yield conn
-
-    def dbs(self) -> Iterator[tuple[ShardIdentifier, Db]]:
-        """Every shard's writer, one at a time, outside any transaction.
-
-        An unsharded repository visits **only the default shard**, even when the registry holds
-        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
-        repository that opted out of sharding would still scatter across every database a
-        sibling repository happens to use.
-
-        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
-        """
-        shards = (
-            (self.registry.default_shard,)
-            if isinstance(self.sharding, NoShardingStrategy)
-            else self.registry.shards
-        )
-        for shard in shards:
-            with self.db(shard=shard) as conn:
-                yield shard, conn
-
-    @contextmanager
-    def _reader(
-        self, *, key: K | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Db]:
-        """What every built-in read uses: :meth:`db` - the **primary**, outside any transaction.
-
-        Exactly Java's: ``findById``, ``findAll``, ``existsById``, ``count`` and the rest go to
-        ``db()``, which never joins an open transaction. So a built-in read inside a
-        transaction does **not** see that transaction's uncommitted writes, and takes a second
-        connection from the pool while the transaction holds the first. A read that must see
-        them is a query of your own on :meth:`tx_db_else_db`.
-
-        Private, because it is not a choice - it is the framework reading on your behalf. The
-        public accessors are where *you* choose, and :meth:`readonly_db` is how you say you can
-        live with lag.
-        """
-        with self.db(key=key, shard=shard) as conn:
-            yield conn
-
-    def _readers(self) -> Iterator[tuple[ShardIdentifier, Db]]:
-        """Every shard's primary - the scatter counterpart to :meth:`_reader`.
-
-        An unsharded repository visits **only the default shard**, even when the registry holds
-        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
-        repository that opted out of sharding would still scatter across every database a
-        sibling repository happens to use.
-
-        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
-        """
-        shards = (
-            (self.registry.default_shard,)
-            if isinstance(self.sharding, NoShardingStrategy)
-            else self.registry.shards
-        )
-        for shard in shards:
-            with self._reader(shard=shard) as conn:
-                yield shard, conn
-
-    @contextmanager
-    def readonly_db(
-        self, *, key: K | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Db]:
-        """The **replica**, for a read that can live with replication lag.
-
-        The same meaning as Java's ``readonlyDb()``, including the fallback: a shard with no
-        replica configured hands back its primary, so this is always safe to call.
-
-        Choosing it is the caller's, and deliberately so. A replica answers with what it has
-        replicated so far, so a read that follows a write of the same row can come back empty.
-        Whether that matters is something only the caller knows - if you care, use :meth:`db`;
-        if you do not, use this. The framework does not guess on your behalf.
-
-        It does **not** join an open transaction, and that is deliberate rather than an
-        oversight: a replica has not seen what the open transaction wrote, so joining would
-        be a promise this connection cannot keep. Java's ``readonlyDb()`` is a plain context
-        on the secondary for the same reason. If you need to see the transaction's own writes,
-        that is what :meth:`tx_db_else_db` is for.
-        """
-        with Db(self._manager(key, None, shard).replica).execution_options(
-            isolation_level="AUTOCOMMIT"
-        ) as conn:
-            yield conn
-
-    def readonly_dbs(self) -> Iterator[tuple[ShardIdentifier, Db]]:
-        """Every shard's **replica**, one at a time.
-
-        An unsharded repository visits **only the default shard**, even when the registry holds
-        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
-        repository that opted out of sharding would still scatter across every database a
-        sibling repository happens to use.
-
-        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
-        """
-        shards = (
-            (self.registry.default_shard,)
-            if isinstance(self.sharding, NoShardingStrategy)
-            else self.registry.shards
-        )
-        for shard in shards:
-            with self.readonly_db(shard=shard) as conn:
-                yield shard, conn
-
-    def tx_db(
-        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
-    ) -> Db | None:
-        """The transaction already open on this shard, or ``None``.
-
-        For code that must behave differently depending on whether it is inside one. Most code
-        should not care, and should call :meth:`tx_db_else_db`.
-        """
-        return self._manager(key, model, shard).current()
-
-    @contextmanager
-    def tx_db_else_db(
-        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
-    ) -> Iterator[Db]:
-        """The transaction open on this shard, or no transaction at all if there is none.
-
-        What every built-in write uses, and what a subclass writing its own query should use
-        when it must see what the open transaction wrote - the built-in reads do not, as
-        Java's do not. Inside a unit of work it joins, outside one each statement commits itself.
-
-        It never opens one. A framework that opened a transaction here would be deciding what
-        is atomic on the caller's behalf, and getting it wrong in both directions - wrapping a
-        single statement that needed nothing, and quietly making a multi-statement call atomic
-        so that nobody noticed it had become one.
-        """
-        with self._manager(key, model, shard).connection() as conn:
-            yield conn
-
     def dialect(self, *, shard: ShardIdentifier | None = None) -> str:
         """Which database this shard speaks, for the rare query that has to differ.
 
         Reach for it sparingly. A dialect difference visible in a repository is one the
         framework failed to hide, and the next dialect will need the same branch again.
         """
-        return self._manager(None, None, shard).dialect
+        dialect: str = self._manager(None, None, shard).dialect
+        return dialect
 
     def id_matches(self, key: K) -> Any:
         """``id = ?``, with a typed id unwrapped on the way to the column.
@@ -525,9 +389,9 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
                 f"{self.table.name} has no column {name!r}; it has {sorted(self.table.c.keys())}"
             ) from None
 
-    def _manager(
-        self, key: K | None, model: M | None, shard: ShardIdentifier | None
-    ) -> TransactionManager:
+    def _manager(self, key: K | None, model: M | None, shard: ShardIdentifier | None) -> Any:
+        """The manager for whichever of shard, row or id was given - a sync one or an async
+        one, as the registry holds."""
         if shard is not None:
             return self.registry.manager(self.registry.effective_shard(shard))
         if model is not None:
@@ -559,44 +423,6 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
             return criteria
         return (self.state_column != DELETED, *criteria)
 
-    # ------------------------------------------------------------------ reads
-
-    def find(self, key: K) -> M | None:
-        """The row, or ``None``. The lookup that treats absence as ordinary."""
-        stmt = select(self.table).where(*self._live(self.id_column == _to_column(key)))
-        with self._reader(key=key) as conn:
-            row = conn.execute(stmt).first()
-        return self.from_row(row) if row is not None else None
-
-    def get(self, key: K) -> M:
-        """The row, or raise. The lookup for callers that cannot continue without it."""
-        found = self.find(key)
-        if found is None:
-            raise EntityNotFoundError(self.model_type.__name__, key)
-        return found
-
-    def find_many(self, keys: Iterable[K]) -> list[M]:
-        """The rows that exist, in no promised order.
-
-        Duplicates are collapsed before the query - asking twice for the same id is a caller's
-        accident, not an instruction to fetch it twice. An empty input is an empty result:
-        never ``IN ()``, and never an accidental full-table read.
-        """
-        unique = list(dict.fromkeys(_to_column(k) for k in keys))
-        if not unique:
-            return []
-
-        by_shard: dict[ShardIdentifier, list[Any]] = {}
-        for key in unique:
-            by_shard.setdefault(self.shard_for(key), []).append(key)
-
-        found: list[M] = []
-        for shard, shard_keys in by_shard.items():
-            with self._reader(shard=shard) as conn:
-                stmt = select(self.table).where(*self._live(self._id_among(conn, shard_keys)))
-                found += [self.from_row(r) for r in conn.execute(stmt)]
-        return found
-
     def _id_among(self, conn: Any, keys: Sequence[Any]) -> Any:
         """``id = ANY(:array)`` on Postgres, ``id IN (…)`` elsewhere.
 
@@ -613,187 +439,8 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
             return self.id_column == any_(literal(list(keys), ARRAY(self.id_column.type)))
         return self.id_column.in_(keys)
 
-    def find_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
-    ) -> list[M]:
-        stmt = select(self.table).where(*self._live(*criteria))
-        return [self.from_row(r) for r in self._read(stmt, shard)]
-
-    def find_one_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
-    ) -> M | None:
-        """The one row matching, or ``None``. For a predicate you believe is unique.
-
-        Stops at the first shard that answers, so a lookup by email across sixteen shards is
-        one query when it is lucky rather than sixteen every time.
-
-        A shard holding two matches is refused rather than resolved. Picking one would be
-        picking arbitrarily, and whoever wrote a predicate they thought was unique is exactly
-        the person who will not notice that it was not.
-        """
-        # Two, not one: a query for a single row can never report that there was a second.
-        stmt = select(self.table).where(*self._live(*criteria)).limit(2)
-        for conn in self._one_or_every(shard):
-            rows = list(conn.execute(stmt))
-            if len(rows) > 1:
-                raise ValidationError(
-                    f"find_one_where matched more than one {self.model_type.__name__}: the "
-                    f"predicate is not unique. Use find_where when several rows are expected."
-                )
-            if rows:
-                return self.from_row(rows[0])
-        return None
-
-    def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Db]:
-        """The shard named, or every shard lazily, so a caller can stop at the first answer."""
-        if shard is not None:
-            with self._reader(shard=shard) as conn:
-                yield conn
-        else:
-            for _, conn in self._readers():
-                yield conn
-
-    def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
-        return self.find_where(shard=shard)
-
-    def exists(self, key: K) -> bool:
-        stmt = self._presence(self.id_column == _to_column(key))
-        with self._reader(key=key) as conn:
-            return conn.execute(stmt).first() is not None
-
-    def exists_where(
-        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
-    ) -> bool:
-        """Whether any row matches - which is not the same question as how many do.
-
-        Counting reads every matching row to answer yes or no. On a predicate matching a
-        million rows that is a million rows of work for one bit of information, and it is the
-        shape a "does this customer have any orders" check most often takes.
-        """
-        stmt = self._presence(*criteria)
-        if shard is not None:
-            with self._reader(shard=shard) as conn:
-                return conn.execute(stmt).first() is not None
-        return any(conn.execute(stmt).first() is not None for _, conn in self._readers())
-
     def _presence(self, *criteria: ColumnElement[bool]) -> Any:
         return select(literal(1)).select_from(self.table).where(*self._live(*criteria)).limit(1)
-
-    def count(self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None) -> int:
-        stmt = select(func.count()).select_from(self.table).where(*self._live(*criteria))
-        return sum(int(r[0]) for r in self._read(stmt, shard))
-
-    def _read(self, stmt: Any, shard: ShardIdentifier | None) -> list[Row[Any]]:
-        """Run a read on one shard, or on every shard when none is named.
-
-        A caller holding an id gets routing for free. A caller with a predicate does not - the
-        predicate says nothing about where its rows live - so this fans out, and the caller
-        that knows better narrows it with ``shard=``.
-        """
-        if shard is not None:
-            with self._reader(shard=shard) as conn:
-                return list(conn.execute(stmt))
-        return [row for _, conn in self._readers() for row in conn.execute(stmt)]
-
-    # ----------------------------------------------------------------- writes
-
-    def add(self, model: M) -> M:
-        """Insert one row and hand back what the database now holds."""
-        return self.add_all([self._one(model)])[0]
-
-    def add_no_result(self, model: M) -> None:
-        """Insert one row without reading it back."""
-        self.add_all_no_result([self._one(model)])
-
-    def add_all(self, models: Sequence[M]) -> list[M]:
-        """Insert, one statement however many rows there are, and read the rows back.
-
-        Reading back is ``RETURNING`` where the dialect has it, so it costs no extra round
-        trip - but it does put every inserted row on the wire, which for a large batch is real
-        money. That is what :meth:`add_all_no_result` is for: same write, no result set. The
-        choice is the caller's, because only the caller knows whether anything is going to look
-        at the rows.
-
-        Where there is no ``RETURNING`` - MySQL - the staged values come back instead, rebuilt
-        through the same readers a query would use, so the two paths differ only in whether a
-        server-side default or trigger is visible. Java takes the same branch
-        (``if MYSQL: insert.execute(); return List.copyOf(domainObjects)``) and does not need
-        the rebuild, because there a typed id is the only thing that compiles. Here a raw
-        ``uuid4()`` passed where an ``Id[Notification]`` belongs would otherwise come back raw on
-        MySQL and wrapped on every other database - the same call, two shapes.
-        """
-        if not self._all(models):
-            return []
-        shard = self.shard_of_all(models)
-        stamped = list(models)
-        rows = [self.to_row(m) for m in stamped]
-
-        with self.tx_db_else_db(shard=shard) as conn:
-            if conn.dialect.insert_returning:
-                written = conn.execute(
-                    insert(self.table).returning(self.table, sort_by_parameter_order=True),
-                    rows,
-                    # SQLAlchemy otherwise splits a RETURNING insert into pages of a thousand
-                    # rows. That is a batching decision, and batching is the caller's - three
-                    # pages outside a transaction are three commits, so a failure on the third
-                    # would leave two thirds written from a split nobody asked for. One
-                    # statement, or the server's parameter ceiling, same as the other port.
-                    execution_options={"insertmanyvalues_page_size": _NO_PAGING},
-                )
-                return [self.from_row(r) for r in written]
-            conn.execute(insert(self.table), rows)
-        return [self.from_row(r) for r in rows]
-
-    def add_all_no_result(self, models: Sequence[M]) -> None:
-        """Insert without reading anything back.
-
-        For the thousand-row import whose rows nobody is going to read. Never asks for
-        ``RETURNING``, so nothing crosses the wire on the way home.
-        """
-        if not self._all(models):
-            return
-        with self._writing("BATCH_INSERT", len(models)):
-            shard = self.shard_of_all(models)
-            rows = [self.to_row(m) for m in models]
-            with self.tx_db_else_db(shard=shard) as conn:
-                conn.execute(insert(self.table), rows)
-
-    def update(self, model: M) -> M:
-        """Update one row under the optimistic lock, and hand back what the database holds."""
-        return self.update_all([self._one(model)])[0]
-
-    def update_no_result(self, model: M) -> None:
-        self.update_all_no_result([self._one(model)])
-
-    def update_all(self, models: Sequence[M]) -> list[M]:
-        """Update under the optimistic lock and read the rows back.
-
-        **One statement**, however many rows. Not ``executemany``: SQLAlchemy rewrites a
-        batched INSERT into a single multi-row statement, but there is no equivalent for
-        UPDATE - an executemany there is N statements and N server-side plans, pipelined at
-        best. So the batch becomes one derived table joined against the target.
-
-        One statement is also all this framework will send. Splitting a batch that exceeds the
-        server's parameter ceiling - 65535 binds on Postgres, a packet size on MySQL - is the
-        caller's, because only the caller knows what the pieces mean if one of them fails.
-
-        If the affected count is short, someone else got there first and the call raises. Inside
-        a unit of work that rolls the whole thing back. Outside one there is no transaction to
-        roll back and the statement has already committed what it matched, so a caller batching
-        by hand takes that on: it is the same on both ports, and the reason to run a batch
-        inside a unit of work when the pieces belong together. The count is trustworthy because
-        every row's version changes, so no row can be reported unaffected for having been
-        written its own values.
-        """
-        written = self._apply_updates(self._all(models), read_back=True)
-        return written if written is not None else []
-
-    def update_all_no_result(self, models: Sequence[M]) -> None:
-        """Update without reading anything back."""
-        if not self._all(models):
-            return
-        with self._writing("BATCH_UPDATE", len(models)):
-            self._apply_updates(models, read_back=False)
 
     def _kind(self) -> str:
         """Java's ``getDomainTypeName()``: what its null messages call the row."""
@@ -837,62 +484,6 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
             },
         ):
             yield
-
-    def _apply_updates(self, models: Sequence[M], *, read_back: bool) -> list[M] | None:
-        if not models:
-            return [] if read_back else None
-        shard = self.shard_of_all(models)
-        stamped = [self._next_version(m) for m in models]
-
-        with self.tx_db_else_db(shard=shard) as conn:
-            returning = read_back and conn.dialect.update_returning
-            written: list[Row[Any]] = []
-            affected = 0
-
-            if len(stamped) == 1:
-                stmt = self._single_update(returning=returning)
-                result = conn.execute(stmt, self._bind(stamped[0]))
-                if returning:
-                    written = list(result)
-                    affected = len(written)
-                else:
-                    affected = result.rowcount
-            else:
-                written, affected = self._batch_update(conn, stamped, returning=returning)
-
-            if affected > len(stamped):
-                # Not a lost race, and so deliberately not a StaleRecordError: the executor
-                # retries those, and retrying this would only burn the attempt. An update
-                # keyed on `id = ? AND version = ?` cannot match twice unless the primary key
-                # is not unique. Java raises IllegalStateException here for the same reason.
-                raise EkbatanError(
-                    f"updating {len(stamped)} {self.model_type.__name__} row(s) matched "
-                    f"{affected}; `id` is not unique in {self.table.name}"
-                )
-            if affected < len(stamped):
-                # Inside a unit of work this rolls the whole thing back. Outside one the
-                # statement has already committed whatever it matched - there is no
-                # transaction here to undo it, by design.
-                raise StaleRecordError(
-                    f"expected to update {len(stamped)} {self.model_type.__name__} row(s) "
-                    f"but matched {affected}; one was concurrently modified or is gone",
-                    model=self.model_type.__name__,
-                )
-
-        if not read_back:
-            return None
-        if not returning:
-            # Rebuilt through the same readers a query would use, not handed back as it came
-            # in. Without this, MySQL - which has no `UPDATE ... RETURNING` - returns the very
-            # object the caller passed, still carrying the events it was about to have
-            # persisted, and the next update writes them a second time. Every other dialect
-            # returns a row, and a row has no events. `add_all` takes the same care for the
-            # same reason.
-            return [self.from_row(self.to_row(m)) for m in stamped]
-        # RETURNING makes no promise about order, and a caller handing in a list expects the
-        # same list back.
-        by_id = {row._mapping[self.id_column.name]: row for row in written}
-        return [self.from_row(by_id[self.to_row(m)[self.id_column.name]]) for m in stamped]
 
     # --------------------------------------------------------------- internals
 
@@ -939,49 +530,6 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
             "_prior": model.version - 1,
             **{f"_v_{k}": v for k, v in row.items() if k != self.id_column.name},
         }
-
-    def _batch_update(
-        self, conn: Any, models: Sequence[M], *, returning: bool = False
-    ) -> tuple[list[Row[Any]], int]:
-        """One UPDATE for the whole batch, joined against a derived table of the new values.
-
-        Two shapes, because the dialects genuinely differ. Postgres has a ``VALUES`` table
-        constructor with named columns and its planner reads one scan node from it. MySQL's
-        equivalent needs ``VALUES ROW(...)`` and only from 8.0.19, and SQLite's cannot be given
-        column names at all - so everything else gets a ``UNION ALL`` of selects, which every
-        version of every one of them understands.
-
-        Every value is bound against its target column's type, never inferred from the value's
-        runtime class. Inference is how a timestamp acquires a zone it never had and the
-        database shifts it by the session offset - invisibly, and only outside UTC.
-        """
-        if conn.dialect.name == "postgresql":
-            stmt = self._values_update(models)
-            return self._run_update(conn, stmt, None, returning)
-
-        # Building a 500-row UNION ALL costs about 25ms, against 5ms for the VALUES form, so
-        # one is composed per batch size and then only re-bound. A service that writes the
-        # same shapes repeatedly pays that cost once; the cache is capped so a caller passing
-        # a different length every time cannot grow it without bound.
-        size = len(models)
-        stmt = self._union_stmts.get((size, returning))
-        if stmt is None:
-            stmt = self._union_update(size)
-            if returning:
-                stmt = stmt.returning(self.table)
-            if len(self._union_stmts) < 32:
-                self._union_stmts[(size, returning)] = stmt
-        return self._run_update(conn, stmt, self._union_binds(models), returning)
-
-    def _run_update(
-        self, conn: Any, stmt: Any, binds: dict[str, Any] | None, returning: bool
-    ) -> tuple[list[Row[Any]], int]:
-        stmt = stmt.returning(self.table) if returning and binds is None else stmt
-        result = conn.execute(stmt) if binds is None else conn.execute(stmt, binds)
-        if returning:
-            rows = list(result)
-            return rows, len(rows)
-        return [], int(result.rowcount)
 
     def _derived_types(self) -> dict[str, Any]:
         return {_PRIOR: self.table.c.version.type} | {
@@ -1052,6 +600,488 @@ class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC):
             for name in self._columns:
                 binds[f"b{i}_{name}"] = row[name]
         return binds
+
+    # ------------------------------------------- what a read or a write is, before it runs
+    #
+    # Everything below decides *what* to send and *what the answer means*, and runs nothing.
+    # The sync repository here and the async one in ``ekbatan.aio`` both call these, so the
+    # statements, the routing and the optimistic-lock rules exist once; the two differ only in
+    # whether they await the connection.
+
+    def _scatter_shards(self) -> tuple[ShardIdentifier, ...]:
+        """The shards a read with no shard named visits.
+
+        An unsharded repository visits **only the default shard**, even when the registry holds
+        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
+        repository that opted out of sharding would still scatter across every database a
+        sibling repository happens to use.
+        """
+        if isinstance(self.sharding, NoShardingStrategy):
+            return (self.registry.default_shard,)
+        return tuple(self.registry.shards)
+
+    def _by_id(self, key: K) -> Any:
+        """``SELECT … WHERE id = ?`` on a live row."""
+        return select(self.table).where(*self._live(self.id_column == _to_column(key)))
+
+    def _where(self, *criteria: ColumnElement[bool]) -> Any:
+        """``SELECT … WHERE …`` on live rows."""
+        return select(self.table).where(*self._live(*criteria))
+
+    def _found(self, found: M | None, key: K) -> M:
+        """What ``get`` makes of ``find``'s answer: the row, or a refusal naming it."""
+        if found is None:
+            raise EntityNotFoundError(self.model_type.__name__, key)
+        return found
+
+    def _insert_rows(self, models: Sequence[M]) -> tuple[ShardIdentifier, list[dict[str, Any]]]:
+        """The shard a batch goes to, and its rows."""
+        return self.shard_of_all(models), [self.to_row(m) for m in models]
+
+    def _insert_returning(self) -> Any:
+        """An insert that reads its rows back. Run it with ``execution_options=_ONE_STATEMENT``."""
+        return insert(self.table).returning(self.table, sort_by_parameter_order=True)
+
+    def _stamped(self, models: Sequence[M]) -> tuple[ShardIdentifier, list[M]]:
+        """The shard a batch of updates goes to, and each row one version on."""
+        return self.shard_of_all(models), [self._next_version(m) for m in models]
+
+    def _update_statement(
+        self, dialect: str, stamped: Sequence[M], *, returning: bool
+    ) -> tuple[Any, dict[str, Any] | None]:
+        """The one UPDATE for a batch, and its binds - ``None`` when they are in the statement.
+
+        One row: ``UPDATE … WHERE id = ? AND version = ?``, built once and re-bound. More: one
+        UPDATE joined against a derived table of the new values - see :meth:`_values_update`
+        and :meth:`_union_update` for why there are two shapes.
+        """
+        if len(stamped) == 1:
+            return self._single_update(returning=returning), self._bind(stamped[0])
+        if dialect == "postgresql":
+            stmt = self._values_update(stamped)
+            return (stmt.returning(self.table) if returning else stmt), None
+
+        # Building a 500-row UNION ALL costs about 25ms, against 5ms for the VALUES form, so
+        # one is composed per batch size and then only re-bound. A service that writes the
+        # same shapes repeatedly pays that cost once; the cache is capped so a caller passing
+        # a different length every time cannot grow it without bound.
+        size = len(stamped)
+        stmt = self._union_stmts.get((size, returning))
+        if stmt is None:
+            stmt = self._union_update(size)
+            if returning:
+                stmt = stmt.returning(self.table)
+            if len(self._union_stmts) < 32:
+                self._union_stmts[(size, returning)] = stmt
+        return stmt, self._union_binds(stamped)
+
+    def _checked(self, result: Any, stamped: Sequence[M], *, returning: bool) -> list[Row[Any]]:
+        """The rows an UPDATE returned, once the optimistic lock has been checked against it.
+
+        Takes the driver's result, already in hand: a sync connection and an async one both
+        give back a buffered result here, so reading it waits on nothing.
+        """
+        written: list[Row[Any]] = list(result) if returning else []
+        affected = len(written) if returning else int(result.rowcount)
+        if affected > len(stamped):
+            # Not a lost race, and so deliberately not a StaleRecordError: the executor
+            # retries those, and retrying this would only burn the attempt. An update
+            # keyed on `id = ? AND version = ?` cannot match twice unless the primary key
+            # is not unique. Java raises IllegalStateException here for the same reason.
+            raise EkbatanError(
+                f"updating {len(stamped)} {self.model_type.__name__} row(s) matched "
+                f"{affected}; `id` is not unique in {self.table.name}"
+            )
+        if affected < len(stamped):
+            # Inside a unit of work this rolls the whole thing back. Outside one the
+            # statement has already committed whatever it matched - there is no
+            # transaction here to undo it, by design.
+            raise StaleRecordError(
+                f"expected to update {len(stamped)} {self.model_type.__name__} row(s) "
+                f"but matched {affected}; one was concurrently modified or is gone",
+                model=self.model_type.__name__,
+            )
+        return written
+
+    def _updated(
+        self, stamped: Sequence[M], written: list[Row[Any]], *, read_back: bool, returning: bool
+    ) -> list[M] | None:
+        """What an update hands back: nothing, the returned rows, or the staged ones rebuilt."""
+        if not read_back:
+            return None
+        if not returning:
+            # Rebuilt through the same readers a query would use, not handed back as it came
+            # in. Without this, MySQL - which has no `UPDATE ... RETURNING` - returns the very
+            # object the caller passed, still carrying the events it was about to have
+            # persisted, and the next update writes them a second time. Every other dialect
+            # returns a row, and a row has no events. `add_all` takes the same care for the
+            # same reason.
+            return [self.from_row(self.to_row(m)) for m in stamped]
+        # RETURNING makes no promise about order, and a caller handing in a list expects the
+        # same list back.
+        by_id = {row._mapping[self.id_column.name]: row for row in written}
+        return [self.from_row(by_id[self.to_row(m)[self.id_column.name]]) for m in stamped]
+
+
+class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Repository[M]):
+    """Rows of one table, as models - Java's ``AbstractRepository``.
+
+    Abstract for Java's reason: ``to_row`` and ``from_row`` are the repository's to write, and a
+    repository without them cannot be created at all - the nearest this language comes to the
+    compile error Java gives. Applications extend :class:`ModelRepository` or
+    :class:`EntityRepository`, which say which kind of thing the table holds.
+    """
+
+    registry: DatabaseRegistry
+
+    @contextmanager
+    def db(
+        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Db]:
+        """A writer connection for one shard, outside any transaction. Each statement commits.
+
+        It does **not** join an open transaction. That is occasionally what you want - a write
+        that must survive the surrounding rollback, an audit row - and almost always not, so
+        reach for :meth:`tx_db_else_db` unless you specifically mean to be outside. Writing to
+        a row your own open transaction already holds will also block until one of them gives
+        up, which is the other reason this is the deliberate choice rather than the default.
+        """
+        with Db(self._manager(key, model, shard).primary).execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
+            yield conn
+
+    def dbs(self) -> Iterator[tuple[ShardIdentifier, Db]]:
+        """Every shard's writer, one at a time, outside any transaction.
+
+        An unsharded repository visits **only the default shard**, even when the registry holds
+        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
+        repository that opted out of sharding would still scatter across every database a
+        sibling repository happens to use.
+
+        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
+        """
+        for shard in self._scatter_shards():
+            with self.db(shard=shard) as conn:
+                yield shard, conn
+
+    @contextmanager
+    def _reader(
+        self, *, key: K | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Db]:
+        """What every built-in read uses: :meth:`db` - the **primary**, outside any transaction.
+
+        Exactly Java's: ``findById``, ``findAll``, ``existsById``, ``count`` and the rest go to
+        ``db()``, which never joins an open transaction. So a built-in read inside a
+        transaction does **not** see that transaction's uncommitted writes, and takes a second
+        connection from the pool while the transaction holds the first. A read that must see
+        them is a query of your own on :meth:`tx_db_else_db`.
+
+        Private, because it is not a choice - it is the framework reading on your behalf. The
+        public accessors are where *you* choose, and :meth:`readonly_db` is how you say you can
+        live with lag.
+        """
+        with self.db(key=key, shard=shard) as conn:
+            yield conn
+
+    def _readers(self) -> Iterator[tuple[ShardIdentifier, Db]]:
+        """Every shard's primary - the scatter counterpart to :meth:`_reader`.
+
+        An unsharded repository visits **only the default shard**, even when the registry holds
+        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
+        repository that opted out of sharding would still scatter across every database a
+        sibling repository happens to use.
+
+        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
+        """
+        for shard in self._scatter_shards():
+            with self._reader(shard=shard) as conn:
+                yield shard, conn
+
+    @contextmanager
+    def readonly_db(
+        self, *, key: K | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Db]:
+        """The **replica**, for a read that can live with replication lag.
+
+        The same meaning as Java's ``readonlyDb()``, including the fallback: a shard with no
+        replica configured hands back its primary, so this is always safe to call.
+
+        Choosing it is the caller's, and deliberately so. A replica answers with what it has
+        replicated so far, so a read that follows a write of the same row can come back empty.
+        Whether that matters is something only the caller knows - if you care, use :meth:`db`;
+        if you do not, use this. The framework does not guess on your behalf.
+
+        It does **not** join an open transaction, and that is deliberate rather than an
+        oversight: a replica has not seen what the open transaction wrote, so joining would
+        be a promise this connection cannot keep. Java's ``readonlyDb()`` is a plain context
+        on the secondary for the same reason. If you need to see the transaction's own writes,
+        that is what :meth:`tx_db_else_db` is for.
+        """
+        with Db(self._manager(key, None, shard).replica).execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
+            yield conn
+
+    def readonly_dbs(self) -> Iterator[tuple[ShardIdentifier, Db]]:
+        """Every shard's **replica**, one at a time.
+
+        An unsharded repository visits **only the default shard**, even when the registry holds
+        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
+        repository that opted out of sharding would still scatter across every database a
+        sibling repository happens to use.
+
+        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
+        """
+        for shard in self._scatter_shards():
+            with self.readonly_db(shard=shard) as conn:
+                yield shard, conn
+
+    def tx_db(
+        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
+    ) -> Db | None:
+        """The transaction already open on this shard, or ``None``.
+
+        For code that must behave differently depending on whether it is inside one. Most code
+        should not care, and should call :meth:`tx_db_else_db`.
+        """
+        current: Db | None = self._manager(key, model, shard).current()
+        return current
+
+    @contextmanager
+    def tx_db_else_db(
+        self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
+    ) -> Iterator[Db]:
+        """The transaction open on this shard, or no transaction at all if there is none.
+
+        What every built-in write uses, and what a subclass writing its own query should use
+        when it must see what the open transaction wrote - the built-in reads do not, as
+        Java's do not. Inside a unit of work it joins, outside one each statement commits itself.
+
+        It never opens one. A framework that opened a transaction here would be deciding what
+        is atomic on the caller's behalf, and getting it wrong in both directions - wrapping a
+        single statement that needed nothing, and quietly making a multi-statement call atomic
+        so that nobody noticed it had become one.
+        """
+        with self._manager(key, model, shard).connection() as conn:
+            yield conn
+
+    # ------------------------------------------------------------------ reads
+
+    def find(self, key: K) -> M | None:
+        """The row, or ``None``. The lookup that treats absence as ordinary."""
+        stmt = self._by_id(key)
+        with self._reader(key=key) as conn:
+            row = conn.execute(stmt).first()
+        return self.from_row(row) if row is not None else None
+
+    def get(self, key: K) -> M:
+        """The row, or raise. The lookup for callers that cannot continue without it."""
+        return self._found(self.find(key), key)
+
+    def find_many(self, keys: Iterable[K]) -> list[M]:
+        """The rows that exist, in no promised order.
+
+        Duplicates are collapsed before the query - asking twice for the same id is a caller's
+        accident, not an instruction to fetch it twice. An empty input is an empty result:
+        never ``IN ()``, and never an accidental full-table read.
+        """
+        unique = list(dict.fromkeys(_to_column(k) for k in keys))
+        if not unique:
+            return []
+
+        by_shard: dict[ShardIdentifier, list[Any]] = {}
+        for key in unique:
+            by_shard.setdefault(self.shard_for(key), []).append(key)
+
+        found: list[M] = []
+        for shard, shard_keys in by_shard.items():
+            with self._reader(shard=shard) as conn:
+                stmt = select(self.table).where(*self._live(self._id_among(conn, shard_keys)))
+                found += [self.from_row(r) for r in conn.execute(stmt)]
+        return found
+
+    def find_where(
+        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    ) -> list[M]:
+        stmt = self._where(*criteria)
+        return [self.from_row(r) for r in self._read(stmt, shard)]
+
+    def find_one_where(
+        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    ) -> M | None:
+        """The one row matching, or ``None``. For a predicate you believe is unique.
+
+        Stops at the first shard that answers, so a lookup by email across sixteen shards is
+        one query when it is lucky rather than sixteen every time.
+
+        A shard holding two matches is refused rather than resolved. Picking one would be
+        picking arbitrarily, and whoever wrote a predicate they thought was unique is exactly
+        the person who will not notice that it was not.
+        """
+        # Two, not one: a query for a single row can never report that there was a second.
+        stmt = select(self.table).where(*self._live(*criteria)).limit(2)
+        for conn in self._one_or_every(shard):
+            rows = list(conn.execute(stmt))
+            if len(rows) > 1:
+                raise ValidationError(
+                    f"find_one_where matched more than one {self.model_type.__name__}: the "
+                    f"predicate is not unique. Use find_where when several rows are expected."
+                )
+            if rows:
+                return self.from_row(rows[0])
+        return None
+
+    def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Db]:
+        """The shard named, or every shard lazily, so a caller can stop at the first answer."""
+        if shard is not None:
+            with self._reader(shard=shard) as conn:
+                yield conn
+        else:
+            for _, conn in self._readers():
+                yield conn
+
+    def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
+        return self.find_where(shard=shard)
+
+    def exists(self, key: K) -> bool:
+        stmt = self._presence(self.id_column == _to_column(key))
+        with self._reader(key=key) as conn:
+            return conn.execute(stmt).first() is not None
+
+    def exists_where(
+        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    ) -> bool:
+        """Whether any row matches - which is not the same question as how many do.
+
+        Counting reads every matching row to answer yes or no. On a predicate matching a
+        million rows that is a million rows of work for one bit of information, and it is the
+        shape a "does this customer have any orders" check most often takes.
+        """
+        stmt = self._presence(*criteria)
+        if shard is not None:
+            with self._reader(shard=shard) as conn:
+                return conn.execute(stmt).first() is not None
+        return any(conn.execute(stmt).first() is not None for _, conn in self._readers())
+
+    def count(self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None) -> int:
+        stmt = select(func.count()).select_from(self.table).where(*self._live(*criteria))
+        return sum(int(r[0]) for r in self._read(stmt, shard))
+
+    def _read(self, stmt: Any, shard: ShardIdentifier | None) -> list[Row[Any]]:
+        """Run a read on one shard, or on every shard when none is named.
+
+        A caller holding an id gets routing for free. A caller with a predicate does not - the
+        predicate says nothing about where its rows live - so this fans out, and the caller
+        that knows better narrows it with ``shard=``.
+        """
+        if shard is not None:
+            with self._reader(shard=shard) as conn:
+                return list(conn.execute(stmt))
+        return [row for _, conn in self._readers() for row in conn.execute(stmt)]
+
+    # ----------------------------------------------------------------- writes
+
+    def add(self, model: M) -> M:
+        """Insert one row and hand back what the database now holds."""
+        return self.add_all([self._one(model)])[0]
+
+    def add_no_result(self, model: M) -> None:
+        """Insert one row without reading it back."""
+        self.add_all_no_result([self._one(model)])
+
+    def add_all(self, models: Sequence[M]) -> list[M]:
+        """Insert, one statement however many rows there are, and read the rows back.
+
+        Reading back is ``RETURNING`` where the dialect has it, so it costs no extra round
+        trip - but it does put every inserted row on the wire, which for a large batch is real
+        money. That is what :meth:`add_all_no_result` is for: same write, no result set. The
+        choice is the caller's, because only the caller knows whether anything is going to look
+        at the rows.
+
+        Where there is no ``RETURNING`` - MySQL - the staged values come back instead, rebuilt
+        through the same readers a query would use, so the two paths differ only in whether a
+        server-side default or trigger is visible. Java takes the same branch
+        (``if MYSQL: insert.execute(); return List.copyOf(domainObjects)``) and does not need
+        the rebuild, because there a typed id is the only thing that compiles. Here a raw
+        ``uuid4()`` passed where an ``Id[Notification]`` belongs would otherwise come back raw on
+        MySQL and wrapped on every other database - the same call, two shapes.
+        """
+        if not self._all(models):
+            return []
+        shard, rows = self._insert_rows(models)
+
+        with self.tx_db_else_db(shard=shard) as conn:
+            if conn.dialect.insert_returning:
+                written = conn.execute(
+                    self._insert_returning(), rows, execution_options=_ONE_STATEMENT
+                )
+                return [self.from_row(r) for r in written]
+            conn.execute(insert(self.table), rows)
+        return [self.from_row(r) for r in rows]
+
+    def add_all_no_result(self, models: Sequence[M]) -> None:
+        """Insert without reading anything back.
+
+        For the thousand-row import whose rows nobody is going to read. Never asks for
+        ``RETURNING``, so nothing crosses the wire on the way home.
+        """
+        if not self._all(models):
+            return
+        with self._writing("BATCH_INSERT", len(models)):
+            shard, rows = self._insert_rows(models)
+            with self.tx_db_else_db(shard=shard) as conn:
+                conn.execute(insert(self.table), rows)
+
+    def update(self, model: M) -> M:
+        """Update one row under the optimistic lock, and hand back what the database holds."""
+        return self.update_all([self._one(model)])[0]
+
+    def update_no_result(self, model: M) -> None:
+        self.update_all_no_result([self._one(model)])
+
+    def update_all(self, models: Sequence[M]) -> list[M]:
+        """Update under the optimistic lock and read the rows back.
+
+        **One statement**, however many rows. Not ``executemany``: SQLAlchemy rewrites a
+        batched INSERT into a single multi-row statement, but there is no equivalent for
+        UPDATE - an executemany there is N statements and N server-side plans, pipelined at
+        best. So the batch becomes one derived table joined against the target.
+
+        One statement is also all this framework will send. Splitting a batch that exceeds the
+        server's parameter ceiling - 65535 binds on Postgres, a packet size on MySQL - is the
+        caller's, because only the caller knows what the pieces mean if one of them fails.
+
+        If the affected count is short, someone else got there first and the call raises. Inside
+        a unit of work that rolls the whole thing back. Outside one there is no transaction to
+        roll back and the statement has already committed what it matched, so a caller batching
+        by hand takes that on: it is the same on both ports, and the reason to run a batch
+        inside a unit of work when the pieces belong together. The count is trustworthy because
+        every row's version changes, so no row can be reported unaffected for having been
+        written its own values.
+        """
+        written = self._apply_updates(self._all(models), read_back=True)
+        return written if written is not None else []
+
+    def update_all_no_result(self, models: Sequence[M]) -> None:
+        """Update without reading anything back."""
+        if not self._all(models):
+            return
+        with self._writing("BATCH_UPDATE", len(models)):
+            self._apply_updates(models, read_back=False)
+
+    def _apply_updates(self, models: Sequence[M], *, read_back: bool) -> list[M] | None:
+        if not models:
+            return [] if read_back else None
+        shard, stamped = self._stamped(models)
+
+        with self.tx_db_else_db(shard=shard) as conn:
+            returning = read_back and conn.dialect.update_returning
+            stmt, binds = self._update_statement(conn.dialect.name, stamped, returning=returning)
+            result = conn.execute(stmt) if binds is None else conn.execute(stmt, binds)
+            written = self._checked(result, stamped, returning=returning)
+
+        return self._updated(stamped, written, read_back=read_back, returning=returning)
 
 
 def _must_hold(col: Any, wanted: type, described: str, why: str) -> None:
@@ -1198,6 +1228,27 @@ def _from_column(value: Any, hint: Any) -> Any:
     return value
 
 
+def _must_be_model[T](model_type: type[T]) -> type[T]:
+    """What a model repository, sync or async, checks before anything else."""
+    if not (isinstance(model_type, type) and issubclass(model_type, Model)):
+        raise ValidationError(
+            f"{model_type.__name__} is not a Model, so it has no events and no timestamps. "
+            f"Use EntityRepository, or make it a Model if its changes are worth telling "
+            f"the rest of the system about."
+        )
+    return model_type
+
+
+def _must_be_entity[T](model_type: type[T]) -> type[T]:
+    """And what an entity repository checks."""
+    if not (isinstance(model_type, type) and issubclass(model_type, Entity)):
+        raise ValidationError(
+            f"{model_type.__name__} is not an Entity. Use ModelRepository if its changes "
+            f"belong in the event stream."
+        )
+    return model_type
+
+
 class ModelRepository[M: Model[Any, Any], K](AbstractRepository[M, K]):
     """Rows of a :class:`~ekbatan.domain.Model` - state whose changes are events.
 
@@ -1207,13 +1258,7 @@ class ModelRepository[M: Model[Any, Any], K](AbstractRepository[M, K]):
     """
 
     def __init__(self, model_type: type[M], *args: Any, **kwargs: Any) -> None:
-        if not (isinstance(model_type, type) and issubclass(model_type, Model)):
-            raise ValidationError(
-                f"{model_type.__name__} is not a Model, so it has no events and no timestamps. "
-                f"Use EntityRepository, or make it a Model if its changes are worth telling "
-                f"the rest of the system about."
-            )
-        super().__init__(model_type, *args, **kwargs)
+        super().__init__(_must_be_model(model_type), *args, **kwargs)
 
 
 class EntityRepository[M: Entity[Any, Any], K](AbstractRepository[M, K]):
@@ -1224,12 +1269,7 @@ class EntityRepository[M: Entity[Any, Any], K](AbstractRepository[M, K]):
     """
 
     def __init__(self, model_type: type[M], *args: Any, **kwargs: Any) -> None:
-        if not (isinstance(model_type, type) and issubclass(model_type, Entity)):
-            raise ValidationError(
-                f"{model_type.__name__} is not an Entity. Use ModelRepository if its changes "
-                f"belong in the event stream."
-            )
-        super().__init__(model_type, *args, **kwargs)
+        super().__init__(_must_be_entity(model_type), *args, **kwargs)
 
 
 class RepositoryRegistry:

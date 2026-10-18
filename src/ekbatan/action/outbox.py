@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, Self, runtime_checkable
@@ -23,7 +23,7 @@ from sqlalchemy import Connection, Table, func, insert, select
 
 from .._builder import FieldBuilder
 from .._json import canonical
-from .._tracing import span
+from .._tracing import Span, span
 from ..clock import to_instant, to_storage
 from ..domain import ModelEvent
 from ..errors import ValidationError
@@ -291,22 +291,24 @@ class EventPersister(Protocol):
     ) -> None: ...
 
 
-class SingleTableJsonEventPersister:
-    """Default :class:`EventPersister`: every model event, and a sentinel row for a unit of work
-    that emits none, into one table with a JSON payload - Java's
-    ``SingleTableJsonEventPersister``.
+class _SingleTableJson:
+    """The rows one invocation writes to the single-table outbox, built without writing them -
+    shared by :class:`SingleTableJsonEventPersister` and ``ekbatan.aio``'s async one, which
+    differ only in how the rows reach the table."""
 
-    Java takes the registry and a Jackson mapper; here the registry and the table, for the
-    reason :class:`EventEntityRepository` takes one.
-    """
+    __slots__ = ("_types_by_name",)
 
-    __slots__ = ("_event_repository", "_types_by_name")
-
-    def __init__(self, database_registry: DatabaseRegistry, table: Table) -> None:
-        self._event_repository = EventEntityRepository(database_registry, table)
+    def __init__(self) -> None:
         self._types_by_name: dict[str, type] = {}
 
-    def persist_action_events(
+    @staticmethod
+    def _span(action_name: str, model_events: Sequence[ModelEvent]) -> AbstractContextManager[Span]:
+        return span(
+            "ekbatan.event.persist",
+            {"ekbatan.action.name": action_name, "ekbatan.event.count": len(model_events)},
+        )
+
+    def _entities(
         self,
         namespace: str,
         action_name: str,
@@ -314,9 +316,8 @@ class SingleTableJsonEventPersister:
         completion_date: datetime,
         action_params: Any,
         model_events: Sequence[ModelEvent],
-        shard: ShardIdentifier,
         action_event_id: uuid.UUID,
-    ) -> None:
+    ) -> list[EventEntity]:
         """One row per event.
 
         The rows of one invocation all carry that invocation's completion instant in
@@ -326,59 +327,55 @@ class SingleTableJsonEventPersister:
         column to promise it with, and a table both ports write to cannot be given the guarantee
         by only one of them. A consumer that needs the order needs it added to the schema.
         """
-        with span(
-            "ekbatan.event.persist",
-            {"ekbatan.action.name": action_name, "ekbatan.event.count": len(model_events)},
-        ):
-            params = _as_json_object(
-                canonical(action_params),
-                "action_params must be a JSON object; give the action a params dataclass "
-                "rather than a bare scalar or list - `Action[DepositParams, Wallet]`, not "
-                "`Action[str, Wallet]`. An action with no parameters takes None",
-            )
-            if not model_events:
-                # A unit of work that emitted nothing is still recorded - one row, every event
-                # column null. The audit trail is of units of work, not of events; without
-                # this, "nothing happened" and "nothing was recorded" are indistinguishable.
-                entities = [
-                    EventEntity.create_event_entity(
-                        id=uuid.uuid4(),
-                        namespace=namespace,
-                        action_id=action_event_id,
-                        action_name=action_name,
-                        action_params=params,
-                        started_date=started_date,
-                        completion_date=completion_date,
-                        model_id=None,
-                        model_type=None,
-                        event_type=None,
-                        payload=None,
-                        event_date=completion_date,
-                    ).build()
-                ]
-            else:
-                entities = [
-                    EventEntity.create_event_entity(
-                        id=uuid.uuid4(),
-                        namespace=namespace,
-                        action_id=action_event_id,
-                        action_name=action_name,
-                        action_params=params,
-                        started_date=started_date,
-                        completion_date=completion_date,
-                        model_id=event.model_id,
-                        model_type=event.model_name,
-                        event_type=self._event_type(event),
-                        payload=_as_json_object(
-                            canonical(event.payload()),
-                            f"{type(event).__name__}.payload() must give a JSON object; check "
-                            f"for an override returning a scalar or a list",
-                        ),
-                        event_date=completion_date,
-                    ).build()
-                    for event in model_events
-                ]
-            self._event_repository.add_all_no_result(entities, shard)
+        params = _as_json_object(
+            canonical(action_params),
+            "action_params must be a JSON object; give the action a params dataclass "
+            "rather than a bare scalar or list - `Action[DepositParams, Wallet]`, not "
+            "`Action[str, Wallet]`. An action with no parameters takes None",
+        )
+        if not model_events:
+            # A unit of work that emitted nothing is still recorded - one row, every event
+            # column null. The audit trail is of units of work, not of events; without
+            # this, "nothing happened" and "nothing was recorded" are indistinguishable.
+            entities = [
+                EventEntity.create_event_entity(
+                    id=uuid.uuid4(),
+                    namespace=namespace,
+                    action_id=action_event_id,
+                    action_name=action_name,
+                    action_params=params,
+                    started_date=started_date,
+                    completion_date=completion_date,
+                    model_id=None,
+                    model_type=None,
+                    event_type=None,
+                    payload=None,
+                    event_date=completion_date,
+                ).build()
+            ]
+        else:
+            entities = [
+                EventEntity.create_event_entity(
+                    id=uuid.uuid4(),
+                    namespace=namespace,
+                    action_id=action_event_id,
+                    action_name=action_name,
+                    action_params=params,
+                    started_date=started_date,
+                    completion_date=completion_date,
+                    model_id=event.model_id,
+                    model_type=event.model_name,
+                    event_type=self._event_type(event),
+                    payload=_as_json_object(
+                        canonical(event.payload()),
+                        f"{type(event).__name__}.payload() must give a JSON object; check "
+                        f"for an override returning a scalar or a list",
+                    ),
+                    event_date=completion_date,
+                ).build()
+                for event in model_events
+            ]
+        return entities
 
     def _event_type(self, event: ModelEvent) -> str:
         """The name a consumer routes and deserialises on - so two different events may not
@@ -398,6 +395,46 @@ class SingleTableJsonEventPersister:
                 f"cannot tell them apart."
             )
         return name
+
+
+class SingleTableJsonEventPersister(_SingleTableJson):
+    """Default :class:`EventPersister`: every model event, and a sentinel row for a unit of work
+    that emits none, into one table with a JSON payload - Java's
+    ``SingleTableJsonEventPersister``.
+
+    Java takes the registry and a Jackson mapper; here the registry and the table, for the
+    reason :class:`EventEntityRepository` takes one.
+    """
+
+    __slots__ = ("_event_repository",)
+
+    def __init__(self, database_registry: DatabaseRegistry, table: Table) -> None:
+        super().__init__()
+        self._event_repository = EventEntityRepository(database_registry, table)
+
+    def persist_action_events(
+        self,
+        namespace: str,
+        action_name: str,
+        started_date: datetime,
+        completion_date: datetime,
+        action_params: Any,
+        model_events: Sequence[ModelEvent],
+        shard: ShardIdentifier,
+        action_event_id: uuid.UUID,
+    ) -> None:
+        """One row per event, and the sentinel row for none - see :meth:`_entities`."""
+        with self._span(action_name, model_events):
+            entities = self._entities(
+                namespace,
+                action_name,
+                started_date,
+                completion_date,
+                action_params,
+                model_events,
+                action_event_id,
+            )
+            self._event_repository.add_all_no_result(entities, shard)
 
 
 def _as_json_object(value: Any, complaint: str) -> Mapping[str, Any]:

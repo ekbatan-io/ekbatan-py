@@ -123,10 +123,29 @@ def clock() -> VirtualClock:
     return VirtualClock(datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC))
 
 
-def _registry(backend: Backend, names: dict[ShardIdentifier, str]) -> DatabaseRegistry:
+def _registry(
+    backend: Backend,
+    names: dict[ShardIdentifier, str],
+    *,
+    kind: Any = DatabaseRegistry,
+    driver: str | None = None,
+) -> Any:
+    """A registry over freshly emptied databases.
+
+    ``kind`` and ``driver`` are for ``ekbatan.aio``'s suite: an ``AsyncDatabaseRegistry`` over
+    the same databases, its urls naming an async driver (``asyncpg``) in place of the sync one.
+    The schema is still migrated and emptied on the sync driver, as everywhere else.
+    """
     for name in names.values():
         backend.prepare(name, metadata)
         backend.truncate(name, metadata)
+
+    def url(name: str) -> str:
+        plain = backend.url(name)
+        if driver is None:
+            return plain
+        scheme, _, rest = plain.partition("://")
+        return f"{scheme.split('+', 1)[0]}+{driver}://{rest}"
 
     groups: dict[int, ShardGroupConfigBuilder] = {}
     for shard, name in names.items():
@@ -136,7 +155,7 @@ def _registry(backend: Backend, names: dict[ShardIdentifier, str]) -> DatabaseRe
             ShardMemberConfig.builder()
             .member(shard.member)
             .name(name)
-            .primary_config(data_source(backend.url(name), pool_size=5))
+            .primary_config(data_source(url(name), pool_size=5))
             .build()
         )
     config = (
@@ -145,7 +164,7 @@ def _registry(backend: Backend, names: dict[ShardIdentifier, str]) -> DatabaseRe
         .groups(g.build() for g in groups.values())
         .build()
     )
-    return DatabaseRegistry.from_config(config)
+    return kind.from_config(config)
 
 
 @pytest.fixture

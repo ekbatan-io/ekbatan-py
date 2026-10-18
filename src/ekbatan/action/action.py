@@ -53,8 +53,13 @@ def current_plan() -> ActionPlan:
     return plan
 
 
-class Action[P, R]:
-    """One unit of business work."""
+class _ActionCore[P, R]:
+    """What every action is, whatever its ``perform`` waits on - shared by :class:`Action` and
+    ``ekbatan.aio``'s ``AsyncAction``: the clock, the name, the ambient plan.
+
+    The two differ in one line, whether ``perform`` is a coroutine, so that line is all each
+    of them adds.
+    """
 
     __slots__ = ("clock",)
 
@@ -88,11 +93,17 @@ class Action[P, R]:
         """Shorthand for ``self.clock.now()``."""
         return self.clock.now()
 
-    def perform(self, principal: str | None, params: P) -> R:
-        raise NotImplementedError
-
     def __repr__(self) -> str:
         return f"{self.name}()"
+
+
+class Action[P, R](_ActionCore[P, R]):
+    """One unit of business work."""
+
+    __slots__ = ()
+
+    def perform(self, principal: str | None, params: P) -> R:
+        raise NotImplementedError
 
 
 class _Binding:

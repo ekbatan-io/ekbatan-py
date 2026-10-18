@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy import Row
 
+from ekbatan.aio import AsyncModelRepository
 from ekbatan.clock import to_storage
 from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
@@ -121,3 +122,7 @@ class NotificationEntityRepository(
     _NotificationRows, EntityRepository[Notification, Id[Notification]]
 ):
     pass
+
+
+class AsyncWalletRepository(_WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    """The same mapping, on ``ekbatan.aio`` - for the suite that runs each scenario both ways."""

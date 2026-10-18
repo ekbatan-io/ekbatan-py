@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from ekbatan import AbstractRepository, Action, Clock
+from ekbatan.aio import AsyncAction
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
 
@@ -146,5 +148,59 @@ class DepositThenFailAction(Action[DepositParams, Wallet]):
 
     def perform(self, principal: str | None, params: DepositParams) -> Wallet:
         wallet = self.wallets.get(params.wallet_id)
+        self.plan.update(wallet.deposit(params.amount))
+        raise ValidationError("changed my mind")
+
+
+# ---------------------------------------------------------------- the same, on ekbatan.aio
+#
+# Twins of the actions above, for `test_async_parity.py`, which runs each scenario on the sync
+# executor and on the async one. Each body is its sync twin's with `await` on the reads.
+
+
+class AsyncCreateWalletAction(AsyncAction[CreateWalletParams, Wallet]):
+    @property
+    def name(self) -> str:
+        # The sync twin's name, so both write the same `action_name` and one assertion
+        # covers both. What `name` is for: a name kept stable across a rename.
+        return "CreateWalletAction"
+
+    async def perform(self, principal: str | None, params: CreateWalletParams) -> Wallet:
+        return self.plan.add(
+            Wallet.open(
+                id=params.wallet_id or ShardedId[Wallet].random(),
+                owner_id=params.owner_id,
+                currency=params.currency,
+                balance=params.initial_balance,
+                created_date=self.clock.now(),
+            )
+        )
+
+
+class AsyncDepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: Any, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    @property
+    def name(self) -> str:
+        return "DepositMoneyAction"
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+
+
+class AsyncDepositThenFailAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: Any, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    @property
+    def name(self) -> str:
+        return "DepositThenFailAction"
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
         self.plan.update(wallet.deposit(params.amount))
         raise ValidationError("changed my mind")

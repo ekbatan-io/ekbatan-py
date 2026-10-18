@@ -703,3 +703,27 @@ sequence gains `schema=...`.
 - Index options holding a list or dict are written with single quotes
   (`postgresql_include=['note']`, `mysql_length={'note': 10}`), unlike the rest of the module.
   Cosmetic; not changed.
+
+## async trial
+
+Judgement calls taken while building the `ekbatan.aio` trial (branch `async-trial`, uncommitted).
+The plan and the results are in `docs/ASYNC-LEDGER.md`.
+
+| decision | why |
+| --- | --- |
+| the shared logic lives in private base classes (`_RepositoryCore`, `_ShardRegistry`, `_ExecutorCore`, `_ChangePersisterCore`, `_SingleTableJson`, `_ActionCore`); the public sync classes extend them and keep their names, signatures and behaviour | one copy of every rule without a second public hierarchy; `isinstance(x, DatabaseRegistry)` and every sync import still work. The async classes extend the same bases |
+| the async classes are not subclasses of the sync ones (`AsyncDatabaseRegistry` is not a `DatabaseRegistry`, `AsyncAction` is not an `Action`) | a coroutine `perform` or `get` overriding a plain one breaks every caller typed on the sync class; siblings on a shared base cannot be passed where the other is expected |
+| one `ContextVar` (`ekbatan_tx`) holds both sync and async open transactions, keyed by manager | the brief said reuse it; a manager is only ever one kind, so the two never meet. Its type widened from `Mapping[TransactionManager, Db]` to `Mapping[object, Any]` - private, nothing outside `persistence` read it |
+| `ActionRegistry` holds both kinds; `get` is now typed `type[A] -> A` | it is a map from type to instance and calls nothing. The new signature also gives sync callers the concrete action class back rather than `Action[P, R]` |
+| an executor refuses the other kind of action when it is built (`ValidationError`, "all-sync or all-async") | a sync executor running an `AsyncAction` would hand back an un-awaited coroutine and commit an empty plan. Found while writing the test, not reported by a user |
+| the sync `RepositoryRegistry` is reused for async repositories (one `type: ignore` in the async executor) | it is a map by model type and never calls a repository. A typed `AsyncRepositoryRegistry` is a small todo if the ignore is unwelcome |
+| the extra is `ekbatan[asyncpg] = ["asyncpg>=0.30", "SQLAlchemy[asyncio]>=2.0.30"]`; asyncpg and `SQLAlchemy[asyncio]` were also added to the `dev` group so the suite runs | SQLAlchemy's asyncio API needs greenlet; its own `asyncio` extra says which one, so no greenlet pin of ours. greenlet was already in the dev environment (gevent pulls it). No other dependency was added |
+| `async_engine_for` shares the sync engine's settings (`_engine_kwargs`): pool, pre-ping, JSON serialiser, `connect_args` | two pools configured from one `DataSourceConfig` cannot drift. Consequence: `data_source_properties` go to the async driver as given, so they are asyncpg's names (`server_settings`), not libpq's (`options`) - the UTC recipe in the docs is psycopg-only today |
+| async built-in reads go to the primary outside the transaction (`db()`), as the sync ones and Java's do | same semantics in both modes; a read that must see the open transaction uses `tx_db_else_db`, as in sync |
+| async scatter reads (`find_where` with no shard) visit shards one after another, as sync does | one meaning first; running them concurrently with `asyncio.gather` is a real async win and a todo (R9), with a decision on what a failing shard means |
+| `close()` is `aclose()` on the async registry and manager, plus `async with` | `dispose()` is a coroutine on an async engine; a sync `close()` cannot await it |
+| the async actions in the test fixtures override `name` to their sync twin's name | both modes then write the same `action_name`, so one assertion covers both - and it is what `name` exists for |
+| the parity scenarios are written once as coroutines against a `Service` that awaits only what is awaitable | "same scenarios for sync and async" with one body each; the two concurrency tests (threads vs tasks) and cancellation are written per mode because they test the concurrency model itself |
+| the benchmark emulates anyio's 40-thread default with `ThreadPoolExecutor(40)` as the loop's default executor and `asyncio.to_thread` | anyio is only in the `examples` group; this is the same limit without adding it. Same pool size (40) for every engine |
+| the benchmark also runs psycopg's async mode (`postgresql+psycopg` through `create_async_engine`) | it needs no new dependency, and it was nearly as fast as asyncpg - which bears on whether asyncpg should be the recommended extra (open, see ledger) |
+| `AsyncDb` subclasses SQLAlchemy's `AsyncConnection` and is built through its constructor, as `AsyncEngine.connect()` builds it | mirrors `Db(Connection)`; uses only public API (`start`, `execution_options`, `execute`) |
