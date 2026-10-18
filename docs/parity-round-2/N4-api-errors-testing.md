@@ -48,6 +48,10 @@ version (A15), `inTransaction` wrapping (A40/C53), the cross-shard shard order (
 ## Fix details
 
 ### 1. A plain object in params or an event is written as its `repr`
+
+> **Fixed (`EKB-0316`):** refused with a `ValidationError` naming the class, before anything is
+> written. Python reads back dataclasses only, so writing the object's fields as Java does would
+> have stored data the port cannot read back; a dataclass gives Java's JSON.
 - **What:** `canonical()` handles dataclasses, mappings, sequences and known scalars; anything
   else falls through to `str(value)`. A params or event field holding a plain class, an attrs
   class or a pydantic model is stored as `"<module.Money object at 0x10bfee270>"`. No error, and

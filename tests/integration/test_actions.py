@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -56,6 +57,45 @@ def test_an_action_reads_the_clock_it_was_built_with(executor, clock):
     assert run(executor, ReadsTheClockAction(executor.clock), None) == datetime(
         2026, 1, 1, 13, 0, tzinfo=UTC
     )
+
+
+@dataclass(frozen=True, kw_only=True)
+class NoteParams:
+    note: object
+
+
+class OpensWithANoteAction(Action[NoteParams, Wallet]):
+    def perform(self, principal: str | None, params: NoteParams) -> Wallet:
+        return self.plan.add(
+            Wallet.open(
+                id=ShardedId[Wallet].random(),
+                owner_id=uuid4(),
+                currency="EUR",
+                balance=Decimal("1"),
+                created_date=self.clock.now(),
+            )
+        )
+
+
+class _PlainNote:
+    def __init__(self) -> None:
+        self.text = "hello"
+
+
+def test_params_holding_a_plain_object_fail_and_store_nothing(executor, wallets, registry):
+    """A plain object in the params used to be stored as its repr, `<_PlainNote object at
+    0x...>`: the action committed and the data was gone. Now it is refused, and nothing is
+    written - neither the wallet nor the outbox row."""
+    from sqlalchemy import func, select
+
+    from fixtures.schema import EVENTS
+
+    with pytest.raises(ValidationError, match="_PlainNote cannot be written as JSON"):
+        run(executor, OpensWithANoteAction(executor.clock), NoteParams(note=_PlainNote()))
+
+    assert wallets.count() == 0
+    with registry.default.connection() as conn:
+        assert conn.execute(select(func.count()).select_from(EVENTS)).scalar_one() == 0
 
 
 class ReadsThePrincipalAction(Action[None, str | None]):

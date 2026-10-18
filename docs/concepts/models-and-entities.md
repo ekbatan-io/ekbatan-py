@@ -183,6 +183,10 @@ What the decoder does with each field, driven by its annotation:
 | `list` / `tuple` / `set` / `frozenset` / `dict` of any of the above | array / object | element by element |
 | `T \| None` | | the non-`None` arm, when there is exactly one |
 
+**Anything else is refused** with a `ValidationError` naming its class, before anything is
+written: a plain class or an `attrs` class, for example (a `NamedTuple` is a tuple, so it is an
+array). Java's Jackson writes such an object's public fields; here, make it a dataclass to get the same JSON and read it back.
+
 **Keys are Java's field names**: `new_balance` is written `newBalance`, in the order the fields
 are declared - what Jackson writes for a Java event with Ekbatan's usual `@JsonCreator`. A
 `dict` keeps its own keys, in insertion order; nothing is sorted. The text is the same, byte for

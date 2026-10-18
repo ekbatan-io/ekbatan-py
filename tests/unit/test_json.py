@@ -315,3 +315,20 @@ def test_a_number_read_into_a_text_field_becomes_its_text():
 
     assert decode(Small, loads('{"note":5}')).note == "5"
     assert decode(Small, loads('{"note":1.50}')).note == "1.50"
+
+
+class _PlainMoney:
+    """Not a dataclass: a plain object, as a Java developer would write a POJO."""
+
+    def __init__(self) -> None:
+        self.amount = Decimal("5")
+        self.currency = "EUR"
+
+
+def test_a_plain_object_is_refused_rather_than_written_as_its_repr():
+    """`str()` of a plain object is `<_PlainMoney object at 0x...>`: written, the data would be
+    lost with no error and a different address every run."""
+    with pytest.raises(ValidationError, match="_PlainMoney cannot be written as JSON: make it a "):
+        dumps({"money": _PlainMoney()})
+    with pytest.raises(ValidationError, match="cannot be written as JSON"):
+        canonical([_PlainMoney()])

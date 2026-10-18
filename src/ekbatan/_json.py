@@ -128,7 +128,14 @@ def canonical(value: Any) -> Any:
         return [canonical(v) for v in value]
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {key: canonical(getattr(value, name)) for name, key in _json_fields(type(value))}
-    return str(value)
+    # Refused rather than written as `str(value)`: for a plain object that is its repr -
+    # `<Money object at 0x...>` - and the data would be gone, silently, with an address that
+    # changes every run. Java's Jackson writes such an object's fields and reads them back; this
+    # port reads back dataclasses only, so a dataclass is the way to the same JSON.
+    raise ValidationError(
+        f"a {type(value).__qualname__} cannot be written as JSON: make it a dataclass, whose "
+        f"fields are written as Java writes an object's, or pass a supported value instead"
+    )
 
 
 def _key(key: Any) -> str:
