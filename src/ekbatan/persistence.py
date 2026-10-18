@@ -510,8 +510,9 @@ def insert_ignoring_duplicates(
         conn.execute(insert(table), list(rows))
 
 
-class DatabaseRegistryBuilder:
-    """Fluent builder for :class:`DatabaseRegistry`. Obtain via :meth:`DatabaseRegistry.builder`.
+class _ShardRegistryBuilder[TM: _ShardManager, R]:
+    """The builder for both kinds of registry: :class:`DatabaseRegistryBuilder` and
+    ``ekbatan.aio``'s ``AsyncDatabaseRegistryBuilder`` differ only in what they build.
 
     Each manager is filed under the shard it says it is, so the key and the manager cannot
     disagree - the mistake the constructor has to check for cannot be written here.
@@ -519,16 +520,19 @@ class DatabaseRegistryBuilder:
 
     __slots__ = ("_default_shard", "_managers", "_unknown_shard_policy")
 
+    #: The registry ``build()`` makes.
+    _builds: Any
+
     def __init__(self) -> None:
-        self._managers: dict[ShardIdentifier, TransactionManager] = {}
+        self._managers: dict[ShardIdentifier, TM] = {}
         self._default_shard: ShardIdentifier | None = None
         self._unknown_shard_policy: Literal["use_default_shard", "fail"] = "use_default_shard"
 
-    def with_database(self, manager: TransactionManager) -> Self:
+    def with_database(self, manager: TM) -> Self:
         self._managers[manager.shard] = manager
         return self
 
-    def with_default_database(self, manager: TransactionManager) -> Self:
+    def with_default_database(self, manager: TM) -> Self:
         self._managers[manager.shard] = manager
         self._default_shard = manager.shard
         return self
@@ -540,5 +544,17 @@ class DatabaseRegistryBuilder:
         self._unknown_shard_policy = _policy(unknown_shard_policy)
         return self
 
-    def build(self) -> DatabaseRegistry:
-        return DatabaseRegistry(self._managers, self._default_shard, self._unknown_shard_policy)
+    def build(self) -> R:
+        built: R = self._builds(self._managers, self._default_shard, self._unknown_shard_policy)
+        return built
+
+
+class DatabaseRegistryBuilder(_ShardRegistryBuilder[TransactionManager, DatabaseRegistry]):
+    """Fluent builder for :class:`DatabaseRegistry`. Obtain via :meth:`DatabaseRegistry.builder`.
+
+    Each manager is filed under the shard it says it is, so the key and the manager cannot
+    disagree - the mistake the constructor has to check for cannot be written here.
+    """
+
+    __slots__ = ()
+    _builds = DatabaseRegistry

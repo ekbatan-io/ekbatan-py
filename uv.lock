@@ -7,6 +7,27 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "aiomysql"
+version = "0.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pymysql" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/e0/302aeffe8d90853556f47f3106b89c16cc2ec2a4d269bdfd82e3f4ae12cc/aiomysql-0.3.2.tar.gz", hash = "sha256:72d15ef5cfc34c03468eb41e1b90adb9fd9347b0b589114bd23ead569a02ac1a", size = 108311, upload-time = "2025-10-22T00:15:21.278Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/af/aae0153c3e28712adaf462328f6c7a3c196a1c1c27b491de4377dd3e6b52/aiomysql-0.3.2-py3-none-any.whl", hash = "sha256:c82c5ba04137d7afd5c693a258bea8ead2aad77101668044143a991e04632eb2", size = 71834, upload-time = "2025-10-22T00:15:15.905Z" },
+]
+
+[[package]]
+name = "aiosqlite"
+version = "0.22.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/8a/64761f4005f17809769d23e518d915db74e6310474e733e3593cfc854ef1/aiosqlite-0.22.1.tar.gz", hash = "sha256:043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650", size = 14821, upload-time = "2025-12-23T19:25:43.997Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/b7/e3bf5133d697a08128598c8d0abc5e16377b51465a33756de24fa7dee953/aiosqlite-0.22.1-py3-none-any.whl", hash = "sha256:21c002eb13823fad740196c5a2e9d8e62f6243bd9e7e4a1f87fb5e44ecb4fceb", size = 17405, upload-time = "2025-12-23T19:25:42.139Z" },
+]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -457,10 +478,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-asyncpg = [
-    { name = "asyncpg" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-]
 codegen = [
     { name = "psycopg", extra = ["binary"] },
     { name = "testcontainers" },
@@ -468,21 +485,39 @@ codegen = [
 mariadb = [
     { name = "pymysql" },
 ]
+mariadb-async = [
+    { name = "aiomysql" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
 migrations = [
     { name = "yoyo-migrations" },
 ]
 mysql = [
     { name = "pymysql" },
 ]
+mysql-async = [
+    { name = "aiomysql" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
 postgres = [
     { name = "psycopg", extra = ["binary"] },
+]
+postgres-async = [
+    { name = "asyncpg" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 redis = [
     { name = "redis" },
 ]
+sqlite-async = [
+    { name = "aiosqlite" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
 
 [package.dev-dependencies]
 dev = [
+    { name = "aiomysql" },
+    { name = "aiosqlite" },
     { name = "asyncpg" },
     { name = "gevent" },
     { name = "mypy" },
@@ -508,7 +543,10 @@ tracing = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncpg", marker = "extra == 'asyncpg'", specifier = ">=0.30" },
+    { name = "aiomysql", marker = "extra == 'mariadb-async'", specifier = ">=0.2" },
+    { name = "aiomysql", marker = "extra == 'mysql-async'", specifier = ">=0.2" },
+    { name = "aiosqlite", marker = "extra == 'sqlite-async'", specifier = ">=0.20" },
+    { name = "asyncpg", marker = "extra == 'postgres-async'", specifier = ">=0.30" },
     { name = "ekbatan-py-db-scheduler", editable = "db-scheduler" },
     { name = "opentelemetry-api", specifier = ">=1.27" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'codegen'", specifier = ">=3.2" },
@@ -518,14 +556,19 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=6" },
     { name = "sqlalchemy", specifier = ">=2.0.30" },
-    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'asyncpg'", specifier = ">=2.0.30" },
+    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'mariadb-async'", specifier = ">=2.0.30" },
+    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'mysql-async'", specifier = ">=2.0.30" },
+    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'postgres-async'", specifier = ">=2.0.30" },
+    { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'sqlite-async'", specifier = ">=2.0.30" },
     { name = "testcontainers", extras = ["postgres"], marker = "extra == 'codegen'", specifier = ">=4.15" },
     { name = "yoyo-migrations", marker = "extra == 'migrations'", specifier = ">=9.0,<10" },
 ]
-provides-extras = ["postgres", "mysql", "mariadb", "migrations", "codegen", "redis", "asyncpg"]
+provides-extras = ["postgres", "mysql", "mariadb", "migrations", "codegen", "redis", "postgres-async", "mysql-async", "mariadb-async", "sqlite-async"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiomysql", specifier = ">=0.2" },
+    { name = "aiosqlite", specifier = ">=0.20" },
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "gevent", specifier = ">=25.4" },
     { name = "mypy", specifier = ">=1.11" },

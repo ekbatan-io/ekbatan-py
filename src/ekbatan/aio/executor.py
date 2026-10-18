@@ -21,7 +21,7 @@ from sqlalchemy import MetaData, Table
 
 from .._tracing import span
 from ..action.action import _Binding
-from ..action.executor import DEFAULT, ExecutionConfiguration, _ExecutorCore
+from ..action.executor import DEFAULT, ExecutionConfiguration, _ExecutorBuilder, _ExecutorCore
 from ..action.plan import ActionPlan, PersistableChanges
 from ..action.registry import ActionRegistry
 from ..clock import Clock, to_instant
@@ -34,7 +34,7 @@ from .persistence import AsyncDatabaseRegistry
 from .persister import AsyncChangePersister
 from .repository import AsyncRepository
 
-__all__ = ["AsyncActionExecutor"]
+__all__ = ["AsyncActionExecutor", "AsyncActionExecutorBuilder"]
 
 
 class AsyncActionExecutor(_ExecutorCore):
@@ -80,6 +80,10 @@ class AsyncActionExecutor(_ExecutorCore):
             else RepositoryRegistry(repositories),  # type: ignore[arg-type]
             self.outbox,
         )
+
+    @classmethod
+    def builder(cls) -> AsyncActionExecutorBuilder:
+        return AsyncActionExecutorBuilder()
 
     async def execute[P, R](
         self,
@@ -155,3 +159,15 @@ class AsyncActionExecutor(_ExecutorCore):
                 completed=to_instant(self.clock.now()),
                 action_id=action_id,
             )
+
+
+class AsyncActionExecutorBuilder(
+    _ExecutorBuilder[AsyncDatabaseRegistry, AsyncEventPersister, AsyncActionExecutor]
+):
+    """Fluent builder for :class:`AsyncActionExecutor` - the sync
+    :class:`~ekbatan.action.ActionExecutorBuilder`'s setters and checks, taking an
+    :class:`~ekbatan.aio.AsyncDatabaseRegistry` and an
+    :class:`~ekbatan.aio.AsyncEventPersister`. Obtain via :meth:`AsyncActionExecutor.builder`."""
+
+    __slots__ = ()
+    _builds = AsyncActionExecutor

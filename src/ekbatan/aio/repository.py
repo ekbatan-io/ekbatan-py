@@ -18,8 +18,9 @@ executor opened, outside one each statement commits itself.
 
 from __future__ import annotations
 
+import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Protocol
 
@@ -31,6 +32,7 @@ from ..repository import (
     _must_be_entity,
     _must_be_model,
     _RepositoryCore,
+    _to_column,
 )
 from ..sharding import ShardIdentifier, ShardingStrategy
 from .persistence import AsyncDatabaseRegistry, AsyncDb
@@ -110,6 +112,18 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
             await conn.execution_options(isolation_level="AUTOCOMMIT")
             yield conn
 
+    async def dbs(self) -> AsyncIterator[tuple[ShardIdentifier, AsyncDb]]:
+        """Every shard's writer, one at a time, outside any transaction - the sync
+        :meth:`~ekbatan.repository.AbstractRepository.dbs`, as an async generator.
+
+        One at a time and lazy, as in sync: the caller decides what to do on each shard, and one
+        that stops at the first shard that answers has not opened the rest. An unsharded
+        repository visits only the default shard.
+        """
+        for shard in self._scatter_shards():
+            async with self.db(shard=shard) as conn:
+                yield shard, conn
+
     @asynccontextmanager
     async def readonly_db(
         self, *, key: K | None = None, shard: ShardIdentifier | None = None
@@ -119,6 +133,12 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
         async with AsyncDb(self._manager(key, None, shard).replica) as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")
             yield conn
+
+    async def readonly_dbs(self) -> AsyncIterator[tuple[ShardIdentifier, AsyncDb]]:
+        """Every shard's **replica**, one at a time - as :meth:`dbs`."""
+        for shard in self._scatter_shards():
+            async with self.readonly_db(shard=shard) as conn:
+                yield shard, conn
 
     def tx_db(
         self, *, key: K | None = None, model: M | None = None, shard: ShardIdentifier | None = None
@@ -145,6 +165,64 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
         async with self.db(key=key, shard=shard) as conn:
             yield conn
 
+    async def _on_each[T](
+        self,
+        shards: Sequence[ShardIdentifier],
+        read: Callable[[ShardIdentifier], Awaitable[T]],
+    ) -> list[T]:
+        """``read`` on every shard **at the same time**, the answers in shard order.
+
+        The one place the async repository does better than the sync one, which visits shards
+        one after another: a read across sixteen shards costs about one shard's round trip.
+        All or nothing, as the sync read is: if one shard fails, the reads still running on the
+        others are cancelled and that shard's error is raised - the same exception the sync
+        read would raise, with a note naming the shard. There are no partial results.
+        """
+        if len(shards) == 1:
+            return [await read(shards[0])]
+        answers: dict[ShardIdentifier, T] = {}
+        failures: dict[ShardIdentifier, Exception] = {}
+
+        async def one(shard: ShardIdentifier) -> None:
+            try:
+                answers[shard] = await read(shard)
+            except Exception as error:
+                failures[shard] = error
+                raise
+
+        try:
+            async with asyncio.TaskGroup() as group:
+                for shard in shards:
+                    group.create_task(one(shard))
+        except BaseExceptionGroup:
+            if not failures:
+                raise
+            # Raised outside the handler, so the error is the shard's own and not chained to
+            # the group that carried it.
+            failed = self._shard_failure(shards, failures)
+        else:
+            return [answers[shard] for shard in shards]
+        raise failed
+
+    def _shard_failure(
+        self, shards: Sequence[ShardIdentifier], failures: Mapping[ShardIdentifier, Exception]
+    ) -> Exception:
+        """The first failed shard's error, in shard order, with notes saying which shard it
+        was and which others failed too - by kind only, never by message."""
+        failed = [shard for shard in shards if shard in failures]
+        first = failures[failed[0]]
+        first.add_note(
+            f"ekbatan: reading shard {failed[0]} ({self.registry.manager(failed[0]).label}) "
+            f"failed, so the whole read failed and the reads still running on the other "
+            f"shards were cancelled"
+        )
+        for other in failed[1:]:
+            first.add_note(f"ekbatan: shard {other} failed too: {type(failures[other]).__name__}")
+        return first
+
+    def _shards(self, shard: ShardIdentifier | None) -> tuple[ShardIdentifier, ...]:
+        return (shard,) if shard is not None else self._scatter_shards()
+
     # ------------------------------------------------------------------ reads
 
     async def find(self, key: K) -> M | None:
@@ -157,24 +235,80 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
         """The row, or raise."""
         return self._found(await self.find(key), key)
 
+    async def find_many(self, keys: Iterable[K]) -> list[M]:
+        """The rows that exist, in no promised order - one query per shard the keys live on,
+        the shards at the same time. Duplicates are collapsed; no keys is no query."""
+        by_shard = self._keys_by_shard(keys)
+
+        async def read(shard: ShardIdentifier) -> list[M]:
+            async with self._reader(shard=shard) as conn:
+                found = await conn.execute(self._among(conn, by_shard[shard]))
+                return [self.from_row(r) for r in found]
+
+        if not by_shard:
+            return []
+        return [model for found in await self._on_each(list(by_shard), read) for model in found]
+
     async def find_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> list[M]:
         """Live rows matching, on the shard named or on every shard."""
         return [self.from_row(r) for r in await self._read(self._where(*criteria), shard)]
 
+    async def find_one_where(
+        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    ) -> M | None:
+        """The one row matching, or ``None``; a shard holding two is refused.
+
+        Across shards every shard is asked at once and the answers are read in shard order, so
+        the answer is the sync one's: the first shard that has the row. Unlike the sync call,
+        which stops at that shard, every shard is queried.
+        """
+        stmt = self._one_where(*criteria)
+
+        async def read(each: ShardIdentifier) -> list[Row[Any]]:
+            async with self._reader(shard=each) as conn:
+                return list(await conn.execute(stmt))
+
+        for rows in await self._on_each(self._shards(shard), read):
+            found = self._unique(rows)
+            if found is not None:
+                return found
+        return None
+
     async def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
         return await self.find_where(shard=shard)
 
-    async def _read(self, stmt: Any, shard: ShardIdentifier | None) -> list[Row[Any]]:
-        """Run a read on one shard, or on every shard when none is named - one after another,
-        as the sync repository does."""
-        shards = (shard,) if shard is not None else self._scatter_shards()
-        rows: list[Row[Any]] = []
-        for each in shards:
+    async def exists(self, key: K) -> bool:
+        stmt = self._presence(self.id_column == _to_column(key))
+        async with self._reader(key=key) as conn:
+            return (await conn.execute(stmt)).first() is not None
+
+    async def exists_where(
+        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    ) -> bool:
+        """Whether any row matches - one row read per shard at most, the shards at once."""
+        stmt = self._presence(*criteria)
+
+        async def read(each: ShardIdentifier) -> bool:
             async with self._reader(shard=each) as conn:
-                rows += list(await conn.execute(stmt))
-        return rows
+                return (await conn.execute(stmt)).first() is not None
+
+        return any(await self._on_each(self._shards(shard), read))
+
+    async def count(
+        self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
+    ) -> int:
+        return sum(int(r[0]) for r in await self._read(self._count(*criteria), shard))
+
+    async def _read(self, stmt: Any, shard: ShardIdentifier | None) -> list[Row[Any]]:
+        """Run a read on the shard named, or on every shard at once when none is."""
+
+        async def read(each: ShardIdentifier) -> list[Row[Any]]:
+            async with self._reader(shard=each) as conn:
+                return list(await conn.execute(stmt))
+
+        return [row for rows in await self._on_each(self._shards(shard), read) for row in rows]
 
     # ----------------------------------------------------------------- writes
 

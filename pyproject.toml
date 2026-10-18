@@ -47,9 +47,14 @@ migrations = ["yoyo-migrations>=9.0,<10"]
 codegen = ["testcontainers[postgres]>=4.15", "psycopg[binary]>=3.2"]
 # The Redis-backed keyed lock, which Java ships as its own `ekbatan-keyed-lock-redis` module.
 redis = ["redis>=6"]
-# Native asyncio (`ekbatan.aio`) on PostgreSQL. SQLAlchemy's own `asyncio` extra rather than a
-# greenlet pin of ours: its asyncio API runs on greenlet, and SQLAlchemy is what says which one.
-asyncpg = ["asyncpg>=0.30", "SQLAlchemy[asyncio]>=2.0.30"]
+# Native asyncio (`ekbatan.aio`): one extra per database, beside the sync ones, each naming
+# that database's default async driver. aiomysql is built on PyMySQL, the sync default for
+# MySQL and MariaDB. SQLAlchemy's own `asyncio` extra rather than a greenlet pin of ours: its
+# asyncio API runs on greenlet, and SQLAlchemy is what says which one.
+postgres-async = ["asyncpg>=0.30", "SQLAlchemy[asyncio]>=2.0.30"]
+mysql-async = ["aiomysql>=0.2", "SQLAlchemy[asyncio]>=2.0.30"]
+mariadb-async = ["aiomysql>=0.2", "SQLAlchemy[asyncio]>=2.0.30"]
+sqlite-async = ["aiosqlite>=0.20", "SQLAlchemy[asyncio]>=2.0.30"]
 
 [tool.uv.sources]
 # The db-scheduler port lives in this repository, as `ekbatan-distributed-jobs` depends on the
@@ -69,8 +74,11 @@ dev = [
     "psycopg[binary]>=3.2",
     "PyMySQL>=1.1",
     "redis>=6",
-    # `ekbatan.aio`'s suite runs the same scenarios as the sync one, on asyncpg.
+    # `ekbatan.aio`'s suite runs the same scenarios as the sync one, on each database's
+    # default async driver.
     "asyncpg>=0.30",
+    "aiomysql>=0.2",
+    "aiosqlite>=0.20",
     "SQLAlchemy[asyncio]>=2.0.30",
     # `make test-gevent` runs the suite under monkey-patching. The framework has no gevent
     # import of its own and needs none - this is here so "it works under gevent" stays a

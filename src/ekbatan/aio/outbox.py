@@ -13,7 +13,7 @@ from collections.abc import Collection, Sequence
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
-from sqlalchemy import Table, insert
+from sqlalchemy import Table, func, insert, select
 
 from ..action.outbox import EventEntity, _require_outbox_columns, _SingleTableJson
 from ..domain import ModelEvent
@@ -21,7 +21,50 @@ from ..errors import ValidationError
 from ..sharding import ShardIdentifier
 from .persistence import AsyncDatabaseRegistry
 
-__all__ = ["AsyncEventPersister", "AsyncSingleTableJsonEventPersister"]
+__all__ = [
+    "AsyncEventEntityRepository",
+    "AsyncEventPersister",
+    "AsyncSingleTableJsonEventPersister",
+]
+
+
+class AsyncEventEntityRepository:
+    """The outbox table's reads and writes for the async persister - the sync
+    :class:`~ekbatan.action.outbox.EventEntityRepository`, awaited. Each joins the transaction
+    open on the shard, else commits its statement on its own."""
+
+    __slots__ = ("_registry", "_table")
+
+    def __init__(self, database_registry: AsyncDatabaseRegistry, table: Table) -> None:
+        if database_registry is None:
+            raise ValidationError("database_registry cannot be None")
+        self._registry = database_registry
+        self._table = _require_outbox_columns(table)
+
+    async def count(self, shard: ShardIdentifier) -> int:
+        async with self._registry.manager(shard).connection() as conn:
+            found = await conn.execute(select(func.count()).select_from(self._table))
+            return int(found.scalar_one())
+
+    async def find_all(self, shard: ShardIdentifier) -> list[EventEntity]:
+        async with self._registry.manager(shard).connection() as conn:
+            return [EventEntity.from_row(r) for r in await conn.execute(select(self._table))]
+
+    async def find_by_action_id(
+        self, action_id: uuid.UUID, shard: ShardIdentifier
+    ) -> list[EventEntity]:
+        table = self._table
+        async with self._registry.manager(shard).connection() as conn:
+            rows = await conn.execute(select(table).where(table.c.action_id == action_id))
+            return [EventEntity.from_row(r) for r in rows]
+
+    async def add_all_no_result(
+        self, entities: Collection[EventEntity], shard: ShardIdentifier
+    ) -> None:
+        if not entities:
+            return
+        async with self._registry.manager(shard).connection() as conn:
+            await conn.execute(insert(self._table), [e.to_row() for e in entities])
 
 
 @runtime_checkable
@@ -46,14 +89,11 @@ class AsyncSingleTableJsonEventPersister(_SingleTableJson):
     """The default :class:`AsyncEventPersister`: every model event, and a sentinel row for a
     unit of work that emits none, into one table with a JSON payload."""
 
-    __slots__ = ("_registry", "_table")
+    __slots__ = ("_event_repository",)
 
     def __init__(self, database_registry: AsyncDatabaseRegistry, table: Table) -> None:
         super().__init__()
-        if database_registry is None:
-            raise ValidationError("database_registry cannot be None")
-        self._registry = database_registry
-        self._table = _require_outbox_columns(table)
+        self._event_repository = AsyncEventEntityRepository(database_registry, table)
 
     async def persist_action_events(
         self,
@@ -76,12 +116,4 @@ class AsyncSingleTableJsonEventPersister(_SingleTableJson):
                 model_events,
                 action_event_id,
             )
-            await self._add_all_no_result(entities, shard)
-
-    async def _add_all_no_result(
-        self, entities: Collection[EventEntity], shard: ShardIdentifier
-    ) -> None:
-        if not entities:
-            return
-        async with self._registry.manager(shard).connection() as conn:
-            await conn.execute(insert(self._table), [e.to_row() for e in entities])
+            await self._event_repository.add_all_no_result(entities, shard)

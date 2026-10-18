@@ -14,10 +14,11 @@ from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import event
 
-from .persistence import DatabaseRegistry
+from .persistence import _ShardRegistry
 
 __all__ = ["StatementCount", "count_statements"]
 
@@ -50,7 +51,7 @@ class StatementCount:
 
 
 @contextmanager
-def count_statements(registry: DatabaseRegistry) -> Iterator[StatementCount]:
+def count_statements(registry: _ShardRegistry[Any]) -> Iterator[StatementCount]:
     """Count everything sent through this registry inside the block::
 
     with count_statements(registry) as cost:
@@ -59,10 +60,16 @@ def count_statements(registry: DatabaseRegistry) -> Iterator[StatementCount]:
     assert cost.transactions == 1
     assert cost.writes["wallets"] == 1
     assert cost.writes["events"] == 1
+
+    A :class:`~ekbatan.persistence.DatabaseRegistry` or an ``ekbatan.aio``
+    ``AsyncDatabaseRegistry``; the block may hold awaited work.
     """
     counted = StatementCount()
     engines = {registry.manager(shard).primary for shard in registry.shards}
     engines |= {registry.manager(shard).replica for shard in registry.shards}
+    # An `ekbatan.aio` registry's engines are async; SQLAlchemy fires their events on the sync
+    # engine each wraps, so the listeners go there and the block counts awaited work the same.
+    engines = {getattr(engine, "sync_engine", engine) for engine in engines}
 
     def before(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
         counted.round_trips += 1

@@ -628,6 +628,35 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
         """``SELECT … WHERE …`` on live rows."""
         return select(self.table).where(*self._live(*criteria))
 
+    def _one_where(self, *criteria: ColumnElement[bool]) -> Any:
+        """``find_one_where``'s statement. Two rows, not one: a query for a single row can never
+        report that there was a second."""
+        return select(self.table).where(*self._live(*criteria)).limit(2)
+
+    def _unique(self, rows: Sequence[Row[Any]]) -> M | None:
+        """What one shard's answer to :meth:`_one_where` means: the row, none, or a refusal."""
+        if len(rows) > 1:
+            raise ValidationError(
+                f"find_one_where matched more than one {self.model_type.__name__}: the "
+                f"predicate is not unique. Use find_where when several rows are expected."
+            )
+        return self.from_row(rows[0]) if rows else None
+
+    def _keys_by_shard(self, keys: Iterable[K]) -> dict[ShardIdentifier, list[Any]]:
+        """``find_many``'s keys, duplicates dropped, grouped by the shard each lives on - in the
+        order each shard was first named."""
+        by_shard: dict[ShardIdentifier, list[Any]] = {}
+        for key in dict.fromkeys(_to_column(k) for k in keys):
+            by_shard.setdefault(self.shard_for(key), []).append(key)
+        return by_shard
+
+    def _among(self, conn: Any, keys: Sequence[Any]) -> Any:
+        """``find_many``'s statement for one shard's keys."""
+        return select(self.table).where(*self._live(self._id_among(conn, keys)))
+
+    def _count(self, *criteria: ColumnElement[bool]) -> Any:
+        return select(func.count()).select_from(self.table).where(*self._live(*criteria))
+
     def _found(self, found: M | None, key: K) -> M:
         """What ``get`` makes of ``find``'s answer: the row, or a refusal naming it."""
         if found is None:
@@ -886,19 +915,10 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         accident, not an instruction to fetch it twice. An empty input is an empty result:
         never ``IN ()``, and never an accidental full-table read.
         """
-        unique = list(dict.fromkeys(_to_column(k) for k in keys))
-        if not unique:
-            return []
-
-        by_shard: dict[ShardIdentifier, list[Any]] = {}
-        for key in unique:
-            by_shard.setdefault(self.shard_for(key), []).append(key)
-
         found: list[M] = []
-        for shard, shard_keys in by_shard.items():
+        for shard, shard_keys in self._keys_by_shard(keys).items():
             with self._reader(shard=shard) as conn:
-                stmt = select(self.table).where(*self._live(self._id_among(conn, shard_keys)))
-                found += [self.from_row(r) for r in conn.execute(stmt)]
+                found += [self.from_row(r) for r in conn.execute(self._among(conn, shard_keys))]
         return found
 
     def find_where(
@@ -919,17 +939,11 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         picking arbitrarily, and whoever wrote a predicate they thought was unique is exactly
         the person who will not notice that it was not.
         """
-        # Two, not one: a query for a single row can never report that there was a second.
-        stmt = select(self.table).where(*self._live(*criteria)).limit(2)
+        stmt = self._one_where(*criteria)
         for conn in self._one_or_every(shard):
-            rows = list(conn.execute(stmt))
-            if len(rows) > 1:
-                raise ValidationError(
-                    f"find_one_where matched more than one {self.model_type.__name__}: the "
-                    f"predicate is not unique. Use find_where when several rows are expected."
-                )
-            if rows:
-                return self.from_row(rows[0])
+            found = self._unique(list(conn.execute(stmt)))
+            if found is not None:
+                return found
         return None
 
     def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Db]:
@@ -965,8 +979,7 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         return any(conn.execute(stmt).first() is not None for _, conn in self._readers())
 
     def count(self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None) -> int:
-        stmt = select(func.count()).select_from(self.table).where(*self._live(*criteria))
-        return sum(int(r[0]) for r in self._read(stmt, shard))
+        return sum(int(r[0]) for r in self._read(self._count(*criteria), shard))
 
     def _read(self, stmt: Any, shard: ShardIdentifier | None) -> list[Row[Any]]:
         """Run a read on one shard, or on every shard when none is named.

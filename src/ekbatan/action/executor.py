@@ -600,8 +600,10 @@ def _valid_namespace(namespace: str) -> str:
     return namespace
 
 
-class ActionExecutorBuilder:
-    """Fluent builder for :class:`ActionExecutor`. Obtain via :meth:`ActionExecutor.builder`.
+class _ExecutorBuilder[REG, OUT, E]:
+    """The builder for both kinds of executor: :class:`ActionExecutorBuilder` and
+    ``ekbatan.aio``'s ``AsyncActionExecutorBuilder`` differ only in the types of the registry
+    and persister they take, and in what they build.
 
     Java's setters, less ``objectMapper``: JSON here is the standard library's, and there is no
     mapper object to hand over.
@@ -617,12 +619,15 @@ class ActionExecutorBuilder:
         "_repository_registry",
     )
 
+    #: The executor ``build()`` makes.
+    _builds: Any
+
     def __init__(self) -> None:
         self._namespace: str | None = None
-        self._database_registry: DatabaseRegistry | None = None
+        self._database_registry: REG | None = None
         self._repository_registry: RepositoryRegistry | None = None
         self._action_registry: ActionRegistry | None = None
-        self._event_persister: EventPersister | None = None
+        self._event_persister: OUT | None = None
         self._clock: Clock | None = None
         self._default_execution_configuration: ExecutionConfiguration = DEFAULT
 
@@ -630,7 +635,7 @@ class ActionExecutorBuilder:
         self._namespace = namespace
         return self
 
-    def database_registry(self, database_registry: DatabaseRegistry) -> Self:
+    def database_registry(self, database_registry: REG) -> Self:
         self._database_registry = database_registry
         return self
 
@@ -642,7 +647,7 @@ class ActionExecutorBuilder:
         self._action_registry = action_registry
         return self
 
-    def event_persister(self, event_persister: EventPersister) -> Self:
+    def event_persister(self, event_persister: OUT) -> Self:
         self._event_persister = event_persister
         return self
 
@@ -656,17 +661,29 @@ class ActionExecutorBuilder:
         self._default_execution_configuration = default_execution_configuration
         return self
 
-    def build(self) -> ActionExecutor:
+    def build(self) -> E:
         """The executor. Each missing piece is refused by name, as the constructor refuses it.
 
         No ``event_persister``: the default single-table persister, as Java's builder makes.
         """
-        return ActionExecutor(
-            namespace=self._namespace,  # type: ignore[arg-type]  # None is refused by name
-            registry=self._database_registry,  # type: ignore[arg-type]
-            repositories=self._repository_registry,  # type: ignore[arg-type]
+        built: E = self._builds(
+            namespace=self._namespace,  # None is refused by name
+            registry=self._database_registry,
+            repositories=self._repository_registry,
             actions=self._action_registry if self._action_registry is not None else (),
             outbox=self._event_persister,  # None: the default persister
             clock=self._clock,
             config=self._default_execution_configuration,
         )
+        return built
+
+
+class ActionExecutorBuilder(_ExecutorBuilder[DatabaseRegistry, EventPersister, ActionExecutor]):
+    """Fluent builder for :class:`ActionExecutor`. Obtain via :meth:`ActionExecutor.builder`.
+
+    Java's setters, less ``objectMapper``: JSON here is the standard library's, and there is no
+    mapper object to hand over.
+    """
+
+    __slots__ = ()
+    _builds = ActionExecutor
