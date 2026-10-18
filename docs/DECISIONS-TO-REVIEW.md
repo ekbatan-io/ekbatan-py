@@ -472,6 +472,57 @@ and the migrator's (items 37 and 84, decided).
 | a failed rollback: Java's `Evicting connection from pool - ...` line, without a traceback | Java's line has none | the same |
 | Java's DataSources "No username is configured" warning is not added | Java writes it for its unpooled data source only, which this port has no counterpart for | its driver data source |
 
+## schemagen with forced types (`EKB-0321`-`EKB-0323`)
+
+2026-10-18, unattended. The user: "in the java code we had the option of forced types (inside the
+gradle script), could we have similar thing here? ... similar to what we have in java with sane
+choices, and good defaults and types and decisions". Ledger: [SCHEMAGEN-LEDGER.md](SCHEMAGEN-LEDGER.md).
+Every type below is proven on a real database by `tests/integration/test_schemagen_types.py`.
+
+**The ones worth a glance first:**
+
+| decision | why | what Java does |
+| --- | --- | --- |
+| a `TIMESTAMPTZ` column is no longer forced to `timestamp_column()`: it is `TIMESTAMP(timezone=True)`, with a note pointing at the UTC recommendation | it falls out of copying Java's forced type exactly (`TIMESTAMP` does not match the zoned type), and the value it reads is now right on any session zone. Round 2 had this as "leave" (N2 #1); nothing was done for it beyond following Java | `OffsetDateTime`, not forced |
+| a MariaDB `JSON` column (`LONGTEXT` + `json_valid` check, which only `information_schema` reports) becomes `json_column()` | the docs already promised it; text there means payloads stop being objects. Beyond Java | `String`: its `(?i:JSON)` forced type never matches on MariaDB |
+| the `CHAR(36)` uuid guess runs on MariaDB as well as MySQL - only `CHAR(36)`, only named `id`/`*_id`, never `VARCHAR` | asked for in these words; this port's MariaDB examples store uuids as `CHAR(36)` | MySQL only; Java's MariaDB uses native `UUID` |
+| a PostgreSQL plain `JSON` column is `JSON(none_as_null=True)`, no longer `json_column()` | `json_column()` builds `JSONB`, so `create_all` would build a different column; it still reads a dict | `org.jooq.JSON`, not forced |
+| settings in `[tool.ekbatan.schemagen]` of `pyproject.toml`, kebab-case keys as `[tool.ruff]` has; a flag wins; paths relative to the file; an unknown key is an error | where a Python project keeps build-time settings; a typo should not silently do nothing | the Gradle or Maven build script |
+| keys, foreign keys, indexes (partial, on expressions), checks, server defaults, identity and generated columns, comments are all generated | so `create_all` in a test builds what the migrations build; measured equal on all four databases | `Keys`, `Indexes`, `defaultValue(...)` |
+
+**The rest:**
+
+| decision | why | what Java does |
+| --- | --- | --- |
+| a forced type says `name` (a framework helper, or a SQLAlchemy type written as Python with literal arguments) or `user-type` (a dotted path, `a.b.C` or `a.b:C`, with optional arguments) - exactly one | jOOQ's `name` and `userType`; a `TypeDecorator` is a user type and its converter in one, so there is no `converter` key | `withName`, `withUserType` + `withConverter` |
+| matching is whole-text, as jOOQ's: `include-expression` against `column`, `table.column`, and `schema.table.column` for a listed schema, case-sensitive; `include-types` against every spelling of the type (the database's, SQLAlchemy's, with and without arguments, `TIMESTAMP`/`TIMESTAMPTZ`), case-insensitive | Java's own patterns (`.*\.id\|.*_id`, `CHAR\(36\)`, `TIMESTAMP`) then work unchanged; a type has no case | jOOQ's regexes; its default `COMMENTS` flag (whitespace ignored) is not copied |
+| `exclude-expression`, `exclude-types`, `nullability` as jOOQ's; at least one include required | a forced type with no include would force every column | the same keys; jOOQ accepts none |
+| the user's forced types are tried first, then Ekbatan's; the first match wins; `default-forced-types = false` drops Ekbatan's | jOOQ's order; the defaults are what every Java example copies | the list in each build script |
+| the built-in five: zone-less `TIMESTAMP`/`DATETIME` to `timestamp_column()` everywhere; `JSONB` (PG) and `JSON` (MySQL, MariaDB, SQLite) to `json_column()`; PG `UUID` to `uuid_column()`; the `CHAR(36)` guess | Java's forced types, one for one; the PG uuid one keeps the schema `CHAR(36)` rather than `CHAR(32)` if it is ever used on MySQL | the same, as converters |
+| a column forced to `timestamp_column()` that is not `TIMESTAMP`/`DATETIME(6)` - MySQL's `TIMESTAMP`, a bare `DATETIME`, `TIMESTAMP(3)` - is still forced, with a note saying what it does differently | Java forces them too; the note is the UTC recommendation where it applies | forced, silently |
+| MariaDB's native `UUID` is `UUID()`, not `uuid_column()` | `uuid_column()` builds `CHAR(36)` there; `UUID()` builds the column the migration built and reads a `uuid.UUID` (measured) | `UUID`, no forced type |
+| MySQL's `DOUBLE`/`REAL` is the generic `DOUBLE()` | MySQL's own `DOUBLE` type reads a `Decimal`; the test checks the type read, not only equality | `Double` |
+| MySQL's `TINYINT(1)` (its `BOOLEAN`) is `BOOLEAN()` | it is how MySQL spells boolean; a real small integer is `TINYINT` without the width | `Byte` |
+| an enum is `Enum("a", "b"[, name=...])` with string values | buildable and checkable; a generated enum class would be a second thing to keep in step | a generated enum class |
+| a type the driver cannot read (`xml`, `point`, MariaDB `INET6`) is `NullType()` with a note naming the forced type to add - not refused | one exotic column should not stop the whole schema; tested: forcing such a column to a user type makes it readable and buildable | `Object`, with a warning |
+| MySQL display widths dropped, character sets and collations kept, MariaDB's literal `NULL` default dropped | what reflection decorates against what the column holds | - |
+| a serial key is left to SQLAlchemy (it builds `SERIAL` again); a serial elsewhere gets its `Sequence` and `nextval` default; an integer key the database does not auto-increment gets `autoincrement=False`; MySQL `AUTO_INCREMENT` outside the key gets a note | otherwise `create_all` adds or drops auto-increment the migration did not have | - |
+| views are generated, into a second `view_metadata`; `views = false` drops them | queryable like tables, and `create_all` on `metadata` must not create a table by a view's name | generated beside the tables |
+| the connection's own schema is always read and written unqualified; `schemas` lists the others, qualified, exported as `SCHEMA_TABLE`; listing the own one (`public`) means the same; an unlisted schema with tables is noted | jOOQ's `outputSchemaToDefault`; the throwaway database's own name means nothing | `schemas` + `outputSchemaToDefault` |
+| `includes`/`excludes` over `table` and `schema.table`; the migration history always out; the framework's tables follow them | jOOQ's; twelve Maven builds exclude `scheduled_tasks` | the same |
+| a foreign key to a table not generated is left out, with a note | it could not be built | generated |
+| the framework's tables are still their helpers, now with their indexes from the migrations; a note when the migrations differ from the helper; an expression index on one is left out with a note | the contract stays one definition; `create_all` builds the indexes too | reflected (PG), excluded (MySQL) |
+| extensions (`CREATE EXTENSION citext`) are not generated | the database's, not the schema's, and need rights the application may not have | not generated |
+| the fingerprint still covers only the migrations; the example Makefiles depend on `pyproject.toml` too | reading settings on import would couple the module to a file a wheel does not ship | Gradle reruns on a build-script change |
+| a user type is imported at generation, before any database starts, and an import failure names the forced type | a typo fails at once, not as a module that does not import; the cost: the type's module must not import the generated schema | jOOQ writes the name without loading it |
+| a user type whose name SQLAlchemy has (`JSON`) is imported under an alias | the module would otherwise shadow one with the other | packages keep them apart |
+| notes go to the logger `io.ekbatan.schemagen` as warnings; the command prints them as `note: ...` | the framework's loggers are all under `io.ekbatan` | Gradle task output |
+| `image = "sqlite"`: a temporary file, no container | SQLite projects can generate too | - |
+| `render()` takes the source `dialect`; without it the per-database forced types (the uuid guess) do not apply | the guess is MySQL's and MariaDB's only | - |
+| every old flag still works; the examples moved to the table and a bare `python -m ekbatan.schemagen`; the setup guide keeps the flags, with a note | `scripts/check-setup-guide.py` runs the guide as written, flags included | - |
+| `schemagen.py` became the package `schemagen/`; `generate`, `render`, `fingerprint`, `check_fingerprint` keep their names, `ForcedType`, `SchemagenConfig`, `load_config`, `DEFAULT_FORCED_TYPES` are new | a type table, configuration and rendering in one module was 1,000 lines | - |
+| tests: `CASES_BY_DIALECT` + `case_id` in `conftest.py`, dropping pairs a database lacks and keeping each database's tests together | a joint parameter restarted the session container per case (measured); interleaving did the same | - |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

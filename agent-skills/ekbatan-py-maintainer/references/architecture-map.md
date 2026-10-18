@@ -25,7 +25,8 @@ src/ekbatan/
   errors.py          the exception hierarchy
   clock.py           Clock, SystemClock, VirtualClock
   migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
-  schemagen.py       table definitions generated from a migrated database
+  schemagen/         table definitions from a migrated database: _config (pyproject, forced
+                     types), _types (the type table), _reflect, _render
   codegen.py         typed builders, generated per model
   streaming.py       ActionEvent - the consumer-side view of an outbox row
   accounting.py      statement counting, so cost claims are checkable

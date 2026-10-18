@@ -136,8 +136,9 @@ column with `json_column()`, and very visible when something **reflects** it: a 
 column comes back as text. [`schemagen`](/reference/schemagen/) forces it back, and that forcing is the
 reason it exists.
 
-Java has the same problem and solves it the same way, with a jOOQ `ForcedType` carrying
-`withName("JSON")`.
+It knows the column is JSON by its check, `json_valid(...)`, which reflection does not report
+and `information_schema.CHECK_CONSTRAINTS` does. Java's builds force `(?i:JSON)`, which never
+matches here, so jOOQ generates a `String` for it (measured in round 2).
 
 **A reflected bigint carries a display width.** MariaDB reports `BIGINT(display_width=20)`.
 Emitted verbatim into a generated module, it does not even import - `TypeError: BIGINT() takes no

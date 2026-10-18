@@ -62,11 +62,20 @@ this generates. Commit the output: it is derived from source you already have.
 
 **Table definitions — gitignored.**
 
-```bash
-uv run python -m ekbatan.schemagen --migrations migrations --out myapp/schema.py
+```toml
+# pyproject.toml - where Java keeps jOOQ's settings in the build script
+[tool.ekbatan.schemagen]
+migrations = "migrations"
+out = "myapp/schema.py"
+image = "postgres:17-alpine"
 ```
 
-Starts a throwaway container, runs **your** migrations into it, reflects the result. The
+```
+uv run python -m ekbatan.schemagen
+```
+
+Starts a throwaway container, runs **your** migrations into it, reflects the result. Forced
+types, includes and excludes go in the same table - see [schemagen](/reference/schemagen/). The
 counterpart to the Java port's jOOQ step, and its output is gitignored for the same reason
 `build/generated-jooq` is: it is derived from a database you have to start.
 
@@ -83,10 +92,10 @@ gap against Gradle — is a **dependency graph**: something that knows `schema.p
 `migrations/` and rebuilds it when they change.
 
 ```make
-schema.py: $(wildcard migrations/*.sql)
-	uv run python -m ekbatan.schemagen --migrations migrations --out $@
+myapp/schema.py: $(wildcard migrations/*.sql) pyproject.toml
+	uv run python -m ekbatan.schemagen
 
-lint: schema.py
+lint: myapp/schema.py
 	uv run mypy
 ```
 

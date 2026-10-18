@@ -22,8 +22,9 @@ Every project is standalone - `cd` into it and `make` works, the way each Java e
 its own Gradle wrapper.
 
 ```
-pyproject.toml    the build: uv_build, setuptools or poetry-core - and where ekbatan comes from
-Makefile          env, schema, test (the wheel, installed), run, clean
+pyproject.toml    the build: uv_build, setuptools or poetry-core - and where ekbatan comes from;
+                  [tool.ekbatan.schemagen]: migrations, out, image - schemagen's settings
+Makefile          env, schema (bare `python -m ekbatan.schemagen`), test (the wheel, installed), run, clean
 .gitignore        the environment, the wheel, the generated schema.py
 README.md         what this example shows, and what to look at first
 src/<package>/    the package - the same name, and the same files, in all three builds:

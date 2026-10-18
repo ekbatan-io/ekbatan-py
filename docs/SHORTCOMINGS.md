@@ -46,6 +46,7 @@ synchronous"*.
 | --- | --- | --- |
 | **Migration targeting** | `FlywayMigrator.migrate(Target...)` | `migrate(config, path, shards=[...])` - added in `EKB-0137`, so this one is closed |
 | **db-scheduler builder** | `registerShutdownHook`, `dueExecutor`, `housekeeperExecutor`, `commitWhenAutocommitDisabled` | none of the four on the vendored builder. The one that mattered is answered a level up, on `JobRegistryBuilder` - see the shutdown row above. `db-scheduler/docs/FILE-LEDGER.md` marks `SchedulerBuilder` **partial** for it |
+| **schemagen output** | an enum class per enum column; views and keys as classes; a converter loaded by name only | enum values are strings in `Enum(...)`; a user type is imported at generation, so its module must not import the generated schema. Forced types, schemas, includes, excludes, keys, indexes and defaults are at parity (`EKB-0321`) |
 | **Examples** | 41 projects, including a full native-image grid and one per DI framework | 7. The database axis is mirrored; the DI and native axes have nothing to mirror |
 
 ---

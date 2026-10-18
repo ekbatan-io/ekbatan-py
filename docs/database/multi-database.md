@@ -76,7 +76,8 @@ tells SQLAlchemy the type rather than asking the database, and is unaffected. Bu
 `Text` for a column you declared as JSON, and the generated module would then bind strings where
 the framework expects objects.
 
-`schemagen` therefore forces the type back rather than trusting the reflection. The same pass
+`schemagen` therefore forces the type back rather than trusting the reflection: it reads the
+column's `json_valid` check from `information_schema` and writes `json_column()`. The same pass
 fixes `BIGINT(display_width=20)`, which MariaDB reports for a plain bigint and which does not
 even import. MySQL reports `JSON` correctly and needs neither.
 

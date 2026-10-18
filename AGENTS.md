@@ -74,7 +74,7 @@ src/ekbatan/
   clock.py           Clock, SystemClock, VirtualClock
   migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
   _yoyo.py           the yoyo backends: one connection, the session lock, the replica check
-  schemagen.py       table definitions generated from a migrated database
+  schemagen/         table definitions generated from a migrated database: config, type table
   codegen.py         typed builders, generated per model
   streaming.py       ActionEvent - the consumer-side view of an outbox row
   accounting.py      statement counting, so the performance claims are checkable
@@ -204,16 +204,26 @@ Two generators, mirroring two different Java mechanisms:
 | Java | here |
 | --- | --- |
 | annotation processor → `WalletBuilder` | `python -m ekbatan.codegen <module> --out builders.py` |
-| jOOQ + container + Flyway → record classes | `python -m ekbatan.schemagen --migrations <dir> --out schema.py` |
+| jOOQ + container + Flyway → record classes | `python -m ekbatan.schemagen`, settings in `[tool.ekbatan.schemagen]` |
 
 `schemagen` starts a throwaway container, runs **your** migrations into it and reflects the
-result. Two things it does that a plain reflection must not skip:
+result. Its settings are jOOQ's, in `[tool.ekbatan.schemagen]` of `pyproject.toml` (a flag wins):
+schemas, includes, excludes, and **forced types** - by column name (`include-expression`) and SQL
+type (`include-types`), to a framework helper or a SQLAlchemy type (`name`) or the user's own
+type by dotted path (`user-type`). The user's are tried first, then Ekbatan's built-in five, which
+are what every Java example's build forces. Three rules hold it together:
 
-- **It forces the types.** A `UUID` reflected from PostgreSQL renders as `CHAR(32)` on MySQL -
-  hex with the hyphens stripped, which no Java service can join against. Reflected *from* MySQL
-  it is `CHAR(36)`, indistinguishable from any other char column, so it is forced by name.
-- **It normalises dialect quirks.** MariaDB reflects a bigint as `BIGINT(display_width=20)`;
-  emitted verbatim the module does not import.
+- **Forcing is what makes the schema right.** A `UUID` reflected from PostgreSQL renders as
+  `CHAR(32)` on MySQL - hex with the hyphens stripped, which no Java service can join against.
+  Reflected *from* MySQL it is `CHAR(36)`, indistinguishable from any other char column, so it
+  is forced by name - only `CHAR(36)`, only on MySQL and MariaDB, as Java's build does.
+- **Every other type is written faithfully** (`schemagen/_types.py`): a generic SQLAlchemy type
+  where one says the same, the dialect's own type imported from its dialect module where not,
+  and nothing reflection merely decorates (MariaDB's `BIGINT(20)` display width). Keys,
+  indexes, checks and defaults come too, so `create_all` builds what the migrations built.
+- **Every type is proven on a real database** - `tests/integration/test_schemagen_types.py`
+  generates, imports, `create_all`s and round-trips each one on all four databases. A new type
+  rule gets a case there.
 
 Generated schemas are **gitignored**, as Java's `build/generated-jooq` is, and each generated
 module fingerprints its migrations and checks that on import - because nothing in Python runs

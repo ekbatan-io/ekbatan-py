@@ -1109,6 +1109,33 @@ and had no entry; that the framework's own tables are *built* rather than reflec
 Java's jOOQ reflects them from the database like any other, had no entry either. Found by being
 asked what Java does about `scheduled_tasks`.
 
+## schemagen is jOOQ's code generator, configured from `pyproject.toml`
+
+> **chosen** - Java's step is jOOQ in the build script; this is the same job for SQLAlchemy, with jOOQ's settings and forced types read from `[tool.ekbatan.schemagen]`. Each call is in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md), "schemagen with forced types".
+
+The settings are jOOQ's - schemas, includes, excludes, forced types matched by column name and by
+SQL type, a user type - and so are the built-in forced types, which are the ones every Java
+example's build copies. [`docs/database/schemagen.md`](docs/database/schemagen.md) has the table,
+setting by setting. Where the output differs:
+
+- **SQLAlchemy `Table` objects, not record classes.** One module, `schema.py`; a table in another
+  schema is exported as `SCHEMA_TABLE` rather than in a package of its own.
+- **The framework's tables are built from `ekbatan.schema`, not reflected.** Java reflects them
+  on PostgreSQL and leaves them out on MySQL and MariaDB.
+- **MariaDB `JSON` is `json_column()`.** It is `LONGTEXT` with a check there; Java's `(?i:JSON)`
+  forced type never matches it, and jOOQ generates a `String`.
+- **A MariaDB `CHAR(36)` named like an id is a uuid**, as on MySQL. Java's MariaDB build forces
+  nothing, because its uuids are native `UUID`; this port's MariaDB examples store `CHAR(36)`.
+- **A PostgreSQL `JSON` column reads as a dict** (`JSON(none_as_null=True)`), where jOOQ gives
+  `org.jooq.JSON`. Neither forces it.
+- **An enum is `Enum("a", "b")`** with string values; jOOQ generates an enum class.
+- **Views go in a second `view_metadata`**, so `create_all` does not create a table by a view's
+  name. jOOQ generates them beside the tables.
+- **A type the driver cannot read is `NullType()` with a note**, where jOOQ uses `Object` with a
+  warning.
+- **The module checks a fingerprint of the migrations on import**, because nothing in Python
+  rebuilds it before the application runs, as Gradle does.
+
 ## Migrations run on yoyo, with the lock, checks and history yoyo does not have
 
 > **forced** - There is no Flyway for Python. yoyo runs the SQL; what Flyway does and yoyo does not is built on top, to behave as Flyway behaves, and where Flyway's default was run and found less safe it is not copied. Those judgement calls are in [`DECISIONS-TO-REVIEW.md`](docs/DECISIONS-TO-REVIEW.md).

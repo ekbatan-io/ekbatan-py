@@ -522,6 +522,10 @@ module of `Table` definitions - the counterpart to the Java port's jOOQ step. On
 the type forcing matters: a uuid is `CHAR(36)` there and nothing in the database says it is one.
 You rarely run this by hand; the Makefile does, when a migration changes.
 
+The flags can live in `pyproject.toml` instead, under `[tool.ekbatan.schemagen]` (`migrations`,
+`out`, `image`), and the command then runs bare - which is how the example projects do it, and
+where forced types, includes and excludes go. See [schemagen](/reference/schemagen/).
+
 ## 7. The Makefile
 
 `uv` has no task runner and no dependency graph, which is the one real gap against Gradle.
