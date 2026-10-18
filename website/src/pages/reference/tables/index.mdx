@@ -8,8 +8,7 @@ lead: "An application has two kinds of table:"
 - **yours** - `wallets`, `orders`, `notifications`;
 - **the framework's** - written by the framework or one of its runtime helpers.
 
-This is the map. The individual pages carry the full DDL per dialect and a column-by-column
-comparison against Java's.
+This is the map. The individual pages carry the full DDL per dialect, column by column.
 
 | table | needed when | written by | shape |
 | --- | --- | --- | --- |
@@ -58,8 +57,8 @@ EVENT_NOTIFICATIONS = notifications_table(metadata)
 SCHEDULED_TASKS = scheduled_tasks_table(metadata)
 ```
 
-Each takes `name=` and `schema=`, so a second outbox or a Java-compatible `eventlog` schema is
-one argument:
+Each takes `name=` and `schema=`, so a second outbox, or the tables in their own `eventlog`
+schema, is one argument:
 
 ```python
 EVENTS = outbox_table(metadata, schema="eventlog")
@@ -71,7 +70,8 @@ tables, and `migrate()` creates them from your migration files. See
 
 On PostgreSQL a schema is a namespace inside the database. On MySQL and MariaDB "schema" and
 "database" are the same thing, so `schema="eventlog"` means a **separate database**, and the
-connecting user needs rights to it.
+connecting user needs rights to it. Sharing these tables with a Java service needs the schema
+set this way - see [Running beside a Java service](/reference/beside-java/#what-to-set).
 
 In a sharded application every shard gets its own copy of all three. `migrate()` applies the same
 migration files to each.

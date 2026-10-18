@@ -14,9 +14,9 @@ a committed event row except the `delivered` flag, and that belongs to the consu
 
 ## DDL
 
-You do not write this by hand; `outbox_table()` produces it and your migration creates it. The
-DDL below is what SQLAlchemy actually emits, so it is what you would compare against a Java
-service's table.
+You do not write this by hand; `outbox_table()` describes it and your migration creates it. The
+DDL below is the table SQLAlchemy emits for it, with the two indexes the examples' migrations add
+(see [Indexes](#indexes) - they are yours to choose).
 
 ### PostgreSQL
 
@@ -39,7 +39,8 @@ CREATE TABLE events (
 );
 
 CREATE INDEX ix_events_action_id ON events (action_id);
-CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
+    WHERE delivered = FALSE;
 ```
 
 ### MySQL and MariaDB
@@ -101,65 +102,61 @@ it loses the event for every consumer that had not yet read it.
 
 ## Ordering
 
-`event_date` is the only ordering key - there is no ordinal column, in either port. Under a real
+`event_date` is the only ordering key - there is no ordinal column. Under a real
 clock that is fine. Under a **frozen** clock every row of a run ties and the order falls back to
 a random uuid. The test suite fell into this more than once; assert on `action_name` or
 `action_id` rather than on position.
 
 ## Dialect types
 
-Where the three dialects differ, and how each compares with the Java port's DDL -
-verified by generating both and comparing, rather than by reading:
+The columns, their order and nullability are the same on every database. Where the types differ:
 
-| | agrees? |
-| --- | --- |
-| column names, order, nullability | **identical** |
-| PostgreSQL types | **identical** |
-| MySQL types | **identical**. Java writes `CHARACTER SET ascii` on the uuid columns; that is an index-size optimisation, not a format difference |
-| MariaDB `id`, `action_id` | **differs.** Java uses MariaDB's native `UUID` type; this port emits `CHAR(36)`. See below |
-| schema | **differs by default.** Java uses `eventlog`; pass `schema="eventlog"` to match |
-| index names | `ix_events_action_id` here, `idx_events_action_id` in Java. Cosmetic |
-| the undelivered index | **differs on PostgreSQL.** See below |
+| | PostgreSQL | MySQL and MariaDB |
+| --- | --- | --- |
+| `id`, `action_id` | `UUID` | `CHAR(36)`, the hyphenated text |
+| `action_params`, `payload` | `JSONB` | `JSON` |
+| the three times | `TIMESTAMP WITHOUT TIME ZONE` | `DATETIME(6)` |
 
 ### MariaDB's native UUID type
 
-Java's MariaDB DDL declares `id UUID`. MariaDB 10.7+ has a native 16-byte UUID type;
-SQLAlchemy does not emit it, so this port's DDL says `CHAR(36)`.
+MariaDB 10.7+ has a native 16-byte `UUID` type. SQLAlchemy does not emit it, so the table here
+says `CHAR(36)`: 36 bytes a value against 16. It matters at outbox scale and nowhere else. A
+table created with the native type works too - a uuid written to it reads back the same, and
+`CAST(id AS CHAR)` gives the usual hyphenated text - so if your migration says `UUID`, nothing
+in your service changes.
 
-**This does not break interop, and that was checked rather than assumed.** Against a table
-created with Java's DDL, this port writes a UUID and reads it back identical, and
-`CAST(id AS CHAR)` in the database gives the canonical hyphenated text. Either DDL works with
-either port; whichever service migrates first decides the storage.
-
-The difference is 16 bytes per value against 36. It matters at outbox scale and nowhere else.
+If a Java service shares this table, what differs between its migration and this one is on
+[Running beside a Java service](/reference/beside-java/#events).
 
 ## Indexes
 
+`outbox_table()` declares no indexes. Your migration creates them, because the right ones depend
+on the database. The examples create two: `action_id`, to find every row of one action, and the
+undelivered index below.
+
 ### The undelivered index, and what it costs
 
-Java creates a **partial** index on PostgreSQL:
+The fan-out job and a polling consumer look for rows not yet delivered. On PostgreSQL that index
+is **partial** - it holds only the rows still waiting:
 
 ```sql
-CREATE INDEX events_undelivered ON eventlog.events (event_type, event_date)
+CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
     WHERE delivered = FALSE;
 ```
 
-This port emits the MySQL-shaped composite index on every dialect, because the table factory
-builds one `Index` with no dialect variation:
+MySQL and MariaDB have no partial indexes, so their migrations use a composite one:
 
 ```sql
 CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
 ```
 
-That is what the MySQL and MariaDB migrations here create, because neither has partial indexes.
-**The PostgreSQL ones create the partial form**, as Java's `V0001__eventlog.sql` does. Measured
-on PostgreSQL 17, 500,000 rows with a 1% backlog - a steady-state outbox that CDC is keeping up
-with:
+The difference in size is large. Measured on PostgreSQL 17, 500,000 rows with a 1% backlog - a
+steady-state outbox that CDC is keeping up with:
 
 | index | size |
 | --- | --- |
-| `(delivered, event_type, event_date)` - the portable form | **3,528 kB** |
-| `(event_type, event_date) WHERE delivered = FALSE` | **56 kB** |
+| `(delivered, event_type, event_date)` - the composite form | **3,528 kB** |
+| `(event_type, event_date) WHERE delivered = FALSE` - the partial form | **56 kB** |
 
 Sixty-three times, because the composite holds every row ever written and the partial one holds
 only the backlog. Every insert pays for it, on the hot path.
@@ -167,10 +164,8 @@ only the backlog. Every insert pays for it, on the hot path.
 **The index is yours, not the framework's.** `ekbatan.schema` declares the table's *shape* - the
 contract a CDC connector binds to - and nothing about its physical design. It used to declare
 three indexes, and that was the whole reason PostgreSQL went without the partial form: one
-declaration cannot be `WHERE delivered = FALSE` on one dialect and a composite on another, so it
-was the composite everywhere. Java's framework has the same split and resolves it the same way:
-its repositories reach for the table through `DSL.table(DSL.name("eventlog", "events"))` and
-ship no DDL at all.
+declaration cannot be `WHERE delivered = FALSE` on one database and a composite on another, so
+it was the composite everywhere.
 
 So write it in your migration, the way every example here does.
 

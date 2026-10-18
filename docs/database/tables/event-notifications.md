@@ -112,64 +112,6 @@ The rest are the delivery state, and they are this table's own:
 | `created_date` | no | when fan-out created the row |
 | `updated_date` | no | when it last changed |
 
-## The unique constraint is the whole design
-
-`UNIQUE (event_id, handler_name)` is what makes fan-out idempotent per handler. If fan-out runs
-twice over the same event - after a crash, or because two instances raced - the second insert is
-refused and no duplicate work exists.
-
-This is the same shape the saga example uses for its step markers, and it is worth internalising:
-**idempotency is a unique constraint inside the transaction that does the work**, not a
-check-then-act in application code. A check-then-act has a window. This has none.
-
-## States
-
-| state | meaning |
-| --- | --- |
-| `PENDING` | the initial state; not yet attempted, or attempted and not yet resolved |
-| `FAILED` | an attempt raised and another retry is still allowed |
-| `SUCCEEDED` | terminal. The handler returned normally |
-| `EXPIRED` | terminal. The retry window elapsed without success |
-
-`FAILED` is not terminal and `EXPIRED` is. A handler that will never succeed - a transfer into a
-closed wallet - should **not** raise; it should record a business outcome and return, or it will
-be retried until the window closes. See [Sagas](../../concepts/sagas.md).
-
-## Handler names are schema
-
-`handler_name` stores the handler's `name`, and old queued rows carry the old name. Renaming a
-handler without saying so makes every queued row invisible to it - they will sit until they
-expire.
-
-The way through is `aliases`:
-
-```python
-class MoneyDepositedEventHandler:
-    name = "money-deposited"
-    aliases = ("deposit-alerts",)      # what it used to be called
-    event_type = MoneyDepositedEvent
-```
-
-New rows are written with `name`; queued rows written under an alias still route. Drop the alias
-once they have drained.
-
-## How this compares with Java
-
-Columns, order, nullability and the unique constraint are **identical**. Two differences, both in
-the indexes:
-
-**The due index is partial on PostgreSQL in both ports** - `(next_retry_at) WHERE state IN
-('PENDING', 'FAILED')` - and `(state, next_retry_at)` on MySQL and MariaDB, which have no
-partial indexes. `SUCCEEDED` and `EXPIRED` rows sit for the retention window and are never
-selected, so on PostgreSQL they stay out of the index entirely.
-
-It comes from your migration, not from `ekbatan.schema`, for the reason given on
-[`events`](events.md#the-undelivered-index-and-what-it-costs): the framework declares the
-table's shape and nothing about its physical design, exactly as Java's does.
-
-**`attempts` has no `DEFAULT 0` here.** Java's DDL declares one; this port always writes the
-column explicitly, so the default is never consulted. It matters only if you insert rows by hand.
-
 ## Indexes
 
 ### The unique constraint is the whole design
@@ -215,20 +157,20 @@ once they have drained.
 
 ## Dialect types
 
-Columns, order, nullability and the unique constraint are **identical**. Two differences, both in
-the indexes:
+The columns, their order, nullability and the unique constraint are the same on every database.
+The difference is in the indexes:
 
-**The due index is partial on PostgreSQL in both ports** - `(next_retry_at) WHERE state IN
-('PENDING', 'FAILED')` - and `(state, next_retry_at)` on MySQL and MariaDB, which have no
-partial indexes. `SUCCEEDED` and `EXPIRED` rows sit for the retention window and are never
-selected, so on PostgreSQL they stay out of the index entirely.
+**The due index is partial on PostgreSQL** - `(next_retry_at) WHERE state IN ('PENDING',
+'FAILED')` - and `(state, next_retry_at)` on MySQL and MariaDB, which have no partial indexes.
+`SUCCEEDED` and `EXPIRED` rows sit for the retention window and are never selected, so on
+PostgreSQL they stay out of the index entirely.
 
 It comes from your migration, not from `ekbatan.schema`, for the reason given on
-[`events`](events.md#the-undelivered-index-and-what-it-costs): the framework declares the
-table's shape and nothing about its physical design, exactly as Java's does.
+[`events`](events.md#the-undelivered-index-and-what-it-costs): the framework declares the table's shape and nothing about its physical
+design.
 
-**`attempts` has no `DEFAULT 0` here.** Java's DDL declares one; this port always writes the
-column explicitly, so the default is never consulted. It matters only if you insert rows by hand.
+**`attempts` has no default.** The framework always writes the column. If you insert rows by
+hand, give it a value - `0` for a row nobody has tried yet.
 
 ## See also
 

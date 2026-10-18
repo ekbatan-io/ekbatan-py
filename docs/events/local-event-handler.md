@@ -70,8 +70,7 @@ The registry keys subscriptions by the event class's **name**, matching `events.
 allows several handlers per event class and **rejects two different event classes with the same
 name**, because those are indistinguishable in the outbox. Handler names and aliases must be
 globally unique - so the same handler registered twice is refused too. Each is checked as the
-handler is added, in Java's order and with Java's messages, so the refusal points at the line
-that added it.
+handler is added, so the refusal points at the line that added it.
 
 ### Renaming a handler safely
 
@@ -153,10 +152,9 @@ jobs.start()
 The executor already writes every committed event with `delivered = False`, so it becomes visible
 to fan-out automatically. There is no extra persister to configure.
 
-**A handling job you build runs**, as Java's does: its schedule is a fixed delay of the handling
-poll delay, 1 second by default, whatever the config says. The switch, `handling.enabled`
-(default off, as in Java), is read by your wiring, as Java's DI reads it to decide whether to
-create the job: pass `enabled=events_config.handling.enabled`, as above, or leave the job out.
+**A handling job you build runs**: its schedule is a fixed delay of the handling poll delay,
+1 second by default, whatever the config says. The switch, `handling.enabled` (default off), is
+read by your wiring, to decide whether to create the job: pass `enabled=events_config.handling.enabled`, as above, or leave the job out.
 Some deployments want fan-out on - so events leave the outbox into notifications - without
 running handlers in *this* process, because a separate worker picks them up. Fan-out has no
 such switch and is always on when the job is registered.
@@ -171,24 +169,22 @@ has reached. It carries a denormalised copy of the event and its action context,
 hydration query. See [`event_notifications`](../database/tables/event-notifications.md) for the full
 DDL and every column.
 
-**An index for the fan-out scan** on `events`, which is the one place this port's schema differs
-from Java's:
+**An index for the fan-out scan** on `events`. Fan-out looks for the rows not yet delivered, and
+the index that finds them differs by database:
 
 ```sql
--- Java, PostgreSQL only:
-CREATE INDEX events_undelivered ON eventlog.events (event_type, event_date)
+-- PostgreSQL:
+CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
     WHERE delivered = FALSE;
 
--- here, every dialect:
+-- MySQL and MariaDB, which have no partial indexes:
 CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
 ```
 
 A **partial** index holds only the rows fan-out is looking for, so it stays small however large
-the outbox grows. A leading-column index holds every row and pays for the delivered ones. The
-trade is portability: `WHERE` on an index is PostgreSQL-only, and MySQL and MariaDB have no
-counterpart, so one index definition serves all three here where Java emits a different one per
-dialect. [`events`](../database/tables/events.md#the-undelivered-index-and-what-it-costs) has the
-measured cost and when to switch.
+the outbox grows. A leading-column index holds every row and pays for the delivered ones. Both
+come from your migration, not from `ekbatan.schema`;
+[`events`](../database/tables/events.md#the-undelivered-index-and-what-it-costs) has the measured cost.
 
 The `delivered` column itself is not an addition — it is part of the base table, written `FALSE`
 on insert by every deployment. Only the *index* and the *notifications table* arrive with the
@@ -208,9 +204,9 @@ LocalEventHandlerConfig(
 )
 ```
 
-Every default matches Java's. Java binds these from `application.yml` and has a documented trap
-about ISO-8601 durations - `PT10S` works, `10s` does not. Here they are `timedelta`s in a frozen
-dataclass, so the trap does not exist and neither do the two spellings of every key.
+In code they are `timedelta`s in a frozen dataclass. In a config file they sit under
+`ekbatan.local-event-handler`, with each duration written as ISO-8601 text - `PT10S`, not
+`10s`; see [Config files](../database/config-files.md).
 
 ## Fan-out
 
@@ -218,11 +214,11 @@ Each round:
 
 1. Drain a batch of undelivered events whose `event_type` **currently has a registered handler** -
    `delivered = FALSE AND event_type IN (...)`, limited, ordered by `event_date`. **From the
-   replica** when the shard has one, else the primary, as Java's is: a lagging replica makes
+   replica** when the shard has one, else the primary: a lagging replica makes
    fan-out late, and an event read twice is dropped by the unique key in step 2. The read takes
-   a connection of its own, as Java's does; steps 2 and 3 are one transaction.
+   a connection of its own; steps 2 and 3 are one transaction.
 2. For each, insert one notification row per subscribed handler, with the full denormalised
-   context: `PENDING`, `attempts = 0`, `next_retry_at = event_date`, as Java's. An older event
+   context: `PENDING`, `attempts = 0`, `next_retry_at = event_date`. An older event
    fanned out late is still handled first, and an event dated in the future waits for its date.
 3. Mark the source events `delivered = TRUE`.
 4. Loop immediately if anything was drained; otherwise sleep the poll delay.
@@ -251,7 +247,7 @@ Each round:
 1. Drain a batch of due notifications **from the primary** - `state IN ('PENDING','FAILED') AND
    next_retry_at <= now`, limited, ordered. From the primary rather than a replica, so a handler
    is not invoked from a stale row that was already marked complete. Like fan-out's read, it
-   takes a connection of its own and never joins an open transaction, as Java's does not.
+   takes a connection of its own and never joins an open transaction.
 2. **Pre-flight expiry:** if `now > event_date + retention`, go straight to `EXPIRED` without
    invoking the handler. A stale event should not burn anything.
 3. Invoke the handler:
@@ -259,8 +255,8 @@ Each round:
    - raises, and the next retry lands inside the window → `FAILED`, `attempts++`,
      `next_retry_at = now + backoff(attempts)`
    - raises, and the next retry would land past `event_date + retention` → `EXPIRED`,
-     `attempts++`, at once, as in Java. `now` is read once, after the whole batch has run.
-4. Write the outcomes, one statement per bucket, each committing itself, as Java does: pre-flight
+     `attempts++`, at once. `now` is read once, after the whole batch has run.
+4. Write the outcomes, one statement per bucket, each committing itself: pre-flight
    expiries, successes, post-failure expiries, then the retries. No transaction around them, so
    if one write fails the ones before it stay written - a handler that already succeeded is not
    called again.
@@ -269,14 +265,11 @@ Each round:
 Backoff is capped exponential: `30s x 2^(attempts-1)`, capped at 5 minutes. So 30s, 1m, 2m, 4m,
 then 5m for ever, until the 7-day retention window closes.
 
-### This half matches Java now, in both respects
+### Handlers run in parallel, and outcomes are batched
 
-Java invokes handlers **in parallel on virtual threads** and commits the outcomes in about four
-batched `UPDATE`s. Two halves, and only one of them ported.
-
-**Handlers now run in parallel** — one thread per notification, per shard, bounded by
-`handling_batch_size` exactly as Java is bounded by its own batch size. There is no setting of
-its own, because Java has none. Measured with a handler modelled as 20 ms of waiting:
+**Handlers run in parallel** — one thread per notification, per shard, bounded by
+`handling_batch_size`. There is no separate setting for it. Measured with a handler modelled as
+20 ms of waiting:
 
 | batch | in series | pooled | speed-up |
 | --- | --- | --- | --- |
@@ -287,23 +280,22 @@ its own, because Java has none. Measured with a handler modelled as 20 ms of wai
 
 A single notification is delivered inline, on no thread at all.
 
-**Your handler now runs concurrently with its siblings.** It did not before. If yours keeps
-state between calls, or touches something that is not safe to share, that is the thing to look
-at — and it is the arrangement Java has always had.
+**Your handler runs concurrently with its siblings.** It did not before. If yours keeps state
+between calls, or touches something that is not safe to share, that is the thing to look at.
 
 **Outcomes are written one `UPDATE` per bucket**, not one per row. Rows that decided the same
 thing — same state, same attempt count, same retry delay — share a statement:
 
-| batch | shape | before | after |
+| batch | shape | one per row | one per bucket |
 | --- | --- | --- | --- |
 | 100 | all succeed, first attempt | 100 | 1 |
 | 100 | mostly ok, retries at two depths, one dead | 100 | 4 |
 
-Four is Java's number, from the same four buckets: successes, pre-flight expiries, post-failure
-expiries, and one per distinct attempt count among the retries.
+The buckets are successes, pre-flight expiries, post-failure expiries, and one per distinct
+attempt count among the retries.
 
 This page used to say the opposite - that handlers subscribed to the same event never run
-concurrently here, and not to rely on it. They do now, as Java's always have. If you took the
+concurrently, and not to rely on it. They do now. If you took the
 advice and did not rely on it, nothing changes for you.
 
 ## Handlers must be idempotent
@@ -328,7 +320,7 @@ What works:
 What you must not rely on:
 
 - ordering **between** events - each shard drains its own backlog;
-- ordering between handlers on one event - sequential here, parallel in Java;
+- ordering between handlers on one event - they may run at the same time;
 - the handler being called *exactly* once. Plan for two.
 
 If a handler cannot be made idempotent in any of those ways, you want the Kafka path with
@@ -355,8 +347,7 @@ class MoneyDepositedEventHandler:
 ```
 
 Nothing injects that service. You construct the handler in your wiring, where you can see what it
-took — the same place you register it. There is no scanning and no annotation, which is why this
-page has no "wiring via DI" section to match Java's three.
+took — the same place you register it. There is no scanning and no annotation.
 
 **The external call is the part that makes idempotency hard.** A notification sent twice is a
 notification the user received twice, and the outbox cannot undo it. If the call has an
@@ -438,8 +429,7 @@ class MoneyDepositedEventHandler:
 ```
 
 Nothing injects that service. You construct the handler in your wiring, where you can see what it
-took — the same place you register it. There is no scanning and no annotation, which is why this
-page has no "wiring via DI" section to match Java's three.
+took — the same place you register it. There is no scanning and no annotation.
 
 **The external call is the part that makes idempotency hard.** A notification sent twice is a
 notification the user received twice, and the outbox cannot undo it. If the call has an

@@ -101,17 +101,15 @@ The event pipeline's two jobs are registered here too - they *are* distributed j
 
 ### `workers(n)`, and sizing the pool
 
-Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
-unbounded and `threads(n)` only sizes the polling batch. Here they are **real OS threads**, so
-`workers(n)` is a ceiling - defaulting to one per registered job.
+Job bodies run on **real OS threads**, so `workers(n)` is a ceiling on how many run at once -
+defaulting to one per registered job.
 
 That default is right: a recurring job is a single row, so it has at most one execution in flight.
 Raise it when several jobs can be due at once.
 
 **A ceiling, not a reservation.** Threads start as work arrives and only when no worker is
 already waiting, so twenty registered jobs with nothing due hold no worker threads at all. They
-are not retired once started: CPython has no counterpart to `newCachedThreadPool()`'s idle
-timeout and neither does this.
+are not retired once started: an idle worker stays until the registry stops.
 
 **On connections - a running job holds none by itself.** Measured: db-scheduler takes a
 connection to claim the row, releases it, runs your body with none open, then takes another to
@@ -163,39 +161,30 @@ The heartbeat is written by the housekeeping thread rather than by the thread ru
 a long `execute()` is not itself at risk. What puts it at risk is the housekeeper stalling - a
 saturated pool, or a database that will not accept the write.
 
-**`stop()` waits `shutdown_max_wait` once, then returns.** Java's db-scheduler waits, interrupts
-the job threads, and waits again - up to twice the setting - and the interrupt usually ends a job
-in a `sleep` or a blocking call at once. Python cannot interrupt a thread, so there is no second
-phase here: `stop()` logs that it cannot interrupt, names the executions still running, and
-returns, at the same moment Java returns for a job that its interrupt ended. Such an execution runs
-on to its end on a daemon thread, or is cut off when the process exits; if cut off, its row stays
+**`stop()` waits `shutdown_max_wait` once, then returns.** Python cannot interrupt a thread, so
+there is no way to end a job stuck in a `sleep` or a blocking call: `stop()` logs that it cannot
+interrupt, names the executions still running, and returns. Such an execution runs on to its end on a daemon thread, or is cut off when the process exits; if cut off, its row stays
 picked with a frozen heartbeat and is recovered later by the same path as a crash. A job that must
 stop cleanly checks `ctx.scheduler_state.is_shutting_down`. The 30-minute default is usually worth
 lowering in tests.
 
 ### Database dialect
 
-db-scheduler detects its SQL dialect by **opening a connection and reading the database
-metadata**. If that connection fails it logs and keeps generic SQL *for the scheduler's lifetime* -
-and the generic SQL emits `OFFSET 0 ROWS FETCH FIRST n ROWS ONLY`, which MySQL and MariaDB cannot
-parse. Since pools are built to let an application start before its database is reachable, that
-failure is ordinary rather than exotic, and the result would be a scheduler issuing an invalid
-poll query for ever while the application reports healthy.
-
-Java pins the dialect from the JDBC url by hand to avoid it. Here **SQLAlchemy resolves the
-dialect from the url when the engine is created, with no I/O** - so there is no race to lose and
-nothing to pin. Java also has to assume MySQL 8+ because a url cannot reveal a server version;
-that assumption does not arise here.
+The scheduler's poll query differs by database: the generic form,
+`OFFSET 0 ROWS FETCH FIRST n ROWS ONLY`, is one MySQL and MariaDB cannot parse. The scheduler
+takes the dialect from the engine, and **SQLAlchemy resolves it from the url when the engine is
+created, with no I/O**. So a scheduler started before its database is reachable - which pools are
+built to allow - still sends the right query once the database is up. There is no detection step
+to fail and nothing to set by hand.
 
 ## Draining at exit: on by default, and the SIGTERM half opt-in
 
-**Java installs a JVM shutdown hook by default** - `JobRegistry.Builder.registerShutdownHook`, on
-unless you turn it off - so the process drains in-flight executions on its way out. It can
-afford to: a JVM shutdown hook is **additive**. Any number can be registered, they all run, and
-none displaces another. And the JVM runs that list on SIGTERM, because it turns SIGTERM into an
-orderly exit.
+A process that stops while a job is running should let the job finish first - **drain** it -
+rather than cut it off. That needs two things: a list of work to run on the way out, where any
+number of entries can be added without displacing each other, and a way to run that list when the
+process is sent SIGTERM, which is how a container is stopped.
 
-Python has the list and not the second part, so this port splits the hook in two.
+Python has the list and not the second part, so the hook is split in two.
 
 **The list is `atexit`, and a started registry is on it by default.** `start()` adds it and
 `stop()` takes it off, exactly as OpenTelemetry's `TracerProvider(shutdown_on_exit=True)` and
@@ -242,7 +231,7 @@ this raises rather than silently doing nothing if it has not got one.
 **Without it**, a SIGTERM kills the process mid-execution; the rows then wait out the
 dead-execution window, 60 seconds on these defaults, before another instance picks them up.
 Nothing is lost, and every job body already has to tolerate running twice - but the shutdown is
-abrupt where Java's is graceful.
+abrupt rather than graceful.
 
 **When to leave it off.** A service that already has somewhere to call `jobs.stop()` - a FastAPI
 lifespan, a Django shutdown - wants none of this, and the REST examples are written that way:
@@ -271,7 +260,7 @@ One row per registered job, and it is the coordination itself rather than a log 
 carries the next execution time, the identity of whichever instance currently holds the task,
 and its heartbeat. Whichever instance claims the row runs; the rest do not.
 
-The table is db-scheduler's, unchanged, so a Java service and a Python one can share one — see
+The table is db-scheduler's, unchanged - see
 [`scheduled_tasks`](/reference/tables/scheduled-tasks/) for every column and the DDL on each
 dialect, generated rather than transcribed:
 
@@ -279,13 +268,9 @@ dialect, generated rather than transcribed:
 from ekbatan.schema import scheduled_tasks_table
 ```
 
-One difference from the Java port's copy is worth knowing if you are sharing a database:
-`execution_time` and the other timestamps are `TIMESTAMP` here, where Java's migration writes
-`TIMESTAMP WITH TIME ZONE`. Both store the same instant and both are read back correctly by
-either port; the column type differs because db-scheduler's own schema is zoned and this port
-holds the always-unzoned rule everywhere. The
-[table's page](/reference/tables/scheduled-tasks/#execution_time-is-timestamptz-in-java-and-timestamp-here)
-has the measured consequence of getting that wrong in the other direction.
+Its times are `TIMESTAMP` with no zone, as in every framework table; [the table's page](/reference/tables/scheduled-tasks/#if-the-time-columns-are-timestamptz) covers a table whose times are
+`timestamptz`. To share the table with a Java service, see
+[Running beside a Java service](/reference/beside-java/#scheduled_tasks).
 
 **What exclusivity does and does not mean.** When a task's `execution_time` arrives, exactly one
 instance wins the atomic claim *for that slot*, and that instance runs it. Each running instance

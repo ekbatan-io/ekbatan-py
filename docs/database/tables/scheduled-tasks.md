@@ -9,12 +9,12 @@ event handler is built on them, because fan-out and dispatch *are* jobs.
 
 This table is **owned by [db-scheduler](https://github.com/kagkarlsson/db-scheduler)**, not by
 this framework. The job registry is a small facade over it and deliberately does not wrap the
-table in a model. Both ports keep the schema verbatim.
+table in a model. The schema here is db-scheduler's own, unchanged.
 
-Java depends on the upstream Java artifact. There is no upstream on PyPI, so this repository
-publishes its own port as `ekbatan-py-db-scheduler` - a separate distribution with its own
-tests, pinned to the version `ekbatan` was cut with. The **table is the same either way**, which
-is what lets a Java worker and a Python worker contend for the same executions.
+The scheduler itself is published from this repository as `ekbatan-py-db-scheduler` - a port of
+db-scheduler, a separate distribution with its own tests, pinned to the version `ekbatan` was cut
+with. Because the table is db-scheduler's, a Java service running db-scheduler can share it; see
+[Running beside a Java service](../../beside-java.md#scheduled_tasks).
 
 ## DDL
 
@@ -72,11 +72,11 @@ CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbe
 
 `DATETIME(6)` is the one to get right here rather than anywhere else on this page: the scheduler
 compares `execution_time` and `last_heartbeat` against instants that are not whole seconds, and a
-bare `DATETIME` truncates. See [the measured consequence](#execution_time-is-timestamptz-in-java-and-timestamp-here) below.
+bare `DATETIME` truncates.
 
 `scheduled_tasks_priority_execution_time_idx` is emitted here too — all three indexes are the
 same on every dialect. It is omitted from the snippet above only for length; see
-[Index names and the priority ordering](#index-names-and-the-priority-ordering) for what each is for.
+[Indexes](#indexes) for what each is for.
 
 ## Columns
 
@@ -109,17 +109,16 @@ startup when the pool is too small, and it warned while the examples were being 
 
 ## Dialect types
 
-Columns, order, nullability and the primary key are **identical** - both ports follow
-db-scheduler's own schema. Two differences on PostgreSQL:
+The columns, their order, nullability and the primary key are db-scheduler's, on every database.
+The time columns are `TIMESTAMP WITHOUT TIME ZONE` on PostgreSQL and `DATETIME(6)` on MySQL and
+MariaDB.
 
-### `execution_time` is `timestamptz` in Java and `timestamp` here
+### If the time columns are `timestamptz`
 
-Java notes that it "intentionally steps off the always-TIMESTAMP rule here" because this is
-db-scheduler's table. This port emits `TIMESTAMP WITHOUT TIME ZONE`.
-
-**Either DDL works with either port, and that was checked.** The Python scheduler's clock returns
-`datetime.now(UTC)` - an *aware* datetime - and an aware datetime stores correctly in a
-`timestamptz` column whatever the session timezone is.
+A table created by another migration may declare the PostgreSQL time columns `timestamptz`. The
+scheduler works with that too, and that was checked: its clock returns `datetime.now(UTC)` - an
+*aware* datetime - and an aware datetime stores correctly in a `timestamptz` column whatever the
+session timezone is.
 
 The trap is worth spelling out, because it is the one that would have bitten. Writing a **naive**
 datetime into a `timestamptz` column makes PostgreSQL interpret it in the *session* timezone.
@@ -134,32 +133,20 @@ Four hours off, silently, and every execution fires at the wrong time. This is w
 tables use `TIMESTAMP` without a zone everywhere else, and why CI runs the PostgreSQL suite a
 second time under a non-UTC process.
 
-If you share a `scheduled_tasks` table created by a Java service, nothing is required of you -
-the aware clock already handles it. If you write to that table yourself, pass aware datetimes.
-
-### Index names and the priority ordering
-
-Java names them `execution_time_idx`, `last_heartbeat_idx`, `priority_execution_time_idx`; this
-port prefixes each with the table name, which is what SQLAlchemy's convention produces and what
-keeps them unique when a schema holds two schedulers.
-
-Java's priority index is `(priority DESC, execution_time ASC)`; this port emits
-`(priority, execution_time)` with no direction. PostgreSQL can scan an index backwards, so the
-ordering is served either way; the cost is a backward scan rather than a forward one, which is
-not measurable at this table's size.
+So with either column type, nothing is required of you - the aware clock already handles it. If
+you write to this table yourself, pass aware datetimes.
 
 ## Indexes
 
 ### Index names and the priority ordering
 
-Java names them `execution_time_idx`, `last_heartbeat_idx`, `priority_execution_time_idx`; this
-port prefixes each with the table name, which is what SQLAlchemy's convention produces and what
-keeps them unique when a schema holds two schedulers.
+Each index name starts with the table name - `scheduled_tasks_execution_time_idx` and so on. That
+is what SQLAlchemy's naming convention produces, and it keeps the names unique when one schema
+holds two schedulers.
 
-Java's priority index is `(priority DESC, execution_time ASC)`; this port emits
-`(priority, execution_time)` with no direction. PostgreSQL can scan an index backwards, so the
-ordering is served either way; the cost is a backward scan rather than a forward one, which is
-not measurable at this table's size.
+The scheduler takes due executions highest priority first, then oldest first
+(`priority DESC, execution_time ASC`). The index is `(priority, execution_time)`, with no
+direction; at this table's size the difference was not measurable.
 
 ## See also
 

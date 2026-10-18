@@ -158,20 +158,20 @@ once they have drained.
 
 ## Dialect types
 
-Columns, order, nullability and the unique constraint are **identical**. Two differences, both in
-the indexes:
+The columns, their order, nullability and the unique constraint are the same on every database.
+The difference is in the indexes:
 
-**The due index is partial on PostgreSQL in both ports** - `(next_retry_at) WHERE state IN
-('PENDING', 'FAILED')` - and `(state, next_retry_at)` on MySQL and MariaDB, which have no
-partial indexes. `SUCCEEDED` and `EXPIRED` rows sit for the retention window and are never
-selected, so on PostgreSQL they stay out of the index entirely.
+**The due index is partial on PostgreSQL** - `(next_retry_at) WHERE state IN ('PENDING',
+'FAILED')` - and `(state, next_retry_at)` on MySQL and MariaDB, which have no partial indexes.
+`SUCCEEDED` and `EXPIRED` rows sit for the retention window and are never selected, so on
+PostgreSQL they stay out of the index entirely.
 
 It comes from your migration, not from `ekbatan.schema`, for the reason given on
-[`events`](/reference/tables/events/#the-undelivered-index-and-what-it-costs): the framework
-declares the table's shape and nothing about its physical design, exactly as Java's does.
+[`events`](/reference/tables/events/#the-undelivered-index-and-what-it-costs): the framework declares the table's shape and nothing about its physical
+design.
 
-**`attempts` has no `DEFAULT 0` here.** Java's DDL declares one; this port always writes the
-column explicitly, so the default is never consulted. It matters only if you insert rows by hand.
+**`attempts` has no default.** The framework always writes the column. If you insert rows by
+hand, give it a value - `0` for a row nobody has tried yet.
 
 ## See also
 

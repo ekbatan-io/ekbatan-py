@@ -5,16 +5,13 @@ activeSection: reference
 lead: "The other consumer path: point a CDC connector at the outbox and ship committed rows to a broker."
 ---
 
-**Nothing in this path is Python code, and that is the point.** The connector and the transform
-run inside Kafka Connect, in a JVM, whichever language wrote the row. A service written here uses
-the *same* `ekbatan-debezium-smt` artifact a Java service uses, pointed at the same table. There
-is no Python counterpart to build and none is planned.
-
-What this port owes the pipeline is the **row format** - and that is
-[`events`](/reference/tables/events/), verified column for column against Java's.
+**Nothing in this path is Python code.** The connector and the transforms run inside Kafka
+Connect, whichever language wrote the row. What your service owes the pipeline is the **row
+format** - the [`events`](/reference/tables/events/) table, written in the same transaction as your domain
+change.
 
 ```
- your service (Python or Java)
+ your service
         │  one transaction
         ▼
  ┌──────────────────────────┐
@@ -23,7 +20,7 @@ What this port owes the pipeline is the **row format** - and that is
         │  write-ahead log
         ▼
  ┌──────────────────────────┐
- │  Debezium                │  ← a JVM, in Kafka Connect
+ │  Debezium                │  ← in Kafka Connect
  └──────────────────────────┘
         │
         ▼
@@ -68,24 +65,21 @@ Your application
 Your consumers — `json.loads`, and nothing else
 ```
 
-Nothing in that diagram is Python-specific, and nothing in it is Java-specific either: the only
-producer-side requirement is a row in `events`, which both ports write identically.
+Nothing in that diagram depends on the language your service is written in: the only thing the
+producer has to do is write a row in `events`.
 
 ## Variant B — Binary on Kafka (Avro / Protobuf)
 
-The framework ships two Kafka Connect transforms — `OutboxToAvroTransform` and
-`OutboxToProtobufTransform` — that encode the row before it reaches the broker.
+Two Kafka Connect transforms — `OutboxToAvroTransform` and `OutboxToProtobufTransform` —
+encode the row before it reaches the broker.
 
-**Neither is a Python artifact, and that is the point.** They run inside Kafka Connect, in a
-JVM, whichever language wrote the row. A service written here mounts the *same* JAR a Java
-service does, configured the same way. What this port owes the pipeline is the row format, and
-[those columns are verified identical](/reference/tables/events/).
+They run inside Kafka Connect, not in your service: your service only writes the rows. Kafka
+Connect plugins are JARs, so these two come from Ekbatan's Java project, as the
+`ekbatan-debezium-smt` artifact - see
+[Running beside a Java service](/reference/beside-java/#streaming-the-events) for where to get them.
 
-Their configuration, payload encoding, descriptor mounting, envelope timestamps, the
-`ExtractNewRecordState` interaction and the error-handling options are documented with the
-artifact itself, on
-[the Java port's streaming page](https://ekbatan-io.github.io/ekbatan/reference/events/streaming/).
-Duplicating that here would give you a second copy to drift.
+Their configuration, payload encoding, envelope timestamps, the `ExtractNewRecordState`
+interaction and the error-handling options are under [SMTs](#smts-variant-b-only) below.
 
 ## Picking a variant
 
@@ -106,8 +100,8 @@ production consumers. Same outbox, two connectors, different transform configura
 
 The encoding is a *wire* concern, not a storage one. The outbox row holds JSON whichever variant
 you run, because the row has readers that are not the broker — the in-process handler, a
-backfill, an operator with `psql` — and because the two ports have to agree on one stored
-representation to interoperate at all.
+backfill, an operator with `psql` — and because every service writing to one outbox has to agree
+on one stored representation.
 
 The transform encodes on the way out. Change variant and nothing about the table changes.
 
@@ -132,9 +126,8 @@ Every variant carries the same 13-field shape: `id`, `namespace`, `action_id`, `
 
 For a Python consumer reading raw Debezium JSON, `ActionEvent.from_row(...)` in
 `ekbatan.streaming` is that shape as a frozen dataclass — the consumer-side view of an outbox
-row, with the decimal and timestamp conventions already applied. Java publishes three modules
-for the same purpose, one per wire format; here the JSON one is in the framework and the binary
-ones are the transform's own schemas.
+row, with the decimal and timestamp conventions already applied. For the binary formats, the
+shape is the transforms' own schemas: `ActionEvent.avsc`, or the protobuf descriptor.
 
 ## Topic naming
 
@@ -208,10 +201,9 @@ rather than a loss.
 
 ## SMTs (Variant B only)
 
-The two transforms are **Kafka Connect artifacts, not Python ones** — shadow JARs that run inside
-the Connect worker. That is not a gap in this port: Connect is a JVM process whatever wrote the
-row, and a Python service writing the same outbox rows gets the same bytes on the same topics
-with the same jars, unchanged. Nothing below needs a JVM in *your* service.
+The two transforms are **Kafka Connect plugins, not Python packages** — JARs that run inside the
+Connect worker. Nothing below runs in *your* service; it only writes the rows the transforms
+read.
 
 - **`OutboxToAvroTransform`** — encodes the Debezium outbox row into an Avro `ActionEvent`
   envelope, with the `payload` field encoded against a **per-`event_type` Avro schema** you
@@ -322,17 +314,19 @@ The namespace must be [dot-separated identifiers](#topic-naming) — no hyphens,
 framework refuses at construction for exactly this reason.
 
 The SMT JARs are **not published to a package index** — Connect loads plugins from the
-filesystem. Take one from the Java port's build and install it in **its own directory** under the
-worker's `plugin.path`. The separate directory matters: Connect gives each plugin directory its
+filesystem. Take them from the Java project's build - see
+[Running beside a Java service](/reference/beside-java/#streaming-the-events) - and install each in **its own
+directory** under the worker's `plugin.path`. The separate directory matters: Connect gives each plugin directory its
 own classloader, which is what stops a plugin's bundled dependencies colliding with anything
 else's.
 
 ### Payload encoding
 
 The `payload` column holds JSON, which the SMT re-encodes against the per-`event_type` schema you
-configure. What this port writes into that column is what the Java port writes — the same text, byte for
-byte: Java's field names, declaration order, decimals as JSON numbers — so a schema written for one producer encodes
-the other's rows without change.
+configure. This framework writes field names in camelCase, in declaration order, decimals as JSON
+numbers and times as ISO-8601 text. A Java service writes the same text, byte for byte, so a
+schema written for one producer encodes the other's rows unchanged - see
+[event payloads](/reference/beside-java/#event-payloads).
 
 The rule is that **the schema decides the type**, and a value that does not fit **fails, naming
 the field path**. It is never coerced to a default:
@@ -353,15 +347,15 @@ declares. Put a bare epoch number in a payload yourself and you have opted into 
 
 ### How to read the bytes
 
-| Format | Envelope | Payload |
-|---|---|---|
-| Avro | `ActionEvent.fromByteBuffer(value)` | `MyEvent.fromByteBuffer(event.getPayload())` |
-| Protobuf | `ActionEvent.parseFrom(value)` | `MyEvent.parseFrom(event.getPayload())` |
+Two levels in both formats: decode the envelope, then decode its `payload` field with the event's
+own schema.
 
-The same call works at both levels in both formats, and in both it is the method the generated
-class already gives you. From Python, `fastavro.schemaless_reader` and the `protobuf` runtime's
-generated `ParseFromString` are the equivalents — the wire format is the contract, not the
-language.
+| Format | Envelope, then payload, from Python |
+|---|---|
+| Avro | skip the 10-byte header (below), then `fastavro.schemaless_reader` with `ActionEvent.avsc`; the same again on `payload` with the event's schema |
+| Protobuf | the generated class's `ParseFromString(value)`; then the event's class's `ParseFromString` on `payload` |
+
+The wire format is the contract, so a consumer in any language reads the same bytes.
 
 For Avro the SMT emits **single-object encoding**: a two-byte marker, the schema's 8-byte
 fingerprint, then the record. A reader that expects bare Avro binary will fail on the header
@@ -422,7 +416,7 @@ that deduplicates on `id` will not notice; anything treating each message as a d
 double-process.
 
 **What the SMT does about it.** It falls back to the row's own `delivered` column, which carries
-the same information for the only `UPDATE` this table ever sees. This port upholds the same
+the same information for the only `UPDATE` this table ever sees. This framework upholds the
 invariant the transform depends on: the outbox writer inserts every row with `delivered = False`,
 and the sole writer that sets it true is the fan-out job — so `delivered = TRUE` *is* the flip and
 `delivered = FALSE` *is* the insert. Duplicates are filtered with no configuration on your part.
@@ -472,8 +466,8 @@ those; the transforms already do.
 
 ## Reading the rows
 
-On the consumer side, `ekbatan.streaming.ActionEvent` is the shape - the same thirteen fields
-under the same names as Java's `ActionEvent`:
+On the consumer side, `ekbatan.streaming.ActionEvent` is the shape - the envelope's thirteen
+fields, as a frozen dataclass:
 
 ```python
 from ekbatan.streaming import ActionEvent
@@ -487,7 +481,7 @@ for message in consumer:
 Nothing is validated, deliberately: four fields are legitimately absent on a sentinel row, so a
 type that rejected them would reject valid traffic.
 
-**Mapping a raw CDC message is still the consumer's job**, in both ports. A Debezium topic carries
+**Mapping a raw CDC message is still the consumer's job.** A Debezium topic carries
 JSON columns as strings rather than nested objects, and timestamps as bare epoch microseconds -
 and which of those you get depends on the connector, the converter and the transform. A helper
 that guessed would be right for one pipeline and wrong for the next.
@@ -503,10 +497,9 @@ event = ActionEvent.from_message(
 )
 ```
 
-Keyword-only, which is the whole of what Java's builder is for. Its thirteen-argument constructor
-put `model_type` next to `event_type` and `started_date` next to `completion_date` - adjacent
-same-typed pairs that transpose silently and produce an event routed to the wrong topic or
-carrying the wrong body.
+`ActionEvent` itself takes keyword arguments only. `model_type` sits next to `event_type`, and
+`started_date` next to `completion_date` - same-typed pairs that, passed by position, would swap
+silently and produce an event routed to the wrong topic or carrying the wrong body.
 
 ## Running both paths at once
 
