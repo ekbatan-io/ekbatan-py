@@ -50,7 +50,7 @@ Both writes commit together or neither does - the same atomicity an action gives
 of the action machinery: no plan, no outbox row, no retry on a lost version race.
 
 `tx.rows(statement)` is forwarded too, for a statement whose rows become objects - the same
-`fetch(mapper)` family a repository uses, described in [Repositories](/reference/repository/#turning-rows-into-objects).
+`fetch(mapper)` family a repository uses, described in [Repositories](/reference/repository/#write-the-mapping).
 `tx.connection` is the `Db` underneath, for everything else SQLAlchemy offers.
 
 **One `with` block covers every case.** The block can compute and keep any value you want, and

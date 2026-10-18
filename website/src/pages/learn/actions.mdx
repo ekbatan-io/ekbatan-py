@@ -99,7 +99,7 @@ the `MoneyDepositedEvent` row into `events`, and commits. If anything raises, bo
 together.
 
 An action with no parameters passes `None`. What it may not pass is a bare scalar — a string or
-an int in the params column is unreadable six months later, and both ports refuse it.
+an int in the params column is unreadable six months later, so it is refused.
 
 ## ActionPlan
 
