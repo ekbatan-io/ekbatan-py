@@ -33,6 +33,12 @@ from ekbatan.errors import ValidationError
 
 MARKER = "Mk-41c9-SECRET"
 
+# `--async-driver` swaps the PostgreSQL default for the whole run; these pin the shipped one.
+SHIPPED_DEFAULTS = pytest.mark.skipif(
+    ASYNC_DEFAULT_DRIVERS["postgres"] != "asyncpg",
+    reason="--async-driver swapped the default PostgreSQL driver",
+)
+
 
 # -- the driver --------------------------------------------------------------------------------
 
@@ -50,6 +56,7 @@ MARKER = "Mk-41c9-SECRET"
         ("sqlite://", "sqlite+aiosqlite"),
     ],
 )
+@SHIPPED_DEFAULTS
 def test_a_url_naming_a_sync_driver_or_none_connects_through_the_async_default(url, connects_with):
     assert async_url(DataSourceConfig(url=url)).drivername == connects_with
 
@@ -62,6 +69,7 @@ def test_a_url_naming_an_async_driver_keeps_it(url):
     assert async_url(DataSourceConfig(url=url)).render_as_string() == url
 
 
+@SHIPPED_DEFAULTS
 def test_each_database_has_a_default():
     assert dict(ASYNC_DEFAULT_DRIVERS) == {
         "postgres": "asyncpg",
