@@ -31,7 +31,7 @@ import pytest
 # here on purpose - see tests/test_structure.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from backends import Backend, requested_dialects, start
+from backends import ALL_DIALECTS, Backend, requested_dialects, start
 from ekbatan.clock import VirtualClock
 from ekbatan.config import (
     ShardGroupConfig,
@@ -62,6 +62,50 @@ def pytest_generate_tests(metafunc: Any) -> None:
     if "dialect" in metafunc.fixturenames:
         chosen = requested_dialects(metafunc.config)
         metafunc.parametrize("dialect", chosen, scope="session", ids=list(chosen))
+        # A module whose cases differ per database - schemagen's type table - names them in
+        # `CASES_BY_DIALECT`; a test asking for `case_id` gets each case on the databases that
+        # have it, and the other pairs are dropped below. Not a joint (dialect, case)
+        # parameter: that makes every pair a new session-scoped `dialect`, and the session's
+        # container is stopped and started again for each one.
+        cases = getattr(metafunc.module, "CASES_BY_DIALECT", None)
+        if cases is not None and "case_id" in metafunc.fixturenames:
+            ids = list(dict.fromkeys(c.id for d in chosen for c in cases.get(d, ())))
+            metafunc.parametrize("case_id", ids)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config: Any, items: list[Any]) -> None:
+    """Drop the (database, case) pairs a database does not have - see `pytest_generate_tests` -
+    and keep each database's tests together: with `case_id` beside `dialect`, pytest's own
+    ordering interleaves the databases, and every switch stops one container and starts it again.
+    """
+    keep, drop = [], []
+    for item in items:
+        params = getattr(getattr(item, "callspec", None), "params", {})
+        cases = getattr(getattr(item, "module", None), "CASES_BY_DIALECT", None)
+        if (
+            cases is not None
+            and "case_id" in params
+            and params["case_id"] not in {c.id for c in cases.get(params["dialect"], ())}
+        ):
+            drop.append(item)
+            continue
+        keep.append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+    order = {d: i for i, d in enumerate(ALL_DIALECTS)}
+    slots = [i for i, item in enumerate(keep) if _has_cases(item)]
+    grouped = sorted(
+        (keep[i] for i in slots), key=lambda item: order.get(item.callspec.params["dialect"], 0)
+    )
+    for slot, item in zip(slots, grouped, strict=True):
+        keep[slot] = item
+    items[:] = keep
+
+
+def _has_cases(item: Any) -> bool:
+    params = getattr(getattr(item, "callspec", None), "params", {})
+    return "dialect" in params and hasattr(getattr(item, "module", None), "CASES_BY_DIALECT")
 
 
 @pytest.fixture(scope="session")
