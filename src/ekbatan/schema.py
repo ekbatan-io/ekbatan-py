@@ -211,38 +211,27 @@ class Converted[DbT, UserT](TypeDecorator[UserT]):
                 )
         super().__init__()
         self.impl = impl() if isinstance(impl, type) else impl
-        self.converter = converter
-
-    @property
-    def _static_cache_key(self) -> Any:
-        """What SQLAlchemy keys its statement cache on: this class, the column type, and the
-        converter.
-
-        The converter by its own ``==`` and hash when it has them - a plain class compares by
-        identity, so two instances never share a cached statement, whatever state they hold -
-        and by identity when it cannot be hashed. Keying on the converter's class alone would
-        be wrong: ``Scaled(2)`` and ``Scaled(4)`` would share one statement's bind processing.
-        """
-        from sqlalchemy.sql.cache_key import NO_CACHE
-
-        inner = self.impl_instance._static_cache_key
-        if inner is NO_CACHE:
-            return NO_CACHE
+        self._converter = converter
+        # SQLAlchemy keys its statement cache on the attributes named after `__init__`'s
+        # parameters (`cache_ok`'s documented rule): `impl`, and this. The converter itself when it
+        # can be hashed - a plain class compares by identity, so two instances never share a
+        # cached statement whatever state they hold - and by identity when it cannot (a plain
+        # `@dataclass`). Keying on the converter's class alone would be wrong: `Scaled(2)` and
+        # `Scaled(4)` would share one statement's bind processing.
         try:
-            hash(self.converter)
-            token: object = self.converter
+            hash(converter)
+            self.converter: object = converter
         except TypeError:
-            token = _Same(self.converter)
-        return (self.__class__, ("impl", inner), ("converter", token))
+            self.converter = _Same(converter)
 
     def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
-        return None if value is None else self.converter.to_db(value)
+        return None if value is None else self._converter.to_db(value)
 
     def process_result_value(self, value: Any, dialect: Dialect) -> Any:
-        return None if value is None else self.converter.from_db(value)
+        return None if value is None else self._converter.from_db(value)
 
     def __repr__(self) -> str:
-        return f"converted({self.impl_instance!r}, {self.converter!r})"
+        return f"converted({self.impl_instance!r}, {self._converter!r})"
 
 
 def converted[DbT, UserT](
