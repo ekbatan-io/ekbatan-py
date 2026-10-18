@@ -82,6 +82,21 @@ def column_sources(text: str) -> dict[tuple[str, str], str]:
     return found
 
 
+def unused_and_undefined(text: str) -> tuple[set[str], set[str]]:
+    """The names a generated module imports and never uses, and the ones it uses and never
+    defines - both empty for a module that imports exactly what it needs."""
+    tree = ast.parse(text)
+    imported: set[str] = set()
+    defined: set[str] = {"__file__"}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module != "__future__":
+            imported |= {a.asname or a.name for a in node.names}
+        elif isinstance(node, ast.Assign):
+            defined |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+    used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    return imported - used, used - imported - defined
+
+
 def normal(source: str) -> str:
     return ast.unparse(ast.parse(source, mode="eval"))
 

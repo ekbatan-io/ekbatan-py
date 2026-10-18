@@ -41,6 +41,7 @@ from schemagen_support import (
     normal,
     notes,
     raw_types,
+    unused_and_undefined,
 )
 
 SAME = object()
@@ -110,6 +111,14 @@ POSTGRES = (
         WHEN.astimezone(TEHRAN),
         expected=WHEN,
     ),
+    # Zoned, so no forced type takes it: PostgreSQL's own TIMESTAMP, to keep the precision.
+    Case(
+        "timestamptz_3",
+        "TIMESTAMPTZ(3)",
+        "postgresql.TIMESTAMP(timezone=True, precision=3)",
+        WHEN.replace(microsecond=123000).astimezone(TEHRAN),
+        expected=WHEN.replace(microsecond=123000),
+    ),
     Case("date", "DATE", "DATE()", date(2026, 1, 2)),
     Case("time", "TIME", "TIME()", time(12, 34, 56, 789000)),
     Case("time_3", "TIME(3)", "postgresql.TIME(precision=3)", time(1, 2, 3, 456000)),
@@ -147,6 +156,9 @@ POSTGRES = (
     # the same column, and the value is what the driver gives - text. No `=` for either.
     Case("xml", "XML", 'sql_type("xml")', "<a>1</a>", where=False),
     Case("point", "POINT", 'sql_type("point")', "(1,2)", where=False),
+    # An array of a type SQLAlchemy cannot read: the whole array as PostgreSQL spells it. The
+    # driver reads it back as a list of the items' text.
+    Case("xml_array", "XML[]", 'sql_type("xml[]")', "{<a/>}", expected=["<a/>"], where=False),
 )
 
 MYSQL = (
@@ -167,6 +179,21 @@ MYSQL = (
         "decimal_19_4", "DECIMAL(19, 4)", "DECIMAL(precision=19, scale=4)", Decimal("-12345.6789")
     ),
     Case("numeric_10_2", "NUMERIC(10, 2)", "DECIMAL(precision=10, scale=2)", Decimal("99.95")),
+    # UNSIGNED on a DECIMAL or FLOAT, and FLOAT(M,D): deprecated by MySQL, still accepted, and
+    # only MySQL's own types can say them.
+    Case(
+        "decimal_unsigned",
+        "DECIMAL(10, 2) UNSIGNED",
+        "mysql.DECIMAL(precision=10, scale=2, unsigned=True)",
+        Decimal("99.95"),
+    ),
+    Case(
+        "float_7_3_unsigned",
+        "FLOAT(7, 3) UNSIGNED",
+        "mysql.FLOAT(precision=7, scale=3, unsigned=True)",
+        1.5,
+        where=False,
+    ),
     Case("float", "FLOAT", "FLOAT()", 1.5),
     # A float, as Java reads a Double - MySQL's own DOUBLE type would hand back a Decimal.
     Case("double", "DOUBLE", "DOUBLE()", 1.25),
@@ -386,6 +413,11 @@ def test_the_whole_module_imports_and_names_its_table(matrix: Matrix, dialect: s
     assert matrix.module.__all__ == ["T_TYPES", "metadata"]
     names = {c.name for c in CASES_BY_DIALECT[dialect]}
     assert set(matrix.module.T_TYPES.c.keys()) == {"pk", *names}
+
+
+def test_the_module_imports_exactly_what_it_uses(matrix: Matrix) -> None:
+    """Every type in one module: no import left unused, no name used and not imported."""
+    assert unused_and_undefined(matrix.text) == (set(), set())
 
 
 def test_timestamps_stay_zone_less_and_read_back_aware_utc(matrix: Matrix, dialect: str) -> None:

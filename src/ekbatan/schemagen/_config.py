@@ -252,12 +252,22 @@ def load_config(path: Path, *, required: bool = True) -> SchemagenConfig | None:
         return None
     except tomllib.TOMLDecodeError as error:
         raise ValidationError(f"{path} is not valid TOML: {error}") from None
+    except UnicodeDecodeError:
+        raise ValidationError(f"{path} is not UTF-8, which TOML must be") from None
+    except OSError as error:  # a directory, no permission
+        raise ValidationError(f"cannot read {path}: {error.strerror or error}") from None
 
-    table = document.get("tool", {}).get("ekbatan", {}).get("schemagen")
-    if table is None:
-        if required:
-            raise ValidationError(f"{path} has no [tool.ekbatan.schemagen] table")
-        return None
+    table: Any = document
+    for level, name in enumerate(("tool", "ekbatan", "schemagen")):
+        table = table.get(name)
+        if table is None:
+            if required:
+                raise ValidationError(f"{path} has no [tool.ekbatan.schemagen] table")
+            return None
+        if not isinstance(table, dict):
+            dotted = ".".join(("tool", "ekbatan", "schemagen")[: level + 1])
+            # The kind, not the value: a misplaced url would carry its password into the error.
+            raise ValidationError(f"{path}: {dotted} must be a table, got a {type(table).__name__}")
     return config_from_table(table, base=path.parent, source=str(path))
 
 
@@ -271,7 +281,9 @@ def config_from_table(table: Mapping[str, Any], *, base: Path, source: str) -> S
     def text(key: str) -> str | None:
         value = table.get(key)
         if value is not None and not isinstance(value, str):
-            raise ValidationError(f"{where}: {key} must be a string, got {value!r}")
+            # A url can carry a password, so a wrong one is described, never shown.
+            got = f"a {type(value).__name__}" if key == "url" else repr(value)
+            raise ValidationError(f"{where}: {key} must be a string, got {got}")
         return value
 
     def flag(key: str, default: bool) -> bool:

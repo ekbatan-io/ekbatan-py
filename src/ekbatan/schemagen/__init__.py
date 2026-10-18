@@ -60,6 +60,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
+import re
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -273,7 +274,9 @@ def _start(image: str) -> tuple[Any, str]:
     against Postgres, so the two were never independent and asking for both invites the pair
     that does not go together. ``sqlite`` needs no container: a file in a temporary directory.
     """
-    family = image.split(":")[0].split("/")[-1].lower()
+    # The last path part, before its tag or digest: `localhost:5000/mysql:8.4` is MySQL, and so
+    # is `mysql@sha256:...`. Splitting on the first `:` read a registry's port as the name.
+    family = re.split(r"[:@]", image.rsplit("/", 1)[-1])[0].lower()
     if family == "sqlite":
         import shutil
         import tempfile

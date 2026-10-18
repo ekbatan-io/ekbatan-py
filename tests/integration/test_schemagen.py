@@ -47,6 +47,7 @@ from schemagen_support import (
     migrations,
     normal,
     notes,
+    unused_and_undefined,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -445,6 +446,12 @@ def test_create_all_builds_the_keys_indexes_defaults_and_checks_the_migrations_b
         if key in ("views", "tables"):
             continue
         assert after[key] == before[key], key
+
+
+def test_the_shape_module_imports_exactly_what_it_uses(shaped: tuple[Any, str, str]) -> None:
+    """Keys, indexes, defaults, checks, identity and views: each brings its own imports."""
+    module, _, _ = shaped
+    assert unused_and_undefined(Path(module.__file__).read_text()) == (set(), set())
 
 
 def test_views_are_generated_apart_and_not_created_as_tables(

@@ -65,11 +65,22 @@ def _of(dialect: str, name: str, args: str = "") -> Emitted:
     return Emitted(f"{dialect}.{name}({args})")
 
 
+#: Characters a string literal cannot hold as they are: a ``\r`` ends the line, and so the
+#: literal, and a NUL is refused in source at all. Tab is the one control character left as is.
+_CONTROL = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
+
+
 def lit(value: Any) -> str:
     """A literal as the generated module writes it: strings double-quoted, the rest as repr."""
     if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return '"' + _CONTROL.sub(_escape, escaped) + '"'
     return repr(value)
+
+
+def _escape(found: re.Match[str]) -> str:
+    character = found.group()
+    return {"\n": "\\n", "\r": "\\r"}.get(character, f"\\x{ord(character):02x}")
 
 
 def _kw(**values: Any) -> str:

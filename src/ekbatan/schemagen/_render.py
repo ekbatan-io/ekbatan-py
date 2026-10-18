@@ -239,10 +239,11 @@ class _Writer:
                 "SQLAlchemy cannot declare: create_all builds it without"
             )
         # SQLAlchemy makes a lone integer key auto-increment unless told otherwise; the
-        # database is the authority on whether it is.
+        # database is the authority on whether it is. Lone, whether the key is written on the
+        # column or apart under a name of its own (`PrimaryKeyConstraint("id", name=...)`).
         if (
-            single_pk
-            and column.primary_key
+            column.primary_key
+            and len(relation.table.primary_key.columns) == 1
             and integer
             and column.identity is None
             and column.autoincrement is not True
@@ -283,8 +284,14 @@ class _Writer:
             sequence = re.match(r"nextval\('([^']+)'", sql)
             if sequence is not None:
                 self.sqlalchemy |= {"Sequence", "text"}
-                name = sequence.group(1).split(".")[-1].strip('"')
-                return f"Sequence({q(name)})", f"server_default=text({q(sql)})"
+                # `audit.t_seq_seq` for a table in another schema: the sequence lives there too,
+                # and the default names it there, so create_all must create it there.
+                where, _, name = sequence.group(1).rpartition(".")
+                schema = f", schema={q(where.strip(chr(34)))}" if where else ""
+                return (
+                    f"Sequence({q(name.strip(chr(34)))}{schema})",
+                    f"server_default=text({q(sql)})",
+                )
         self.sqlalchemy.add("text")
         return None, f"server_default=text({q(sql)})"
 

@@ -658,3 +658,48 @@ bits from a `ShardedId` with no version guard, while the `Id` branch beside it h
 | the claim that a backward index scan serves db-scheduler's `priority DESC, execution_time ASC` was dropped | read backwards, `(priority, execution_time)` gives DESC, DESC - it does not match the mixed order |
 | site tables still scroll sideways on many pages; only the new page's tables were made to fit | the scrolling table is the site's own design, used on pages this track did not change |
 | the setup-guide check fails on `main` too and was not fixed here | `EKB-0350` gave the examples forced types (`Currency`), but the guide builds a project without `converters.py` or the forced-types settings, so its tests fail; that is converter work (track C), not this track Fixed in `EKB-0347`: step 8 of the guide adds `converters.py`, the two forced-type rules and an explicit regenerate (`make` alone could miss a change made in the same second); the Makefile rule also depends on `pyproject.toml`. All 9 database x installer runs pass |
+
+## schemagen tests (EKB-0355-)
+
+Hardening the schemagen test suite (ledger: `SCHEMAGEN-TEST-LEDGER.md`) found seven real bugs.
+Each was proved on the unchanged code first - the test failed, or a probe on a real database
+showed it - then fixed minimally in `src/ekbatan/schemagen/`. Old-code failure output is in the
+ledger's probe table.
+
+### Bugs fixed
+
+| bug | fix | how the old code was shown to fail |
+| --- | --- | --- |
+| a `\r` (or NUL, or another control character) in a comment, default or name made the generated module a syntax error | `lit()` escapes every control character but tab (`\r` -> `\\r`, others `\\xNN`); tab and `\n` are written as before | unit `test_any_text_in_a_comment_or_default_survives_into_the_module[carriage return, crlf, nul]`: `SyntaxError: unterminated string literal` / `cannot contain null bytes`; probe on PostgreSQL 17 with `COMMENT ON COLUMN ... IS E'line1\r\nline2'`: the generated module failed to import |
+| `url` written as a list or table in the file was echoed in the error, password and all | for `url` only, the error says the kind (`got a list`), never the value | unit `test_a_url_of_the_wrong_kind_is_refused_without_printing_it`: the password was in the message |
+| `--config` naming a directory, or a config file that is not UTF-8, gave a traceback | `load_config` turns `OSError` and `UnicodeDecodeError` into `ValidationError` (`cannot read ...`, `... is not UTF-8`) | unit tests raised `IsADirectoryError` and `UnicodeDecodeError` |
+| `[tool.ekbatan] schemagen = "x"` was refused as "unknown key(s) ['x']" (the string's letters); `[tool] ekbatan = 1` and `tool = 1` were `AttributeError` tracebacks | each of `tool`, `tool.ekbatan`, `tool.ekbatan.schemagen` must be a table, said by name and kind - the value is not shown, as a misplaced url would carry its password | unit `test_a_section_that_is_not_a_table_is_refused_as_such`: the wrong message, and `AttributeError` twice |
+| an image from a registry with a port (`localhost:5000/mysql:8.4`) or pinned by digest (`mysql@sha256:...`) started a **PostgreSQL** container | the database kind is the last path part before its tag or digest | unit `test_the_image_names_the_database_whatever_registry_or_digest_it_comes_from`, with testcontainers' classes replaced by recorders: `_FakePostgres` was started for all three |
+| PostgreSQL: a single-column integer key with its own name (`CONSTRAINT pk_t PRIMARY KEY (id)`) came back from `create_all` as `SERIAL` (a `nextval` default the migration never had) | `autoincrement=False` is written for a lone integer key whether the key is on the column or written apart by name | integration `test_a_single_column_key_with_its_own_name_is_not_made_auto_increment[postgres]`: rebuilt default `nextval('keyed_id_seq'::regclass)` against `None` |
+| PostgreSQL: a non-key `SERIAL` in a schema listed in `schemas` was declared `Sequence("t_seq_seq")` with no schema, so `create_all` failed: `relation "audit.tallies_seq_seq" does not exist` | the sequence is declared in the schema its `nextval(...)` names: `Sequence("tallies_seq_seq", schema="audit")` | integration `test_a_serial_that_is_not_the_key_brings_its_sequence[postgres]` failed with that `UndefinedTable` |
+
+Output changes for anyone regenerating: only the cases above. A comment or default holding a
+control character other than tab and `\n` is now written escaped (it did not parse before, or
+held the raw byte); a named single integer key gains `autoincrement=False`; a listed schema's
+sequence gains `schema=...`.
+
+### Open questions - left as they are
+
+| question | what happens today | options |
+| --- | --- | --- |
+| **a table named like something the module imports** - `text`, `date`, `varchar`, `json`, `uuid`, ... or `migrations_fingerprint` | `TEXT = Table("text", ...)` replaces `from sqlalchemy import TEXT`; a later table (or view) that writes `TEXT()` raises `TypeError: 'Table' object is not callable` on import. A table `migrations_fingerprint` overwrites `MIGRATIONS_FINGERPRINT`, so the stale check always fires. Not fixed: every fix changes an exported name, or refuses a schema that imports today (a `text` table with no later `TEXT()` works) | (a) export such a table as `TEXT_`, as Python keywords already are (`class` -> `CLASS_`) - changes a name some module may import; (b) import SQLAlchemy's names under an alias when a table takes them - no exported name changes, the module reads less plainly; (c) refuse, "exclude it or rename it". Pinned by two strict xfail tests in `tests/unit/test_schemagen_hardening.py` that flip when it is fixed |
+| **MySQL/MariaDB: a foreign key from a listed schema into the connection's own database** | left out, with the note "refers to `<db>.parents`, which is not generated" - the table *is* generated, unqualified. PostgreSQL keeps the key (it reports the own schema unqualified). Tried and reverted: writing the target unqualified - MySQL then reads `REFERENCES parents` inside `CREATE TABLE other.entries` as `other.parents`, and `create_all` fails (`Failed to open the referenced table`) | (a) keep leaving it out, but word the note truthfully ("cross-database key into the own database cannot be written without its name"); (b) write the database's real name into the key - `create_all` works only on a database of that name, against the docs' "works whatever the database is called"; (c) leave as is. Pinned per database by `test_a_foreign_key_from_a_listed_schema_into_the_own_schema` |
+| `image = ""` and `includes = ""` in the file | read as no setting: the default image, every table | an empty string could be refused instead. Pinned by `test_an_empty_image_or_includes_falls_back_to_the_default` |
+
+### Docs gaps found (docs not edited, per the task)
+
+- `docs/database/schemagen.md` says `include-expression` is tried as `schema.table.column`
+  "for a schema in `schemas`". The code also tries it for the connection's own schema
+  (`public.widgets.id`, MySQL's database name, SQLite's `main`), on purpose (`_reflect.Relation`
+  says so). Tested as the code does it (`test_each_forced_type_key_picks_exactly_the_columns_it_says`).
+- The same page lists "indexes (... on expressions)" as generated. On SQLite, SQLAlchemy's
+  reflection skips an expression index with its own `SAWarning`, so it is not in the module;
+  MariaDB has no expression indexes. True on PostgreSQL (tested).
+- Index options holding a list or dict are written with single quotes
+  (`postgresql_include=['note']`, `mysql_length={'note': 10}`), unlike the rest of the module.
+  Cosmetic; not changed.
