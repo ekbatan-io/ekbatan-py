@@ -136,13 +136,27 @@ def toml_list(items: list[str], indent: str = "") -> str:
     return "[" + ", ".join(f'"{i}"' for i in items) + "]"
 
 
+def schemagen(e: Example) -> str:
+    """`[tool.ekbatan.schemagen]`: where Java's build script keeps jOOQ's settings."""
+    if not e.image:
+        return ""
+    return (
+        "# schemagen's settings, as Java's build script carries jOOQ's: `make schema` runs\n"
+        "# `python -m ekbatan.schemagen`, which reads them. A flag on the command wins.\n"
+        "[tool.ekbatan.schemagen]\n"
+        f'migrations = "src/{e.package}/migrations"\n'
+        f'out = "src/{e.package}/schema.py"\n'
+        f'image = "{e.image}"\n\n'
+    )
+
+
 def pyproject(e: Example, build: str) -> str:
     head = (
         f'[project]\nname = "{e.project}"\nversion = "0.1.0"\n'
         f'description = "{e.description}, built with {BUILD_NAMES[build]}."\n'
         f'requires-python = ">=3.13"\n'
     )
-    pytest = '[tool.pytest.ini_options]\naddopts = "-q"\n'
+    pytest = schemagen(e) + '[tool.pytest.ini_options]\naddopts = "-q"\n'
     if build == "uv":
         return (
             f"{head}dependencies = {toml_list(dependencies(e))}\n\n"
@@ -223,8 +237,6 @@ def makefile(e: Example, build: str) -> str:
             "# PYTHON must be 3.13 or later: `make PYTHON=python3.13` if `python3` is older.",
         ]
     lines += ["", f"PACKAGE := {e.package}", "SRC     := src/$(PACKAGE)"]
-    if e.image:
-        lines += [f"IMAGE   := {e.image}"]
     if build == "pip":
         lines += ["PYTHON  ?= python3", "VENV    := .venv/bin"]
     lines += ["", ".PHONY: all env test run schema builders clean", ".DEFAULT_GOAL := all", ""]
@@ -249,9 +261,10 @@ def makefile(e: Example, build: str) -> str:
     needs = "$(SRC)/schema.py" if e.image else "env"
     if e.image:
         lines += [
-            "# A container starts when a migration changed, and not otherwise.",
-            "$(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) | env",
-            f"\t{py} ekbatan.schemagen --migrations $(SRC)/migrations --out $@ --image $(IMAGE)",
+            "# A container starts when a migration or the settings changed, and not otherwise.",
+            "# The settings - where, which image, forced types - are [tool.ekbatan.schemagen].",
+            "$(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) pyproject.toml | env",
+            f"\t{py} ekbatan.schemagen",
             "",
             "schema: $(SRC)/schema.py",
             "",

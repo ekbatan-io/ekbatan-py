@@ -28,6 +28,18 @@ Make supplies the missing piece - a dependency on the migration files, so it reg
 they change and skips the container entirely when they have not. Measured: **12 milliseconds**
 when nothing changed.
 
+Its settings are in `pyproject.toml`, where Java keeps jOOQ's in the build script:
+
+```toml
+[tool.ekbatan.schemagen]
+migrations = "src/fastapi_wallet_rest_pg/migrations"
+out = "src/fastapi_wallet_rest_pg/schema.py"
+image = "postgres:17-alpine"
+```
+
+Forced types, includes and excludes go there too - see
+[schemagen](../../docs/database/schemagen.md).
+
 Two things it does that a plain reflection would not:
 
 **It forces the types.** A column reflected from PostgreSQL as `TIMESTAMP` compiles on MySQL to

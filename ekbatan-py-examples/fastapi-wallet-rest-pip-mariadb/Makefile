@@ -11,7 +11,6 @@
 
 PACKAGE := fastapi_wallet_rest_mariadb
 SRC     := src/$(PACKAGE)
-IMAGE   := mariadb:11.4
 PYTHON  ?= python3
 VENV    := .venv/bin
 
@@ -29,9 +28,10 @@ $(VENV)/python:
 
 env: $(VENV)/python
 
-# A container starts when a migration changed, and not otherwise.
-$(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) | env
-	$(VENV)/python -m ekbatan.schemagen --migrations $(SRC)/migrations --out $@ --image $(IMAGE)
+# A container starts when a migration or the settings changed, and not otherwise.
+# The settings - where, which image, forced types - are [tool.ekbatan.schemagen].
+$(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) pyproject.toml | env
+	$(VENV)/python -m ekbatan.schemagen
 
 schema: $(SRC)/schema.py
 

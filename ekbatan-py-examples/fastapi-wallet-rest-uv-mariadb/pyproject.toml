@@ -12,6 +12,13 @@ dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[mysql]>=4.15", "httpx>
 requires = ["uv_build>=0.13,<0.14"]
 build-backend = "uv_build"
 
+# schemagen's settings, as Java's build script carries jOOQ's: `make schema` runs
+# `python -m ekbatan.schemagen`, which reads them. A flag on the command wins.
+[tool.ekbatan.schemagen]
+migrations = "src/fastapi_wallet_rest_mariadb/migrations"
+out = "src/fastapi_wallet_rest_mariadb/schema.py"
+image = "mariadb:11.4"
+
 [tool.pytest.ini_options]
 addopts = "-q"
 

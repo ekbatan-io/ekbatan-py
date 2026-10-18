@@ -9,7 +9,6 @@
 
 PACKAGE := fastapi_wallet_saga_pg
 SRC     := src/$(PACKAGE)
-IMAGE   := postgres:17-alpine
 
 .PHONY: all env test run schema builders clean
 .DEFAULT_GOAL := all
@@ -19,9 +18,10 @@ all: test
 env:
 	uv sync --quiet
 
-# A container starts when a migration changed, and not otherwise.
-$(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) | env
-	uv run python -m ekbatan.schemagen --migrations $(SRC)/migrations --out $@ --image $(IMAGE)
+# A container starts when a migration or the settings changed, and not otherwise.
+# The settings - where, which image, forced types - are [tool.ekbatan.schemagen].
+$(SRC)/schema.py: $(wildcard $(SRC)/migrations/*.sql) pyproject.toml | env
+	uv run python -m ekbatan.schemagen
 
 schema: $(SRC)/schema.py
 

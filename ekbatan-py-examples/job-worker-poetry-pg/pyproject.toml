@@ -34,5 +34,12 @@ ekbatan = { path = "../..", develop = true, extras = ["codegen"] }
 pytest = ">=8.0"
 testcontainers = { version = ">=4.15", extras = ["postgres"] }
 
+# schemagen's settings, as Java's build script carries jOOQ's: `make schema` runs
+# `python -m ekbatan.schemagen`, which reads them. A flag on the command wins.
+[tool.ekbatan.schemagen]
+migrations = "src/job_worker_pg/migrations"
+out = "src/job_worker_pg/schema.py"
+image = "postgres:17-alpine"
+
 [tool.pytest.ini_options]
 addopts = "-q"
