@@ -467,3 +467,17 @@ each.
 passed, 12 skipped; async 345 passed, 2 skipped; every base sync id still passing.
 `make test-gevent` (SQLite): 1870 passed, async runs skipped (base 1853).
 
+**Final** (`EKB-0367`, 2026-10-19): unit + structure 1258 passed, 4 xfailed.
+
+| database | sync (base) | async |
+| --- | --- | --- |
+| SQLite (aiosqlite) | 629 passed, 68 skipped (619 / 62) | 312 passed, 35 skipped |
+| PostgreSQL (asyncpg) | 801 passed, 12 skipped (785 / 12) | 345 passed, 2 skipped |
+| PostgreSQL (psycopg async) | 801 passed, 12 skipped | 345 passed, 2 skipped |
+| MySQL (aiomysql) | 804 passed, 13 skipped (788 / 13) | 346 passed, 1 skipped |
+| MariaDB (aiomysql) | 814 passed, 11 skipped (798 / 11) | 346 passed, 1 skipped |
+
+Every base sync id is still there and still passing on every database. `make lint` clean;
+website `npm run build` 57 pages and `npm run check` clean; `scripts/check-setup-guide.py --db pg
+--install uv` ok (the other database x installer pairs not rerun).
+
