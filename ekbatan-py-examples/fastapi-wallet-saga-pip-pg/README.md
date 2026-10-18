@@ -102,6 +102,41 @@ happened or the transfer was failed instead, because what it guards is "step two
 | `schema.py` | the unique constraint that does the idempotency |
 | `test_wallet_saga.py` | happy path, three compensation paths, and a replay that credits nothing |
 
+## Two forced types
+
+`pyproject.toml` tells schemagen to turn two plain text columns into this app's own types:
+
+```toml
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_saga_pg.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name: the saga's step, as the StepName enum.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_saga_pg.converters.StepNameConverter"
+include-expression = "transfer_steps\\.step"
+```
+
+and schemagen writes these two lines into `schema.py`:
+
+```python
+Column("step", converted(VARCHAR(length=24), StepNameConverter()), nullable=False)
+Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
+```
+
+- **Picked by type.** Every `CHAR(3)` column is a currency code. A wallet's `currency` is a
+  `Currency`, which takes only three capital letters; the destination check in step two compares
+  its code with the one the transfer's event carries.
+- **Picked by name.** `transfer_steps.step` is a `StepName`. The step markers are written and
+  read as `StepName.CREDIT` and `StepName.REFUND`, `steps_of` gets them straight from the column,
+  and a query can say `TRANSFER_STEPS.c.step == StepName.REFUND`. The column holds `CREDIT`.
+
+The classes are in `model.py` and the converters in `converters.py`; neither knows SQLAlchemy.
+Events keep the plain text, `"currency": "EUR"`, because they are JSON for other services to
+read. The `state` columns are left as text on purpose: the framework itself reads them as text.
+The test checks each value in Python, in the table and through the API.
+
 ## Running on PostgreSQL
 
 As Java's `spring-boot-wallet-saga-gradle-pg` does. Fan-out and dispatch are two distributed

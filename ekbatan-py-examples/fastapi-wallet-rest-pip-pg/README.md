@@ -37,8 +37,8 @@ out = "src/fastapi_wallet_rest_pg/schema.py"
 image = "postgres:17-alpine"
 ```
 
-Forced types, includes and excludes go there too - see
-[schemagen](../../docs/database/schemagen.md).
+Forced types go there too - this example has two, [below](#two-forced-types) - and includes and
+excludes; see [schemagen](../../docs/database/schemagen.md).
 
 Two things it does that a plain reflection would not:
 
@@ -71,6 +71,43 @@ Built with **pip and setuptools**. The same project with [uv](../fastapi-wallet-
 
 The venv is made with `python3`, which must be 3.13 or later - `make PYTHON=python3.13` if yours is older.
 <!-- /build -->
+
+## Two forced types
+
+`pyproject.toml` tells schemagen to turn two plain text columns into small classes of this
+app's own:
+
+```toml
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_pg.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_pg.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+```
+
+and schemagen writes these two lines into `schema.py`:
+
+```python
+Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
+Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
+```
+
+- **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A
+  wallet's `currency` is a `Currency`, which takes only three capital letters: `"eur"` is
+  refused.
+- **Picked by name.** `alerts.recipient` is an `EmailAddress`. A bad address is refused when
+  the deposit is made (a 400), rather than later in the handler that writes the alert, where it
+  would fail on every retry.
+
+The two classes are in `model.py` and the converters in `converters.py`; neither knows
+SQLAlchemy. The repository hands the table a `Currency` and gets one back, and the column holds
+`EUR`. Action parameters and events keep the plain text, `"currency": "EUR"`, because they are
+written to the outbox as JSON for other services to read. The test checks each value in Python,
+in the table, and through the API.
 
 ## What differs from the other two databases
 
@@ -122,6 +159,6 @@ the test fills them from its container.
 make
 ```
 
-Eleven cases against a real PostgreSQL in Testcontainers, including one that asserts this project is
+Fifteen cases against a real PostgreSQL in Testcontainers, including one that asserts this project is
 actually running on PostgreSQL - three projects differing only by url makes a wrong one invisible,
 and every other test would still pass.

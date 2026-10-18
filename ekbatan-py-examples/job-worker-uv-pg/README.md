@@ -62,6 +62,43 @@ which is why Java's `JobRegistry` can turn its own on without asking. Either way
 handler was already there and call it: dropping it is harmless in a `__main__` and silently
 wrong inside a gunicorn or uvicorn worker.
 
+## Two forced types
+
+`pyproject.toml` tells schemagen to turn two plain text columns into small classes of this
+app's own:
+
+```toml
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "job_worker_pg.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "job_worker_pg.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+```
+
+and schemagen writes these two lines into `schema.py`:
+
+```python
+Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
+Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
+```
+
+- **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A
+  wallet's `currency` is a `Currency`, which takes only three capital letters: `"eur"` is
+  refused.
+- **Picked by name.** `alerts.recipient` is an `EmailAddress`. The stipend job's alerts go to
+  `stipend@example.com`; `DepositMoneyAction` checks the address before it moves any money, so
+  a bad one never reaches the handler.
+
+The two classes are in `model.py` and the converters in `converters.py`; neither knows
+SQLAlchemy. The repository hands the table a `Currency` and gets one back, and the column holds
+`EUR`. Action parameters and events keep the plain text, `"currency": "EUR"`, because they are
+written to the outbox as JSON for other services to read. The test checks each value in Python
+and in the table.
+
 ## The pools
 
 The scheduler gets **its own engine**, sized above the worker count. db-scheduler writes

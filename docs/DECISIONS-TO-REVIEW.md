@@ -609,6 +609,25 @@ unattended. The design was agreed; these are the calls made while building it.
 | the Java build-setting table moved from the schemagen page to `DIVERGENCE.md` | the user wants the website free of Java; the mapping is still useful to a maintainer | - |
 | `docs/getting-started.md` and `learn/install.mdx` keep their one Java sentence about schemagen | they mention neither `user-type` nor `NullType`; removing Java from them is Track B's, and editing them here would collide | - |
 
+## examples with forced types (`EKB-0350`-)
+
+| decision | why |
+| --- | --- |
+| each generating example has two converters - one picked by type, one by name - and no `name` target | no column in these schemas needs a `name` rule: the built-in ones already cover uuids, JSON and timestamps, so it would change nothing a reader can see. Adding a column just to show one would be a column nobody would have |
+| the currency rule picks by type: every `CHAR(3)` column becomes a `Currency` | every `CHAR(3)` here is a currency code, a common convention in money schemas, and it shows `include-types`. A later `CHAR(3)` that is not a currency (a country code) would be caught too; it would need an `exclude-expression` then |
+| the second rule is by name: `alerts.recipient` -> `EmailAddress` (REST x4, job worker), `transfer_steps.step` -> `StepName` (saga) | the saga has no alerts table; its step marker is the natural enum. The job worker has the same two tables as the REST service, so it uses the same two rules |
+| the same rules on PostgreSQL, MySQL and MariaDB | the column types are the same on all three (`CHAR(3)`, `VARCHAR(255)`), so nothing per database was needed |
+| action parameters and events keep plain text (`currency: str`, `recipient: str`); only the model holds `Currency` and `EmailAddress` | parameters and events are written to the outbox as JSON. A dataclass there would be written `{"code": "EUR"}` and change what other services read; the payload stays `"currency": "EUR"` (tested) |
+| a lowercase or malformed currency is now refused with a 400 | `Currency` takes only `[A-Z]{3}`; before, `"eur"` was stored as is. A small behaviour change in the examples |
+| `DepositMoneyAction` checks the recipient before it deposits; a bad address is a 400 | the alert is written later by a handler; a bad address there would fail on every retry. Before, any text was accepted |
+| value classes live in `model.py`; `converters.py` imports them | the saga's `StepName` was already in `model.py`, and imports then run one way. schemagen imports `converters.py` before `schema.py` exists, so it must not import `schema.py` |
+| `StepNameConverter` stores the member's name | the repository wrote `step.name` before, so the stored text is unchanged |
+| the `state` columns are not converted | the framework reads them as text (`state != 'DELETED'`), so they stay written by hand |
+| no new migration | every converted column already existed |
+| the forced types are written by `scripts/sync-examples.py` (`Forced`, `WALLET_FORCED`, `SAGA_FORCED`) | it writes every `pyproject.toml` from a template, so the three builds of an example cannot differ; an edit to a project's own file is overwritten |
+| the SQLite examples are left as they are | they have no migrations: the hand-written `schema.py` builds the tables with `create_all`, so there is nothing for schemagen to read. Generating would mean adding migrations to the smallest example. Their README's old reason, "generating needs Docker", was out of date (`image = "sqlite"` needs none) and is corrected |
+| the saga's new currency test waits for the saga to finish | without it, its steps landed in the next test and broke that test's count of three units of work (seen in a run) |
+
 ## Noticed in the Java, not acted on
 
 - **`RedisKeyedLockProvider` does not wrap a Redis failure** (found by parity group L,

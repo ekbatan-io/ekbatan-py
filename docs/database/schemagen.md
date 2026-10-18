@@ -557,3 +557,5 @@ again.
 - [Multiple dialects](multi-database.md) - the column helpers the forced types use
 - [MariaDB](mariadb.md#the-scheme-has-to-say-mariadb) - why schemagen rewrites MariaDB's url
 - [Getting started](../getting-started.md) - the Makefile, in context
+- [`fastapi-wallet-rest-uv-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg) - two converters
+  in a working service: one picked by type, one by name

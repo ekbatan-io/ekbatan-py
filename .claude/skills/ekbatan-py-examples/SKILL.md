@@ -53,6 +53,9 @@ all three REST databases' uv projects; those are not generated from one another.
 - Three pools - requests, jobs, locks - and the jobs pool is at least twice the worker count.
 - A keyed lock lease must span `executor.execute(...)`, not just the read.
 - Generated `schema.py` is gitignored. Never commit one, and never edit one.
+- Forced types are set in `scripts/sync-examples.py` (`WALLET_FORCED`, `SAGA_FORCED`), which
+  writes every `pyproject.toml`; see `references/example-matrix.md#forced-types`. A converter's
+  module must not import `schema.py` - schemagen imports it before `schema.py` exists.
 
 - **UTC everywhere**, the framework's strong recommendation: an example takes time from the clock
   (`self.now()`, `clock.now()`), never `datetime.now()`; its migrations use `TIMESTAMP` (PostgreSQL)

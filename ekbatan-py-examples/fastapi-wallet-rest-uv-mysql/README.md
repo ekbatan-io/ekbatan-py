@@ -20,6 +20,43 @@ make run        # run it; the database comes first, above
 Built with **uv**. The same project with [pip and setuptools](../fastapi-wallet-rest-pip-mysql) and [Poetry](../fastapi-wallet-rest-poetry-mysql) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 <!-- /build -->
 
+## Two forced types
+
+`pyproject.toml` tells schemagen to turn two plain text columns into small classes of this
+app's own:
+
+```toml
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_mysql.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_mysql.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+```
+
+and schemagen writes these two lines into `schema.py`:
+
+```python
+Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
+Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
+```
+
+- **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A
+  wallet's `currency` is a `Currency`, which takes only three capital letters: `"eur"` is
+  refused.
+- **Picked by name.** `alerts.recipient` is an `EmailAddress`. A bad address is refused when
+  the deposit is made (a 400), rather than later in the handler that writes the alert, where it
+  would fail on every retry.
+
+The two classes are in `model.py` and the converters in `converters.py`; neither knows
+SQLAlchemy. The repository hands the table a `Currency` and gets one back, and the column holds
+`EUR`. Action parameters and events keep the plain text, `"currency": "EUR"`, because they are
+written to the outbox as JSON for other services to read. The test checks each value in Python,
+in the table, and through the API.
+
 ## What differs from the other two databases
 
 The domain is **byte-identical** across all three - model, events, actions, handlers,
@@ -70,6 +107,6 @@ the test fills them from its container.
 make
 ```
 
-Eleven cases against a real MySQL in Testcontainers, including one that asserts this project is
+Fifteen cases against a real MySQL in Testcontainers, including one that asserts this project is
 actually running on MySQL - three projects differing only by url makes a wrong one invisible,
 and every other test would still pass.

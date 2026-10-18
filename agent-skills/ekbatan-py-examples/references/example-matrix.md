@@ -23,14 +23,15 @@ its own Gradle wrapper.
 
 ```
 pyproject.toml    the build: uv_build, setuptools or poetry-core - and where ekbatan comes from;
-                  [tool.ekbatan.schemagen]: migrations, out, image - schemagen's settings
+                  [tool.ekbatan.schemagen]: migrations, out, image, and two forced types
 Makefile          env, schema (bare `python -m ekbatan.schemagen`), test (the wheel, installed), run, clean
 .gitignore        the environment, the wheel, the generated schema.py
 README.md         what this example shows, and what to look at first
 src/<package>/    the package - the same name, and the same files, in all three builds:
   app.py            the wiring, all of it in one place
   api.py            the HTTP layer, and nothing else
-  model.py          the domain
+  model.py          the domain, with the small value classes the forced types read into
+  converters.py     the converters the forced types name; imports model.py, never schema.py
   actions.py        the units of work
   repository.py     the queries this application actually asks
   handlers.py       the in-process event handlers
@@ -40,8 +41,24 @@ src/<package>/    the package - the same name, and the same files, in all three 
   schema.py         GENERATED, gitignored. Never commit or edit
 ```
 
-The SQLite examples are the exception: a hand-written `schema.py`, committed, because there is
-no container to reflect from.
+The SQLite examples are the exception: a hand-written `schema.py`, committed. They have no
+migrations - `create_all` builds the tables from that file - so there is nothing for schemagen to
+read, and no `converters.py`.
+
+## Forced types
+
+Every generating example has two, one picked by type and one by name, each a converter to a
+class of the app's own:
+
+| example | by type (`include-types`) | by name (`include-expression`) |
+| --- | --- | --- |
+| REST (pg, mysql, mariadb, sharded-pg), job worker | `CHAR\(3\)` -> `Currency` | `alerts\.recipient` -> `EmailAddress` |
+| saga | `CHAR\(3\)` -> `Currency` | `transfer_steps\.step` -> `StepName` |
+
+The rules live in `scripts/sync-examples.py` (`Forced`, `WALLET_FORCED`, `SAGA_FORCED`), which
+writes every `pyproject.toml` - an edit to a project's own file is overwritten. Action parameters
+and events keep the plain text (`"currency": "EUR"`), because they are outbox JSON; the
+`state` columns are never converted, because the framework reads them as text.
 
 ## The axes that do not exist here
 

@@ -95,8 +95,23 @@ they were features:
 - **It normalises dialect quirks.** MariaDB reflects a bigint as `BIGINT(display_width=20)`;
   emitted verbatim that module does not even import.
 
-The SQLite examples keep a hand-written schema on purpose: their whole job is running with
-nothing installed, and generating needs Docker.
+Each generating example also has **two forced types of its own**, so a reader sees a converter
+end to end: plain text in the table, a small class of the app's own in Python. One rule picks
+columns by their type, the other one column by its name:
+
+| example | picked by type | picked by name |
+|---|---|---|
+| REST (all four), job worker | every `CHAR(3)` column becomes a `Currency` | `alerts.recipient` becomes an `EmailAddress` |
+| saga | every `CHAR(3)` column becomes a `Currency` | `transfer_steps.step` becomes the `StepName` enum |
+
+Each example's README shows the rules and the `schema.py` lines they produce. The rules are the
+same in all three builds of an example, so `scripts/sync-examples.py` writes them into every
+`pyproject.toml` (`WALLET_FORCED`, `SAGA_FORCED`): change them there, not in a project.
+
+The SQLite examples keep a hand-written schema on purpose: they have no migrations. Their tables
+are built from that one file with `create_all`, so the whole example reads in one place and runs
+with nothing installed. schemagen can read SQLite without Docker (`image = "sqlite"`), but here
+there is nothing for it to read.
 
 ## Naming
 
