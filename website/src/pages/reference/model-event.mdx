@@ -20,9 +20,7 @@ The class line names the model the event is about; the constructor takes that mo
 MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance)
 ```
 
-That is Java's `new MoneyDepositedEvent(id, amount, newBalance)`, whose constructor calls
-`super(id.getValue().toString(), Wallet.class)`. The type argument plays the part of
-`Wallet.class`: it fixes `model_name` once per event class, so no call site passes it. It is a
+The type argument fixes `model_name` once per event class, so no call site passes it. It is a
 string because events are declared before the model that emits them, as in `ShardedId["Wallet"]`.
 
 A missing or blank `model_id` is refused when the event is made, and so is an event class that
@@ -40,8 +38,8 @@ the executor commits           one INSERT into events, per event
 
 The row's columns are filled from three places: the **action** supplies `action_id`,
 `action_name`, `action_params` and the timestamps; the **event** supplies `model_id`,
-`model_type`, `event_type` and `payload`. The persister writes them as the event carries them,
-as Java's does - it does not look at the model the event was attached to.
+`model_type`, `event_type` and `payload`. The persister writes them as the event carries them -
+it does not look at the model the event was attached to.
 
 So a consumer correlates without opening the payload, and routes on `event_type` without
 parsing it.
@@ -65,18 +63,20 @@ Name them in the past tense: an event describes something that already happened.
 
 ## Serialisation
 
-The payload is JSON, the same text, byte for byte, that Java's default Jackson 3 mapper writes
-for the same event, and it is read back into the same class from the dataclass's own
-annotations. Nothing extra is needed for that round trip.
+The payload is JSON, read back into the same class from the dataclass's own annotations.
+Nothing extra is needed for that round trip.
 
-- **Keys are Java's field names**, in declaration order: `{"modelId": ..., "modelName": "Wallet",
-  "amount": 10.00, "newBalance": 110.00}` for `amount` and `new_balance`.
-- **Decimals are JSON numbers**, as `BigDecimal.toString()` writes them (`10.50`, `1E+3`), and
-  are read back as `Decimal` with their scale. MySQL's `JSON` column keeps a fraction as a
-  double, for Java too.
-- **An aware UTC `datetime` is an `Instant`** (`"2025-01-01T00:00:00.120Z"`), a naive one a
-  `LocalDateTime`; `date`, `time`, `timedelta` and `bytes` take Java's forms too. See
-  [Models and entities](/learn/models-and-entities/) for the full table.
+- **Keys are camelCase**, in declaration order, after `modelId` and `modelName`:
+  `{"modelId": ..., "modelName": "Wallet", "amount": 10.00, "newBalance": 110.00}` for `amount`
+  and `new_balance`.
+- **Decimals are JSON numbers** (`10.50`, `1E+3`), and are read back as `Decimal` with their
+  scale. MySQL's `JSON` column keeps a fraction as a double.
+- **Dates and times are ISO-8601 text**: an aware UTC `datetime` as
+  `"2025-01-01T00:00:00.120Z"`, a naive one with no offset; `bytes` as base64. See
+  [Models and entities](/learn/models-and-entities/#modelevent) for the full table.
+
+A Java service built on Ekbatan reads and writes this same JSON - see
+[Running beside a Java service](/reference/beside-java/#event-payloads).
 
 ## Attaching one
 

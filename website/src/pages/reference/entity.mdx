@@ -26,7 +26,7 @@ class Entity[ID, S: Enum = GenericState, B: EntityBuilder = EntityBuilder](
 ):
     id: ID
     state: S
-    version: int    # required, as Java's is
+    version: int    # required, 1 or more
 
     @property
     def is_model(self) -> bool: ...        # always False on Entity
@@ -121,8 +121,8 @@ def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
 
 ## Equality
 
-Two entities are equal when they have the same class and the same `id`, `state` and `version` —
-what Java's `equals` compares on `Entity`. The business fields take no part: two currencies with one id and version
+Two entities are equal when they have the same class and the same `id`, `state` and `version`.
+The business fields take no part: two currencies with one id and version
 are equal whatever display name each copy carries. The hash is the id's alone.
 
 A model compares its two timestamps as well; an entity has none. See

@@ -91,9 +91,6 @@ What you give up is ORM-style dirty tracking. There is no `session.commit()` wor
 changed; you say what changed, explicitly, through the plan. That is more typing, and it is what
 makes the outbox guarantee expressible at all.
 
-The Java port takes the identical stance - `public final` fields, a `copy()` builder, a `deposit`
-that returns a new `Wallet`. This is not a Python-side invention.
-
 `kw_only` is doing two jobs, and the second is not optional. It stops transposition, because
 `owner_id` sits next to `currency` and `started_date` next to `completion_date` - adjacent
 same-typed fields that swap silently when passed positionally. It also makes the inheritance
@@ -108,7 +105,7 @@ code should prefer `copy()`, so that every change in an application reads the sa
 
 ## Equality
 
-The same row at the same version is the same object, as in Java:
+The same row at the same version is the same object:
 
 | | equal when these match | hash |
 | --- | --- | --- |
@@ -135,49 +132,37 @@ class MoneyDepositedEvent(ModelEvent["Wallet"]):
 ```
 
 The class line names the model the event is about, and the constructor takes that model's id -
-`MoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`, which is Java's
-`new MoneyDepositedEvent(id, amount, newBalance)` with `super(id, Wallet.class)` inside it. The
-type argument stands in for `Wallet.class`: it fixes `model_name` once per class, so no call site
-passes it. Those two fill the outbox's `model_id` and `model_type` columns. A missing or blank id
+`MoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`. The type argument
+fixes `model_name` once per class, so no call site passes it. Those two fill the outbox's `model_id` and `model_type` columns. A missing or blank id
 is refused when the event is made.
 
-**There is no deserialisation boilerplate**, and this is one of
-the few places this port is straightforwardly ahead of Java: Java needs a `@JsonCreator`
-constructor with a `@JsonProperty` for every field, or the dispatch job cannot rebuild the event
-and the handler is never invoked. Here the payload is rebuilt from the dataclass's own
+**There is no deserialisation boilerplate.** The payload is rebuilt from the dataclass's own
 annotations - a `Decimal` from its number, a `datetime` from its ISO form, an enum from its name.
-Nothing to write, and nothing to forget.
-
-Events are written to `events.payload` as the JSON Java writes for them. See [The outbox](outbox.md) for the
-row, including why two identity keys are spelled in Java's style.
+Nothing to write, and nothing to forget. See [The outbox](outbox.md) for the row the event
+lands in.
 
 ### Deserialization (for in-process handlers)
 
 Events are stored as JSON in `events.payload` and read back into the same class when an
 in-process handler is invoked. **Nothing extra is needed for that round trip** — no annotation,
 no registered constructor, no per-handler mapping layer. The payload is rebuilt from the
-dataclass's own annotations, which is the one place the field types are already written down.
-
-That is the whole of the Python side of a problem Java spends a `@JsonCreator` constructor on.
-Java's Jackson cannot reconstruct an event with constructor parameters unless you write a second
-constructor annotating every parameter with its JSON name; forget it and the dispatch job fails
-to invoke the handler at all. Here the dataclass's `__init__` already takes keyword arguments
-named after its fields, so there is nothing to declare.
+dataclass's own annotations, which is the one place the field types are already written down,
+and its `__init__` already takes keyword arguments named after its fields.
 
 What the decoder does with each field, driven by its annotation:
 
-| Annotation | Written as (what Java writes) | Read back as |
+| Annotation | Written as | Read back as |
 |---|---|---|
-| `Decimal` | a JSON **number**, as `BigDecimal.toString()`: `10.50`, `1E+3` | the same `Decimal`, scale kept |
-| `float` | a number, as `Double.toString()`: `0.1`, `1.0E20` | `float` |
-| `datetime` with UTC | an `Instant`: `"2025-01-01T00:00:00.120Z"` | aware, UTC |
-| `datetime` with another offset | an `OffsetDateTime`: `"...T02:00:00+02:00"` | aware, that offset |
-| `datetime` with no zone | a `LocalDateTime`: `"2025-01-01T10:00:00"` | no zone, as written |
-| `date`, `time`, `timedelta` | `LocalDate`, `LocalTime`, `Duration` (`"PT1.5S"`) | the same type |
+| `Decimal` | a JSON **number**: `10.50`, `1E+3` | the same `Decimal`, scale kept |
+| `float` | a number: `0.1`, `1.0E20` | `float` |
+| `datetime` with UTC | ISO-8601 text ending in `Z`: `"2025-01-01T00:00:00.120Z"` | aware, UTC |
+| `datetime` with another offset | ISO-8601 text with the offset: `"...T02:00:00+02:00"` | aware, that offset |
+| `datetime` with no zone | ISO-8601 text, no offset: `"2025-01-01T10:00:00"` | no zone, as written |
+| `date`, `time`, `timedelta` | ISO-8601 text: `"2025-01-01"`, `"10:00:00"`, `"PT1.5S"` | the same type |
 | `bytes` | base64: `"AQL/"` | `bytes` |
 | `UUID` | its text | `UUID` |
 | an `Enum` | its **member name**, never its ordinal | the member |
-| `Id`, `ShardedId` | `{"id": "...", "value": "..."}`, as Jackson writes Java's | the typed id |
+| `Id`, `ShardedId` | `{"id": "...", "value": "..."}` | the typed id |
 | another `TypedValue` | `{"value": ...}` | the typed value |
 | a nested frozen dataclass | an object, keys as below | recursively, the same way |
 | `list` / `tuple` / `set` / `frozenset` / `dict` of any of the above | array / object | element by element |
@@ -185,17 +170,18 @@ What the decoder does with each field, driven by its annotation:
 
 **Anything else is refused** with a `ValidationError` naming its class, before anything is
 written: a plain class or an `attrs` class, for example (a `NamedTuple` is a tuple, so it is an
-array). Java's Jackson writes such an object's public fields; here, make it a dataclass to get the same JSON and read it back.
+array). Make it a dataclass to have it written and read back.
 
-**Keys are Java's field names**: `new_balance` is written `newBalance`, in the order the fields
-are declared - what Jackson writes for a Java event with Ekbatan's usual `@JsonCreator`. A
-`dict` keeps its own keys, in insertion order; nothing is sorted. The text is the same, byte for
-byte, as Java's default Jackson 3 mapper writes for the same object - checked over 50,000
-values in `parity-probes/G-domain-model/`.
+**Keys are camelCase**: `new_balance` is written `newBalance`, in the order the fields are
+declared. A `dict` keeps its own keys, in insertion order; nothing is sorted. The camelCase keys
+and the value forms above are the JSON a Java service built on Ekbatan reads and writes, so the
+two can handle each other's events - see
+[Running beside a Java service](../beside-java.md#event-payloads).
 
-**Every JSON number is read as a `Decimal`**, so nothing is lost on the way in, from either
-port. One database is the exception: MySQL's `JSON` type stores a number with a fraction as a
-double, so `50.00` comes back `50.0` there - for a Java service too, which sends the same text.
+**Every JSON number is read as a `Decimal`**, so nothing is lost on the way in. One database is
+the exception: MySQL's `JSON` type stores a number with a fraction as a double, so `50.00` comes
+back `50.0` there.
+
 Enums travel by name - an ordinal changes meaning the moment somebody inserts a member in the
 middle, and nothing about that change looks dangerous at the time.
 
@@ -204,35 +190,33 @@ Two limits worth knowing:
 - **A key the dataclass does not declare is dropped**, not an error. An additive change on the
   producer cannot break a consumer that has not caught up — which is the same tolerance the
   streaming path has, and for the same reason. **A key the JSON lacks leaves the field `None`**
-  (or its declared default), as Jackson leaves a Java field null.
+  (or its declared default).
 - **A union with more than one non-`None` arm is left as raw JSON.** There is no discriminator in
   the payload to pick an arm with, so the decoder does not guess. Model that as a nested
   dataclass with a `kind` field rather than as a union if a handler needs it typed.
 
-`model_id` and `model_name` come first, as `modelId` and `modelName`, because Java's local event
-handler deserialises the payload straight into the event class and refuses one without them.
-`modelName` is not read back: it comes off the class line, as Java's comes off `Wallet.class`.
+Every payload starts with `modelId` and `modelName` - the event's `model_id` and its model's
+class name - so a reader of the raw JSON knows what it is about; a Java consumer requires them
+there. `modelName` is not read back: it comes off the class line.
 
 Streaming-only consumers do not go through any of this: they read the JSON off the broker.
 
-`created_date` is **required**, exactly as Java's is — its constructor says
-`Validate.notNull(builder.createdDate)` and `build()` throws without it. A model records
+`created_date` is **required**: `build()` refuses a model without it. A model records
 something that happened, and when it happened is part of the record rather than a column the
-framework backfills afterwards. Pass `self.clock.now()` from the action, which is what Java's
-`clock.instant()` is doing:
+framework backfills afterwards. Pass `self.clock.now()` from the action, so a test with a fixed
+clock gets a fixed date:
 
 ```python
 Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.now())
 ```
 
 `updated_date` falls back to `created_date` — a row that has never changed was last updated when
-it was created. Both are kept as aware UTC `datetime`s, as Java keeps `Instant`s: a value with
+it was created. Both are kept as aware UTC `datetime`s: a value with
 another offset is moved to UTC, one with no zone is taken as UTC. So `wallet.created_date`
 compares with `clock.now()`, and equals the same instant read back from any database.
 
 **Nothing moves `updated_date` but you.** Neither the plan nor the repository touches it on a
-write, exactly as nothing in Java's `ekbatan-core` writes `updatedDate`. Move it on the changes
-where it means something:
+write. Move it on the changes where it means something:
 
 ```python
 def deposit(self, amount: Decimal, at: datetime) -> Wallet:
@@ -252,9 +236,8 @@ makes the column usable for recording when *your* change happened.
 
 The **version** is different, and does move on its own: the repository increments it inside the
 write, under `WHERE version = ?`, because that is the optimistic lock rather than a convenience.
-Java's `nextVersion()` does the same.
 
-`Entity` has neither, in either port. Something that needs to know when it last changed almost
+`Entity` has neither. Something that needs to know when it last changed almost
 certainly has changes worth telling the rest of the system about, which makes it a `Model`.
 
 ## Required, and optional
@@ -262,19 +245,13 @@ certainly has changes worth telling the rest of the system about, which makes it
 The base refuses `None` for any field whose annotation does not admit it — **including the ones
 you declare**. `owner_id: UUID` is required; `note: str | None` is not.
 
-| Java | here | `None` |
-|---|---|---|
-| `String currency` | `currency: str` | refused |
-| `Optional<String> note` | `note: str \| None` | accepted |
+| field | `None` |
+|---|---|
+| `currency: str` | refused |
+| `note: str \| None` | accepted |
 
-Java writes this out per field — `Validate.notNull(builder.ownerId, ...)` once for each, in
-every model's constructor — because a Java base class cannot enumerate a subclass's fields. A
-dataclass can, so it is one rule rather than three lines per model, and it covers the fields
-somebody would have forgotten.
-
-There is no counterpart to Java's fourth case, a `null` where an `Optional` *reference* belongs:
-Python's absence **is** `None` rather than a wrapper that can itself be missing. One sentinel,
-not two.
+The base reads the rule off the dataclass's own annotations, so there is no null check to write
+in each model, and none to forget for a field added later.
 
 ## Optimistic locking, always
 
@@ -387,10 +364,9 @@ caught by a type checker — the base resolves setters through `__getattr__`, wh
 name — and `build()` fails at runtime only if the new field is *required*, taking the default
 silently if it is not.
 
-Java has no equivalent exposure: its annotation processor runs on every compile, so its builder
-cannot be stale or missing. `scripts/check-builders.py` restores that guarantee here — it
+So check it rather than remember it. This repository's `scripts/check-builders.py` does — it
 regenerates into memory, compares, and fails `make lint` on a builder that is missing or behind
-its model. A builder without the generator's header is taken as hand-written, and only its
+its model; a project of your own can run the generator the same way in CI. A builder without the generator's header is taken as hand-written, and only its
 existence is checked.
 
 **A model must name a typed builder**, on its class line:
@@ -410,8 +386,8 @@ Wallet.copy() needs a typed builder, and Wallet has not named one.
 then name it on Wallet's class line, which is the whole of the wiring.
 ```
 
-Java's `copy()` returns a generated builder or the class does not compile. There is no compile
-step here, so the refusal is **per route and at the call** — a model that only ever calls
+There is no compile step to catch a missing builder, so the refusal is **per route and at the
+call** — a model that only ever calls
 `copy()` needs only that override, and an entity built solely through a factory like
 `Alert.create(...)` and never copied needs neither.
 
@@ -452,13 +428,13 @@ no timestamps to hold, so those methods are not on it to be called by mistake.
 - **Action** - imperative, because an action describes intent: `OpenWalletAction`,
   `DepositMoneyAction`.
 
-**One divergence, deliberately.** Java orders an action's name model-first -
-`WalletCreateAction`, `WalletDepositMoneyAction`. This port orders it verb-first:
-`OpenWalletAction`, `DepositMoneyAction`. The suffix and the imperative mood are the same; the
-word order is not. Java's ordering groups a model's actions together alphabetically, which is
-worth something in a large package tree; verb-first reads as the English sentence the action
-actually is, which is worth more in a flat Python module. Pick one and hold it - the examples
-here are all verb-first.
+- **Id** - no class of its own: `ShardedId[Wallet]` for a model whose rows are routed by id,
+  `Id[Alert]` otherwise. A type checker keeps two models' ids apart; at runtime they compare by
+  uuid.
+
+An action's name puts the verb first - `OpenWalletAction`, not `WalletOpenAction` - because it
+reads as the sentence the action is, which suits a flat Python module. Pick one order and hold
+it; the examples here are all verb-first.
 
 ## See also
 

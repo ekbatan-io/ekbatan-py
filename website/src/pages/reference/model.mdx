@@ -15,17 +15,16 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     balance: Decimal
 ```
 
-Two type parameters, where Java needs three:
+Three type parameters:
 
 | Parameter | Meaning | Typical value |
 |---|---|---|
 | `ID` | the identifier type | `Id[T]`, or [`ShardedId[T]`](/reference/sharding/) when the row lives on one of several databases |
 | `S` | the state enum for this model's lifecycle | `WalletState` (`OPENED`, `CLOSED`, `DELETED`); `GenericState` by default |
+| `B` | the typed builder `copy()` and `builder()` return | `WalletBuilder` - see [Builder API](#builder-api) |
 
-Java carries a third, the concrete subclass itself, so that its generated builder's setters
-return the subclass rather than the abstract parent. `Self` does that here without a parameter,
-which is why `Model[ShardedId[Wallet], WalletState]` reads the way it does and
-`Model<Wallet, Id<Wallet>, WalletState>` does not.
+The model class itself needs no parameter: the base's methods return `Self`, so `next_version()`
+on a `Wallet` is typed as a `Wallet`.
 
 What the base contributes:
 
@@ -33,7 +32,7 @@ What the base contributes:
 class Model[ID, S: Enum, B: ModelBuilder = ModelBuilder](Persistable[ID, S, B]):
     id: ID
     state: S
-    version: int                           # required, as Java's is
+    version: int                           # required, 1 or more
     created_date: datetime                 # required
     updated_date: datetime | None = None   # falls back to created_date
     events: tuple[ModelEvent, ...] = ()
@@ -48,24 +47,22 @@ class Model[ID, S: Enum, B: ModelBuilder = ModelBuilder](Persistable[ID, S, B]):
     def next_version(self) -> Self: ...
 ```
 
-`created_date` is **required**, exactly as Java's is — its constructor says
-`Validate.notNull(builder.createdDate)` and `build()` throws without it. A model records
+`created_date` is **required**: `build()` refuses a model without it. A model records
 something that happened, and when it happened is part of the record rather than a column the
-framework backfills afterwards. Pass `self.clock.now()` from the action, which is what Java's
-`clock.instant()` is doing:
+framework backfills afterwards. Pass `self.clock.now()` from the action, so a test with a fixed
+clock gets a fixed date:
 
 ```python
 Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.now())
 ```
 
 `updated_date` falls back to `created_date` — a row that has never changed was last updated when
-it was created. Both are kept as aware UTC `datetime`s, as Java keeps `Instant`s: a value with
+it was created. Both are kept as aware UTC `datetime`s: a value with
 another offset is moved to UTC, one with no zone is taken as UTC. So `wallet.created_date`
 compares with `clock.now()`, and equals the same instant read back from any database.
 
 **Nothing moves `updated_date` but you.** Neither the plan nor the repository touches it on a
-write, exactly as nothing in Java's `ekbatan-core` writes `updatedDate`. Move it on the changes
-where it means something:
+write. Move it on the changes where it means something:
 
 ```python
 def deposit(self, amount: Decimal, at: datetime) -> Wallet:
@@ -85,9 +82,8 @@ makes the column usable for recording when *your* change happened.
 
 The **version** is different, and does move on its own: the repository increments it inside the
 write, under `WHERE version = ?`, because that is the optimistic lock rather than a convenience.
-Java's `nextVersion()` does the same.
 
-`Entity` has neither, in either port. Something that needs to know when it last changed almost
+`Entity` has neither. Something that needs to know when it last changed almost
 certainly has changes worth telling the rest of the system about, which makes it a `Model`.
 
 
@@ -96,19 +92,13 @@ certainly has changes worth telling the rest of the system about, which makes it
 The base refuses `None` for any field whose annotation does not admit it — **including the ones
 you declare**. `owner_id: UUID` is required; `note: str | None` is not.
 
-| Java | here | `None` |
-|---|---|---|
-| `String currency` | `currency: str` | refused |
-| `Optional<String> note` | `note: str \| None` | accepted |
+| field | `None` |
+|---|---|
+| `currency: str` | refused |
+| `note: str \| None` | accepted |
 
-Java writes this out per field — `Validate.notNull(builder.ownerId, ...)` once for each, in
-every model's constructor — because a Java base class cannot enumerate a subclass's fields. A
-dataclass can, so it is one rule rather than three lines per model, and it covers the fields
-somebody would have forgotten.
-
-There is no counterpart to Java's fourth case, a `null` where an `Optional` *reference* belongs:
-Python's absence **is** `None` rather than a wrapper that can itself be missing. One sentinel,
-not two.
+The base reads the rule off the dataclass's own annotations, so there is no null check to write
+in each model, and none to forget for a field added later.
 
 `events` is excluded from equality. Two readers of one database row are looking at the same
 wallet whether or not one of them is mid-change.
@@ -125,7 +115,7 @@ matters most — it is the optimistic-locking primitive, and a row inserted at 0
 behind whatever reads it back.
 
 > A subclass defining its own `__post_init__` **must** call `super().__post_init__()` or it loses
-> all four. Java's constructor chaining does that for you; Python's does not.
+> all four. Python does not call the parent's `__post_init__` for you.
 
 The companion shape, [`Entity`](/reference/entity/), is for state the persistence layer needs to
 track but whose changes do not belong in the event stream — caches, lookup tables, audit-only
@@ -183,8 +173,7 @@ silently stopped existing would leave every published event with nothing on the 
 ## Equality
 
 Two models are equal when they are **the same row at the same version**: the same class, and the
-same `id`, `state`, `version`, `created_date` and `updated_date` — what Java's `equals` compares on `Model`, field
-for field. The business fields take no part, and neither do events, so two wallets with one id and
+same `id`, `state`, `version`, `created_date` and `updated_date`. The business fields take no part, and neither do events, so two wallets with one id and
 version are equal even if one copy says the balance is different. The hash is the id's alone, so
 any model can go in a set or be a dict key, list and dict fields included.
 
@@ -217,12 +206,11 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     balance: Decimal
 ```
 
-Leave it out and both refuse, because nothing here can make the untyped builder a compile error
-the way Java's annotation processor does.
+Leave it out and both refuse at the call, with a message naming the two ways to make one. There
+is no compile step to catch it earlier.
 
-Java needs no such argument: its `copy()` is `abstract`, so every model writes the method out,
-and writing it is where the narrower return type goes. Here the base can fill the method in —
-a dataclass knows its own fields — so the type has nowhere else to live but the class line.
+The base writes `copy()` for you - a dataclass knows its own fields - so the class line is the
+one place left to say which builder it returns.
 
 Generated or hand-written makes no difference; by hand is better where a setter needs a
 conditional default. `ModelBuilder(Wallet)` stays reachable by name for a model defined inside a
