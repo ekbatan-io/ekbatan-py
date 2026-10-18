@@ -87,15 +87,11 @@ class SqlKeyedLockProvider(ABC):
         if reentered is not None:
             return reentered
 
-        remaining = max_wait
-        while True:
-            segment = min(remaining, SEGMENT) if remaining > SEGMENT else remaining
+        for segment in segments(max_wait):
             lease = self._attempt(key, segment, max_hold)
             if lease is not None:
                 return lease
-            remaining -= segment
-            if remaining <= timedelta(0):
-                return None
+        return None
 
     def close(self) -> None:  # noqa: B027 - deliberately empty, as Java's default
         """Does nothing, as Java's ``close()`` does nothing. Leases still open stay held until
@@ -116,7 +112,7 @@ class SqlKeyedLockProvider(ABC):
             # Drawing the connection is part of taking the lock, so an unreachable database is a
             # LockAcquisitionError like any other backend failure, as in Java. Nothing to give
             # back: the connection was never handed over.
-            raise LockAcquisitionError(key, "could not obtain a connection") from exc
+            raise LockAcquisitionError(key, NO_CONNECTION) from exc
         try:
             acquired = self._try_lock(conn, hashed, wait)
         except LockAcquisitionError:
@@ -124,7 +120,7 @@ class SqlKeyedLockProvider(ABC):
             raise
         except Exception as exc:
             _discard(conn, self._log)
-            raise LockAcquisitionError(key, f"the lock backend failed: {exc}") from exc
+            raise LockAcquisitionError(key, backend_failed(exc)) from exc
 
         if not acquired:
             _discard(conn, self._log)
@@ -165,6 +161,74 @@ def _discard(conn: Connection, log: logging.Logger) -> None:
         log.debug("failed to close a lock connection", exc_info=True)
 
 
+#: Shared with ``ekbatan.aio.locks``: what each backend sends, and how its answers are read.
+#: The single try. The sync provider sends it in psycopg's own spelling; the same statement.
+PG_TRY_LOCK = "SELECT pg_try_advisory_lock(:k)"
+PG_LOCK = "SELECT pg_advisory_lock(:k)"
+PG_UNLOCK = "SELECT pg_advisory_unlock(:k)"
+PG_RESET_LOCK_TIMEOUT = "SET lock_timeout = 0"
+PG_RELEASE_FAILED = "Failed to release advisory lock for key %s; evicting connection"
+PG_RESET_FAILED = "Failed to reset lock_timeout on connection; marking dirty"
+MYSQL_GET_LOCK = "SELECT GET_LOCK(:name, :timeout)"
+MYSQL_RELEASE_LOCK = "SELECT RELEASE_LOCK(:name)"
+MYSQL_RELEASE_FAILED = "Failed to RELEASE_LOCK for key %s; evicting connection"
+NO_CONNECTION = "could not obtain a connection"
+
+
+def pg_lock_timeout(wait: timedelta) -> str:
+    """The bounded wait, as Java sets it: whole milliseconds, at least one."""
+    millis = max(1, int(wait.total_seconds() * 1000))
+    return f"SET lock_timeout = {millis}"
+
+
+def backend_failed(error: Exception) -> str:
+    return f"the lock backend failed: {error}"
+
+
+def mysql_got_lock(result: Any, name: str) -> bool:
+    """``GET_LOCK``'s answer: 1 taken, 0 timed out, NULL a server-side failure.
+
+    NULL is a server-side failure - out of memory, a killed session. It has to stay
+    distinguishable from a timeout, because a blocking acquire retries a timeout forever and
+    would spin on this instead of failing.
+    """
+    if result is None:
+        raise LockAcquisitionError(name, "GET_LOCK returned NULL (server-side failure)")
+    return bool(int(result))
+
+
+def mysql_released(log: logging.Logger, result: Any, user_key: str) -> None:
+    """``RELEASE_LOCK``'s answer. Java's two warnings: NULL means no such lock existed, 0 that
+    this session did not hold it - either way something else released or never took what we
+    think we held."""
+    if result is None:
+        log.warning("RELEASE_LOCK for key %s returned NULL (no such lock)", user_key)
+    elif int(result) != 1:
+        log.warning(
+            "RELEASE_LOCK for key %s returned %s (lock not held by this session)",
+            user_key,
+            result,
+        )
+
+
+def mysql_lock_name(key: int) -> str:
+    """Bare unsigned hex - Java's `Long.toHexString(LockKeyHash.hashUtf8(key))`, character for
+    character, so a Python service and a Java service contending for one key actually contend.
+    Pinned against Java's output in `test_locks.py`."""
+    return f"{key & 0xFFFFFFFFFFFFFFFF:x}"
+
+
+def segments(max_wait: timedelta) -> list[timedelta]:
+    """A bounded wait cut into ``SEGMENT``-long waits; a zero wait is one zero-length try."""
+    remaining, cut = max_wait, []
+    while True:
+        segment = min(remaining, SEGMENT) if remaining > SEGMENT else remaining
+        cut.append(segment)
+        remaining -= segment
+        if remaining <= timedelta(0):
+            return cut
+
+
 def _is_lock_timeout(error: Exception) -> bool:
     """Postgres's 55P03, however the driver chose to report it."""
     original = getattr(error, "orig", None)
@@ -189,12 +253,11 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
                 conn.exec_driver_sql("SELECT pg_try_advisory_lock(%(k)s)", {"k": key}).scalar()
             )
 
-        millis = max(1, int(wait.total_seconds() * 1000))
-        conn.exec_driver_sql(f"SET lock_timeout = {millis}")
+        conn.exec_driver_sql(pg_lock_timeout(wait))
         acquired = False
         failure: Exception | None = None
         try:
-            conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
+            conn.execute(text(PG_LOCK), {"k": key})
             acquired = True
         except Exception as exc:
             if not _is_lock_timeout(exc):
@@ -203,12 +266,10 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
         # wait left the lock_timeout on the pooled connection, and the next borrower's ordinary
         # statements could then fail with lock timeouts nobody asked for.
         try:
-            conn.exec_driver_sql("SET lock_timeout = 0")
+            conn.exec_driver_sql(PG_RESET_LOCK_TIMEOUT)
         except Exception as reset:
             # Java marks the connection dirty here and evicts it instead of returning it.
-            self._log.warning(
-                "Failed to reset lock_timeout on connection; marking dirty", exc_info=reset
-            )
+            self._log.warning(PG_RESET_FAILED, exc_info=reset)
             if failure is not None:
                 failure.add_note(f"resetting lock_timeout also failed: {reset!r}")
             if acquired:
@@ -220,12 +281,12 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
             raise failure
         return acquired
 
-    _release_failed = "Failed to release advisory lock for key %s; evicting connection"
+    _release_failed = PG_RELEASE_FAILED
 
     def _unlock(self, conn: Connection, key: int, user_key: str) -> None:
         from sqlalchemy import text
 
-        conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+        conn.execute(text(PG_UNLOCK), {"k": key})
 
 
 class MySQLKeyedLockProvider(SqlKeyedLockProvider):
@@ -255,43 +316,22 @@ class MySQLKeyedLockProvider(SqlKeyedLockProvider):
     def _try_lock(self, conn: Connection, key: int, wait: timedelta) -> bool:
         from sqlalchemy import text
 
+        name = mysql_lock_name(key)
         result = conn.execute(
-            text("SELECT GET_LOCK(:name, :timeout)"),
-            {"name": self._name(key), "timeout": _get_lock_timeout(wait)},
+            text(MYSQL_GET_LOCK), {"name": name, "timeout": _get_lock_timeout(wait)}
         ).scalar()
-        if result is None:
-            # NULL is a server-side failure - out of memory, a killed session. It has to stay
-            # distinguishable from a timeout, because a blocking acquire retries a timeout
-            # forever and would spin on this instead of failing.
-            raise LockAcquisitionError(
-                self._name(key), "GET_LOCK returned NULL (server-side failure)"
-            )
-        return bool(int(result))
+        return mysql_got_lock(result, name)
 
-    _release_failed = "Failed to RELEASE_LOCK for key %s; evicting connection"
+    _release_failed = MYSQL_RELEASE_FAILED
 
     def _unlock(self, conn: Connection, key: int, user_key: str) -> None:
         from sqlalchemy import text
 
-        result = conn.execute(
-            text("SELECT RELEASE_LOCK(:name)"), {"name": self._name(key)}
-        ).scalar()
-        # Java's two warnings: NULL means no such lock existed, 0 that this session did not
-        # hold it - either way something else released or never took what we think we held.
-        if result is None:
-            self._log.warning("RELEASE_LOCK for key %s returned NULL (no such lock)", user_key)
-        elif int(result) != 1:
-            self._log.warning(
-                "RELEASE_LOCK for key %s returned %s (lock not held by this session)",
-                user_key,
-                result,
-            )
+        result = conn.execute(text(MYSQL_RELEASE_LOCK), {"name": mysql_lock_name(key)}).scalar()
+        mysql_released(self._log, result, user_key)
 
     def _name(self, key: int) -> str:
-        # Bare unsigned hex - Java's `Long.toHexString(LockKeyHash.hashUtf8(key))`, character for
-        # character, so a Python service and a Java service contending for one key actually
-        # contend. Pinned against Java's output in `test_locks.py`.
-        return f"{key & 0xFFFFFFFFFFFFFFFF:x}"
+        return mysql_lock_name(key)
 
 
 def _get_lock_timeout(wait: timedelta) -> Decimal:

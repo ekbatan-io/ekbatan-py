@@ -40,6 +40,7 @@ from .._metrics import counter
 from ..errors import LockAcquisitionError, ValidationError
 from ._holder import KeyedReentrantHolder, ReleaseReason
 from .base import Lease, check
+from .sql import backend_failed
 
 __all__ = ["DEFAULT_NAMESPACE", "RedisKeyedLockProvider", "RedisKeyedLockProviderBuilder"]
 
@@ -113,6 +114,34 @@ def lease_millis(max_hold: timedelta) -> int:
     return max(1, int(max_hold.total_seconds() * 1000))
 
 
+def lock_channel(stored: str) -> str:
+    """The channel an unlock is published on: Redisson's, for the stored key."""
+    return _prefix_name("redisson_lock__channel", stored)
+
+
+def unlock_latch(stored: str) -> str:
+    """A fresh latch key for one unlock: Redisson's name, with a random suffix."""
+    return f"{_prefix_name('redisson_unlock_latch', stored)}:{uuid.uuid4().hex}"
+
+
+def refuse_blank_namespace(namespace: str) -> None:
+    """The constructor's check, shared with ``ekbatan.aio.locks.redis``."""
+    if not namespace or not namespace.strip():
+        raise LockAcquisitionError(namespace, "namespace cannot be blank")
+
+
+def refuse_blank_namespace_setting(namespace: str) -> None:
+    """The builder's check, shared: refused when it is set, as Java refuses it."""
+    if not namespace or not namespace.strip():
+        raise ValidationError("namespace cannot be blank")
+
+
+#: Java's ERROR line when a release does not reach Redis.
+RELEASE_FAILED_LINE = (
+    "Failed to release Redis lock for key %s; it will remain held until its TTL expires"
+)
+
+
 def _prefix_name(prefix: str, name: str) -> str:
     """Redisson's `RedissonObject.prefixName`: the hash tag keeps a channel on the key's slot."""
     if "{" in name:
@@ -133,8 +162,7 @@ class RedisKeyedLockProvider:
     __slots__ = ("_client", "_holder", "_id", "_lock", "_prefix", "_release")
 
     def __init__(self, client: Any, *, namespace: str = DEFAULT_NAMESPACE) -> None:
-        if not namespace or not namespace.strip():
-            raise LockAcquisitionError(namespace, "namespace cannot be blank")
+        refuse_blank_namespace(namespace)
         self._client = client
         self._prefix = f"{namespace}:"
         self._holder = KeyedReentrantHolder()
@@ -187,9 +215,9 @@ class RedisKeyedLockProvider:
 
         try:
             pubsub = self._client.pubsub(ignore_subscribe_messages=True)
-            pubsub.subscribe(_prefix_name("redisson_lock__channel", self._prefix + key))
+            pubsub.subscribe(lock_channel(self._prefix + key))
         except Exception as error:
-            raise LockAcquisitionError(key, f"the lock backend failed: {error}") from error
+            raise LockAcquisitionError(key, backend_failed(error)) from error
         try:
             while True:
                 ttl = self._try_lock(key, owner, max_hold)
@@ -212,7 +240,7 @@ class RedisKeyedLockProvider:
         try:
             ttl = self._lock(keys=[self._prefix + key], args=[lease_millis(max_hold), owner])
         except Exception as error:
-            raise LockAcquisitionError(key, f"the lock backend failed: {error}") from error
+            raise LockAcquisitionError(key, backend_failed(error)) from error
         return None if ttl is None else int(ttl)
 
     def _register(self, key: str, owner: str, max_hold: timedelta) -> Lease:
@@ -228,12 +256,12 @@ class RedisKeyedLockProvider:
             # unlock here would race a lease somebody else has just taken. Java does the same.
             return
         stored = self._prefix + key
-        latch = f"{_prefix_name('redisson_unlock_latch', stored)}:{uuid.uuid4().hex}"
+        latch = unlock_latch(stored)
         try:
             # Unlocked as the owner that took it, so a lease closed from another thread still
             # releases, as Java's `unlockAsync(acquirerThreadId)` does.
             result = self._release(
-                keys=[stored, _prefix_name("redisson_lock__channel", stored), latch],
+                keys=[stored, lock_channel(stored), latch],
                 args=[UNLOCK_MESSAGE, millis, owner, "publish", _LATCH_MILLIS],
             )
         except Exception as error:
@@ -242,12 +270,7 @@ class RedisKeyedLockProvider:
             # `max_hold`, and at DEBUG - which is where the Java implementation had it until
             # EKB-0059 - a shard stalling leaves no trace at all.
             RELEASES_FAILED.add(1)
-            LOG.error(
-                "Failed to release Redis lock for key %s; it will remain held until its TTL "
-                "expires",
-                key,
-                exc_info=error,
-            )
+            LOG.error(RELEASE_FAILED_LINE, key, exc_info=error)
             return
         try:
             # Redisson deletes the latch afterwards too, without checking; it expires anyway.
@@ -270,7 +293,7 @@ def _await_unlock(pubsub: Any, key: str, seconds: float) -> None:
         try:
             message = pubsub.get_message(timeout=remaining)
         except Exception as error:
-            raise LockAcquisitionError(key, f"the lock backend failed: {error}") from error
+            raise LockAcquisitionError(key, backend_failed(error)) from error
         if message is not None and message.get("type") == "message":
             return
 
@@ -294,8 +317,7 @@ class RedisKeyedLockProviderBuilder:
 
     def namespace(self, namespace: str) -> Self:
         """Refused when it is set, as Java refuses it, rather than at ``build()``."""
-        if not namespace or not namespace.strip():
-            raise ValidationError("namespace cannot be blank")
+        refuse_blank_namespace_setting(namespace)
         self._namespace = namespace
         return self
 

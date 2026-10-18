@@ -23,7 +23,7 @@ import sys
 import threading
 from datetime import timedelta
 from types import TracebackType
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from ..errors import ValidationError
 
@@ -51,21 +51,17 @@ class _Hold(Protocol):
     def release_one(self) -> None: ...
 
 
-class Lease:
-    """A held lock. Closing releases it; closing twice is harmless.
-
-    Every acquisition returns its own lease, re-entries included, and each must be closed once.
-    ``with`` does that; cleanup running from two places - a scope exit and an error path - is
-    why closing twice may not raise.
+class _LeaseCore:
+    """What a sync and an async lease share: the hold behind it, and closing it only once.
 
     Each lease remembers that it was closed, as Java's ``HeldLease`` does. Without that, closing
     an inner lease twice counted the hold down twice: the second close freed the key while the
-    outer region still held it, and another thread walked in.
+    outer region still held it, and another holder walked in.
     """
 
     __slots__ = ("_closed", "_gate", "_holding")
 
-    def __init__(self, holding: _Hold) -> None:
+    def __init__(self, holding: Any) -> None:
         self._holding = holding
         self._gate = threading.Lock()
         self._closed = False
@@ -74,16 +70,37 @@ class Lease:
     def held(self) -> bool:
         """False once this lease is closed, and false once the hold limit has fired - even for
         an inner lease nobody has closed yet."""
-        return not self._closed and self._holding.held
+        return not self._closed and bool(self._holding.held)
 
-    def release(self) -> None:
-        # The check and the set together, as Java's compareAndSet: two threads closing the same
-        # lease at once must not both count the hold down.
+    def _close_once(self) -> bool:
+        """Mark it closed; True only for the first caller. The check and the set together, as
+        Java's compareAndSet: two closes at once must not both count the hold down."""
         with self._gate:
             if self._closed:
-                return
+                return False
             self._closed = True
-        self._holding.release_one()
+            return True
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(held={self.held})"
+
+
+class Lease(_LeaseCore):
+    """A held lock. Closing releases it; closing twice is harmless.
+
+    Every acquisition returns its own lease, re-entries included, and each must be closed once.
+    ``with`` does that; cleanup running from two places - a scope exit and an error path - is
+    why closing twice may not raise.
+    """
+
+    __slots__ = ()
+
+    def __init__(self, holding: _Hold) -> None:
+        super().__init__(holding)
+
+    def release(self) -> None:
+        if self._close_once():
+            self._holding.release_one()
 
     def __enter__(self) -> Lease:
         return self
@@ -95,9 +112,6 @@ class Lease:
         tb: TracebackType | None,
     ) -> None:
         self.release()
-
-    def __repr__(self) -> str:
-        return f"Lease(held={self.held})"
 
 
 @runtime_checkable
@@ -117,8 +131,14 @@ class KeyedLockProvider(Protocol):
 
 
 def check(key: str, max_hold: timedelta, max_wait: timedelta | None = None) -> None:
-    """Refuse the arguments that produce something which looks like a lock and is not."""
+    """Refuse the arguments that produce something which looks like a lock and is not - and a
+    sync lock taken on an event loop's thread."""
     _refuse_on_an_event_loop()
+    check_arguments(key, max_hold, max_wait)
+
+
+def check_arguments(key: str, max_hold: timedelta, max_wait: timedelta | None = None) -> None:
+    """The argument checks alone, shared with ``ekbatan.aio.locks``."""
     if not key or not key.strip():
         raise ValidationError("lock key cannot be blank; a blank key collides with every other")
     if max_hold <= timedelta(0):
@@ -135,9 +155,9 @@ def _refuse_on_an_event_loop() -> None:
     A holder is a thread, as in Java, where each request has a thread of its own. On an event
     loop every request shares one: a second request would "re-enter" the first one's lock and
     walk straight in, and a request that did wait would freeze the loop - the holder included.
-    Ekbatan is synchronous throughout, so the answer is not a lock that knows about tasks but
-    calling it from a worker thread, where each request is its own holder again: a plain
-    ``def`` endpoint, which FastAPI and Starlette already run on one, or ``asyncio.to_thread``.
+    On an event loop the answer is the async providers in ``ekbatan.aio.locks``, whose holder is
+    the task; from sync code, a worker thread, where each request is its own holder again: a
+    plain ``def`` endpoint, which FastAPI and Starlette already run on one.
 
     asyncio not imported means no loop can be running, so then this costs a dictionary lookup.
     """
@@ -149,7 +169,8 @@ def _refuse_on_an_event_loop() -> None:
     except RuntimeError:
         return
     raise ValidationError(
-        "a keyed lock was taken on an asyncio event loop's thread. Ekbatan is synchronous: "
-        "there, two requests would share one lock holder and both get in. Call it from a worker "
-        "thread instead - a plain `def` endpoint, or `await asyncio.to_thread(...)`"
+        "a sync keyed lock was taken on an asyncio event loop's thread: there, two requests "
+        "would share one lock holder and both get in. On an event loop use the async provider "
+        "from ekbatan.aio.locks, whose holder is the task; or call this from a worker thread - "
+        "a plain `def` endpoint, or `await asyncio.to_thread(...)`"
     )

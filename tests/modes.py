@@ -16,9 +16,11 @@ How a test body written against the sync API reaches the async one:
 - **calls**. What an async object hands back is made blocking: a coroutine is awaited on the
   loop, an ``async with`` block becomes a ``with`` block, an async iterator a plain one, and
   another async object is wrapped the same way. Rows, models and results come back as they are.
-- **context**. Each thread that calls in keeps one :class:`contextvars.Context` for all its
-  calls, so an ambient transaction opened by one call is seen by the next, exactly as within one
-  task - and two threads calling in are two tasks that never see each other's.
+- **context**. Each thread that calls in is one task on the loop for all its calls - a task
+  started on its first call, with a context of its own, that runs each call it is sent in turn.
+  So an ambient transaction opened by one call is seen by the next, a keyed lock taken by one
+  call is re-entered by the next, exactly as within one task - and two threads calling in are
+  two tasks that never see each other's.
 - **actions**. An action subclassed in a test from the rebound ``Action`` with a plain ``def
   perform`` gets an ``async def perform`` that runs it on the loop. It may stage and read the
   clock; one that calls a repository needs a real async twin (:func:`twin`), and says so loudly
@@ -38,6 +40,8 @@ import inspect
 import threading
 from collections.abc import Callable, Iterator
 from typing import Any
+
+from ekbatan.aio.locks.base import Acquiring
 
 #: Modules whose names are rebound for the async run, besides the test module itself: support
 #: code a test calls, which builds executors and repositories of its own.
@@ -181,6 +185,40 @@ def _register_framework_twins() -> None:
 _register_framework_twins()
 
 
+def _register_lock_twins() -> None:
+    """The keyed lock providers: each sync provider's twin is the async one over the same
+    backend. Redis only when redis-py is installed, as the Redis tests skip without it."""
+    from ekbatan.aio.locks import (
+        AsyncMariaDBKeyedLockProvider,
+        AsyncMySQLKeyedLockProvider,
+        AsyncPostgresKeyedLockProvider,
+    )
+    from ekbatan.locks import (
+        MariaDBKeyedLockProvider,
+        MySQLKeyedLockProvider,
+        PostgresKeyedLockProvider,
+    )
+
+    TWINS.update(
+        {
+            PostgresKeyedLockProvider: AsyncPostgresKeyedLockProvider,
+            MySQLKeyedLockProvider: AsyncMySQLKeyedLockProvider,
+            MariaDBKeyedLockProvider: AsyncMariaDBKeyedLockProvider,
+        }
+    )
+    try:
+        import redis  # noqa: F401
+    except ImportError:  # pragma: no cover - the dev group installs it
+        return
+    from ekbatan.aio.locks.redis import AsyncRedisKeyedLockProvider
+    from ekbatan.locks.redis import RedisKeyedLockProvider
+
+    TWINS[RedisKeyedLockProvider] = AsyncRedisKeyedLockProvider
+
+
+_register_lock_twins()
+
+
 def _register_event_twin() -> None:
     """``sqlalchemy.event`` for an async engine: SQLAlchemy fires an async engine's events on
     the sync engine it wraps, and says to listen there - so the twin does."""
@@ -243,7 +281,7 @@ class Portal:
     def __init__(self) -> None:
         self.loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run, name="ekbatan-portal", daemon=True)
-        self._contexts: dict[int, contextvars.Context] = {}
+        self._runners: dict[int, tuple[asyncio.Queue[Any], asyncio.Task[None]]] = {}
         self._proxies: dict[int, tuple[Any, Proxy]] = {}
         self._thread.start()
 
@@ -251,15 +289,36 @@ class Portal:
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
-    def _context(self) -> contextvars.Context:
-        ident = threading.get_ident()
-        context = self._contexts.get(ident)
-        if context is None:
-            context = self._contexts[ident] = contextvars.copy_context()
-        return context
+    def _runner(self, ident: int, context: contextvars.Context) -> asyncio.Queue[Any]:
+        """The calling thread's task, started on its first call: it awaits each call it is sent,
+        one after another, so every call a thread makes runs in one task and one context."""
+        held = self._runners.get(ident)
+        if held is not None:
+            return held[0]
+        queue: asyncio.Queue[Any] = asyncio.Queue()
+
+        async def run() -> None:
+            while True:
+                awaitable, done = await queue.get()
+                try:
+                    result = await awaitable
+                except BaseException as error:  # handed to the caller, whatever it is
+                    task = asyncio.current_task()
+                    while task is not None and task.cancelling():
+                        task.uncancel()
+                    if isinstance(error, asyncio.CancelledError):
+                        done.set_exception(asyncio.CancelledError())
+                    else:
+                        done.set_exception(error)
+                else:
+                    done.set_result(result)
+
+        task = self.loop.create_task(run(), context=context)
+        self._runners[ident] = (queue, task)
+        return queue
 
     def call(self, awaitable: Any) -> Any:
-        """Run ``awaitable`` as a task on the loop, in the calling thread's context; wait."""
+        """Run ``awaitable`` on the loop, in the calling thread's task; wait."""
         if threading.current_thread() is self._thread:
             if inspect.iscoroutine(awaitable):
                 awaitable.close()
@@ -267,24 +326,14 @@ class Portal:
                 "a blocking call from inside the event loop: this code runs on the loop and "
                 "calls the async API as if it were sync. Give it an async twin (modes.twin)."
             )
-        context = self._context()
+        ident = threading.get_ident()
+        # The calling thread's context, for its task's first call - as a task started from
+        # this thread would copy it.
+        context = None if ident in self._runners else contextvars.copy_context()
         done: concurrent.futures.Future[Any] = concurrent.futures.Future()
 
-        async def run() -> Any:
-            return await awaitable
-
         def start() -> None:
-            task = self.loop.create_task(run(), context=context)
-
-            def finished(task: asyncio.Task[Any]) -> None:
-                if task.cancelled():
-                    done.set_exception(asyncio.CancelledError())
-                elif task.exception() is not None:
-                    done.set_exception(task.exception())  # type: ignore[arg-type]
-                else:
-                    done.set_result(task.result())
-
-            task.add_done_callback(finished)
+            self._runner(ident, context or contextvars.copy_context()).put_nowait((awaitable, done))
 
         self.loop.call_soon_threadsafe(start)
         return done.result()
@@ -300,6 +349,14 @@ class Portal:
         return self.call(run())
 
     def close(self) -> None:
+        async def stop_runners() -> None:
+            tasks = [task for _, task in self._runners.values()]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        if self._runners:
+            asyncio.run_coroutine_threadsafe(stop_runners(), self.loop).result(10)
         self.loop.call_soon_threadsafe(self.loop.stop)
         self._thread.join(10)
         self.loop.close()
@@ -311,6 +368,10 @@ class Portal:
         """``value`` as a test written against the sync API can use it."""
         if isinstance(value, Proxy | type):
             return value
+        # A keyed lock's `acquire`: awaited at once, as the sync `acquire` takes the lock at
+        # once. The lease is an async context manager, so `with locks.acquire(...)` still works.
+        if isinstance(value, Acquiring):
+            return self.wrap(self.call(value))
         # An async context manager before an awaitable: `engine.connect()` is both, and a test
         # enters it with `with` - awaiting it first would start the connection twice.
         if hasattr(value, "__anext__") or (

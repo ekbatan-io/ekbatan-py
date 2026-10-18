@@ -6,6 +6,10 @@ Redisson's `CompletionException` unwrapping have no counterpart - that is a deta
 Java uses, and `redis-py` raises what it raises.
 
 Nothing here is mocked. A lock that works against a fake is a lock nobody has tested.
+
+Every test runs twice: on the sync provider over `redis.Redis`, and on `ekbatan.aio.locks.redis`'
+async one over `redis.asyncio.Redis` (see `tests/modes.py`). `redis_client` stays the sync client
+in both runs: it only looks at what the provider wrote.
 """
 
 from __future__ import annotations
@@ -31,12 +35,31 @@ from ekbatan.locks.redis import (
 SHORT = timedelta(seconds=5)
 NONE = timedelta(0)
 
+MODES = ("sync", "async")
+
 
 @pytest.fixture
-def provider(redis_client, request):
+def lock_client(redis_client, mode, portal):
+    """The client a provider is built on: the sync one, or in an async run a
+    `redis.asyncio.Redis` to the same server, closed on the loop it ran on."""
+    if mode == "sync":
+        yield redis_client
+        return
+    import redis.asyncio
+
+    where = redis_client.connection_pool.connection_kwargs
+    made = redis.asyncio.Redis(host=where["host"], port=where["port"], decode_responses=True)
+    try:
+        yield made
+    finally:
+        portal.call(made.aclose())
+
+
+@pytest.fixture
+def provider(lock_client, request):
     """A provider in a namespace of this test's own, so tests cannot collide."""
     made = RedisKeyedLockProvider(
-        redis_client, namespace=f"t-{abs(hash(request.node.name)) % 100000}"
+        lock_client, namespace=f"t-{abs(hash(request.node.name)) % 100000}"
     )
     yield made
     made.close()
@@ -70,17 +93,17 @@ def test_a_negative_max_wait_is_refused(provider):
 
 
 @pytest.mark.parametrize("bad", ["", "   "])
-def test_a_blank_namespace_is_refused(redis_client, bad):
+def test_a_blank_namespace_is_refused(lock_client, bad):
     with pytest.raises(LockAcquisitionError):
-        RedisKeyedLockProvider(redis_client, namespace=bad)
+        RedisKeyedLockProvider(lock_client, namespace=bad)
 
 
-def test_the_default_namespace_is_javas(redis_client, request):
+def test_the_default_namespace_is_javas(redis_client, lock_client, request):
     """The key prefix is shared state. A Java service and a Python service coordinating on
     `wallet:123` have to write the same Redis key or neither excludes the other."""
     assert DEFAULT_NAMESPACE == "ekbatan-lock"
 
-    provider = RedisKeyedLockProvider(redis_client)
+    provider = RedisKeyedLockProvider(lock_client)
     try:
         with provider.acquire(key(request), SHORT):
             assert redis_client.exists(f"ekbatan-lock:{key(request)}")
@@ -438,8 +461,10 @@ def test_a_backend_failure_on_acquire_is_reported_as_one(provider, request, monk
 # Redisson holder, or a Java service trying the same key fails with WRONGTYPE instead of waiting.
 
 
-def test_the_lock_is_a_redisson_hash(provider, redis_client, request):
-    """A hash, one field `<client id>:<thread id>` holding the count 1, TTL `max_hold`."""
+def test_the_lock_is_a_redisson_hash(provider, redis_client, request, mode):
+    """A hash, one field `<client id>:<thread id>` holding the count 1, TTL `max_hold`. On the
+    async provider the second half is a number drawn per acquisition, not a thread id: the
+    holder is a task."""
     k = key(request)
     stored = f"{provider._prefix}{k}"
 
@@ -451,7 +476,10 @@ def test_the_lock_is_a_redisson_hash(provider, redis_client, request):
         field = field.decode() if isinstance(field, bytes) else field
         client_id, thread_id = field.rsplit(":", 1)
         assert client_id == provider._id
-        assert thread_id == str(threading.get_ident())
+        if mode == "sync":
+            assert thread_id == str(threading.get_ident())
+        else:
+            assert thread_id.isdigit()
         assert int(count) == 1
         assert 29_000 < redis_client.pttl(stored) <= 30_000
 
@@ -609,7 +637,7 @@ def test_the_scripts_are_redissons_own():
     assert sent == {_LOCK, _UNLOCK}, "Redisson 3.39.0 sends other scripts than this port copies"
 
 
-def test_redis_sees_from_this_port_exactly_what_it_saw_from_java(redis_client):
+def test_redis_sees_from_this_port_exactly_what_it_saw_from_java(redis_client, lock_client):
     """The same three scenarios as `RedissonRecordingTest.java`, under MONITOR: every command
     Redis runs - the scripts' own `hincrby`, `pexpire`, `del`, `PUBLISH`, the latch - matches the
     Java recording, values included."""
@@ -619,7 +647,7 @@ def test_redis_sees_from_this_port_exactly_what_it_saw_from_java(redis_client):
 
     scripts = {_LOCK: "lock", _UNLOCK: "unlock"}
     scripts |= {hashlib.sha1(s.encode()).hexdigest(): n for s, n in list(scripts.items())}
-    provider = RedisKeyedLockProvider(redis_client)  # the default namespace, as Java's
+    provider = RedisKeyedLockProvider(lock_client)  # the default namespace, as Java's
     hold = timedelta(seconds=30)
 
     def mark(name: str) -> None:
@@ -650,3 +678,64 @@ def test_redis_sees_from_this_port_exactly_what_it_saw_from_java(redis_client):
     java = _normalised(_RECORDING.read_text().splitlines(), scripts)
     assert len(java) > 30, "the recording lost its scenarios"
     assert _normalised(seen, scripts) == java
+
+
+# -- the password ------------------------------------------------------------------------------
+
+#: A password nobody else has, so finding it anywhere means it leaked.
+MARKER = "Rd5-marker-pw-for-tests"
+WRONG_MARKER = "Wr0ng-Rd5-marker-pw"
+
+
+@pytest.fixture(scope="module")
+def secret_redis():
+    """A Redis of this module's own that wants `MARKER`: (host, port)."""
+    from tests.backends import docker_is_available
+
+    if not docker_is_available():
+        pytest.skip("needs a container and Docker is not reachable")
+    from testcontainers.community.redis import RedisContainer
+
+    with RedisContainer("redis:7-alpine", password=MARKER) as container:
+        yield container.get_container_host_ip(), int(container.get_exposed_port(6379))
+
+
+def test_a_password_in_the_redis_url_is_never_printed(secret_redis, mode, portal, caplog, capsys):
+    """Clients made from urls holding the password - the right one, and a wrong one Redis
+    refuses - and every logger at DEBUG: the provider, its lease, the refusal and its traceback
+    hold neither password."""
+    import logging
+    import traceback
+
+    import redis
+    import redis.asyncio
+
+    host, port = secret_redis
+    kind = redis.Redis if mode == "sync" else redis.asyncio.Redis
+    right = kind.from_url(f"redis://:{MARKER}@{host}:{port}/0")
+    wrong = kind.from_url(f"redis://:{WRONG_MARKER}@{host}:{port}/0")
+    caplog.set_level(logging.DEBUG)
+    written: list[str] = []
+    try:
+        provider = RedisKeyedLockProvider(right)
+        with provider.acquire("secret", SHORT) as lease:
+            written += [repr(provider), repr(lease), str(lease)]
+        with pytest.raises(LockAcquisitionError) as refused:
+            RedisKeyedLockProvider(wrong).acquire("secret", SHORT)
+        written += [
+            str(refused.value),
+            repr(refused.value),
+            "".join(traceback.format_exception(refused.value)),
+        ]
+    finally:
+        for client in (right, wrong):
+            if mode == "sync":
+                client.close()
+            else:
+                portal.call(client.aclose())
+
+    printed = capsys.readouterr()
+    everything = "\n".join([caplog.text, printed.out, printed.err, *written])
+    assert "the lock backend failed" in str(refused.value), "the wrong password was refused"
+    assert MARKER not in everything
+    assert WRONG_MARKER not in everything

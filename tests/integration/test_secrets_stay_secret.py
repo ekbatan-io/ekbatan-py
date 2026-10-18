@@ -9,14 +9,23 @@ the log, stdout, stderr, every result and every error. SQLite has no passwords t
 from __future__ import annotations
 
 import logging
+import traceback
+from datetime import timedelta
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
-from ekbatan.config import ShardingConfig, split_login
+from conftest import of_mode
+from ekbatan.config import DataSourceConfig, ShardingConfig, split_login
+from ekbatan.errors import LockAcquisitionError
+from ekbatan.locks import (
+    MariaDBKeyedLockProvider,
+    MySQLKeyedLockProvider,
+    PostgresKeyedLockProvider,
+)
 from ekbatan.migrations import MigrationError, info, migrate, repair
-from ekbatan.persistence import DatabaseRegistry
+from ekbatan.persistence import DatabaseRegistry, engine_for
 from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.migrating import fresh, query
 
@@ -90,3 +99,46 @@ def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
     assert "V3__broken.sql" in str(failed.value), "and the failure was the migration's"
     assert SECRET not in everything
     assert WRONG not in everything, "nor a wrong password a login was refused with"
+
+
+#: The SQL keyed lock provider each database implements; each has an async twin.
+LOCKS = {
+    "postgres": PostgresKeyedLockProvider,
+    "mysql": MySQLKeyedLockProvider,
+    "mariadb": MariaDBKeyedLockProvider,
+}
+
+
+def test_a_keyed_lock_on_that_login_prints_no_password(
+    backend, request, caplog, capsys, mode, portal
+):
+    """The lock providers - sync, and `ekbatan.aio.locks`' async ones - over a pool whose login
+    has the password, and over one with a wrong password: what they log, return and raise."""
+    if backend.dialect == "sqlite":
+        pytest.skip("SQLite has no passwords, and no keyed lock")
+    url = with_secret_user(fresh(backend, request), backend.dialect)
+    caplog.set_level(logging.DEBUG)
+    provider = of_mode(mode, LOCKS[backend.dialect])
+    right = engine_for(DataSourceConfig(url=url, username=USER, password=SECRET, echo=True))
+    wrong = engine_for(DataSourceConfig(url=url, username=USER, password=WRONG))
+    written: list[str] = []
+    try:
+        locks = provider(right)
+        with locks.acquire("wallet:secret", timedelta(seconds=10)) as lease:
+            written += [repr(locks), repr(lease), str(lease)]
+        with pytest.raises(LockAcquisitionError) as refused:
+            provider(wrong).acquire("wallet:secret", timedelta(seconds=10))
+        written += [
+            str(refused.value),
+            repr(refused.value),
+            "".join(traceback.format_exception(refused.value)),
+        ]
+    finally:
+        for engine in (right, wrong):
+            engine.dispose()
+
+    printed = capsys.readouterr()
+    everything = "\n".join([caplog.text, printed.out, printed.err, *written])
+    assert "could not obtain a connection" in str(refused.value), "the login was refused"
+    assert SECRET not in everything
+    assert WRONG not in everything

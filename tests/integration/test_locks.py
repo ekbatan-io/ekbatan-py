@@ -9,6 +9,10 @@ running the suite against the real three before anything is believed.
 
 A lease holds a connection open for its lifetime, which is the failure mode worth testing: a
 lock that leaks one takes the pool down long before it takes correctness down.
+
+Every test runs twice: on the sync providers, and on `ekbatan.aio.locks`' async ones over the
+async registry's engine (see `tests/modes.py`). There the holder is a task, and each thread
+calling in is one task - so "another thread" below is another task, and a re-entry is one.
 """
 
 from __future__ import annotations
@@ -16,16 +20,27 @@ from __future__ import annotations
 import threading
 import time
 from datetime import timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import create_engine, text
 
+from conftest import of_mode
 from ekbatan.locks.sql import (
     MariaDBKeyedLockProvider,
     MySQLKeyedLockProvider,
     PostgresKeyedLockProvider,
 )
+from fixtures.actions import (
+    CreateWalletAction,
+    CreateWalletParams,
+    DepositMoneyAction,
+    DepositParams,
+)
 from fixtures.executing import run
+
+MODES = ("sync", "async")
 
 HOLD = timedelta(seconds=30)
 NOW = timedelta(0)
@@ -38,11 +53,12 @@ PROVIDERS = {
 
 
 @pytest.fixture
-def locks(registry, dialect):
-    """The provider this dialect implements, over the shard's own engine."""
+def locks(registry, dialect, mode):
+    """The provider this dialect implements, over the shard's own engine - the async provider
+    over the async engine in an async run."""
     if dialect not in PROVIDERS:
         pytest.skip(f"{dialect} has no advisory lock; the SQL providers are for the real three")
-    made = PROVIDERS[dialect](registry.default.primary)
+    made = of_mode(mode, PROVIDERS[dialect])(registry.default.primary)
     yield made
     made.close()
 
@@ -349,8 +365,6 @@ def test_the_server_sees_the_lock_under_the_name_java_uses(locks, registry, dial
     contend for one lock rather than each holding its own."""
     if dialect not in ("mysql", "mariadb"):
         pytest.skip("Postgres locks a number, pinned in the unit tests; no name to ask about")
-    from sqlalchemy import text
-
     java_name = "813e4046e5b48a46"
 
     def holder() -> object:
@@ -374,10 +388,6 @@ def test_a_timed_out_wait_leaves_no_lock_timeout_on_the_pooled_connection(
     can fail with lock timeouts."""
     if dialect != "postgres":
         pytest.skip("only Postgres waits with a session lock_timeout")
-    from sqlalchemy import create_engine
-
-    from ekbatan.locks.sql import PostgresKeyedLockProvider
-
     k = key(request)
     one = create_engine(registry.default.primary.url, pool_size=1, max_overflow=0)
     try:
@@ -457,15 +467,6 @@ def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallets, request
     Nothing clever - but it is the composition the whole lock exists to support, and neither the
     lock suite nor the action suite exercises it alone.
     """
-    from decimal import Decimal
-
-    from fixtures.actions import (
-        CreateWalletAction,
-        CreateWalletParams,
-        DepositMoneyAction,
-        DepositParams,
-    )
-
     wallet = run(
         executor,
         CreateWalletAction(executor.clock),
@@ -493,15 +494,6 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
     it) and that it ends (completes once the holder lets go), rather than either failing fast or
     hanging forever.
     """
-    from decimal import Decimal
-
-    from fixtures.actions import (
-        CreateWalletAction,
-        CreateWalletParams,
-        DepositMoneyAction,
-        DepositParams,
-    )
-
     wallet = run(
         executor,
         CreateWalletAction(executor.clock),

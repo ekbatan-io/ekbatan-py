@@ -21,6 +21,12 @@ from ekbatan.aio import (
     async_engine_for,
     async_url,
 )
+from ekbatan.aio.locks import (
+    AsyncLease,
+    AsyncSqlKeyedLockProvider,
+    AsyncSqlKeyedLockProviderBuilder,
+)
+from ekbatan.aio.locks.redis import AsyncRedisKeyedLockProvider, AsyncRedisKeyedLockProviderBuilder
 from ekbatan.aio.persistence import _asyncpg_connect_args
 from ekbatan.config import DataSourceConfig
 from ekbatan.errors import ValidationError
@@ -168,6 +174,15 @@ def public(cls: type) -> set[str]:
         ("ekbatan.persistence.DatabaseRegistryBuilder", AsyncDatabaseRegistryBuilder, set()),
         ("ekbatan.persistence.TransactionManager", AsyncTransactionManager, {"close", "aclose"}),
         ("ekbatan.testing.ActionSpec", AsyncActionSpec, set()),
+        ("ekbatan.locks.base.Lease", AsyncLease, set()),
+        ("ekbatan.locks.sql.SqlKeyedLockProvider", AsyncSqlKeyedLockProvider, set()),
+        ("ekbatan.locks.sql.SqlKeyedLockProviderBuilder", AsyncSqlKeyedLockProviderBuilder, set()),
+        ("ekbatan.locks.redis.RedisKeyedLockProvider", AsyncRedisKeyedLockProvider, set()),
+        (
+            "ekbatan.locks.redis.RedisKeyedLockProviderBuilder",
+            AsyncRedisKeyedLockProviderBuilder,
+            set(),
+        ),
     ],
 )
 def test_the_async_class_has_the_sync_ones_public_surface(sync_path, async_cls, differ):

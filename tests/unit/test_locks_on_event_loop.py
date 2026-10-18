@@ -2,8 +2,9 @@
 
 A holder is a thread, as in Java. On an event loop every request shares one, so a second
 request would "re-enter" the first one's lock and both would get in - found by running it in the
-Dracula sweep (bug 3). Ekbatan is synchronous, so the answer is a worker thread per call, where
-each request is its own holder again; taking a lock anywhere else is refused, loudly.
+Dracula sweep (bug 3). On a loop the answer is `ekbatan.aio.locks`, whose holder is the task; from
+sync code, a worker thread per call, where each request is its own holder again. Taking a sync
+lock on the loop's thread is refused, loudly, and the refusal names both.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ def test_taking_a_lock_on_the_loop_is_refused() -> None:
     with pytest.raises(ValidationError, match="asyncio event loop") as raised:
         on_the_loop(lambda: check("wallet:1", HOLD))
     assert "asyncio.to_thread" in str(raised.value), "and it says what to do instead"
+    assert "ekbatan.aio.locks" in str(raised.value), "including the async provider"
 
 
 @pytest.mark.parametrize(

@@ -409,14 +409,14 @@ Decisions: `docs/DECISIONS-TO-REVIEW.md#async-follow-ups`.
 
 | # | Item | State |
 |---|---|---|
-| L1 | `AsyncKeyedLockProvider` protocol and `AsyncKeyedLock` | todo |
-| L2 | async in-memory provider, on the sync one's core | todo |
-| L3 | async PostgreSQL advisory provider | todo |
-| L4 | async MySQL / MariaDB `GET_LOCK` provider | todo |
-| L5 | async Redis provider on `redis.asyncio` | todo |
-| L6 | same names and rules as sync: timeouts, max hold, namespace, key validation | todo |
-| L7 | marker password never printed (Redis url included) | todo |
-| L8 | lock tests run both ways on four databases (and Redis) | todo |
+| L1 | `AsyncKeyedLockProvider` protocol and `AsyncLease` | done - `ekbatan.aio.locks`; `acquire` returns an `Acquiring` that is awaited or entered with `async with`; `try_acquire` a coroutine; holder = the task |
+| L2 | async in-memory provider, on the sync one's core | n/a - the sync side has none (removed in EKB-0225, Java has none); not added (decision logged) |
+| L3 | async PostgreSQL advisory provider | done - `AsyncPostgresKeyedLockProvider` |
+| L4 | async MySQL / MariaDB `GET_LOCK` provider | done - `AsyncMySQLKeyedLockProvider`, `AsyncMariaDBKeyedLockProvider` |
+| L5 | async Redis provider on `redis.asyncio` | done - `ekbatan.aio.locks.redis.AsyncRedisKeyedLockProvider`, Redisson's layout; matches the Java MONITOR recording too |
+| L6 | same names and rules as sync: timeouts, max hold, namespace, key validation | done - shared cores: `_HoldingCore`, `_HolderCore`, `_LeaseCore`, `check_arguments`, statements and result readers in `locks/sql.py`, scripts/channel/latch/namespace checks in `locks/redis.py`; surface test pairs added |
+| L7 | marker password never printed (Redis url included) | done - `test_a_keyed_lock_on_that_login_prints_no_password` (PG/MySQL/MariaDB, both modes) and `test_a_password_in_the_redis_url_is_never_printed` (a Redis wanting a marker password; both modes); each proven able to fail |
+| L8 | lock tests run both ways on four databases (and Redis) | done - `test_locks.py`, `test_redis_locks.py` with `MODES`; native `test_async_locks.py` (task holder, cancelled/timed-out waits, cancelled holder); proven able to fail (thread as holder) |
 | H1 | an event handler may be `async def handle`; dispatch owns one long-lived loop on a thread of its own | todo |
 | H2 | retry, backoff, dead letter identical for both kinds | todo |
 | H3 | handler tests run both ways on four databases | todo |
