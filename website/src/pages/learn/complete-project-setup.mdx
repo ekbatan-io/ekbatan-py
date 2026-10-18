@@ -33,6 +33,7 @@ import mariadb_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-
 import mariadb_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0004__alerts.sql?raw";
 import mariadb_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/test_fastapi_wallet_rest_mariadb.py?raw";
 import shared_model_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/model.py?raw";
+import shared_converters_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/converters.py?raw";
 import shared_actions_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/actions.py?raw";
 import shared_handlers_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/handlers.py?raw";
 import shared_jobs_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/jobs.py?raw";
@@ -132,6 +133,7 @@ wallet/
    │  ├─ V0003__wallets.sql
    │  └─ V0004__alerts.sql
    ├─ model.py              the domain
+   ├─ converters.py         column values as the domain's own classes
    ├─ builders.py           GENERATED, committed
    ├─ schema.py             GENERATED, gitignored
    ├─ repository.py         the queries this app asks
@@ -538,7 +540,7 @@ migrations and rebuilds it when they change. A Makefile is that, in a few lines.
 IMAGE := postgres:17-alpine
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -556,7 +558,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 IMAGE := mysql:8.4
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -574,7 +576,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 IMAGE := mariadb:11.4
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -596,7 +598,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 IMAGE := postgres:17-alpine
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -614,7 +616,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 IMAGE := mysql:8.4
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -632,7 +634,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 IMAGE := mariadb:11.4
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -654,7 +656,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 IMAGE := postgres:17-alpine
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -672,7 +674,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 IMAGE := mysql:8.4
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -690,7 +692,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 IMAGE := mariadb:11.4
 PKG   := src/wallet
 
-$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql)
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
 
 $(PKG)/builders.py: $(PKG)/model.py
@@ -705,7 +707,7 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 
 </div>
 
-**It regenerates only what is out of date**: `schema.py` when a migration changed, `builders.py`
+**It regenerates only what is out of date**: `schema.py` when a migration or `pyproject.toml` changed, `builders.py`
 when the model did - a container starts when it has to and not otherwise. `builders.py` is
 generated on the first run too, before it exists, though the model already imports it.
 
@@ -741,6 +743,142 @@ poetry run python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
 ```
 
 </div>
+
+### Converters: the currency as a class of its own
+
+`Wallet.currency` is a `Currency`, not a string: a small class that takes only three capital
+letters. The table stores plain text, so something has to turn one into the other. That is a
+**converter** - a class with two methods, `from_db` and `to_db`, and no SQLAlchemy in it:
+
+<CodeBlock filename="src/wallet/converters.py" language="python" shadow="yellow" code={shared_converters_py} />
+
+Then tell schemagen which columns use them. One rule picks columns by their **type** (every
+`CHAR(3)` column is a currency code), the other picks one column by its **name**:
+
+```bash
+cat >> pyproject.toml <<'EOF'
+
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "wallet.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "wallet.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+EOF
+```
+
+Regenerate `schema.py` with the same command as in step 6; it now reads the rules from
+`pyproject.toml`. (`make` would notice the change too; running it now makes sure.)
+
+<div data-install="uv">
+
+<div data-db="pg">
+
+```bash
+uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image postgres:17-alpine
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mysql:8.4
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mariadb:11.4
+```
+
+</div>
+<div data-db="sqlite">
+
+SQLite: nothing to regenerate here.
+
+</div>
+
+</div>
+<div data-install="pip">
+
+<div data-db="pg">
+
+```bash
+python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image postgres:17-alpine
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mysql:8.4
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mariadb:11.4
+```
+
+</div>
+<div data-db="sqlite">
+
+SQLite: nothing to regenerate here.
+
+</div>
+
+</div>
+<div data-install="poetry">
+
+<div data-db="pg">
+
+```bash
+poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image postgres:17-alpine
+```
+
+</div>
+<div data-db="mysql">
+
+```bash
+poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mysql:8.4
+```
+
+</div>
+<div data-db="mariadb">
+
+```bash
+poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
+  --out src/wallet/schema.py --image mariadb:11.4
+```
+
+</div>
+<div data-db="sqlite">
+
+SQLite: nothing to regenerate here.
+
+</div>
+
+</div>
+
+The two columns come out wrapped:
+
+```python
+Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False),
+```
+
+From then on the repository writes a `Currency` and reads one back. More on picking columns and
+writing converters: [schemagen](/reference/schemagen/#write-your-own-converter).
 
 `balance` is `Decimal`, never `float`. And there is no id class to write: the id is
 `ShardedId[Wallet]`, which carries its shard inside the uuid - what lets you add a second database
