@@ -639,3 +639,22 @@ unattended. The design was agreed; these are the calls made while building it.
 
 See the table at the top of `JAVA-PARITY-LEDGER.md`: `EmbeddedBitsShardingStrategy` decodes shard
 bits from a `ShardedId` with no version guard, while the `Id` branch beside it has one.
+
+## website without java (`EKB-0336`-)
+
+| decision | why |
+| --- | --- |
+| one page, `reference/beside-java` (docs: `beside-java.md`), holds every working-together fact; other pages keep at most one sentence and a link | the reader who runs only Python is not sent through Java on every page; the one who shares a database finds it all in one place |
+| traces, logger names and config keys are on that page too, not only tables, the lock, JSON, ids and streaming | each one is a real setting a mixed team shares (one dashboard, one logging config, one shard layout) |
+| the logger name `io.ekbatan.flyway.FlywayMigrator` stays on the migrations and observability pages | it is the real name a reader types into a logging config; each page says once why it looks like that |
+| the payload sentence "`modelId` and `modelName` come first" still names the Java consumer | that consumer is the only real reason for the order; inventing another would be wrong |
+| config-files states the duration and missing-variable rules with no reason | the only reasons given were "as Java's binder / Spring does"; no other reason exists in the code |
+| the footer's "The Java port" link now points to the new page; "a port of ekbatan" became "ekbatan for python" | the site-wide footer should not send every reader to Java |
+| `docs/README.md` keeps its "About the port" list | it is the repository's index of maintainer files, not a copy of a website page |
+| `.astro` code comments that mention Java (footer, nav, index pages) are left | not shown on any page, as the task said |
+| example comments shown by the setup guide were rewritten; the mysql and mariadb `api.py` too, though not shown | the three projects stay alike, and `sync-examples.py` copies them to the pip and Poetry builds |
+| links to maintainer files (`DIVERGENCE.md`, `SHORTCOMINGS.md`, the ledgers, `parity-probes/`) were dropped from reader pages | they are written against Java; a reader page should stand without them |
+| wrong statements found while rewriting were fixed, each checked in `src/`: retry matching is by exact class; `Model` has three type parameters; a repository must write `to_row`/`from_row`; handlers in a dispatch batch run at the same time; event fan-out across shards is concurrent; there is no in-process lock provider; the framework declares no indexes; a failed cross-shard commit logs at ERROR with a `CRITICAL:` prefix | each contradicted the code or another page |
+| the claim that a backward index scan serves db-scheduler's `priority DESC, execution_time ASC` was dropped | read backwards, `(priority, execution_time)` gives DESC, DESC - it does not match the mixed order |
+| site tables still scroll sideways on many pages; only the new page's tables were made to fit | the scrolling table is the site's own design, used on pages this track did not change |
+| the setup-guide check fails on `main` too and was not fixed here | `EKB-0350` gave the examples forced types (`Currency`), but the guide builds a project without `converters.py` or the forced-types settings, so its tests fail; that is converter work (track C), not this track |
