@@ -352,7 +352,7 @@ database. Nothing at the call site can tell the two apart, so neither port tries
 now do instead is say it happened:**
 
 ```
-WARNING  ekbatan.persistence  shard 9:9 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+WARNING  io.ekbatan.core.shard.DatabaseRegistry  Shard ShardIdentifier(9, 9) is not registered, routing to default ShardIdentifier(0, 0) [registered=[ShardIdentifier(0, 0), ShardIdentifier(1, 0)]]
 ```
 
 Until `EKB-0200` the fallback was silent, which is the part that made a typo expensive: the

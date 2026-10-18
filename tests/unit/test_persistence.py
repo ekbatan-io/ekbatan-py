@@ -238,8 +238,10 @@ def test_an_unregistered_shard_falls_back_to_the_default_and_says_so(caplog):
         with caplog.at_level(logging.WARNING, logger="io.ekbatan.core.shard.DatabaseRegistry"):
             assert registry.effective_shard(ShardIdentifier(9, 9)) == ShardIdentifier(0, 0)
 
-        assert "shard 9:9 is not registered, routing to default 0:0" in caplog.text
-        assert "'0:0', '1:0'" in caplog.text, "the message names what is registered"
+        assert (
+            "Shard ShardIdentifier(9, 9) is not registered, routing to default "
+            "ShardIdentifier(0, 0) [registered=[ShardIdentifier(0, 0), ShardIdentifier(1, 0)]]"
+        ) in caplog.text, "Java's line, word for word, naming what is registered"
     finally:
         registry.close()
 

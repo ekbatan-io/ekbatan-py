@@ -336,8 +336,9 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
 
         Caught as Exception, an Error on shard B produced partially-committed data in silence.
 
-    A cross-shard action that commits shard A and fails on shard B does not roll back. The
-    CRITICAL log and its span attributes are the only notice anyone gets, so what killed the
+    A cross-shard action that commits shard A and fails on shard B does not roll back. Java's
+    `CRITICAL: ... PARTIALLY COMMITTED!` line, at ERROR with the exception, and its span
+    attributes are the only notice anyone gets, so what killed the
     second shard must not decide whether the notice is written. `KeyboardInterrupt` between two
     commits is the realistic one - a deploy restarting a pod mid-action.
     """
@@ -355,7 +356,7 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
 
     monkeypatch.setattr(type(executor), "_commit_shard", second_shard_dies)
 
-    with caplog.at_level(logging.CRITICAL), pytest.raises(KeyboardInterrupt):
+    with caplog.at_level(logging.ERROR), pytest.raises(KeyboardInterrupt):
         run(
             executor,
             CreateOnBothShardsAction(executor.clock),
@@ -363,9 +364,10 @@ def test_a_partial_commit_is_reported_even_when_what_killed_it_is_not_an_excepti
             config=ExecutionConfiguration(allow_cross_shard=True),
         )
 
-    assert any("PARTIALLY COMMITTED" in r.message for r in caplog.records), (
-        "the one notice anyone gets was not written"
-    )
+    (notice,) = [r for r in caplog.records if "PARTIALLY COMMITTED" in r.message]
+    assert notice.levelno == logging.ERROR, "Java logs it at ERROR"
+    assert notice.message.startswith("CRITICAL: Cross-shard action CreateOnBothShardsAction ")
+    assert notice.exc_info is not None, "with what killed the second shard attached"
 
 
 def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
@@ -386,7 +388,7 @@ def test_a_failure_before_any_shard_commits_is_not_called_a_partial_commit(
 
     monkeypatch.setattr(type(executor), "_commit_shard", first_shard_dies)
 
-    with caplog.at_level(logging.CRITICAL), pytest.raises(RuntimeError):
+    with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
         run(
             executor,
             CreateOnBothShardsAction(executor.clock),
@@ -467,7 +469,7 @@ def test_a_partial_commit_keeps_the_committed_shard_and_rolls_back_the_failing_o
     # Retries off, so the action runs exactly once and the count arithmetic is unambiguous.
     config = ExecutionConfiguration(allow_cross_shard=True, retry_configs=())
 
-    with caplog.at_level(logging.CRITICAL), pytest.raises(StaleRecordError):
+    with caplog.at_level(logging.ERROR), pytest.raises(StaleRecordError):
         run(
             executor,
             CreateOnGlobalThenFailOnMexicoAction(wallets, executor.clock),

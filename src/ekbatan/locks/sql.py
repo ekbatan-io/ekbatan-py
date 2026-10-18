@@ -63,8 +63,11 @@ class SqlKeyedLockProvider(ABC):
         """Take the lock, waiting at most ``wait``. False means someone else has it."""
 
     @abstractmethod
-    def _unlock(self, conn: Connection, key: int) -> None:
-        """Give it back."""
+    def _unlock(self, conn: Connection, key: int, user_key: str) -> None:
+        """Give it back. ``user_key`` is only for the log lines, as Java's ``payload.userKey``."""
+
+    #: Java's ERROR line when a release fails, per provider; ``%s`` is the caller's key.
+    _release_failed = "Failed to release the lock for key %s; evicting connection"
 
     # ------------------------------------------------------------------ the API
 
@@ -126,18 +129,18 @@ class SqlKeyedLockProvider(ABC):
         if not acquired:
             _discard(conn, self._log)
             return None
-        return self._holder.register(key, (hashed, conn), max_hold, self._release)
+        return self._holder.register(key, (key, hashed, conn), max_hold, self._release)
 
     def _release(self, payload: Any, reason: ReleaseReason) -> None:
-        hashed, conn = payload
+        user_key, hashed, conn = payload
         try:
-            self._unlock(conn, hashed)
+            self._unlock(conn, hashed, user_key)
         except Exception:
             # Evicted rather than returned, as Java evicts here. The unlock did not happen, so
             # this session still holds the lock: handing the connection back to the pool would
             # hand the lock to whoever borrows it next, invisibly. Closing the physical
             # connection is what makes the server drop the session and its locks with it.
-            self._log.exception("failed to release a database lock; discarding its session")
+            self._log.exception(self._release_failed, user_key)
             conn.invalidate()
         else:
             if conn.info.get(_DIRTY):
@@ -203,7 +206,9 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
             conn.exec_driver_sql("SET lock_timeout = 0")
         except Exception as reset:
             # Java marks the connection dirty here and evicts it instead of returning it.
-            self._log.warning("could not reset lock_timeout; the connection will be discarded")
+            self._log.warning(
+                "Failed to reset lock_timeout on connection; marking dirty", exc_info=reset
+            )
             if failure is not None:
                 failure.add_note(f"resetting lock_timeout also failed: {reset!r}")
             if acquired:
@@ -215,7 +220,9 @@ class PostgresKeyedLockProvider(SqlKeyedLockProvider):
             raise failure
         return acquired
 
-    def _unlock(self, conn: Connection, key: int) -> None:
+    _release_failed = "Failed to release advisory lock for key %s; evicting connection"
+
+    def _unlock(self, conn: Connection, key: int, user_key: str) -> None:
         from sqlalchemy import text
 
         conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
@@ -261,10 +268,24 @@ class MySQLKeyedLockProvider(SqlKeyedLockProvider):
             )
         return bool(int(result))
 
-    def _unlock(self, conn: Connection, key: int) -> None:
+    _release_failed = "Failed to RELEASE_LOCK for key %s; evicting connection"
+
+    def _unlock(self, conn: Connection, key: int, user_key: str) -> None:
         from sqlalchemy import text
 
-        conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": self._name(key)})
+        result = conn.execute(
+            text("SELECT RELEASE_LOCK(:name)"), {"name": self._name(key)}
+        ).scalar()
+        # Java's two warnings: NULL means no such lock existed, 0 that this session did not
+        # hold it - either way something else released or never took what we think we held.
+        if result is None:
+            self._log.warning("RELEASE_LOCK for key %s returned NULL (no such lock)", user_key)
+        elif int(result) != 1:
+            self._log.warning(
+                "RELEASE_LOCK for key %s returned %s (lock not held by this session)",
+                user_key,
+                result,
+            )
 
     def _name(self, key: int) -> str:
         # Bare unsigned hex - Java's `Long.toHexString(LockKeyHash.hashUtf8(key))`, character for

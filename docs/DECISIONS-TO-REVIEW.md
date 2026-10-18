@@ -302,7 +302,7 @@ Asked by the user on 2026-10-16: fix Dracula 6, matching Java.
 | tracer scope `io.ekbatan.core`, at this package's version | Java's scope; Java reports its artifact's version, so this reports its own | built |
 | `opentelemetry-api` is a dependency; the SDK stays the application's choice | Java's `ekbatan-core` depends on the API; without an SDK both are no-ops. Reverses the old "not a dependency" choice | the user |
 | the migrator's MDC keys `ekbatanShard` and `ekbatanTarget` as record attributes, from a context variable through a filter on its logger | Python has no MDC; this is its standard counterpart. Unlike Java's thread-wide MDC, the keys reach only the migrator's own lines | built |
-| log messages themselves left as they are | the row was about names; messages differ in places (`executing` vs `Executing`) | built |
+| *superseded (`EKB-0317`): the messages are Java's too* log messages themselves left as they are | the row was about names; messages differ in places (`executing` vs `Executing`) | reverted |
 
 ## Keyed locks on an event loop (`EKB-0250`)
 
@@ -444,6 +444,27 @@ migrator waits as long as it takes on every database, logging every thirty secon
 Items 77-84 (script migrations, how `V1_5` is stored, the history table's shape, the checksum
 ignoring line breaks, the `installed_on` zone, the baseline text, the result of a run with nothing
 to apply, and the success log lines) are left as they are, by the user's decision (2026-10-18).
+
+## Log messages worded as Java's (`EKB-0317`)
+
+Asked by the user on 2026-10-18 (parity round 2, N3 item 7), so a Java team's log searches and
+alerts match Python's lines. Every Ekbatan log line now has Java's text, level and attached
+exception: action execution, retries, transactions, the registry, persisting, locks, jobs and
+event handling. Round 2's log probes: 75 of the 107 recorded Java lines are now identical (2
+before); what still differs is each language's exception class names, the error messages
+themselves (scan items 50-51), the order concurrent handlers finish in, db-scheduler's own lines,
+and the migrator's (items 37 and 84, decided).
+
+| decision | why | what Java does |
+| --- | --- | --- |
+| shards print as Java prints them inside messages - `ShardIdentifier(1, 0)`, and `(1,0)` in the transaction lines - through `_logtext`; elsewhere a shard is still `1:0` | the text a search matches has to be Java's; Dracula 66 is about `str()`, not log lines | its `toString()` and the transaction line's own format |
+| discarded notifications: one `DISCARDED N event notification(s) ...` line per handler and reason for the batch, not one per row | Java's line, and an alert on `DISCARDED` now fires; after an outage it is one line, not thousands | the same |
+| a handler failure: `Handler 'x' threw E while processing event <id> (attempts=n): m`, with the traceback; a non-`Exception` (a cancellation) as `threw Error` at ERROR | Java's two lines; Java's `Error` has no Python twin, a `BaseException` that is not an `Exception` is the nearest | WARN for an exception, ERROR for an `Error` |
+| the partial cross-shard commit: Java's `CRITICAL: ... PARTIALLY COMMITTED!` text at ERROR with the exception, not at CRITICAL | Java's level and text | the same |
+| the per-row `will be retried in` line is gone | Java has no such line; a retry is visible in the `threw` line and the row | none |
+| a failed lock release names the caller's key, and MySQL/MariaDB warn when `RELEASE_LOCK` returns NULL or 0 | Java's lines; the key was not in the release payload before | the same |
+| a failed rollback: Java's `Evicting connection from pool - ...` line, without a traceback | Java's line has none | the same |
+| Java's DataSources "No username is configured" warning is not added | Java writes it for its unpooled data source only, which this port has no counterpart for | its driver data source |
 
 ## Ported an invariant Java already had - lower risk
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -24,6 +25,7 @@ from typing import Any
 from sqlalchemy import Table
 
 from .._json import decode
+from .._logtext import java_duration
 from .._metrics import counter, histogram
 from ..clock import Clock, SystemClock, to_instant
 from ..domain import ModelEvent
@@ -69,6 +71,11 @@ SUCCEEDED = "succeeded"
 FAILED = "failed"
 EXPIRED_PREFLIGHT = "expired_preflight"
 EXPIRED_POST_FAILURE = "expired_post_failure"
+#: The reason each kind of discard gives in Java's ``DISCARDED`` line, word for word.
+_DISCARD_REASONS = {
+    EXPIRED_PREFLIGHT: "was already past the retention window when it was claimed",
+    EXPIRED_POST_FAILURE: "exhausted the retention window after repeated handler failures",
+}
 #: No handler is registered under the row's name any more.
 DEFERRED = "deferred"
 
@@ -193,6 +200,7 @@ class EventDispatch:
         # would differ by microseconds and no two rows could ever share a statement.
         now = to_instant(self._clock.now())
         outcomes = [self._retry_or_expire(outcome, now) for outcome in outcomes]
+        self._log_discarded(outcomes)
         buckets: dict[tuple[str, timedelta | None], list[Any]] = defaultdict(list)
         for outcome in outcomes:
             buckets[(outcome.kind, outcome.retry_delay)].append(outcome.notification_id)
@@ -218,18 +226,9 @@ class EventDispatch:
             # Checked before invoking, not after. Handing a handler an event already known to
             # be too old risks a side effect nobody wanted - a stale email, a reversed charge -
             # for work that will be discarded either way.
-            # ERROR, not INFO. Expiry is the only outcome that discards an event, and a
-            # handler that could never succeed produces a wall of warnings while retrying and
-            # then nothing at all at the moment its event is thrown away.
-            LOG.error(
-                "notification %s for handler %r was discarded: %s was already past its "
-                "retention window when it was claimed",
-                row.id,
-                row.handler_name,
-                row.event_type,
-            )
+            # Logged once per handler for the whole batch, by `_log_discarded`, as Java does.
             HANDLED.add(1, {"outcome": "expired_preflight", "handler": row.handler_name})
-            return _Outcome(row.id, EXPIRED_PREFLIGHT)
+            return _Outcome(row.id, EXPIRED_PREFLIGHT, None, row)
 
         handler = self._handlers.by_name(row.handler_name)
         if handler is None:
@@ -252,13 +251,29 @@ class EventDispatch:
             # BaseException on purpose. The failure class an ordinary `except Exception`
             # misses is exactly the one that would otherwise escape and discard this batch's
             # siblings, whose successes would then never be recorded.
-            LOG.warning(
-                "handler %r failed on attempt %d (%s: %s)",
-                row.handler_name,
-                attempts,
-                type(error).__name__,
-                error,
-            )
+            # Java's two lines: an ordinary failure at WARN, and what Java calls an `Error` - here
+            # an exception that is not an `Exception`, a cancellation - at ERROR. Both name the
+            # event and carry the traceback. `attempts` is the count before this one, as Java's.
+            if isinstance(error, Exception):
+                LOG.warning(
+                    "Handler '%s' threw %s while processing event %s (attempts=%d): %s",
+                    row.handler_name,
+                    type(error).__name__,
+                    row.event_id,
+                    row.attempts,
+                    error,
+                    exc_info=error,
+                )
+            else:
+                LOG.error(
+                    "Handler '%s' threw Error %s while processing event %s (attempts=%d): %s",
+                    row.handler_name,
+                    type(error).__name__,
+                    row.event_id,
+                    row.attempts,
+                    error,
+                    exc_info=error,
+                )
             # Retry or expire is decided once the whole batch has run - `_retry_or_expire`.
             return _Outcome(row.id, FAILED, backoff(attempts, self._max_backoff), row)
 
@@ -283,22 +298,33 @@ class EventDispatch:
         if outcome.kind != FAILED or row is None or outcome.retry_delay is None:
             return outcome
         if now + outcome.retry_delay > row.event_date + self._retention:
-            LOG.error(
-                "notification %s for handler %r was discarded: it exhausted the retention "
-                "window after repeated handler failures",
-                row.id,
-                row.handler_name,
-            )
             HANDLED.add(1, {"outcome": "expired_postfailure", "handler": row.handler_name})
-            return _Outcome(row.id, EXPIRED_POST_FAILURE)
-        LOG.warning(
-            "notification %s for handler %r will be retried in %s",
-            row.id,
-            row.handler_name,
-            outcome.retry_delay,
-        )
+            return _Outcome(row.id, EXPIRED_POST_FAILURE, None, row)
         HANDLED.add(1, {"outcome": "failed_retry", "handler": row.handler_name})
         return outcome
+
+    def _log_discarded(self, outcomes: Sequence[_Outcome]) -> None:
+        """Java's ``DISCARDED`` line: one per handler and reason for the whole batch, at ERROR,
+        with the first discarded event as the example - not one line per row, which after an
+        outage is thousands of lines and an alert on the word that never matches.
+
+        ERROR, not INFO: expiry is the only outcome that throws an event away.
+        """
+        groups: dict[tuple[str, str], list[EventNotification]] = {}
+        for outcome in outcomes:
+            if outcome.kind in _DISCARD_REASONS and outcome.row is not None:
+                groups.setdefault((outcome.kind, outcome.row.handler_name), []).append(outcome.row)
+        for (kind, handler), discarded in groups.items():
+            LOG.error(
+                "DISCARDED %d event notification(s) for handler '%s' - each %s (%s). These events "
+                "will never be delivered. Example event: %s (attempts=%d).",
+                len(discarded),
+                handler,
+                _DISCARD_REASONS[kind],
+                java_duration(self._retention),
+                discarded[0].event_id,
+                discarded[0].attempts,
+            )
 
     def _expired(self, event_date: datetime, now: datetime) -> bool:
         return event_date + self._retention <= now

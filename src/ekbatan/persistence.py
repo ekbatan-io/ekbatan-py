@@ -28,6 +28,7 @@ from sqlalchemy import exc as sa_exc
 from sqlalchemy.pool import ConnectionPoolEntry, QueuePool
 from sqlalchemy.util import queue as sa_queue
 
+from ._logtext import java_list, java_shard, java_shard_pair
 from ._tracing import span
 from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from .config import _unknown_shard_policy as _policy
@@ -173,13 +174,13 @@ class TransactionManager:
             # connection is evicted rather than released.
             tx = conn.begin()
             try:
-                LOG.debug("transaction started [shard=%s]", self.shard)
+                LOG.debug("Transaction started [shard=%s]", java_shard_pair(self.shard))
                 yield Transaction(conn, self.shard, self.dialect)
                 # Inside the try, as Java's is: a commit that fails is a transaction that has
                 # to be rolled back like any other, and if that rollback fails too the
                 # connection is in the same unknown state.
                 tx.commit()
-                LOG.debug("transaction committed [shard=%s]", self.shard)
+                LOG.debug("Transaction committed [shard=%s]", java_shard_pair(self.shard))
             except BaseException as error:
                 # BaseException: a cancellation still rolled the transaction back, and a log
                 # that omitted it would be worse than none. The span needs nothing here - an
@@ -192,15 +193,14 @@ class TransactionManager:
                     # server discard anything still open on it - and stops the pool offering
                     # it to somebody else.
                     LOG.warning(
-                        "rollback failed [shard=%s]; discarding the connection rather than "
-                        "returning it to the pool",
-                        self.shard,
-                        exc_info=True,
+                        "Evicting connection from pool - rollback or autocommit-reset failed "
+                        "leaving it in unknown state [shard=%s]",
+                        java_shard_pair(self.shard),
                     )
                     conn.invalidate()
                 LOG.warning(
-                    "transaction rolled back [shard=%s]: %s",
-                    self.shard,
+                    "Transaction rolled back [shard=%s]: %s",
+                    java_shard_pair(self.shard),
                     type(error).__name__,
                 )
                 raise
@@ -356,10 +356,10 @@ class DatabaseRegistry:
                 f"registered: {sorted(str(s) for s in self._managers)}"
             )
         REGISTRY_LOG.warning(
-            "shard %s is not registered, routing to default %s [registered=%s]",
-            shard,
-            self.default_shard,
-            sorted(str(s) for s in self._managers),
+            "Shard %s is not registered, routing to default %s [registered=%s]",
+            java_shard(shard),
+            java_shard(self.default_shard),
+            java_list(java_shard(s) for s in self._managers),
         )
         return self.default_shard
 
@@ -378,7 +378,11 @@ class DatabaseRegistry:
             try:
                 manager.close()
             except Exception as exc:
-                REGISTRY_LOG.warning("failed to close shard %s: %s", shard, exc)
+                REGISTRY_LOG.warning(
+                    "Failed to close TransactionManager for shard %s: %s",
+                    java_shard(shard),
+                    f"{type(exc).__name__}: {exc}",
+                )
                 first = first or exc
         if first is not None:
             raise first

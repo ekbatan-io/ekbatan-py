@@ -18,6 +18,7 @@ from typing import Any, Self
 
 from sqlalchemy import MetaData, Table
 
+from .._logtext import java_list, java_shard
 from .._tracing import span
 from ..clock import Clock, SystemClock, to_instant
 from ..errors import CrossShardError, StaleRecordError, ValidationError
@@ -289,7 +290,7 @@ class ActionExecutor:
             {"ekbatan.action.name": name, "ekbatan.action.principal": principal or ""},
         ) as execution:
             started_at = time.monotonic()
-            LOG.info("executing %s [principal=%s]", name, principal or "")
+            LOG.info("Executing %s [principal=%s]", name, principal or "")
             while True:
                 started = to_instant(self.clock.now())
                 # A fresh plan per attempt. If it survived a failed one, the retry would commit
@@ -310,7 +311,7 @@ class ActionExecutor:
                         retried += 1
                         chosen, cause = match
                         RETRY_LOG.warning(
-                            "retrying %s (%d/%d) after %s: %s",
+                            "Retrying %s (retry %d/%d) due to %s: %s",
                             name,
                             retried,
                             chosen.max_retries,
@@ -332,9 +333,9 @@ class ActionExecutor:
                         {"ekbatan.action.outcome": "success", "ekbatan.action.retry.count": retried}
                     )
                     LOG.info(
-                        "%s completed in %.0fms [principal=%s]",
+                        "%s completed in %dms [principal=%s]",
                         name,
-                        (time.monotonic() - started_at) * 1000,
+                        int((time.monotonic() - started_at) * 1000),
                         principal or "",
                     )
                     return result
@@ -362,11 +363,23 @@ class ActionExecutor:
         persisting: Any,
     ) -> None:
         by_shard = self._group_by_shard(plan)
+        LOG.debug(
+            "Resolved %d entity types across %d shards [shards=%s]",
+            len({model_type for slices in by_shard.values() for model_type in slices}),
+            len(by_shard),
+            java_list(java_shard(s) for s in by_shard),
+        )
 
         if len(by_shard) > 1 and not policy.allow_cross_shard:
             # Refused before anything is written. Committing per shard by default would turn
             # the central promise into a lie the first time an action reached two databases by
             # accident - and it would do it silently.
+            LOG.error(
+                "%s rejected: spans %d shards %s but cross-shard is disabled",
+                action_name,
+                len(by_shard),
+                java_list(java_shard(s) for s in by_shard),
+            )
             first, second, *_ = sorted(by_shard)
             raise CrossShardError(first, second)
 
@@ -381,10 +394,10 @@ class ActionExecutor:
             # after the last commit is never written at all in that case.
             persisting.set({"ekbatan.shard.cross_shard": True})
             LOG.warning(
-                "%s spans %d shards %s; each committed on its own",
+                "%s spans %d shards: %s [allowCrossShard=true]",
                 action_name,
                 len(by_shard),
-                [str(s) for s in by_shard],
+                java_list(java_shard(s) for s in by_shard),
             )
 
         action_id = uuid.uuid4()
@@ -404,18 +417,22 @@ class ActionExecutor:
                     persisting.set(
                         {
                             "ekbatan.shard.partial_commit_failure": True,
-                            "ekbatan.shard.committed_shards": str([str(x) for x in committed]),
-                            "ekbatan.shard.failed_shard": str(shard),
+                            "ekbatan.shard.committed_shards": java_list(
+                                java_shard(x) for x in committed
+                            ),
+                            "ekbatan.shard.failed_shard": java_shard(shard),
                         }
                     )
-                    LOG.critical(
-                        "%s PARTIALLY COMMITTED: shards %s are committed and will not roll "
-                        "back; shard %s failed with %s: %s",
+                    LOG.error(
+                        "CRITICAL: Cross-shard action %s PARTIALLY COMMITTED! Committed shards: "
+                        "%s, Failed shard: %s. Error: %s: %s. Data on committed shards remains "
+                        "persisted and will NOT roll back automatically.",
                         action_name,
-                        [str(s) for s in committed],
-                        shard,
+                        java_list(java_shard(s) for s in committed),
+                        java_shard(shard),
                         type(error).__name__,
                         error,
+                        exc_info=error,
                     )
                 raise
 

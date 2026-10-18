@@ -69,6 +69,11 @@ class ChangePersister:
         to say which would eventually disagree.
         """
         events: list[ModelEvent] = []
+        LOG.debug(
+            "Persisting %d additions, %d updates",
+            sum(len(c.additions) for c in changes.values()),
+            sum(len(c.updates) for c in changes.values()),
+        )
 
         for model_type, staged in changes.items():
             repo = self.repository_for(model_type)
@@ -84,13 +89,6 @@ class ChangePersister:
             if staged.updates:
                 repo.update_all_no_result(list(staged.updates.values()))
 
-        LOG.debug(
-            "persisting %d addition(s) and %d update(s) on shard %s",
-            sum(len(c.additions) for c in changes.values()),
-            sum(len(c.updates) for c in changes.values()),
-            tx.shard,
-        )
-
         self.outbox.persist_action_events(
             namespace,
             action_name,
@@ -101,6 +99,7 @@ class ChangePersister:
             tx.shard,
             action_id,
         )
+        LOG.debug("Persisted events for action %s [actionEventId=%s]", action_name, action_id)
 
 
 def _events_of(models: Iterable[Persistable[Any, Any]]) -> list[ModelEvent]:

@@ -96,7 +96,7 @@ class _Holding:
         self._holder._forget(self)
         try:
             callback(payload, ReleaseReason.EXPIRED)
-            LOG.warning("released the lock on %r: its hold limit elapsed", self.key)
+            LOG.warning("Auto-released held lock for key %s (hold limit exceeded)", self.key)
         except BaseException:
             # BaseException, as Java catches `RuntimeException | Error` here. This runs on the
             # watchdog thread, which every other hold depends on: anything that escapes would
@@ -106,8 +106,8 @@ class _Holding:
             # own expiry - but the hold is already marked released, and putting that back would
             # strand the entry instead.
             LOG.exception(
-                "could not release %r after its hold limit elapsed; the backend lock may "
-                "remain held until it expires on its own",
+                "Failed to auto-release held lock for key %s after the hold limit was exceeded; "
+                "the backend lock may remain held until its own expiry",
                 self.key,
             )
 

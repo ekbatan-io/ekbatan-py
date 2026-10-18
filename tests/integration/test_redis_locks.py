@@ -400,7 +400,7 @@ def test_a_failing_release_does_not_escape_the_with_block(provider, request, cap
     with caplog.at_level(logging.ERROR):
         lease.release()
 
-    assert any("stays held until its TTL" in r.message for r in caplog.records)
+    assert any("will remain held until its TTL expires" in r.message for r in caplog.records)
 
 
 def test_a_failed_release_does_not_wedge_the_provider_for_that_key(provider, request, monkeypatch):

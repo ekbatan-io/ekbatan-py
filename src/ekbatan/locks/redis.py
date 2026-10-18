@@ -243,7 +243,8 @@ class RedisKeyedLockProvider:
             # EKB-0059 - a shard stalling leaves no trace at all.
             RELEASES_FAILED.add(1)
             LOG.error(
-                "failed to release the Redis lock for %r; it stays held until its TTL expires",
+                "Failed to release Redis lock for key %s; it will remain held until its TTL "
+                "expires",
                 key,
                 exc_info=error,
             )
@@ -255,7 +256,7 @@ class RedisKeyedLockProvider:
             LOG.debug("failed to delete the unlock latch for %r; it expires on its own", key)
         if result is None:
             # Java's IllegalMonitorStateException: the TTL ran out first. Nothing is held.
-            LOG.debug("Redis lock for %r was no longer held by this owner", key)
+            LOG.debug("Redis lock for %s was no longer held by this owner", key)
 
 
 def _await_unlock(pubsub: Any, key: str, seconds: float) -> None:

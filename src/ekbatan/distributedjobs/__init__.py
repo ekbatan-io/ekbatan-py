@@ -29,6 +29,7 @@ from db_scheduler.task.helper import Tasks
 from db_scheduler.task.schedule import Schedule
 from sqlalchemy import Engine
 
+from .._logtext import java_list
 from ..errors import ValidationError
 from ._shutdown import ShutdownHook
 from .config import JobsConfig, JobsConfigBuilder
@@ -168,7 +169,11 @@ class JobRegistry:
 
     def start(self) -> None:
         """Begin polling and executing registered jobs."""
-        LOG.info("Starting JobRegistry with %d job(s): %s", len(self._job_names), self._job_names)
+        LOG.info(
+            "Starting JobRegistry with %d job(s): %s",
+            len(self._job_names),
+            java_list(self._job_names),
+        )
         self._scheduler.start()
         self._verify_every_job_registered()
         # Last, and only once the jobs are known to be registered: a hook that drained a

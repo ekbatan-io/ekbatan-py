@@ -195,7 +195,7 @@ def test_a_watchdog_whose_release_fails_says_so_and_does_not_die_quietly(caplog)
     assert any("may remain held" in r.message for r in caplog.records), (
         "the failure is reported against the key that caused it"
     )
-    assert not any("released the lock on" in r.message for r in caplog.records), (
+    assert not any("Auto-released held lock" in r.message for r in caplog.records), (
         "and the success line is not written, because the release did not succeed"
     )
 
@@ -213,7 +213,10 @@ def test_the_success_line_is_written_only_after_the_release_worked(caplog):
         time.sleep(0.4)
 
     assert released == ["payload"]
-    assert any("hold limit elapsed" in r.message for r in caplog.records)
+    assert any(
+        r.message == "Auto-released held lock for key k (hold limit exceeded)"
+        for r in caplog.records
+    ), "Java's line, word for word"
 
 
 def test_a_close_and_a_watchdog_cannot_both_release(caplog):

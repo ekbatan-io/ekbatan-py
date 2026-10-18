@@ -83,6 +83,11 @@ small.
 with `", "` inside brackets; four places. The shard text itself (`0:0` against
 `ShardIdentifier(0, 0)`) is Dracula 66 and stays apart.
 
+> **Fixed (`EKB-0317`)**, with items 1, 2, 3, 5 and 6, which are the same lines: every Ekbatan log
+> line now has Java's text, level and attached exception. The probes now match 75 of 107 Java lines
+> exactly (2 before); the rest differ only in language-specific exception names, the error
+> messages themselves, handler order, db-scheduler's own lines and the migrator's (decided).
+
 **7. Message wording (needs you).** `EKB-0248` matched logger names and deliberately left the texts
 ("messages differ in places"); that was a call made while building, not the user's. Java's texts
 are in the files named above plus `TransactionManager.java:169-200`, `Retry.java:40-46`,
