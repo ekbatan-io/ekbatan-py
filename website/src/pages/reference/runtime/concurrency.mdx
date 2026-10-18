@@ -2,7 +2,7 @@
 layout: ../../../layouts/DocLayout.astro
 title: Concurrency
 activeSection: reference
-lead: "This framework is synchronous, and every place it could have run something concurrently is answered here - five of them - along with the one way to use it wrongly."
+lead: "The sync API blocks, and every place it could have run something concurrently is answered here - five of them - along with the one way to use it wrongly. For an asyncio service there is also a native async API, ekbatan.aio."
 ---
 
 If you read one section, read [Blocking is not free](#blocking-is-not-free-under-asyncio).
@@ -13,7 +13,8 @@ If you read one section, read [Blocking is not free](#blocking-is-not-free-under
 | --- | --- | --- |
 | a thread per request (gunicorn sync, waitress, a worker loop) | yes | nothing |
 | FastAPI or Starlette with plain `def` endpoints | yes | nothing - they run in a threadpool |
-| FastAPI with `async def` endpoints | **no** | `await run_in_threadpool(...)` around framework calls |
+| FastAPI with `async def` endpoints calling the sync API | **no** | `await run_in_threadpool(...)` around each call - or use `ekbatan.aio` |
+| FastAPI with `async def` endpoints on `ekbatan.aio` | yes | `await` every call; see Native asyncio |
 | a process per worker (gunicorn, uvicorn `--workers`) | yes | nothing; pools are per process, so size them per process |
 | a thread pool you own | yes | see [Work forked from inside an action](#2-work-forked-from-inside-an-action) |
 
@@ -150,9 +151,8 @@ and a realistic mix is 4.
 
 This is the one that will actually hurt you.
 
-The framework is synchronous. There is no `async` or `await` anywhere in `src/`, and under a
-**threaded** server that is exactly right - a blocking call holds one worker thread and the GIL
-is released for the duration of the I/O.
+The sync API blocks, and under a **threaded** server that is exactly right - a blocking call
+holds one worker thread and the GIL is released for the duration of the I/O.
 
 Under an **asyncio** server it is not right, because a blocking call there stops the entire event
 loop rather than one thread.
@@ -180,13 +180,13 @@ ordinary way of writing one is safe with none of the above.
 [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) is written that way
 throughout, which is why it contains no `to_thread` at all.
 
-**The ambient transaction is a `ContextVar`,** which is per-async-task as well as per-thread - so
-the state mechanism is already correct if this framework ever grows an async surface.
-
-It has not grown one and would not gain much from it: SQLAlchemy's async support is a wrapper
-over the same drivers, and this framework's value is in what it does *between* the queries. But
-an `async def` handler calling straight into it is a real mistake with a real cost, and nothing
-in the API stops you making it.
+**Or await the database natively, with `ekbatan.aio`.** The ambient transaction is a
+`ContextVar`, per task as well as per thread, and `ekbatan.aio` is the same framework with every
+database wait awaited: `async def perform`, async repositories, an executor you `await`, on
+asyncpg, aiomysql or aiosqlite. Measured on one PostgreSQL with a pool of 40, it does about one
+and a half times the work of the sync API in a 40-thread pool once 50 or more requests are in
+flight, with a lone request a little slower. An `async def` handler calling the *sync* API
+straight is still a real mistake with a real cost, and nothing in the API stops you making it.
 
 ## gevent: cheap blocking, with nothing to change
 
@@ -232,8 +232,10 @@ tests included. `make test-gevent` is a CI job, so that stays a measurement rath
 another sentence nobody rechecked.
 
 **What it does not cover.** gevent serves **WSGI**. FastAPI, Litestar and anything else on an
-asyncio loop cannot use it - for those, the `to_thread` above is still the answer, and every
-example in this repository is FastAPI, so none of them demonstrates this. SQLite is local file
+asyncio loop cannot use it - for those, `ekbatan.aio` or the `to_thread` above is the answer,
+and every example in this repository is FastAPI, so none of them demonstrates this. Nor do the
+two mix: `ekbatan.aio` does not run under gevent's monkey-patching (its async runs are skipped
+by `make test-gevent`), so a service picks one. SQLite is local file
 I/O and will not yield, which costs nothing because it is local. And `patch_all()` must run
 before any other import, which is an application discipline nothing can check for you.
 
@@ -277,3 +279,4 @@ tested under a free-threaded build, so that is a reasonable expectation rather t
 
 - [Wiring](/reference/wiring/) - the three pools, and what each is sized for
 - [Wiring with FastAPI](/reference/wiring-fastapi/) - `def` versus `async def` at the endpoint
+- [Native asyncio](/reference/runtime/async/) - `ekbatan.aio`, when it helps, and what stays sync

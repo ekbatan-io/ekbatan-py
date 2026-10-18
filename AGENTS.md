@@ -79,11 +79,13 @@ src/ekbatan/
   streaming.py       ActionEvent - the consumer-side view of an outbox row
   accounting.py      statement counting, so the performance claims are checkable
   action/            action.py, plan.py, executor.py, registry.py, persister.py, outbox.py
+  aio/               native asyncio: persistence, repository, action, executor, persister,
+                     outbox, testing - the async twins, on the sync modules' private cores
   events/            handler.py, fanout.py, dispatch.py, jobs.py, notification.py, config.py
   locks/             base.py, sql.py, redis.py, inprocess.py, _holder.py
   distributedjobs/   DistributedJob, JobRegistry, JobsConfig
 db-scheduler/        a separate distribution: the port of kagkarlsson/db-scheduler
-ekbatan-py-examples/ seven examples x uv/pip/Poetry: 21 standalone projects
+ekbatan-py-examples/ nine examples x uv/pip/Poetry: 27 standalone projects
 ```
 
 `db-scheduler/` is **its own distribution** with its own lock file, tests, CI workflow and ruff
@@ -139,6 +141,40 @@ mechanism works under a threaded server and an asyncio one. Work handed to a poo
 unit of work does **not** inherit it - which is correct, and is pinned by
 `tests/integration/test_concurrency.py`.
 
+### Async lives in `ekbatan.aio`, on the sync code's private cores
+
+There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them one framework:
+
+- **One copy of every rule.** Statements, routing, the optimistic lock, soft delete, retries,
+  the outbox rows and the builders live in private cores (`_RepositoryCore`, `_ShardRegistry`,
+  `_ShardRegistryBuilder`, `_ExecutorCore`, `_ExecutorBuilder`, `_ChangePersisterCore`,
+  `_SingleTableJson`, `_ActionCore`) that both sides extend. An async class adds only the lines
+  that await. A rule changed in a sync class that is not in its core is a rule the async side
+  silently lacks - move it into the core.
+- **Same public surface.** A public method added to a sync class needs its async twin;
+  `tests/unit/test_async_engine.py` compares the two surfaces and fails otherwise. Names carry
+  the `Async` prefix; `to_row` / `from_row` stay plain `def` on both.
+- **What stays sync, on threads:** event fan-out and dispatch, handlers, distributed jobs, keyed
+  locks, migrations, `schemagen`. An async service builds a sync registry beside its async one,
+  from the same layout file, for those. A keyed lock inside an async unit of work is deferred
+  by the user - do not add one unasked.
+- **Drivers.** A url naming a sync driver, or none, connects through the database's async
+  default (`async_url`, `ASYNC_DEFAULT_DRIVERS`: asyncpg, aiomysql, aiosqlite); an async driver
+  in the url is kept. For asyncpg, libpq's `options` / `application_name` / `connect_timeout` /
+  `sslmode` are translated, nothing else. A new driver means rows in `tests/driver_settings.tsv`.
+- **The pool is the cap.** No semaphore of the framework's own; the async pool takes the same
+  `DataSourceConfig` settings as a sync one.
+- **Reads across shards run at once** (`TaskGroup`): all or nothing, the failing shard's own
+  error with a note naming it, never a group, never partial rows. `dbs()` / `readonly_dbs()`
+  stay sequential.
+- **Tests run both ways.** A test module sets `MODES = ("sync", "async")` and `tests/modes.py`
+  runs each test a second time against `ekbatan.aio` through a blocking portal; a test's own
+  actions get async twins with `twin`, `stager_twin` or `rebased`. What the harness cannot say -
+  tasks, cancellation, timeouts, the pool cap, concurrent shard reads - is in
+  `tests/integration/test_async.py`, written as coroutines. Any change to the sync suite must
+  leave its sync counts unchanged.
+- **gevent and `ekbatan.aio` do not mix**; the async runs skip under `make test-gevent`.
+
 ### Nothing in `src/` may import a web framework
 
 `tests/test_structure.py` enforces it, along with the rule that an example imports only the
@@ -154,7 +190,9 @@ make examples    # every example, each as its built wheel installed
 ```
 
 - `tests/unit/` is **database-free by rule**, not by luck, and a test enforces it.
-- `tests/integration/` is parametrised over dialects with `--dialects={sqlite,postgres,mysql,mariadb,all}`.
+- `tests/integration/` is parametrised over dialects with `--dialects={sqlite,postgres,mysql,mariadb,all}`,
+  and a module with `MODES` over the sync and async APIs as well (`[sync-postgres]`,
+  `[async-postgres]`).
 - `tests/fixtures/` is the framework's own domain. It is deliberately **not** shared with the
   examples, and `tests/test_structure.py` keeps them apart: coverage changes would otherwise land
   in the documentation, and clarity changes would break the suite.
@@ -173,6 +211,13 @@ Each of these was a real bug in the tests, found by running:
 - **`str(engine.url)` masks the password**, so a "separate connection" built from it connects to
   nothing.
 - **A module-scoped container shares state between tests.** Truncate in the fixture.
+- **asyncpg refuses an aware `datetime` for a zone-less column**, where psycopg accepts one. A
+  hand-written insert in a test passes `to_storage(...)`, as the framework does.
+- **A patched class attribute must be restored by deleting it** when the class only inherited
+  it: `AsyncDb.execute = real` leaves a copy on `AsyncDb` that hides every later patch of
+  `AsyncConnection.execute`. `monkeypatch` gets this right.
+- **SQLAlchemy's pool `checkout` event fires after the pre-ping**, so counting checkouts does not
+  show two fast reads overlapping. Slow the statement down and count what runs at once.
 
 ### Prove a test can fail
 

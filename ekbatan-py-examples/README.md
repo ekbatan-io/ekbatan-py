@@ -11,7 +11,7 @@ here instead, every change made for coverage would land in the documentation and
 for clarity would break the suite. So they do not meet, and `tests/test_structure.py` keeps it
 that way.
 
-## Seven examples, each built three ways
+## Nine examples, each built three ways
 
 Java carries each of its examples per build tool - `*-gradle-*` and `*-maven-*`. Python projects
 are built three common ways, so each example here is carried three times, with only its build
@@ -53,6 +53,21 @@ than a setting:
 And one that only shows up when a migration fails half-way: MySQL and MariaDB commit each schema
 change on its own, so a migration that fails after one leaves it behind, where PostgreSQL rolls
 the whole file back.
+
+## The REST service on native asyncio
+
+| | uv | pip | Poetry |
+|---|---|---|---|
+| PostgreSQL | [`fastapi-wallet-rest-uv-async-pg`](fastapi-wallet-rest-uv-async-pg/) | [`fastapi-wallet-rest-pip-async-pg`](fastapi-wallet-rest-pip-async-pg/) | [`fastapi-wallet-rest-poetry-async-pg`](fastapi-wallet-rest-poetry-async-pg/) |
+| MariaDB | [`fastapi-wallet-rest-uv-async-mariadb`](fastapi-wallet-rest-uv-async-mariadb/) | [`fastapi-wallet-rest-pip-async-mariadb`](fastapi-wallet-rest-pip-async-mariadb/) | [`fastapi-wallet-rest-poetry-async-mariadb`](fastapi-wallet-rest-poetry-async-mariadb/) |
+
+The same service with its request path on `ekbatan.aio`: `async def` endpoints that await an
+`AsyncActionExecutor` and async repositories, on asyncpg or aiomysql. The event handler and the
+jobs stay sync, on threads, through a sync registry built from the same `ekbatan.yaml` - whose
+urls name the sync driver; the async registry connects through the async default for the same
+database. No keyed lock on the deposit: the optimistic lock decides, and a deposit that loses
+twice is a 409. Each session runs in UTC by the documented setting, which asyncpg receives as its
+own `server_settings`. Java has no counterpart: its virtual threads make a blocking API cheap.
 
 ## Outside the database matrix
 
@@ -125,7 +140,7 @@ In the code, the same conventions as the Java side: `...Action` for a unit of wo
 for something that happened, `...EventHandler` for what reacts to one, `...Job` for scheduled
 work, `...Repository` for reads.
 
-## Why 21 and not Java's 36
+## Why 27 and not Java's 36
 
 Java's grid is three DI frameworks x two build tools x three databases, each JVM and native.
 Here there is one web framework worth targeting and no native image, so those axes collapse. The
@@ -135,7 +150,7 @@ decides what a wheel holds, which is the one thing an example cannot show from t
 ## Running them
 
 ```
-make examples                    # all 21, each in its own environment, each as its wheel
+make examples                    # all 27, each in its own environment, each as its wheel
 make -C ekbatan-py-examples/fastapi-wallet-rest-pip-mysql      # or one
 ```
 

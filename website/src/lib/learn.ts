@@ -3,8 +3,8 @@
 //
 // The order mirrors Java's - the problem, then the model, then building something, then the
 // harder shapes, then the whole project - minus native-image, which has no counterpart, plus
-// three this port needs and Java does not: installing, wiring by hand, and what concurrency
-// actually costs on CPython.
+// four this port needs and Java does not: installing, wiring by hand, going async, and what
+// concurrency actually costs on CPython.
 export const LEARN_PAGES = [
     { slug: "getting-started", title: "Getting started", blurb: "Start here. Follow one wallet change through the dual-write problem, model events, action staging, and what the executor commits." },
     { slug: "the-dual-write-trap", title: "The dual-write trap", blurb: "Why writing to a database and to a broker separately creates silent drift, and why the event has to be stored with the state that caused it." },
@@ -18,6 +18,7 @@ export const LEARN_PAGES = [
     { slug: "sharding", title: "Adding a shard", blurb: "Take a single-database service to two shards. Your action signatures, repository queries and endpoints do not change; the model's id type does." },
     { slug: "sharding-strategies", title: "Sharding strategies", blurb: "The deeper model behind groups, members, embedded-bits ids and custom routing - and why a cross-shard action is refused until you say otherwise." },
     { slug: "sagas", title: "Sagas", blurb: "Split a multi-step workflow into committed actions chained by events, with explicit compensation when a later step fails and nothing to roll back." },
+    { slug: "async", title: "Going async", blurb: "Make the request path natively async with ekbatan.aio: async repositories and actions, an awaited executor, async def endpoints - while handlers and jobs stay on threads." },
     { slug: "going-to-production", title: "Going to production", blurb: "What concurrency costs on CPython, how migrations run at deploy, what to alert on, and what this port does not do for you yet." },
     { slug: "complete-project-setup", title: "Complete project setup", blurb: "The whole setup, for your dialect and your installer: scaffold, dependencies, connection config, migrations, generated schema, domain, HTTP layer, tests." },
 ] as const;

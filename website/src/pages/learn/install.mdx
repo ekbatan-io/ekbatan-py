@@ -27,6 +27,9 @@ Everything optional is an extra, and nothing you do not name is installed:
 |---|---|---|
 | `postgres` | psycopg 3 | your dialect |
 | `mysql`, `mariadb` | PyMySQL | your dialect |
+| `postgres-async` | asyncpg | the async API, `ekbatan.aio`, on PostgreSQL - beside `postgres` |
+| `mysql-async`, `mariadb-async` | aiomysql | `ekbatan.aio` on MySQL or MariaDB - beside the sync extra |
+| `sqlite-async` | aiosqlite | `ekbatan.aio` on SQLite |
 | `migrations` | yoyo | you want SQL migrations run across every shard |
 | `redis` | redis-py | the Redis keyed lock rather than the SQL one |
 | `codegen` | testcontainers | **development only** — see below |

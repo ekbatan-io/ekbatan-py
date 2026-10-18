@@ -12,6 +12,7 @@ uv add "ekbatan[postgres]"
 | | |
 | --- | --- |
 | driver | psycopg 3 |
+| async driver | asyncpg - the `postgres-async` extra, for `ekbatan.aio` |
 | url | `postgresql+psycopg://host:5432/db` |
 | login | `username=` and `password=`, never in the url |
 | uuid | `UUID`, native |

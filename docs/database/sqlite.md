@@ -8,6 +8,7 @@ dialect**. This page is mostly about why both halves of that are true.
 | | |
 | --- | --- |
 | driver | the standard library's `sqlite3` |
+| async driver | aiosqlite - the `sqlite-async` extra, for `ekbatan.aio` |
 | url | `sqlite:///path/to.db`, or `sqlite://` for memory |
 | extra | none needed |
 | uuid | `CHAR(32)` - hex, no hyphens |

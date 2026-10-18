@@ -108,6 +108,8 @@ PAIRS: dict[str, tuple[str, ...]] = {
     "events/event-streaming.md": ("reference/events/streaming.mdx",),
     "events/local-event-handler.md": ("reference/events/local-event-handler.mdx",),
     "jobs/distributed-jobs.md": ("reference/jobs/distributed-jobs.mdx",),
+    "runtime/async.md": ("reference/runtime/async.mdx",),
+    "going-async.md": ("learn/async.mdx",),
     "runtime/concurrency.md": ("reference/runtime/concurrency.mdx",),
     "runtime/observability.md": ("reference/runtime/observability.mdx",),
     "wiring-fastapi.md": ("reference/wiring-fastapi.mdx",),

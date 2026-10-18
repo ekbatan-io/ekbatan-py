@@ -12,6 +12,7 @@ uv add "ekbatan[mysql]"
 | | |
 | --- | --- |
 | driver | PyMySQL |
+| async driver | aiomysql - the `mysql-async` extra, for `ekbatan.aio` |
 | url | `mysql+pymysql://host:3306/db` |
 | login | `username=` and `password=`, never in the url |
 | uuid | `CHAR(36)` |

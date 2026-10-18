@@ -990,8 +990,9 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 <CodeBlock filename="src/wallet/api.py" language="python" shadow="yellow" code={shared_api_py} />
 
 Endpoints are plain `def`, not `async def`: FastAPI runs a `def` on a worker thread, where a
-blocking database call blocks one thread. Ekbatan is synchronous, and on the event loop itself a
-keyed lock is refused.
+blocking database call blocks one thread. This project uses the sync API, and on the event loop
+itself a keyed lock is refused. For `async def` endpoints on the async API, see
+[step 19](#19-going-async-optional).
 
 ## 15. The test
 
@@ -1187,11 +1188,135 @@ build files differing:
 | [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) | this project, on PostgreSQL |
 | [`fastapi-wallet-rest-uv-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mysql) · [`fastapi-wallet-rest-uv-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb) | the same, on the other databases |
 | [`fastapi-wallet-rest-uv-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) | two databases, with placement asserted |
+| [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) · [`fastapi-wallet-rest-uv-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb) | this project with an async request path, `ekbatan.aio` |
 | [`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg) | a transfer across shards, with compensation |
 | [`job-worker-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-pg) | no HTTP at all - a worker running distributed jobs |
 | [`wallet-service-uv-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-sqlite) | one module set, one command, no container |
 
-The [examples index](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples) lists all 21.
+The [examples index](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples) lists all 27.
+
+## 19. Going async (optional)
+
+The project above serves each request on a worker thread through the sync API. To make the
+request path natively async instead - `async def` endpoints that await the database - add the
+async driver beside the sync one, which migrations, `schemagen`, the event handler and the job
+keep using:
+
+<div data-install="uv">
+
+<div data-db="pg">
+
+```sh
+uv add "ekbatan[postgres,postgres-async,migrations]"
+```
+
+</div>
+<div data-db="mysql">
+
+```sh
+uv add "ekbatan[mysql,mysql-async,migrations]"
+```
+
+</div>
+<div data-db="mariadb">
+
+```sh
+uv add "ekbatan[mariadb,mariadb-async,migrations]"
+```
+
+</div>
+<div data-db="sqlite">
+
+```sh
+uv add "ekbatan[sqlite-async]"
+```
+
+</div>
+
+</div>
+<div data-install="pip">
+
+<div data-db="pg">
+
+```sh
+pip install "ekbatan[postgres,postgres-async,migrations]"
+```
+
+</div>
+<div data-db="mysql">
+
+```sh
+pip install "ekbatan[mysql,mysql-async,migrations]"
+```
+
+</div>
+<div data-db="mariadb">
+
+```sh
+pip install "ekbatan[mariadb,mariadb-async,migrations]"
+```
+
+</div>
+<div data-db="sqlite">
+
+```sh
+pip install "ekbatan[sqlite-async]"
+```
+
+</div>
+
+</div>
+<div data-install="poetry">
+
+<div data-db="pg">
+
+```sh
+poetry add "ekbatan[postgres,postgres-async,migrations]"
+```
+
+</div>
+<div data-db="mysql">
+
+```sh
+poetry add "ekbatan[mysql,mysql-async,migrations]"
+```
+
+</div>
+<div data-db="mariadb">
+
+```sh
+poetry add "ekbatan[mariadb,mariadb-async,migrations]"
+```
+
+</div>
+<div data-db="sqlite">
+
+```sh
+poetry add "ekbatan[sqlite-async]"
+```
+
+</div>
+
+</div>
+
+Then, file by file - every change is in the async examples, which pass their own tests:
+
+| file | what changes |
+| --- | --- |
+| `repository.py` | the mapping moves into a small class both kinds share; the request path's repositories extend `AsyncModelRepository` / `AsyncEntityRepository`, and your own queries become `async def`; the handler keeps one sync repository |
+| `actions.py` | `AsyncAction`, `async def perform`, `await` on each read |
+| `handlers.py` | unchanged in spirit: a sync handler and the sync action it runs |
+| `app.py` | an `AsyncDatabaseRegistry` and an `AsyncActionExecutor` for requests, built from the same `ekbatan.yaml`; a sync registry for the handler and the jobs; `await service.aclose()` |
+| `api.py` | `async def` endpoints that `await`, a 503 for a full pool; no keyed lock - the optimistic lock decides |
+| `ekbatan.yaml` | the same urls; one more pool, `handlersConfig`; the UTC setting, which asyncpg reads too |
+| `__main__.py` | `limit_concurrency`, the cap at the door |
+
+The urls stay the sync ones: the async registry reads `postgresql+psycopg://` as "this
+PostgreSQL" and connects with asyncpg (`mysql+pymysql://` with aiomysql). The step by step is
+[Going async](/learn/async/); the examples are
+[`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg)
+and
+[`fastapi-wallet-rest-uv-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb).
 
 ## After setup
 
@@ -1204,6 +1329,7 @@ operational: how many pools, how many threads, and what to watch.
 ## See also
 
 - [Going to production](/learn/going-to-production/) - threads, pool sizing, what to alert on
+- [Going async](/learn/async/) - the request path on `ekbatan.aio`
 - [Wiring a service](/learn/wiring-a-service/) - the `build()` function in detail
 - [Consuming events](/learn/consuming-events/) - turning those outbox rows into work
 - Reference: [schemagen](/reference/schemagen/),

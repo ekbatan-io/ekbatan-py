@@ -2,7 +2,9 @@
 
 Asked on 2026-10-18: a **trial** of native asyncio support, built as the first slice of a
 professional, complete async implementation rather than a throwaway. Branch `async-trial`, in its
-own worktree; nothing committed.
+own worktree. Then, the same day: **finish it** - every remaining row except keyed locks and
+handlers inside async actions (deferred by the user). Done; see "Professional implementation"
+at the end. All rows are now `trial`/`done`, `shared`, `n/a` or `deferred`.
 
 The design the user approved:
 
@@ -37,9 +39,9 @@ sync by decision.
 | P7 | password never printed: async engine/url/registry repr, errors | trial (tested with a marker password) |
 | P8 | `AsyncDb`: `rows(stmt)` -> `FetchResult` on an `AsyncConnection` | trial |
 | P9 | `AsyncTransaction` (`execute`, `rows`, `shard`, `dialect`) | trial |
-| P10 | `AsyncDatabaseRegistryBuilder` | todo |
-| P11 | `insert_ignoring_duplicates` async twin (used by fan-out/jobs only) | n/a while handlers stay sync |
-| P12 | replica (`secondaryConfig`) engines in `from_config` | trial (built; no replica test) |
+| P10 | `AsyncDatabaseRegistryBuilder` | done - `AsyncDatabaseRegistryBuilder`, on the shared `_ShardRegistryBuilder` |
+| P11 | `insert_ignoring_duplicates` async twin (used by fan-out/jobs only) | n/a - handlers stay sync (user) |
+| P12 | replica (`secondaryConfig`) engines in `from_config` | done - built by `from_config`, as in sync (no replica container in the suite, as in sync) |
 | P13 | `close()` as `async def aclose()` / `async with registry` | trial |
 
 ## Repository and reads
@@ -52,13 +54,13 @@ sync by decision.
 | R3 | `add`, `add_no_result`, `add_all`, `add_all_no_result` | trial |
 | R4 | `update`, `update_no_result`, `update_all`, `update_all_no_result` - single and batch (`VALUES` on PG, `UNION ALL` elsewhere), stale check shared | trial |
 | R5 | `find_where` (one shard or scatter across all) | trial |
-| R6 | `find_one_where`, `find_many`, `exists`, `exists_where`, `count` | todo (each is ~5 lines on the shared statement builders; `_presence` and `_id_among` are already shared) |
+| R6 | `find_one_where`, `find_many`, `exists`, `exists_where`, `count` | done - each on shared statement builders (`_one_where`, `_unique`, `_keys_by_shard`, `_among`, `_count`); run both ways by the suite |
 | R7 | `db()`, `readonly_db()`, `tx_db()`, `tx_db_else_db()` as async context managers | trial |
-| R8 | `dbs()`, `readonly_dbs()` scatter iterators (async generators) | todo |
-| R9 | multi-shard reads run concurrently (`asyncio.gather` per shard) rather than one after another | todo - a real gain over sync, decide the semantics of a failing shard |
+| R8 | `dbs()`, `readonly_dbs()` scatter iterators (async generators) | done - async generators, one shard at a time and lazy, as in sync (decision logged) |
+| R9 | multi-shard reads run concurrently (`asyncio.gather` per shard) rather than one after another | done - `asyncio.TaskGroup`, all or nothing, the shard's own error with a note naming it (user's rule) |
 | R10 | soft delete hidden from every read (`_live`, shared) | trial |
 | R11 | `AsyncRepository` protocol (what the executor asks of an async repository) | trial |
-| R12 | registry of async repositories (the sync `RepositoryRegistry` is reused - it is a map by model type) | trial |
+| R12 | registry of async repositories (the sync `RepositoryRegistry` is reused - it is a map by model type) | done - `RepositoryRegistry` typed for either kind (`AnyRepository`); the trial's `type: ignore` removed |
 | R13 | `id_matches`, `column`, `dialect`, `shard_for`, `shard_of`, `shard_of_all` | shared (inherited from the core) |
 
 ## Actions and executor
@@ -73,48 +75,48 @@ sync by decision.
 | A6 | `AsyncChangePersister`: rows then outbox on one transaction (write plan shared) | trial |
 | A7 | `AsyncSingleTableJsonEventPersister` + `AsyncEventPersister` protocol; event rows built by the shared function | trial |
 | A8 | sentinel row for a unit of work with no events | trial |
-| A9 | `AsyncActionExecutor.builder()` | todo |
+| A9 | `AsyncActionExecutor.builder()` | done - `AsyncActionExecutorBuilder`, on the shared `_ExecutorBuilder` |
 | A10 | `ActionRegistry` holds async actions (shared, typed on a common base) | trial |
-| A11 | `AsyncActionSpec` (testing helper twin of `ekbatan.testing.ActionSpec`) | todo |
-| A12 | cancellation: a cancelled task mid-transaction rolls back and the connection is not reused dirty | trial (rollback path is `BaseException`; one test) |
-| A13 | timeouts: `asyncio.timeout` around `execute` behaves like cancellation | todo (test) |
+| A11 | `AsyncActionSpec` (testing helper twin of `ekbatan.testing.ActionSpec`) | done - `AsyncActionSpec`, `async_run_action` (`ekbatan.aio.testing`); unit-tested |
+| A12 | cancellation: a cancelled task mid-transaction rolls back and the connection is not reused dirty | done - plus the harness runs every executor test both ways |
+| A13 | timeouts: `asyncio.timeout` around `execute` behaves like cancellation | done - `test_a_timeout_around_a_unit_of_work_commits_nothing` (in perform, inside the transaction), four databases |
 
 ## Outbox, events, jobs
 
 | # | Item | State |
 |---|---|---|
 | E1 | outbox write inside the action transaction | trial |
-| E2 | `EventEntityRepository` async reads (`count`, `find_all`, `find_by_action_id`) | todo (tests only use SQL) |
+| E2 | `EventEntityRepository` async reads (`count`, `find_all`, `find_by_action_id`) | done - `AsyncEventEntityRepository`; the async persister writes through it |
 | E3 | event fan-out (`events` -> `event_notifications`), dispatch, handlers | n/a - stay sync on threads, read the same tables |
 | E4 | distributed jobs, db-scheduler | n/a - sync |
-| E5 | keyed locks (SQL, Redis) inside an async action | todo - decide: async lock providers, or run sync providers in a thread |
-| E6 | a handler that runs an *async* executor (sync handler -> `asyncio.run`?) | todo - decide |
+| E5 | keyed locks (SQL, Redis) inside an async action | deferred by the user - documented: no keyed lock inside an async unit of work |
+| E6 | a handler that runs an *async* executor (sync handler -> `asyncio.run`?) | deferred by the user - handlers run sync actions on a sync executor (the example shows it) |
 
 ## Cross-cutting
 
 | # | Item | State |
 |---|---|---|
-| X1 | tracing spans (same names and attributes: `ekbatan.action.execute`, `.perform`, `.persist`, `ekbatan.transaction`, `ekbatan.repository`, `ekbatan.event.persist`) | trial (same `span()` helper and names; not yet checked with an SDK installed, as the sync `tracing` job does) |
-| X2 | logging (same Java logger names and messages - the shared helpers emit them) | trial (not asserted by a test) |
-| X3 | logging MDC equivalent (action name/principal on every line) | todo - the sync side has none either; if added, a ContextVar works for both |
-| X4 | `ekbatan.accounting` statement counting | todo - check it hooks the async engine's `sync_engine` events |
-| X5 | metrics | todo (sync has spans only) |
+| X1 | tracing spans (same names and attributes: `ekbatan.action.execute`, `.perform`, `.persist`, `ekbatan.transaction`, `ekbatan.repository`, `ekbatan.event.persist`) | done - the span tests run both ways with the SDK installed (`uv run --group tracing`) |
+| X2 | logging (same Java logger names and messages - the shared helpers emit them) | done - the log assertions (retry, failure, partial commit) run both ways |
+| X3 | logging MDC equivalent (action name/principal on every line) | n/a - the sync request path has none |
+| X4 | `ekbatan.accounting` statement counting | done - `count_statements` takes an async registry; `test_accounting` runs both ways |
+| X5 | metrics | n/a - the sync request path has none |
 | X6 | sharding: routing by `EmbeddedBitsShardingStrategy` on async | trial |
-| X7 | `build_async(...)` wiring (the counterpart to `ekbatan.build`) from config files | todo |
-| X8 | `mypy --strict` over `ekbatan.aio` | trial (clean) |
-| X9 | `AGENTS.md` module map: add `aio/` | todo |
-| X10 | `make test-gevent`: check `ekbatan.aio` is not imported under gevent, or document that the two do not mix | todo |
+| X7 | `build_async(...)` wiring (the counterpart to `ekbatan.build`) from config files | done - `AsyncDatabaseRegistry.from_config(load_sharding_config(...))`; `test_config_files_connect` runs both ways, four file formats |
+| X8 | `mypy --strict` over `ekbatan.aio` | done - strict, over `src` and every example |
+| X9 | `AGENTS.md` module map: add `aio/` | done - module map and an async section in `AGENTS.md` |
+| X10 | `make test-gevent`: check `ekbatan.aio` is not imported under gevent, or document that the two do not mix | done - the two do not mix (measured); async runs skip under `make test-gevent`; documented |
 
 ## Drivers
 
 | # | Item | State |
 |---|---|---|
-| D1 | PostgreSQL via asyncpg (`ekbatan[asyncpg]`) | trial |
-| D2 | PostgreSQL via psycopg async (`postgresql+psycopg_async`) - no new dependency | todo - try; may be the default |
-| D3 | MySQL / MariaDB via aiomysql or asyncmy | todo - new extra, user approval |
-| D4 | SQLite via aiosqlite | todo - new extra, user approval |
-| D5 | `data_source_properties` per async driver (asyncpg takes `server_settings`, not libpq `options`) and the refused-key ledger `tests/driver_settings.tsv` for each | todo |
-| D6 | the UTC rule on asyncpg (`server_settings={"timezone": "UTC"}`) | todo - document |
+| D1 | PostgreSQL via asyncpg (`ekbatan[asyncpg]`) | done - the PostgreSQL default (`postgres-async`) |
+| D2 | PostgreSQL via psycopg async (`postgresql+psycopg_async`) - no new dependency | done - kept when the url names `postgresql+psycopg_async`; not a default |
+| D3 | MySQL / MariaDB via aiomysql or asyncmy | done - aiomysql, the default for both (`mysql-async`, `mariadb-async`) |
+| D4 | SQLite via aiosqlite | done - aiosqlite (`sqlite-async`) |
+| D5 | `data_source_properties` per async driver (asyncpg takes `server_settings`, not libpq `options`) and the refused-key ledger `tests/driver_settings.tsv` for each | done - asyncpg, aiomysql, aiosqlite rows in `tests/driver_settings.tsv`, checked against each `connect` signature; libpq names translated for asyncpg |
+| D6 | the UTC rule on asyncpg (`server_settings={"timezone": "UTC"}`) | done - `options: -c TimeZone=UTC` works on asyncpg (translated); measured against a Tehran default |
 
 ## Tests
 
@@ -127,19 +129,19 @@ sync by decision.
 | T5 | sharded routing | trial |
 | T6 | ContextVar isolation across concurrent tasks | trial |
 | T7 | marker password never printed (async url, engine, registry) | trial |
-| T8 | the whole integration suite on async, every dialect it supports | todo |
-| T9 | unit tests for the shared core (database-free) | todo |
+| T8 | the whole integration suite on async, every dialect it supports | done - 19 integration modules run both ways, four databases (counts below) |
+| T9 | unit tests for the shared core (database-free) | done - `tests/unit/test_async_engine.py`, `test_async_action_spec.py` |
 
 ## Docs, website, examples
 
 | # | Item | State |
 |---|---|---|
-| W1 | `docs/runtime/async.md` (and the website page beside it, written together) | todo |
-| W2 | the concurrency page: when async helps and when threads are fine (use the numbers below) | todo |
-| W3 | an async FastAPI example (`fastapi-wallet-rest-async-uv-pg`), uv/pip/Poetry | todo |
-| W4 | setup guide: the `asyncpg` extra | todo |
-| W5 | `DIVERGENCE.md`: Java has no async API (it uses virtual threads) | todo |
-| W6 | `scripts/check-api.py` will check the new names once documented | todo |
+| W1 | `docs/runtime/async.md` (and the website page beside it, written together) | done - `docs/runtime/async.md` and `reference/runtime/async.mdx` |
+| W2 | the concurrency page: when async helps and when threads are fine (use the numbers below) | done - the concurrency page points to it, with the measured numbers |
+| W3 | an async FastAPI example (`fastapi-wallet-rest-async-uv-pg`), uv/pip/Poetry | done - `fastapi-wallet-rest-*-async-pg` and `-async-mariadb`, uv/pip/Poetry, 15 tests each |
+| W4 | setup guide: the async extras | done - step 19 of the setup guide, `docs/getting-started.md`, the install page |
+| W5 | `DIVERGENCE.md`: Java has no async API (it uses virtual threads) | done - `DIVERGENCE.md`, a **chosen** section |
+| W6 | `scripts/check-api.py` will check the new names once documented | done - `check-api.py` checks the async pages' imports and snippets |
 
 ## Trial results
 

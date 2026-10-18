@@ -30,6 +30,9 @@ Everything optional is an extra, and nothing you do not name is installed:
 | --- | --- | --- |
 | `postgres` | psycopg 3 | your dialect |
 | `mysql`, `mariadb` | PyMySQL | your dialect |
+| `postgres-async` | asyncpg | the async API, `ekbatan.aio`, on PostgreSQL - beside `postgres` |
+| `mysql-async`, `mariadb-async` | aiomysql | `ekbatan.aio` on MySQL or MariaDB - beside the sync extra |
+| `sqlite-async` | aiosqlite | `ekbatan.aio` on SQLite |
 | `migrations` | yoyo | you want `ekbatan.migrations.migrate` to run your SQL migrations across every shard |
 | `redis` | redis-py | you want the Redis-backed keyed lock rather than the SQL one |
 | `codegen` | testcontainers, psycopg | **development only** - see below |
@@ -239,10 +242,22 @@ Both bind the plan through the same mechanism the executor uses, so `self.plan`,
 also the limit of it: that state and events land *together* is a claim about a transaction, and
 only a test against a real database checks it.
 
+## Going async
+
+The service above uses the sync API: a plain `def` endpoint runs on a worker thread. For an
+asyncio service whose `async def` endpoints await the database, add the async driver beside the
+sync one - `"ekbatan[postgres,postgres-async,migrations]"`, `mysql-async`, `mariadb-async` or
+`sqlite-async` - and build the request path on `ekbatan.aio`: `AsyncModelRepository`,
+`AsyncAction` with `async def perform`, and an `AsyncActionExecutor` you `await`. Models, events,
+migrations and the generated schema do not change, and event handlers and jobs stay sync. The
+file-by-file walk is [Going async](going-async.md), and the reference is
+[Native asyncio](runtime/async.md).
+
 ## Where to go next
 
 - [Wiring](wiring.md) - the complete bootstrap, every block of it
 - [schemagen](database/schemagen.md) - the code generation step in full
 - [Wiring with FastAPI](wiring-fastapi.md) - a lifespan, a dependency, and the three pools
 - [Concurrency](runtime/concurrency.md) - threads, the GIL, and the one way to use this wrongly
-- [`ekbatan-py-examples/`](../ekbatan-py-examples) - seven runnable projects
+- [Going async](going-async.md) - the request path on `ekbatan.aio`
+- [`ekbatan-py-examples/`](../ekbatan-py-examples) - nine runnable projects

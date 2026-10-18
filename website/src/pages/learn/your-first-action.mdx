@@ -186,7 +186,8 @@ def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletRe
 `service` is the one built at startup, handed over by a FastAPI dependency — not built per
 request, which would open a connection pool per request.
 [Wiring with FastAPI](/reference/wiring-fastapi/) is that seam, and names the other sharp
-mistake: calling this from an `async def` endpoint blocks the event loop.
+mistake: calling this sync API from an `async def` endpoint blocks the event loop. (An async
+service uses `ekbatan.aio` instead - [Going async](/learn/async/).)
 
 Who is acting is a separate concern. The executor takes a principal; in a real service it comes
 from your authentication layer.

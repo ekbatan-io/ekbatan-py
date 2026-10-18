@@ -147,10 +147,10 @@ stop being true.
 **Taking a lock on an asyncio event loop's own thread is refused** with a `ValidationError`.
 There, every request shares the one thread, so a second request would count as the same holder
 and walk straight into the first one's lock - and a request that did have to wait would freeze
-the loop, the holder included. Ekbatan is synchronous throughout; call it from a worker thread,
-where each request is its own holder again: a plain `def` endpoint, which FastAPI and Starlette
-already run on one, or `await asyncio.to_thread(...)` from an `async def`. Threaded servers and
-gevent are unaffected.
+the loop, the holder included. Keyed locks are sync, and `ekbatan.aio` has no async lock yet; call
+one from a worker thread, where each request is its own holder again: a plain `def` endpoint, which
+FastAPI and Starlette already run on one, or `await asyncio.to_thread(...)` from an `async def`.
+Threaded servers and gevent are unaffected.
 
 One shared helper owns the per-`(thread, key)` counter, the watchdog timer and the
 release arbitration, so each backend implements only a low-level acquire and release. That is

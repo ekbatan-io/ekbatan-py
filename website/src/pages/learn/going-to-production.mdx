@@ -13,7 +13,7 @@ CPython has no lightweight threads: every thread is an operating-system thread, 
 Python code at a time. So how the framework uses threads, and how your server calls it, are worth
 a few minutes. If you read one thing on this page, read this.
 
-**The framework is synchronous.** Under a threaded server that is exactly right — a blocking
+**The sync API blocks.** Under a threaded server that is exactly right — a blocking
 call holds one worker thread and the GIL is released for the duration of the I/O, so other
 threads keep running while it waits.
 
@@ -29,7 +29,10 @@ wallet = await run_in_threadpool(wallets.get, wallet_id)
 ```
 
 A plain `def` endpoint in FastAPI is already run in a threadpool, so the ordinary way of writing
-one is safe with none of this.
+one is safe with none of this. Or build the request path on the async API, `ekbatan.aio`, and
+`await` every call — see [Going async](/learn/async/). There, the connection pool is the cap on
+requests waiting on the database: size it, set `pool_timeout`, map its timeout to a 503, and cap
+open requests at the server too (`uvicorn --limit-concurrency`).
 
 ### What runs in parallel
 

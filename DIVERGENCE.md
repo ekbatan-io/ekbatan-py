@@ -1418,7 +1418,7 @@ order - that half is under "Dispatch delivers one notification at a time", and i
 trade, because those handlers are application code running in process rather than one bounded
 query per database.
 
-## The framework is synchronous, and blocking is free under gevent and not under asyncio
+## The sync API blocks, and blocking is free under gevent and not under asyncio
 
 > **forced** - under asyncio, where a blocking call holds the loop. Under gevent it is as cheap as Java's, for the same reason and with no code here.
 
@@ -1426,8 +1426,8 @@ Java is built on virtual threads, where a blocking call costs almost nothing: th
 is released and picked up by other work. That is what lets its whole API be blocking without
 apology.
 
-This port is synchronous too - there is no `async` or `await` anywhere in `src/` - and under a
-threaded server that is exactly right, for the same reason. Under an **asyncio** server it is
+This port's sync API blocks too, and under a threaded server that is exactly right, for the same
+reason. Under an **asyncio** server it is
 not, because a blocking call there stops the entire event loop rather than one carrier thread.
 
 Measured: a 0.5s framework call made from inside an `async def` handler let a background
@@ -1448,10 +1448,9 @@ that is why it needs no `to_thread` anywhere. And the ambient transaction lives 
 `ContextVar`, which is per-async-task as well as per-thread, so the state mechanism is already
 correct if this port ever grows an async surface.
 
-It has not grown one, and would not gain much by it: SQLAlchemy's async support is a wrapper
-over the same drivers, and the framework's value is in what it does between the queries. But an
-`async def` handler calling straight into it is a real mistake with a real cost, and nothing in
-the API stops you making it.
+It has since grown one - see the next section, `ekbatan.aio`. An `async def` handler calling
+straight into the *sync* API is still a real mistake with a real cost, and nothing in the API
+stops you making it.
 
 ### Under gevent this divergence does not exist
 
@@ -1488,7 +1487,29 @@ entry point; the framework never knows. What the framework owes is the documenta
 job that keeps it honest.
 
 It does not reach everyone: gevent serves **WSGI**, so FastAPI and anything else on an asyncio
-loop are still on `to_thread` - and every example here is FastAPI, so none of them shows it.
+loop are on `to_thread` or on `ekbatan.aio` - and every example here is FastAPI, so none of them
+shows it. The two do not mix: `ekbatan.aio` does not run under gevent's monkey-patching.
+
+## A native async API, `ekbatan.aio`, which Java does not have
+
+> **chosen** - decided by the user (2026-10-18): Java's virtual threads make a blocking API cheap; CPython's asyncio services need an awaited one. See [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#async-professional).
+
+Java has one API, blocking, and virtual threads make it cheap under any load. CPython has no
+virtual threads, and an asyncio service calling the sync API either moves each call to a thread
+or stops its event loop. So this port has a second API in `ekbatan.aio`: `AsyncAction` with
+`async def perform`, async repositories, an `AsyncActionExecutor` you await, on asyncpg, aiomysql
+or aiosqlite. Measured on one PostgreSQL, it does about one and a half times the work of the
+sync API in a 40-thread pool once 50 or more requests are in flight.
+
+What a Java service sees does not change. The rows, the outbox rows and their JSON are written by
+the same code in both APIs - statements, routing, the optimistic lock, soft delete, the event
+rows and the sentinel row are shared, not copied - so a Java consumer cannot tell which API wrote
+a row. Event fan-out and dispatch, distributed jobs and keyed locks have no async version: they
+run on threads through the sync API, as in Java, and share their tables with Java unchanged.
+
+Two differences inside the async API, both deliberate: a read across shards asks every shard at
+once (Java's, like this port's sync one, asks them one after another), and a keyed lock cannot
+be held across an async unit of work yet. The full page is `docs/runtime/async.md`.
 
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 

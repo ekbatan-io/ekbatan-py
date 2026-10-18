@@ -14,6 +14,7 @@ Linked from the top-level [README](../README.md). Each section has its own index
 - **[Wiring](wiring.md)** - the complete bootstrap, block by block
 - **[Wiring with FastAPI](wiring-fastapi.md)** - the lifespan, the dependency, and three sharp
   traps
+- **[Going async](going-async.md)** - the request path on `ekbatan.aio`, file by file
 - **[Database](database/README.md)** - the framework's tables, repositories, transactions, keyed
   locks, sharding, migrations, the four dialects, schemagen
 - **[Events out](events/README.md)** - in-process handlers, and Debezium
@@ -22,6 +23,8 @@ Linked from the top-level [README](../README.md). Each section has its own index
 **Running it**
 
 - **[Concurrency](runtime/concurrency.md)** - threads, the GIL, asyncio, gevent, and pool sizing
+- **[Native asyncio](runtime/async.md)** - `ekbatan.aio`, its drivers, its pool, and what stays
+  sync
 - **[Observability](runtime/observability.md)** - spans, attributes, metrics, what to alert on
 - **[Running beside a Java service](beside-java.md)** - sharing tables, locks, events and ids
   with a Java service

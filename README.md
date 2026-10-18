@@ -144,6 +144,8 @@ missing, what is slower, and what has not been decided yet.
   sharding, migrations, the four dialects, schemagen
 - [Events out](docs/events/README.md) and [Jobs](docs/jobs/README.md) - in-process handlers,
   Debezium, cluster-exclusive background work
+- [Native asyncio](docs/runtime/async.md) - `ekbatan.aio`: async repositories, actions and
+  executor, for an asyncio service
 - [Concurrency](docs/runtime/concurrency.md) - threads, the GIL, asyncio, and the one way to use
   this wrongly
 - [Observability](docs/runtime/observability.md) - spans, metrics, what to alert on
@@ -206,6 +208,8 @@ ekbatan-py-examples/                 each one built three ways: -uv-, -pip-, -po
   fastapi-wallet-rest-uv-mysql/       the same service, on MySQL
   fastapi-wallet-rest-uv-mariadb/     the same service, on MariaDB
   fastapi-wallet-rest-uv-sharded-pg/  the same service, over two databases
+  fastapi-wallet-rest-uv-async-pg/    the same service on native asyncio, ekbatan.aio
+  fastapi-wallet-rest-uv-async-mariadb/  and on MariaDB
   fastapi-wallet-saga-uv-pg/          a saga: two services, choreography, compensation
   job-worker-uv-pg/                   a distributed job, no HTTP at all
   wallet-service-uv-sqlite/           the smallest one. No container, no web stack
@@ -215,7 +219,7 @@ One REST example per dialect and one of everything else, which is the shape of J
 there, too, only the REST project is replicated per database. And each is carried once per build
 tool, as Java's are per Gradle and Maven: `fastapi-wallet-rest-uv-pg`,
 `fastapi-wallet-rest-pip-pg`, `fastapi-wallet-rest-poetry-pg`, the same code with its own
-`pyproject.toml` and `Makefile` - 21 projects, kept in step by `scripts/sync-examples.py`. Each is
+`pyproject.toml` and `Makefile` - 27 projects, kept in step by `scripts/sync-examples.py`. Each is
 standalone: `cd` into one and `make` builds it, tests it as its installed wheel, and needs
 nothing else from this repository but the framework.
 
@@ -259,7 +263,7 @@ uv run pytest tests/unit              # no database at all, about a second
 uv run pytest                         # the whole suite, on SQLite
 uv run pytest --dialects=postgres     # in a container
 uv run pytest --dialects=all          # every test, on all four
-make examples                         # all 21 examples, each as its installed wheel
+make examples                         # all 27 examples, each as its installed wheel
 make -C ekbatan-py-examples/wallet-service-uv-sqlite run
 
 uv run mypy                           # strict, on the library and the examples

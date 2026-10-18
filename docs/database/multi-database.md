@@ -126,7 +126,10 @@ is built for it, and leaving it is where time bugs come from. Three parts:
    DataSourceConfig(url=..., data_source_properties={"init_command": "SET time_zone = '+00:00'"})
    ```
 
-   Both measured against a server set to `Asia/Tehran`: the session then reports UTC.
+   Both measured against a server set to `Asia/Tehran`: the session then reports UTC. The same
+   lines work for `ekbatan.aio`'s drivers as written: aiomysql reads `init_command` as PyMySQL
+   does, and asyncpg - which has no libpq `options` - receives the `-c` settings as its own
+   `server_settings`. Measured the same way, on both.
 
 CI runs the PostgreSQL suite a second time under a non-UTC process, because that is where a driver
 inferring a zoned type would show up and nowhere else. The one place the framework steps off the

@@ -12,6 +12,7 @@ uv add "ekbatan[mariadb]"
 | | |
 | --- | --- |
 | driver | PyMySQL |
+| async driver | aiomysql - the `mariadb-async` extra, for `ekbatan.aio` |
 | url | `mariadb+pymysql://host:3306/db` |
 | login | `username=` and `password=`, never in the url |
 | uuid | `CHAR(36)` here; MariaDB also has a native `UUID` |

@@ -1,8 +1,8 @@
 # Wiring with FastAPI
 
 Where a service meets the outside world, and where the two sharpest mistakes are available:
-building the service per request instead of once, and calling into the framework from an
-`async def` endpoint.
+building the service per request instead of once, and calling the sync API from an `async def`
+endpoint.
 
 [Wiring](wiring.md) is the framework half and has nothing to do with HTTP. This page is the
 seam between the two.
@@ -55,7 +55,7 @@ a dependency and reads it as an unfilled *query parameter* instead.
 
 The symptom is a 422 on every endpoint, naming a field nobody declared. It cost an afternoon.
 
-## A plain `def` endpoint is the right endpoint
+## With the sync API, a plain `def` endpoint is the right endpoint
 
 ```python
 @app.post("/wallets", response_model=WalletResponse, status_code=201)
@@ -69,10 +69,10 @@ def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
     )
 ```
 
-`def`, not `async def`, and that is the single most important line on this page.
+`def`, not `async def`, and with the sync API that is the single most important line on this
+page.
 
-The framework is synchronous - there is no `async` or `await` anywhere in `src/`. FastAPI runs a
-plain `def` endpoint **in a threadpool**, so a blocking database call there blocks one worker
+The sync API blocks. FastAPI runs a plain `def` endpoint **in a threadpool**, so a blocking database call there blocks one worker
 thread and nothing else. Each request waits on its own thread, and the others carry on.
 
 An `async def` endpoint runs **on the event loop**, and a blocking call there stops the entire
@@ -80,8 +80,9 @@ loop - every other request on that worker, not just this one. Measured: a 0.5s f
 from inside an `async def` handler let a background heartbeat tick **5 times where a free loop
 manages about 55**.
 
-If you need an `async def` endpoint - because something else in it genuinely awaits - then hand
-the framework call to a thread:
+If you need an `async def` endpoint and keep the sync API - because something else in it
+genuinely awaits - then hand the framework call to a thread, or build the service on
+`ekbatan.aio` instead (next section):
 
 ```python
 wallet = await run_in_threadpool(service.wallets.get, wallet_id)
@@ -95,6 +96,49 @@ nothing. But gevent serves **WSGI**, and FastAPI is ASGI, so a FastAPI service c
 your front end is Flask or Django, see the gevent section of [Concurrency](runtime/concurrency.md).
 
 See [Concurrency](runtime/concurrency.md).
+
+## `async def` endpoints, on `ekbatan.aio`
+
+The other way: build the request path on the async API, and every endpoint is an `async def` that
+awaits. Nothing blocks the event loop, and under load it does more work than a thread pool does.
+
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    service = build(settings)          # sync: it runs the migrations, once, before any request
+    service.start()
+    app.state.service = service
+    try:
+        yield
+    finally:
+        await service.aclose()         # the async registry closes with `aclose()`
+
+
+@app.post("/wallets", response_model=WalletResponse, status_code=201)
+async def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
+    return WalletResponse.of(
+        await service.executor.execute(
+            OpenWalletAction,
+            OpenWalletParams(owner_id=body.owner_id, currency=body.currency,
+                             opening_balance=body.opening_balance),
+        )
+    )
+```
+
+`service.executor` is an `AsyncActionExecutor` and `service.wallets` an async repository. Three
+things to add over the sync service:
+
+- **A 503 for a full pool.** The connection pool is the cap on requests waiting on the database:
+  one that waits `pool_timeout` for a connection fails with SQLAlchemy's `TimeoutError`. Map it,
+  once, to a 503 with `Retry-After`.
+- **A cap at the door.** `uvicorn --limit-concurrency 50` answers 503 itself past 50 open
+  requests, before they reach the app. Keep it a small multiple of the pool.
+- **The handlers and jobs stay sync.** They run on threads through a sync registry built from
+  the same config file; only the request path is async.
+
+[Going async](going-async.md) walks through it, and
+[`fastapi-wallet-rest-uv-async-pg`](../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) runs
+it.
 
 ## Map the framework's errors once
 
@@ -193,5 +237,6 @@ trap and the least interesting one.
 
 - [Wiring](wiring.md) - what `build()` contains
 - [Concurrency](runtime/concurrency.md) - the `def` versus `async def` question in full
+- [Native asyncio](runtime/async.md) - `ekbatan.aio` in full
 - [`fastapi-wallet-rest-uv-pg`](../ekbatan-py-examples/fastapi-wallet-rest-uv-pg) - all of the above,
   running

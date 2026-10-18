@@ -126,10 +126,12 @@ With `from __future__ import annotations`, FastAPI resolves string annotations a
 parameter is read as an unfilled **query parameter** instead. The symptom is a 422 on every
 endpoint, naming a field nobody declared.
 
-**Use `def`, not `async def`.** FastAPI runs a plain `def` endpoint in a threadpool, so a
-blocking database call blocks one worker thread. An `async def` endpoint runs on the event loop,
-where the same call stops **every** request on that worker. Measured: a 0.5s call from an
-`async def` handler let a heartbeat tick 5 times where a free loop manages about 55.
+**Use `def`, not `async def`, with the sync API.** FastAPI runs a plain `def` endpoint in a
+threadpool, so a blocking database call blocks one worker thread. An `async def` endpoint runs
+on the event loop, where the same call stops **every** request on that worker. Measured: a 0.5s
+call from an `async def` handler let a heartbeat tick 5 times where a free loop manages about 55.
+For `async def` endpoints, build the request path on `ekbatan.aio` instead —
+[Going async](/learn/async/).
 
 **An exception handler must `return` a response, not raise one.** A raise from inside a handler
 is not caught again and becomes a 500 — the opposite of what they exist for.
