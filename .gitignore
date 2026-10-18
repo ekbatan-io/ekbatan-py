@@ -47,6 +47,8 @@ website/.astro/
 
 # --- local scratch ----------------------------------------------------------------------------
 *.log
+# ... but a recording a test compares against is a fixture, not scratch.
+!tests/fixtures/**/*.log
 *.orig
 *.rej
 .env
