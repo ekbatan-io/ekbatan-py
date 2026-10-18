@@ -97,8 +97,8 @@ migrations/
   V0003__wallets.sql            # your domain tables
 ```
 
-All of that is only needed if you want the framework's tables in a namespace of their own. This
-port defaults to the connected database, where none of it applies - see
+All of that is only needed if you want the framework's tables in a namespace of their own. By
+default they go in the connected database, where none of it applies - see
 [Schema or database](/reference/multi-database/#schema-vs-database).
 
 ### `mariadb_init.sql`
@@ -122,13 +122,13 @@ services:
 
 ## MariaDB-specific gotchas
 
-**Native UUID exists, and this port does not emit it.** MariaDB 10.7+ has a real 16-byte `UUID`
-type; Java's DDL uses it. SQLAlchemy does not render it, so `uuid_column()` gives `CHAR(36)`.
+**Native UUID exists, and this framework does not emit it.** MariaDB 10.7+ has a real 16-byte
+`UUID` type. SQLAlchemy does not render it, so `uuid_column()` gives `CHAR(36)`.
 
-**Interop is unaffected, and that was checked rather than assumed.** Against a table created with
-Java's `id UUID` DDL, this port writes a uuid and reads back an identical value, and
-`CAST(id AS CHAR)` gives the canonical hyphenated text. Either DDL works with either port. The
-difference is 16 bytes against 36.
+**A native `UUID` column works too, and that was checked.** Against a table declared `id UUID`,
+the framework writes a uuid and reads back an identical value, and `CAST(id AS CHAR)` gives the
+usual hyphenated text. The difference is 16 bytes against 36. A Java service's MariaDB tables use
+the native type - see [Running beside a Java service](/reference/beside-java/#the-shared-tables).
 
 **`JSON` is `LONGTEXT` underneath.** MariaDB has no separate JSON storage - it is `LONGTEXT` with
 a CHECK constraint, and the driver reports it that way. That is invisible when you *declare* the
@@ -137,8 +137,8 @@ column comes back as text. [`schemagen`](/reference/schemagen/) forces it back, 
 reason it exists.
 
 It knows the column is JSON by its check, `json_valid(...)`, which reflection does not report
-and `information_schema.CHECK_CONSTRAINTS` does. Java's builds force `(?i:JSON)`, which never
-matches here, so jOOQ generates a `String` for it (measured in round 2).
+and `information_schema.CHECK_CONSTRAINTS` does - so a rule that matches on the type name alone
+never matches here.
 
 **A reflected bigint carries a display width.** MariaDB reports `BIGINT(display_width=20)`.
 Emitted verbatim into a generated module, it does not even import - `TypeError: BIGINT() takes no

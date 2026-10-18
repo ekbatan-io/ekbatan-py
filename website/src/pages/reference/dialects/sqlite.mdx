@@ -5,8 +5,6 @@ activeSection: reference
 lead: "It is supported here, it is what the test suite runs on by default, and it is not a production dialect. This page is mostly about why both halves of that are true."
 ---
 
-**No Java counterpart - SQLite is not a dialect there at all.**
-
 ## Quick reference
 
 | | |
@@ -121,7 +119,7 @@ Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and i
 For that last case it genuinely works: accept that the scheduler is not cluster-exclusive
 because there is no cluster, and you have a working event-sourced service in one file with no
 infrastructure. Keyed locks are the one thing it cannot give you on its own - SQLite has no
-advisory locks, and there is no in-process provider, as there is none in Java - so use
+advisory locks, and there is no in-process provider - so use
 `RedisKeyedLockProvider` if you need them. Optimistic locking needs nothing and is always on.
 
 ## The claim this framework makes

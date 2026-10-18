@@ -2,13 +2,12 @@
 layout: ../../../layouts/DocLayout.astro
 title: Observability
 activeSection: reference
-lead: "The action pipeline is instrumented with the OpenTelemetry API only - no SDK. The API is a dependency, as it is of Java's ekbatan-core; with no SDK registered at runtime every call is a no-op, so the framework costs nothing to an application that does not want tracing, and the no-SDK path is the one most of the test suite exercises."
+lead: "The action pipeline is instrumented with the OpenTelemetry API only - no SDK. The API is a required dependency; with no SDK registered at runtime every call is a no-op, so the framework costs nothing to an application that does not want tracing, and the no-SDK path is the one most of the test suite exercises."
 ---
 
-**The span and metric names are a cross-language contract.** An operator filtering a trace on
-`ekbatan.action.name` is filtering across both implementations, so a service written here and one
-written in Java appear in one dashboard. Everything below was checked against Java's names rather
-than invented.
+The span, attribute and metric names below are the same ones Ekbatan for Java uses, so a filter on
+`ekbatan.action.name` catches a Python service and a Java service alike - see
+[Running beside a Java service](/reference/beside-java/#traces-and-logs).
 
 ## Bringing your own SDK
 
@@ -41,7 +40,7 @@ A single-shard action gives one of each. A cross-shard action gives one transact
 its nested repository and event spans - **per involved shard**.
 
 **Every `transaction()` block is a span**, a nested one too: a nested block is a transaction of
-its own, as in Java. A repository call joining the open transaction is not a boundary and makes
+its own. A repository call joining the open transaction is not a boundary and makes
 no transaction span. See [the transaction manager](/reference/transaction-manager/#do-not-nest).
 
 ## Attributes
@@ -74,21 +73,23 @@ A cross-shard action that commits some shards and fails another sets, on the fai
 | `ekbatan.shard.committed_shards` | which shards are already committed and cannot be undone |
 | `ekbatan.shard.failed_shard` | which one did not |
 
-Java logs the same facts at CRITICAL. Putting them on the span as well means the trace that shows
+The same facts are logged at ERROR, on a line starting `CRITICAL:`. Putting them on the span as
+well means the trace that shows
 the failure also shows exactly what state the data is in - which is the question anyone looks at
 that trace to answer.
 
 ### The instrumentation scope
 
-`io.ekbatan.core`, as Java's - so a filter on the scope, like one on the span names, catches
-both ports. The version is each port's own: Java reports its artifact's, this port its package's.
-The meter is Java's too: `io.ekbatan.events.localeventhandler`.
+`io.ekbatan.core`, with the installed package's version. The meter is
+`io.ekbatan.events.localeventhandler`.
 
 ## Loggers
 
-Each logger is named after the Java class that writes the same lines, as Java's
-`LoggerFactory.getLogger(SomeClass.class)` names them - so a logging config written for the Java
-port, `io.ekbatan.core.action: DEBUG` or `io.ekbatan: WARN`, applies here unchanged.
+The loggers are standard `logging` loggers under `io.ekbatan`, so one setting covers them all:
+`logging.getLogger("io.ekbatan").setLevel(logging.WARNING)`. They are named like `io.ekbatan.core...`
+rather than after Python modules because those are the names a Java service built on Ekbatan logs
+the same lines under, so one logging config covers both - see
+[Running beside a Java service](/reference/beside-java/#traces-and-logs).
 
 | logger | logs |
 | --- | --- |
@@ -105,12 +106,11 @@ port, `io.ekbatan.core.action: DEBUG` or `io.ekbatan: WARN`, applies here unchan
 | `io.ekbatan.events.localeventhandler.job.EventHandlingJob` | handler failures and discarded notifications |
 | `io.ekbatan.flyway.FlywayMigrator` | migrations |
 
-While a target migrates, each line the migrator logs carries Java's MDC keys as record attributes:
-`ekbatanShard` (`1:0`) and `ekbatanTarget` (`mexico/member-0`). Java's pattern `%X{ekbatanShard}`
-is `%(ekbatanShard)s` here; give the formatter `defaults={"ekbatanShard": "", "ekbatanTarget": ""}`
-for the lines logged outside a migration, where Java's MDC prints nothing. Python has no MDC, so
-the keys are on the migrator's own lines only - not on lines a driver logs meanwhile, which Java's
-thread-wide MDC would also cover.
+While a target migrates, each line the migrator logs carries two extra record attributes:
+`ekbatanShard` (`1:0`) and `ekbatanTarget` (`mexico/member-0`). Write `%(ekbatanShard)s` in a format
+string to show one, and give the formatter `defaults={"ekbatanShard": "", "ekbatanTarget": ""}` for
+the lines logged outside a migration. They are on the migrator's own lines only - not on lines a
+driver logs in the meantime.
 
 ## Retry events
 

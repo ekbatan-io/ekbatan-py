@@ -37,8 +37,8 @@ migrations/
   V0003__wallets.sql            # your domain tables
 ```
 
-All of that is only needed if you want the framework's tables in a namespace of their own. This
-port defaults to the connected database, where none of it applies - see
+All of that is only needed if you want the framework's tables in a namespace of their own. By
+default they go in the connected database, where none of it applies - see
 [Schema or database](multi-database.md#schema-vs-database).
 
 ### `mysql_init.sql`
@@ -106,20 +106,19 @@ Reads filter `state != DELETED` for you. Updates carry `WHERE version = ?` and i
 
 **No native UUID.** `uuid_column()` renders `CHAR(36)` - the hyphenated text form, chosen so ids
 stay grep-able in query logs and dumps, and so they match what PostgreSQL and MariaDB store as
-text. `BINARY(16)` is more compact and harder to debug; it is not the default here or in Java.
+text. `BINARY(16)` is more compact and harder to debug, so it is not the default.
 
-**Java writes `CHARACTER SET ascii` on those columns and this port does not.** A uuid is pure
-7-bit ASCII, so pinning the charset keeps each character at one byte rather than up to four under
-`utf8mb4`, which tightens index locality. It is a storage optimisation, not a format difference -
-interop is unaffected - but if you are writing the migration by hand, add it.
+**Add `CHARACTER SET ascii` to those columns in your migration.** `uuid_column()` does not pin
+the charset. A uuid is pure 7-bit ASCII, so pinning it keeps each character at one byte rather
+than up to four under `utf8mb4`, which makes the index smaller. The stored text is the same
+either way.
 
 **`DATETIME(6)`, not `TIMESTAMP`.** `TIMESTAMP` has a smaller range, implicit
 `ON UPDATE CURRENT_TIMESTAMP` behaviour and awkward `NULL` semantics. Reserve it for
 db-scheduler's own table. And never bare `DATETIME` - it truncates to whole seconds, silently.
 
 **No partial indexes.** Put the predicate column into the index instead:
-`(delivered, event_type, event_date)`. This is what the framework emits everywhere, so on MySQL
-the generated index is already the right shape.
+`(delivered, event_type, event_date)`, as the MySQL examples' migrations do.
 
 **No `RETURNING`.** A write cannot read its own result back in one statement, so the framework
 rebuilds written rows itself. That is why `add_no_result` and `update_no_result` exist: on a
@@ -127,16 +126,17 @@ large batch where you do not need the objects back, they skip work that is free 
 is not free here.
 
 **A lock wait is rounded to whole seconds.** MySQL rounds `GET_LOCK`'s timeout to the nearest
-second: a 250 ms wait is a single try, 500 ms waits one second, 1.5 s waits two - the same as in
-Java. [Measured](keyed-locks.md#mysql-rounds-the-wait-to-whole-seconds).
+second: a 250 ms wait is a single try, 500 ms waits one second, 1.5 s waits two.
+[Measured](keyed-locks.md#mysql-rounds-the-wait-to-whole-seconds).
 
-**`eventlog` would be a separate database.** Only if you want Java's layout. It needs a migration
+**`eventlog` would be a separate database.** Only if you want the tables in a namespace of their
+own. It needs a migration
 to create it and an init script to grant rights - the grant cannot be in a migration, because the
 migrator connects as the user that needs granting.
 
 **One schema change per migration file.** MySQL commits every schema change on its own, the
 moment it runs, so a migration that fails after one leaves it behind. The migrator records the
-failure, as Flyway does, and will not run that migration again until the database has been put
+failure and will not run that migration again until the database has been put
 right by hand and `repair()` called. One per file keeps a failure from leaving anything half-done.
 Several statements in one file are otherwise fine: the migrator splits a file itself - a
 procedure's `BEGIN ... END` body included, written without `DELIMITER`.

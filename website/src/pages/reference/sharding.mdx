@@ -34,14 +34,14 @@ of it, so intra-group latency is what that read costs. Names like `global-eu-1`,
 reflect the convention. Nothing enforces it - a connection url is opaque to the framework - but
 it is the shape the design assumes, and ignoring it makes scatter reads slower than they look.
 
-A shard this deployment does not have routes to the default, in both ports, and **logs a warning
+A shard this deployment does not have routes to the default and **logs a warning
 saying so** - see [Unregistered shards](#unregistered-shards-fall-back-to-default-and-say-so)
 below, and `unknown_shard_policy="fail"` if you want it to be an error instead.
 
 ## Declarative configuration
 
-Java's layout, level for level: **groups** of **members**, each member one shard and a named map
-of datasources.
+The layout has two levels: **groups** of **members**, each member one shard with a named map of
+datasources.
 
 ```python
 layout = ShardingConfig(
@@ -73,8 +73,9 @@ and room for any other:
 | `"secondaryConfig"` | optional. A read replica for non-transactional reads; omit it and both go to the primary |
 | anything else | yours - `"jobsConfig"`, `"lockConfig"`, `"analyticsConfig"`. Read back with `member.config_for(name)` and build with `engine_for(...)`; the registry builds only the two above |
 
-The key names are Java's, spelling included, so one layout describes both ports. A group needs a
-`name`; a member's `name` is optional and labels its spans and log lines.
+The two reserved names are spelled exactly as shown. A group needs a `name`; a member's `name` is
+optional and labels its spans and log lines. The same names are used by Ekbatan for Java, so one
+layout can describe a Java service too - see [Running beside a Java service](/reference/beside-java/#the-config-file).
 
 `DataSourceConfig` is the pool:
 
@@ -99,7 +100,7 @@ invisible as latency.
 
 The same layout can be read from a YAML, TOML, JSON or INI file: see [Config files](/reference/config-files/).
 
-**The login lives in `username` and `password`, never in the url** - as in the Java port. A url
+**The login lives in `username` and `password`, never in the url**. A url
 is logged and repeated, so one that carries a user name or a secret is refused, and the message
 says where each goes instead, without repeating the url:
 
@@ -113,8 +114,7 @@ DataSourceConfig(
 
 Both are optional: leave `username` out only when the driver supplies the user, and `password` for
 a login that has none. A url SQLAlchemy cannot parse - two hosts written `h1:3306,h2:3306` - is
-read from its text instead, the way Java reads every url. `split_login(url)` takes the login out of
-a url that arrives with one, such as a test container's.
+read from its text instead. `split_login(url)` takes the login out of a url that arrives with one, such as a test container's.
 
 **`data_source_properties` are handed to the driver as given** - a number stays a number, a group
 stays a group, an object stays an object:
@@ -142,8 +142,8 @@ connect with the same login and the same settings.
 treated as a secret. Printing a `DataSourceConfig`, or anything that holds one - a layout, a member,
 a migration result - shows `***` in their place. `log.info(layout)` is safe to write.
 
-There is no counterpart to Hikari's `idleTimeout` or `minimumIdle`; retirement here is by age
-rather than by idleness. See [SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md).
+A connection is retired by age (`pool_recycle`), not by how long it sat idle, and there is no
+floor on how many stay open while idle.
 
 ## Sharded models
 
@@ -210,8 +210,8 @@ The shard is packed into the `rand_b` region of a UUIDv7:
 └────────────────────────────────────────────────────────────────┘
 ```
 
-**This layout is a cross-language contract.** An id minted by a Java service and one minted here
-carry the shard in the same bits, so either port can route the other's rows without a lookup.
+Ekbatan for Java puts the shard in the same bits, so a Java service and this one route each other's
+rows without a lookup - see [Running beside a Java service](/reference/beside-java/#ids).
 
 Minting and reading:
 
@@ -223,10 +223,10 @@ wallet_id.minted_at                        # -> datetime, from the v7 timestamp
 
 `ShardedId[Wallet].random()` uses the default shard. Because the timestamp is the high bits, ids sort
 chronologically - which is what keeps a primary key index from fragmenting the way a v4 does.
-Comparing two ids (`<`, `sorted`) follows Java's `UUID.compareTo`, which reads each half of the
-uuid as a signed number: version 7 ids sort by time either way, but a random `Id[...]` whose
-first digit is `8`-`f` sorts before one starting `0`-`7`, as in Java (the database's own order
-is unsigned).
+Comparing two ids (`<`, `sorted`) reads each half of the uuid as a signed number: version 7 ids
+sort by time, but a random `Id[...]` whose first digit is `8`-`f` sorts before one starting
+`0`-`7` (the database's own order is unsigned). A Java service sorts the
+same ids in the same order.
 
 ## Sharded repositories
 
@@ -242,8 +242,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 ```
 
 That one keyword is the entire difference from an unsharded repository. There is no second line
-to change, because the mapping is by field name and the id type already carries the shard —
-where the Java port also has to widen `fromRecord` to rebuild a `ShardedId`.
+to change, because the mapping is by field name and the id type already carries the shard.
 
 What it changes about the inherited reads and writes:
 
@@ -334,19 +333,19 @@ embedded-bits strategy is the default despite being the less flexible one.
 
 ## Unregistered shards fall back to default, and say so
 
-An id naming a shard this deployment has not configured **lands on the default**, in both ports.
+An id naming a shard this deployment has not configured **lands on the default**.
 That is what lets a staging database with one shard read ids minted where there are four.
 
 It is also exactly what a mistyped shard identifier does, and that one writes to the wrong
-database. Nothing at the call site can tell the two apart, so neither port tries to. **What both
-now do instead is say it happened:**
+database. Nothing at the call site can tell the two apart, so the framework does not try to.
+**What it does instead is say it happened:**
 
 ```
 WARNING  io.ekbatan.core.shard.DatabaseRegistry  Shard ShardIdentifier(9, 9) is not registered, routing to default ShardIdentifier(0, 0) [registered=[ShardIdentifier(0, 0), ShardIdentifier(1, 0)]]
 ```
 
-Until `EKB-0200` the fallback was silent, which is the part that made a typo expensive: the
-write succeeded, the row was in the wrong database, and nothing surfaced until somebody counted.
+A silent fallback is what would make a typo expensive: the write succeeds, the row is in the wrong
+database, and nothing surfaces until somebody counts.
 The warning is unconditional — it fires under either policy, because it is the diagnosis, not the
 enforcement.
 
@@ -365,7 +364,7 @@ ShardingConfig(
 ValidationError: shard 9:9 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
 ```
 
-The value is read as Java reads it: case and separators do not matter, so `fail`, `FAIL`,
+Case and separators do not matter, so `fail`, `FAIL`,
 `useDefaultShard`, `use_default_shard` and `USE-DEFAULT-SHARD` all work, in code and in a
 config file; an empty value, or `None`, is the default.
 
@@ -424,9 +423,9 @@ rather than skipped. See [Migrations](/reference/migrations/).
 
 ## What sharding does not provide
 
-A scatter read and an event fan-out round visit shards **one at a time**; Java forks a virtual
-thread per shard. On eight shards a round takes eight batches' time rather than one. Recorded in
-[SHORTCOMINGS.md](https://github.com/ekbatan-io/ekbatan-py/blob/main/docs/SHORTCOMINGS.md); the fix is a pool around the per-shard drain.
+A scatter read visits shards **one at a time**, not side by side: on eight shards it takes eight
+round trips' time rather than one. The event jobs are different - they drain every shard at once,
+see [Concurrency](/reference/runtime/concurrency/#5-fan-out-and-dispatch---shards-and-handlers-side-by-side).
 
 ## See also
 

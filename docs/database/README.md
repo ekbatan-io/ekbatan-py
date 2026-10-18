@@ -25,17 +25,8 @@ For the *concept* of the outbox - the atomic state-and-events story - see
 - **[schemagen](schemagen.md)** - table definitions generated from a migrated database, and the
   type forcing that makes them portable
 
-## Interoperating with a Java service
+## Sharing the tables with a Java service
 
-The framework tables are a **cross-language contract**: a Java service and a Python service can
-read each other's outbox rows, contend for the same keyed lock and share one `scheduled_tasks`
-table. Three things have to line up, and the first is the one people miss:
-
-1. **The schema.** Java puts its tables in `eventlog`. This port defaults to no schema, because a
-   Python service usually owns its database outright. Pass it explicitly to match:
-   `outbox_table(metadata, schema="eventlog")`.
-2. **The column types.** They already agree - see each table page for the verified comparison.
-3. **The namespace.** Different services should use different ones; the same service in two
-   languages should use the same one.
-
-Where the two genuinely differ, the table pages say so and say whether it matters.
+A Java service built on Ekbatan for Java can share these tables, the keyed lock and the event
+stream with a Python one. What has to line up - the schema, the namespace, the shard layout - is
+on [Running beside a Java service](../beside-java.md).

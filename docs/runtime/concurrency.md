@@ -15,22 +15,20 @@ If you read one section, read [Blocking is not free](#blocking-is-not-free-under
 | a process per worker (gunicorn, uvicorn `--workers`) | yes | nothing; pools are per process, so size them per process |
 | a thread pool you own | yes | see [Work forked from inside an action](#2-work-forked-from-inside-an-action) |
 
-## Why there is no port of "virtual threads"
+## Five places threads could have been used
 
-A virtual thread is cheap: millions of them, and a blocking call parks one without holding an OS
-thread. A CPython thread is an OS thread - about a megabyte of stack - and the GIL means more of
-them buys concurrency on I/O but not parallelism on CPU.
+A CPython thread is an operating-system thread - about a megabyte of stack - and the GIL means
+more of them buy concurrency while waiting on I/O, but not on CPU work. Threads are not free, so
+each place where the framework could run things at the same time was decided on its own. There
+are five, and they went five different ways.
 
-So "port the virtual threads" is not a thing that can be done. Each site where Java forks one is
-its own decision. There are five in the main sources and they went five different ways.
-
-### 1. The unit of work - no threads either side
+### 1. The unit of work - no threads at all
 
 The one that matters most needs none.
 
-Java binds the open transaction to a `ScopedValue`. Here it is a **`ContextVar`** holding a
-shard-to-connection mapping. Neither forks anything; both answer one question - *is this
-execution context already inside a transaction on this shard?*
+The open transaction is held in a **`ContextVar`**: a mapping from shard to connection. Nothing
+is started; it answers one question - *is this execution context already inside a transaction
+on this shard?*
 
 A `ContextVar` is per-thread **and** per-async-task, so the same mechanism is correct under a
 threaded server and an asyncio one. The threading model above the framework is the host's to
@@ -44,12 +42,9 @@ rows, and a pool worker does not carry a transaction into its next task.
 
 ### 2. Work forked from inside an action
 
-The rule is the same as Java's, and so is the reason.
-
-Java's own documentation says: fan out on virtual threads, **join**, and only then touch the
-plan - because a plain virtual thread does not inherit a `ScopedValue` binding. A `ContextVar`
-behaves identically. Work handed to a pool from inside a unit of work does **not** inherit the
-ambient transaction.
+Fan out, **join**, and only then touch the plan. A new thread starts with its own `ContextVar`
+values, so work handed to a pool from inside a unit of work does **not** inherit the ambient
+transaction.
 
 ```python
 def perform(self, principal: str | None, params: Params) -> Result:
@@ -66,14 +61,10 @@ outliving the unit of work and holding its connection is precisely the bug the d
 
 ### 3. The keyed-lock watchdog - one thread for all of them
 
-Java gives each outermost hold a `Thread.ofVirtual()` watchdog to force-release at `max_hold`,
-and that is right there: measured on a JDK 25 with ten cores, ten watchdogs fire 17 ms late and
-a hundred thousand fire 48 ms late. A sleeping virtual thread is unmounted and competes for
-nothing.
-
-A `threading.Timer` is an OS thread, so the same shape does not translate. This port used one
-per hold until it was measured, and it was worse in every direction - not only heavier but
-**later**, because starting a thousand threads takes 70 ms before any of them can fire:
+Each outermost hold needs a watchdog that force-releases it at `max_hold`. The obvious shape is
+a `threading.Timer` per hold, and each of those is an operating-system thread. This framework
+used one per hold until it was measured, and it was worse in every direction - not only heavier
+but **later**, because starting a thousand threads takes 70 ms before any of them can fire:
 
 | 1,000 held locks | register | median late | threads | memory |
 | --- | --- | --- | --- | --- |
@@ -90,24 +81,19 @@ its connection for as long as it is held, because that is what the lock *is*.
 
 ### 4. Job workers - a ceiling, with a knob
 
-Java hands db-scheduler `Executors.newVirtualThreadPerTaskExecutor()`, so its worker count is
-unbounded and `threads(n)` only sizes the polling batch.
-
-Here they are daemon OS threads, so there is a ceiling - defaulting to one per registered job.
+Job bodies run on daemon threads, and threads cost memory, so there is a ceiling - defaulting to
+one per registered job.
 That default is right: a recurring task is a single row, so it has at most one execution in
 flight.
 
 **A ceiling, not a reservation.** Workers start as work arrives and only when none is already
-waiting, so twenty registered jobs with nothing due hold **no** worker threads. That is the half
-of Java's `newCachedThreadPool()` that CPython gives for free; the other half - retiring a thread
-idle for a minute - is in neither the standard library nor, as far as I could find, any
-well-known package.
+waiting, so twenty registered jobs with nothing due hold **no** worker threads. A thread, once
+started, is kept rather than retired when idle; the standard library has no pool that retires
+idle threads.
 
 ```python
 job_registry().engine(engine).with_jobs(jobs).workers(3).build()
 ```
-
-`workers(n)` has no Java counterpart, because Java never has to choose.
 
 Two sizing rules, and the second has teeth:
 
@@ -123,13 +109,12 @@ Two sizing rules, and the second has teeth:
 Give jobs their own pool, separate from the request pool, for the same reason: a traffic burst
 must not be able to starve that heartbeat.
 
-### 5. Fan-out and dispatch - across shards parallel, within a shard not
+### 5. Fan-out and dispatch - shards and handlers side by side
 
-Java forks a virtual thread per shard in `EventFanoutJob` *and* in `EventHandlingJob`, and a
-further one per due notification inside a batch. Two different forks, and they ported
-differently.
+The two event jobs - fan-out and dispatch - could run work side by side in two places: one per
+shard in a round, and one per due notification in a batch. They do both.
 
-**Per shard: ported.** Both jobs drain their shards through a `ThreadPoolExecutor`, one thread
+**Per shard.** Both jobs drain their shards through a `ThreadPoolExecutor`, one thread
 per shard. This is one of the cases where threads in CPython buy real wall-clock, because a
 batch against a shard is a round trip to a *different* database - I/O the whole way, with the
 GIL released for all of it. Measured, one 40 ms round trip per shard:
@@ -142,34 +127,33 @@ GIL released for all of it. Measured, one 40 ms round trip per shard:
 | 16 | 694 ms | 48 ms | 14.6x |
 | 32 | 1405 ms | 47 ms | 29.6x |
 
-Flat, as Java's is: a round costs one shard's time however many shards there are.
+Flat: a round costs one shard's time however many shards there are.
 
-**There is no setting for it**, because Java has none. It forks one virtual thread per shard and
-joins them; this forks one thread per shard and joins them. A deployment with many shards
+**There is no setting for it.** A deployment with many shards
 already holds a connection pool per shard, so a thread per shard for the length of a round is in
 proportion to what it already has. A single shard builds no pool and runs inline.
 
-The contract matches Java's: the whole round is submitted before any failure is raised, so one
+The whole round is submitted before any failure is raised, so one
 unreachable shard does not hold back its siblings, and results come back in shard order.
 
-**Per notification: ported too.** A batch's handlers now run at once, one thread each, in a
-pool per shard bounded by the batch size - the same ceiling Java has. Measured at 20 ms per
-handler, a batch of 100 goes from 2376 ms to 28 ms. **Your handler code therefore runs
-concurrently with its siblings**, which it did not before; Java's always has.
+**Per notification.** A batch's handlers run at once, one thread each, in a pool per shard
+bounded by the batch size. Measured at 20 ms per handler, a batch of 100 goes from 2376 ms one
+after another to 28 ms. **Your handler code therefore runs at the same time as its siblings** -
+write it so that is safe.
 
-The **statement count** matches too: outcomes are written one `UPDATE` per bucket, so a batch
-of 100 that all succeed is 1 statement and a realistic mix is 4 — which is Java's number.
+Outcomes are written one `UPDATE` per bucket, so a batch of 100 that all succeed is 1 statement
+and a realistic mix is 4.
+
 ## Blocking is not free under asyncio
 
 This is the one that will actually hurt you.
 
 The framework is synchronous. There is no `async` or `await` anywhere in `src/`, and under a
 **threaded** server that is exactly right - a blocking call holds one worker thread and the GIL
-is released for the duration of the I/O, which is the same bargain Java gets from virtual
-threads.
+is released for the duration of the I/O.
 
 Under an **asyncio** server it is not right, because a blocking call there stops the entire event
-loop rather than one carrier thread.
+loop rather than one thread.
 
 Measured: a 0.5s framework call from inside an `async def` handler let a background heartbeat
 tick **5 times where a free loop manages about 55**. Every other request on that loop stalled for
@@ -195,18 +179,17 @@ ordinary way of writing one is safe with none of the above.
 throughout, which is why it contains no `to_thread` at all.
 
 **The ambient transaction is a `ContextVar`,** which is per-async-task as well as per-thread - so
-the state mechanism is already correct if this port ever grows an async surface.
+the state mechanism is already correct if this framework ever grows an async surface.
 
 It has not grown one and would not gain much from it: SQLAlchemy's async support is a wrapper
 over the same drivers, and this framework's value is in what it does *between* the queries. But
 an `async def` handler calling straight into it is a real mistake with a real cost, and nothing
 in the API stops you making it.
 
-## gevent: the closest thing to virtual threads, and it needs nothing from us
+## gevent: cheap blocking, with nothing to change
 
-Everything above is about a framework that blocks. **gevent removes the cost of blocking**,
-which is what virtual threads do for Java - and it does it for *every* blocking call, not only
-the ones a library knows about.
+Everything above is about a framework that blocks. **gevent removes the cost of blocking** - for
+*every* blocking call, not only the ones a library knows about.
 
 ```python
 from gevent import monkey; monkey.patch_all()   # the very first thing, before any other import
@@ -292,5 +275,3 @@ tested under a free-threaded build, so that is a reasonable expectation rather t
 
 - [Wiring](../wiring.md) - the three pools, and what each is sized for
 - [Wiring with FastAPI](../wiring-fastapi.md) - `def` versus `async def` at the endpoint
-- [`DIVERGENCE.md`](../../DIVERGENCE.md) - the same five decisions, from the porting side
-- [`SHORTCOMINGS.md`](../SHORTCOMINGS.md) - where sequential costs against Java's parallel

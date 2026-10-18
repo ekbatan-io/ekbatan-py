@@ -42,7 +42,7 @@ wrongly under pressure:
   it above the worst case for the work inside.
 - **Contention is not failure.** `try_acquire` returns `None` when the lease cannot be had
   inside `max_wait`, and `acquire` simply waits longer. A broken backend - an unreachable
-  database included - raises `LockAcquisitionError`, as in Java. Keeping those distinguishable is
+  database included - raises `LockAcquisitionError`. Keeping those distinguishable is
   what lets an HTTP handler answer 503 with a `Retry-After` instead of 500.
 - **The key is a string you choose**, and its granularity is the whole design. `wallet:{id}`
   serialises one wallet; `wallets` serialises every wallet, which is a different product.
@@ -99,8 +99,7 @@ The lease closes *before* the framework's commit runs. Another acquirer takes th
 immediately, reads the still-pre-commit state, computes a stale-version update, and collides at
 its own commit. Optimistic locking catches it — `StaleRecordError`, and the executor re-runs
 phase one — so **no data is lost**. But calls fail and retry under contention that a
-caller-side lease would have prevented entirely. The Java port measured its own version of this:
-ten concurrent deposits, about six committing first time.
+caller-side lease would have prevented entirely.
 
 This placement is for **side-effect coordination, not commit serialisation**:
 
@@ -136,11 +135,10 @@ closes — or when its watchdog fires.
 **The first acquire's `max_hold` governs the watchdog; a re-entry's `max_hold` is ignored.** That
 is stricter than the last-call-wins convention some lock libraries use, and it is the only rule
 under which the outer region's reasoning stays true: it committed to a worst case, and an inner
-call cannot pull that commitment out from under it. The same is true in the Java port, and for
-the same reason.
+call cannot pull that commitment out from under it.
 
-Re-entry is **per thread, not per call stack** — as in Java, where the holder is the thread too.
-A thread you hand work to is a different identity and will block on a key you hold. That is not a
+Re-entry is **per thread, not per call stack**: the holder is the thread. A thread you hand
+work to is a different identity and will block on a key you hold. That is not a
 bug to work around: if the child could inherit the hold, "this key is held by one holder" would
 stop being true.
 
@@ -156,18 +154,18 @@ gevent are unaffected.
 
 One shared helper owns the per-`(thread, key)` counter, the watchdog timer and the
 release arbitration, so each backend implements only a low-level acquire and release. That is
-what makes "uniform across all five" checkable rather than aspirational.
+what makes "the same on all four" checkable rather than aspirational.
 
-## Five backends
+## Four backends
 
 | Provider | Scope | Mechanism | Hold | Notes |
 |---|---|---|---|---|
 | `PostgresKeyedLockProvider` | cross-process | `pg_advisory_lock` (session-scoped) | session + watchdog | Auto-released if the session ends — a crashed process or a dropped network connection releases the key without anyone intervening. One connection per lease |
 | `MySQLKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | `max_wait` is **rounded to whole seconds** — see [below](#mysql-rounds-the-wait-to-whole-seconds) |
 | `MariaDBKeyedLockProvider` | the server | `GET_LOCK(...)` | session + watchdog | Same statements as the MySQL one, separate because MariaDB honours sub-second timeouts |
-| `RedisKeyedLockProvider` | the Redis deployment | Redisson's lock: a hash, its Lua scripts, an unlock message | **TTL** + watchdog | Shares a lock with a Java service on the same Redis. Waiters are woken, not polling. Single-master only — **not** Redlock |
+| `RedisKeyedLockProvider` | the Redis deployment | a hash, Lua scripts, an unlock message | **TTL** + watchdog | Can share a lock with a [Java service](../beside-java.md#keyed-locks). Waiters are woken, not polling. Single-master only — **not** Redlock |
 
-There is **no in-process provider**, as there is none in Java. A lock held in one process's
+There is **no in-process provider**. A lock held in one process's
 memory excludes nothing in another, and a Python service in production is several worker
 processes - so it would go on working and stop excluding anything, without saying so. Every
 backend above excludes across processes and machines alike.
@@ -181,24 +179,19 @@ the key simply expires and the next caller takes it.
 The Redis provider deliberately drives the expiry itself rather than letting a client library's
 own watchdog extend the lease, so the framework's first-acquire-wins rule holds there too.
 
-It stores the lock exactly as Java's Redisson-backed provider does - a hash at
-`ekbatan-lock:<key>`, one field per holder, the TTL set to `max_hold`, and a `0` published on
-`redisson_lock__channel:{ekbatan-lock:<key>}` on release. So a Java service and a Python service
-on one Redis share the lock both ways: either keeps the other out, and a release on one side
-wakes a waiter on the other at once.
+On Redis the lock is a hash at `ekbatan-lock:<key>` with one field per holder, set to expire at
+`max_hold`. Releasing it publishes a message that wakes the next waiter at once, so nobody polls.
+A Java service built on Ekbatan stores its lock the same way, so the two can share it -
+see [Running beside a Java service](../beside-java.md#keyed-locks).
 
-The four SQL and in-process providers come from `ekbatan.locks`. The Redis one is imported from
+The three SQL providers come from `ekbatan.locks`. The Redis one is imported from
 `ekbatan.locks.redis` and needs the `redis` extra - it is deliberately *not* re-exported from the
 package, because importing it eagerly would make `ekbatan.locks` fail for everyone who has not
 installed redis-py.
 
-The in-process one is for tests and single-process deployments. It is not a distributed lock and
-will not tell you so at runtime - two instances each get their own.
-
-Each key is hashed to a 64-bit integer, and the hash matches Java's exactly, **so a Python
-service and a Java service contending for one key actually contend.** The MySQL lock name is
-the bare unsigned hex of that hash (`813e4046e5b48a46` for `wallet:abc`), byte for byte what
-Java produces, with no prefix - a test holds a lock and asks the server for Java's name.
+On the SQL servers each key is hashed to a 64-bit number, and that number is what gets locked.
+On MySQL and MariaDB the lock's name is the hash as bare unsigned hex, with no prefix
+(`813e4046e5b48a46` for `wallet:abc`) - the name the server shows for a held lock.
 
 ### Wiring up a backend
 
@@ -209,7 +202,7 @@ locks = PostgresKeyedLockProvider(
 ```
 
 A provider is a plain object you construct and hand to whatever needs it — there is no registry
-to declare it in and nothing discovers it. `locks.close()` does nothing, as in Java: a lease still
+to declare it in and nothing discovers it. `locks.close()` does nothing: a lease still
 open stays held until it is released or its `max_hold` passes. The engine is yours — you created
 it, so you dispose it — and the order matters: let the leases end before disposing the pool they
 are holding connections from.
@@ -253,13 +246,13 @@ connections held for the length of a lease.
 ### How the SQL backends wait
 
 Not in one unbounded call. An unbounded `pg_advisory_lock` or `GET_LOCK` parks inside a socket
-read that nothing can interrupt, so a shutdown would hang on it. Both ports wait in **5-second
-segments** instead.
+read that nothing can interrupt, so a shutdown would hang on it. The SQL providers wait in
+**5-second segments** instead.
 
 Three consequences:
 
-- **In Java, an interrupt stops a waiting `acquire` within 5 seconds.** Python has no thread
-  interrupt, so nothing can stop a waiting `acquire` here - on any backend. Code that must be
+- **Nothing can stop a waiting `acquire`.** Python has no way to interrupt another thread, so
+  a waiting `acquire` runs until it gets the lock - on any backend. Code that must be
   able to stop waiting should call `try_acquire` with a bounded `max_wait`, in a loop that checks
   its own stop flag. This is a limit of the language, not a choice.
 - **Fairness is best-effort.** Within a segment the waiter is genuinely queued inside the
@@ -288,18 +281,16 @@ session (MySQL 26.7, MariaDB 12.2):
 | 1.5s | **2.01s** | 1.50s |
 
 So `try_acquire(key, timedelta(milliseconds=250), ...)` on MySQL is a single try, and a 500 ms
-wait lasts a second. The same happens in Java: both ports send the same value, the milliseconds
-over 1000 as a decimal (`0.5`), which is what Java's driver puts on the wire.
+wait lasts a second. The framework sends the wait as a decimal number of seconds (`0.5`).
 
 The type matters. Sent as a float (`0.5e0`), MySQL rounds half to even, and the 500 ms wait
-becomes no wait at all - which is what this port did until `EKB-0265`.
+becomes no wait at all - a mistake this framework once made.
 
 ## The watchdog is one thread, not one per hold
 
-Each outermost hold gets a watchdog that force-releases at `max_hold`. Java uses
-`Thread.ofVirtual()` per hold, which is effectively free - a hundred thousand of them fire 48 ms
-late. A `threading.Timer` is a real OS thread, so this port keeps **one** watchdog thread holding
-a heap of deadlines, waiting until the earliest is due.
+Each outermost hold gets a watchdog that force-releases at `max_hold`. A timer per hold would be
+the simple way, but a `threading.Timer` is a real operating-system thread, so this framework
+keeps **one** watchdog thread holding a heap of deadlines, waiting until the earliest is due.
 
 | 1,000 held locks | register | median late | threads | memory |
 | --- | --- | --- | --- | --- |
