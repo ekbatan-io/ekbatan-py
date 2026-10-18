@@ -68,7 +68,7 @@ gathered so a reader finds them. Maintainer files keep their Java comparisons: `
 | B1 | Inventory every Java/jOOQ/Gradle/Maven mention on the website and in the `docs/` copies, each marked remove / keep (working together) | B | done (`docs/website-nojava-inventory.md`, `EKB-0346`) |
 | B2 | Rewrite: each feature explained on its own terms; the working-together facts gathered in one place, linked where needed | B | done (`EKB-0336`-`EKB-0344`) |
 | B3 | Website polish ("extra love"): read every changed page rendered, desktop and phone width; build passes; docs/website in sync | A+B | A: done for the schemagen page (`EKB-0329`); B: done (`EKB-0344`, `EKB-0345`) |
-| C | Merge both tracks; targeted tests, lint, examples, site build; full suite once | both | todo |
+| C | Merge both tracks; targeted tests, lint, examples, site build; full suite once | both | done: merged with the examples' forced types (`EKB-0350`-`EKB-0351`). Full suite 3,494 passed, 3 failed; gevent 1,579 passed, the same 3 failed - two tests that did not know `converters.py`, fixed in `EKB-0348` (17 passed). The pip and Poetry examples imported the wheel `make test` installs, not the source; fixed in `EKB-0348`, then all 21 examples passed. Setup guide 9 of 9 after `EKB-0347`; lint clean; site 55 pages |
 
 ## Findings
 
