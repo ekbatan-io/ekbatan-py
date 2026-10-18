@@ -209,9 +209,11 @@ Two generators, mirroring two different Java mechanisms:
 `schemagen` starts a throwaway container, runs **your** migrations into it and reflects the
 result. Its settings are jOOQ's, in `[tool.ekbatan.schemagen]` of `pyproject.toml` (a flag wins):
 schemas, includes, excludes, and **forced types** - by column name (`include-expression`) and SQL
-type (`include-types`), to a framework helper or a SQLAlchemy type (`name`) or the user's own
-type by dotted path (`user-type`). The user's are tried first, then Ekbatan's built-in five, which
-are what every Java example's build forces. Three rules hold it together:
+type (`include-types`), to a framework helper or a SQLAlchemy type (`name`), to the user's own
+**converter** by dotted path (`converter`: any class with `from_db`/`to_db`, jOOQ's
+`userType` + `converter`), or to a library's ready-made SQLAlchemy type (`sqlalchemy-type`, a
+convenience only). The user's are tried first, then Ekbatan's built-in five, which are what every
+Java example's build forces. Four rules hold it together:
 
 - **Forcing is what makes the schema right.** A `UUID` reflected from PostgreSQL renders as
   `CHAR(32)` on MySQL - hex with the hyphens stripped, which no Java service can join against.
@@ -219,8 +221,16 @@ are what every Java example's build forces. Three rules hold it together:
   is forced by name - only `CHAR(36)`, only on MySQL and MariaDB, as Java's build does.
 - **Every other type is written faithfully** (`schemagen/_types.py`): a generic SQLAlchemy type
   where one says the same, the dialect's own type imported from its dialect module where not,
-  and nothing reflection merely decorates (MariaDB's `BIGINT(20)` display width). Keys,
-  indexes, checks and defaults come too, so `create_all` builds what the migrations built.
+  and nothing reflection merely decorates (MariaDB's `BIGINT(20)` display width). A type
+  SQLAlchemy has no class for (PostgreSQL `xml`, MariaDB `INET6`, pgvector's `vector(3)`) is
+  `sql_type("<as the database spells it>")`, never `NullType()`. Keys, indexes, checks and
+  defaults come too, so `create_all` builds what the migrations built.
+- **A converter keeps the column's type.** It is written `converted(<impl>, Conv())`, where
+  `<impl>` is what the column would be without it (the next matching non-converter forced type,
+  else the type table). `ekbatan.schema.Converted` passes `None` through, and keys SQLAlchemy's
+  statement cache on the converter itself (identity for an unhashable one), never on its class -
+  `tests/unit/test_schema_converters.py` shows why. Converter and `sqlalchemy-type` paths are
+  imported before any database starts, so a typo fails first.
 - **Every type is proven on a real database** - `tests/integration/test_schemagen_types.py`
   generates, imports, `create_all`s and round-trips each one on all four databases. A new type
   rule gets a case there.

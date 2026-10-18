@@ -1114,9 +1114,30 @@ asked what Java does about `scheduled_tasks`.
 > **chosen** - Java's step is jOOQ in the build script; this is the same job for SQLAlchemy, with jOOQ's settings and forced types read from `[tool.ekbatan.schemagen]`. Each call is in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md), "schemagen with forced types".
 
 The settings are jOOQ's - schemas, includes, excludes, forced types matched by column name and by
-SQL type, a user type - and so are the built-in forced types, which are the ones every Java
-example's build copies. [`docs/database/schemagen.md`](docs/database/schemagen.md) has the table,
-setting by setting. Where the output differs:
+SQL type, a converter - and so are the built-in forced types, which are the ones every Java
+example's build copies. The user-facing page, [`docs/database/schemagen.md`](docs/database/schemagen.md),
+explains them without Java; the mapping, setting by setting, is here:
+
+| Java (`generateJooqClasses`, `<generator>`) | here |
+| --- | --- |
+| `migrationLocations` | `migrations` |
+| `outputDirectory`, `basePackageName` | `out` |
+| `jooq { withContainer { image } }` | `image` |
+| `schemas`, `<inputSchema>` | `schemas` (the connection's own schema is always read) |
+| `outputSchemaToDefault` | always: the connection's own schema is written unqualified |
+| `<includes>`, `<excludes>` | `includes`, `excludes` |
+| `includeFlywayTable(false)` | always: migration history tables are never generated |
+| `database.withForcedTypes(ForcedType()...)` | `[[tool.ekbatan.schemagen.forced-types]]` |
+| `.withName("...")` | `name = "..."` |
+| `.withUserType(...)` + `.withConverter(...)` | `converter = "..."`: a plain class with `from_db`/`to_db`, wrapped around the column's own type as `converted(<type>, Converter())` |
+| a ready-made jOOQ `Binding` | `sqlalchemy-type = "..."`: a library's SQLAlchemy type (named `user-type` for a day, `EKB-0328` renamed it) |
+| `.withIncludeExpression(...)` | `include-expression = "..."` |
+| `.withIncludeTypes(...)` | `include-types = "..."` |
+| `.withExcludeExpression`, `.withExcludeTypes`, `.withNullability` | `exclude-expression`, `exclude-types`, `nullability` |
+| the forced types every example copies | built in; `default-forced-types = false` to drop them |
+| Gradle reruns the task when a migration changes | Make reruns it; the module checks its fingerprint on import |
+
+Where the output differs:
 
 - **SQLAlchemy `Table` objects, not record classes.** One module, `schema.py`; a table in another
   schema is exported as `SCHEMA_TABLE` rather than in a package of its own.
@@ -1131,8 +1152,14 @@ setting by setting. Where the output differs:
 - **An enum is `Enum("a", "b")`** with string values; jOOQ generates an enum class.
 - **Views go in a second `view_metadata`**, so `create_all` does not create a table by a view's
   name. jOOQ generates them beside the tables.
-- **A type the driver cannot read is `NullType()` with a note**, where jOOQ uses `Object` with a
-  warning.
+- **A type SQLAlchemy has no class for is `sql_type("<the database's spelling>")`**, which
+  `create_all` builds and which reads what the driver gives (usually `str`), where jOOQ uses
+  `Object` with a warning. Before `EKB-0328` it was `NullType()` with a note, which `create_all`
+  could not build.
+- **A converter is wrapped around the column's own type**, `converted(NUMERIC(...), Money())`,
+  and receives what the column would give without it - `timestamp_column()`'s aware UTC
+  `datetime` on a timestamp, for example. jOOQ's converter receives the JDBC type of the
+  column; the effect is the same, the layering is explicit here.
 - **The module checks a fingerprint of the migrations on import**, because nothing in Python
   rebuilds it before the application runs, as Gradle does.
 

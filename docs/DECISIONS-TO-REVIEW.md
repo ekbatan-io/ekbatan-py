@@ -591,6 +591,24 @@ java, so camel case". Ledger: [parity-fix/J-json-domain.md](parity-fix/J-json-do
 | a `datetime` with no zone given to a model or bound to a column is taken as UTC, not refused | Java's `Instant` has no zone-less form, so there is no Java behaviour to copy; refusing would break every `datetime(2026, 1, 1)` in tests and scripts | - |
 | `timestamp_column()` is now a type that converts on the way in and out; the framework also converts explicitly in its own row mapping | so a table declared with a plain `DateTime` (a hand-written schema, the test fixture's `wallets`) reads back aware too | - |
 
+## schemagen converters (`EKB-0328`-)
+
+Track A of [CONVERTER-AND-WEBSITE-LEDGER.md](CONVERTER-AND-WEBSITE-LEDGER.md), 2026-10-18,
+unattended. The design was agreed; these are the calls made while building it.
+
+| decision | why | what Java does |
+| --- | --- | --- |
+| SQLAlchemy's statement cache keys a `converted()` type on the converter object itself (its own `==`/hash; a plain class is equal only to itself), and on identity when it cannot be hashed (a plain `@dataclass`) | keyed on the class alone, two converters of one class with different state shared a statement: `Plus(10)` read 102 instead of 110 (measured). An unhashable converter would otherwise raise at query time | jOOQ has no statement cache of this kind |
+| the cache-key override is SQLAlchemy's private `_static_cache_key` | the public route keys on `__init__` arguments and fails on an unhashable converter; the override is pinned by `tests/unit/test_schema_converters.py` | - |
+| `Converter[DbT, UserT]` is a `Protocol`, usable as an optional base | any object with `from_db`/`to_db` works, as asked; subclassing it still lets mypy flag a missing method and a wrong `DbT` (checked with `mypy --strict`) | `Converter<T, U>` is an interface you must implement |
+| a converter wraps what the column would be without it: the next matching forced type that is not a converter, else the type table | so a converter on a `TIMESTAMP` receives `timestamp_column()`'s aware UTC `datetime` on every database, the value the docs' mapping table lists; a second matching converter is not stacked | the converter receives the JDBC value of the column's own type |
+| a converter path may name a class (instantiated, with arguments if given), a factory function, or a converter object made once in a module | the same three forms `user-type` took; a TypeEngine given as a converter, or a converter given as `sqlalchemy-type`, is refused naming the right key | `withConverter` names a class |
+| `sql_type(...)` uses the database's own spelling, lower case as reported (`xml`, `inet6`, `vector(3)`) | `create_all` then builds exactly that, and the reflected type round-trips (tested on PostgreSQL, MariaDB, pgvector) | jOOQ maps it to `Object` |
+| `NullType()` and its note survive only for `render()` on tables built by hand with no known spelling | a real run always has the database's spelling | - |
+| the mapping tables on the website are three short columns with notes underneath, and wrap on phones (a page-scoped style) | the site's tables are `max-content` wide; the first draft put the Python column off screen at desktop width. The shared layout was not touched, to stay out of Track B's way | - |
+| the Java build-setting table moved from the schemagen page to `DIVERGENCE.md` | the user wants the website free of Java; the mapping is still useful to a maintainer | - |
+| `docs/getting-started.md` and `learn/install.mdx` keep their one Java sentence about schemagen | they mention neither `user-type` nor `NullType`; removing Java from them is Track B's, and editing them here would collide | - |
+
 ## Noticed in the Java, not acted on
 
 - **`RedisKeyedLockProvider` does not wrap a Redis failure** (found by parity group L,

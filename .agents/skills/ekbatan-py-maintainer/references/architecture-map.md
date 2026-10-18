@@ -21,12 +21,13 @@ src/ekbatan/
   repository.py      Repository, ModelRepository, EntityRepository, RepositoryRegistry
   persistence.py     DatabaseRegistry, TransactionManager, Transaction
   config.py          DataSourceConfig, ShardConfig, ShardingConfig
-  schema.py          the framework's tables, and the column helpers
+  schema.py          the framework's tables, the column helpers, Converter/converted()/sql_type()
   errors.py          the exception hierarchy
   clock.py           Clock, SystemClock, VirtualClock
   migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
   schemagen/         table definitions from a migrated database: _config (pyproject, forced
-                     types), _types (the type table), _reflect, _render
+                     types: name, converter, sqlalchemy-type), _types (the type table; an
+                     unknown type is sql_type("...")), _reflect, _render
   codegen.py         typed builders, generated per model
   streaming.py       ActionEvent - the consumer-side view of an outbox row
   accounting.py      statement counting, so cost claims are checkable

@@ -2,8 +2,10 @@
 layout: ../../layouts/DocLayout.astro
 title: schemagen
 activeSection: reference
-lead: "Table definitions that cannot drift from the database, because they are generated from it: start a throwaway database, run your migrations into it, read the result, write `schema.py`. Java does this with jOOQ in the build; this is the same job, configured the same way."
+lead: "schemagen writes <code>schema.py</code> for you, from your migrations. It starts a throwaway database, runs your migrations into it, reads the tables back, and writes one Python module with a SQLAlchemy <code>Table</code> for each. The module comes from the real database, so it cannot drift from it."
 ---
+
+import DialectPicker from "../../components/DialectPicker.astro";
 
 ```
 uv add --dev "ekbatan[codegen]"
@@ -21,56 +23,291 @@ image = "postgres:17-alpine"
 uv run python -m ekbatan.schemagen
 ```
 
+## What you get
+
+From this migration:
+
+```sql
+CREATE TABLE orders (
+    id UUID PRIMARY KEY,
+    amount NUMERIC(19, 4) NOT NULL,
+    note TEXT,
+    created_date TIMESTAMP NOT NULL
+);
+```
+
+schemagen writes:
+
+```python
+ORDERS = Table(
+    "orders",
+    metadata,
+    Column("id", uuid_column(), primary_key=True),
+    Column("amount", NUMERIC(precision=19, scale=4), nullable=False),
+    Column("note", TEXT()),
+    Column("created_date", timestamp_column(), nullable=False),
+)
+```
+
+Import `ORDERS` and query it like any SQLAlchemy table. Every column has a type, and every type
+is listed in [the default mapping](#the-default-mapping) below. To get your own class back from
+a column, such as a `Money` instead of a `Decimal`, [write a converter](#write-your-own-converter).
+
 ## Settings
 
-They live in `pyproject.toml`, under `[tool.ekbatan.schemagen]` - where a Python project keeps
-build-time settings, as Java keeps jOOQ's in `build.gradle.kts` or `pom.xml`. A flag on the
-command wins over the file. Paths in the file are relative to the file.
+Settings go in `pyproject.toml`, under `[tool.ekbatan.schemagen]`. A flag on the command wins
+over the file. Paths in the file are relative to the file.
 
 | key | flag | default | what it is |
 | --- | --- | --- | --- |
 | `migrations` | `--migrations` | - | your migrations directory |
 | `out` | `--out` | - | the module to write |
-| `image` | `--image` | `postgres:17-alpine` | the throwaway database: `postgres:*`, `mysql:*`, `mariadb:*`, or `sqlite` (a temporary file, no container) |
-| `url` | `--url` | - | an existing, empty database to use instead |
-| `schemas` | `--schema` (repeat it) | `[]` | other schemas (MySQL: databases) to read too |
-| `includes` | `--include` | `".*"` | tables to generate, a regular expression |
-| `excludes` | `--exclude` | none | tables to leave out, a regular expression |
+| `image` | `--image` | `postgres:17-alpine` | the throwaway database |
+| `url` | `--url` | - | use this database instead |
+| `schemas` | `--schema`, repeated | `[]` | more schemas to read |
+| `includes` | `--include` | `".*"` | tables to generate |
+| `excludes` | `--exclude` | none | tables to leave out |
 | `views` | `--no-views` | `true` | generate the views |
-| `default-forced-types` | `--no-default-forced-types` | `true` | apply Ekbatan's built-in forced types |
-| `forced-types` | - | `[]` | your forced types, below |
-| - | `--config` | `./pyproject.toml` | another TOML file holding the table |
+| `default-forced-types` | `--no-default-forced-types` | `true` | the built-in forced types |
+| `forced-types` | - | `[]` | your forced types |
+| - | `--config` | `./pyproject.toml` | another TOML file |
 
-An unknown key is an error, so a typo does not silently do nothing. Keep `url` out of a
-committed file if it has a password; pass it with `--url`. schemagen never prints it.
+`image` is `postgres:*`, `mysql:*`, `mariadb:*`, or `sqlite` (a temporary file, no container).
+In MySQL and MariaDB, a schema in `schemas` is a database. `includes` and `excludes` are
+regular expressions over table names. Forced types are [below](#forced-types).
 
-## Java's build, and the setting here
+An unknown key is an error, so a typo does not silently do nothing. `url` must point at an empty
+database. Keep it out of a committed file if it has a password; pass it with `--url`. schemagen
+never prints it.
 
-| Java (`generateJooqClasses`, `<generator>`) | here |
-| --- | --- |
-| `migrationLocations` | `migrations` |
-| `outputDirectory`, `basePackageName` | `out` |
-| `jooq { withContainer { image } }` | `image` |
-| `schemas`, `<inputSchema>` | `schemas` (the connection's own schema is always read) |
-| `outputSchemaToDefault` | always: the connection's own schema is written unqualified |
-| `<includes>`, `<excludes>` | `includes`, `excludes` |
-| `includeFlywayTable(false)` | always: migration history tables are never generated |
-| `database.withForcedTypes(ForcedType()...)` | `[[tool.ekbatan.schemagen.forced-types]]` |
-| `.withName("...")` | `name = "..."` |
-| `.withUserType(...)` + `.withConverter(...)` | `user-type = "..."` - a `TypeDecorator` is both |
-| `.withIncludeExpression(...)` | `include-expression = "..."` |
-| `.withIncludeTypes(...)` | `include-types = "..."` |
-| `.withExcludeExpression`, `.withExcludeTypes`, `.withNullability` | `exclude-expression`, `exclude-types`, `nullability` |
-| the forced types every example copies | built in; `default-forced-types = false` to drop them |
-| Gradle reruns the task when a migration changes | Make reruns it; the module checks its fingerprint on import |
+The connection's own schema is always read, and written without a schema name, so the same
+module works whatever the database is called. The migration history table is never generated.
 
-## Forced types
+## The default mapping
 
-A forced type picks columns and says what type they get - jOOQ's `forcedTypes`, the same rules:
+For each database: the column type in your migration, what `schema.py` writes for it, and the
+Python value you read back. Each row is checked on a real database by the test suite: generated,
+imported, built again by `metadata.create_all`, and a value written and read back.
+
+<div class="schemagen-mapping">
+
+<style>{`
+    /* The mapping tables fit a phone: cells wrap rather than scroll, so the Python value
+       column stays in view. Elsewhere tables keep the site's sideways scroll. The wrapper
+       also bounds the sticky database picker to this section. */
+    .schemagen-mapping {
+        display: block;
+    }
+    @media (max-width: 640px) {
+        .schemagen-mapping .table-scroll-wrap table,
+        .schemagen-mapping .table-scroll-wrap thead,
+        .schemagen-mapping .table-scroll-wrap tbody {
+            width: 100%;
+        }
+        .schemagen-mapping th,
+        .schemagen-mapping td {
+            padding: 0.4rem 0.45rem;
+            font-size: 0.78rem;
+        }
+        .schemagen-mapping td code {
+            overflow-wrap: anywhere;
+        }
+    }
+`}</style>
+
+
+<DialectPicker />
+
+<div data-db="pg">
+
+| SQL column | `schema.py` | Python value |
+| --- | --- | --- |
+| `SMALLINT`, `INTEGER`, `BIGINT` | `SMALLINT()`, `INTEGER()`, `BIGINT()` | `int` |
+| `NUMERIC(p, s)`, `DECIMAL(p, s)` | `NUMERIC(precision=p, scale=s)` | `Decimal` |
+| `REAL` | `REAL()` | `float` |
+| `DOUBLE PRECISION` | `DOUBLE_PRECISION()` | `float` |
+| `BOOLEAN` | `BOOLEAN()` | `bool` |
+| `CHAR(n)`, `VARCHAR(n)` | `CHAR(length=n)`, `VARCHAR(length=n)` | `str` |
+| `TEXT` | `TEXT()` | `str` |
+| `CITEXT` | `postgresql.CITEXT()` | `str` |
+| `BYTEA` | `LargeBinary()` | `bytes` |
+| `UUID` | `uuid_column()` | `uuid.UUID` |
+| `JSONB` | `json_column()` | `dict`, `list` |
+| `JSON` | `JSON(none_as_null=True)` | `dict`, `list` |
+| `TIMESTAMP`, `TIMESTAMP(p)` | `timestamp_column()` | `datetime` (UTC) |
+| `TIMESTAMPTZ` | `TIMESTAMP(timezone=True)` | `datetime` |
+| `DATE` | `DATE()` | `date` |
+| `TIME`, `TIMETZ` | `TIME()`, `TIME(timezone=True)` | `time` |
+| `TIME(p)` | `postgresql.TIME(precision=p)` | `time` |
+| `INTERVAL` | `postgresql.INTERVAL()` | `timedelta` |
+| `TEXT[]`, `INTEGER[]`, ... | `postgresql.ARRAY(TEXT())`, ... | `list` |
+| `INET` | `postgresql.INET()` | `IPv4Address`, `IPv6Address` |
+| `CIDR` | `postgresql.CIDR()` | `IPv4Network`, `IPv6Network` |
+| `MACADDR`, `MONEY`, `BIT(n)`, ... | `postgresql.MACADDR()`, ... | `str` |
+| `INT4RANGE`, `TSRANGE`, ... | `postgresql.INT4RANGE()`, ... | `Range` |
+| `OID` | `postgresql.OID()` | `int` |
+| an enum type | `Enum("happy", "sad", name="mood")` | `str` |
+| `xml`, `point`, `vector(3)`, ... | `sql_type("xml")`, ... | `str` |
+
+- A JSON column reads whatever the JSON holds: a `dict`, a `list`, a number or a string.
+- `timestamp_column()` reads a `datetime` in UTC, with its zone set. A `TIMESTAMPTZ` reads a
+  `datetime` with its zone set too, and a note suggests plain `TIMESTAMP`.
+- `INET` and `CIDR` values come from Python's `ipaddress` module. `Range` is
+  `sqlalchemy.dialects.postgresql.Range`.
+- The `MACADDR` row also covers `MACADDR8`, `VARBIT(n)` and `TSVECTOR`.
+- An enum type is one made with `CREATE TYPE mood AS ENUM ('happy', 'sad')`.
+- The last row is any type SQLAlchemy has no class for, written as PostgreSQL spells it. Its
+  value is what the driver gives, usually a `str`.
+
+</div>
+<div data-db="mysql">
+
+| SQL column | `schema.py` | Python value |
+| --- | --- | --- |
+| `SMALLINT`, `INT`, `BIGINT` | `SMALLINT()`, `INTEGER()`, `BIGINT()` | `int` |
+| `TINYINT`, `MEDIUMINT` | `mysql.TINYINT()`, `mysql.MEDIUMINT()` | `int` |
+| `INT UNSIGNED`, ... | `mysql.INTEGER(unsigned=True)`, ... | `int` |
+| `BOOLEAN`, `TINYINT(1)` | `BOOLEAN()` | `bool` |
+| `DECIMAL(p, s)`, `NUMERIC(p, s)` | `DECIMAL(precision=p, scale=s)` | `Decimal` |
+| `FLOAT` | `FLOAT()` | `float` |
+| `DOUBLE`, `REAL` | `DOUBLE()` | `float` |
+| `BIT(n)` | `mysql.BIT(length=n)` | `int` |
+| `CHAR(n)`, `VARCHAR(n)` | `CHAR(length=n)`, `VARCHAR(length=n)` | `str` |
+| `CHAR(36)` named `id`, `*_id` | `uuid_column()` | `uuid.UUID` |
+| `TEXT` | `TEXT()` | `str` |
+| `TINYTEXT`, `LONGTEXT`, ... | `mysql.TINYTEXT()`, ... | `str` |
+| `VARCHAR(10) CHARACTER SET latin1` | `mysql.VARCHAR(..., charset="latin1")` | `str` |
+| `BINARY(n)`, `VARBINARY(n)` | `BINARY(length=n)`, `VARBINARY(length=n)` | `bytes` |
+| `BLOB` | `BLOB()` | `bytes` |
+| `TINYBLOB`, `LONGBLOB`, ... | `mysql.TINYBLOB()`, ... | `bytes` |
+| `JSON` | `json_column()` | `dict`, `list` |
+| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime` (UTC) |
+| `DATE` | `DATE()` | `date` |
+| `TIME` | `TIME()` | `time` |
+| `TIME(p)` | `mysql.TIME(fsp=p)` | `time` |
+| `YEAR` | `mysql.YEAR()` | `int` |
+| `ENUM('NEW', 'DONE')` | `Enum("NEW", "DONE")` | `str` |
+| `SET('a', 'b')` | `mysql.SET("a", "b")` | `set` |
+
+- `timestamp_column()` reads a `datetime` in UTC, with its zone set. A bare `DATETIME` and
+  MySQL's `TIMESTAMP` type get a note saying how they differ from `DATETIME(6)`.
+- The `CHAR(36)` row is a guess, and a narrow one - see the built-in forced types below.
+- A character set or a collation of its own makes the column MySQL's own `mysql.VARCHAR`, with
+  both written out.
+- A type SQLAlchemy has no class for is written as MySQL spells it, `sql_type("...")`. Its value
+  is what the driver gives.
+
+</div>
+<div data-db="mariadb">
+
+| SQL column | `schema.py` | Python value |
+| --- | --- | --- |
+| `SMALLINT`, `INT`, `BIGINT` | `SMALLINT()`, `INTEGER()`, `BIGINT()` | `int` |
+| `TINYINT`, `MEDIUMINT` | `mysql.TINYINT()`, `mysql.MEDIUMINT()` | `int` |
+| `INT UNSIGNED`, ... | `mysql.INTEGER(unsigned=True)`, ... | `int` |
+| `BOOLEAN`, `TINYINT(1)` | `BOOLEAN()` | `bool` |
+| `DECIMAL(p, s)`, `NUMERIC(p, s)` | `DECIMAL(precision=p, scale=s)` | `Decimal` |
+| `FLOAT` | `FLOAT()` | `float` |
+| `DOUBLE`, `REAL` | `DOUBLE()` | `float` |
+| `BIT(n)` | `mysql.BIT(length=n)` | `int` |
+| `CHAR(n)`, `VARCHAR(n)` | `CHAR(length=n)`, `VARCHAR(length=n)` | `str` |
+| `UUID` | `UUID()` | `uuid.UUID` |
+| `CHAR(36)` named `id`, `*_id` | `uuid_column()` | `uuid.UUID` |
+| `TEXT` | `TEXT()` | `str` |
+| `TINYTEXT`, `LONGTEXT`, ... | `mysql.TINYTEXT()`, ... | `str` |
+| `VARCHAR(10) CHARACTER SET latin1` | `mysql.VARCHAR(..., charset="latin1")` | `str` |
+| `BINARY(n)`, `VARBINARY(n)` | `BINARY(length=n)`, `VARBINARY(length=n)` | `bytes` |
+| `BLOB` | `BLOB()` | `bytes` |
+| `TINYBLOB`, `LONGBLOB`, ... | `mysql.TINYBLOB()`, ... | `bytes` |
+| `JSON` | `json_column()` | `dict`, `list` |
+| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime` (UTC) |
+| `DATE` | `DATE()` | `date` |
+| `TIME` | `TIME()` | `time` |
+| `TIME(p)` | `mysql.TIME(fsp=p)` | `time` |
+| `YEAR` | `mysql.YEAR()` | `int` |
+| `ENUM('NEW', 'DONE')` | `Enum("NEW", "DONE")` | `str` |
+| `SET('a', 'b')` | `mysql.SET("a", "b")` | `set` |
+| `INET6`, ... | `sql_type("inet6")`, ... | `str` |
+
+- `timestamp_column()` reads a `datetime` in UTC, with its zone set. A bare `DATETIME` and
+  the `TIMESTAMP` type get a note saying how they differ from `DATETIME(6)`.
+- MariaDB stores `JSON` as `LONGTEXT` with a `json_valid` check. schemagen reads the check and
+  writes `json_column()`.
+- MariaDB's own `UUID` type needs no guess. The `CHAR(36)` row is the same narrow guess as on
+  MySQL.
+- The last row is any type SQLAlchemy has no class for, written as MariaDB spells it. Its value
+  is what the driver gives - a `str` for `INET6`.
+
+</div>
+<div data-db="sqlite">
+
+| SQL column | `schema.py` | Python value |
+| --- | --- | --- |
+| `INTEGER`, `BIGINT`, `SMALLINT` | `INTEGER()`, `BIGINT()`, `SMALLINT()` | `int` |
+| `BOOLEAN` | `BOOLEAN()` | `bool` |
+| `NUMERIC(p, s)` | `NUMERIC(precision=p, scale=s)` | `Decimal` |
+| `REAL`, `FLOAT`, `DOUBLE` | `REAL()`, `FLOAT()`, `DOUBLE()` | `float` |
+| `CHAR(n)`, `VARCHAR(n)` | `CHAR(length=n)`, `VARCHAR(length=n)` | `str` |
+| `TEXT` | `TEXT()` | `str` |
+| `BLOB` | `BLOB()` | `bytes` |
+| `JSON` | `json_column()` | `dict`, `list` |
+| `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime` (UTC) |
+| `DATE` | `DATE()` | `date` |
+| `TIME` | `TIME()` | `time` |
+
+- `timestamp_column()` reads a `datetime` in UTC, with its zone set.
+
+SQLite has no uuid type, so a uuid column is text, and schemagen cannot tell. Say which columns
+hold uuids:
 
 ```toml
 [[tool.ekbatan.schemagen.forced-types]]
-user-type = "myapp.types.Money"
+name = "uuid_column"
+include-types = "CHAR\\(32\\)"
+include-expression = ".*\\.id|.*_id"
+```
+
+</div>
+
+</div>
+
+### Types SQLAlchemy has no class for
+
+Some column types have no SQLAlchemy class: PostgreSQL's `xml` and `point`, MariaDB's `INET6`,
+pgvector's `vector(3)`. schemagen writes them as the database spells them:
+
+```python
+Column("doc", sql_type("xml"))
+```
+
+`metadata.create_all` builds the same column, and the value is what the database driver gives,
+usually a `str`. To get your own class, wrap a converter around it - see
+[the pgvector example](#a-pgvector-column-without-the-pgvector-package).
+
+### Ekbatan's built-in forced types
+
+A few columns are not written as their plain type. They get one of Ekbatan's column helpers
+instead, so that the value is the same on every database:
+
+| columns | become | on |
+| --- | --- | --- |
+| `TIMESTAMP`, `DATETIME` (any precision, no zone) | `timestamp_column()` | all |
+| `JSONB` | `json_column()` | PostgreSQL |
+| `JSON` | `json_column()` | MySQL, MariaDB, SQLite |
+| `UUID` | `uuid_column()` | PostgreSQL |
+| `CHAR(36)` named `.*\.id\|.*_id` | `uuid_column()` | MySQL, MariaDB |
+
+The last one is a guess, and a narrow one: nothing in MySQL says a `CHAR(36)` holds a uuid. So
+it takes only that exact type, and only under an id-like name. A `VARCHAR(36)` stays text.
+MariaDB's own `UUID` type needs no guess. Turn all five off with `default-forced-types = false`.
+
+## Forced types
+
+A forced type picks some columns and says what they become:
+
+```toml
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "myapp.converters.MoneyConverter"
 include-expression = ".*\\.amount"
 
 [[tool.ekbatan.schemagen.forced-types]]
@@ -80,107 +317,206 @@ include-types = "MEDIUMTEXT|LONGTEXT"
 
 **What the columns become** - exactly one of:
 
-- `name`: one of the framework's helpers (`uuid_column`, `json_column`, `timestamp_column`) or a
-  SQLAlchemy type written as in Python - `Text`, `String(36)`, `Numeric(19, 4)`,
+- `name`: one of Ekbatan's helpers (`uuid_column`, `json_column`, `timestamp_column`), or a
+  SQLAlchemy type written as in Python: `Text`, `String(36)`, `Numeric(19, 4)`,
   `postgresql.INET`, `mysql.TINYINT(unsigned=True)`.
-- `user-type`: your own type by dotted path - `myapp.types.Money`, `myapp.types:Money`, or with
-  arguments, `myapp.types.Money(4)`. A class (usually a `TypeDecorator`), a function returning a
-  type, or a type instance. schemagen imports it to check it, so keep it in a module that does
-  not import the generated schema.
+- `converter`: your own class with `from_db` and `to_db`. The column keeps its type, and your
+  class turns its values into yours. See [Write your own converter](#write-your-own-converter).
+- `sqlalchemy-type`: a ready-made SQLAlchemy type from a library. See
+  [When to use sqlalchemy-type](#when-to-use-sqlalchemy-type).
 
-**Which columns** - regular expressions that must match the whole text, as jOOQ's do:
+**Which columns** - regular expressions. Each must match the whole text:
 
-- `include-expression` - the column name, tried as `column`, `table.column` and, for a schema
-  in `schemas`, `schema.table.column`. Case matters. Java's `.*\.id|.*_id` works unchanged.
-- `include-types` - the column's type, tried in each spelling: the database's own
-  (`character varying(36)`, `tinyint(1)`, `int unsigned`), SQLAlchemy's (`VARCHAR(36)`), each
-  with and without its arguments, and the short names (`TIMESTAMP`, `TIMESTAMPTZ`). Case does
-  not matter.
-- `exclude-expression`, `exclude-types` take columns back out; `nullability` is `ALL` (the
+- `include-expression`: the column name, tried as `column`, as `table.column`, and, for a schema
+  in `schemas`, as `schema.table.column`. Case matters. `.*\.id|.*_id` means "`id`, or anything
+  ending in `_id`".
+- `include-types`: the column type, tried in every spelling: the database's own
+  (`character varying(36)`, `tinyint(1)`, `int unsigned`), SQLAlchemy's (`VARCHAR(36)`), each with
+  and without its arguments, and the short names (`TIMESTAMP`, `TIMESTAMPTZ`). Case does not
+  matter.
+- `exclude-expression` and `exclude-types` take columns back out. `nullability` is `ALL` (the
   default), `NULL` or `NOT_NULL`.
 
-At least one include is required. **The first forced type that matches wins**, and yours are
-tried before Ekbatan's, as in jOOQ. A typo - a type that does not exist, a module that does not
-import - fails before any database starts, naming the forced type.
+At least one include is required. **The first forced type that matches a column wins**, and yours
+are tried before Ekbatan's. A mistake - a type that does not exist, a module that does not import,
+a class without `from_db` - fails before any database starts, and the error names the forced type.
 
-A user type, for example - Java's `userType` and `converter` in one class:
+## Write your own converter
+
+A converter is a plain class with two methods. There is no SQLAlchemy in it:
 
 ```python
-# myapp/types.py
+# myapp/converters.py
+from dataclasses import dataclass
 from decimal import Decimal
-from sqlalchemy import Numeric
-from sqlalchemy.types import TypeDecorator
 
-class Money(TypeDecorator[Decimal]):
-    impl = Numeric(19, 2)
-    cache_ok = True
+from ekbatan.schema import Converter
 
-    def process_result_value(self, value, dialect):
-        return None if value is None else Decimal(value).quantize(Decimal("0.01"))
+
+@dataclass(frozen=True)
+class Money:
+    amount: Decimal
+
+
+class MoneyConverter(Converter[Decimal, Money]):
+    def from_db(self, value: Decimal) -> Money:
+        return Money(value)
+
+    def to_db(self, value: Money) -> Decimal:
+        return value.amount
 ```
 
-### Ekbatan's built-in forced types
+Tell schemagen which columns it is for:
 
-What every Java example's build forces, built in, after yours:
+```toml
+# pyproject.toml
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "myapp.converters.MoneyConverter"
+include-expression = ".*\\.amount"
+```
 
-| columns | become | on | Java's |
-| --- | --- | --- | --- |
-| `TIMESTAMP`, `DATETIME` (any precision, no zone) | `timestamp_column()` | all | `Instant` + `InstantConverter` |
-| `JSONB` | `json_column()` | PostgreSQL | `ObjectNode` + `JSONBObjectNodeConverter` |
-| `JSON` | `json_column()` | MySQL, MariaDB, SQLite | `ObjectNode` + `JSONObjectNodeConverter` |
-| `UUID` | `uuid_column()` | PostgreSQL | jOOQ's own `UUID` |
-| `CHAR(36)` named `.*\.id\|.*_id` | `uuid_column()` | MySQL, MariaDB | `UUID` + `UuidStringConverter` |
+The column keeps its own type, and the converter is wrapped around it:
 
-The last one is a guess, and a narrow one: nothing in MySQL says a `CHAR(36)` holds a uuid, so
-only that exact type, only under an id-like name, as in Java. A `VARCHAR(36)` stays text.
-MariaDB's own `UUID` type needs no guess. SQLite has no uuid type: say which columns are uuids,
+```python
+Column("amount", converted(NUMERIC(precision=19, scale=4), MoneyConverter()), nullable=False)
+```
+
+Now the column takes and gives `Money`, in inserts, reads and comparisons alike:
+
+```python
+from decimal import Decimal
+
+from sqlalchemy import insert, select
+
+from myapp.converters import Money
+from myapp.schema import ORDERS
+
+connection.execute(
+    insert(ORDERS).values(id=order_id, amount=Money(Decimal("9.99")), created_date=now)
+)
+cheap = connection.execute(
+    select(ORDERS).where(ORDERS.c.amount < Money(Decimal("10")))
+).all()
+```
+
+### Pick the columns by name or by type
+
+By name, as above: `include-expression = ".*\\.amount"` takes every column called `amount`.
+By type, it takes every column of that type, whatever it is called:
 
 ```toml
 [[tool.ekbatan.schemagen.forced-types]]
-name = "uuid_column"
-include-types = "CHAR\\(32\\)"
-include-expression = ".*\\.id|.*_id"
+converter = "myapp.converters.MoneyConverter"
+include-types = "NUMERIC\\(19,4\\)"
 ```
 
-## The type table
+Use both to take only the columns that match both.
 
-Every column not forced is written as the SQLAlchemy type that builds the same column: a generic
-type from `sqlalchemy` where one says the same, the dialect's own type
-(`from sqlalchemy.dialects import mysql, postgresql`) where not. What only reflection adds is
-dropped - MariaDB's display widths, `BIGINT(20)`. Each row is proven on a real database: generated,
-imported, built again by `create_all`, a value written and read back
-(`tests/integration/test_schemagen_types.py`: 43 PostgreSQL types, 47 MySQL, 48 MariaDB, 18 SQLite).
+### What your converter gets
 
-| SQL | written as |
-| --- | --- |
-| `SMALLINT`, `INTEGER`, `BIGINT` | `SMALLINT()`, `INTEGER()`, `BIGINT()` |
-| MySQL `TINYINT`, `MEDIUMINT`, any `UNSIGNED` | `mysql.TINYINT()`, `mysql.INTEGER(unsigned=True)`, ... |
-| `BOOLEAN`, and MySQL's `TINYINT(1)` | `BOOLEAN()` |
-| `NUMERIC(p, s)`, `DECIMAL(p, s)` | `NUMERIC(precision=p, scale=s)`, `DECIMAL(...)` |
-| `REAL`, `DOUBLE PRECISION`, `FLOAT`, MySQL `DOUBLE` | `REAL()`, `DOUBLE_PRECISION()`, `FLOAT()`, `DOUBLE()` - all read a float |
-| `CHAR(n)`, `VARCHAR(n)`, `TEXT` | `CHAR(length=n)`, `VARCHAR(length=n)`, `TEXT()`, with any collation |
-| MySQL `TINYTEXT`, `MEDIUMTEXT`, `LONGTEXT`; a character set | `mysql.LONGTEXT()`, `mysql.VARCHAR(length=10, charset="latin1", ...)` |
-| `BYTEA` | `LargeBinary()` |
-| `BINARY(n)`, `VARBINARY(n)`, `BLOB` | `BINARY(length=n)`, `VARBINARY(length=n)`, `BLOB()` |
-| MySQL `TINYBLOB`, `MEDIUMBLOB`, `LONGBLOB` | `mysql.TINYBLOB()`, ... |
-| PostgreSQL `JSON` | `JSON(none_as_null=True)` - not forced, as in Java |
-| MariaDB `JSON` (stored as `LONGTEXT` with a `json_valid` check) | `json_column()` |
-| MariaDB `UUID` | `UUID()` |
-| `TIMESTAMPTZ` | `TIMESTAMP(timezone=True)`, with a note |
-| `DATE`, `TIME`, `TIMETZ` | `DATE()`, `TIME()`, `TIME(timezone=True)` |
-| `TIME(p)` | `postgresql.TIME(precision=p)`, `mysql.TIME(fsp=p)` |
-| MySQL `YEAR`, `BIT(n)` | `mysql.YEAR()`, `mysql.BIT(length=n)` |
-| `INTERVAL` | `postgresql.INTERVAL(...)`, with its fields and precision |
-| `ENUM(...)`, a PostgreSQL enum type | `Enum("a", "b")`, `Enum("a", "b", name="mood")` |
-| MySQL `SET(...)` | `mysql.SET("a", "b")` |
-| `TEXT[]`, `INTEGER[]`, `UUID[]` | `postgresql.ARRAY(TEXT())`, ... - with the item type |
-| `INET`, `CIDR`, `MACADDR`, `MACADDR8`, `MONEY`, `BIT`, `VARBIT`, `TSVECTOR`, ranges, `OID`, `CITEXT` | `postgresql.INET()`, ... |
-| a type SQLAlchemy cannot read (`xml`, `point`, MariaDB `INET6`) | `NullType()` and a note: force it to a type |
+- **`None` never reaches it.** A `NULL` column reads as `None`, and writing `None` writes `NULL`.
+  Your methods only see real values.
+- **`from_db` gets the value in [the default mapping](#the-default-mapping).** On a `NUMERIC`
+  column that is a `Decimal`. On a `TIMESTAMP` column it is a `datetime` in UTC, because the
+  converter wraps `timestamp_column()`: whatever the column would have been without the converter.
+- **`to_db` returns that same kind of value.**
+
+### The Converter base class is optional
+
+`Converter[Decimal, Money]` is there for type hints: your editor and mypy then check that
+`from_db` takes a `Decimal` and returns a `Money`. Any class with `from_db` and `to_db` works
+without it.
+
+A converter that takes arguments is written with them: `converter =
+"myapp.converters.MoneyConverter(4)"`. A converter object made once in your module works too:
+`converter = "myapp.converters.MONEY"`.
+
+schemagen imports your converter when it runs, to check it. So keep converters in a module that
+does not import the generated `schema.py`.
+
+### A pgvector column, without the pgvector package
+
+pgvector adds a `vector` column type to PostgreSQL. SQLAlchemy has no class for it, so schemagen
+writes `sql_type("vector(3)")`, and the value is pgvector's text, `"[0.1,0.2,0.3]"`. A converter
+makes it a list of floats.
+
+The migration:
+
+```sql
+-- migrations/V0001__items.sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE TABLE items (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    embedding vector(3) NOT NULL
+);
+```
+
+The converter:
+
+```python
+# myapp/converters.py
+class VectorConverter:
+    def from_db(self, value: str) -> list[float]:
+        return [float(x) for x in value.strip("[]").split(",")]
+
+    def to_db(self, value: list[float]) -> str:
+        return "[" + ",".join(str(x) for x in value) + "]"
+```
+
+The settings. The image is PostgreSQL with pgvector installed:
+
+```toml
+# pyproject.toml
+[tool.ekbatan.schemagen]
+image = "pgvector/pgvector:pg17"
+
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "myapp.converters.VectorConverter"
+include-types = "VECTOR.*"
+```
+
+schemagen writes:
+
+```python
+Column("embedding", converted(sql_type("vector(3)"), VectorConverter()), nullable=False)
+```
+
+Nearest first, with pgvector's `<->` distance operator:
+
+```python
+from sqlalchemy import select
+
+from myapp.schema import ITEMS
+
+nearest = connection.execute(
+    select(ITEMS.c.name).order_by(ITEMS.c.embedding.op("<->")([0.0, 0.0, 0.0])).limit(5)
+).scalars()
+```
+
+The list you pass to `.op("<->")` goes through `to_db` too. `metadata.create_all` builds the
+`vector(3)` column again, once the database has the extension (`CREATE EXTENSION vector`).
+
+## When to use sqlalchemy-type
+
+Use it when a library already ships a SQLAlchemy type for the column, such as pgvector's `Vector`
+or GeoAlchemy2's `Geometry`:
+
+```toml
+[[tool.ekbatan.schemagen.forced-types]]
+sqlalchemy-type = "pgvector.sqlalchemy.Vector(3)"
+include-types = "VECTOR.*"
+```
+
+It is a convenience, not a need. The library's type may add helpers, such as
+`embedding.l2_distance(...)`, but a converter gives you the same values without the extra
+package, as the example above shows. Write it as a dotted path, with arguments if it takes any.
+It may be a type, a function returning a type, or a type object made once in a module.
 
 ## What else is generated
 
-Enough for `metadata.create_all` to build, in a test, the database the migrations built - what jOOQ
-generates as `Keys`, `Indexes` and default values. Ekbatan uses none of it at run time.
+Enough for `metadata.create_all` to build, in a test, the database the migrations built. Ekbatan
+uses none of it at run time.
 
 - primary keys (composite ones in key order), unique constraints, foreign keys with their
   `ON DELETE`/`ON UPDATE`, checks, indexes (unique, partial, on expressions), server defaults,
@@ -190,41 +526,40 @@ generates as `Keys`, `Indexes` and default values. Ekbatan uses none of it at ru
 - **other schemas**, when listed in `schemas`: written with `schema="audit"` and exported as
   `AUDIT_ENTRIES`. When a schema holds tables and is not listed, a note says so.
 
-Not generated: database extensions (`CREATE EXTENSION citext` comes before `create_all`), and
-a foreign key to a table that is not generated (a note says so).
+Not generated: database extensions (`CREATE EXTENSION citext` comes before `create_all`), and a
+foreign key to a table that is not generated (a note says so).
 
 ## The framework's own tables
 
 `events`, `event_notifications` and `scheduled_tasks` are written as `outbox_table(metadata)`,
 `notifications_table(metadata)` and `scheduled_tasks_table(metadata)`, with their indexes from the
-migrations - not read column by column. They are a contract other services bind to. If the
-migrations differ from the helper, a note says how. `excludes = "scheduled_tasks"` leaves one
-out, as twelve of Java's Maven builds do.
+migrations. They are not read column by column, because other services read these tables and
+their shape is fixed. If your migrations differ from the helper, a note says how.
+`excludes = "scheduled_tasks"` leaves one out.
 
 ## UTC
 
-Ekbatan strongly recommends UTC everywhere and zone-less columns - see
-[Always UTC](/reference/multi-database/#always-utc). The generator keeps to it and says where a schema
-does not:
+Ekbatan strongly recommends UTC everywhere and columns without a zone - see
+[Always UTC](/reference/multi-database/#always-utc). schemagen keeps to it, and says where a schema does
+not:
 
 - `TIMESTAMP` (PostgreSQL) and `DATETIME(6)` (MySQL, MariaDB) become `timestamp_column()`:
-  stored without a zone, read back as an aware `datetime` in UTC;
-- a `TIMESTAMPTZ` keeps its zone, as Java's `OffsetDateTime` does, with a note;
-- MySQL's `TIMESTAMP` type, a bare `DATETIME`, a `TIMESTAMP(3)`: forced as in Java, with a note
-  saying what the column does differently from `DATETIME(6)`.
+  stored without a zone, read back as a `datetime` in UTC with its zone set;
+- a `TIMESTAMPTZ` keeps its zone, with a note;
+- MySQL's `TIMESTAMP` type, a bare `DATETIME`, a `TIMESTAMP(3)`: they become
+  `timestamp_column()` too, with a note saying how the column differs from `DATETIME(6)`.
 
 ## The output is gitignored
 
-Exactly as Java's `build/generated-jooq` is. A fresh clone has no `schema.py`, runs `make`, and
-gets one - the same as a fresh clone of the Java project running `./gradlew build`.
+A fresh clone has no `schema.py`. Running `make` writes one.
 
 That is the opposite of the *other* generator: `ekbatan.codegen`'s typed builders **are**
-committed. A builder is derived from source you already have; a schema is derived from a
-database you have to start.
+committed. A builder comes from source you already have; a schema comes from a database you have
+to start.
 
 ## Wire it into Make
 
-`uv` has no task runner and no dependency graph. Make fills it:
+`uv` has no task runner. Make fills the gap:
 
 ```make
 src/myapp/schema.py: $(wildcard src/myapp/migrations/*.sql) pyproject.toml
@@ -234,29 +569,26 @@ test: src/myapp/schema.py
 	uv run pytest
 ```
 
-**It starts a database when a migration or the settings change, and does nothing at all when
-they have not** - Gradle's up-to-date check, in one line. `lint` should depend on it too: mypy
-reads the generated module.
+**It starts a database when a migration or the settings change, and does nothing when they have
+not.** `lint` should depend on it too: mypy reads the generated module.
 
 ## The stale-module guard
 
-Nothing in Python runs before `python -m yourapp`, so the module checks itself: it carries a
-fingerprint of the migrations it was generated from and checks it on import. A stale module
-raises `ValidationError` saying to regenerate, instead of failing later as a missing column.
-Java gets this from Gradle, which reruns the task before it compiles.
+Nothing in Python runs before `python -m yourapp`, so the module checks itself. It carries a
+fingerprint of the migrations it came from, and checks it on import. A stale module raises
+`ValidationError` saying to regenerate, instead of failing later on a missing column.
 
 ## Notes
 
-What schemagen wants you to know is logged to `io.ekbatan.schemagen` as warnings, and the
-command prints each as `note: ...`: a type it cannot read, a zoned timestamp, a timestamp
-column unlike `DATETIME(6)`, a schema not read, a foreign key left out, a framework table that
-differs from its helper.
+What schemagen wants you to know is logged to `io.ekbatan.schemagen` as warnings, and the command
+prints each as `note: ...`: a zoned timestamp, a timestamp column unlike `DATETIME(6)`, a schema
+not read, a foreign key left out, a framework table that differs from its helper.
 
 ## Why not sqlacodegen
 
-It cannot force the per-dialect types, and a schema generated without that forcing corrupts data
-on MySQL. That is recorded in `pyproject.toml` next to the extra, so the question does not get
-re-asked.
+It cannot force the per-database types, and a schema generated without them corrupts data on
+MySQL. That is recorded in `pyproject.toml` next to the extra, so the question does not get asked
+again.
 
 ## See also
 
