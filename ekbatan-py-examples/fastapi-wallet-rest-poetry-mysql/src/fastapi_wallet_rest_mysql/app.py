@@ -18,10 +18,10 @@ is what the lock *is* - so a lease taken during a request would otherwise sit on
 connection for the duration. Size it for the maximum number of leases held at once, not for
 traffic.
 
-All three are declared on the shard member in `ekbatan.yaml`, the way Java's `application.yml`
-declares them: `primaryConfig` for requests, and `jobsConfig` and `lockConfig` beside it. The
-registry builds the first; the other two are this file's to build with `engine_for`, and this
-file's to dispose. The same file holds the namespace and turns the event handling job on.
+All three are declared on the shard member in `ekbatan.yaml`: `primaryConfig` for requests, and
+`jobsConfig` and `lockConfig` beside it. The registry builds the first; the other two are this
+file's to build with `engine_for`, and this file's to dispose. The same file holds the namespace
+and turns the event handling job on.
 """
 
 from __future__ import annotations
@@ -60,8 +60,8 @@ from .schema import EVENT_NOTIFICATIONS, EVENTS
 #: could deploy: `create_all` has no answer for a column that changed.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
-#: The service's Ekbatan settings - database layout, namespace, event handling - in the same keys
-#: as the Java examples' `application.yml`.
+#: The service's Ekbatan settings - database layout, namespace, event handling - in one file,
+#: so changing a pool or adding a shard is an edit here and not in the code.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
@@ -76,8 +76,8 @@ class Settings:
     config_file: Path = Path(os.environ.get("WALLET_CONFIG_FILE", CONFIG_FILE))
     #: Where the file's `${...}` placeholders are looked up - the url and the login.
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
-    #: Threads running job bodies. Java gets unbounded virtual threads and has no such key;
-    #: here the workers are real OS threads, so the number is chosen.
+    #: Threads running job bodies. Each worker is a real OS thread, so the number is chosen
+    #: rather than unbounded - size it for how many jobs can be due at once.
     job_workers: int = int(os.environ.get("WALLET_JOB_WORKERS", "3"))
     run_migrations: bool = os.environ.get("WALLET_MIGRATE", "1") != "0"
 
@@ -155,7 +155,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         .build()
     )
 
-    # Java's `shardingConfig.groups.getFirst().members.getFirst().configFor("lockConfig")`.
+    # The one shard member's pools, as `ekbatan.yaml` declares them.
     member = layout.groups[0].members[0]
     lock_engine = engine_for(_required(member, "lockConfig"))
     jobs_engine = engine_for(_required(member, "jobsConfig"))
@@ -191,7 +191,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                     .handlers(handlers)
                     .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
-                    # Java's DI makes this job only if `handling.enabled`; this is that check.
+                    # Off unless `handling.enabled` is set in `ekbatan.yaml`.
                     .enabled(events_config.handling.enabled)
                     .clock(running)
                     .build(),
@@ -206,7 +206,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
 
 
 def _required(member: ShardMemberConfig, name: str) -> DataSourceConfig:
-    """Java's `configFor(name).orElseThrow(...)`, naming where the setting goes."""
+    """The named pool's settings, or an error naming where the setting goes."""
     found = member.config_for(name)
     if found is None:
         raise ValueError(f"groups[0].members[0].configs.{name} is required")

@@ -110,7 +110,7 @@ re-implemented.
 
 There is no module to add — the in-process path ships in the framework. It is off until you
 register a handler and the handling job. `handling.enabled` (default off) is the switch your
-wiring reads, as Java's DI does - the job itself runs once registered, as Java's does:
+wiring reads to decide whether to register the job; once registered, the job runs:
 
 ```python
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
@@ -194,9 +194,11 @@ are automatic — see
 When the consumers are other services, a lake or a warehouse, tail the table with Debezium.
 
 **Nothing in this path is Python code, and that is the point.** The connector and the transform
-run inside Kafka Connect, in a JVM, whichever language wrote the row — so a service written here
-uses the *same* artifact a Java service uses. What this port owes the pipeline is the row
-format, and those columns are verified identical.
+run inside Kafka Connect, whichever language wrote the row. What your service owes the pipeline
+is the row in `events`, and the framework writes it the same way every time. The transforms
+come from the Ekbatan for Java project - see
+[Running beside a Java service](/reference/beside-java/#streaming-the-events) for where to get
+them.
 
 ### B.1 Set up Debezium
 
@@ -229,9 +231,9 @@ Capture only the outbox:
 }
 ```
 
-`table.include.list` is `public.events` here where the Java projects write `eventlog.events`.
-The schema is a parameter, not a rule: pass `schema="eventlog"` to `outbox_table(...)` if you
-want the two ports' tables in the same place.
+`table.include.list` is `public.events` because the framework's tables are in no schema unless
+you name one. The schema is a parameter: pass `schema="eventlog"` to `outbox_table(...)` and the
+connector lists `eventlog.events` instead.
 
 The transform **drops UPDATE rows** — including fan-out's `delivered` flip — **skips sentinel
 rows** where `event_type` is null, and encodes the row as Avro using the schemas you mount into

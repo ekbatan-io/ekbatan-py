@@ -52,10 +52,9 @@ class MoneyDepositedEvent(ModelEvent["Wallet"]):
     new_balance: Decimal
 ```
 
-The event says which model it is about, the way Java's does. `ModelEvent["Wallet"]` on the class
-line fixes the model's name once for every event of this class, and the wallet's id is passed when
-the event is made - `MoneyDepositedEvent(model_id=str(self.id), ...)`, which is Java's
-`new MoneyDepositedEvent(id, ...)`. Those two go into the outbox's `model_id` and `model_type`
+The event says which model it is about. `ModelEvent["Wallet"]` on the class line fixes the
+model's name once for every event of this class, and the wallet's id is passed when the event is
+made - `MoneyDepositedEvent(model_id=str(self.id), ...)`. Those two go into the outbox's `model_id` and `model_type`
 columns, so a consumer correlates without opening the payload.
 
 Notice what is *not* in it. The deposit endpoint also takes a `recipient`, and it is absent
@@ -108,12 +107,19 @@ sees the field types, which is the one thing Python cannot work out for itself �
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
+
+    def to_row(self, wallet: Wallet) -> dict[str, Any]:
+        return self.columns_by_field_name(wallet)
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        return self.model_by_field_name(row)
 ```
 
 That is the whole repository. `get`, `find_where`, `add`, `update`, counting and existence are
-inherited, and the mapping between the table and the dataclass is **by field name** — nothing to
-declare unless a name differs, so there is no `from_row` and no `to_row` to keep in step with
-the model.
+inherited. The mapping between a row and the model is yours to write, and when the names line up
+it is the two methods above: every field to the column of the same name. A repository without
+them is refused when it is created, so a renamed column can never quietly stop matching. Where a
+name or a shape differs, write the mapping out instead.
 
 What you add are the questions your business actually asks:
 
@@ -209,9 +215,9 @@ One row, with `event_type = 'MoneyDepositedEvent'`, `model_type = 'Wallet'` and 
 `version + 1`. Both changed inside **one** transaction — see
 [`events`](/reference/tables/events/) for what every column means.
 
-That is the JSON a Java service writes for the same event, byte for byte: Java's field names,
-and decimals as JSON numbers. This port reads every number back as a `Decimal`, so the scale
-survives.
+The keys are camelCase and decimals are JSON numbers. Every number is read back as a `Decimal`,
+so the scale survives. (A Java service built on Ekbatan writes the same text for the same event -
+see [Running beside a Java service](/reference/beside-java/#event-payloads).)
 
 ## What just happened
 
@@ -229,7 +235,7 @@ an outbox anywhere. There is no second table to remember, because you never writ
 
 ## Test it without a database
 
-An action's logic needs none. `ActionSpec` is Java's, method for method:
+An action's logic needs none. `ActionSpec` runs the action and checks what it staged and emitted:
 
 ```python
 (ActionSpec.of(DepositMoneyAction(wallets, clock))

@@ -4,14 +4,13 @@ A repository is where a query that means something to the business lives. The fr
 reads - by id, by predicate, counting, existence - are inherited, so what is left here is the
 handful of questions this application actually asks.
 
-**The mapping is written, as Java's is.** `AbstractRepository` declares `fromRecord` and
-`toRecord` abstract there, so every repository implements both; here they are `to_row` and
-`from_row` and the base refuses until they exist.
+**The mapping is written.** Every repository implements `to_row` and `from_row`, and the base
+refuses to create one until both exist.
 
 Where the names line up - which is the usual case, because a dataclass already knows its own
 fields - that is two lines saying so. It was the default until `EKB-0217`, and being the default
 is what made it magic: rename a column without renaming the field and the mapping silently
-stopped matching, where Java gets a compile error.
+stopped matching.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
         )
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
-        """Every column, named - the counterpart to Java's `toRecord`.
+        """Every column, named - the model as one row.
 
         Three of the eight are conversions rather than copies, and each is a decision about how
         the value is stored: a typed id goes in as its `uuid`, an enum as its `name` rather
@@ -71,7 +70,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
-        """And back - the counterpart to Java's `fromRecord`.
+        """And back - one row as the model.
 
         A plain mapping rather than a row is how an insert without `RETURNING` rebuilds what it
         just wrote, on a dialect that has none.
@@ -156,7 +155,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 
         The `state != DELETED` filter is spelled out because this is *your* statement. The
         inherited reads apply it for you; one you build yourself carries only what you put in
-        it, exactly as the Java repository's `.and(WALLETS.STATE.ne(...))` does.
+        it.
         """
         query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(
             WALLETS.c.state != WalletState.DELETED.name

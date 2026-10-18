@@ -308,8 +308,7 @@ reflect your schema - a thing your build does and your deployment must never do.
 
 ## 4. Configure the DB connection
 
-The framework reads its coordinates from `ekbatan.yaml`, in the same keys as the Java port's
-`application.yml`. One shard is still a sharding layout - the single-database case is the
+The framework reads its coordinates from `ekbatan.yaml`. One shard is still a sharding layout - the single-database case is the
 one-member case, which is why going to two databases later changes this file and nothing else.
 
 <div data-db="pg">
@@ -338,8 +337,8 @@ stops startup naming it. YAML, TOML, JSON and INI all work - see
 [Config files](/reference/config-files).
 
 **The url names the database and where it is - never the login.** `username` and `password` are
-fields of their own, as in the Java port: a url is logged and repeated, and one carrying a
-password is refused.
+fields of their own, because a url is logged and repeated, and one carrying a password is
+refused.
 
 **Three pools on one member.** `primaryConfig` is for requests. `jobsConfig` is the scheduler's,
 sized at least twice its worker count, because the scheduler heartbeats from a housekeeping
@@ -353,8 +352,8 @@ written are, correctly, no longer yours.
 
 ## 5. Add the migrations
 
-Plain SQL files, named `V<version>__<description>.sql` and run in version order - split as the
-Java port's examples split theirs. **The framework does not ship its tables as a bundled
+Plain SQL files, named `V<version>__<description>.sql` and run in version order - one file per
+concern, so each can be read and reviewed on its own. **The framework does not ship its tables as a bundled
 migration**: they are your tables, reviewed like every other, and the framework only says what
 shape they must have.
 
@@ -518,7 +517,7 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 </div>
 
 It starts a throwaway container, runs **your** migrations into it, reflects the result and writes a
-module of `Table` definitions - the counterpart to the Java port's jOOQ step. On MySQL and MariaDB
+module of SQLAlchemy `Table` definitions for your repositories to query. On MySQL and MariaDB
 the type forcing matters: a uuid is `CHAR(36)` there and nothing in the database says it is one.
 You rarely run this by hand; the Makefile does, when a migration changes.
 
@@ -528,7 +527,8 @@ where forced types, includes and excludes go. See [schemagen](/reference/schemag
 
 ## 7. The Makefile
 
-`uv` has no task runner and no dependency graph, which is the one real gap against Gradle.
+`uv` has no task runner and no dependency graph - nothing that knows `schema.py` comes from the
+migrations and rebuilds it when they change. A Makefile is that, in a few lines.
 
 <div data-install="uv">
 
@@ -1005,9 +1005,6 @@ wheel with each:
 | setuptools (the pip setup above) | packed | only with `[tool.setuptools.package-data]` |
 | poetry-core (`poetry new`) | only with `[[tool.poetry.include]]` | packed |
 | hatchling | only with `artifacts = ["src/wallet/schema.py"]` under `[tool.hatch.build.targets.wheel]` | packed |
-
-Java has none of this to think about: the generated classes are compiled into the jar whatever
-git ignores.
 
 ## 18. The example projects
 

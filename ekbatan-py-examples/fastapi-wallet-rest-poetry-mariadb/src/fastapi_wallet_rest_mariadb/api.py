@@ -6,7 +6,6 @@ HTTP layer that mentioned them would be one that could get them wrong.
 
 The DTOs are deliberately not the domain model. `Wallet` carries a version, timestamps and an
 event list; a client needs none of those and should not be broken by a change to any of them.
-Java's examples draw the same line with a `WalletResponse` record.
 """
 
 from __future__ import annotations
@@ -182,8 +181,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         Taking the key first means the second caller waits and then succeeds, which is what
         anyone depositing into a busy wallet actually wants.
 
-        Different wallets take different keys and do not contend at all. This is Java's
-        `try (var lease = lockProvider.acquire(...))` around the same call, written as a `with`.
+        Different wallets take different keys and do not contend at all. The `with` block
+        releases the lease however the block ends.
         """
         # `try_acquire`, not `acquire`: an HTTP request must not block forever. A lease that
         # cannot be had inside `LOCK_WAIT` comes back as None - which is *contention*, not a

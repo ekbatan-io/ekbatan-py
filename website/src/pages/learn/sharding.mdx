@@ -34,8 +34,9 @@ itself, inside the `rand_b` field of a UUIDv7:
 framework reads the bits, finds the database, opens the transaction. No directory service, no
 sticky sessions.
 
-This layout is a **cross-language contract** — an id minted by a Java service carries its shard
-in the same bits, so either port can route the other's rows.
+The layout is fixed, so every service that reads it agrees - including a Java service built on
+Ekbatan, which puts the shard in the same bits (see
+[Running beside a Java service](/reference/beside-java/#ids)).
 
 ```python
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
@@ -207,9 +208,8 @@ taken.
 - `wallets.find_where(...)` — has no id to route by, so it **scatters** across every shard.
 - Every action body. Every endpoint. Every test that does not assert on placement.
 
-**A predicate read hits every shard.** Latency is the sum, because this port visits them one at
-a time where the Java port forks a thread per shard. On two shards that is invisible; on eight it
-is the first thing you would feel.
+**A predicate read hits every shard.** Latency is the sum, because the shards are visited one at
+a time. On two shards that is invisible; on eight it is the first thing you would feel.
 
 **A cross-shard action is refused** unless you pass `allow_cross_shard=True`, and then each shard
 commits independently. If a partial commit would need compensating, you want a

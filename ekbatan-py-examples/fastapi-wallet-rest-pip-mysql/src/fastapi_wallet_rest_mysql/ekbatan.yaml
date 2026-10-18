@@ -1,5 +1,5 @@
-# The service's Ekbatan settings - the same keys, in the same places, as the Java examples'
-# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+# The service's Ekbatan settings: the database layout, the namespace, the jobs and the event
+# handling. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
 #
 # `${NAME:default}` is an environment variable with a default, so the file runs as it is against
 # a local server and the same file runs anywhere else with the variables set. The test fills them
@@ -21,7 +21,7 @@ ekbatan:
               primaryConfig:
                 # Extra driver settings, each name exactly as the driver spells it; handed to the
                 # driver beside the url, never printed.
-                # init_command runs on each new connection, like sessionVariables in Java.
+                # init_command runs once on each new connection.
                 dataSourceProperties:
                   init_command: SET SESSION innodb_lock_wait_timeout=10
                 url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}

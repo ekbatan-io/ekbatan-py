@@ -6,11 +6,10 @@ that makes the prose false makes this red.
 
     make
 
-Java's grid examples each carry the same thing - a Testcontainers integration test that
-drives the REST endpoints - and for the same reason. A real MariaDB server rather than
-SQLite, because this example is about what a deployment looks like: migrations from
-files, a keyed lock taken on a real server-side lock, three separate pools. None of
-those are exercised honestly by SQLite.
+It drives the REST endpoints against a database in a container, started by Testcontainers. A
+real MariaDB server rather than SQLite, because this example is about what a deployment looks
+like: migrations from files, a keyed lock taken on a real server-side lock, three separate
+pools. None of those are exercised honestly by SQLite.
 
 """
 
@@ -117,7 +116,7 @@ def test_the_deposit_event_reaches_the_handler_and_writes_an_alert(client: TestC
     Nothing in the deposit endpoint mentions alerts. The deposit emits an event, the fan-out
     job turns it into a delivery, the handling job runs the handler, and the handler starts its
     own unit of work. Polled rather than asserted immediately because those are real background
-    jobs on a real schedule - Java's examples use Awaitility here for the same reason.
+    jobs on a real schedule, and a background job finishes when it finishes.
     """
     wallet_id = open_wallet(client)
     client.post(
@@ -283,9 +282,9 @@ def test_it_runs_on_the_database_this_example_is_named_for(client: TestClient) -
 
 
 def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) -> None:
-    """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: the
-    namespace, the three pools and the driver setting all come from it. (The handling job it
-    turns on is proven by the deposit tests above: without it no alert is ever raised.)"""
+    """`ekbatan.yaml` is the service's Ekbatan config: the namespace, the three pools and the
+    driver setting all come from it. (The handling job it turns on is proven by the deposit
+    tests above: without it no alert is ever raised.)"""
     service = client.app.state.service
     primary = service.registry.manager(DEFAULT_SHARD).primary
 

@@ -2,7 +2,7 @@
 layout: ../../layouts/DocLayout.astro
 title: Install it
 activeSection: learn
-lead: One dependency line, two generators, and the four lines of Makefile that replace what Gradle does for the Java port.
+lead: One dependency line, two generators, and four lines of Makefile that keep the generated code up to date.
 ---
 
 import LearnPager from "../../components/LearnPager.astro";
@@ -40,10 +40,9 @@ container to reflect your schema — a thing your build does and your deployment
 uv add --dev "ekbatan[codegen]"
 ```
 
-That is the whole of the setup. There is **no counterpart to the Java port's five numbered
-gotchas** — no BOM to override, no annotation processor to put on two classpaths, no
-`-parameters` flag, no compile-time visitor to forget. Python resolves parameter names at
-runtime for free, which is the single reason most of that page exists.
+That is the whole of the setup. There is no plugin to register, no build step to hook into and
+no flag to remember: Python knows a function's parameter names and a dataclass's fields at
+runtime, so the framework reads them from your classes as they are.
 
 ## The two generators
 
@@ -63,7 +62,7 @@ this generates. Commit the output: it is derived from source you already have.
 **Table definitions — gitignored.**
 
 ```toml
-# pyproject.toml - where Java keeps jOOQ's settings in the build script
+# pyproject.toml
 [tool.ekbatan.schemagen]
 migrations = "migrations"
 out = "myapp/schema.py"
@@ -76,8 +75,8 @@ uv run python -m ekbatan.schemagen
 
 Starts a throwaway container, runs **your** migrations into it, reflects the result. Forced
 types, includes and excludes go in the same table - see [schemagen](/reference/schemagen/). The
-counterpart to the Java port's jOOQ step, and its output is gitignored for the same reason
-`build/generated-jooq` is: it is derived from a database you have to start.
+output is gitignored because it is derived from a database you have to start, and it is
+rebuilt whenever the migrations change.
 
 **Gitignored is not left out of the package - check that it is not.** Some build tools leave a
 gitignored file out of the wheel: poetry-core and hatchling drop `schema.py` unless told to keep
@@ -87,9 +86,8 @@ a wheel holds.
 
 ## A Makefile, because uv has no task runner
 
-`uv` manages dependencies and runs commands. What it does not have — and this is the one real
-gap against Gradle — is a **dependency graph**: something that knows `schema.py` comes from
-`migrations/` and rebuilds it when they change.
+`uv` manages dependencies and runs commands. What it does not have is a **dependency graph**:
+something that knows `schema.py` comes from `migrations/` and rebuilds it when they change.
 
 ```make
 myapp/schema.py: $(wildcard migrations/*.sql) pyproject.toml
@@ -100,8 +98,7 @@ lint: myapp/schema.py
 ```
 
 The dependency on the migration files is what makes this bearable in front of every other
-target: **it starts a container when they change and does nothing when they have not.** That is
-Gradle's up-to-date check, in one line.
+target: **it starts a container when they change and does nothing when they have not.**
 
 `lint` depends on it because mypy reads the generated module — a fresh clone would otherwise
 report `cannot find implementation for module myapp.schema`, which is true and unhelpful.
