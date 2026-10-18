@@ -65,6 +65,18 @@ WALLET_FORCED = (
 )
 
 
+#: On MySQL and MariaDB a uuid is stored as a CHAR(36), like any other text. This rule says
+#: which ones hold uuids - the ids - so they read as `uuid.UUID`.
+UUID_IDS = Forced(
+    "A uuid is stored as CHAR(36) here, like any text, so say which columns hold one: the ids.",
+    (
+        ("name", "uuid_column"),
+        ("include-types", r"CHAR\(36\)"),
+        ("include-expression", r".*\.id|.*_id"),
+    ),
+)
+
+
 #: The saga's two: the same currency rule, and the step marker's name read as the `StepName`
 #: enum, picked by name.
 SAGA_FORCED = (
@@ -117,6 +129,7 @@ MATRIX = (
         ("mysql", "migrations"),
         image="mysql:8.4",
         containers="mysql",
+        forced=(UUID_IDS, *WALLET_FORCED),
     ),
     Example(
         "fastapi-wallet-rest",
@@ -126,6 +139,7 @@ MATRIX = (
         ("mariadb", "migrations"),
         image="mariadb:11.4",
         containers="mysql",
+        forced=(UUID_IDS, *WALLET_FORCED),
     ),
     Example(
         "fastapi-wallet-rest",

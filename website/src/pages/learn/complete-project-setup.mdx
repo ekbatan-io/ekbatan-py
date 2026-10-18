@@ -418,6 +418,39 @@ and the test checks their names without a database through `validate_scripts`.
 
 ## 6. Generate the schema module
 
+<div data-db="mysql">
+
+MySQL has no uuid type, so the ids are `CHAR(36)` columns, and nothing in the database says they
+hold uuids. Say so first, so they read as `uuid.UUID`:
+
+```bash
+cat >> pyproject.toml <<'EOF'
+
+[[tool.ekbatan.schemagen.forced-types]]
+name = "uuid_column"
+include-types = "CHAR\\(36\\)"
+include-expression = ".*\\.id|.*_id"
+EOF
+```
+
+</div>
+<div data-db="mariadb">
+
+The ids are `CHAR(36)` columns, and nothing in the database says they hold uuids. Say so first,
+so they read as `uuid.UUID`:
+
+```bash
+cat >> pyproject.toml <<'EOF'
+
+[[tool.ekbatan.schemagen.forced-types]]
+name = "uuid_column"
+include-types = "CHAR\\(36\\)"
+include-expression = ".*\\.id|.*_id"
+EOF
+```
+
+</div>
+
 <div data-install="uv">
 
 <div data-db="pg">
@@ -519,9 +552,8 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 </div>
 
 It starts a throwaway container, runs **your** migrations into it, reflects the result and writes a
-module of SQLAlchemy `Table` definitions for your repositories to query. On MySQL and MariaDB
-the type forcing matters: a uuid is `CHAR(36)` there and nothing in the database says it is one.
-You rarely run this by hand; the Makefile does, when a migration changes.
+module of SQLAlchemy `Table` definitions for your repositories to query. You rarely run this
+by hand; the Makefile does, when a migration changes.
 
 The flags can live in `pyproject.toml` instead, under `[tool.ekbatan.schemagen]` (`migrations`,
 `out`, `image`), and the command then runs bare - which is how the example projects do it, and

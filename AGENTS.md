@@ -212,13 +212,15 @@ schemas, includes, excludes, and **forced types** - by column name (`include-exp
 type (`include-types`), to a framework helper or a SQLAlchemy type (`name`), to the user's own
 **converter** by dotted path (`converter`: any class with `from_db`/`to_db`, jOOQ's
 `userType` + `converter`), or to a library's ready-made SQLAlchemy type (`sqlalchemy-type`, a
-convenience only). The user's are tried first, then Ekbatan's built-in five, which are what every
-Java example's build forces. Four rules hold it together:
+convenience only). The user's are tried first, then Ekbatan's built-in four (timestamps, JSON,
+PostgreSQL `UUID`), which every Java example's build forces too. Four rules hold it together:
 
 - **Forcing is what makes the schema right.** A `UUID` reflected from PostgreSQL renders as
   `CHAR(32)` on MySQL - hex with the hyphens stripped, which no Java service can join against.
   Reflected *from* MySQL it is `CHAR(36)`, indistinguishable from any other char column, so it
-  is forced by name - only `CHAR(36)`, only on MySQL and MariaDB, as Java's build does.
+  is **not** forced by default: the project adds the rule (`CHAR\(36\)` + `.*\.id|.*_id`), as
+  each Java MySQL build adds `UuidStringConverter` itself. The MySQL/MariaDB examples carry it
+  (`UUID_IDS` in `scripts/sync-examples.py`). Do not bring the name guess back as a default.
 - **Every other type is written faithfully** (`schemagen/_types.py`): a generic SQLAlchemy type
   where one says the same, the dialect's own type imported from its dialect module where not,
   and nothing reflection merely decorates (MariaDB's `BIGINT(20)` display width). A type

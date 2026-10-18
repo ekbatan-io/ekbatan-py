@@ -117,10 +117,19 @@ def app_migrations(tmp_path: Path, dialect: str) -> Path:
     return migrations(tmp_path / "migrations", APP[_family(dialect)], _framework_ddl(dialect))
 
 
+#: What a MySQL or MariaDB project adds to say its CHAR(36) ids hold uuids - schemagen does not
+#: guess it. On PostgreSQL there is no CHAR(36) to match, and the UUID type needs no rule.
+UUID_IDS = ForcedType(
+    name="uuid_column", include_types=r"CHAR\(36\)", include_expression=r".*\.id|.*_id"
+)
+
+
 @pytest.fixture
 def generated(app_migrations: Path, tmp_path: Path, backend: Backend) -> Path:
     out = tmp_path / "app" / "schema.py"
-    generate(app_migrations, out, url=fresh(backend))
+    generate(
+        app_migrations, out, url=fresh(backend), config=SchemagenConfig(forced_types=(UUID_IDS,))
+    )
     return out
 
 
@@ -193,6 +202,35 @@ def test_the_forced_types_survive_a_move_to_mysql(generated: Path, dialect: str)
         ddl = " ".join(str(CreateTable(module.WIDGETS).compile(dialect=target)).split())
         assert f"id {uuid_type}" in ddl, ddl
         assert f"created_date {stamp}" in ddl, ddl
+
+
+def test_a_char_36_id_is_text_until_the_project_says_it_holds_a_uuid(
+    tmp_path: Path, backend: Backend, dialect: str
+) -> None:
+    """No guess from the name: without the project's rule a CHAR(36) `id` or `*_id` is text,
+    as in a Java build that adds no converter. With it, it is a uuid - whatever its character
+    set, since the rule matches the type in every spelling."""
+    if _family(dialect) != "mysql":
+        pytest.skip("a uuid has its own type here, or is a CHAR(32) - see the forced-type tests")
+    source = migrations(
+        tmp_path / "migrations",
+        "CREATE TABLE accounts (id CHAR(36) NOT NULL PRIMARY KEY, "
+        "owner_id CHAR(36) CHARACTER SET ascii NOT NULL, note CHAR(36));\n",
+    )
+
+    plain = generate(source, tmp_path / "a" / "schema.py", url=fresh(backend))
+    forced = generate(
+        source,
+        tmp_path / "b" / "schema.py",
+        url=fresh(backend),
+        config=SchemagenConfig(forced_types=(UUID_IDS,)),
+    )
+
+    assert 'Column("id", CHAR(length=36), primary_key=True)' in plain
+    assert 'Column("owner_id", uuid_column()' not in plain
+    assert 'Column("id", uuid_column(), primary_key=True)' in forced
+    assert 'Column("owner_id", uuid_column(), nullable=False)' in forced
+    assert 'Column("note", uuid_column()' not in forced, "not an id-like name"
 
 
 def test_a_naive_reflection_would_have_got_that_wrong() -> None:

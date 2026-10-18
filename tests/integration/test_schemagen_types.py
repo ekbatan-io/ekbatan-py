@@ -177,15 +177,9 @@ MYSQL = (
     Case("varchar_80", "VARCHAR(80)", "VARCHAR(length=80)", "a name"),
     # Round 2, N2 #2: Java forces only CHAR(36); a VARCHAR(36) id stays text.
     Case("varchar_36_id", "VARCHAR(36)", "VARCHAR(length=36)", "not-a-uuid", column="ext_id"),
-    # The uuid guess, as Java's: CHAR(36), named `id` or `*_id`.
-    Case("char_36_id", "CHAR(36)", "uuid_column()", ID, column="legacy_id"),
-    Case(
-        "char_36_ascii_id",
-        "CHAR(36) CHARACTER SET ascii",
-        "uuid_column()",
-        ID,
-        column="owner_id",
-    ),
+    # No uuid guess from the name: a CHAR(36) id is text unless the project forces it (see
+    # test_schemagen's test_a_char_36_id_is_text_until_the_project_says_it_holds_a_uuid).
+    Case("char_36_id", "CHAR(36)", "CHAR(length=36)", str(ID), column="legacy_id"),
     Case("char_36_not_id", "CHAR(36)", "CHAR(length=36)", "a" * 36, column="country_name"),
     Case(
         "varchar_latin1",

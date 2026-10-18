@@ -173,7 +173,6 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `DOUBLE`, `REAL` | `DOUBLE()` | `float` |
 | `BIT(n)` | `mysql.BIT(length=n)` | `int` |
 | `CHAR(n)`, `VARCHAR(n)` | `CHAR(length=n)`, `VARCHAR(length=n)` | `str` |
-| `CHAR(36)` named `id`, `*_id` | `uuid_column()` | `uuid.UUID` |
 | `TEXT` | `TEXT()` | `str` |
 | `TINYTEXT`, `LONGTEXT`, ... | `mysql.TINYTEXT()`, ... | `str` |
 | `VARCHAR(10) CHARACTER SET latin1` | `mysql.VARCHAR(..., charset="latin1")` | `str` |
@@ -191,7 +190,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 
 - `timestamp_column()` reads a `datetime` in UTC, with its zone set. A bare `DATETIME` and
   MySQL's `TIMESTAMP` type get a note saying how they differ from `DATETIME(6)`.
-- The `CHAR(36)` row is a guess, and a narrow one - see the built-in forced types below.
+- A uuid stored as `CHAR(36)` reads as a `str` until you say which columns hold one - see
+  [a uuid stored as text](#a-uuid-stored-as-text).
 - A character set or a collation of its own makes the column MySQL's own `mysql.VARCHAR`, with
   both written out.
 - A type SQLAlchemy has no class for is written as MySQL spells it, `sql_type("...")`. Its value
@@ -212,7 +212,6 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `BIT(n)` | `mysql.BIT(length=n)` | `int` |
 | `CHAR(n)`, `VARCHAR(n)` | `CHAR(length=n)`, `VARCHAR(length=n)` | `str` |
 | `UUID` | `UUID()` | `uuid.UUID` |
-| `CHAR(36)` named `id`, `*_id` | `uuid_column()` | `uuid.UUID` |
 | `TEXT` | `TEXT()` | `str` |
 | `TINYTEXT`, `LONGTEXT`, ... | `mysql.TINYTEXT()`, ... | `str` |
 | `VARCHAR(10) CHARACTER SET latin1` | `mysql.VARCHAR(..., charset="latin1")` | `str` |
@@ -233,8 +232,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
   the `TIMESTAMP` type get a note saying how they differ from `DATETIME(6)`.
 - MariaDB stores `JSON` as `LONGTEXT` with a `json_valid` check. schemagen reads the check and
   writes `json_column()`.
-- MariaDB's own `UUID` type needs no guess. The `CHAR(36)` row is the same narrow guess as on
-  MySQL.
+- MariaDB's own `UUID` type reads as a `uuid.UUID` with no setting. A uuid stored as `CHAR(36)`
+  is a `str` until you say which columns hold one, as on MySQL.
 - The last row is any type SQLAlchemy has no class for, written as MariaDB spells it. Its value
   is what the driver gives - a `str` for `INET6`.
 
@@ -295,11 +294,33 @@ instead, so that the value is the same on every database:
 | `JSONB` | `json_column()` | PostgreSQL |
 | `JSON` | `json_column()` | MySQL, MariaDB, SQLite |
 | `UUID` | `uuid_column()` | PostgreSQL |
-| `CHAR(36)` named `.*\.id\|.*_id` | `uuid_column()` | MySQL, MariaDB |
 
-The last one is a guess, and a narrow one: nothing in MySQL says a `CHAR(36)` holds a uuid. So
-it takes only that exact type, and only under an id-like name. A `VARCHAR(36)` stays text.
-MariaDB's own `UUID` type needs no guess. Turn all five off with `default-forced-types = false`.
+Turn all four off with `default-forced-types = false`.
+
+### A uuid stored as text
+
+MySQL has no uuid type, so a uuid is usually stored as `CHAR(36)`, and nothing in the database
+says which `CHAR(36)` columns hold one. schemagen does not guess: a `CHAR(36)` is a `str`, even
+when it is named `id` or `owner_id`. When yours hold uuids, say so with one rule:
+
+```toml
+[[tool.ekbatan.schemagen.forced-types]]
+name = "uuid_column"
+include-types = "CHAR\\(36\\)"
+include-expression = ".*\\.id|.*_id"
+```
+
+Now every `CHAR(36)` named `id` or ending in `_id` is a `uuid_column()` and reads as a
+`uuid.UUID`. Any other `CHAR(36)` stays a `str`. To keep one id-like column a string, put a rule
+for it first - the first rule that matches wins:
+
+```toml
+[[tool.ekbatan.schemagen.forced-types]]
+name = "String(36)"
+include-expression = "orders\\.tracking_id"
+```
+
+The same works on MariaDB. Its own `UUID` type needs no rule.
 
 ## Forced types
 

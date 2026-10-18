@@ -151,20 +151,15 @@ def _any(pattern: str, candidates: Sequence[str], flags: int = 0) -> bool:
 #:   MariaDB). A plain PostgreSQL ``JSON`` is not forced, as in Java.
 #: - a PostgreSQL ``UUID`` to ``uuid_column()``, so the same schema renders ``CHAR(36)`` - not
 #:   SQLAlchemy's ``CHAR(32)`` - if it is ever used on MySQL.
-#: - a ``CHAR(36)`` named ``id`` or ``*_id`` to ``uuid_column()`` when reading MySQL or MariaDB -
-#:   Java's ``UuidStringConverter``, with Java's own two patterns. Nothing in those databases
-#:   says a ``CHAR(36)`` is a uuid; the name is the only signal, and it is narrow on purpose.
+#:
+#: Not here: a ``CHAR(36)`` uuid on MySQL or MariaDB. Nothing in those databases says a
+#: ``CHAR(36)`` holds a uuid, so it stays text unless a project says so with its own forced
+#: type - as each Java MySQL build adds ``UuidStringConverter`` itself.
 DEFAULT_FORCED_TYPES: tuple[ForcedType, ...] = (
     ForcedType(name="timestamp_column", include_types="TIMESTAMP|DATETIME"),
     ForcedType(name="json_column", include_types="JSONB", dialects=("postgresql",)),
     ForcedType(name="json_column", include_types="JSON", dialects=("mysql", "mariadb", "sqlite")),
     ForcedType(name="uuid_column", include_types="UUID", dialects=("postgresql",)),
-    ForcedType(
-        name="uuid_column",
-        include_types=r"CHAR\(36\)",
-        include_expression=r".*\.id|.*_id",
-        dialects=("mysql", "mariadb"),
-    ),
 )
 
 DEFAULT_IMAGE = "postgres:17-alpine"

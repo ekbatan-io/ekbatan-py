@@ -38,8 +38,9 @@ Reflection sees one database. A column reflected from PostgreSQL as ``TIMESTAMP`
 MySQL to ``TIMESTAMP`` - which has a 2038 ceiling and shifts with the session's timezone - where
 this framework requires ``DATETIME(6)``. A ``UUID`` reflected from PostgreSQL becomes
 ``CHAR(32)`` on MySQL, the hex with its hyphens stripped, which no Java service can join against.
-And from MySQL a uuid is a ``CHAR(36)`` like any other. So the reflected types are mapped onto
-the framework's own column helpers - exactly Java's ``forcedTypes``, for exactly the same reason.
+So the reflected types are mapped onto the framework's own column helpers - exactly Java's
+``forcedTypes``, for exactly the same reason. From MySQL a uuid is a ``CHAR(36)`` like any other,
+so there only the project can say which columns hold one, with a forced type of its own.
 
 ## Why the framework's own tables are not reflected
 
@@ -153,9 +154,11 @@ def render(
 def _dialect(name: str | None) -> Any:
     if not name:
         return None
-    from sqlalchemy.dialects import registry
+    from sqlalchemy.engine import make_url
 
-    return registry.load(name)()
+    # The registry hands back an instance for `mariadb` and a class for the others; a URL's
+    # get_dialect() is a class for every one.
+    return make_url(f"{name}://").get_dialect()()
 
 
 def check_fingerprint(generated: str, expected: str, migrations: str | None) -> None:

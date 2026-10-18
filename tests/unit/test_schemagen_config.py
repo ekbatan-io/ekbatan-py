@@ -233,14 +233,19 @@ def test_nullability_limits_a_forced_type() -> None:
     assert not _matches(forced, nullable=True)
 
 
-def test_ekbatan_s_defaults_are_per_database_as_java_s_builds_are() -> None:
-    """The CHAR(36) uuid guess only when reading MySQL or MariaDB; JSONB only on PostgreSQL."""
-    guess = DEFAULT_FORCED_TYPES[-1]
+def test_ekbatan_s_defaults_are_per_database_and_never_take_a_char_36() -> None:
+    """JSONB only on PostgreSQL. And no default takes a CHAR(36) id on any database: whether it
+    holds a uuid is the project's to say, as each Java MySQL build says it."""
+    jsonb = next(f for f in DEFAULT_FORCED_TYPES if f.include_types == "JSONB")
 
-    assert _matches(guess, "owner_id", dialect="mysql")
-    assert _matches(guess, "owner_id", dialect="mariadb")
-    assert not _matches(guess, "owner_id", dialect="postgresql")
-    assert not _matches(guess, "owner_id", dialect="sqlite")
+    assert _matches(jsonb, "doc", types=("JSONB",), dialect="postgresql")
+    assert not _matches(jsonb, "doc", types=("JSONB",), dialect="mysql")
+    for dialect in ("postgresql", "mysql", "mariadb", "sqlite"):
+        for column in ("id", "owner_id"):
+            assert not any(
+                _matches(f, column, types=("CHAR(36)", "CHAR"), dialect=dialect)
+                for f in DEFAULT_FORCED_TYPES
+            ), (dialect, column)
 
 
 def test_the_timestamp_default_takes_zone_less_timestamps_only() -> None:
@@ -504,30 +509,44 @@ def test_render_needs_no_database_and_imports_what_it_used() -> None:
     body = text.replace("check_fingerprint(__file__", "check_fingerprint('x'")
     exec(compile(body, "schema.py", "exec"), namespace)
     assert "from sqlalchemy.dialects import mysql" in text
-    assert 'Column("id", uuid_column(), primary_key=True)' in text
+    assert 'Column("id", CHAR(length=36), primary_key=True)' in text
     assert 'Column("flag", BOOLEAN(), nullable=False)' in text
     assert 'Column("at", timestamp_column())' in text
     assert "EVENTS = outbox_table(metadata)" in text
 
 
-def test_the_uuid_guess_is_mysql_s_and_mariadb_s_only() -> None:
-    """Round 2, N2 #2: Java forces CHAR(36) named like an id, on MySQL only. On PostgreSQL a
-    uuid has its own type, so a 36-character text id is text."""
+def test_a_char_36_id_stays_text_unless_a_forced_type_says_it_is_a_uuid() -> None:
+    """Nothing in MySQL or MariaDB says a CHAR(36) holds a uuid, so schemagen does not guess:
+    an id-like name is not enough, on any database. A project that stores uuids that way says
+    so with its own forced type - and only then is the column a uuid."""
     table = Table(
         "t", MetaData(), Column("id", CHAR(36), primary_key=True), Column("ext_id", VARCHAR(36))
     )
-
-    on_postgres = render(
-        [table], framework=[], migrations_fingerprint="x", module=None, dialect="postgresql"
+    uuid_ids = SchemagenConfig(
+        forced_types=(
+            ForcedType(
+                name="uuid_column", include_types=r"CHAR\(36\)", include_expression=r".*\.id|.*_id"
+            ),
+        )
     )
-    on_mysql = render(
-        [table], framework=[], migrations_fingerprint="x", module=None, dialect="mysql"
-    )
 
-    assert 'Column("id", CHAR(length=36), primary_key=True)' in on_postgres
-    assert 'Column("ext_id", VARCHAR(length=36))' in on_postgres
-    assert 'Column("id", uuid_column(), primary_key=True)' in on_mysql
-    assert 'Column("ext_id", VARCHAR(length=36))' in on_mysql, "VARCHAR is never guessed"
+    for dialect in ("postgresql", "mysql", "mariadb"):
+        plain = render(
+            [table], framework=[], migrations_fingerprint="x", module=None, dialect=dialect
+        )
+        assert 'Column("id", CHAR(length=36), primary_key=True)' in plain, dialect
+        assert 'Column("ext_id", VARCHAR(length=36))' in plain, dialect
+
+    forced = render(
+        [table],
+        framework=[],
+        migrations_fingerprint="x",
+        module=None,
+        dialect="mysql",
+        config=uuid_ids,
+    )
+    assert 'Column("id", uuid_column(), primary_key=True)' in forced
+    assert 'Column("ext_id", VARCHAR(length=36))' in forced, "the rule names CHAR(36) only"
 
 
 def test_a_sqlalchemy_type_named_like_sqlalchemy_s_own_is_aliased(
