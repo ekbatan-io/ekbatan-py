@@ -28,6 +28,7 @@ import pytest
 import sqlalchemy.exc
 from sqlalchemy import create_engine, event, func, select, text
 
+import ekbatan.aio
 from conftest import GLOBAL, MEXICO, NOT_UNDER_GEVENT, _registry, under_gevent
 from ekbatan.aio import AsyncActionExecutor, AsyncDatabaseRegistry, AsyncDb
 from ekbatan.ids import ShardedId
@@ -477,8 +478,9 @@ def test_the_documented_utc_setup_puts_each_async_session_on_utc(backend, dialec
     with server_off_utc(backend, name) as tehran:
         assert session_zone(backend, name, {}) == tehran, "the control: off UTC without it"
         assert session_zone(backend, name, UTC_RECIPE[dialect]) in ("UTC", "+00:00")
-        if dialect == "postgres":
-            # asyncpg's own spelling works as well, for a layout only async code reads.
+        if dialect == "postgres" and ekbatan.aio.ASYNC_DEFAULT_DRIVERS["postgres"] == "asyncpg":
+            # asyncpg's own spelling works as well, for a layout only async code reads. (Under
+            # `--async-driver=psycopg_async` the libpq spelling above is psycopg's own.)
             native = {"server_settings": {"TimeZone": "UTC"}}
             assert session_zone(backend, name, native) == "UTC"
 
@@ -570,3 +572,31 @@ def test_statements_gathered_inside_one_transaction_take_turns(backend, clock):
             await registry.aclose()
 
     asyncio.run(scenario())
+
+
+# ------------------------------------------------------------------- which driver this run uses
+
+
+def test_the_async_runs_connect_through_the_driver_this_run_asked_for(backend, dialect, request):
+    """The default async driver - or, on PostgreSQL, psycopg's own async mode when the run is
+    `--async-driver=psycopg_async` (`make test-psycopg-async`). Without this, a run meant for
+    psycopg could quietly be another asyncpg run."""
+    import os
+
+    asked = request.config.getoption("--async-driver") or os.environ.get("EKBATAN_ASYNC_DRIVER")
+    expected = {"postgres": asked or "asyncpg", "mysql": "aiomysql", "mariadb": "aiomysql"}.get(
+        dialect, "aiosqlite"
+    )
+
+    async def driver() -> str:
+        registry = one_database(backend, "ekbatan_async_driver")
+        try:
+            async with registry.default.connection() as conn:
+                await conn.execute(text("SELECT 1"))
+                engine = registry.default.primary
+                assert engine.dialect.is_async, "and the dialect is SQLAlchemy's async one"
+                return engine.url.get_driver_name()
+        finally:
+            await registry.aclose()
+
+    assert asyncio.run(driver()) == expected

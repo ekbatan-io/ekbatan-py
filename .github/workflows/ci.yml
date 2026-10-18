@@ -102,6 +102,20 @@ jobs:
           EKBATAN_MYSQL_IMAGE: mysql:8.4
           EKBATAN_MARIADB_IMAGE: mariadb:11.4
 
+  psycopg_async:
+    # The async runs on PostgreSQL use asyncpg by default; this proves psycopg's own async mode
+    # (`postgresql+psycopg_async://`) with the same scenarios.
+    name: tests (postgres, ekbatan.aio on psycopg async)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras
+      - run: make test-psycopg-async
+        env:
+          EKBATAN_POSTGRES_IMAGE: postgres:17-alpine
+
   non_utc:
     # The timestamp defects are invisible under a UTC process, which is where suites usually
     # run. This is the job that would have caught a driver inferring a zoned type.

@@ -195,6 +195,7 @@ projects are written from the uv ones by `scripts/sync-examples.py`; edit only t
 ```bash
 make test        # unit, then the whole suite on SQLite
 make test-all    # PostgreSQL, MySQL and MariaDB too - needs Docker
+make test-psycopg-async   # the PostgreSQL suite, its async runs on psycopg's async mode
 make examples    # every example, each as its built wheel installed
 ```
 

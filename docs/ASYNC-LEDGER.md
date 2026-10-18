@@ -428,10 +428,10 @@ Decisions: `docs/DECISIONS-TO-REVIEW.md#async-follow-ups`.
 
 | # | Item | State |
 |---|---|---|
-| P1 | a way to run the async runs on `postgresql+psycopg_async` | todo |
-| P2 | the whole PostgreSQL suite through it; fix what fails | todo |
-| P3 | the UTC session test and the marker-password test on psycopg async | todo |
-| P4 | Makefile / CI target | todo |
+| P1 | a way to run the async runs on `postgresql+psycopg_async` | done - `pytest --async-driver=psycopg_async` (or `EKBATAN_ASYNC_DRIVER`) makes psycopg's async mode the PostgreSQL async default for the session; `test_the_async_runs_connect_through_the_driver_this_run_asked_for` proves which driver a run really used |
+| P2 | the whole PostgreSQL suite through it; fix what fails | done - 1146 passed, 14 skipped; nothing in the library needed fixing. One test branched: asyncpg's own `server_settings` spelling is checked only on asyncpg (psycopg refuses it - it is not a libpq setting; the libpq spelling is checked on both) |
+| P3 | the UTC session test and the marker-password test on psycopg async | done - both run in that suite: the Tehran test (`options: -c TimeZone=UTC` passed straight to libpq), and both marker-password tests (registry/migrator, and the keyed lock) |
+| P4 | Makefile / CI target | done - `make test-psycopg-async`; CI job `psycopg_async` |
 
 ### Runs
 
@@ -462,4 +462,8 @@ checked id by id with the `sync` parameter dropped):
 New SQLite skips: the lock suites (no advisory lock on SQLite) and the async handler test that
 needs two writers. The async examples, uv / pip / Poetry on PostgreSQL and MariaDB: 15 passed
 each.
+
+**F3** (`make test-psycopg-async`, PostgreSQL, async runs on psycopg's async mode): sync 801
+passed, 12 skipped; async 345 passed, 2 skipped; every base sync id still passing.
+`make test-gevent` (SQLite): 1870 passed, async runs skipped (base 1853).
 

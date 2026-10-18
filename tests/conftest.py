@@ -60,6 +60,43 @@ def pytest_addoption(parser: Any) -> None:
         help="comma-separated: sqlite, postgres, mysql, mariadb - or 'all'. "
         "Also readable from EKBATAN_DIALECTS.",
     )
+    parser.addoption(
+        "--async-driver",
+        default=None,
+        help="the driver the async runs use on PostgreSQL: asyncpg (the default) or "
+        "psycopg_async, psycopg's own async mode. Also readable from EKBATAN_ASYNC_DRIVER.",
+    )
+
+
+#: The PostgreSQL drivers an async run may be asked to use.
+ASYNC_PG_DRIVERS = ("asyncpg", "psycopg_async")
+
+
+def pytest_configure(config: Any) -> None:
+    """``--async-driver=psycopg_async``: every async run on PostgreSQL connects through
+    psycopg's async mode - as a url naming ``postgresql+psycopg_async://`` would - by making it
+    the default for the session. Everything else about the run is unchanged."""
+    import os
+
+    driver = config.getoption("--async-driver") or os.environ.get("EKBATAN_ASYNC_DRIVER")
+    if not driver:
+        return
+    if driver not in ASYNC_PG_DRIVERS:
+        raise pytest.UsageError(f"--async-driver must be one of {ASYNC_PG_DRIVERS}, not {driver!r}")
+    from types import MappingProxyType
+
+    import ekbatan.aio
+    import ekbatan.aio.persistence
+
+    chosen = MappingProxyType(dict(ekbatan.aio.ASYNC_DEFAULT_DRIVERS) | {"postgres": driver})
+    ekbatan.aio.ASYNC_DEFAULT_DRIVERS = chosen  # type: ignore[misc]
+    ekbatan.aio.persistence.ASYNC_DEFAULT_DRIVERS = chosen  # type: ignore[misc]
+
+
+def pytest_report_header(config: Any) -> str | None:
+    from ekbatan.aio import ASYNC_DEFAULT_DRIVERS
+
+    return f"ekbatan.aio on PostgreSQL: {ASYNC_DEFAULT_DRIVERS['postgres']}"
 
 
 def pytest_generate_tests(metafunc: Any) -> None:
@@ -380,7 +417,10 @@ def outbox(registry: DatabaseRegistry) -> Any:
 @pytest.fixture
 def handler_kind(request: Any) -> str:
     """``"sync"``, or ``"async"`` in the second run of a module with ``HANDLER_KINDS``."""
-    return str(getattr(request, "param", "sync"))
+    chosen = str(getattr(request, "param", "sync"))
+    if chosen == "async" and under_gevent():
+        pytest.skip(NOT_UNDER_GEVENT)
+    return chosen
 
 
 @pytest.fixture

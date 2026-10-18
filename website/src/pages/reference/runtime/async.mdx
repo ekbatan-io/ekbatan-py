@@ -115,6 +115,9 @@ A url that names a sync driver, or none, connects through the database's async d
 names an async driver is used as written. `async_url(config)` shows which url a config connects
 to, and `ASYNC_DEFAULT_DRIVERS` holds the defaults.
 
+psycopg's own async mode needs no extra install - it is psycopg - and takes libpq's settings as
+they are written. The whole PostgreSQL suite runs on it as well as on asyncpg.
+
 ## Driver settings, and UTC
 
 `data_source_properties` reach the async driver as they are given, with one exception: asyncpg
@@ -331,8 +334,10 @@ awaited work.
 ## Passwords
 
 As on the sync side, no password is printed: not by an async engine, url, manager or registry,
-not in a connection refused by asyncpg or aiomysql, and not with the engine's echo on. Tested
-with a marker password on PostgreSQL, MySQL and MariaDB.
+not in a connection refused by asyncpg, psycopg's async mode or aiomysql, not by an async keyed
+lock, its lease or its refusal - a Redis url's password included - and not with the engine's echo
+on. Tested with a marker password on PostgreSQL (asyncpg and psycopg async), MySQL, MariaDB and
+Redis.
 
 ## gevent
 

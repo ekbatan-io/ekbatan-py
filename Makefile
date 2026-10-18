@@ -8,6 +8,7 @@
 #     make            lint, type-check and the fast tests
 #     make test       the suite on SQLite
 #     make test-all   the suite on PostgreSQL, MySQL and MariaDB too (needs Docker)
+#     make test-psycopg-async  the PostgreSQL suite with its async runs on psycopg's async mode
 #     make examples   every example's own test (needs Docker)
 #     make schema     regenerate what codegen owns
 #     make lint       ruff and mypy
@@ -32,7 +33,7 @@ EXAMPLES := \
 	job-worker-uv-pg job-worker-pip-pg job-worker-poetry-pg \
 	wallet-service-uv-sqlite wallet-service-pip-sqlite wallet-service-poetry-sqlite
 
-.PHONY: all lint format test test-all test-gevent examples schema build clean help website website-dev
+.PHONY: all lint format test test-all test-psycopg-async test-gevent examples schema build clean help website website-dev
 .DEFAULT_GOAL := all
 
 all: lint test
@@ -115,6 +116,12 @@ test:
 
 test-all:
 	$(UV) pytest --dialects=all
+
+# ekbatan.aio's runs on PostgreSQL connect through asyncpg, the async default. This runs the whole
+# PostgreSQL suite again with them on psycopg's own async mode - what a url naming
+# `postgresql+psycopg_async://` connects with - so that mode is proven by the same scenarios.
+test-psycopg-async:
+	$(UV) pytest tests/integration --dialects=postgres --async-driver=psycopg_async
 
 # The framework is synchronous, so under gevent it is concurrent for free - every blocking call
 # yields, not only the ones a library knows about, which is the one thing the asyncio answer
