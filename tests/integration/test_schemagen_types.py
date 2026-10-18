@@ -289,7 +289,9 @@ class Matrix:
     raw_rebuilt: dict[tuple[str, str], str]
 
 
-_BUILT: dict[str, Matrix] = {}
+#: By backend, not by dialect: the full suite stops a dialect's container and starts a new one
+#: between modules, and a cached matrix would then point at databases that are gone.
+_BUILT: dict[int, tuple[Backend, Matrix]] = {}
 
 
 def _build(backend: Backend, dialect: str, root: Path) -> Matrix:
@@ -333,9 +335,11 @@ def case(dialect: str, case_id: str) -> Case:
 
 @pytest.fixture
 def matrix(backend: Backend, dialect: str, tmp_path_factory: pytest.TempPathFactory) -> Matrix:
-    if dialect not in _BUILT:
-        _BUILT[dialect] = _build(backend, dialect, tmp_path_factory.mktemp(f"types-{dialect}"))
-    return _BUILT[dialect]
+    cached = _BUILT.get(id(backend))
+    if cached is None or cached[0] is not backend:
+        built = _build(backend, dialect, tmp_path_factory.mktemp(f"types-{dialect}"))
+        cached = _BUILT[id(backend)] = (backend, built)
+    return cached[1]
 
 
 def test_the_type_is_written_as(matrix: Matrix, case: Case) -> None:

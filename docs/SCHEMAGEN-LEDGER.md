@@ -39,7 +39,7 @@ excludes, the input schema, the output package). `sqlacodegen` stays out, for th
 | 5 | Build it: configuration, forced types, the type table, the uuid guess as Java's (MySQL/MariaDB, `CHAR(36)` only), keys/indexes/defaults as decided | done - `EKB-0321` |
 | 6 | Tests: per type per database, generate + import + create_all + round trip; forced types; includes/excludes; stale check; a test that fails on the old code for each N2 finding | done - F5 |
 | 7 | Examples regenerated and passing; docs, website, AGENTS.md, skills | done - F6 |
-| 8 | Full run: suite on every database, examples, lint, site | todo |
+| 8 | Full run: suite on every database, examples, lint, site | done - F7 |
 
 ## Findings
 
@@ -113,3 +113,13 @@ table, forced types, built-in defaults, the type table), its website copy, `gett
 and `install.mdx`, a note in the setup guide, MariaDB/multi-database corrections (the MariaDB JSON
 claim is now true; Java's forced type never fires there), `DIVERGENCE.md` (one **chosen**
 section), `SHORTCOMINGS.md`, `AGENTS.md`, the three skills (synced).
+
+**F7 - The full run (2026-10-18).** `pytest -q --dialects=all`: 3423 passed, 58 skipped, 2 failed.
+The 2 are `test_redis_locks.py`'s recording tests: `tests/fixtures/redisson/java-3.39.0.monitor.log`
+is caught by `.gitignore`'s `*.log`, so it exists in the main checkout and in no clone; with it
+copied in they pass. Not this work's; the main session should decide (un-ignore it, or rename it).
+The first full run also found a fault of this work's: the type matrix cached its databases per
+dialect, and the PostgreSQL container is restarted between modules - 87 failures, fixed by caching
+per backend (`EKB-0324`). `make lint` passes; `make examples` passes all 21; `npm run build` builds
+54 pages.
+
