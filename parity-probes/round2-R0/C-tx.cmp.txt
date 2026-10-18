@@ -1,0 +1,73 @@
+COUNTS same=49 fixed=9 regressed=0 still=9 changed-still=0 py-only=0
+[fixed] tx.nested.same_connection
+    java: no
+    r1  : yes
+    now : no
+[fixed] tx.nested.inner_sees_outer_uncommitted
+    java: no
+    r1  : yes
+    now : no
+[fixed] tx.nested.inner_row_kept_after_outer_rollback
+    java: yes
+    r1  : no
+    now : yes
+[fixed] tx.nested.inner_failure_caught.inner_row_kept
+    java: no
+    r1  : yes
+    now : no
+[fixed] tx.nested.inner_updates_row_outer_locked
+    java: blocked (lock timeout)
+    r1  : ok
+    now : blocked (lock timeout)
+[fixed] tx.two_managers_same_shard.second_current_inside_first
+    java: empty
+    r1  : present
+    now : empty
+[fixed] tx.two_managers_same_shard.second_tx_database
+    java: replicadb
+    r1  : testdb
+    now : replicadb
+[fixed] pool.open_connections_after_one_query
+    java: 3
+    r1  : 1
+    now : 3
+[fixed] red.wrong_password.seconds_to_fail
+    java: about 30
+    r1  : under 5
+    now : about 30
+[still] tx.rollback.runtime.propagated_same_object
+    java: no
+    r1  : yes
+    now : yes
+[still] tx.checked.unchecked_form
+    java: wrapped in RuntimeException
+    r1  : unchanged
+    now : unchanged
+[still] tx.log.rollback_warn_text
+    java: WARNING io.ekbatan.core.persistence.TransactionManager - Transaction rolled back [shard=(0,0)]: IllegalStateException
+    r1  : WARNING io.ekbatan.core.persistence.TransactionManager - transaction rolled back [shard=0:0]: ValueError
+    now : WARNING io.ekbatan.core.persistence.TransactionManager - transaction rolled back [shard=0:0]: ValueError
+[still] tx.failed_rollback.propagated
+    java: java.lang.RuntimeException: boom
+    r1  : boom
+    now : boom
+[still] rep.manager_level_readonly_inside_tx_database
+    java: replicadb (registry.secondary; Java has no manager-level call)
+    r1  : testdb (manager.connection(readonly=True))
+    now : testdb (manager.connection(readonly=True))
+[still] acc.db_unknown_shard
+    java: null context (fails on first use)
+    r1  : testdb
+    now : testdb
+[still] acc.readonly_unknown_shard
+    java: null context (fails on first use)
+    r1  : testdb
+    now : testdb
+[still] acc.txDb_unknown_shard
+    java: error: No database registered for shard: ShardIdentifier(5, 5)
+    r1  : Optional.empty
+    now : Optional.empty
+[still] red.no_username.warned
+    java: yes
+    r1  : no
+    now : no

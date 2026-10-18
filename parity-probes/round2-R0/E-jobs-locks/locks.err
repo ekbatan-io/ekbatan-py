@@ -1,0 +1,308 @@
+released the lock on 'parity:pg:6ce93d00-e5b8-4394-a8c8-4ec6f1e408be': its hold limit elapsed
+released the lock on 'parity:pg:2bb5c737-2c58-4132-9d8a-0f64605cc45d': its hold limit elapsed
+released the lock on 'parity:pg:edf597c7-cd78-4ae2-8133-aaa2ae0f36db': its hold limit elapsed
+failed to release a database lock; discarding its session
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.AdminShutdown: terminating connection due to administrator command
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/locks/sql.py", line 134, in _release
+    self._unlock(conn, hashed)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/locks/sql.py", line 221, in _unlock
+    conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.OperationalError: (psycopg.errors.AdminShutdown) terminating connection due to administrator command
+[SQL: SELECT pg_advisory_unlock(%(k)s)]
+[parameters: {'k': -4100305643558978108}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+released the lock on 'parity:mysql:677dd77c-e95c-4090-8b10-0fefa469cc89': its hold limit elapsed
+released the lock on 'parity:mysql:85e1b4e5-0d2e-41dd-a908-bbccbca8031b': its hold limit elapsed
+released the lock on 'parity:mysql:76dc1e3d-2ecd-40a7-8e8f-d200633fc40b': its hold limit elapsed
+failed to release a database lock; discarding its session
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 159, in execute
+    result = self._query(query)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 330, in _query
+    conn.query(q)
+    ~~~~~~~~~~^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 582, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 847, in _read_query_result
+    result.read()
+    ~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 1245, in read
+    first_packet = self.connection._read_packet()
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 772, in _read_packet
+    packet_header = self._read_bytes(4)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 826, in _read_bytes
+    raise err.OperationalError(
+        CR.CR_SERVER_LOST, "Lost connection to MySQL server during query"
+    )
+pymysql.err.OperationalError: (2013, 'Lost connection to MySQL server during query')
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/locks/sql.py", line 134, in _release
+    self._unlock(conn, hashed)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/locks/sql.py", line 267, in _unlock
+    conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": self._name(key)})
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 159, in execute
+    result = self._query(query)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 330, in _query
+    conn.query(q)
+    ~~~~~~~~~~^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 582, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 847, in _read_query_result
+    result.read()
+    ~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 1245, in read
+    first_packet = self.connection._read_packet()
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 772, in _read_packet
+    packet_header = self._read_bytes(4)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 826, in _read_bytes
+    raise err.OperationalError(
+        CR.CR_SERVER_LOST, "Lost connection to MySQL server during query"
+    )
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (2013, 'Lost connection to MySQL server during query')
+[SQL: SELECT RELEASE_LOCK(%(name)s)]
+[parameters: {'name': 'e8b31457cf7566b4'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+released the lock on 'parity:mariadb:de2bc2b9-58c5-4827-bbdb-b58460df44ad': its hold limit elapsed
+released the lock on 'parity:mariadb:593492ca-7cdc-43bf-8609-c0402a87cd29': its hold limit elapsed
+released the lock on 'parity:mariadb:985062b1-60c8-4714-88c6-0aadc5978d86': its hold limit elapsed
+failed to release a database lock; discarding its session
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 159, in execute
+    result = self._query(query)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 330, in _query
+    conn.query(q)
+    ~~~~~~~~~~^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 582, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 847, in _read_query_result
+    result.read()
+    ~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 1245, in read
+    first_packet = self.connection._read_packet()
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 772, in _read_packet
+    packet_header = self._read_bytes(4)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 826, in _read_bytes
+    raise err.OperationalError(
+        CR.CR_SERVER_LOST, "Lost connection to MySQL server during query"
+    )
+pymysql.err.OperationalError: (2013, 'Lost connection to MySQL server during query')
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/locks/sql.py", line 134, in _release
+    self._unlock(conn, hashed)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/locks/sql.py", line 267, in _unlock
+    conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": self._name(key)})
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 159, in execute
+    result = self._query(query)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/cursors.py", line 330, in _query
+    conn.query(q)
+    ~~~~~~~~~~^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 582, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 847, in _read_query_result
+    result.read()
+    ~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 1245, in read
+    first_packet = self.connection._read_packet()
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 772, in _read_packet
+    packet_header = self._read_bytes(4)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/pymysql/connections.py", line 826, in _read_bytes
+    raise err.OperationalError(
+        CR.CR_SERVER_LOST, "Lost connection to MySQL server during query"
+    )
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (2013, 'Lost connection to MySQL server during query')
+[SQL: SELECT RELEASE_LOCK(%(name)s)]
+[parameters: {'name': 'ac88d0d2154f0720'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+released the lock on 'parity:redis:8941eceb-7adf-4d75-9477-a4527a141819': its hold limit elapsed
+released the lock on 'parity:redis:e7eaa30a-5d6c-4447-8478-f172ddf054a9': its hold limit elapsed
+released the lock on 'parity:redis:41b8eb19-b8a1-4afc-abe2-85962c877fcf': its hold limit elapsed

@@ -1,0 +1,4 @@
+PROBE postgresql:  CREATE TABLE t ( u UUID,  ts TIMESTAMP WITHOUT TIME ZONE,  j JSONB )  
+PROBE mysql:  CREATE TABLE t ( u CHAR(36),  ts DATETIME(6),  j JSON )  
+PROBE mariadb:  CREATE TABLE t ( u CHAR(36),  ts DATETIME(6),  j JSON )  
+PROBE sqlite:  CREATE TABLE t ( u CHAR(32),  ts DATETIME,  j JSON )  

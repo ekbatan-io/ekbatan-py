@@ -1,0 +1,6 @@
+PROBE d3.step.jobs.stop: 0.0s
+PROBE d3.step.jobs_engine.dispose: 0.0s
+PROBE d3.step.locks.close: 0.0s
+PROBE d3.step.lock_engine.dispose: 0.0s
+PROBE d3.step.reg.close: 0.0s
+PROBE d3.threads_after: ['MainThread', 'ekbatan-pool-filler', 'ekbatan-pool-filler', 'ekbatan-pool-filler']

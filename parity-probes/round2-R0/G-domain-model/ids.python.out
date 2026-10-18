@@ -1,0 +1,64 @@
+PROBE fixed.0_0: shard=(0, 0) ms=1735689600123 str=01941f29-7c7b-7abc-8000-123456789abc
+PROBE fixed.1_2: shard=(1, 2) ms=1735689600123 str=01941f29-7c7b-7abc-8042-123456789abc
+PROBE fixed.17_5: shard=(17, 5) ms=1735689600123 str=01941f29-7c7b-7abc-8445-123456789abc
+PROBE fixed.255_63: shard=(255, 63) ms=1735689600123 str=01941f29-7c7b-7abc-bfff-123456789abc
+PROBE v4.shard: ERR ValidationError: f47ac10b-58cc-4372-a567-0e02b2c3d479 carries no shard - it is a version 4 uuid. Use Id for one that does not, or ShardedId.generate(shard) for one that does.
+PROBE v4.instantMs: OK None
+PROBE gen.0_0: version=7 variant=2 shard=(0, 0) msNearNow=True
+PROBE gen.1_2: version=7 variant=2 shard=(1, 2) msNearNow=True
+PROBE gen.17_5: version=7 variant=2 shard=(17, 5) msNearNow=True
+PROBE gen.255_63: version=7 variant=2 shard=(255, 63) msNearNow=True
+PROBE gen.batchStrictlyIncreasing: False
+PROBE gen.batchDistinct: True
+PROBE gen.batchTimeNonDecreasing: True
+PROBE cross.otherPort.0_0: version=7 shard=(0, 0) msNearFile=True
+PROBE cross.otherPort.1_2: version=7 shard=(1, 2) msNearFile=True
+PROBE cross.otherPort.17_5: version=7 shard=(17, 5) msNearFile=True
+PROBE cross.otherPort.255_63: version=7 shard=(255, 63) msNearFile=True
+PROBE id.random.version: 4
+PROBE id.random.variant: 2
+PROBE id.random.unique: True
+PROBE id.of.upper: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE shardedId.of.upper: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE id.of.noDashes: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE shardedId.of.noDashes: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE id.of.braces: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE shardedId.of.braces: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE id.of.urn: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE shardedId.of.urn: OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE id.of.shortGroups: ERR ValidationError: '1-1-1-1-1' is not a uuid
+PROBE shardedId.of.shortGroups: ERR ValidationError: '1-1-1-1-1' is not a uuid
+PROBE id.of.empty: ERR ValidationError: '' is not a uuid
+PROBE shardedId.of.empty: ERR ValidationError: '' is not a uuid
+PROBE id.of.garbage: ERR ValidationError: 'not-a-uuid' is not a uuid
+PROBE shardedId.of.garbage: ERR ValidationError: 'not-a-uuid' is not a uuid
+PROBE id.of.null: ERR ValidationError: Id value cannot be null
+PROBE shardedId.of.null: ERR ValidationError: ShardedId value cannot be null
+PROBE id.toString: f47ac10b-58cc-4372-a567-0e02b2c3d479
+PROBE shardedId.toString: 01941f29-7c7b-7abc-8042-123456789abc
+PROBE id.equals.sameUuid: True
+PROBE id.equals.diffUuid: False
+PROBE id.equals.shardedIdSameUuid: False
+PROBE id.equals.otherModelSameUuid: True
+PROBE id.hash.equalsUuidHash: True
+PROBE id.equals.rawUuid: False
+PROBE order.id.msbHighBitVsZero: -1
+PROBE order.shardedId.msbHighBitVsZero: -1
+PROBE order.id.lsbVariant10vs00: -1
+PROBE order.id.sorted: ['80000000', '00000000', '7fffffff']
+PROBE order.v7.sameMsDifferentLsb: 1
+PROBE typed.toString: x
+PROBE typed.null: ERR ValidationError: WalletNumber value cannot be null
+PROBE typed.equals.same: True
+PROBE typed.equals.otherType: False
+PROBE typed.equals.subclass: True
+PROBE typed.hash.same: True
+PROBE typed.compare: OK True
+PROBE shard.of.256_0: ERR ValidationError: group must be 0..255, got 256
+PROBE shard.of.0_64: ERR ValidationError: member must be 0..63, got 64
+PROBE shard.of.-1_0: ERR ValidationError: group must be 0..255, got -1
+PROBE shard.of.255_63: OK (255, 63)
+PROBE shard.toString: 1:2
+PROBE shard.equals: True
+PROBE shard.default: (0, 0)
+PROBE readShard.v4: None

@@ -1,0 +1,22 @@
+  from testcontainers.postgres import PostgresContainer
+wrote parity-probes/round2-N2/py-schema-from-java/pg/schema.py
+from sqlalchemy import BIGINT, CHAR, Column, MetaData, NUMERIC, TEXT, Table, VARCHAR
+MIGRATIONS_FINGERPRINT = "81736faa24948955"
+NOTIFICATIONS = Table(
+WALLETS = Table(
+SCHEDULED_TASKS = scheduled_tasks_table(metadata)
+PROBE fromJava.pg.imports: OK
+wrote parity-probes/round2-N2/py-schema-from-java/mariadb/schema.py
+from sqlalchemy import BIGINT, CHAR, Column, DECIMAL, MetaData, TEXT, Table, VARCHAR
+MIGRATIONS_FINGERPRINT = "7f80feae72a041bb"
+NOTIFICATIONS = Table(
+WALLETS = Table(
+SCHEDULED_TASKS = scheduled_tasks_table(metadata)
+PROBE fromJava.mariadb.imports: OK
+wrote parity-probes/round2-N2/py-schema-from-java/mysql/schema.py
+from sqlalchemy import BIGINT, CHAR, Column, DECIMAL, MetaData, TEXT, Table, VARCHAR
+MIGRATIONS_FINGERPRINT = "6ecb22d4bca9344e"
+NOTIFICATIONS = Table(
+WALLETS = Table(
+SCHEDULED_TASKS = scheduled_tasks_table(metadata)
+PROBE fromJava.mysql.imports: OK

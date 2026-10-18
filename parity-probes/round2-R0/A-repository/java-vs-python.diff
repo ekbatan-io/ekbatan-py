@@ -1,0 +1,483 @@
+5,8c5,8
+< PROBE pg.add.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE pg.add.updated_date: 2024-01-02T03:04:05.123456Z
+< PROBE pg.find.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE pg.find.created_date_equals_input: true
+---
+> PROBE pg.add.created_date: 2024-01-02T03:04:05.123456
+> PROBE pg.add.updated_date: 2024-01-02T03:04:05.123456
+> PROBE pg.find.created_date: 2024-01-02T03:04:05.123456
+> PROBE pg.find.created_date_equals_input: false
+18c18
+< PROBE pg.addAll.null.err: NullPointerException
+---
+> PROBE pg.addAll.null.err: ValidationError
+20c20
+< PROBE pg.addAll.null_element.err: NullPointerException
+---
+> PROBE pg.addAll.null_element.err: ValidationError
+23c23
+< PROBE pg.add.null.err: NullPointerException
+---
+> PROBE pg.add.null.err: ValidationError
+25c25
+< PROBE pg.addNoResult.null.err: NullPointerException
+---
+> PROBE pg.addNoResult.null.err: ValidationError
+28c28
+< PROBE pg.addAllNoResult.null.err: NullPointerException
+---
+> PROBE pg.addAllNoResult.null.err: ValidationError
+30,31c30,31
+< PROBE pg.add.duplicate_id.err: IntegrityConstraintViolationException
+< PROBE pg.addAll.duplicate_id_in_batch.err: IntegrityConstraintViolationException
+---
+> PROBE pg.add.duplicate_id.err: IntegrityError
+> PROBE pg.addAll.duplicate_id_in_batch.err: IntegrityError
+36,41c36,41
+< PROBE pg.update.updated_date: 2024-01-02T03:04:05.123456Z
+< PROBE pg.update.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE pg.update.stale.err: StaleRecordException
+< PROBE pg.update.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+< PROBE pg.updateNoResult.stale.err: StaleRecordException
+< PROBE pg.updateNoResult.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+---
+> PROBE pg.update.updated_date: 2024-01-02T03:04:05.123456
+> PROBE pg.update.created_date: 2024-01-02T03:04:05.123456
+> PROBE pg.update.stale.err: StaleRecordError
+> PROBE pg.update.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+> PROBE pg.updateNoResult.stale.err: StaleRecordError
+> PROBE pg.updateNoResult.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+43,46c43,46
+< PROBE pg.update.missing.err: StaleRecordException
+< PROBE pg.update.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+< PROBE pg.updateNoResult.missing.err: StaleRecordException
+< PROBE pg.updateNoResult.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+---
+> PROBE pg.update.missing.err: StaleRecordError
+> PROBE pg.update.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+> PROBE pg.updateNoResult.missing.err: StaleRecordError
+> PROBE pg.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+48c48
+< PROBE pg.update.null.err: NullPointerException
+---
+> PROBE pg.update.null.err: ValidationError
+56c56
+< PROBE pg.updateAll.two.order_kept: false
+---
+> PROBE pg.updateAll.two.order_kept: true
+60,61c60,61
+< PROBE pg.updateAll.one_stale.err: StaleRecordException
+< PROBE pg.updateAll.one_stale.msg: Expected to update 2 records but only updated 1
+---
+> PROBE pg.updateAll.one_stale.err: StaleRecordError
+> PROBE pg.updateAll.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+63,64c63,64
+< PROBE pg.updateAllNoResult.one_stale.err: StaleRecordException
+< PROBE pg.updateAllNoResult.one_stale.msg: Expected to update 2 records but only updated 1
+---
+> PROBE pg.updateAllNoResult.one_stale.err: StaleRecordError
+> PROBE pg.updateAllNoResult.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+66,67c66,67
+< PROBE pg.updateAll.same_row_twice.err: StaleRecordException
+< PROBE pg.updateAll.same_row_twice.msg: Expected to update 2 records but only updated 1
+---
+> PROBE pg.updateAll.same_row_twice.err: StaleRecordError
+> PROBE pg.updateAll.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+69,72c69,72
+< PROBE pg.updateAllNoResult.same_row_twice.err: StaleRecordException
+< PROBE pg.updateAllNoResult.same_row_twice.msg: Expected to update 2 records but only updated 1
+< PROBE pg.updateAll.null_column_every_row: no error -> null
+< PROBE pg.updateAll.null_collection.err: NullPointerException
+---
+> PROBE pg.updateAllNoResult.same_row_twice.err: StaleRecordError
+> PROBE pg.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+> PROBE pg.updateAll.null_column_every_row: no error -> None
+> PROBE pg.updateAll.null_collection.err: ValidationError
+75,78c75,78
+< PROBE pg.getById.missing.err: EntityNotFoundException
+< PROBE pg.getById.missing.msg: No entity found with id: Dummy[id=<uuid>]
+< PROBE pg.getById.deleted.err: EntityNotFoundException
+< PROBE pg.getById.deleted.msg: No entity found with id: Dummy[id=<uuid>]
+---
+> PROBE pg.getById.missing.err: EntityNotFoundError
+> PROBE pg.getById.missing.msg: no Wallet with id UUID('<uuid>')
+> PROBE pg.getById.deleted.err: EntityNotFoundError
+> PROBE pg.getById.deleted.msg: no Wallet with id ShardedId(value=UUID('<uuid>'))
+83c83,84
+< PROBE pg.findAllByIds.null: no error -> 0
+---
+> PROBE pg.findAllByIds.null.err: TypeError
+> PROBE pg.findAllByIds.null.msg: 'NoneType' object is not iterable
+88,89c89,90
+< PROBE pg.findOneWhere.two_matches.err: TooManyRowsException
+< PROBE pg.findOneWhere.two_matches.msg: Cursor returned more than one result
+---
+> PROBE pg.findOneWhere.two_matches.err: ValidationError
+> PROBE pg.findOneWhere.two_matches.msg: find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+110c111
+< PROBE pg.tx.rollback.exception_seen: IllegalStateException
+---
+> PROBE pg.tx.rollback.exception_seen: RuntimeError
+113c114
+< PROBE pg.tx.updateAll_one_stale.exception: StaleRecordException
+---
+> PROBE pg.tx.updateAll_one_stale.exception: StaleRecordError
+116,119c117,120
+< PROBE pg.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+< PROBE pg.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+< PROBE pg.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.add.same_instance: true
+---
+> PROBE pg.zone.add_created_date: 2024-01-02T03:04:05.123456
+> PROBE pg.zone.updateAll_created_date: 2024-01-02T03:04:05.123456
+> PROBE pg.zone.update_created_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.add.same_instance: false
+121c122
+< PROBE mysql.add.events_on_result: 1
+---
+> PROBE mysql.add.events_on_result: 0
+123,126c124,127
+< PROBE mysql.add.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.add.updated_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.find.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.find.created_date_equals_input: true
+---
+> PROBE mysql.add.created_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.add.updated_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.find.created_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.find.created_date_equals_input: false
+133,136c134,137
+< PROBE mysql.addAll.two.same_instances: true
+< PROBE mysql.addAll.two.events_on_result: 1
+< PROBE mysql.addAll.one.same_instance: true
+< PROBE mysql.addAll.null.err: NullPointerException
+---
+> PROBE mysql.addAll.two.same_instances: false
+> PROBE mysql.addAll.two.events_on_result: 0
+> PROBE mysql.addAll.one.same_instance: false
+> PROBE mysql.addAll.null.err: ValidationError
+138c139
+< PROBE mysql.addAll.null_element.err: NullPointerException
+---
+> PROBE mysql.addAll.null_element.err: ValidationError
+141c142
+< PROBE mysql.add.null.err: NullPointerException
+---
+> PROBE mysql.add.null.err: ValidationError
+143c144
+< PROBE mysql.addNoResult.null.err: NullPointerException
+---
+> PROBE mysql.addNoResult.null.err: ValidationError
+146c147
+< PROBE mysql.addAllNoResult.null.err: NullPointerException
+---
+> PROBE mysql.addAllNoResult.null.err: ValidationError
+148,149c149,150
+< PROBE mysql.add.duplicate_id.err: IntegrityConstraintViolationException
+< PROBE mysql.addAll.duplicate_id_in_batch.err: IntegrityConstraintViolationException
+---
+> PROBE mysql.add.duplicate_id.err: IntegrityError
+> PROBE mysql.addAll.duplicate_id_in_batch.err: IntegrityError
+151c152
+< PROBE mysql.update.events_on_result: 1
+---
+> PROBE mysql.update.events_on_result: 0
+154,159c155,160
+< PROBE mysql.update.updated_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.update.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.update.stale.err: StaleRecordException
+< PROBE mysql.update.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+< PROBE mysql.updateNoResult.stale.err: StaleRecordException
+< PROBE mysql.updateNoResult.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+---
+> PROBE mysql.update.updated_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.update.created_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.update.stale.err: StaleRecordError
+> PROBE mysql.update.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+> PROBE mysql.updateNoResult.stale.err: StaleRecordError
+> PROBE mysql.updateNoResult.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+161,164c162,165
+< PROBE mysql.update.missing.err: StaleRecordException
+< PROBE mysql.update.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+< PROBE mysql.updateNoResult.missing.err: StaleRecordException
+< PROBE mysql.updateNoResult.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+---
+> PROBE mysql.update.missing.err: StaleRecordError
+> PROBE mysql.update.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+> PROBE mysql.updateNoResult.missing.err: StaleRecordError
+> PROBE mysql.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+166c167
+< PROBE mysql.update.null.err: NullPointerException
+---
+> PROBE mysql.update.null.err: ValidationError
+175c176
+< PROBE mysql.updateAll.two.events_on_result: 1
+---
+> PROBE mysql.updateAll.two.events_on_result: 0
+178,179c179,180
+< PROBE mysql.updateAll.one_stale.err: StaleRecordException
+< PROBE mysql.updateAll.one_stale.msg: Expected to update 2 records but only updated 1
+---
+> PROBE mysql.updateAll.one_stale.err: StaleRecordError
+> PROBE mysql.updateAll.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+181,182c182,183
+< PROBE mysql.updateAllNoResult.one_stale.err: StaleRecordException
+< PROBE mysql.updateAllNoResult.one_stale.msg: Expected to update 2 records but only updated 1
+---
+> PROBE mysql.updateAllNoResult.one_stale.err: StaleRecordError
+> PROBE mysql.updateAllNoResult.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+184,185c185,186
+< PROBE mysql.updateAll.same_row_twice.err: StaleRecordException
+< PROBE mysql.updateAll.same_row_twice.msg: Expected to update 2 records but only updated 1
+---
+> PROBE mysql.updateAll.same_row_twice.err: StaleRecordError
+> PROBE mysql.updateAll.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+187,190c188,191
+< PROBE mysql.updateAllNoResult.same_row_twice.err: StaleRecordException
+< PROBE mysql.updateAllNoResult.same_row_twice.msg: Expected to update 2 records but only updated 1
+< PROBE mysql.updateAll.null_column_every_row: no error -> null
+< PROBE mysql.updateAll.null_collection.err: NullPointerException
+---
+> PROBE mysql.updateAllNoResult.same_row_twice.err: StaleRecordError
+> PROBE mysql.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+> PROBE mysql.updateAll.null_column_every_row: no error -> None
+> PROBE mysql.updateAll.null_collection.err: ValidationError
+193,196c194,197
+< PROBE mysql.getById.missing.err: EntityNotFoundException
+< PROBE mysql.getById.missing.msg: No entity found with id: Dummy[id=<uuid>]
+< PROBE mysql.getById.deleted.err: EntityNotFoundException
+< PROBE mysql.getById.deleted.msg: No entity found with id: Dummy[id=<uuid>]
+---
+> PROBE mysql.getById.missing.err: EntityNotFoundError
+> PROBE mysql.getById.missing.msg: no Wallet with id UUID('<uuid>')
+> PROBE mysql.getById.deleted.err: EntityNotFoundError
+> PROBE mysql.getById.deleted.msg: no Wallet with id ShardedId(value=UUID('<uuid>'))
+201c202,203
+< PROBE mysql.findAllByIds.null: no error -> 0
+---
+> PROBE mysql.findAllByIds.null.err: TypeError
+> PROBE mysql.findAllByIds.null.msg: 'NoneType' object is not iterable
+206,207c208,209
+< PROBE mysql.findOneWhere.two_matches.err: TooManyRowsException
+< PROBE mysql.findOneWhere.two_matches.msg: Cursor returned more than one result
+---
+> PROBE mysql.findOneWhere.two_matches.err: ValidationError
+> PROBE mysql.findOneWhere.two_matches.msg: find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+228c230
+< PROBE mysql.tx.rollback.exception_seen: IllegalStateException
+---
+> PROBE mysql.tx.rollback.exception_seen: RuntimeError
+231c233
+< PROBE mysql.tx.updateAll_one_stale.exception: StaleRecordException
+---
+> PROBE mysql.tx.updateAll_one_stale.exception: StaleRecordError
+234,236c236,238
+< PROBE mysql.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mysql.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+---
+> PROBE mysql.zone.add_created_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.zone.updateAll_created_date: 2024-01-02T03:04:05.123456
+> PROBE mysql.zone.update_created_date: 2024-01-02T03:04:05.123456
+241,244c243,246
+< PROBE mariadb.add.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mariadb.add.updated_date: 2024-01-02T03:04:05.123456Z
+< PROBE mariadb.find.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mariadb.find.created_date_equals_input: true
+---
+> PROBE mariadb.add.created_date: 2024-01-02T03:04:05.123456
+> PROBE mariadb.add.updated_date: 2024-01-02T03:04:05.123456
+> PROBE mariadb.find.created_date: 2024-01-02T03:04:05.123456
+> PROBE mariadb.find.created_date_equals_input: false
+254c256
+< PROBE mariadb.addAll.null.err: NullPointerException
+---
+> PROBE mariadb.addAll.null.err: ValidationError
+256c258
+< PROBE mariadb.addAll.null_element.err: NullPointerException
+---
+> PROBE mariadb.addAll.null_element.err: ValidationError
+259c261
+< PROBE mariadb.add.null.err: NullPointerException
+---
+> PROBE mariadb.add.null.err: ValidationError
+261c263
+< PROBE mariadb.addNoResult.null.err: NullPointerException
+---
+> PROBE mariadb.addNoResult.null.err: ValidationError
+264c266
+< PROBE mariadb.addAllNoResult.null.err: NullPointerException
+---
+> PROBE mariadb.addAllNoResult.null.err: ValidationError
+266,267c268,269
+< PROBE mariadb.add.duplicate_id.err: IntegrityConstraintViolationException
+< PROBE mariadb.addAll.duplicate_id_in_batch.err: IntegrityConstraintViolationException
+---
+> PROBE mariadb.add.duplicate_id.err: IntegrityError
+> PROBE mariadb.addAll.duplicate_id_in_batch.err: IntegrityError
+272,277c274,279
+< PROBE mariadb.update.updated_date: 2024-01-02T03:04:05.123456Z
+< PROBE mariadb.update.created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mariadb.update.stale.err: StaleRecordException
+< PROBE mariadb.update.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+< PROBE mariadb.updateNoResult.stale.err: StaleRecordException
+< PROBE mariadb.updateNoResult.stale.msg: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+---
+> PROBE mariadb.update.updated_date: 2024-01-02T03:04:05.123456
+> PROBE mariadb.update.created_date: 2024-01-02T03:04:05.123456
+> PROBE mariadb.update.stale.err: StaleRecordError
+> PROBE mariadb.update.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+> PROBE mariadb.updateNoResult.stale.err: StaleRecordError
+> PROBE mariadb.updateNoResult.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+279,282c281,284
+< PROBE mariadb.update.missing.err: StaleRecordException
+< PROBE mariadb.update.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+< PROBE mariadb.updateNoResult.missing.err: StaleRecordException
+< PROBE mariadb.updateNoResult.missing.msg: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+---
+> PROBE mariadb.update.missing.err: StaleRecordError
+> PROBE mariadb.update.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+> PROBE mariadb.updateNoResult.missing.err: StaleRecordError
+> PROBE mariadb.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+284c286
+< PROBE mariadb.update.null.err: NullPointerException
+---
+> PROBE mariadb.update.null.err: ValidationError
+293c295
+< PROBE mariadb.updateAll.two.events_on_result: 1
+---
+> PROBE mariadb.updateAll.two.events_on_result: 0
+296,297c298,299
+< PROBE mariadb.updateAll.one_stale.err: StaleRecordException
+< PROBE mariadb.updateAll.one_stale.msg: Expected to update 2 records but only updated 1
+---
+> PROBE mariadb.updateAll.one_stale.err: StaleRecordError
+> PROBE mariadb.updateAll.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+299,300c301,302
+< PROBE mariadb.updateAllNoResult.one_stale.err: StaleRecordException
+< PROBE mariadb.updateAllNoResult.one_stale.msg: Expected to update 2 records but only updated 1
+---
+> PROBE mariadb.updateAllNoResult.one_stale.err: StaleRecordError
+> PROBE mariadb.updateAllNoResult.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+302,303c304,305
+< PROBE mariadb.updateAll.same_row_twice.err: StaleRecordException
+< PROBE mariadb.updateAll.same_row_twice.msg: Expected to update 2 records but only updated 1
+---
+> PROBE mariadb.updateAll.same_row_twice.err: StaleRecordError
+> PROBE mariadb.updateAll.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+305,308c307,310
+< PROBE mariadb.updateAllNoResult.same_row_twice.err: StaleRecordException
+< PROBE mariadb.updateAllNoResult.same_row_twice.msg: Expected to update 2 records but only updated 1
+< PROBE mariadb.updateAll.null_column_every_row: no error -> null
+< PROBE mariadb.updateAll.null_collection.err: NullPointerException
+---
+> PROBE mariadb.updateAllNoResult.same_row_twice.err: StaleRecordError
+> PROBE mariadb.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+> PROBE mariadb.updateAll.null_column_every_row: no error -> None
+> PROBE mariadb.updateAll.null_collection.err: ValidationError
+311,314c313,316
+< PROBE mariadb.getById.missing.err: EntityNotFoundException
+< PROBE mariadb.getById.missing.msg: No entity found with id: Dummy[id=<uuid>]
+< PROBE mariadb.getById.deleted.err: EntityNotFoundException
+< PROBE mariadb.getById.deleted.msg: No entity found with id: Dummy[id=<uuid>]
+---
+> PROBE mariadb.getById.missing.err: EntityNotFoundError
+> PROBE mariadb.getById.missing.msg: no Wallet with id UUID('<uuid>')
+> PROBE mariadb.getById.deleted.err: EntityNotFoundError
+> PROBE mariadb.getById.deleted.msg: no Wallet with id ShardedId(value=UUID('<uuid>'))
+319c321,322
+< PROBE mariadb.findAllByIds.null: no error -> 0
+---
+> PROBE mariadb.findAllByIds.null.err: TypeError
+> PROBE mariadb.findAllByIds.null.msg: 'NoneType' object is not iterable
+324,325c327,328
+< PROBE mariadb.findOneWhere.two_matches.err: TooManyRowsException
+< PROBE mariadb.findOneWhere.two_matches.msg: Cursor returned more than one result
+---
+> PROBE mariadb.findOneWhere.two_matches.err: ValidationError
+> PROBE mariadb.findOneWhere.two_matches.msg: find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+346c349
+< PROBE mariadb.tx.rollback.exception_seen: IllegalStateException
+---
+> PROBE mariadb.tx.rollback.exception_seen: RuntimeError
+349c352
+< PROBE mariadb.tx.updateAll_one_stale.exception: StaleRecordException
+---
+> PROBE mariadb.tx.updateAll_one_stale.exception: StaleRecordError
+352,354c355,357
+< PROBE mariadb.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mariadb.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+< PROBE mariadb.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+---
+> PROBE mariadb.zone.add_created_date: 2024-01-02T03:04:05.123456
+> PROBE mariadb.zone.updateAll_created_date: 2024-01-02T03:04:05.123456
+> PROBE mariadb.zone.update_created_date: 2024-01-02T03:04:05.123456
+361,364c364,367
+< PROBE shard.addAll_cross.A_then_B.err: CrossShardException
+< PROBE shard.addAll_cross.A_then_B.msg: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+< PROBE shard.addAll_cross.B_then_A.err: CrossShardException
+< PROBE shard.addAll_cross.B_then_A.msg: Cross-shard operation detected: action started on shard ShardIdentifier(1, 0) but attempted to access shard ShardIdentifier(0, 0)
+---
+> PROBE shard.addAll_cross.A_then_B.err: CrossShardError
+> PROBE shard.addAll_cross.A_then_B.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+> PROBE shard.addAll_cross.B_then_A.err: CrossShardError
+> PROBE shard.addAll_cross.B_then_A.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+366,369c369,372
+< PROBE shard.addAllNoResult_cross.err: CrossShardException
+< PROBE shard.addAllNoResult_cross.msg: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+< PROBE shard.addAll_registered_and_unregistered.err: CrossShardException
+< PROBE shard.addAll_registered_and_unregistered.msg: Cross-shard operation detected: action started on shard ShardIdentifier(1, 0) but attempted to access shard ShardIdentifier(0, 0)
+---
+> PROBE shard.addAllNoResult_cross.err: CrossShardError
+> PROBE shard.addAllNoResult_cross.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+> PROBE shard.addAll_registered_and_unregistered.err: CrossShardError
+> PROBE shard.addAll_registered_and_unregistered.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+371,372c374,375
+< PROBE shard.updateAll_cross.err: CrossShardException
+< PROBE shard.updateAll_cross.msg: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+---
+> PROBE shard.updateAll_cross.err: CrossShardError
+> PROBE shard.updateAll_cross.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+388,395c391,398
+< PROBE shard.nonid.findById.err: UnsupportedOperationException
+< PROBE shard.nonid.findById.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+< PROBE shard.nonid.existsById.err: UnsupportedOperationException
+< PROBE shard.nonid.existsById.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+< PROBE shard.nonid.findAllByIds.err: UnsupportedOperationException
+< PROBE shard.nonid.findAllByIds.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+< PROBE shard.nonid.getById.err: UnsupportedOperationException
+< PROBE shard.nonid.getById.msg: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+---
+> PROBE shard.nonid.findById.err: UnsupportedError
+> PROBE shard.nonid.findById.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+> PROBE shard.nonid.existsById.err: UnsupportedError
+> PROBE shard.nonid.existsById.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+> PROBE shard.nonid.findAllByIds.err: UnsupportedError
+> PROBE shard.nonid.findAllByIds.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+> PROBE shard.nonid.getById.err: UnsupportedError
+> PROBE shard.nonid.getById.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+398c401
+< PROBE shard.tx_on_A.outer_exception: RuntimeException
+---
+> PROBE shard.tx_on_A.outer_exception: RuntimeError
+401,407c404,410
+< PROBE shard.fail_policy.add_unregistered.err: IllegalArgumentException
+< PROBE shard.fail_policy.add_unregistered.msg: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+< PROBE shard.fail_policy.findById_unregistered.err: IllegalArgumentException
+< PROBE shard.fail_policy.findById_unregistered.msg: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+< PROBE shard.fail_policy.findAllByIds_unregistered.err: IllegalArgumentException
+< PROBE shard.fail_policy.findAllByIds_unregistered.msg: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+< PROBE registry.two_repos_one_model: no error -> second
+---
+> PROBE shard.fail_policy.add_unregistered.err: ValidationError
+> PROBE shard.fail_policy.add_unregistered.msg: shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+> PROBE shard.fail_policy.findById_unregistered.err: ValidationError
+> PROBE shard.fail_policy.findById_unregistered.msg: shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+> PROBE shard.fail_policy.findAllByIds_unregistered.err: ValidationError
+> PROBE shard.fail_policy.findAllByIds_unregistered.msg: shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+> PROBE registry.two_repos_one_model.err: ValidationError
+409c412
+< PROBE registry.lookup_unregistered: no error -> null
+---
+> PROBE registry.lookup_unregistered.err: ValidationError

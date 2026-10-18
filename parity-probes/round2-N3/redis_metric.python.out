@@ -1,0 +1,1 @@
+PROBE metric.ekbatan.locks.release_failures: scope=io.ekbatan.events.localeventhandler unit={release} desc=Redis lock releases that did not reach the server; the key stays held until its TTL

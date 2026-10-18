@@ -1,0 +1,357 @@
+PROBE pg.add.same_instance: false
+PROBE pg.add.events_on_input: 1
+PROBE pg.add.events_on_result: 0
+PROBE pg.add.version: 1
+PROBE pg.add.created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.add.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.find.created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.find.created_date_equals_input: true
+PROBE pg.find.events: 0
+PROBE pg.find.balance: 10.0000
+PROBE pg.addNoResult.row_exists: true
+PROBE pg.addAll.empty.size: 0
+PROBE pg.addAll.two.size: 2
+PROBE pg.addAll.two.order_kept: true
+PROBE pg.addAll.two.same_instances: false
+PROBE pg.addAll.two.events_on_result: 0
+PROBE pg.addAll.one.same_instance: false
+PROBE pg.addAll.null.err: ValidationError
+PROBE pg.addAll.null.msg: Models collection cannot be null
+PROBE pg.addAll.null_element.err: ValidationError
+PROBE pg.addAll.null_element.msg: Model in collection cannot be null
+PROBE pg.addAll.null_element.first_row_written: false
+PROBE pg.add.null.err: ValidationError
+PROBE pg.add.null.msg: Model cannot be null
+PROBE pg.addNoResult.null.err: ValidationError
+PROBE pg.addNoResult.null.msg: Model cannot be null
+PROBE pg.addAllNoResult.empty: no error -> ok
+PROBE pg.addAllNoResult.null.err: ValidationError
+PROBE pg.addAllNoResult.null.msg: Models collection cannot be null
+PROBE pg.add.duplicate_id.err: IntegrityError
+PROBE pg.addAll.duplicate_id_in_batch.err: IntegrityError
+PROBE pg.update.version: 2
+PROBE pg.update.events_on_result: 0
+PROBE pg.update.db_version: 2
+PROBE pg.update.balance: 11
+PROBE pg.update.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.update.created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.update.stale.err: StaleRecordError
+PROBE pg.update.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE pg.updateNoResult.stale.err: StaleRecordError
+PROBE pg.updateNoResult.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE pg.update.stale.db_version_after: 3
+PROBE pg.update.missing.err: StaleRecordError
+PROBE pg.update.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE pg.updateNoResult.missing.err: StaleRecordError
+PROBE pg.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE pg.updateNoResult.db_version: 4
+PROBE pg.update.null.err: ValidationError
+PROBE pg.update.null.msg: Model cannot be null
+PROBE pg.delete.returned_state: DELETED
+PROBE pg.delete.returned_version: 2
+PROBE pg.delete.findById_present: false
+PROBE pg.update.soft_deleted_row: no error -> 3
+PROBE pg.updateAll.empty.size: 0
+PROBE pg.updateAll.two.versions: 2,2
+PROBE pg.updateAll.two.order_kept: true
+PROBE pg.updateAll.two.events_on_result: 0
+PROBE pg.updateAll.two.balance: 11
+PROBE pg.updateAll.one.version: 3
+PROBE pg.updateAll.one_stale.err: StaleRecordError
+PROBE pg.updateAll.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE pg.updateAll.one_stale.fresh_row_moved: true
+PROBE pg.updateAllNoResult.one_stale.err: StaleRecordError
+PROBE pg.updateAllNoResult.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE pg.updateAllNoResult.one_stale.fresh_row_moved: true
+PROBE pg.updateAll.same_row_twice.err: StaleRecordError
+PROBE pg.updateAll.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE pg.updateAll.same_row_twice.db_version: 2
+PROBE pg.updateAllNoResult.same_row_twice.err: StaleRecordError
+PROBE pg.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE pg.updateAll.null_column_every_row: no error -> None
+PROBE pg.updateAll.null_collection.err: ValidationError
+PROBE pg.updateAll.null_collection.msg: Models collection cannot be null
+PROBE pg.findById.missing: false
+PROBE pg.getById.missing.err: EntityNotFoundError
+PROBE pg.getById.missing.msg: no Wallet with id UUID('<uuid>')
+PROBE pg.getById.deleted.err: EntityNotFoundError
+PROBE pg.getById.deleted.msg: no Wallet with id ShardedId(value=UUID('<uuid>'))
+PROBE pg.existsById.live: true
+PROBE pg.existsById.deleted: false
+PROBE pg.existsById.missing: false
+PROBE pg.findAllByIds.empty: 0
+PROBE pg.findAllByIds.null.err: TypeError
+PROBE pg.findAllByIds.null.msg: 'NoneType' object is not iterable
+PROBE pg.findAllByIds.dupes_missing_deleted: 1
+PROBE pg.findAllWhere.two_live_one_deleted: 2
+PROBE pg.countWhere.two_live_one_deleted: 2
+PROBE pg.existsWhere.live: true
+PROBE pg.findOneWhere.two_matches.err: ValidationError
+PROBE pg.findOneWhere.two_matches.msg: find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+PROBE pg.findOneWhere.none: false
+PROBE pg.findOneWhere.one: true
+PROBE pg.findOneWhere.deleted_only: false
+PROBE pg.existsWhere.deleted_only: false
+PROBE pg.countWhere.deleted_only: 0
+PROBE pg.count.delta_after_one_live_one_deleted: 1
+PROBE pg.findAll.delta_after_one_live_one_deleted: 1
+PROBE pg.count.equals_findAll: true
+PROBE pg.tx.findById_sees_own_insert: false
+PROBE pg.tx.existsById_sees_own_insert: false
+PROBE pg.tx.countWhere_sees_own_insert: 0
+PROBE pg.tx.findAllByIds_sees_own_insert: 0
+PROBE pg.tx.findAll_sees_own_insert: false
+PROBE pg.tx.findOneWhere_sees_own_insert: false
+PROBE pg.tx.existsWhere_sees_own_insert: false
+PROBE pg.tx.other_connection_sees_insert: 0
+PROBE pg.tx.after_commit_visible: true
+PROBE pg.tx.update_returns_version: 2
+PROBE pg.tx.getById_after_own_update_version: 1
+PROBE pg.tx.after_commit_version: 2
+PROBE pg.tx.rollback.exception_seen: RuntimeError
+PROBE pg.tx.rollback.insert_gone: true
+PROBE pg.tx.rollback.update_gone_version: 2
+PROBE pg.tx.updateAll_one_stale.exception: StaleRecordError
+PROBE pg.tx.updateAll_one_stale.fresh_row_version: 1
+PROBE pg.notx.other_connection_sees_insert: 1
+PROBE pg.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+PROBE pg.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.add.same_instance: false
+PROBE mysql.add.events_on_input: 1
+PROBE mysql.add.events_on_result: 0
+PROBE mysql.add.version: 1
+PROBE mysql.add.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.add.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.find.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.find.created_date_equals_input: true
+PROBE mysql.find.events: 0
+PROBE mysql.find.balance: 10.0000
+PROBE mysql.addNoResult.row_exists: true
+PROBE mysql.addAll.empty.size: 0
+PROBE mysql.addAll.two.size: 2
+PROBE mysql.addAll.two.order_kept: true
+PROBE mysql.addAll.two.same_instances: false
+PROBE mysql.addAll.two.events_on_result: 0
+PROBE mysql.addAll.one.same_instance: false
+PROBE mysql.addAll.null.err: ValidationError
+PROBE mysql.addAll.null.msg: Models collection cannot be null
+PROBE mysql.addAll.null_element.err: ValidationError
+PROBE mysql.addAll.null_element.msg: Model in collection cannot be null
+PROBE mysql.addAll.null_element.first_row_written: false
+PROBE mysql.add.null.err: ValidationError
+PROBE mysql.add.null.msg: Model cannot be null
+PROBE mysql.addNoResult.null.err: ValidationError
+PROBE mysql.addNoResult.null.msg: Model cannot be null
+PROBE mysql.addAllNoResult.empty: no error -> ok
+PROBE mysql.addAllNoResult.null.err: ValidationError
+PROBE mysql.addAllNoResult.null.msg: Models collection cannot be null
+PROBE mysql.add.duplicate_id.err: IntegrityError
+PROBE mysql.addAll.duplicate_id_in_batch.err: IntegrityError
+PROBE mysql.update.version: 2
+PROBE mysql.update.events_on_result: 0
+PROBE mysql.update.db_version: 2
+PROBE mysql.update.balance: 11
+PROBE mysql.update.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.update.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.update.stale.err: StaleRecordError
+PROBE mysql.update.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mysql.updateNoResult.stale.err: StaleRecordError
+PROBE mysql.updateNoResult.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mysql.update.stale.db_version_after: 3
+PROBE mysql.update.missing.err: StaleRecordError
+PROBE mysql.update.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mysql.updateNoResult.missing.err: StaleRecordError
+PROBE mysql.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mysql.updateNoResult.db_version: 4
+PROBE mysql.update.null.err: ValidationError
+PROBE mysql.update.null.msg: Model cannot be null
+PROBE mysql.delete.returned_state: DELETED
+PROBE mysql.delete.returned_version: 2
+PROBE mysql.delete.findById_present: false
+PROBE mysql.update.soft_deleted_row: no error -> 3
+PROBE mysql.updateAll.empty.size: 0
+PROBE mysql.updateAll.two.versions: 2,2
+PROBE mysql.updateAll.two.order_kept: true
+PROBE mysql.updateAll.two.events_on_result: 0
+PROBE mysql.updateAll.two.balance: 11
+PROBE mysql.updateAll.one.version: 3
+PROBE mysql.updateAll.one_stale.err: StaleRecordError
+PROBE mysql.updateAll.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mysql.updateAll.one_stale.fresh_row_moved: true
+PROBE mysql.updateAllNoResult.one_stale.err: StaleRecordError
+PROBE mysql.updateAllNoResult.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mysql.updateAllNoResult.one_stale.fresh_row_moved: true
+PROBE mysql.updateAll.same_row_twice.err: StaleRecordError
+PROBE mysql.updateAll.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mysql.updateAll.same_row_twice.db_version: 2
+PROBE mysql.updateAllNoResult.same_row_twice.err: StaleRecordError
+PROBE mysql.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mysql.updateAll.null_column_every_row: no error -> None
+PROBE mysql.updateAll.null_collection.err: ValidationError
+PROBE mysql.updateAll.null_collection.msg: Models collection cannot be null
+PROBE mysql.findById.missing: false
+PROBE mysql.getById.missing.err: EntityNotFoundError
+PROBE mysql.getById.missing.msg: no Wallet with id UUID('<uuid>')
+PROBE mysql.getById.deleted.err: EntityNotFoundError
+PROBE mysql.getById.deleted.msg: no Wallet with id ShardedId(value=UUID('<uuid>'))
+PROBE mysql.existsById.live: true
+PROBE mysql.existsById.deleted: false
+PROBE mysql.existsById.missing: false
+PROBE mysql.findAllByIds.empty: 0
+PROBE mysql.findAllByIds.null.err: TypeError
+PROBE mysql.findAllByIds.null.msg: 'NoneType' object is not iterable
+PROBE mysql.findAllByIds.dupes_missing_deleted: 1
+PROBE mysql.findAllWhere.two_live_one_deleted: 2
+PROBE mysql.countWhere.two_live_one_deleted: 2
+PROBE mysql.existsWhere.live: true
+PROBE mysql.findOneWhere.two_matches.err: ValidationError
+PROBE mysql.findOneWhere.two_matches.msg: find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+PROBE mysql.findOneWhere.none: false
+PROBE mysql.findOneWhere.one: true
+PROBE mysql.findOneWhere.deleted_only: false
+PROBE mysql.existsWhere.deleted_only: false
+PROBE mysql.countWhere.deleted_only: 0
+PROBE mysql.count.delta_after_one_live_one_deleted: 1
+PROBE mysql.findAll.delta_after_one_live_one_deleted: 1
+PROBE mysql.count.equals_findAll: true
+PROBE mysql.tx.findById_sees_own_insert: false
+PROBE mysql.tx.existsById_sees_own_insert: false
+PROBE mysql.tx.countWhere_sees_own_insert: 0
+PROBE mysql.tx.findAllByIds_sees_own_insert: 0
+PROBE mysql.tx.findAll_sees_own_insert: false
+PROBE mysql.tx.findOneWhere_sees_own_insert: false
+PROBE mysql.tx.existsWhere_sees_own_insert: false
+PROBE mysql.tx.other_connection_sees_insert: 0
+PROBE mysql.tx.after_commit_visible: true
+PROBE mysql.tx.update_returns_version: 2
+PROBE mysql.tx.getById_after_own_update_version: 1
+PROBE mysql.tx.after_commit_version: 2
+PROBE mysql.tx.rollback.exception_seen: RuntimeError
+PROBE mysql.tx.rollback.insert_gone: true
+PROBE mysql.tx.rollback.update_gone_version: 2
+PROBE mysql.tx.updateAll_one_stale.exception: StaleRecordError
+PROBE mysql.tx.updateAll_one_stale.fresh_row_version: 1
+PROBE mysql.notx.other_connection_sees_insert: 1
+PROBE mysql.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mysql.zone.update_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.add.same_instance: false
+PROBE mariadb.add.events_on_input: 1
+PROBE mariadb.add.events_on_result: 0
+PROBE mariadb.add.version: 1
+PROBE mariadb.add.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.add.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.find.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.find.created_date_equals_input: true
+PROBE mariadb.find.events: 0
+PROBE mariadb.find.balance: 10.0000
+PROBE mariadb.addNoResult.row_exists: true
+PROBE mariadb.addAll.empty.size: 0
+PROBE mariadb.addAll.two.size: 2
+PROBE mariadb.addAll.two.order_kept: true
+PROBE mariadb.addAll.two.same_instances: false
+PROBE mariadb.addAll.two.events_on_result: 0
+PROBE mariadb.addAll.one.same_instance: false
+PROBE mariadb.addAll.null.err: ValidationError
+PROBE mariadb.addAll.null.msg: Models collection cannot be null
+PROBE mariadb.addAll.null_element.err: ValidationError
+PROBE mariadb.addAll.null_element.msg: Model in collection cannot be null
+PROBE mariadb.addAll.null_element.first_row_written: false
+PROBE mariadb.add.null.err: ValidationError
+PROBE mariadb.add.null.msg: Model cannot be null
+PROBE mariadb.addNoResult.null.err: ValidationError
+PROBE mariadb.addNoResult.null.msg: Model cannot be null
+PROBE mariadb.addAllNoResult.empty: no error -> ok
+PROBE mariadb.addAllNoResult.null.err: ValidationError
+PROBE mariadb.addAllNoResult.null.msg: Models collection cannot be null
+PROBE mariadb.add.duplicate_id.err: IntegrityError
+PROBE mariadb.addAll.duplicate_id_in_batch.err: IntegrityError
+PROBE mariadb.update.version: 2
+PROBE mariadb.update.events_on_result: 0
+PROBE mariadb.update.db_version: 2
+PROBE mariadb.update.balance: 11
+PROBE mariadb.update.updated_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.update.created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.update.stale.err: StaleRecordError
+PROBE mariadb.update.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mariadb.updateNoResult.stale.err: StaleRecordError
+PROBE mariadb.updateNoResult.stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mariadb.update.stale.db_version_after: 3
+PROBE mariadb.update.missing.err: StaleRecordError
+PROBE mariadb.update.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mariadb.updateNoResult.missing.err: StaleRecordError
+PROBE mariadb.updateNoResult.missing.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE mariadb.updateNoResult.db_version: 4
+PROBE mariadb.update.null.err: ValidationError
+PROBE mariadb.update.null.msg: Model cannot be null
+PROBE mariadb.delete.returned_state: DELETED
+PROBE mariadb.delete.returned_version: 2
+PROBE mariadb.delete.findById_present: false
+PROBE mariadb.update.soft_deleted_row: no error -> 3
+PROBE mariadb.updateAll.empty.size: 0
+PROBE mariadb.updateAll.two.versions: 2,2
+PROBE mariadb.updateAll.two.order_kept: true
+PROBE mariadb.updateAll.two.events_on_result: 0
+PROBE mariadb.updateAll.two.balance: 11
+PROBE mariadb.updateAll.one.version: 3
+PROBE mariadb.updateAll.one_stale.err: StaleRecordError
+PROBE mariadb.updateAll.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mariadb.updateAll.one_stale.fresh_row_moved: true
+PROBE mariadb.updateAllNoResult.one_stale.err: StaleRecordError
+PROBE mariadb.updateAllNoResult.one_stale.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mariadb.updateAllNoResult.one_stale.fresh_row_moved: true
+PROBE mariadb.updateAll.same_row_twice.err: StaleRecordError
+PROBE mariadb.updateAll.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mariadb.updateAll.same_row_twice.db_version: 2
+PROBE mariadb.updateAllNoResult.same_row_twice.err: StaleRecordError
+PROBE mariadb.updateAllNoResult.same_row_twice.msg: expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+PROBE mariadb.updateAll.null_column_every_row: no error -> None
+PROBE mariadb.updateAll.null_collection.err: ValidationError
+PROBE mariadb.updateAll.null_collection.msg: Models collection cannot be null
+PROBE mariadb.findById.missing: false
+PROBE mariadb.getById.missing.err: EntityNotFoundError
+PROBE mariadb.getById.missing.msg: no Wallet with id UUID('<uuid>')
+PROBE mariadb.getById.deleted.err: EntityNotFoundError
+PROBE mariadb.getById.deleted.msg: no Wallet with id ShardedId(value=UUID('<uuid>'))
+PROBE mariadb.existsById.live: true
+PROBE mariadb.existsById.deleted: false
+PROBE mariadb.existsById.missing: false
+PROBE mariadb.findAllByIds.empty: 0
+PROBE mariadb.findAllByIds.null.err: TypeError
+PROBE mariadb.findAllByIds.null.msg: 'NoneType' object is not iterable
+PROBE mariadb.findAllByIds.dupes_missing_deleted: 1
+PROBE mariadb.findAllWhere.two_live_one_deleted: 2
+PROBE mariadb.countWhere.two_live_one_deleted: 2
+PROBE mariadb.existsWhere.live: true
+PROBE mariadb.findOneWhere.two_matches.err: ValidationError
+PROBE mariadb.findOneWhere.two_matches.msg: find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+PROBE mariadb.findOneWhere.none: false
+PROBE mariadb.findOneWhere.one: true
+PROBE mariadb.findOneWhere.deleted_only: false
+PROBE mariadb.existsWhere.deleted_only: false
+PROBE mariadb.countWhere.deleted_only: 0
+PROBE mariadb.count.delta_after_one_live_one_deleted: 1
+PROBE mariadb.findAll.delta_after_one_live_one_deleted: 1
+PROBE mariadb.count.equals_findAll: true
+PROBE mariadb.tx.findById_sees_own_insert: false
+PROBE mariadb.tx.existsById_sees_own_insert: false
+PROBE mariadb.tx.countWhere_sees_own_insert: 0
+PROBE mariadb.tx.findAllByIds_sees_own_insert: 0
+PROBE mariadb.tx.findAll_sees_own_insert: false
+PROBE mariadb.tx.findOneWhere_sees_own_insert: false
+PROBE mariadb.tx.existsWhere_sees_own_insert: false
+PROBE mariadb.tx.other_connection_sees_insert: 0
+PROBE mariadb.tx.after_commit_visible: true
+PROBE mariadb.tx.update_returns_version: 2
+PROBE mariadb.tx.getById_after_own_update_version: 1
+PROBE mariadb.tx.after_commit_version: 2
+PROBE mariadb.tx.rollback.exception_seen: RuntimeError
+PROBE mariadb.tx.rollback.insert_gone: true
+PROBE mariadb.tx.rollback.update_gone_version: 2
+PROBE mariadb.tx.updateAll_one_stale.exception: StaleRecordError
+PROBE mariadb.tx.updateAll_one_stale.fresh_row_version: 1
+PROBE mariadb.notx.other_connection_sees_insert: 1
+PROBE mariadb.zone.add_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.zone.updateAll_created_date: 2024-01-02T03:04:05.123456Z
+PROBE mariadb.zone.update_created_date: 2024-01-02T03:04:05.123456Z

@@ -1,0 +1,16 @@
+PROBE xport.python_holds.pg.wallet.java_try_zero_got: false
+PROBE xport.python_holds.pg.unicode.java_try_zero_got: false
+PROBE xport.python_holds.mysql.wallet.java_try_zero_got: false
+PROBE xport.python_holds.mysql.unicode.java_try_zero_got: false
+PROBE xport.python_holds.mariadb.wallet.java_try_zero_got: false
+PROBE xport.python_holds.mariadb.unicode.java_try_zero_got: false
+PROBE xport.python_holds.redis.wallet.java_try_zero_got: raised RedisException
+DETAIL org.redisson.client.RedisException: WRONGTYPE Operation against a key holding the wrong kind of value script: 149c5a8bf18676fd99e9e6e24923bd64d9b62f94, on @user_script:1.. channel: [id: 0x5e9b4699, L:/127.0.0.1:50369 - R:localhost/127.0.0.1:56379] command: (EVAL), params: [if ((redis.call('exists', KEYS[1]) == 0) or (redis.call('hexists', KEYS[1], ARGV[2]) == 1)) then redis.call('hincrby', KEYS[1], ARGV[2], 1); redis.call('pexpire', KEYS[1], ARGV[1]); return nil; end; return redis.call('pttl', KEYS[1]);, 1, ekbatan-lock:xport:wallet:abc, 300000, cca63936-3c84-4909-9744-ee75ec6ce05a:3], promise: java.util.concurrent.CompletableFuture@4398e9ef[Not completed, 1 dependents]
+PROBE xport.python_holds.redis.unicode.java_try_zero_got: raised RedisException
+DETAIL org.redisson.client.RedisException: WRONGTYPE Operation against a key holding the wrong kind of value script: 149c5a8bf18676fd99e9e6e24923bd64d9b62f94, on @user_script:1.. channel: [id: 0x89fc5c08, L:/127.0.0.1:50371 - R:localhost/127.0.0.1:56379] command: (EVAL), params: [if ((redis.call('exists', KEYS[1]) == 0) or (redis.call('hexists', KEYS[1], ARGV[2]) == 1)) then redis.call('hincrby', KEYS[1], ARGV[2], 1); redis.call('pexpire', KEYS[1], ARGV[1]); return nil; end; return redis.call('pttl', KEYS[1]);, 1, ekbatan-lock:xport:café, 300000, cca63936-3c84-4909-9744-ee75ec6ce05a:3], promise: java.util.concurrent.CompletableFuture@598fa0f4[Not completed, 1 dependents]
+PROBE xport.python_holds.pg.wallet.java_gets_it_after_python_releases: true
+PROBE xport.python_holds.mysql.wallet.java_gets_it_after_python_releases: true
+PROBE xport.python_holds.mariadb.wallet.java_gets_it_after_python_releases: true
+PROBE xport.python_holds.redis.wallet.java_gets_it_after_python_releases: true
+PROBE xport.shared_job.java_stopped: true
+PROBE xport.java_holds.released: true

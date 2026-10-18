@@ -1,0 +1,4 @@
+PROBE crlf_same_lines: accepted
+PROBE bom: accepted
+PROBE trailing_newline_dropped: MigrationError:   - V1__a.sql has changed since it was applied (e5f3b7032efb then, afc4b85baa2e now). An applied migration is history: put the file back as it was, and make the change in a new migration.
+PROBE middle_file_gone: MigrationError:   - V2__b.sql (version 2) has been applied to this database but its file is gone. An applied migration is history: restore the file - or, if it was removed on purpose, run repair() to record it as deleted.

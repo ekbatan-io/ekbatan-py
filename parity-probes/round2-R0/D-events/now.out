@@ -1,0 +1,144 @@
+PROBE b.initial: PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE b.step1.early_any: false
+PROBE b.step1.any: true
+PROBE b.step1: FAILED attempts=1 delay=30s updated=2026-01-01 10:00:00
+PROBE b.step2.early_any: false
+PROBE b.step2.any: true
+PROBE b.step2: FAILED attempts=2 delay=60s updated=2026-01-01 10:00:30
+PROBE b.step3.early_any: false
+PROBE b.step3.any: true
+PROBE b.step3: FAILED attempts=3 delay=120s updated=2026-01-01 10:01:30
+PROBE b.step4.early_any: false
+PROBE b.step4.any: true
+PROBE b.step4: FAILED attempts=4 delay=240s updated=2026-01-01 10:03:30
+PROBE b.step5.early_any: false
+PROBE b.step5.any: true
+PROBE b.step5: FAILED attempts=5 delay=300s updated=2026-01-01 10:07:30
+PROBE b.step6.early_any: false
+PROBE b.step6.any: true
+PROBE b.step6: FAILED attempts=6 delay=300s updated=2026-01-01 10:12:30
+PROBE b.step7.early_any: false
+PROBE b.step7.any: true
+PROBE b.step7: FAILED attempts=7 delay=300s updated=2026-01-01 10:17:30
+PROBE b.step8.early_any: false
+PROBE b.step8.any: true
+PROBE b.step8: FAILED attempts=8 delay=300s updated=2026-01-01 10:22:30
+PROBE b.calls: 8
+PROBE b.attempt_seen_by_handler: [1, 2, 3, 4, 5, 6, 7, 8]
+PROBE c.default_fanout_batch: 200
+PROBE c.fanout_took_oldest: t
+PROBE c.default_handling_batch: 100
+PROBE c.max_concurrent_handlers: 5
+PROBE c.slow_calls: 5
+PROBE c.order.count: 2
+PROBE c.order.e1.rec: PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE c.order.e2.rec: PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:01:00 | 2026-01-01 10:01:00
+PROBE c.order.handled: [m-2, m-1]
+PROBE c.future_event.row: PENDING | 0 | 2026-01-01 11:00:00 | 2026-01-01 10:00:00
+PROBE c.future_event.calls: 0
+PROBE e.round1.any: true
+PROBE e.round1.ok: SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE e.round1.error: FAILED | 1 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+PROBE e.round1.fail: FAILED | 1 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+PROBE e.round1.ghost: PENDING | 0 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+PROBE e.round2.ok: SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE e.round2.error: FAILED | 2 | 2026-01-01 10:01:30 | 2026-01-01 10:00:30
+PROBE e.round2.fail: FAILED | 2 | 2026-01-01 10:01:30 | 2026-01-01 10:00:30
+PROBE e.round2.ghost: PENDING | 0 | 2026-01-01 10:01:00 | 2026-01-01 10:00:30
+PROBE e.round3.ghost: PENDING | 0 | 2026-01-01 10:02:00 | 2026-01-01 10:01:30
+PROBE e.calls: 1/3/3
+PROBE e.alias.old_row: SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE e.alias.calls: 1
+PROBE e.alias.new_rows: [new-name]
+PROBE f.round1.any: true
+PROBE f.delivered.e1: t
+PROBE f.delivered.e2: t
+PROBE f.delivered.e3: f
+PROBE f.delivered.e4: f
+PROBE f.delivered.e6: t
+PROBE f.delivered.e5: t
+PROBE f.s0.count: 6
+PROBE f.s0.e1.email: PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.s0.e1.indexer: PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.s0.e2.email: PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.s0.e2.indexer: PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.s0.e6.email: PENDING | 0 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.s0.e6.indexer: PENDING | 0 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.s1.count: 2
+PROBE f.s1.e5.email: PENDING | 0 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.s1.e5.indexer: PENDING | 0 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.copied_mismatch: 0
+PROBE f.round2.any: false
+PROBE f.refanout.any: true
+PROBE f.refanout.count: 6
+PROBE f.refanout.e1_delivered: t
+PROBE f.handle1.any: true
+PROBE f.after.s0.count: 6
+PROBE f.after.s0.e1.email: SUCCEEDED | 1 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.after.s0.e1.indexer: SUCCEEDED | 1 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.after.s0.e2.email: SUCCEEDED | 1 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.after.s0.e2.indexer: SUCCEEDED | 1 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.after.s0.e6.email: SUCCEEDED | 1 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.after.s0.e6.indexer: SUCCEEDED | 1 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.after.s1.count: 2
+PROBE f.after.s1.e5.email: SUCCEEDED | 1 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.after.s1.e5.indexer: SUCCEEDED | 1 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+PROBE f.received.email: [e1/m-1/Widget/name-1/red/m-1/Widget/ns/000000001001/SomeAction/{"k":"v"}/2026-01-01 09:55:00/2026-01-01 09:55:00/2026-01-01 09:55:00, e2/m-2/Widget/name-2/red/m-2/Widget/ns/000000001002/SomeAction/{"k":"v"}/2026-01-01 09:50:00/2026-01-01 09:50:00/2026-01-01 09:50:00, e5/m-5/Widget/name-5/red/m-5/Widget/ns/000000001005/SomeAction/{"k":"v"}/2026-01-01 09:57:00/2026-01-01 09:57:00/2026-01-01 09:57:00, e6/m-6/Widget/name-6/red/m-6/Widget/ns/000000001006/SomeAction/{"k":"v"}/2026-01-01 09:56:40/2026-01-01 09:56:40/2026-01-01 09:56:40]
+PROBE f.received.indexer: [e1/m-1/Widget/name-1/red/m-1/Widget/ns/000000001001/SomeAction/{"k":"v"}/2026-01-01 09:55:00/2026-01-01 09:55:00/2026-01-01 09:55:00, e2/m-2/Widget/name-2/red/m-2/Widget/ns/000000001002/SomeAction/{"k":"v"}/2026-01-01 09:50:00/2026-01-01 09:50:00/2026-01-01 09:50:00, e5/m-5/Widget/name-5/red/m-5/Widget/ns/000000001005/SomeAction/{"k":"v"}/2026-01-01 09:57:00/2026-01-01 09:57:00/2026-01-01 09:57:00, e6/m-6/Widget/name-6/red/m-6/Widget/ns/000000001006/SomeAction/{"k":"v"}/2026-01-01 09:56:40/2026-01-01 09:56:40/2026-01-01 09:56:40]
+PROBE f.handle2.any: false
+PROBE f.late.any: true
+PROBE f.late.e3_delivered: t
+PROBE f.late.e3_row: PENDING | 0 | 2026-01-01 09:53:00 | 2026-01-01 10:00:00
+PROBE f.late.e4_sentinel_delivered: f
+PROBE f.late.audit_received: [w-3/t-3]
+PROBE g.same_handler_twice: refused: Handler name or alias already registered: a (handler names and aliases must be globally unique)
+PROBE g.duplicate_name: refused: Handler name or alias already registered: a (handler names and aliases must be globally unique)
+PROBE g.alias_equals_other_name: refused: Handler name or alias already registered: a (handler names and aliases must be globally unique)
+PROBE g.name_equals_other_alias: refused: Handler name or alias already registered: a-old (handler names and aliases must be globally unique)
+PROBE g.alias_equals_own_name: refused: Handler alias duplicates canonical name: c
+PROBE g.blank_alias: refused: handler.aliases cannot contain blank values
+PROBE g.blank_name: refused: handler.name cannot be blank
+PROBE g.simple_name_collision: refused: Event type simple name collision: WidgetCreatedEvent
+PROBE g.handled_event_types: [NoteCreatedEvent, WidgetCreatedEvent]
+PROBE g.subscribers_widget: [a, a2]
+PROBE g.subscribers_unknown: []
+PROBE g.lookup_alias: a
+PROBE g.lookup_unknown: null
+PROBE j.fanout.name: ekbatan-event-fanout
+PROBE j.handling.name: ekbatan-event-handling
+PROBE j.fanout.schedule: FixedDelay
+PROBE j.handling.schedule_default: FixedDelay
+PROBE j.config.handling_enabled_default: false
+PROBE j.config.defaults_empty: true
+PROBE j.config.batch_zero: refused: fanout_batch_size must be at least 1, got 0
+PROBE j.config.poll_zero: refused: handling_poll_delay must be positive, got 0:00:00
+PROBE j.config.retention_negative: refused: handling_retention_window must be positive, got -1 day, 23:59:59
+PROBE j.job.blank_name: refused: EventFanoutJob has a blank name. The name is the primary key of this job's row and how every instance recognises it as the same job.
+PROBE j.job.batch_zero: ok
+PROBE j.job.no_clock: ok
+PROBE j.empty_registry_fanout.any: false
+PROBE r.find_undelivered: 0
+PROBE r.fanout.any: false
+PROBE r.fanout.primary_notifications: 0
+PROBE r.find_due: 1
+PROBE r.handling.any: true
+PROBE r.handling.calls: 1
+PROBE t.find_undelivered_sees_own_uncommitted: 0
+PROBE t.after_rollback_events: 0
+PROBE t.find_due_sees_own_uncommitted: 0
+PROBE t.undelivered_after_mark_in_same_tx: 1
+PROBE t.mark_delivered_rolled_back: f
+PROBE t.outcome_write_failed.threw: true
+PROBE t.outcome_write_failed.ok_row: SUCCEEDED
+PROBE t.outcome_write_failed.fail_row: PENDING
+PROBE t.outcome_write_failed.ok_calls_after_two_rounds: 1
+PROBE x.step1: at=+0s FAILED attempts=1 next=+30s calls=1
+PROBE x.step2: at=+30s FAILED attempts=2 next=+90s calls=2
+PROBE x.step3: at=+90s FAILED attempts=3 next=+210s calls=3
+PROBE x.step4: at=+210s FAILED attempts=4 next=+450s calls=4
+PROBE x.step5: at=+450s EXPIRED attempts=5 next=+450s calls=5
+PROBE x.boundary.exact: EXPIRED | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00
+PROBE x.boundary.one_second_older: EXPIRED | 0 | 2026-01-01 09:49:59 | 2026-01-01 10:00:00
+PROBE x.boundary.one_second_younger: SUCCEEDED | 1 | 2026-01-01 09:50:01 | 2026-01-01 10:00:00
+PROBE x.boundary.calls: [m-13]
+PROBE x.near_deadline.first_failure: EXPIRED | 1 | 2026-01-01 09:50:10 | 2026-01-01 10:00:00

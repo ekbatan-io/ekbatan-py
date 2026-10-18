@@ -1,0 +1,603 @@
+=== docs/concepts/actions.md <-> website/src/pages/learn/actions.mdx: 67 only-in-docs, 73 only-in-website
+  D: A ContextVar is per-context;
+  D: A policy for EkbatanError does not catch a StaleRecordError .
+  D: A pool thread that outlived the unit of work while holding its connection is exactly the bug this prevents.
+  D: A property rather than a field:
+  D: A repository call three frames down stages onto the same plan without ever mentioning it, and threading it through every signature between would put framework plumbing in the middle of domain code.
+  D: A single dict assignment is atomic;
+  D: ActionPlan The accumulator for this invocation.
+  D: Actions An action is one unit of business work - DepositMoneyAction , ShipOrderAction , RenewSubscriptionAction .
+  D: Ambient because it cannot be anything else.
+  D: An action must not have mutable instance state.
+  D: An error raised inside an except block without from is not followed:
+  D: Anything beyond the constructor breaks under concurrency.
+  D: Cross-shard actions An action whose changes span shards raises CrossShardError .
+  D: If a partial commit would need compensating, model the work as a saga instead.
+  D: If another transaction got there first, zero rows match and StaleRecordError unwinds the whole thing.
+  D: If anything raises, both roll back.
+  D: If one must follow the other, orchestrate above the framework.
+  D: If the action fans work out to a pool to gather data, join the children first and only then stage from the thread that invoked perform() .
+  D: If they are independent, run them separately from the caller.
+  D: If two operations must happen together, they are one action.
+  D: Internally it is a plain dict keyed by type, holding plain dicts keyed by id, and nothing guards them.
+  D: It follows __cause__ - what raise ...
+  D: Matching is by exact class, as Java's is.
+  D: Matching looks through the cause chain, so a driver wrapping a conflict is still recognised.
+  D: Name the class that is actually thrown - a policy on a class that is only ever raised as one of its subclasses matches nothing and says nothing about it.
+  D: Nothing checks it, as in Java:
+  D: Pass the executor's clock to the action.
+  D: Python records that link as __context__ for free, and Java has no equivalent.
+  D: Retries on optimistic-lock conflicts Every persistable carries a version , and updates always include WHERE version = ?
+  D: See also - Models and entities - what plan.add and plan.update consume - The outbox - what phase 2 writes - Sagas - multi-step workflows, and compensation - Sharding - how phase 2 groups changes - Concurrency - the ContextVar, and forking work safely
+  D: Side effects in perform() that are outside the plan - logging, counters, an HTTP call - replay too.
+  D: Singletons + per-call state via a ContextVar One instance per class, for the life of the application, shared by every concurrent invocation.
+  D: That second point is not a limitation to work around - it is the design.
+  D: That split is what makes the outbox implicit:
+  D: The GIL is not the reprieve it looks like.
+  D: The default is one retry after 100 ms - enough to absorb ordinary contention, not enough to hide a real problem.
+  D: The default refusal is the point:
+  D: The exception is chaining after the commit:
+  D: The failure is a lost write with a correct-looking traceback, which is exactly the kind you find in production rather than in a test.
+  D: The other two can be passed, so they are.
+  D: The plan is ambient because it cannot be anything else:
+  D: The retry replays the whole action from phase 1, with a fresh plan.
+  D: There is no support for composition and that is deliberate:
+  D: Three details worth knowing:
+  D: Three per-invocation values, and the same three mechanisms Java uses for them:
+  D: Treat it as an escape hatch.
+  D: Within perform() , add , add_all , update and update_all must all happen on the thread that entered it.
+  D: Writing an action python class DepositMoneyAction(Action[DepositParams, Wallet]):
+  D: a failure reaches the caller unchanged, for work whose side effects are not safe to repeat.
+  D: a handler, a consumer or a worker reacts to a committed event and starts the next action in its own transaction.
+  D: a repository call three frames down stages onto the same plan without mentioning it.
+  D: current_plan() raises with a message saying so rather than returning None .
+  D: domain rows and event rows are written together, by the framework, never by your code.
+  D: forking is allowed but not encouraged Deliberately.
+  D: from err sets - and nothing else, which is exactly what Java's getCause() walk reaches.
+  D: it resolves the ContextVar bound for the duration of perform() , so one shared action instance serves every concurrent invocation safely.
+  D: nesting blurs the transaction boundary, hides coupling, and makes the flow hard to follow.
+  D: once two databases are involved, all-or-nothing is not available, and a partial commit is the dual-write trap wearing a different hat.
+  D: python config = ExecutionConfiguration( retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),) ) executor.execute(DepositMoneyAction, params, config=config) ExecutionConfiguration.no_retry() is the other end:
+  D: python executor.execute(TransferAction, params, config=ExecutionConfiguration(allow_cross_shard=True)) With it enabled, each shard gets its own transaction and commits independently - there is no two-phase commit - and the action's outbox row is written to every involved shard so each holds the full
+  D: python wallet = executor.execute( DepositMoneyAction, DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")), ) The executor opens one transaction, writes the wallet row with its incremented version, writes the MoneyDepositedEvent row, commits.
+  D: self.plan must be reached from the thread or task that is running perform() .
+  D: the action reads its own clock in perform() and the rows are stamped from the executor's, so a test that freezes one and not the other asserts on two different instants.
+  D: the clock is a constructor field, the principal is a parameter of perform() , and only the plan is ambient - bound into a ContextVar for the duration of perform() , where Java uses a ScopedValue .
+  D: the staging path is not - it checks whether the id is already staged, stamps the row, and then assigns, and two threads can both pass the check.
+  D: wallet = self.wallets.get(params.wallet_id) return self.plan.update(wallet.deposit(params.amount)) Read from a repository, build a new immutable Wallet with an event attached, stage it.
+  D: work handed to a pool does not inherit the binding.
+  W: <LearnPager current="actions" / See also - Your first action - the same action, end to end, with the outbox row read back - Models and entities - what perform() reads and stages - Sagas - what to write when the work does not fit in one transaction - Reference:
+  W: A failure rolls back only its own shard;
+  W: A retry replays the whole action from phase 1, with a fresh plan.
+  W: A saga is exactly this shape, repeated - one committed action emits an event, a post-commit consumer starts the next.
+  W: ActionPlan python self.plan.add(entity) staged for INSERT self.plan.update(entity) staged for UPDATE;
+  W: Action[DepositParams, Wallet] means execute on this action takes those params and returns a wallet, at the call site, without a cast.
+  W: Actions, Wiring - where an action is registered
+  W: An action is one unit of business work.
+  W: An action whose staged changes span shards raises CrossShardError , naming the two that disagreed - the check is on what was staged, so it fires at the boundary between perform() and the commit rather than half way through writing.
+  W: An action with no parameters passes None .
+  W: Cross-shard actions Refused unless you ask.
+  W: Decimal class DepositMoneyAction(Action[DepositParams, Wallet]):
+  W: Do not share the action's transactional connection across threads.
+  W: Even reading it from a pool thread is unsupported, because the ContextVar binding does not propagate - self.plan raises there rather than returning the wrong plan, which is the better of the two failures.
+  W: Here a policy for EkbatanError catches every framework error.
+  W: If a partial commit would need compensating, the honest answer is a saga.
+  W: If anything raises, both roll back together.
+  W: Inside perform() , keep parallelism to work that needs none of the action's state:
+  W: Inside perform() there is not even one yet.
+  W: It is bound to the invoking thread, and a DBAPI connection is not thread-safe regardless.
+  W: Matching is by isinstance , so a subclass matches.
+  W: Matching looks through the cause chain , so a driver wrapping a conflict is still recognised.
+  W: No database write happens in perform() .
+  W: One id may be staged at most once per action.
+  W: One must follow the other → chain them after the commit.
+  W: One perform() can read three repositories and stage four objects;
+  W: Only the thread that invoked perform() may call self.plan.add(...) or self.plan.update(...) .
+  W: Per-execution state - the plan, the clock, the principal - is bound into a ContextVar for the duration of perform() .
+  W: Prefer opting in per call rather than as an executor default, so the risk is visible at the call site.
+  W: Retries on optimistic-lock conflicts The default is one retry after 100 ms - enough to absorb ordinary contention, not enough to hide a real problem.
+  W: Side effects outside the plan - logging, counters, an HTTP call - replay too.
+  W: Singletons + per-call state via a ContextVar One instance per class, shared by every concurrent invocation.
+  W: So a partial commit here is the dual-write trap wearing a different hat - two systems that can disagree, where the two systems happen to both be yours.
+  W: So an action must not have mutable instance state, and self.plan must be reached from the thread or task running perform() .
+  W: That last one is the only exception, and it is a real one:
+  W: That second rule is why the non-propagation is correct rather than a limitation:
+  W: The Java port binds the same thing to a ScopedValue .
+  W: The action reads through a repository, builds a new immutable wallet with an event already attached - that happened inside wallet.deposit(...) - and stages it.
+  W: The framework intentionally does not support nesting or composition :
+  W: The generic parameters are what a checker holds you to:
+  W: The plan is single-writer.
+  W: The reason the exception is safe and nesting is not comes down to one thing:
+  W: The supported pattern is fan out, join , and only then stage - from the invoking thread:
+  W: There are three right answers, depending on what you actually meant:
+  W: There is no two-phase commit , and there is no way to add one:
+  W: They are independent → execute them separately from the caller, which is the layer that already knows they are independent.
+  W: They must happen together → they belong in a single action.
+  W: This is a real divergence from the Java port, which matches the exception class exactly - a policy for RuntimeException there does not catch an IllegalStateException .
+  W: Two changes to one row in one action is almost always a bug you would rather find here.
+  W: Under asyncio the same rule applies with a sharper edge:
+  W: What it may not pass is a bare scalar - a string or an int in the params column is unreadable six months later, and both ports refuse it.
+  W: Writing an action python @dataclass(frozen=True, kw_only=True) class DepositParams:
+  W: a ContextVar is per-task as well as per-thread, so work handed to another task does not inherit the binding either.
+  W: a pool thread outliving the unit of work while holding its connection is exactly the bug it prevents.
+  W: after the commit there is no outer transaction left to corrupt.
+  W: an action is a self-contained unit of business work that produces one atomic transaction, and nesting blurs that boundary, creates hidden coupling, and makes the execution flow hard to reason about.
+  W: an in-process handler, a broker consumer or a worker reacts once the source action has committed , and starts the next step in its own transaction.
+  W: concurrent mutation from a pool thread is a data race with a correct-looking traceback.
+  W: concurrent mutation is a data race.
+  W: customer, quote = pool.map(...) neither touches the plan return self.plan.add(build_order(customer, quote)) back on this thread For reads , prefer doing the fan-out before executor.execute(...) - at the caller - so the parallel work uses ordinary pool connections rather than anything belonging to th
+  W: external calls, replica reads on their own connections, pure computation.
+  W: python config = ExecutionConfiguration( retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),) ) executor.execute(DepositMoneyAction, params, config=config) Three details worth knowing:
+  W: python def perform(self, principal:
+  W: python executor.execute( TransferAction, params, config=ExecutionConfiguration(allow_cross_shard=True), ) With that, each shard gets its own transaction and commits independently.
+  W: python wallet = executor.execute( DepositMoneyAction, DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")), ) The executor opens one transaction, writes the wallet row with its incremented version, writes the MoneyDepositedEvent row into events , and commits.
+  W: returns the object at its next version self.plan.add_all(items) self.plan.update_all(items) Three rules:
+  W: spawning threads is fine Spawning parallel work inside perform() is allowed - the plan is single-writer, not the action.
+  W: that is not a reason to reach for a second action.
+  W: the ones that already committed stay committed, and the executor logs that loudly.
+  W: the shards are separate databases, and an atomic commit across them does not exist to be opted into.
+  W: update() returns the object at its next version , so later reads in the same perform() see the increment.
+  W: wallet = self.wallets.get(params.wallet_id) return self.plan.update(wallet.deposit(params.amount)) Typed parameters in, a domain object out.
+  W: with ThreadPoolExecutor() as pool:
+=== docs/concepts/models-and-entities.md <-> website/src/pages/learn/models-and-entities.mdx: 105 only-in-docs, 53 only-in-website
+  D: , because that is the optimistic lock rather than a convenience.
+  D: @dataclass(frozen=True) on a model would write a whole-row == of its own, so the framework gives each model this one as it is defined.
+  D: @dataclass(frozen=True, kw_only=True) is ordinary, idiomatic Python - the standard library has had dataclasses since 3.7, and pydantic, pytest, anyio, FastAPI and SQLAlchemy all use frozen ones.
+  D: A Model python @dataclass(frozen=True, kw_only=True) class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
+  D: A dataclass can, so it is one rule rather than three lines per model, and it covers the fields somebody would have forgotten.
+  D: A missing or blank id is refused when the event is made.
+  D: A model records something that happened, and when it happened is part of the record rather than a column the framework backfills afterwards.
+  D: A model that writes its own __eq__ keeps it.
+  D: Action - imperative, because an action describes intent:
+  D: An entity may add its own timestamp columns;
+  D: Both are kept as aware UTC datetime s, as Java keeps Instant s:
+  D: Both immutable, both version-tracked, both with a state column that supports soft deletion.
+  D: Choose Entity when the current state is enough and the history of individual changes is not:
+  D: Decimal The class line names the model the event is about, and the constructor takes that model's id - MoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...) , which is Java's new MoneyDepositedEvent(id, amount, newBalance) with super(id, Wallet.class) inside it.
+  D: Deleting is a domain event like any other.
+  D: Domain code should prefer copy() , so that every change in an application reads the same way.
+  D: Entity has neither, in either port.
+  D: Equality The same row at the same version is the same object, as in Java:
+  D: Event - <Noun <Verb ed + Event , because an event describes something that already happened:
+  D: Events are written to events.payload as the JSON Java writes for them.
+  D: Frozen makes that unwritable rather than merely discouraged.
+  D: GenericState ( ACTIVE / DELETED ) is there for entities and simple models that need no state machine.
+  D: Here the payload is rebuilt from the dataclass's own annotations - a Decimal from its number, a datetime from its ISO form, an enum from its name.
+  D: If another transaction got there first, zero rows match and StaleRecordError unwinds the action's transaction.
+  D: If you are coming from Django or the SQLAlchemy ORM deposit() returning a new wallet instead of assigning to self.balance is the part that looks strange, so it is worth saying plainly what it is and is not.
+  D: It also makes the inheritance legal at all:
+  D: It is how Python compares saved records too (Django by primary key, SQLAlchemy by one object per row);
+  D: It stops transposition, because owner_id sits next to currency and started_date next to completion_date - adjacent same-typed fields that swap silently when passed positionally.
+  D: Java here None --- --- --- String currency currency:
+  D: Java needs a @JsonCreator constructor with a @JsonProperty for every field, or the dispatch job cannot rebuild the event and the handler is never invoked.
+  D: Java orders an action's name model-first - WalletCreateAction , WalletDepositMoneyAction .
+  D: Java's nextVersion() does the same.
+  D: Java's ordering groups a model's actions together alphabetically, which is worth something in a large package tree;
+  D: Keyword arguments have no order, so that cannot arise.
+  D: ModelEvent A ModelEvent is a frozen dataclass carrying whatever the domain needs:
+  D: Models and entities Two kinds of persistable object.
+  D: Move it on the changes where it means something:
+  D: Mutators build on it, change what changed, attach an event and build() .
+  D: Naming conventions - Model - a singular noun:
+  D: Neither the plan nor the repository touches it on a write, exactly as nothing in Java's ekbatan-core writes updatedDate .
+  D: Nothing moves updated_date but you.
+  D: Nothing to write, and nothing to forget.
+  D: One divergence, deliberately.
+  D: OpenWalletAction , DepositMoneyAction .
+  D: Optimistic locking is correct but it is correct by failing :
+  D: Optimistic locking, always Every persistable carries a version , and every update carries it:
+  D: Pass self.clock.now() from the action, which is what Java's clock.instant() is doing:
+  D: Pick one and hold it - the examples here are all verb-first.
+  D: Python's absence is None rather than a wrapper that can itself be missing.
+  D: Required, and optional The base refuses None for any field whose annotation does not admit it - including the ones you declare .
+  D: See The outbox for the row, including why two identity keys are spelled in Java's style.
+  D: See also - Actions - how these flow through perform() into the database - The outbox - where the events go - Getting started - the repository that maps a model to a row
+  D: So wallet.created_date compares with clock.now() , and equals the same instant read back from any database.
+  D: Soft deletion Rows are not physically removed.
+  D: Something that needs to know when it last changed almost certainly has changes worth telling the rest of the system about, which makes it a Model .
+  D: State enum - <Model State with upper-snake values:
+  D: Taking a keyed lock on the wallet first means the second caller waits and then succeeds, which is what anyone depositing into a busy wallet actually wants.
+  D: That is a deliberate stance rather than a Python convention, and the reason is two-phase execution.
+  D: That is more typing, and it is what makes the outbox guarantee expressible at all.
+  D: That is the cost of a framework that will not rewrite a column your application set - which is the property that makes the column usable for recording when your change happened.
+  D: The Java port takes the identical stance - public final fields, a copy() builder, a deposit that returns a new Wallet .
+  D: The default policy retries the whole action once after 100 ms - see Actions.
+  D: The interesting case is when losing is the wrong outcome.
+  D: The plan holds a reference to what you staged, and the executor writes it later, inside a transaction.
+  D: The previous instance is untouched.
+  D: The suffix and the imperative mood are the same;
+  D: The type argument stands in for Wallet.class :
+  D: The version is different, and does move on its own:
+  D: There is no counterpart to Java's fourth case, a null where an Optional reference belongs:
+  D: There is no deserialisation boilerplate , and this is one of the few places this port is straightforwardly ahead of Java:
+  D: This is not a Python-side invention.
+  D: This port orders it verb-first:
+  D: Those two fill the outbox's model_id and model_type columns.
+  D: WalletOpenedEvent , MoneyDepositedEvent , TransferFailedEvent .
+  D: What leaves is the wallet, not its history.
+  D: What you give up is ORM-style dirty tracking.
+  D: When a physical delete is genuinely required - an erasure request, purging expired data - issue the DELETE yourself through the repository's table.
+  D: When you genuinely want a lock, take a keyed lock or issue SELECT ...
+  D: a column named updated_date does not move on its own, and a row you never mark still reads as last-updated-when-created.
+  D: a value with another offset is moved to UTC, one with no zone is taken as UTC.
+  D: cache keys, config values, durations, markers.
+  D: comparing every field is for value objects.
+  D: copy() returns a builder pre-populated with the current state.
+  D: copy() versus evolve() evolve() is the framework's own shorthand and exists because internal code needs it.
+  D: created_date is required , exactly as Java's is - its constructor says Validate.notNull(builder.createdDate) and build() throws without it.
+  D: equal when these match hash --- --- --- Model class, id , state , version , created_date , updated_date hash(id) Entity class, id , state , version hash(id) Business fields and events take no part, so two copies of one wallet at one version are equal whatever each says the balance is - and any model
+  D: id , state , version yes yes created_date / updated_date required , and typed on the base neither Changes emit events yes no Choose Model when a change should be recorded as an event - for downstream consumers, for in-process handlers, for audit, or for any reason a discrete record of what happened 
+  D: it fixes model_name once per class, so no call site passes it.
+  D: it is still the other side of every event already published about that aggregate.
+  D: kw_only is doing two jobs, and the second is not optional.
+  D: python @dataclass(frozen=True, kw_only=True) class MoneyDepositedEvent(ModelEvent["Wallet"]):
+  D: python Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.now()) updated_date falls back to created_date - a row that has never changed was last updated when it was created.
+  D: python def deposit(self, amount:
+  D: return ( self.copy() .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=self.balance + amount)) .balance(self.balance + amount) .updated_date(at) .build() ) The trade is worth knowing rather than discovering:
+  D: return self return self.copy().with_event(WalletClosedEvent(model_id=str(self.id))).state(WalletState.CLOSED).build() Two patterns worth naming:
+  D: sql UPDATE wallets SET balance = ?, version = ?
+  D: state flips to DELETED and every read filters them out - the filter is applied once, in the framework, rather than remembered at each call site.
+  D: str \ None accepted Java writes this out per field - Validate.notNull(builder.ownerId, ...) once for each, in every model's constructor - because a Java base class cannot enumerate a subclass's fields.
+  D: str refused Optional<String note note:
+  D: the base carries updated_date and events with defaults, and a subclass field without one would otherwise be "non-default argument follows default argument" , a TypeError at class-definition time.
+  D: the framework simply will not populate them.
+  D: the repository increments it inside the write, under WHERE version = ?
+  D: two deposits race, the loser raises.
+  D: verb-first reads as the English sentence the action actually is, which is worth more in a flat Python module.
+  D: you say what changed, explicitly, through the plan.
+  W: <LearnPager current="models-and-entities" / See also - Actions - how a model flows through perform() into the database - Your first action - the same wallet, end to end - The outbox - where the events a model emits end up - Reference:
+  W: A blank id is refused when the event is made, not when it is written.
+  W: A checker keeps two models' ids apart;
+  W: A model <CodeBlock filename="model.py" language="python" shadow="yellow" code={ @dataclass(frozen=True, kw_only=True) class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
+  W: Action - <Verb <Model Action :
+  W: And a query you write yourself does not get the filter :
+  W: Both are immutable, both version-tracked, both with a state column that supports soft deletion.
+  W: But note that is correct by failing - two deposits race and the loser raises.
+  W: Choose Entity when the current state is enough:
+  W: Decimal The class line names the model the event is about, and the constructor takes that model's id - MoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...) .
+  W: Deleting is a domain decision , so the model says what it means - some models refuse to be deleted while they hold money.
+  W: Event - <Model <Verb ed + Event :
+  W: GenericState ( ACTIVE / DELETED ) is fine for an entity, or a model with no real state machine.
+  W: If another transaction got there first, zero rows match and StaleRecordError unwinds the action, which then retries once by default.
+  W: If you are arriving from Django or the SQLAlchemy ORM:
+  W: It also makes the inheritance legal at all :
+  W: It stops transposition, because owner_id sits next to currency and started_date next to completion_date .
+  W: ModelEvent python @dataclass(frozen=True, kw_only=True) class MoneyDepositedEvent(ModelEvent["Wallet"]):
+  W: Models and entities, Repositories - how a model becomes a row and back
+  W: Naming conventions The same in both ports, so a reader moving between them recognises what they are looking at.
+  W: OpenWalletAction , DepositMoneyAction , ShipOrderAction .
+  W: Optimistic locking, always Every update carries WHERE version = ?
+  W: ShardedId[Wallet] for a model whose rows are routed by id, Id[Alert] otherwise, as Java writes ShardedId<Wallet .
+  W: Soft deletion Nothing is physically removed.
+  W: State enum - <Model State , values in UPPER_SNAKE :
+  W: That is deliberate, and the reason is two-phase execution.
+  W: The plan holds a reference to what you staged, and the executor writes it later.
+  W: There is no delete() on the repository, in either port, and that is deliberate:
+  W: Those two fill the outbox's model_id and model_type columns, exactly as Java's super(id, Wallet.class) does.
+  W: WalletOpenedEvent , MoneyDepositedEvent , OrderShippedEvent .
+  W: WalletRepository.erase in the example does exactly that, and refuses a wallet that still holds money.
+  W: WalletState.OPENED , OrderState.SHIPPED .
+  W: What leaves is the wallet, not the history.
+  W: When a physical delete is genuinely required - an erasure request, purging expired rows - write it against your own rule.
+  W: When losing is the wrong outcome, take a keyed lock first so the second caller waits and then succeeds.
+  W: Why frozen @dataclass(frozen=True, kw_only=True) is ordinary Python - the standard library has had dataclasses since 3.7, and pydantic, pytest, FastAPI and SQLAlchemy all use frozen ones.
+  W: a row that silently stopped existing would leave every event already published about it with nothing on the other side.
+  W: an action describes intent.
+  W: an event describes something that already happened.
+  W: at runtime they compare by uuid, as Java's do.
+  W: cache keys, config values, durations.
+  W: copy() returns a builder pre-populated with the current state;
+  W: delete() on the model flips state to DELETED and emits an event like any other change, and every inherited read filters those rows out:
+  W: id , state , version yes yes created_date / updated_date required , and typed on the base neither Changes emit events yes no Choose Model when a change should be recorded as an event.
+  W: if self.state is WalletState.DELETED:
+  W: mutators build on it, change what changed, attach an event and build() .
+  W: python def delete(self) - Wallet:
+  W: return self return self.copy().with_event(WalletClosedEvent(model_id=str(self.id))).state(WalletState.CLOSED).build() } / Two patterns worth naming.
+  W: return self return self.copy().with_event(WalletDeletedEvent(model_id=str(self.id))).state(WalletState.DELETED).build() then repo.update(wallet.delete()) , or plan.update(wallet.delete()) inside an action.
+  W: the base carries updated_date and events with defaults, and a subclass field without one would otherwise be "non-default argument follows default argument" .
+  W: the inherited reads apply it, a statement you build carries what you put in it, so add WALLETS.c.state != WalletState.DELETED.name when you drop to SQL.
+  W: what you give up is dirty tracking.
+  W: you say what changed, through the plan.
+=== docs/concepts/outbox.md <-> website/src/pages/learn/outbox.mdx: 33 only-in-docs, 33 only-in-website
+  D: After the commit, the rows in events are the canonical record of what happened.
+  D: And this is the table they land in - events has its DDL on every dialect, column by column.
+  D: Assert on action_name or action_id rather than on position, or use a running clock.
+  D: Every action's commit is one database transaction that touches as many domain tables as the action needs plus the outbox.
+  D: How rows get there Every row arrives the same way, and no other way exists:
+  D: In-process fan-out flips delivered from false to true, producing UPDATE rows;
+  D: It is also what makes the generated schema module the single source of truth for the table's shape.
+  D: Java's field names ( new_balance is newBalance ) in declaration order, decimals as JSON numbers, times in java.time 's forms.
+  D: Leave it out - no events= and no outbox= - and the executor writes through the default persister to the framework's own events table definition ( outbox_table ), as Java's builder makes its default persister when none is set.
+  D: Ordering, and the thing to know about it event_date is the only ordering key - there is no ordinal column.
+  D: Pass it whenever your table has another name or schema.
+  D: Passing the table explicitly events=EVENTS is not ceremony.
+  D: Point Debezium at events and ship rows to per-event-type topics.
+  D: See also - Actions - what stages the events that end up here - Models and entities - only models emit events - The dual-write trap - why this exists at all
+  D: So either port reads the other's rows;
+  D: That is what makes a Java service and a Python service able to read each other's events:
+  D: The outbox The central guarantee.
+  D: The payload starts with modelId and modelName , as Java's does - Java's local event handler deserialises the payload straight into its event class and refuses one without them.
+  D: The table is a cross-language contract The columns are the same here and in Java, because a Debezium connector pointed at either one must produce the same topic.
+  D: The table is passed in rather than reached for globally, which is what lets two services run in one process against two outboxes - exactly what the saga example's tests do.
+  D: The transform that does the routing runs inside Kafka Connect, in a JVM , whichever language wrote the row - so a Python service uses the same ekbatan-debezium-smt artifact a Java one does.
+  D: There is no Python counterpart to build, and none is planned.
+  D: This is the right shape for a monolith or an internal service, and it is what every example here uses.
+  D: Two consumer paths The outbox is just a table .
+  D: Two jobs - fan-out and dispatch - drain the outbox and invoke typed handlers, with retry and expiry.
+  D: Under a frozen clock, every row of a run ties and the order falls back to a random uuid, which is a trap the test suite fell into more than once.
+  D: What the outbox row means An action that emits no events still writes one row , with model_id , model_type , event_type and payload all null.
+  D: What this port owes is the row format above.
+  D: id , action_id the row, and the action that wrote it namespace , action_name who did it, and what they did action_params the parameters the action was called with started_date , completion_date the action's span model_id , model_type which aggregate this event is about event_type , payload the event
+  D: the Kafka transforms drop non-insert operations, so those flips are invisible downstream.
+  D: the ordering key delivered the in-process dispatch flag action_params and payload hold the JSON a Java service writes for the same object, byte for byte:
+  D: │ │ status │ │ payload (JSON) │ │ │ └────────────────┘ └────────────────┘ └────────────────────┘ │ │ domain domain outbox │ │ │ └────────────────────────────────────────────────────────────────────┘ │ ▼ commit (every row persists) -or- rollback (none of them do) There is no second write to a broker,
+  D: ┌────────────────── ONE DATABASE TRANSACTION ──────────────────────┐ │ │ │ ┌────────────────┐ ┌────────────────┐ ┌────────────────────┐ │ │ │ wallets │ │ orders │ │ events │ │ │ │ (UPDATE) │ │ (INSERT) │ │ (INSERT) │ │ │ ├────────────────┤ ├────────────────┤ ├────────────────────┤ │ │ │ id │ │ id │ 
+  W: </div <div data-db="mariadb" sql CREATE TABLE events ( id CHAR(36) NOT NULL, namespace VARCHAR(255) NOT NULL, action_id CHAR(36) NOT NULL, action_name VARCHAR(255) NOT NULL, action_params JSON NOT NULL, started_date DATETIME(6) NOT NULL, completion_date DATETIME(6) NOT NULL, model_id VARCHAR(255), m
+  W: </div <div data-db="mysql" sql CREATE TABLE events ( id CHAR(36) NOT NULL, namespace VARCHAR(255) NOT NULL, action_id CHAR(36) NOT NULL, action_name VARCHAR(255) NOT NULL, action_params JSON NOT NULL, started_date DATETIME(6) NOT NULL, completion_date DATETIME(6) NOT NULL, model_id VARCHAR(255), mod
+  W: </div <div data-db="sqlite" sql CREATE TABLE events ( id CHAR(32) NOT NULL, namespace VARCHAR(255) NOT NULL, action_id CHAR(32) NOT NULL, action_name VARCHAR(255) NOT NULL, action_params JSON NOT NULL, started_date DATETIME NOT NULL, completion_date DATETIME NOT NULL, model_id VARCHAR(255), model_ty
+  W: </div What the outbox row means An action that emits no events still writes one row , with model_id , model_type , event_type and payload all null.
+  W: <DialectPicker / Every action's commit is one database transaction that touches as many domain tables as the action needs plus the outbox.
+  W: <LearnPager current="outbox" / See also - Your first action - where a row in this table comes from - Consuming events - the four topologies for draining it - The dual-write trap - why one table rather than two systems - Reference:
+  W: <div data-db="pg" sql CREATE TABLE events ( id UUID NOT NULL, namespace VARCHAR(255) NOT NULL, action_id UUID NOT NULL, action_name VARCHAR(255) NOT NULL, action_params JSONB NOT NULL, started_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, model_id V
+  W: And this is the table they land in.
+  W: CDC to Kafka - point Debezium at events .
+  W: CHAR(32) - hex with the hyphens stripped, because SQLite has no native uuid.
+  W: DATETIME(6) , never bare DATETIME - the bare form truncates to whole seconds, silently, and event_date is the outbox's only ordering key.
+  W: Fan-out flips delivered from false to true, producing UPDATE rows;
+  W: In process - two jobs drain it and invoke typed handlers, with retry and expiry.
+  W: Interop is unaffected, and that was checked :
+  W: Invisible when you declare the column;
+  W: It has no SKIP LOCKED , so the scheduler and the SQL keyed lock degrade to single-process behaviour.
+  W: MariaDB 10.7+ has a native 16-byte UUID type and the Java port's DDL uses it.
+  W: MySQL has no UUID type, so ids are CHAR(36) :
+  W: Note also that MariaDB stores JSON as LONGTEXT with a check constraint.
+  W: Right for a monolith or an internal service.
+  W: SQLite is not a production dialect.
+  W: The transform that routes rows runs inside Kafka Connect, in a JVM , whichever language wrote the row, so a Python service uses the same artifact a Java one does.
+  W: The values round trip correctly but do not look like what PostgreSQL shows, so a hand-written query comparing against a hyphenated literal finds nothing.
+  W: There is no Python counterpart to build and none is planned.
+  W: This port emits CHAR(36) because SQLAlchemy does not render the native one.
+  W: What happens after commit The outbox is just a table .
+  W: against a table created with the Java DDL, this port writes a uuid and reads back an identical value.
+  W: events , event_notifications , Streaming with Debezium
+  W: the binary form is indexable and compares by value, where JSON is stored text and compares by bytes, so two payloads differing only in key order would be unequal.
+  W: the hyphenated text form, chosen so they stay grep-able and so they match what the other dialects store.
+  W: the transforms drop non-insert operations, so those flips never become Kafka messages.
+  W: very visible when something reflects it, which is why schemagen forces it back.
+  W: ┌────────────────── ONE DATABASE TRANSACTION ──────────────────────┐ │ wallets (UPDATE) orders (INSERT) events (INSERT) │ └────────────────────────────────────────────────────────────────────┘ │ commit (every row persists) -or- rollback (none of them do) How rows get there Every row arrives the same
+=== docs/concepts/sagas.md <-> website/src/pages/learn/sagas.mdx: 43 only-in-docs, 37 only-in-website
+  D: 202, not 200 This is the part that has no counterpart in the Java page, and it is the first thing a caller notices.
+  D: A caller may observe intermediate state:
+  D: A check-then-act has a window.
+  D: A check-then-act has a window;
+  D: A handler should not have to parse the producing action's params to know what to do next.
+  D: A saga accepts that instead of hiding it.
+  D: Add a compensating action and a new event.
+  D: CompleteTransferAction emits TransferFailedEvent and returns normally.
+  D: Delivery is at-least-once;
+  D: Design rules Carry a correlation id through every event.
+  D: Do not erase earlier facts.
+  D: Each step commits locally;
+  D: Idempotency is a unique constraint in the same transaction as the effect , not a check-then-act in application code.
+  D: If A commits and B fails, nothing can make those two transactions behave like one.
+  D: If the destination wallet is closed, retrying will never help.
+  D: In-process when every step lives in one application;
+  D: It is a durable, auditable workflow with explicit recovery - which is the honest thing to have, because the alternative was never actually available.
+  D: Make every step idempotent.
+  D: Make payloads self-contained.
+  D: POST /wallets/{id}/transfers - 202 Accepted, + transfer_id + status_url GET /transfers/{id} - IN_FLIGHT COMPLETED REFUNDED When that response is written, only step one has committed :
+  D: Pick the consumer by deployment shape.
+  D: Put the identifiers and the amount in the event.
+  D: Sagas A saga models one business workflow as a sequence of smaller, independently committed actions.
+  D: See also - Actions - why actions are not nested - The outbox - why each step gets a durable event - Sharding - why cross-shard is refused by default - fastapi-wallet-saga-uv-pg - all of it, running
+  D: That is usually the right trade when allow_cross_shard=True would otherwise hide a partial-commit risk.
+  D: That is why the example emits TransferRefundedEvent rather than trying to undo the earlier TransferInitiatedEvent .
+  D: The action code does not change either way.
+  D: The example mints a transfer_id in step one and carries it through all four events.
+  D: The result is not one all-or-nothing transaction.
+  D: There is no coordinator to ask what state a transfer is in, because the state is the rows.
+  D: There is no saga orchestrator here , and none is planned.
+  D: There is no saga table and no coordinator to ask.
+  D: a broker when a later step belongs to another service.
+  D: a handler can run twice after a crash.
+  D: action → committed event → post-commit consumer → next action.
+  D: allow_cross_shard=True lets an action stage changes that route to several shards, but each shard still commits on its own.
+  D: cross-shard transfers, cross-database updates, cross-service work, or anything where a later step may need to compensate for one that has already committed.
+  D: each step commits atomically with the event announcing it, - the next step is driven from a durable outbox row, - failed business steps are visible in the event log, - compensation is explicit and auditable.
+  D: every action commits its own state and events atomically, and - the outbox lets a committed event reliably start the next step.
+  D: if a later one fails, the workflow records a failure event and runs a compensating action.
+  D: python def perform(self, principal:
+  D: the source is debited before the destination is credited, or before the refund runs.
+  D: this has none, because the database refuses the duplicate and takes the credit down with it.
+  W: 202, not 200 POST /wallets/{id}/transfers - 202 Accepted, + transfer_id + status_url GET /transfers/{id} - IN_FLIGHT COMPLETED REFUNDED When that response is written, only step one has committed :
+  W: <CodeBlock filename="actions.py" language="python" shadow="orange" code={ def perform(self, principal:
+  W: <LearnPager current="sagas" / See also - Consuming events - the handler pipeline a saga is built on - Sharding strategies - why a cross-shard action is refused by default - The outbox - why every saga step gets a durable row - Reference:
+  W: A caller may observe intermediate state.
+  W: A closed destination wallet will still be closed on the next attempt, so retrying forever does not help.
+  W: A failure rolls back only its own shard and the ones that already committed stay committed.
+  W: A handler should not have to parse the producing action's parameters to know what to do next.
+  W: A saga is the honest alternative:
+  W: A saga models one business workflow as a sequence of smaller, independently committed actions.
+  W: An action whose changes span shards is refused by default, and allow_cross_shard=True does not buy atomicity - it opens one transaction per shard , each committing independently.
+  W: Because there is no atomic commit across databases to have.
+  W: Choose in-process or broker by deployment shape.
+  W: Delivery is at-least-once everywhere, so a step runs twice sooner or later.
+  W: Design rules Put a correlation id in every saga event.
+  W: Do not erase earlier facts - add a new compensating action and its event.
+  W: If a later step belongs to another service, let that service consume the event through Debezium instead.
+  W: Local event handlers - the fan-out and dispatch jobs each step waits on, Actions - the one-action alternative, and what it costs - ekbatan-py-examples/fastapi-wallet-saga-uv-pg - the runnable transfer, including the replay test that shows nothing is written twice
+  W: Make each step idempotent , with a unique constraint rather than a check.
+  W: Make event payloads self-contained.
+  W: Nothing in the saga's shape changes.
+  W: Put the next step's identifiers and the amount in the event itself.
+  W: Self-describing events are what make choreography possible - a handler that had to look things up would need to know where they are.
+  W: So a saga is action → committed event → post-commit consumer → next action .
+  W: That is the dual-write trap again, with two shards of your own database standing in for the database and the broker.
+  W: The example mints a transfer_id in InitiateTransferAction and carries it through every event of the workflow, so a human can reconstruct one transfer from the outbox with a single WHERE .
+  W: The example stages a TransferStep keyed by (transfer_id, step) before the credit, inside the same transaction:
+  W: The example uses in-process handlers because every step lives in one application.
+  W: The example writes a TransferFailedEvent , and compensation reacts to it like any other event.
+  W: There is no saga orchestrator here, and none is planned.
+  W: a replay hits the constraint and the credit beside it rolls back with it.
+  W: cross-shard transfers, cross-service work, or anything where a later step may need to compensate for one already committed.
+  W: each step commits atomically with the event announcing it, the next step is driven from a durable outbox row, failed business steps are visible in the event log, and compensation is explicit and auditable.
+  W: every action commits its own state and events atomically, and the outbox lets a committed event reliably start the next step.
+  W: every step commits on its own, and a step that cannot proceed compensates rather than pretending the earlier ones did not happen.
+  W: the refund is a second thing that also happened.
+  W: there is no coordinator to ask what state a transfer is in, because the state is the rows.
+  W: } / A check-then-act has a window.
+=== docs/concepts/the-dual-write-trap.md <-> website/src/pages/learn/the-dual-write-trap.mdx: 11 only-in-docs, 13 only-in-website
+  D: One system decides whether the change happened, and one transaction commits it.
+  D: See also - The outbox - the table and the write path - Actions - the two-phase lifecycle that makes it automatic - Sagas - coordinating multi-step work without pretending it is one transaction
+  D: The dual-write trap Every business change produces two things at once - a new state, and a record of how it got there.
+  D: The one place the trap reappears A cross-shard action is conceptually a dual write again - two databases, two commits, no atomicity between them.
+  D: The rest of Concepts is how the pieces make that structural rather than a convention somebody has to police.
+  D: This is the dual-write problem , and it is the most common source of "the events do not match the data" in event-driven systems.
+  D: Why it's a framework concern The pattern is well known, and most teams bolt it on:
+  D: Your code stages a DepositMoneyAction ;
+  D: app ↓ ┌─────────────────────────┐ │ database (one tx) │ │ ┌──────┐ ┌────────┐ │ │ │state │ │ outbox │ │ │ └──────┘ └────────┘ │ └─────────────────────────┘ ↓ Kafka (Debezium, or a poller) The outbox is an ordinary table in your application database.
+  D: app ↙ ↘ DB Kafka The bug is the gap between them.
+  D: the executor opens the transaction, writes the wallet row, writes the matching MoneyDepositedEvent , commits.
+  W: <GuidedFlow variant="broken" / The bug is the gap between them.
+  W: <GuidedFlow variant="outbox" / The outbox is an ordinary table in your application database.
+  W: <LearnPager current="the-dual-write-trap" / See also - The outbox - the table that makes the single write enough - Consuming events - what reads it afterwards - Sharding strategies - the one place the trap reappears - Reference:
+  W: Actions - the two phases that make the single write structural
+  W: An action that forgot the outbox is not a bug you can write - there is no API for writing a domain row without one.
+  W: Every business change produces two things at once - a new state, and a record of how it got there.
+  W: See sharding strategies and sagas.
+  W: That is the whole pitch, and the rest of this section is how the pieces make the guarantee structural rather than a convention somebody has to police.
+  W: The one place it reappears A cross-shard action is conceptually a dual write again - two databases, two commits, no atomicity between them.
+  W: Why it’s a framework concern The pattern is well known, and most teams bolt it on:
+  W: events - the table this page argues for, column by column - Reference:
+  W: the executor opens the transaction, writes the wallets row, writes the matching MoneyDepositedEvent to events , and commits.
+  W: your code stages a DepositMoneyAction ;
+=== docs/database/config-files.md <-> website/src/pages/reference/config-files.mdx: 1 only-in-docs, 1 only-in-website
+  D: Config files load_sharding_config reads the layout from a file and builds the same ShardingConfig that code builds;
+  W: load_sharding_config reads the layout from a file and builds the same ShardingConfig that code builds;
+=== docs/database/keyed-locks.md <-> website/src/pages/reference/keyed-locks.mdx: 4 only-in-docs, 4 only-in-website
+  D: A keyed lock is the other tool:
+  D: Keyed locks Optimistic locking is the framework's default and is in every write.
+  D: Reentrancy The same key, taken again in the same context, re-enters.
+  D: pessimistic , named by a string you choose, and held across whatever work you wrap in it.
+  W: A thousand callers queued on one key is a thousand held connections on the SQL backends and a queue with no fairness promise.
+  W: At that point the answer is to shard the key, or to serialise the work through a job rather than through a lock.
+  W: Not the right primitive at very high concurrency.
+  W: Reentrancy contract - uniform across all five backends The same key, taken again in the same context, re-enters.
+=== docs/database/mariadb.md <-> website/src/pages/reference/dialects/mariadb.mdx: 1 only-in-docs, 0 only-in-website
+  D: MariaDB Close enough to MySQL to share a driver and most of a page, and different in four ways that have each cost real time.
+=== docs/database/migrations.md <-> website/src/pages/reference/migrations.mdx: 1 only-in-docs, 0 only-in-website
+  D: Migrations How the schema gets into every database, including the shards, before anything opens a pool.
+=== docs/database/multi-database.md <-> website/src/pages/reference/multi-database.mdx: 3 only-in-docs, 1 only-in-website
+  D: Multiple dialects PostgreSQL, MySQL and MariaDB are supported.
+  D: SQLite runs the test suite and is not a production dialect - see SQLite for exactly why.
+  D: See also - PostgreSQL · MySQL · MariaDB · SQLite - Framework tables - the DDL, per dialect - schemagen - why the forcing exists
+  W: See also - PostgreSQL · MySQL · MariaDB · SQLite - one page each, for what only that dialect does - schemagen - what reflection gets wrong, and what the forcing pass puts back - Repositories - where a Table and a dataclass meet, and why the mapping needs no per-dialect branch - Framework tables - th
+=== docs/database/mysql.md <-> website/src/pages/reference/dialects/mysql.mdx: 2 only-in-docs, 0 only-in-website
+  D: MySQL Fully supported, with three things to know:
+  D: there is no UUID type, there are no partial indexes, and GET_LOCK does something surprising with sub-second timeouts.
+=== docs/database/postgresql.md <-> website/src/pages/reference/dialects/postgresql.mdx: 2 only-in-docs, 0 only-in-website
+  D: Native UUID, native JSONB, partial indexes, SKIP LOCKED and RETURNING - every feature the framework wants, without a workaround.
+  D: PostgreSQL The cleanest fit.
+=== docs/database/repositories.md <-> website/src/pages/reference/repository.mdx: 4 only-in-docs, 0 only-in-website
+  D: Repositories One repository per persistable type, extending ModelRepository or EntityRepository .
+  D: The base supplies the whole read and write surface;
+  D: what you add are the questions your business actually asks.
+  D: you want use --- --- the default read behaviour the inherited reads - the primary, outside any open transaction, as Java's a custom read that must be current db(...) or dbs() a custom read where lag is fine readonly_db(...) or readonly_dbs() - these are the replica a read that must see this transact
+=== docs/database/schemagen.md <-> website/src/pages/reference/schemagen.mdx: 3 only-in-docs, 0 only-in-website
+  D: One command, and four lines of Makefile to make it incremental.
+  D: schemagen Table definitions that cannot drift from the database, because they are generated from it:
+  D: start a throwaway database, run your migrations into it, reflect the result, generate code.
+=== docs/database/sharding.md <-> website/src/pages/reference/sharding.mdx: 5 only-in-docs, 2 only-in-website
+  D: For why there are two axes and when to reach for each strategy, read Concepts → Sharding first;
+  D: See also - Concepts → Sharding - the reasoning - Migrations - applying migrations across shards - fastapi-wallet-rest-uv-sharded-pg
+  D: Sharded models and repositories A model that participates in sharding declares its id type as ShardedId instead of Id :
+  D: What is sequential here A scatter read and an event fan-out round visit shards one at a time ;
+  D: this page is the configuration and the wire format.
+  W: See also - Repositories - db(key=...) / readonly_db(key=...) / tx_db_else_db(key=...) are the shard-aware accessors - Adding a shard - the same thing as four steps against a running example - Sharding strategies - policy and capacity, and which axis answers which question - Actions - allow_cross_sha
+  W: Sharded models A model that participates in sharding declares its id type as ShardedId instead of Id :
+=== docs/database/sqlite.md <-> website/src/pages/reference/dialects/sqlite.mdx: 3 only-in-docs, 1 only-in-website
+  D: It is supported here, it is what the test suite runs on by default, and it is not a production dialect .
+  D: SQLite No Java counterpart - SQLite is not a dialect there at all.
+  D: This page is mostly about why both halves of that are true.
+  W: No Java counterpart - SQLite is not a dialect there at all.
+=== docs/database/tables/event-notifications.md <-> website/src/pages/reference/tables/event-notifications.mdx: 7 only-in-docs, 1 only-in-website
+  D: How this compares with Java Columns, order, nullability and the unique constraint are identical .
+  D: Indexes The unique constraint is the whole design UNIQUE (event_id, handler_name) is what makes fan-out idempotent per handler.
+  D: It turns one durable event row into one delivery row per subscribed handler - so an event with two handlers becomes two rows with the same event_id and different handler_name .
+  D: Needed only when the in-process event handler is installed.
+  D: States state meaning --- --- PENDING the initial state;
+  D: event_notifications Optional.
+  D: the event's event_date when fan-out writes the row created_date no when fan-out created the row updated_date no when it last changed The unique constraint is the whole design UNIQUE (event_id, handler_name) is what makes fan-out idempotent per handler.
+  W: the event's event_date when fan-out writes the row created_date no when fan-out created the row updated_date no when it last changed Indexes The unique constraint is the whole design UNIQUE (event_id, handler_name) is what makes fan-out idempotent per handler.
+=== docs/database/tables/events.md <-> website/src/pages/reference/tables/events.mdx: 8 only-in-docs, 1 only-in-website
+  D: Dialect types Verified by generating both and comparing, rather than by reading:
+  D: Domain rows and event rows commit in the same transaction, so this table is the reliable source that in-process handlers, CDC connectors and broker publishers read after the commit.
+  D: Functionally the same queries are served.
+  D: If your outbox is large and PostgreSQL is your dialect, drop the generated index and create the partial one in your own migration .
+  D: It is recorded in SHORTCOMINGS.md as a real gap rather than a difference of taste.
+  D: The cost is size and write amplification, and it is not small.
+  D: The undelivered index, and what it costs Java creates a partial index on PostgreSQL:
+  D: index size --- --- (delivered, event_type, event_date) - this port 3,528 kB (event_type, event_date) WHERE delivered = FALSE - Java 56 kB Sixty-three times larger, because the composite index holds every row ever written and the partial one holds only the backlog.
+  W: Dialect types Where the three dialects differ, and how each compares with the Java port's DDL - verified by generating both and comparing, rather than by reading:
+=== docs/database/tables/scheduled-tasks.md <-> website/src/pages/reference/tables/scheduled-tasks.mdx: 4 only-in-docs, 1 only-in-website
+  D: Index names and the priority ordering Java names them execution_time_idx , last_heartbeat_idx , priority_execution_time_idx ;
+  D: MySQL and MariaDB are the same with BLOB for BYTEA and DATETIME(6) for the timestamps.
+  D: Needed when you use distributed jobs, or anything built on them - and the in-process event handler is built on them, because fan-out and dispatch are jobs.
+  D: see Index names and the priority ordering for what each is for.
+  W: see Indexes for what each is for.
+=== docs/database/tables.md <-> website/src/pages/reference/tables/index.mdx: 3 only-in-docs, 5 only-in-website
+  D: Framework tables An application has two kinds of table:
+  D: Getting them into your database They are SQLAlchemy Table objects, not DDL you copy.
+  D: action persistence only yes no no Debezium or CDC reading committed events yes no no in-process fan-out and handling yes yes yes distributed jobs only no no yes Table pages - events - the committed action and event rows the default persister writes.
+  W: Table pages - events - the committed action and event rows the default persister writes.
+  W: The outbox table is the default persister's choice, not the framework's requirement:
+  W: What you cannot swap is when it is written, which is the part that makes it atomic.
+  W: action persistence only yes no no Debezium or CDC reading committed events yes no no in-process fan-out and handling yes yes yes distributed jobs only no no yes a custom EventPersister that writes somewhere else up to you no, unless you also handle in-process only if you use distributed jobs The las
+  W: swap the persister and events is yours to shape - a different retention, a partitioned table, a second column your consumers need.
+=== docs/database/transaction-manager.md <-> website/src/pages/reference/transaction-manager.mdx: 3 only-in-docs, 4 only-in-website
+  D: Sometimes you need transactional access outside that:
+  D: The transaction manager The executor is the right entry point for business operations - anything that changes a domain object and emits events.
+  D: an admin script backfilling a column, a startup hook reconciling two tables, a multi-step read that does not fit the action shape, batch maintenance with no event worth emitting.
+  W: A failed commit is not on its own grounds for eviction.
+  W: If that rollback succeeds, the connection is clean and goes back to the pool normally.
+  W: Only a rollback that also fails leaves the state unknown, and only then is the connection thrown away.
+  W: The COMMIT is issued inside the try , so a commit that raises falls into the same except as any other failure and gets a ROLLBACK like any other transaction.
+=== docs/events/event-streaming.md <-> website/src/pages/reference/events/streaming.mdx: 2 only-in-docs, 0 only-in-website
+  D: Streaming with Debezium The other consumer path:
+  D: point a CDC connector at the outbox and ship committed rows to a broker.
+=== docs/events/local-event-handler.md <-> website/src/pages/reference/events/local-event-handler.mdx: 7 only-in-docs, 2 only-in-website
+  D: Drain a batch of due notifications from the primary - state IN ('PENDING','FAILED') AND next_retry_at <= now , limited, ordered.
+  D: Handlers feel like callbacks and inherit the full outbox guarantee:
+  D: If your handler cannot be made idempotent in any of those ways, you probably want the Kafka path with consumer-group offsets rather than this pipeline.
+  D: In-process event handlers For applications that do not need to fan events out to other services - a small monolith, an internal tool, anywhere a Kafka cluster would be overkill - events are delivered to handlers registered in your own application, by two background jobs polling the same outbox.
+  D: Listen to yourself Most handlers reach for something to do the useful part - send a notification, write an audit row, post to an external API.
+  D: Wiring python handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)]) events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True)) jobs = ( job_registry() .engine(engine) .with_jobs([ EventFanoutJob(registry, handlers, events=EVENTS, notifications=EVENT_NOTIFICATION
+  D: delivery survives restarts, retries on failure, and behaves correctly across several instances.
+  W: Drain a batch of due notifications from the primary - state IN ('PENDING','FAILED') AND next_retry_at &lt;= now , limited, ordered.
+  W: Wiring (manual) python handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)]) events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True)) jobs = ( job_registry() .engine(engine) .with_jobs([ EventFanoutJob(registry, handlers, events=EVENTS, notifications=EVENT_NOT
+=== docs/jobs/distributed-jobs.md <-> website/src/pages/reference/jobs/distributed-jobs.mdx: 3 only-in-docs, 1 only-in-website
+  D: A thin facade over db-scheduler, whose Python port this repository also publishes.
+  D: Coordination semantics - Every instance polls the shared scheduled_tasks table.
+  D: Distributed jobs Background work that should run on exactly one instance across a cluster.
+  W: Coordination semantics (inherited from db-scheduler) - Every instance polls the shared scheduled_tasks table.
+=== docs/runtime/concurrency.md <-> website/src/pages/reference/runtime/concurrency.mdx: 2 only-in-docs, 1 only-in-website
+  D: Concurrency This framework is synchronous, and every place it could have run something concurrently is answered here - five of them - along with the one way to use it wrongly.
+  D: monkey.patch_all() the very first thing, before any other import import myapp Then run it as you would any WSGI app - gunicorn -k gevent myapp:app .
+  W: monkey.patch_all() the very first thing, before any other import Then run it as you would any WSGI app - gunicorn -k gevent myapp:app .
+=== docs/runtime/observability.md <-> website/src/pages/reference/runtime/observability.mdx: 7 only-in-docs, 2 only-in-website
+  D: A known caveat ekbatan.events.fanned_out counts rows read , not rows written.
+  D: Observability The action pipeline is instrumented with the OpenTelemetry API only - no SDK.
+  D: The API is a dependency, as it is of Java's ekbatan-core ;
+  D: Three attributes Java does not have A cross-shard action that commits some shards and fails another sets, on the failing span:
+  D: What each one answers handled is throughput and failure rate.
+  D: instrument type unit tags from --- --- --- --- --- ekbatan.events.handled counter {notification} outcome , handler dispatch ekbatan.events.handler.duration histogram s handler , outcome dispatch ekbatan.events.delivery.lag histogram s handler dispatch ekbatan.events.fanned_out counter {event} - fan-
+  D: with no SDK registered at runtime every call is a no-op, so the framework costs nothing to an application that does not want tracing, and the no-SDK path is the one most of the test suite exercises.
+  W: Attributes on a partial cross-shard commit A cross-shard action that commits some shards and fails another sets, on the failing span:
+  W: instrument type unit tags from --- --- --- --- --- ekbatan.events.handled counter {notification} outcome , handler dispatch ekbatan.events.handler.duration histogram s handler , outcome dispatch ekbatan.events.delivery.lag histogram s handler dispatch ekbatan.events.fanned_out counter {event} - fan-
+=== docs/wiring-fastapi.md <-> website/src/pages/reference/wiring-fastapi.mdx: 2 only-in-docs, 0 only-in-website
+  D: Wiring with FastAPI Where a service meets the outside world, and where the two sharpest mistakes are available:
+  D: building the service per request instead of once, and calling into the framework from an async def endpoint.
+=== docs/wiring.md <-> website/src/pages/reference/wiring.mdx: 3 only-in-docs, 0 only-in-website
+  D: Nothing scans, nothing is discovered - the list is the wiring, and it is the one place that knows what this service is.
+  D: Wiring Everything a service is made of, assembled in one function:
+  D: the databases, the repositories, the actions, the event handlers and the jobs.

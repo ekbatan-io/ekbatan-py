@@ -1,0 +1,154 @@
+PROBE m1_migrate.outcome: ok
+PROBE m1_migrate.log.0: INFO io.ekbatan.flyway.FlywayMigrator | global/member-0 (0:0): current version << empty >> | exc=-
+PROBE m1_migrate.log.1: INFO io.ekbatan.flyway.FlywayMigrator | global/member-0 (0:0): migrating to version 0001 - create  events | exc=-
+PROBE m1_migrate.log.2: INFO io.ekbatan.flyway.FlywayMigrator | global/member-0 (0:0): migrating to version 0002 - create wallets table | exc=-
+PROBE m1_migrate.log.3: INFO io.ekbatan.flyway.FlywayMigrator | global/member-0 (0:0): applied 2 migrations, now at version 0002 | exc=-
+PROBE m1_migrate.log.4: INFO io.ekbatan.flyway.FlywayMigrator | global/member-0 is at version 0002 (2 applied) | exc=-
+PROBE m1_migrate.log.5: INFO io.ekbatan.flyway.FlywayMigrator | mexico/member-0 (1:0): current version << empty >> | exc=-
+PROBE m1_migrate.log.6: INFO io.ekbatan.flyway.FlywayMigrator | mexico/member-0 (1:0): migrating to version 0001 - create  events | exc=-
+PROBE m1_migrate.log.7: INFO io.ekbatan.flyway.FlywayMigrator | mexico/member-0 (1:0): migrating to version 0002 - create wallets table | exc=-
+PROBE m1_migrate.log.8: INFO io.ekbatan.flyway.FlywayMigrator | mexico/member-0 (1:0): applied 2 migrations, now at version 0002 | exc=-
+PROBE m1_migrate.log.9: INFO io.ekbatan.flyway.FlywayMigrator | mexico/member-0 is at version 0002 (2 applied) | exc=-
+PROBE r1_registry.outcome: ok
+PROBE a1_success.outcome: ok
+PROBE a1_success.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a1_success.span.1: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[]
+PROBE a1_success.span.2: ekbatan.event.persist parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=CreateAction, ekbatan.event.count=1} events=[]
+PROBE a1_success.span.3: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[]
+PROBE a1_success.span.4: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a1_success.span.5: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=CreateAction, ekbatan.action.outcome=success, ekbatan.action.principal=alice, ekbatan.action.retry.count=0} events=[]
+PROBE a1_success.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing CreateAction [principal=alice] | exc=-
+PROBE a1_success.log.1: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a1_success.log.2: DEBUG io.ekbatan.core.action.persister.ChangePersister | persisting 1 addition(s) and 0 update(s) on shard 0:0 | exc=-
+PROBE a1_success.log.3: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=0:0] | exc=-
+PROBE a1_success.log.4: INFO io.ekbatan.core.action.ActionExecutor | CreateAction completed in 6ms [principal=alice] | exc=-
+PROBE a1b_no_principal.outcome: ok
+PROBE a1b_no_principal.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a1b_no_principal.span.1: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[]
+PROBE a1b_no_principal.span.2: ekbatan.event.persist parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=CreateAction, ekbatan.event.count=1} events=[]
+PROBE a1b_no_principal.span.3: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[]
+PROBE a1b_no_principal.span.4: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a1b_no_principal.span.5: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=CreateAction, ekbatan.action.outcome=success, ekbatan.action.principal=, ekbatan.action.retry.count=0} events=[]
+PROBE a1b_no_principal.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing CreateAction [principal=] | exc=-
+PROBE a1b_no_principal.log.1: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a1b_no_principal.log.2: DEBUG io.ekbatan.core.action.persister.ChangePersister | persisting 1 addition(s) and 0 update(s) on shard 0:0 | exc=-
+PROBE a1b_no_principal.log.3: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=0:0] | exc=-
+PROBE a1b_no_principal.log.4: INFO io.ekbatan.core.action.ActionExecutor | CreateAction completed in 5ms [principal=] | exc=-
+PROBE a2_retry_then_success.outcome: ok
+PROBE a2_retry_then_success.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: first attempt attrs={} events=[exception{exception.escaped=False, exception.message=first attempt, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a2_retry_then_success.span.1: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a2_retry_then_success.span.2: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[]
+PROBE a2_retry_then_success.span.3: ekbatan.event.persist parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=FreshPlanAction, ekbatan.event.count=1} events=[]
+PROBE a2_retry_then_success.span.4: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[]
+PROBE a2_retry_then_success.span.5: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a2_retry_then_success.span.6: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=FreshPlanAction, ekbatan.action.outcome=success, ekbatan.action.principal=alice, ekbatan.action.retry.count=1} events=[retry{retry.count=1, retry.exception=StaleRecordError}]
+PROBE a2_retry_then_success.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing FreshPlanAction [principal=alice] | exc=-
+PROBE a2_retry_then_success.log.1: WARN io.ekbatan.core.action.Retry | retrying FreshPlanAction (1/1) after StaleRecordError: first attempt | exc=-
+PROBE a2_retry_then_success.log.2: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a2_retry_then_success.log.3: DEBUG io.ekbatan.core.action.persister.ChangePersister | persisting 1 addition(s) and 0 update(s) on shard 0:0 | exc=-
+PROBE a2_retry_then_success.log.4: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=0:0] | exc=-
+PROBE a2_retry_then_success.log.5: INFO io.ekbatan.core.action.ActionExecutor | FreshPlanAction completed in 109ms [principal=alice] | exc=-
+PROBE a3_perform_fails.outcome: RuntimeError
+PROBE a3_perform_fails.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=ERROR:RuntimeError: perform boom attrs={} events=[exception{exception.escaped=False, exception.message=perform boom, exception.type=RuntimeError}]
+PROBE a3_perform_fails.span.1: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=ERROR:RuntimeError: perform boom attrs={ekbatan.action.name=FailAction, ekbatan.action.outcome=error, ekbatan.action.principal=alice} events=[exception{exception.escaped=False, exception.message=perform boom, exception.type=RuntimeError}]
+PROBE a3_perform_fails.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing FailAction [principal=alice] | exc=-
+PROBE a3_perform_fails.log.1: ERROR io.ekbatan.core.action.ActionExecutor | FailAction failed: RuntimeError: perform boom | exc=-
+PROBE a4_persist_fails_no_retry.outcome: StaleRecordError
+PROBE a4_persist_fails_no_retry.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a4_persist_fails_no_retry.span.1: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={db.operation.name=BATCH_UPDATE, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a4_persist_fails_no_retry.span.2: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a4_persist_fails_no_retry.span.3: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a4_persist_fails_no_retry.span.4: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.action.name=StaleUpdateAction, ekbatan.action.outcome=error, ekbatan.action.principal=alice} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a4_persist_fails_no_retry.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing StaleUpdateAction [principal=alice] | exc=-
+PROBE a4_persist_fails_no_retry.log.1: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a4_persist_fails_no_retry.log.2: WARN io.ekbatan.core.persistence.TransactionManager | transaction rolled back [shard=0:0]: StaleRecordError | exc=-
+PROBE a4_persist_fails_no_retry.log.3: ERROR io.ekbatan.core.action.ActionExecutor | StaleUpdateAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone | exc=-
+PROBE a5_retries_exhausted.outcome: StaleRecordError
+PROBE a5_retries_exhausted.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a5_retries_exhausted.span.1: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={db.operation.name=BATCH_UPDATE, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a5_retries_exhausted.span.2: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a5_retries_exhausted.span.3: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a5_retries_exhausted.span.4: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a5_retries_exhausted.span.5: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={db.operation.name=BATCH_UPDATE, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a5_retries_exhausted.span.6: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a5_retries_exhausted.span.7: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a5_retries_exhausted.span.8: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.action.name=StaleUpdateAction, ekbatan.action.outcome=error, ekbatan.action.principal=alice, ekbatan.action.retry.count=1} events=[retry{retry.count=1, retry.exception=StaleRecordError}, exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a5_retries_exhausted.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing StaleUpdateAction [principal=alice] | exc=-
+PROBE a5_retries_exhausted.log.1: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a5_retries_exhausted.log.2: WARN io.ekbatan.core.persistence.TransactionManager | transaction rolled back [shard=0:0]: StaleRecordError | exc=-
+PROBE a5_retries_exhausted.log.3: WARN io.ekbatan.core.action.Retry | retrying StaleUpdateAction (1/1) after StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone | exc=-
+PROBE a5_retries_exhausted.log.4: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a5_retries_exhausted.log.5: WARN io.ekbatan.core.persistence.TransactionManager | transaction rolled back [shard=0:0]: StaleRecordError | exc=-
+PROBE a5_retries_exhausted.log.6: ERROR io.ekbatan.core.action.ActionExecutor | StaleUpdateAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone | exc=-
+PROBE a6_cross_shard_allowed.outcome: ok
+PROBE a6_cross_shard_allowed.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a6_cross_shard_allowed.span.1: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[]
+PROBE a6_cross_shard_allowed.span.2: ekbatan.event.persist parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=TwoShardAction, ekbatan.event.count=1} events=[]
+PROBE a6_cross_shard_allowed.span.3: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[]
+PROBE a6_cross_shard_allowed.span.4: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[]
+PROBE a6_cross_shard_allowed.span.5: ekbatan.event.persist parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=TwoShardAction, ekbatan.event.count=1} events=[]
+PROBE a6_cross_shard_allowed.span.6: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.group=1, ekbatan.shard.member=0} events=[]
+PROBE a6_cross_shard_allowed.span.7: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.cross_shard=true} events=[]
+PROBE a6_cross_shard_allowed.span.8: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=TwoShardAction, ekbatan.action.outcome=success, ekbatan.action.principal=alice, ekbatan.action.retry.count=0} events=[]
+PROBE a6_cross_shard_allowed.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing TwoShardAction [principal=alice] | exc=-
+PROBE a6_cross_shard_allowed.log.1: WARN io.ekbatan.core.action.ActionExecutor | TwoShardAction spans 2 shards ['0:0', '1:0']; each committed on its own | exc=-
+PROBE a6_cross_shard_allowed.log.2: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a6_cross_shard_allowed.log.3: DEBUG io.ekbatan.core.action.persister.ChangePersister | persisting 1 addition(s) and 0 update(s) on shard 0:0 | exc=-
+PROBE a6_cross_shard_allowed.log.4: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=0:0] | exc=-
+PROBE a6_cross_shard_allowed.log.5: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=1:0] | exc=-
+PROBE a6_cross_shard_allowed.log.6: DEBUG io.ekbatan.core.action.persister.ChangePersister | persisting 1 addition(s) and 0 update(s) on shard 1:0 | exc=-
+PROBE a6_cross_shard_allowed.log.7: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=1:0] | exc=-
+PROBE a6_cross_shard_allowed.log.8: INFO io.ekbatan.core.action.ActionExecutor | TwoShardAction completed in 13ms [principal=alice] | exc=-
+PROBE a7_cross_shard_rejected.outcome: CrossShardError
+PROBE a7_cross_shard_rejected.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a7_cross_shard_rejected.span.1: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=ERROR:CrossShardError: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed. attrs={} events=[exception{exception.escaped=False, exception.message=this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed., exception.type=ekbatan.errors.CrossShardError}]
+PROBE a7_cross_shard_rejected.span.2: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=ERROR:CrossShardError: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed. attrs={ekbatan.action.name=TwoShardAction, ekbatan.action.outcome=error, ekbatan.action.principal=alice} events=[exception{exception.escaped=False, exception.message=this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed., exception.type=ekbatan.errors.CrossShardError}]
+PROBE a7_cross_shard_rejected.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing TwoShardAction [principal=alice] | exc=-
+PROBE a7_cross_shard_rejected.log.1: ERROR io.ekbatan.core.action.ActionExecutor | TwoShardAction failed: CrossShardError: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed. | exc=-
+PROBE a8_partial_commit.outcome: StaleRecordError
+PROBE a8_partial_commit.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a8_partial_commit.span.1: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[]
+PROBE a8_partial_commit.span.2: ekbatan.event.persist parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=PartialAction, ekbatan.event.count=1} events=[]
+PROBE a8_partial_commit.span.3: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[]
+PROBE a8_partial_commit.span.4: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={db.operation.name=BATCH_UPDATE, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a8_partial_commit.span.5: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.shard.group=1, ekbatan.shard.member=0} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a8_partial_commit.span.6: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.shard.committed_shards=['0:0'], ekbatan.shard.cross_shard=true, ekbatan.shard.failed_shard=1:0, ekbatan.shard.partial_commit_failure=true} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a8_partial_commit.span.7: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=ERROR:StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone attrs={ekbatan.action.name=PartialAction, ekbatan.action.outcome=error, ekbatan.action.principal=alice} events=[exception{exception.escaped=False, exception.message=expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone, exception.type=ekbatan.errors.StaleRecordError}]
+PROBE a8_partial_commit.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing PartialAction [principal=alice] | exc=-
+PROBE a8_partial_commit.log.1: WARN io.ekbatan.core.action.ActionExecutor | PartialAction spans 2 shards ['0:0', '1:0']; each committed on its own | exc=-
+PROBE a8_partial_commit.log.2: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a8_partial_commit.log.3: DEBUG io.ekbatan.core.action.persister.ChangePersister | persisting 1 addition(s) and 0 update(s) on shard 0:0 | exc=-
+PROBE a8_partial_commit.log.4: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=0:0] | exc=-
+PROBE a8_partial_commit.log.5: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=1:0] | exc=-
+PROBE a8_partial_commit.log.6: WARN io.ekbatan.core.persistence.TransactionManager | transaction rolled back [shard=1:0]: StaleRecordError | exc=-
+PROBE a8_partial_commit.log.7: CRITICAL io.ekbatan.core.action.ActionExecutor | PartialAction PARTIALLY COMMITTED: shards ['0:0'] are committed and will not roll back; shard 1:0 failed with StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone | exc=-
+PROBE a8_partial_commit.log.8: ERROR io.ekbatan.core.action.ActionExecutor | PartialAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone | exc=-
+PROBE a9_unknown_shard.outcome: ok
+PROBE a9_unknown_shard.span.0: ekbatan.action.perform parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a9_unknown_shard.span.1: ekbatan.repository parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=1, ekbatan.entity.type=Wallet} events=[]
+PROBE a9_unknown_shard.span.2: ekbatan.event.persist parent=ekbatan.transaction kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=CreateAction, ekbatan.event.count=1} events=[]
+PROBE a9_unknown_shard.span.3: ekbatan.transaction parent=ekbatan.action.persist kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.shard.group=0, ekbatan.shard.member=0} events=[]
+PROBE a9_unknown_shard.span.4: ekbatan.action.persist parent=ekbatan.action.execute kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={} events=[]
+PROBE a9_unknown_shard.span.5: ekbatan.action.execute parent=root kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={ekbatan.action.name=CreateAction, ekbatan.action.outcome=success, ekbatan.action.principal=alice, ekbatan.action.retry.count=0} events=[]
+PROBE a9_unknown_shard.log.0: INFO io.ekbatan.core.action.ActionExecutor | executing CreateAction [principal=alice] | exc=-
+PROBE a9_unknown_shard.log.1: WARN io.ekbatan.core.shard.DatabaseRegistry | shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']] | exc=-
+PROBE a9_unknown_shard.log.2: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+PROBE a9_unknown_shard.log.3: WARN io.ekbatan.core.shard.DatabaseRegistry | shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']] | exc=-
+PROBE a9_unknown_shard.log.4: DEBUG io.ekbatan.core.action.persister.ChangePersister | persisting 1 addition(s) and 0 update(s) on shard 0:0 | exc=-
+PROBE a9_unknown_shard.log.5: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=0:0] | exc=-
+PROBE a9_unknown_shard.log.6: INFO io.ekbatan.core.action.ActionExecutor | CreateAction completed in 4ms [principal=alice] | exc=-
+PROBE a10_repo_add_all.outcome: ok
+PROBE a11_repo_add_all_no_result.outcome: ok
+PROBE a11_repo_add_all_no_result.span.0: ekbatan.repository parent=root kind=INTERNAL scope=io.ekbatan.core status=UNSET: attrs={db.operation.name=BATCH_INSERT, ekbatan.batch.size=2, ekbatan.entity.type=Wallet} events=[]
+PROBE l1_wait_times_out.got: false
+PROBE l1_wait_times_out.outcome: ok
+PROBE l2_hold_limit_expires.outcome: ok
+PROBE l2_hold_limit_expires.log.0: WARN io.ekbatan.core.concurrent.KeyedReentrantHolder | released the lock on 'order-2': its hold limit elapsed | exc=-
+PROBE l3_release_fails.outcome: ok
+PROBE l3_release_fails.log.0: ERROR io.ekbatan.core.concurrent.PostgresKeyedLockProvider | failed to release a database lock; discarding its session | exc=OperationalError
+PROBE secret.log_records_scanned: true
+PROBE secret.log_records_with_marker: 0
+PROBE secret.spans_with_marker: 0
+PROBE library_info_plus.m1_migrate INFO yoyo.migrations: 10
+PROBE library_info_plus.setup INFO testcontainers.core.container: 4
+PROBE library_info_plus.setup INFO testcontainers.core.docker_client: 2

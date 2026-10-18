@@ -1,0 +1,5 @@
+PROBE unit: 922            (README.md:216 says 250)
+PROBE integration: 507     (README.md:217 says 322)
+PROBE all-sqlite: 1436     (README.md:265 says 578)
+PROBE all-dialects: 2708   (README.md:265 says 1,370)
+PROBE requires: ['ekbatan-py-db-scheduler~=0.1.0.dev0', 'opentelemetry-api>=1.27', 'pyyaml>=6.0', 'sqlalchemy>=2.0.30']  (README.md:68 "SQLAlchemy is the only unconditional dependency, alongside db-scheduler")

@@ -1,0 +1,11 @@
+PROBE emit_ddl_tables: ['event_notifications', 'events', 'scheduled_tasks']
+PROBE emit_ddl_stable: True
+PROBE migrate_registry: ok None
+PROBE migrate_registry_tables: ['event_notifications', 'events', 'scheduled_tasks']
+PROBE no_location: ValidationError: at least one migrations location is required
+PROBE missing_dir: ValidationError: no migrations directory at nope
+PROBE installed_on: ('2026-10-17T23:44:23.275792Z', 'text')
+    Versioned 1 a Success
+    Versioned 2 b Pending
+PROBE info_while_lock_held_returns: (True, '1')
+PROBE info_changed_nothing: 1

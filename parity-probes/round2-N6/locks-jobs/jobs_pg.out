@@ -1,0 +1,10 @@
+PROBE postgresql execution_time column: execution_time TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+PROBE postgresql indexes: ['CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)', 'CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)', 'CREATE INDEX scheduled_tasks_priority_execution_time_idx ON scheduled_tasks (priority, execution_time)']
+PROBE mysql execution_time column: execution_time DATETIME(6) NOT NULL,
+PROBE mysql indexes: ['CREATE INDEX scheduled_tasks_execution_time_idx ON scheduled_tasks (execution_time)', 'CREATE INDEX scheduled_tasks_last_heartbeat_idx ON scheduled_tasks (last_heartbeat)', 'CREATE INDEX scheduled_tasks_priority_execution_time_idx ON scheduled_tasks (priority, execution_time)']
+PROBE session timezone: America/New_York
+PROBE job ran right away on Java's timestamptz table: True
+PROBE next execution_time - (run + 1 h), seconds: 0.0
+PROBE workers=3 pool=3 warning: Give the engine at least 6 connections (pool_size 
+PROBE workers=3 pool=4 warning: none
+PROBE workers=3 pool=6 warning: none

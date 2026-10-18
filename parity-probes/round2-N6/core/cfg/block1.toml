@@ -1,0 +1,15 @@
+[ekbatan.sharding]
+default-shard = { group = 0, member = 0 }
+
+[[ekbatan.sharding.groups]]
+group = 0
+name = "global"
+
+[[ekbatan.sharding.groups.members]]
+member = 0
+
+[ekbatan.sharding.groups.members.configs.primary-config]
+url = "postgresql+psycopg://db:5432/wallet"
+username = "app"
+password = "${DB_PASSWORD}"
+pool-size = 20

@@ -1,0 +1,8 @@
+shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+transaction rolled back [shard=0:0]: RuntimeError
+transaction rolled back [shard=0:0]: RuntimeError
+exit 0

@@ -1,0 +1,67 @@
+PROBE tx.uncommitted.visible_to_other_connection: no
+PROBE tx.commit.visible_after: yes
+PROBE tx.rollback.runtime.propagated_same_object: no
+PROBE tx.rollback.runtime.row_kept: no
+PROBE tx.rollback.runtime.checked_form_same_object: yes
+PROBE tx.rollback.runtime.checked_form_row_kept: no
+PROBE tx.rollback.base_error.propagated_same_object: yes
+PROBE tx.rollback.base_error.row_kept: no
+PROBE tx.checked.unchecked_form: wrapped in RuntimeException
+PROBE tx.checked.checked_form: unchanged
+PROBE tx.current.outside: empty
+PROBE tx.current.inside: present
+PROBE tx.current.is_block_context: yes
+PROBE tx.current.other_thread_inside: empty
+PROBE tx.current.after: empty
+PROBE tx.autocommit.outside_visible_immediately: yes
+PROBE tx.autocommit.first_statement_kept_after_second_fails: yes
+PROBE tx.log.rollback_warn_lines: 1
+PROBE tx.log.rollback_warn_text: WARNING io.ekbatan.core.persistence.TransactionManager - Transaction rolled back [shard=(0,0)]: IllegalStateException
+PROBE tx.nested.same_connection: no
+PROBE tx.nested.inner_sees_outer_uncommitted: no
+PROBE tx.nested.current_after_inner_is_outer: yes
+PROBE tx.nested.inner_row_kept_after_outer_rollback: yes
+PROBE tx.nested.outer_row_kept_after_outer_rollback: no
+PROBE tx.nested.inner_failure_caught.inner_row_kept: no
+PROBE tx.nested.inner_failure_caught.outer_row_kept: yes
+PROBE tx.nested.inner_updates_row_outer_locked: blocked (lock timeout)
+PROBE tx.two_managers_same_shard.second_current_inside_first: empty
+PROBE tx.two_managers_same_shard.second_tx_database: replicadb
+PROBE tx.failed_rollback.propagated: java.lang.RuntimeException: boom
+PROBE tx.failed_rollback.discard_logged: yes
+PROBE tx.failed_rollback.row_kept: no
+PROBE tx.failed_rollback.next_tx_ok: yes
+PROBE tx.commit_failure.sqlstate: 23505
+PROBE tx.commit_failure.rows: 0
+PROBE tx.commit_failure.next_tx_ok: yes
+PROBE rep.secondary_database: replicadb
+PROBE rep.repo_readonly_database: replicadb
+PROBE rep.repo_readonly_inside_tx_database: replicadb
+PROBE rep.manager_level_readonly_inside_tx_database: replicadb (registry.secondary; Java has no manager-level call)
+PROBE rep.repo_db_inside_tx_same_connection: no
+PROBE rep.repo_db_inside_tx_sees_uncommitted: no
+PROBE rep.repo_txDbElseDb_inside_tx_same_connection: yes
+PROBE rep.repo_txDb_inside_tx: present
+PROBE rep.repo_txDb_outside_tx: empty
+PROBE rep.repo_txDbElseDb_outside_autocommits: yes
+PROBE rep.no_replica.secondary_database: testdb
+PROBE acc.db_unknown_shard: null context (fails on first use)
+PROBE acc.readonly_unknown_shard: null context (fails on first use)
+PROBE acc.txDb_unknown_shard: error: No database registered for shard: ShardIdentifier(5, 5)
+PROBE acc.db_by_id_unknown_shard: testdb
+PROBE acc.db_by_id_unknown_shard.warned: yes
+PROBE pool.open_connections_after_one_query: 3
+PROBE pool.max_connections_under_load: 3
+PROBE pool.driver_setting_reaches_server: yes
+PROBE red.login_with_marker_password: yes
+PROBE red.printed_forms.marker: no
+PROBE red.wrong_password.failed: yes
+PROBE red.wrong_password.seconds_to_fail: about 30
+PROBE red.wrong_password.marker_in_error: no
+PROBE red.wrong_password.error_names_auth: yes
+PROBE red.no_username.logs_in_as_os_user: yes
+PROBE red.no_username.marker_in_error: no
+PROBE red.no_username.warned: yes
+PROBE red.all_captured_logs.marker: no
+PROBE red.all_captured_logs.count_nonzero: yes
+PROBE red.all_captured_logs.debug_lines_present: yes

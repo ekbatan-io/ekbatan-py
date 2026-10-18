@@ -1,0 +1,10 @@
+PROBE ekbatan engine_for (pool_size=3, pre_ping): killed 3 backends, 3 checkouts ok: 2/3 OperationalError: (psycopg.errors.AdminShutdown) terminating connection due to administrator comma
+PROBE plain create_engine(pool_pre_ping=True): killed 1 backends, 3 checkouts ok: 3/3 
+PROBE ekbatan engine_for (pool_size=3, pre_ping): killed 3 backends, 3 checkouts ok: 2/3 OperationalError: (psycopg.errors.AdminShutdown) terminating connection due to administrator comma
+PROBE plain create_engine(pool_pre_ping=True): killed 1 backends, 3 checkouts ok: 3/3 
+PROBE ekbatan engine_for (pool_size=3, pre_ping): killed 3 backends, 3 checkouts ok: 2/3 OperationalError: (psycopg.errors.AdminShutdown) terminating connection due to administrator comma
+PROBE plain create_engine(pool_pre_ping=True): killed 1 backends, 3 checkouts ok: 3/3 
+PROBE ekbatan engine_for (pool_size=3, pre_ping): killed 3 backends, 3 checkouts ok: 2/3 OperationalError: (psycopg.errors.AdminShutdown) terminating connection due to administrator comma
+PROBE plain create_engine(pool_pre_ping=True): killed 1 backends, 3 checkouts ok: 3/3 
+PROBE ekbatan engine_for (pool_size=3, pre_ping): killed 3 backends, 3 checkouts ok: 2/3 OperationalError: (psycopg.errors.AdminShutdown) terminating connection due to administrator comma
+PROBE plain create_engine(pool_pre_ping=True): killed 1 backends, 3 checkouts ok: 3/3 

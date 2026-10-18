@@ -1,0 +1,4 @@
+PROBE error_last_line: Already migrated: global/member-0. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+PROBE log: ERROR io.ekbatan.flyway.FlywayMigrator Migrating mexico/member-0 (1:0) failed
+PROBE log: ERROR io.ekbatan.flyway.FlywayMigrator Stopped at mexico/member-0 (1:0); already migrated: [global/member-0]
+PROBE unknown_shard: ValidationError: cannot migrate 9:9: not in this layout, which has 0:0, 1:0

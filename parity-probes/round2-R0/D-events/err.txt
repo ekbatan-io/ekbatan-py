@@ -1,0 +1,63 @@
+handler 'failing' failed on attempt 1 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:00:30
+handler 'failing' failed on attempt 2 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:01:00
+handler 'failing' failed on attempt 3 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:02:00
+handler 'failing' failed on attempt 4 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:04:00
+handler 'failing' failed on attempt 5 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:05:00
+handler 'failing' failed on attempt 6 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:05:00
+handler 'failing' failed on attempt 7 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:05:00
+handler 'failing' failed on attempt 8 (RuntimeError: boom)
+notification c62147ff-c30b-4c06-b296-36a6dfc17820 for handler 'failing' will be retried in 0:05:00
+handler 'fail' failed on attempt 1 (RuntimeError: boom)
+handler 'error' failed on attempt 1 (Fatal: error-boom)
+no handler named 'ghost' is registered; leaving its notifications alone
+notification b5985e4a-5296-4522-b777-2cd932d16457 for handler 'error' will be retried in 0:00:30
+notification 74c5d441-8c6d-4644-9d46-8800debbeff5 for handler 'fail' will be retried in 0:00:30
+no handler named 'ghost' is registered; leaving its notifications alone
+handler 'error' failed on attempt 2 (Fatal: error-boom)
+handler 'fail' failed on attempt 2 (RuntimeError: boom)
+notification b5985e4a-5296-4522-b777-2cd932d16457 for handler 'error' will be retried in 0:01:00
+notification 74c5d441-8c6d-4644-9d46-8800debbeff5 for handler 'fail' will be retried in 0:01:00
+handler 'fail' failed on attempt 3 (RuntimeError: boom)
+no handler named 'ghost' is registered; leaving its notifications alone
+handler 'error' failed on attempt 3 (Fatal: error-boom)
+notification b5985e4a-5296-4522-b777-2cd932d16457 for handler 'error' will be retried in 0:02:00
+notification 74c5d441-8c6d-4644-9d46-8800debbeff5 for handler 'fail' will be retried in 0:02:00
+transaction rolled back [shard=0:0]: Rollback
+transaction rolled back [shard=0:0]: Rollback
+transaction rolled back [shard=0:0]: Rollback
+handler 'fail' failed on attempt 1 (RuntimeError: boom)
+notification c57b8813-c84a-4578-84cc-ec1afe7974c6 for handler 'fail' will be retried in 0:00:30
+ekbatan-dispatch-shard: ShardIdentifier(group=0, member=0) failed this round: (psycopg.errors.RaiseException) no FAILED allowed
+CONTEXT:  PL/pgSQL function refuse_failed() line 1 at RAISE
+[SQL: UPDATE event_notifications SET state=%(state)s::VARCHAR, attempts=(event_notifications.attempts + %(attempts_1)s::INTEGER), next_retry_at=%(next_retry_at)s::TIMESTAMP WITHOUT TIME ZONE, updated_date=%(updated_date)s::TIMESTAMP WITHOUT TIME ZONE WHERE event_notifications.id IN (%(id_1_1)s::UUID)]
+[parameters: {'state': 'FAILED', 'attempts_1': 1, 'next_retry_at': datetime.datetime(2026, 1, 1, 10, 0, 30), 'updated_date': datetime.datetime(2026, 1, 1, 10, 0), 'id_1_1': UUID('c57b8813-c84a-4578-84cc-ec1afe7974c6')}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+handler 'fail' failed on attempt 1 (RuntimeError: boom)
+notification c57b8813-c84a-4578-84cc-ec1afe7974c6 for handler 'fail' will be retried in 0:00:30
+ekbatan-dispatch-shard: ShardIdentifier(group=0, member=0) failed this round: (psycopg.errors.RaiseException) no FAILED allowed
+CONTEXT:  PL/pgSQL function refuse_failed() line 1 at RAISE
+[SQL: UPDATE event_notifications SET state=%(state)s::VARCHAR, attempts=(event_notifications.attempts + %(attempts_1)s::INTEGER), next_retry_at=%(next_retry_at)s::TIMESTAMP WITHOUT TIME ZONE, updated_date=%(updated_date)s::TIMESTAMP WITHOUT TIME ZONE WHERE event_notifications.id IN (%(id_1_1)s::UUID)]
+[parameters: {'state': 'FAILED', 'attempts_1': 1, 'next_retry_at': datetime.datetime(2026, 1, 1, 10, 0, 30), 'updated_date': datetime.datetime(2026, 1, 1, 10, 0), 'id_1_1': UUID('c57b8813-c84a-4578-84cc-ec1afe7974c6')}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+handler 'failing' failed on attempt 1 (RuntimeError: boom)
+notification d535c548-f7f6-47cc-8c1c-8a32680b43d9 for handler 'failing' will be retried in 0:00:30
+handler 'failing' failed on attempt 2 (RuntimeError: boom)
+notification d535c548-f7f6-47cc-8c1c-8a32680b43d9 for handler 'failing' will be retried in 0:01:00
+handler 'failing' failed on attempt 3 (RuntimeError: boom)
+notification d535c548-f7f6-47cc-8c1c-8a32680b43d9 for handler 'failing' will be retried in 0:02:00
+handler 'failing' failed on attempt 4 (RuntimeError: boom)
+notification d535c548-f7f6-47cc-8c1c-8a32680b43d9 for handler 'failing' will be retried in 0:04:00
+handler 'failing' failed on attempt 5 (RuntimeError: boom)
+notification d535c548-f7f6-47cc-8c1c-8a32680b43d9 for handler 'failing' was discarded: it exhausted the retention window after repeated handler failures
+notification b851d2d3-6bae-497d-ac7d-98315bd1c8a2 for handler 'ok' was discarded: WidgetCreatedEvent was already past its retention window when it was claimed
+notification 74e8175c-1250-4c92-9848-0dbee1498137 for handler 'ok' was discarded: WidgetCreatedEvent was already past its retention window when it was claimed
+handler 'failing' failed on attempt 1 (RuntimeError: boom)
+notification d4cf4039-5417-4cbc-8447-42970da3c75a for handler 'failing' was discarded: it exhausted the retention window after repeated handler failures
+exit 0

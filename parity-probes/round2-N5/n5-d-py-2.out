@@ -1,0 +1,16 @@
+PROBE d1.build_took: 0.0s
+PROBE d1.start_took: 0.0s
+PROBE d1.connections_open_2s_after_start: 11
+PROBE d1.action_to_handler: within 3s
+PROBE d1.threads_while_running: {'db-scheduler-detect-dead': 1, 'db-scheduler-due': 1, 'db-scheduler-heartbeat': 1, 'db-scheduler-worker-#': 2, 'ekbatan-pool-filler': 3}
+PROBE d1.stop_took: 0.0s
+PROBE d1.connections_left_after_stop: 0
+PROBE d1.threads_left_after_stop: {}
+PROBE d2.build_took: 0.0s
+PROBE d2.start_error_names_auth: yes
+PROBE d2.start: threw ValidationError after 90.0s
+PROBE d2.action: failed after 30.0s
+PROBE d2.action_error_names_auth: yes
+PROBE d2.threads_while_running: {'db-scheduler-detect-dead': 1, 'db-scheduler-due': 1, 'db-scheduler-heartbeat': 1, 'ekbatan-pool-filler': 3}
+PROBE d2.stop_took: 20.0s
+PROBE d2.threads_left_after_stop: {}

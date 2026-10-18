@@ -1,0 +1,20 @@
+ekbatan:
+  namespace: ns
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: g
+        members:
+          - member: 0
+            name: m
+            configs:
+              primaryConfig:
+                @URL_KEY@: @URL@
+                username: u
+
+  jobs:
+    polling-interval: PT1S
+    pollingInterval: PT2S

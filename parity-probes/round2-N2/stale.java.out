@@ -1,0 +1,4 @@
+# ./gradlew generateJooqClasses in scratch jooq-pg (build.gradle.kts copied as java/jooq-pg.build.gradle.kts)
+PROBE stale.java.unchanged: > Task :generateJooqClasses UP-TO-DATE
+PROBE stale.java.afterNewMigration: > Task :generateJooqClasses (reran by itself; ADDED_LATER present in ProbeItems.java: 1)
+PROBE stale.java.migrationRemovedAgain: > Task :generateJooqClasses (reran)

@@ -1,0 +1,45 @@
+PROBE outbox.row.CreateWalletAction: type=WalletCreatedEvent payload={"modelId":"01a14c3f-f289-73da-8000-c7517844d22f","modelName":"Wallet","ownerId":"5f577502-4238-46cd-994b-3cd4ebde1eea","currency":"EUR","initialBalance":100.00} params={"ownerId":"5f577502-4238-46cd-994b-3cd4ebde1eea","currency":"EUR","initialBalance":100.00,"walletId":{"id":"01a14c3f-f289-73da-8000-c7517844d22f","value":"01a14c3f-f289-73da-8000-c7517844d22f"}} delivered=0 id='433a7238c1274303ae415c3d21824387'
+PROBE outbox.row.DepositMoneyAction: type=WalletMoneyDepositedEvent payload={"modelId":"01a14c3f-f289-73da-8000-c7517844d22f","modelName":"Wallet","amount":10.50,"newBalance":110.5000} params={"walletId":{"id":"01a14c3f-f289-73da-8000-c7517844d22f","value":"01a14c3f-f289-73da-8000-c7517844d22f"},"amount":10.50,"recipient":"a@b"} delivered=0 id='9aa922f32d1745f5bf25b1512343fa53'
+PROBE outbox.row.NotifyAction: type=None payload=None params={"walletId":{"id":"01a14c3f-f289-73da-8000-c7517844d22f","value":"01a14c3f-f289-73da-8000-c7517844d22f"},"kind":"k","recipient":"r","message":null} delivered=0 id='e915a1ee1cd3478bb42fd79a0ecb3377'
+PROBE outbox.default_persister_without_events_kw: wrote rows
+PROBE outbox.payload_starts_modelId_modelName: True
+PROBE outbox.payload_camel_newBalance: True
+PROBE outbox.sentinel_payload_is_sql_null: True
+PROBE outbox.sqlite_uuid_text: '9aa922f32d1745f5bf25b1512343fa53' len=32
+PROBE json.decimal_and_instant: {"modelId":"m1","modelName":"Wallet","amount":1E+3,"at":"2025-01-01T00:00:00.120Z"}
+PROBE json.decimal_back: Decimal('1E+3') datetime.datetime(2025, 1, 1, 0, 0, 0, 120000, tzinfo=datetime.timezone.utc)
+PROBE modelevent.model_id='': refused ValidationError
+PROBE modelevent.model_id=None: refused ValidationError
+PROBE fanout.events_fanned: 1
+PROBE fanout.row.bad-handler: state=PENDING attempts=0 next_retry_at=2026-01-01 10:00:05.000000 event_date=2026-01-01 10:00:05.000000 created=2026-01-01 11:00:00.000000
+PROBE fanout.row.ok-handler: state=PENDING attempts=0 next_retry_at=2026-01-01 10:00:05.000000 event_date=2026-01-01 10:00:05.000000 created=2026-01-01 11:00:00.000000
+PROBE fanout.delivered.CreateWalletAction: 0
+PROBE fanout.delivered.DepositMoneyAction: 1
+PROBE fanout.delivered.NotifyAction: 0
+handler 'bad-handler' failed on attempt 1 (RuntimeError: boom)
+notification 298f1591-37e4-442a-a522-ae52b06bf83a for handler 'bad-handler' will be retried in 0:00:30
+PROBE dispatch.max_concurrent_handlers_one_event: 2
+PROBE dispatch.envelope_tz: event_date=datetime.datetime(2026, 1, 1, 10, 0, 5, tzinfo=datetime.timezone.utc) started=datetime.datetime(2026, 1, 1, 10, 0, 5, tzinfo=datetime.timezone.utc)
+PROBE dispatch.envelope_amount_type: Decimal
+PROBE dispatch.envelope_params: {'walletId': {'id': '01a14c3f-f289-73da-8000-c7517844d22f', 'value': '01a14c3f-f289-73da-8000-c7517844d22f'}, 'amount': Decimal('10.50'), 'recipient': 'a@b'}
+PROBE dispatch.round1.bad-handler: state=FAILED attempts=1 next_retry_at=2026-01-01 10:00:36.000000
+PROBE dispatch.round1.ok-handler: state=SUCCEEDED attempts=1 next_retry_at=2026-01-01 10:00:05.000000
+PROBE dispatch.round1.update_order: ['state=?, attempts=(event_notifications.attempts + ?), updated_date=?', 'state=?, attempts=(event_notifications.attempts + ?), next_retry_at=?, updated_d']
+handler 'bad-handler' failed on attempt 2 (RuntimeError: boom)
+notification 298f1591-37e4-442a-a522-ae52b06bf83a for handler 'bad-handler' will be retried in 0:01:00
+PROBE dispatch.round2.bad-handler: now=+0:00:31 state=FAILED attempts=2 next_retry_at=2026-01-01 10:01:36.000000
+handler 'bad-handler' failed on attempt 3 (RuntimeError: boom)
+notification 298f1591-37e4-442a-a522-ae52b06bf83a for handler 'bad-handler' will be retried in 0:02:00
+PROBE dispatch.round3.bad-handler: now=+0:01:31 state=FAILED attempts=3 next_retry_at=2026-01-01 10:03:36.000000
+handler 'bad-handler' failed on attempt 4 (RuntimeError: boom)
+notification 298f1591-37e4-442a-a522-ae52b06bf83a for handler 'bad-handler' was discarded: it exhausted the retention window after repeated handler failures
+PROBE dispatch.round4.bad-handler: now=+0:03:31 state=EXPIRED attempts=4 next_retry_at=2026-01-01 10:03:36.000000
+LOG WARNING io.ekbatan.events.localeventhandler.job.EventHandlingJob no handler named 'ghost' is registered; leaving its notifications alone
+PROBE ghost.after_round: state=PENDING attempts=0 next_retry_at=2026-01-01 10:00:37.000000
+LOG ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob notification 42ca66ee-736b-4129-9528-28acaaf3b861 for handler 'ghost' was discarded: WalletMoneyDepositedEvent was already past its retention window when it was claimed
+PROBE ghost.after_retention: state=EXPIRED attempts=0
+PROBE job.handling.built_without_enabled.schedule: FixedDelay(duration=0:00:07)
+PROBE job.handling.enabled_from_config.schedule: DisabledSchedule()
+PROBE job.fanout.has_enabled_switch: DisabledSchedule()
+PROBE config.defaults: LocalEventHandlerConfig(fanout_poll_delay=None, fanout_batch_size=None, handling_poll_delay=None, handling_batch_size=None, handling_max_backoff_cap=None, handling_retention_window=None, handling=HandlingConfig(enabled=False))
+PROBE fanout.two_shards.max_concurrent_reads: 2

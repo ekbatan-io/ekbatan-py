@@ -1,0 +1,63 @@
+ThrowAction failed: RuntimeError: boom
+retrying ThrowAction (1/1) after StaleRecordError: stale
+ThrowAction failed: StaleRecordError: stale
+transaction rolled back [shard=0:0]: StaleRecordError
+retrying StaleUpdateAction (1/1) after StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+transaction rolled back [shard=0:0]: StaleRecordError
+StaleUpdateAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+transaction rolled back [shard=0:0]: StaleRecordError
+StaleUpdateAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+transaction rolled back [shard=0:0]: StaleRecordError
+retrying StaleUpdateAction (1/3) after StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+transaction rolled back [shard=0:0]: StaleRecordError
+retrying StaleUpdateAction (2/3) after StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+transaction rolled back [shard=0:0]: StaleRecordError
+retrying StaleUpdateAction (3/3) after StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+transaction rolled back [shard=0:0]: StaleRecordError
+StaleUpdateAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+retrying ThrowAction (1/2) after ProbeEx: probe
+retrying ThrowAction (2/2) after ProbeEx: probe
+ThrowAction failed: ProbeEx: probe
+ThrowAction failed: ProbeSubEx: probesub
+retrying ThrowAction (1/1) after StaleRecordError: stale
+ThrowAction failed: StaleRecordError: stale
+retrying ThrowAction (1/1) after StaleRecordError: inner
+ThrowAction failed: RuntimeError: wrapped
+retrying FreshPlanAction (1/1) after StaleRecordError: first attempt
+TwoShardAction failed: CrossShardError: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+TwoShardAction spans 2 shards ['1:0', '0:0']; each committed on its own
+PartialAction spans 2 shards ['0:0', '1:0']; each committed on its own
+transaction rolled back [shard=1:0]: StaleRecordError
+PartialAction PARTIALLY COMMITTED: shards ['0:0'] are committed and will not roll back; shard 1:0 failed with StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PartialAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PartialAction spans 2 shards ['0:0', '1:0']; each committed on its own
+transaction rolled back [shard=1:0]: StaleRecordError
+PartialAction PARTIALLY COMMITTED: shards ['0:0'] are committed and will not roll back; shard 1:0 failed with StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+retrying PartialAction (1/1) after StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PartialAction spans 2 shards ['0:0', '1:0']; each committed on its own
+transaction rolled back [shard=1:0]: StaleRecordError
+PartialAction PARTIALLY COMMITTED: shards ['0:0'] are committed and will not roll back; shard 1:0 failed with StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PartialAction failed: StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+shard 2:0 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+transaction rolled back [shard=0:0]: ValidationError
+ScalarParamsAction failed: ValidationError: action_params must be a JSON object; give the action a params dataclass rather than a bare scalar or list - `Action[DepositParams, Wallet]`, not `Action[str, Wallet]`. An action with no parameters takes None; got str
+DoubleStageAction failed: ValidationError: Wallet 01a14c3b-9d1d-7b7d-8000-3b07d675779d is already staged in this unit of work. A unit of work writes each row once, so two changes to one row have to be composed before they are staged - `wallet.deposit(10).withdraw(5)`, then one plan.update - rather than staged one after another.
+DoubleStageAction failed: ValidationError: Wallet 01a14c3b-9d25-7ef0-8000-8415452e71da is already staged in this unit of work. A unit of work writes each row once, so two changes to one row have to be composed before they are staged - `wallet.deposit(10).withdraw(5)`, then one plan.update - rather than staged one after another.
+DoubleStageAction failed: ValidationError: Wallet 01a14c3b-9d2b-7ab4-8000-57cf971e176e is already staged in this unit of work. A unit of work writes each row once, so two changes to one row have to be composed before they are staged - `wallet.deposit(10).withdraw(5)`, then one plan.update - rather than staged one after another.
+transaction rolled back [shard=0:0]: ValidationError
+DupEventAction failed: ValidationError: event type name collision: 'Dup' is used by both __main__.OuterA.Dup and __main__.OuterB.Dup. A consumer routes on this name and cannot tell them apart.
+transaction rolled back [shard=0:0]: RuntimeError
+CreateAction failed: RuntimeError: persister fails
+OuterAction failed: RuntimeError: outer fails after inner 01a14c3b-9d63-7106-8000-aebc8cdc7330
+transaction rolled back [shard=0:0]: StaleRecordError
+retrying LatchDepositAction (1/1) after StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+transaction rolled back [shard=0:0]: IntegrityError
+ReAddAction failed: IntegrityError: (psycopg.errors.UniqueViolation) duplicate key value violates unique constraint "wallets_pkey"
+DETAIL:  Key (id)=(01a14c3b-9e0d-79df-8000-b28e85d2e7a5) already exists.
+[SQL: INSERT INTO wallets (id, version, state, owner_id, currency, balance, created_date, updated_date, aliases, reward_points) VALUES (%(id)s::UUID, %(version)s::BIGINT, %(state)s::VARCHAR, %(owner_id)s::UUID, %(currency)s::VARCHAR, %(balance)s, %(created_date)s::TIMESTAMP WITHOUT TIME ZONE, %(updated_date)s::TIMESTAMP WITHOUT TIME ZONE, %(aliases)s::JSONB, %(reward_points)s::INTEGER)]
+[parameters: {'id': UUID('01a14c3b-9e0d-79df-8000-b28e85d2e7a5'), 'version': 1, 'state': 'OPENED', 'owner_id': UUID('1cb3a47d-6cca-4d88-aa6a-a4b2cb6148d8'), 'currency': 'EUR', 'balance': Decimal('10.0000'), 'created_date': datetime.datetime(2026, 10, 17, 23, 38, 57, 933946), 'updated_date': datetime.datetime(2026, 10, 17, 23, 38, 57, 933946), 'aliases': Jsonb([]), 'reward_points': None}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+CreateAction failed: ValidationError: no repository is registered for Wallet, so a change staged for it cannot be written. Register one on the RepositoryRegistry the executor was built with; it currently holds ['Notification'].
+transaction rolled back [shard=0:0]: RuntimeError
+exit 0

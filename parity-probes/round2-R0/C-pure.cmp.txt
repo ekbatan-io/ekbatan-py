@@ -1,0 +1,193 @@
+COUNTS same=105 fixed=6 regressed=0 still=42 changed-still=0 py-only=0
+[fixed] policy.yaml.useDefaultShard
+    java: use_default_shard
+    r1  : error
+    now : use_default_shard
+[fixed] policy.yaml.UseDefaultShard
+    java: use_default_shard
+    r1  : error
+    now : use_default_shard
+[fixed] policy.yaml.padded_fail
+    java: fail
+    r1  : error
+    now : fail
+[fixed] policy.yaml.empty_string
+    java: use_default_shard
+    r1  : error
+    now : use_default_shard
+[fixed] policy.yaml.null_value
+    java: use_default_shard
+    r1  : error
+    now : use_default_shard
+[fixed] policy.config_builder_null
+    java: use_default_shard
+    r1  : error: unknown_shard_policy must be 'use_default_shard' or 'fail', not None
+    now : use_default_shard
+[still] id.v4.raw_decode
+    java: ok 156:22
+    r1  : ok none
+    now : ok none
+[still] sid.of_256_0
+    java: error: group must be 0 or 255 or between them
+    r1  : error: group must be 0..255, got 256
+    now : error: group must be 0..255, got 256
+[still] sid.of_0_64
+    java: error: member must be 0 or 63 or between them
+    r1  : error: member must be 0..63, got 64
+    now : error: member must be 0..63, got 64
+[still] sid.of_-1_0
+    java: error: group must be 0 or 255 or between them
+    r1  : error: group must be 0..255, got -1
+    now : error: group must be 0..255, got -1
+[still] sid.str_1_2
+    java: ShardIdentifier(1, 2)
+    r1  : 1:2
+    now : 1:2
+[still] yaml.dsp.connectTimeout
+    java: 10 (text)
+    r1  : 10 (number)
+    now : 10 (number)
+[still] yaml.dsp.ha.enableJMX
+    java: true (text)
+    r1  : true (bool)
+    now : true (bool)
+[still] yaml.group_number_missing
+    java: ok
+    r1  : error
+    now : error
+[still] yaml.group_number_missing.value
+    java: 0
+    r1  : error
+    now : error
+[still] yaml.member_number_missing
+    java: ok
+    r1  : error
+    now : error
+[still] yaml.default_names_nothing
+    java: ok
+    r1  : error
+    now : error
+[still] yaml.duplicate_shard
+    java: ok
+    r1  : error
+    now : error
+[still] yaml.mixed_dialects
+    java: ok
+    r1  : error
+    now : error
+[still] yaml.kebab_keys.core_binding
+    java: error
+    r1  : ok
+    now : ok
+[still] yaml.kebab_keys.di_normalizer
+    java: defaultShard.group groups[0].members[0].configs.primaryConfig.maximumPoolSize
+    r1  : n/a (the loader itself accepts kebab-case)
+    now : n/a (the loader itself accepts kebab-case)
+[still] yaml.bad_pool_value.marker_in_error
+    java: yes
+    r1  : no
+    now : no
+[still] dsc.pool_0
+    java: error: maximumPoolSize must be at least 1
+    r1  : error: pool_size must be at least 1, got 0
+    now : error: pool_size must be at least 1, got 0
+[still] dsc.pool_-1
+    java: error: maximumPoolSize must be at least 1
+    r1  : error: pool_size must be at least 1, got -1
+    now : error: pool_size must be at least 1, got -1
+[still] dsc.url_blank
+    java: error: jdbcUrl is required
+    r1  : error: url is required
+    now : error: url is required
+[still] dsc.url_missing
+    java: error: jdbcUrl is required
+    r1  : error: url is required
+    now : error: url is required
+[still] dsc.username_blank
+    java: error: username cannot be empty; leave it out when the driver or a plugin supplies the user
+    r1  : error: username cannot be empty; leave it out when the driver supplies the user
+    now : error: username cannot be empty; leave it out when the driver supplies the user
+[still] dsc.username_empty
+    java: error: username cannot be empty; leave it out when the driver or a plugin supplies the user
+    r1  : error: username cannot be empty; leave it out when the driver supplies the user
+    now : error: username cannot be empty; leave it out when the driver supplies the user
+[still] dsc.dialect.oracle
+    java: error: Cannot determine the database dialect from the URL. A JDBC URL looks like jdbc:postgresql://host:5432/db.
+    r1  : error: unsupported database 'oracle'; this framework speaks mariadb, mysql, postgres, sqlite
+    now : error: unsupported database 'oracle'; this framework speaks mariadb, mysql, postgres, sqlite
+[still] dsc.dialect.sqlite
+    java: error: URL resolves to SQLITE, which Ekbatan does not support. Supported dialects: PostgreSQL, MySQL, MariaDB.
+    r1  : ok
+    now : ok
+[still] dsc.dialect.garbage
+    java: error: Cannot determine the database dialect from the URL. A JDBC URL looks like jdbc:postgresql://host:5432/db.
+    r1  : error: cannot tell which database the url names: it has no '://'. A url looks like 'postgresql+psycopg://host:5432/db'
+    now : error: cannot tell which database the url names: it has no '://'. A url looks like 'postgresql+psycopg://host:5432/db'
+[still] dsc.dsp.user
+    java: error: 'user' does not belong in dataSourceProperties, where it would silently win over username; set username instead
+    r1  : error: 'user' does not belong in data_source_properties, where it would silently win over username; set username instead
+    now : error: 'user' does not belong in data_source_properties, where it would silently win over username; set username instead
+[still] dsc.dsp.PASSWORD
+    java: error: 'PASSWORD' does not belong in dataSourceProperties, where it would silently win over password; set password instead
+    r1  : error: 'PASSWORD' does not belong in data_source_properties, where it would silently win over password; set password instead
+    now : error: 'PASSWORD' does not belong in data_source_properties, where it would silently win over password; set password instead
+[still] dsc.dsp.passwd
+    java: ok
+    r1  : error: 'passwd' does not belong in data_source_properties, where it would silently win over password; set password instead
+    now : error: 'passwd' does not belong in data_source_properties, where it would silently win over password; set password instead
+[still] dsc.dsp.null_value
+    java: error: dataSourceProperties 'ssl' has no value
+    r1  : error: data_source_properties 'ssl' has no value
+    now : error: data_source_properties 'ssl' has no value
+[still] dsc.dsp.nested
+    java: error: dataSourceProperties 'ssl' holds a nested block, which no driver setting can; write each setting as one name, such as ha.enableJMX
+    r1  : ok
+    now : ok
+[still] dsc.dsp.list
+    java: error: dataSourceProperties 'ssl' must be a single value, not a list
+    r1  : ok
+    now : ok
+[still] dsc.dsp.blank_name
+    java: error: a dataSourceProperties name cannot be blank
+    r1  : error: a data_source_properties name cannot be blank
+    now : error: a data_source_properties name cannot be blank
+[still] dsc.dsp.number_kept_as
+    java: text
+    r1  : number
+    now : number
+[still] reg.two_no_default
+    java: error: withDefaultDatabase must be called when more than one database is registered
+    r1  : error: default_shard is required when more than one database is registered; registered: ['0:0', '1:0']
+    now : error: default_shard is required when more than one database is registered; registered: ['0:0', '1:0']
+[still] reg.manager_unknown
+    java: error: No database registered for shard: ShardIdentifier(9, 9)
+    r1  : error: no database registered for shard 9:9; registered: ['0:0', '1:0']
+    now : error: no database registered for shard 9:9; registered: ['0:0', '1:0']
+[still] reg.effective.unknown.warn_text
+    java: WARN io.ekbatan.core.shard.DatabaseRegistry - Shard ShardIdentifier(5, 5) is not registered, routing to default ShardIdentifier(0, 0) [registered=[ShardIdentifier(0, 0), ShardIdentifier(1, 0)]]
+    r1  : WARNING io.ekbatan.core.shard.DatabaseRegistry - shard 5:5 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+    now : WARNING io.ekbatan.core.shard.DatabaseRegistry - shard 5:5 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]
+[still] reg.effective.null.warn_lines
+    java: 2
+    r1  : 0
+    now : 0
+[still] reg.effective.unknown_fail_policy
+    java: error: Shard ShardIdentifier(5, 5) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+    r1  : error: shard 5:5 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+    now : error: shard 5:5 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+[still] reg.effective.null_fail_policy
+    java: error: Shard null is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+    r1  : 0:0
+    now : 0:0
+[still] reg.from_config.default_names_nothing
+    java: error: defaultShard must reference a registered database
+    r1  : error: default_shard 9:9 names no configured database; configured: ['0:0']
+    now : error: default_shard 9:9 names no configured database; configured: ['0:0']
+[still] reg.from_config.duplicate_shard
+    java: ok
+    r1  : error: shard 0:0 is configured twice
+    now : error: shard 0:0 is configured twice
+[still] reg.from_config.duplicate_shard.registered
+    java: 1
+    r1  : error
+    now : error

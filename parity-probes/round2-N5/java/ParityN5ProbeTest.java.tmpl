@@ -1,0 +1,516 @@
+package __PKG__;
+
+import static io.ekbatan.core.action.ActionExecutor.Builder.actionExecutor;
+import static io.ekbatan.core.action.ActionRegistry.Builder.actionRegistry;
+import static io.ekbatan.core.config.DataSourceConfig.Builder.dataSourceConfig;
+import static io.ekbatan.core.persistence.ConnectionProvider.hikariConnectionProvider;
+import static io.ekbatan.core.repository.RepositoryRegistry.Builder.repositoryRegistry;
+import static io.ekbatan.core.shard.DatabaseRegistry.Builder.databaseRegistry;
+import static io.ekbatan.events.localeventhandler.EventHandlerRegistry.eventHandlerRegistry;
+import static io.ekbatan.events.localeventhandler.job.EventFanoutJob.eventFanoutJob;
+import static io.ekbatan.events.localeventhandler.job.EventHandlingJob.eventHandlingJob;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.github.kagkarlsson.scheduler.task.ExecutionContext;
+import com.github.kagkarlsson.scheduler.task.schedule.FixedDelay;
+import com.github.kagkarlsson.scheduler.task.schedule.Schedule;
+import io.ekbatan.core.action.Action;
+import io.ekbatan.core.action.ActionExecutor;
+import io.ekbatan.core.concurrent.KeyedLockProvider;
+import io.ekbatan.core.config.DataSourceConfig;
+import io.ekbatan.core.domain.ModelEvent;
+import io.ekbatan.core.domain.ModelId;
+import io.ekbatan.core.domain.ShardedId;
+import io.ekbatan.core.persistence.ConnectionProvider;
+import io.ekbatan.core.persistence.TransactionManager;
+import io.ekbatan.core.shard.DatabaseRegistry;
+import io.ekbatan.core.shard.ShardIdentifier;
+import io.ekbatan.core.shard.ShardedUUID;
+import io.ekbatan.core.shard.UnknownShardPolicy;
+import io.ekbatan.distributedjobs.DistributedJob;
+import io.ekbatan.distributedjobs.JobRegistry;
+import io.ekbatan.events.localeventhandler.EventEnvelope;
+import io.ekbatan.events.localeventhandler.EventHandler;
+import io.ekbatan.test.local_event_handler.widget.action.WidgetCreateAction;
+import io.ekbatan.test.local_event_handler.widget.models.Widget;
+import io.ekbatan.test.local_event_handler.widget.models.events.WidgetCreatedEvent;
+import __PKG__.widget.repository.WidgetRepository;
+import io.ekbatan.testsupport.time.VirtualClock;
+import java.math.BigDecimal;
+import java.security.Principal;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+/** Parity round 2, area N5: temporary twin-run probe. Never committed. Generated from a template. */
+@TestMethodOrder(MethodOrderer.MethodName.class)
+class ParityN5ProbeTest {
+
+    static final String D = "__D__";
+    static final SQLDialect DIALECT = SQLDialect.__DIALECT__;
+    static final String MARKER = "N5-s3cret-marker";
+    static final Instant T0 = Instant.parse("2026-01-01T10:00:00Z");
+    static final ObjectMapper OM = new ObjectMapper();
+
+    static String url(String db) {
+        return "__JDBC__://localhost:__PORT__/" + db;
+    }
+
+    static DataSourceConfig cfg(String db, int pool) {
+        return dataSourceConfig()
+                .jdbcUrl(url(db))
+                .username("test")
+                .password(MARKER)
+                .maximumPoolSize(pool)
+                .build();
+    }
+
+    static void p(String key, Object value) {
+        var s = String.valueOf(value);
+        if (s.contains(MARKER)) throw new AssertionError("password leaked in " + key);
+        System.out.println("PROBE " + key + ": " + s);
+    }
+
+    static String yn(boolean b) {
+        return b ? "yes" : "no";
+    }
+
+    static String secs(double s) {
+        return String.format("%.1fs", Math.round(s * 2) / 2.0);
+    }
+
+    static String chain(Throwable t) {
+        var sb = new StringBuilder();
+        for (var c = t; c != null; c = c.getCause()) sb.append(c).append(" | ");
+        return sb.toString();
+    }
+
+    static Connection raw(String db) throws Exception {
+        return DriverManager.getConnection(url(db), "test", MARKER);
+    }
+
+    static Object scalar(String sql) throws Exception {
+        return scalarOn("testdb", sql);
+    }
+
+    static Object scalarOn(String db, String sql) throws Exception {
+        try (var c = raw(db);
+                var rs = c.createStatement().executeQuery(sql)) {
+            return rs.next() ? rs.getObject(1) : null;
+        }
+    }
+
+    static long count(String sql) throws Exception {
+        return ((Number) scalar(sql)).longValue();
+    }
+
+    static void exec(String db, String... sqls) throws Exception {
+        try (var c = raw(db)) {
+            for (var s : sqls) c.createStatement().execute(s);
+        }
+    }
+
+    static void truncate(String db) throws Exception {
+        exec(
+                db,
+                "delete from eventlog.event_notifications",
+                "delete from eventlog.events",
+                "delete from widgets",
+                "delete from side_rows",
+                "delete from scheduled_tasks");
+    }
+
+    static long side(int id) throws Exception {
+        return count("select count(*) from side_rows where id = " + id);
+    }
+
+    static long widgets(String where) throws Exception {
+        return count("select count(*) from widgets where " + where);
+    }
+
+    static String wid(Widget w) {
+        return w.id.getValue().toString();
+    }
+
+    static final Principal TESTER = () -> "tester";
+
+    static class Boom extends RuntimeException {
+        Boom(String m) {
+            super(m);
+        }
+    }
+
+    /** Exposes the protected accessors. */
+    static class Repo extends WidgetRepository {
+        Repo(DatabaseRegistry r) {
+            super(r);
+        }
+
+        DSLContext txElse() {
+            return txDbElseDb();
+        }
+    }
+
+    public record RenameParams(UUID id, String name) {}
+
+    public static class WidgetRenameAction extends Action<RenameParams, Widget> {
+        final Repo repo;
+
+        public WidgetRenameAction(Repo repo, Clock clock) {
+            super(clock);
+            this.repo = repo;
+        }
+
+        @Override
+        protected Widget perform(Principal principal, RenameParams params) {
+            var found = repo.findById(params.id())
+                    .orElseThrow(() -> new IllegalStateException("widget " + params.id() + " not visible to the action"));
+            return plan().update(found.copy().name(params.name()).build());
+        }
+    }
+
+    public static class ThrowAction extends Action<WidgetCreateAction.Params, Widget> {
+        public ThrowAction(Clock clock) {
+            super(clock);
+        }
+
+        @Override
+        protected Widget perform(Principal principal, WidgetCreateAction.Params params) {
+            plan().add(Widget.createWidget(params.shard(), params.name(), params.color(), clock.instant())
+                    .build());
+            throw new RuntimeException("action failed on purpose");
+        }
+    }
+
+    record App(TransactionManager tm, ConnectionProvider cp, DatabaseRegistry reg, Repo repo, ActionExecutor ex) {}
+
+    static App build(int pool, Clock clock) {
+        var cp = hikariConnectionProvider(cfg("testdb", pool));
+        var tm = new TransactionManager(cp, cp, DIALECT);
+        var reg = databaseRegistry().withDatabase(tm).build();
+        var repo = new Repo(reg);
+        return new App(tm, cp, reg, repo, executor(reg, repo, clock));
+    }
+
+    static ActionExecutor executor(DatabaseRegistry reg, Repo repo, Clock clock) {
+        return actionExecutor()
+                .namespace("test.local_event_handler")
+                .databaseRegistry(reg)
+                .objectMapper(OM)
+                .clock(clock)
+                .repositoryRegistry(
+                        repositoryRegistry().withModelRepository(Widget.class, repo).build())
+                .actionRegistry(actionRegistry()
+                        .withAction(WidgetCreateAction.class, new WidgetCreateAction(clock))
+                        .withAction(WidgetRenameAction.class, new WidgetRenameAction(repo, clock))
+                        .withAction(ThrowAction.class, new ThrowAction(clock))
+                        .withAction(PriceAction.class, new PriceAction(clock))
+                        .build())
+                .build();
+    }
+
+    static WidgetCreateAction.Params create(String name) {
+        return new WidgetCreateAction.Params(ShardIdentifier.DEFAULT, name, "red");
+    }
+
+    // ================================================================== (a) nested transactions
+
+    @Test
+    void a_nested() throws Exception {
+        truncate("testdb");
+        var app = build(5, Clock.systemUTC());
+        p("dialect", D);
+        a1a2(app);
+        a3(app);
+        a4(app);
+        if (D.equals("pg")) a5();
+        a6();
+        a7(app);
+        a8(app);
+        app.reg().close();
+    }
+
+    void a1a2(App app) throws Exception {
+        var created = new AtomicReference<Widget>();
+        try {
+            app.tm().inTransactionChecked((TransactionManager.CheckedConsumer<DSLContext>) dsl -> {
+                dsl.execute("insert into side_rows values (1, 'outer')");
+                created.set(app.ex().execute(TESTER, WidgetCreateAction.class, create("a1")));
+                p(
+                        "a1.action_row_visible_outside_while_outer_open",
+                        yn(widgets("id = '" + wid(created.get()) + "'") == 1));
+                throw new Boom("outer fails");
+            });
+        } catch (Boom e) {
+            // expected
+        }
+        p("a1.outer_row_after_outer_rollback", side(1));
+        p("a1.action_widget_after_outer_rollback", widgets("id = '" + wid(created.get()) + "'"));
+        p(
+                "a1.action_outbox_rows_after_outer_rollback",
+                count("select count(*) from eventlog.events where action_name = 'WidgetCreateAction'"));
+
+        app.tm().inTransactionChecked(dsl -> {
+            dsl.execute("insert into side_rows values (2, 'outer')");
+            try {
+                app.ex().execute(TESTER, ThrowAction.class, create("a2"));
+                p("a2.action_error", "none");
+            } catch (Exception e) {
+                p("a2.action_error_message", e.getMessage());
+            }
+        });
+        p("a2.outer_row_after_commit", side(2));
+        p("a2.thrown_action_widget", widgets("name = 'a2'"));
+        p(
+                "a2.thrown_action_outbox_rows",
+                count("select count(*) from eventlog.events where action_name = 'ThrowAction'"));
+    }
+
+    void a3(App app) throws Exception {
+        var w = Widget.createWidget(ShardIdentifier.DEFAULT, "a3", "red", Instant.now())
+                .build();
+        app.tm().inTransactionChecked(dsl -> {
+            app.repo().add(w);
+            p("a3.repo_add_in_outer_visible_outside", yn(widgets("id = '" + wid(w) + "'") == 1));
+            p(
+                    "a3.repo_find_in_outer_sees_outer_row",
+                    yn(app.repo().findById(w.id.getValue()).isPresent()));
+            p(
+                    "a3.repo_tx_db_else_db_sees_outer_row",
+                    yn(app.repo().txElse().fetchCount(app.repo().txElse().selectFrom("widgets").where("id = '" + wid(w) + "'")) == 1));
+            try {
+                app.ex().execute(TESTER, WidgetRenameAction.class, new RenameParams(w.id.getValue(), "renamed"));
+                p("a3.action_sees_outer_row", "yes");
+            } catch (Exception e) {
+                p("a3.action_sees_outer_row", "no: " + e.getClass().getSimpleName());
+            }
+            app.tm().inTransactionChecked(inner -> {
+                p(
+                        "a3.inner_tx_sees_outer_row",
+                        yn(inner.fetchCount(inner.selectFrom("widgets").where("id = '" + wid(w) + "'")) == 1));
+            });
+            p("a3.after_inner_current_is_outer", yn(app.tm().currentTransactionDbContext().isPresent()));
+        });
+        p("a3.repo_add_committed_with_outer", yn(widgets("id = '" + wid(w) + "'") == 1));
+    }
+
+    void a4(App app) throws Exception {
+        var w = app.ex().execute(TESTER, WidgetCreateAction.class, create("a4"));
+        var t0 = System.nanoTime();
+        app.tm().inTransactionChecked(dsl -> {
+            dsl.execute("update widgets set color = 'locked' where id = '" + wid(w) + "'");
+            Exception err = null;
+            try {
+                app.ex().execute(TESTER, WidgetRenameAction.class, new RenameParams(w.id.getValue(), "a4-renamed"));
+            } catch (Exception e) {
+                err = e;
+            }
+            p("a4.blocked_for", secs((System.nanoTime() - t0) / 1e9));
+            p("a4.action_failed", yn(err != null));
+            if (err != null) {
+                var m = chain(err).toLowerCase();
+                p("a4.error_is_lock_timeout", yn(m.contains("lock") && (m.contains("timeout") || m.contains("wait"))));
+            }
+            p("a4.outer_still_usable", dsl.fetchValue("select 1"));
+        });
+        p("a4.final_color", scalar("select color from widgets where id = '" + wid(w) + "'"));
+        p("a4.final_name", scalar("select name from widgets where id = '" + wid(w) + "'"));
+        p(
+                "a4.rename_outbox_rows",
+                count("select count(*) from eventlog.events where action_name = 'WidgetRenameAction'"));
+    }
+
+    void a5() throws Exception {
+        var app = build(1, Clock.systemUTC());
+        Thread.sleep(1000);
+        var t0 = System.nanoTime();
+        app.tm().inTransactionChecked(dsl -> {
+            try {
+                app.ex().execute(TESTER, WidgetCreateAction.class, create("a5"));
+                p("a5.action_inside_outer_on_pool_of_one", "ran");
+            } catch (Exception e) {
+                p("a5.action_inside_outer_on_pool_of_one", "failed");
+                p("a5.error", e.getClass().getSimpleName() + " <- " + chain(e));
+            }
+            p("a5.waited", secs((System.nanoTime() - t0) / 1e9));
+        });
+        p("a5.widget_rows", widgets("name = 'a5'"));
+        app.reg().close();
+    }
+
+    void a6() throws Exception {
+        var clock = new VirtualClock();
+        clock.pauseAt(T0);
+        var app = build(5, clock);
+        exec("testdb", "delete from eventlog.event_notifications", "delete from eventlog.events");
+        var calls = new CopyOnWriteArrayList<Boolean>();
+        EventHandler<WidgetCreatedEvent> handler = new EventHandler<>() {
+            public String name() {
+                return "n5-tx-handler";
+            }
+
+            public Class<WidgetCreatedEvent> eventType() {
+                return WidgetCreatedEvent.class;
+            }
+
+            public void handle(EventEnvelope<WidgetCreatedEvent> env) throws Exception {
+                if (!"a6".equals(env.event.name)) return;
+                calls.add(app.tm().currentTransactionDbContext().isPresent());
+                var n = calls.size();
+                app.tm().inTransactionChecked(dsl -> {
+                    dsl.execute("insert into side_rows values (" + (600 + n) + ", 'handler')");
+                    app.ex().execute(TESTER, WidgetCreateAction.class, create("a6-from-handler-" + n));
+                    if (n == 1) throw new Boom("first attempt fails after its own work");
+                });
+            }
+        };
+        var handlers = eventHandlerRegistry().withHandler(handler).build();
+        var fan = eventFanoutJob()
+                .databaseRegistry(app.reg())
+                .eventHandlerRegistry(handlers)
+                .clock(clock)
+                .build();
+        var hand = eventHandlingJob()
+                .databaseRegistry(app.reg())
+                .eventHandlerRegistry(handlers)
+                .objectMapper(OM)
+                .clock(clock)
+                .build();
+        app.ex().execute(TESTER, WidgetCreateAction.class, create("a6"));
+        fan.drainOneRound();
+        hand.drainOneRound();
+        var q = "select concat(state, '/', attempts) from eventlog.event_notifications where handler_name = 'n5-tx-handler' order by created_date limit 1";
+        p("a6.handler_saw_ambient_tx", yn(calls.get(0)));
+        p("a6.after_fail.handler_side_rows", count("select count(*) from side_rows where id > 600"));
+        p("a6.after_fail.handler_widgets", widgets("name like 'a6-from-handler-%'"));
+        p("a6.after_fail.notification", scalar(q));
+        clock.advance(Duration.ofSeconds(31));
+        hand.drainOneRound();
+        p("a6.after_retry.calls", calls.size());
+        p("a6.after_retry.handler_side_rows", count("select count(*) from side_rows where id > 600"));
+        p("a6.after_retry.handler_widgets", widgets("name like 'a6-from-handler-%'"));
+        p("a6.after_retry.notification", scalar(q));
+        app.reg().close();
+    }
+
+    void a7(App app) throws Exception {
+        var ambient = new AtomicBoolean();
+        var done = new CountDownLatch(1);
+        var job = new DistributedJob() {
+            public String name() {
+                return "n5-tx-job";
+            }
+
+            public Schedule schedule() {
+                return FixedDelay.of(Duration.ofHours(1));
+            }
+
+            public void execute(ExecutionContext ctx) {
+                try {
+                    ambient.set(app.tm().currentTransactionDbContext().isPresent());
+                    app.tm().inTransactionChecked((TransactionManager.CheckedConsumer<DSLContext>) dsl -> {
+                        dsl.execute("insert into side_rows values (700, 'job')");
+                        app.ex().execute(TESTER, WidgetCreateAction.class, create("a7-from-job"));
+                        throw new Boom("job fails after the action");
+                    });
+                } catch (RuntimeException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    done.countDown();
+                }
+            }
+        };
+        var jobsCp = hikariConnectionProvider(cfg("testdb", 3));
+        var jobs = JobRegistry.jobRegistry()
+                .connectionProvider(jobsCp)
+                .pollInterval(Duration.ofMillis(200))
+                .registerShutdownHook(false)
+                .withJob(job)
+                .build();
+        jobs.start();
+        p("a7.job_ran", yn(done.await(20, TimeUnit.SECONDS)));
+        Thread.sleep(500);
+        jobs.stop();
+        jobsCp.close();
+        p("a7.job_saw_ambient_tx", yn(ambient.get()));
+        p("a7.job_side_row", side(700));
+        p("a7.job_action_widget", widgets("name = 'a7-from-job'"));
+        p(
+                "a7.job_failures_recorded",
+                scalar("select consecutive_failures from scheduled_tasks where task_name = 'n5-tx-job'"));
+    }
+
+    static KeyedLockProvider locks(ConnectionProvider cp) {
+        return __LOCKS__;
+    }
+
+    void a8(App app) throws Exception {
+        var lockCp = hikariConnectionProvider(cfg("testdb", 3));
+        var locks = locks(lockCp);
+        var other = new java.util.concurrent.ConcurrentHashMap<String, Boolean>();
+        java.util.function.Consumer<String> tryOther = tag -> {
+            var th = new Thread(() -> {
+                try {
+                    var lease = locks.tryAcquire("n5-key", Duration.ofMillis(500), Duration.ofSeconds(30));
+                    other.put(tag, lease.isPresent());
+                    lease.ifPresent(KeyedLockProvider.Lease::close);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            th.start();
+            try {
+                th.join(10_000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        };
+        var lease = locks.acquire("n5-key", Duration.ofSeconds(30));
+        var created = new AtomicReference<Widget>();
+        app.tm().inTransactionChecked(dsl -> {
+            dsl.execute("insert into side_rows values (800, 'locked')");
+            created.set(app.ex().execute(TESTER, WidgetCreateAction.class, create("a8")));
+            var again = locks.tryAcquire("n5-key", Duration.ZERO, Duration.ofSeconds(30));
+            p("a8.reentrant_in_nested_scope", yn(again.isPresent()));
+            again.ifPresent(KeyedLockProvider.Lease::close);
+            tryOther.accept("while_held");
+        });
+        p("a8.other_thread_while_held", yn(other.get("while_held")));
+        p("a8.work_committed_under_lock", side(800) + "/" + widgets("id = '" + wid(created.get()) + "'"));
+        lease.close();
+        tryOther.accept("after_release");
+        p("a8.other_thread_after_release", yn(other.get("after_release")));
+        lockCp.close();
+    }
+
+    // __MORE__
+}

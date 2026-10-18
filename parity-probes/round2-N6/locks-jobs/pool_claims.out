@@ -1,0 +1,7 @@
+PROBE defaults pool_size/max_overflow/pool_timeout/pool_recycle/pool_pre_ping/echo: (10, 0, 30.0, 1800, True, False)
+PROBE pool_size=3: open connections 1.5 s after build, no query: 3
+PROBE after one connection thrown away, open connections: 2
+PROBE wrong password with pool_timeout=3 fails after: 3.0s with OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58720 failed: FATAL:  
+PROBE marker in the error text: False
+PROBE marker in any log line: False
+PROBE marker in repr(config): False

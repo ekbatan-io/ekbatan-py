@@ -1,0 +1,7 @@
+transaction rolled back [shard=0:0]: RuntimeError
+transaction rolled back [shard=0:0]: StaleRecordError
+transaction rolled back [shard=0:0]: RuntimeError
+transaction rolled back [shard=0:0]: StaleRecordError
+transaction rolled back [shard=0:0]: RuntimeError
+transaction rolled back [shard=0:0]: StaleRecordError
+repo exit 0

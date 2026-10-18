@@ -1,0 +1,52 @@
+PROBE shard.add_B.on_B: 1
+PROBE shard.add_B.on_A: 0
+PROBE shard.findById_B: true
+PROBE shard.existsById_B: true
+PROBE shard.add_unregistered.on_A: 1
+PROBE shard.findById_unregistered: true
+PROBE shard.addAll_cross.A_then_B.err: CrossShardError
+PROBE shard.addAll_cross.A_then_B.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+PROBE shard.addAll_cross.B_then_A.err: CrossShardError
+PROBE shard.addAll_cross.B_then_A.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+PROBE shard.addAll_cross.nothing_written: 0
+PROBE shard.addAllNoResult_cross.err: CrossShardError
+PROBE shard.addAllNoResult_cross.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+PROBE shard.addAll_registered_and_unregistered.err: CrossShardError
+PROBE shard.addAll_registered_and_unregistered.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+PROBE shard.addAll_default_and_unregistered: no error -> 2
+PROBE shard.updateAll_cross.err: CrossShardError
+PROBE shard.updateAll_cross.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+PROBE shard.update_on_B.version: 2
+PROBE shard.count_across: 7
+PROBE shard.findAll_across: 7
+PROBE shard.findOneWhere_across: true
+PROBE shard.existsWhere_across: true
+PROBE shard.countWhere_across: 1
+PROBE shard.findAllWhere_across: 1
+PROBE shard.findAllByIds_across: 3
+PROBE shard.findOneWhere_one_match_per_shard: no error -> true
+PROBE shard.unsharded.count_equals_A_rows: true
+PROBE shard.unsharded.findAll_equals_A_rows: true
+PROBE shard.unsharded.add_B_id.on_A: 1
+PROBE shard.unsharded.add_B_id.on_B: 0
+PROBE shard.unsharded.findById_row_on_B: false
+PROBE shard.unsharded.addAll_mixed_ids: no error -> 2
+PROBE shard.nonid.findById.err: UnsupportedError
+PROBE shard.nonid.findById.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+PROBE shard.nonid.existsById.err: UnsupportedError
+PROBE shard.nonid.existsById.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+PROBE shard.nonid.findAllByIds.err: UnsupportedError
+PROBE shard.nonid.findAllByIds.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+PROBE shard.nonid.getById.err: UnsupportedError
+PROBE shard.nonid.getById.msg: NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+PROBE shard.nonid.add_routes_by_model.on_B: 1
+PROBE shard.nonid.findAll_scatters: true
+PROBE shard.tx_on_A.outer_exception: RuntimeError
+PROBE shard.tx_on_A.write_to_B_survives_A_rollback: 1
+PROBE shard.tx_on_A.write_to_A_rolled_back: true
+PROBE shard.fail_policy.add_unregistered.err: ValidationError
+PROBE shard.fail_policy.add_unregistered.msg: shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+PROBE shard.fail_policy.findById_unregistered.err: ValidationError
+PROBE shard.fail_policy.findById_unregistered.msg: shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+PROBE shard.fail_policy.findAllByIds_unregistered.err: ValidationError
+PROBE shard.fail_policy.findAllByIds_unregistered.msg: shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']

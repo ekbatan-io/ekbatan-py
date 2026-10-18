@@ -1,0 +1,3 @@
+PROBE Connection.invalidate(): open after 1 s / 6 s: (2, 2)
+PROBE server killed one backend: open after 6 s, no checkout: 2
+sqlalchemy.exc.OperationalError: (psycopg.errors.AdminShutdown) terminating connection due to administrator command

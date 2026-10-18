@@ -1,0 +1,16 @@
+PROBE xport.python_holds.pg.wallet.java_try_zero_got: false
+PROBE xport.python_holds.pg.unicode.java_try_zero_got: false
+PROBE xport.python_holds.mysql.wallet.java_try_zero_got: false
+PROBE xport.python_holds.mysql.unicode.java_try_zero_got: false
+PROBE xport.python_holds.mariadb.wallet.java_try_zero_got: false
+PROBE xport.python_holds.mariadb.unicode.java_try_zero_got: false
+PROBE xport.python_holds.redis.wallet.java_try_zero_got: false
+PROBE xport.python_holds.redis.unicode.java_try_zero_got: false
+PROBE xport.python_holds.pg.wallet.java_gets_it_after_python_releases: true
+PROBE xport.python_holds.mysql.wallet.java_gets_it_after_python_releases: true
+PROBE xport.python_holds.mariadb.wallet.java_gets_it_after_python_releases: true
+PROBE xport.python_holds.redis.wallet.java_gets_it_after_python_releases: true
+PROBE xport.python_holds.redis.wake.java_got: true
+PROBE xport.python_holds.redis.wake.java_woken_under_3s: true
+PROBE xport.shared_job.java_stopped: true
+PROBE xport.java_holds.released: true

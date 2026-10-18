@@ -1,0 +1,61 @@
+PROBE e1.get_missing.type: EntityNotFoundError
+PROBE e1.get_missing.msg: no Wallet with id ShardedId(value=UUID('01a14c46-d900-7873-8000-215a1e3a82a9'))
+PROBE e1.get_missing.chain: EntityNotFoundError
+PROBE e1.get_missing.caught_by_framework_base: true
+PROBE e2.update_stale.type: StaleRecordError
+PROBE e2.update_stale.msg: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE e2.update_stale.chain: StaleRecordError
+PROBE e2.update_stale.caught_by_framework_base: true
+PROBE e3.unregistered.type: ValidationError
+PROBE e3.unregistered.msg: no instance of UnregisteredAction is registered, so it cannot be run. Register it on the ActionRegistry the executor was built with; it currently holds ['BadParamsAction', 'CreateAction', 'FixedIdAction', 'StaleThrowActi
+PROBE e3.unregistered.chain: ValidationError
+PROBE e3.unregistered.caught_by_framework_base: true
+PROBE e4.plan_outside.type: EkbatanError
+PROBE e4.plan_outside.msg: there is no unit of work here. A plan only exists inside ActionExecutor.execute(...); staging a change outside one would have nothing to commit it. If this was called from a thread you started inside an action, note that
+PROBE e4.plan_outside.chain: EkbatanError
+PROBE e4.plan_outside.caught_by_framework_base: true
+PROBE e5.cross_shard.type: CrossShardError
+PROBE e5.cross_shard.msg: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earl
+PROBE e5.cross_shard.chain: CrossShardError
+PROBE e5.cross_shard.caught_by_framework_base: true
+PROBE e6.fail_policy_execute.type: ValidationError
+PROBE e6.fail_policy_execute.msg: shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+PROBE e6.fail_policy_execute.chain: ValidationError
+PROBE e6.fail_policy_execute.caught_by_framework_base: true
+PROBE e6.wallets_global: 0
+PROBE e9.duplicate_key.type: IntegrityError
+PROBE e9.duplicate_key.msg: (psycopg.errors.UniqueViolation) duplicate key value violates unique constraint "wallets_pkey"
+PROBE e9.duplicate_key.chain: IntegrityError <- UniqueViolation
+PROBE e9.duplicate_key.caught_by_framework_base: false
+PROBE e10.unwritable_params.type: none
+PROBE e10.unwritable_params.msg: none
+PROBE e10.unwritable_params.chain: none
+PROBE e10.unwritable_params.caught_by_framework_base: false
+PROBE e10.wallets: 1
+PROBE e10.outbox: 1
+PROBE e10.stored_params: ['{"thing": "<__main__.Opaque object at 0x...>']
+PROBE e10b.plain_class_with_public_fields.stored_params: ['{"thing": "<__main__.Money object at 0x...>']
+PROBE e12.policy_on_base_class.attempts: 1
+PROBE e12.policy_on_base_class.type: StaleRecordError
+PROBE e13.stale_no_arg_constructor: TypeError
+PROBE e7.unreachable.registry_build: none
+PROBE e7.unreachable.read.type: OperationalError
+PROBE e7.unreachable.read.msg: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58599 failed: could not receive data from server: Connection refused
+PROBE e7.unreachable.read.chain: OperationalError <- OperationalError
+PROBE e7.unreachable.read.caught_by_framework_base: false
+PROBE e7.unreachable.is_ConnectivityError: false
+PROBE e7.unreachable.seconds_to_fail_rounded_to_5: 30
+PROBE e8.lock_unreachable.type: LockAcquisitionError
+PROBE e8.lock_unreachable.msg: lock 'wallet:1': could not obtain a connection
+PROBE e8.lock_unreachable.chain: LockAcquisitionError <- OperationalError <- OperationalError
+PROBE e8.lock_unreachable.caught_by_framework_base: true
+PROBE e8.lock_unreachable.key_field: wallet:1
+PROBE e11.vclock_advance_running.type: EkbatanError
+PROBE e11.vclock_advance_running.msg: cannot advance: the clock is not paused. Call pause() or pause_at(...) first, or construct it with an instant.
+PROBE e11.vclock_advance_running.chain: EkbatanError
+PROBE e11.vclock_advance_running.caught_by_framework_base: true
+PROBE t1.assert_throws_other_type_action_asserts.type: AssertionError
+PROBE t1.assert_throws_other_type_action_asserts.msg: Expected ValidationError but got AssertionError
+PROBE t1.assert_throws_other_type_action_asserts.chain: AssertionError <- AssertionError
+PROBE t2.assert_throws_broadest_action_asserts: passes
+PROBE t3.null_clock_action.type: ValidationError

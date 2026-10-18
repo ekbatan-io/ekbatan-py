@@ -1,0 +1,96 @@
+3,4c3,4
+< PROBE e1_fanout.log.0: DEBUG io.ekbatan.core.persistence.TransactionManager | Transaction started [shard=(0,0)] | exc=-
+< PROBE e1_fanout.log.1: DEBUG io.ekbatan.core.persistence.TransactionManager | Transaction committed [shard=(0,0)] | exc=-
+---
+> PROBE e1_fanout.log.0: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction started [shard=0:0] | exc=-
+> PROBE e1_fanout.log.1: DEBUG io.ekbatan.core.persistence.TransactionManager | transaction committed [shard=0:0] | exc=-
+7,10c7,14
+< PROBE e2_handle_round.log.0: ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob | Handler 'error-handler' threw Error AssertionError while processing event 00000000-0000-0000-0000-000000000001 (attempts=0): error boom | exc=AssertionError
+< PROBE e2_handle_round.log.1: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | Handler 'fail-handler' threw RuntimeException while processing event 00000000-0000-0000-0000-000000000002 (attempts=0): handler boom | exc=RuntimeException
+< PROBE e2_handle_round.log.2: ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob | Handler 'error-handler' threw Error AssertionError while processing event 00000000-0000-0000-0000-000000000002 (attempts=0): error boom | exc=AssertionError
+< PROBE e2_handle_round.log.3: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | Handler 'fail-handler' threw RuntimeException while processing event 00000000-0000-0000-0000-000000000001 (attempts=0): handler boom | exc=RuntimeException
+---
+> PROBE e2_handle_round.log.0: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | handler 'fail-handler' failed on attempt 1 (RuntimeError: handler boom) | exc=-
+> PROBE e2_handle_round.log.1: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | handler 'error-handler' failed on attempt 1 (Fatal: error boom) | exc=-
+> PROBE e2_handle_round.log.2: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | handler 'error-handler' failed on attempt 1 (Fatal: error boom) | exc=-
+> PROBE e2_handle_round.log.3: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | handler 'fail-handler' failed on attempt 1 (RuntimeError: handler boom) | exc=-
+> PROBE e2_handle_round.log.4: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | notification 7af942ba-a869-4ece-9a05-7b8db98dfdd3 for handler 'fail-handler' will be retried in 0:00:30 | exc=-
+> PROBE e2_handle_round.log.5: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | notification 6e7617af-ae37-4b2c-8e7a-a7946939279f for handler 'error-handler' will be retried in 0:00:30 | exc=-
+> PROBE e2_handle_round.log.6: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | notification 84681413-0c55-40c1-87d1-ddae57b28a0e for handler 'fail-handler' will be retried in 0:00:30 | exc=-
+> PROBE e2_handle_round.log.7: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | notification 05e65b56-f1db-4894-8d0e-93c1ec085871 for handler 'error-handler' will be retried in 0:00:30 | exc=-
+13c17,18
+< PROBE e3_expired_preflight.log.0: ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob | DISCARDED 2 event notification(s) for handler 'ok-handler' - each was already past the retention window when it was claimed (PT24H). These events will never be delivered. Example event: 00000000-0000-0000-0000-000000000001 (attempts=0). | exc=-
+---
+> PROBE e3_expired_preflight.log.0: ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob | notification 00000000-0000-0000-0000-000000000502 for handler 'ok-handler' was discarded: WidgetCreatedEvent was already past its retention window when it was claimed | exc=-
+> PROBE e3_expired_preflight.log.1: ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob | notification 00000000-0000-0000-0000-000000000501 for handler 'ok-handler' was discarded: WidgetCreatedEvent was already past its retention window when it was claimed | exc=-
+16,18c21,23
+< PROBE e4_expired_postfailure.log.0: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | Handler 'fail-handler' threw RuntimeException while processing event 00000000-0000-0000-0000-000000000003 (attempts=0): handler boom | exc=RuntimeException
+< PROBE e4_expired_postfailure.log.1: ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob | DISCARDED 1 event notification(s) for handler 'fail-handler' - each exhausted the retention window after repeated handler failures (PT24H). These events will never be delivered. Example event: 00000000-0000-0000-0000-000000000003 (attempts=0). | exc=-
+< PROBE metric.ekbatan.events.delivery.lag (instrument): ekbatan.events.delivery.lag scope=io.ekbatan.events.localeventhandler type=HISTOGRAM unit=s desc=Age of the source event when its handler succeeded temporality=CUMULATIVE
+---
+> PROBE e4_expired_postfailure.log.0: WARN io.ekbatan.events.localeventhandler.job.EventHandlingJob | handler 'fail-handler' failed on attempt 1 (RuntimeError: handler boom) | exc=-
+> PROBE e4_expired_postfailure.log.1: ERROR io.ekbatan.events.localeventhandler.job.EventHandlingJob | notification 00000000-0000-0000-0000-000000000503 for handler 'fail-handler' was discarded: it exhausted the retention window after repeated handler failures | exc=-
+> PROBE metric.ekbatan.events.delivery.lag (instrument): ekbatan.events.delivery.lag scope=io.ekbatan.events.localeventhandler type=Histogram unit=s desc=Age of the source event when its handler succeeded temporality=CUMULATIVE
+20c25
+< PROBE metric.ekbatan.events.fanned_out (instrument): ekbatan.events.fanned_out scope=io.ekbatan.events.localeventhandler type=LONG_SUM unit={event} desc=Source events transitioned from undelivered to delivered by the fan-out job monotonic=true temporality=CUMULATIVE
+---
+> PROBE metric.ekbatan.events.fanned_out (instrument): ekbatan.events.fanned_out scope=io.ekbatan.events.localeventhandler type=Sum unit={event} desc=Source events transitioned from undelivered to delivered by the fan-out job monotonic=true temporality=CUMULATIVE
+22c27
+< PROBE metric.ekbatan.events.handled (instrument): ekbatan.events.handled scope=io.ekbatan.events.localeventhandler type=LONG_SUM unit={notification} desc=Notification rows processed by the event-handling job, tagged by outcome monotonic=true temporality=CUMULATIVE
+---
+> PROBE metric.ekbatan.events.handled (instrument): ekbatan.events.handled scope=io.ekbatan.events.localeventhandler type=Sum unit={notification} desc=Notification rows processed by the event-handling job, tagged by outcome monotonic=true temporality=CUMULATIVE
+28c33
+< PROBE metric.ekbatan.events.handler.duration (instrument): ekbatan.events.handler.duration scope=io.ekbatan.events.localeventhandler type=HISTOGRAM unit=s desc=Wall-clock duration of a single event-handler invocation temporality=CUMULATIVE
+---
+> PROBE metric.ekbatan.events.handler.duration (instrument): ekbatan.events.handler.duration scope=io.ekbatan.events.localeventhandler type=Histogram unit=s desc=Wall-clock duration of a single event-handler invocation temporality=CUMULATIVE
+32c37
+< PROBE metric.ekbatan.events.notifications_created (instrument): ekbatan.events.notifications_created scope=io.ekbatan.events.localeventhandler type=LONG_SUM unit={notification} desc=Notification rows materialized by the fan-out job (one per event x subscribed handler) monotonic=true temporality=CUMULATIVE
+---
+> PROBE metric.ekbatan.events.notifications_created (instrument): ekbatan.events.notifications_created scope=io.ekbatan.events.localeventhandler type=Sum unit={notification} desc=Notification rows materialized by the fan-out job (one per event x subscribed handler) monotonic=true temporality=CUMULATIVE
+36,44c41,49
+< PROBE j1_start.log.0: INFO io.ekbatan.distributedjobs.JobRegistry | Starting JobRegistry with 2 job(s): [ok-job, failing-job] | exc=-
+< PROBE j1_start.log.1: INFO com.github.kagkarlsson.scheduler.Scheduler | Starting scheduler. | exc=-
+< PROBE j1_start.log.2: INFO com.github.kagkarlsson.scheduler.task.helper.ScheduleRecurringOnStartup | Creating initial execution for task-instance 'TaskInstance: task=ok-job, id=recurring, priority=90'. Next execution-time: 2026-10-17T23:47:30.985927Z | exc=-
+< PROBE j1_start.log.3: INFO com.github.kagkarlsson.scheduler.task.helper.ScheduleRecurringOnStartup | Creating initial execution for task-instance 'TaskInstance: task=failing-job, id=recurring, priority=90'. Next execution-time: 2026-10-17T23:47:30.991701Z | exc=-
+< PROBE j1_start.log.4: INFO io.ekbatan.distributedjobs.JobRegistry | Job 'failing-job' execution started | exc=-
+< PROBE j1_start.log.5: INFO io.ekbatan.distributedjobs.JobRegistry | Job 'ok-job' execution started | exc=-
+< PROBE j1_start.log.6: INFO io.ekbatan.distributedjobs.JobRegistry | Job 'ok-job' execution finished | exc=-
+< PROBE j1_start.log.7: ERROR io.ekbatan.distributedjobs.JobRegistry | Job 'failing-job' execution failed: IllegalStateException: job boom | exc=IllegalStateException
+< PROBE j1_start.log.8: WARN com.github.kagkarlsson.scheduler.Scheduler | Unhandled exception IllegalStateException: 'job boom' during execution of task with name 'failing-job'. Treating as failure. | exc=IllegalStateException
+---
+> PROBE j1_start.log.0: INFO io.ekbatan.distributedjobs.JobRegistry | Starting JobRegistry with 2 job(s): ['ok-job', 'failing-job'] | exc=-
+> PROBE j1_start.log.1: INFO db_scheduler.scheduler | Starting scheduler. | exc=-
+> PROBE j1_start.log.2: INFO db_scheduler.task | Creating initial execution for task-instance 'TaskInstance(task=ok-job, id=recurring, priority=90)'. Next execution-time: 2026-10-17 23:48:23.685175+00:00 | exc=-
+> PROBE j1_start.log.3: INFO db_scheduler.task | Creating initial execution for task-instance 'TaskInstance(task=failing-job, id=recurring, priority=90)'. Next execution-time: 2026-10-17 23:48:23.691130+00:00 | exc=-
+> PROBE j1_start.log.4: INFO io.ekbatan.distributedjobs.JobRegistry | Job 'ok-job' execution started | exc=-
+> PROBE j1_start.log.5: INFO io.ekbatan.distributedjobs.JobRegistry | Job 'ok-job' execution finished | exc=-
+> PROBE j1_start.log.6: INFO io.ekbatan.distributedjobs.JobRegistry | Job 'failing-job' execution started | exc=-
+> PROBE j1_start.log.7: ERROR io.ekbatan.distributedjobs.JobRegistry | Job 'failing-job' execution failed: ValueError: job boom | exc=ValueError
+> PROBE j1_start.log.8: WARN db_scheduler.scheduler | Unhandled exception ValueError: 'job boom' during execution of task with name 'failing-job'. Treating as failure. | exc=ValueError
+50,52c55,57
+< PROBE j3_stop.log.1: INFO com.github.kagkarlsson.scheduler.Scheduler | Shutting down Scheduler. | exc=-
+< PROBE j3_stop.log.2: INFO com.github.kagkarlsson.scheduler.Executor | Letting running executions finish. Will wait up to 2xPT30M. | exc=-
+< PROBE j3_stop.log.3: INFO com.github.kagkarlsson.scheduler.Executor | Scheduler stopped. | exc=-
+---
+> PROBE j3_stop.log.1: INFO db_scheduler.scheduler | Shutting down Scheduler. | exc=-
+> PROBE j3_stop.log.2: INFO db_scheduler.executor | Letting running executions finish. Will wait up to 0:30:00. | exc=-
+> PROBE j3_stop.log.3: INFO db_scheduler.executor | Scheduler stopped. | exc=-
+54,67c59,61
+< PROBE secret.hit.1: setup org.testcontainers.shaded.com.github.dockerjava.core.command.AbstrDockerCmd
+< PROBE secret.hit.2: setup com.github.dockerjava.zerodep.shaded.org.apache.hc.client5.http.wire
+< PROBE secret.hit.3: setup com.github.dockerjava.zerodep.shaded.org.apache.hc.client5.http.wire
+< PROBE secret.log_records_with_marker: 3
+< PROBE library_info_plus.e1_fanout INFO org.jooq.Constants: 2
+< PROBE library_info_plus.e1_fanout INFO org.jooq.impl: 1
+< PROBE library_info_plus.setup INFO com.zaxxer.hikari: 2
+< PROBE library_info_plus.setup INFO org.flywaydb.core: 11
+< PROBE library_info_plus.setup INFO org.testcontainers.DockerClientFactory: 5
+< PROBE library_info_plus.setup INFO org.testcontainers.dockerclient: 2
+< PROBE library_info_plus.setup INFO org.testcontainers.images: 1
+< PROBE library_info_plus.setup INFO org.testcontainers.utility: 3
+< PROBE library_info_plus.setup INFO tc.postgres:17-alpine: 4
+< PROBE library_info_plus.setup INFO tc.testcontainers/ryuk:0.14: 3
+---
+> PROBE secret.log_records_with_marker: 0
+> PROBE library_info_plus.setup INFO testcontainers.core.container: 4
+> PROBE library_info_plus.setup INFO testcontainers.core.docker_client: 2

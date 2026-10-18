@@ -1,0 +1,16 @@
+diff --git a/ekbatan-integration-tests/keyed-lock-provider/redis/build.gradle.kts b/ekbatan-integration-tests/keyed-lock-provider/redis/build.gradle.kts
+index 0ef2d5f..ba3ee79 100644
+--- a/ekbatan-integration-tests/keyed-lock-provider/redis/build.gradle.kts
++++ b/ekbatan-integration-tests/keyed-lock-provider/redis/build.gradle.kts
+@@ -14,6 +14,11 @@ repositories {
+ dependencies {
+     testImplementation(project(":ekbatan-core"))
+     testImplementation(project(":ekbatan-keyed-lock-redis"))
++    testImplementation(project(":ekbatan-distributed-jobs"))
++    testImplementation("org.postgresql:postgresql:${project.property("postgresqlVersion")}")
++    testImplementation("com.mysql:mysql-connector-j:${project.property("mysqlConnectorVersion")}")
++    testImplementation("org.mariadb.jdbc:mariadb-java-client:${project.property("mariadbJavaClientVersion")}")
++    testImplementation("com.zaxxer:HikariCP:${project.property("hikariCpVersion")}")
+ 
+     testImplementation(platform("org.junit:junit-bom:${project.property("junitBomVersion")}"))
+     testImplementation("org.junit.jupiter:junit-jupiter")

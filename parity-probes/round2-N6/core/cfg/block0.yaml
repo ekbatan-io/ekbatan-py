@@ -1,0 +1,21 @@
+ekbatan:
+  sharding:
+    default-shard: {group: 0, member: 0}
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            configs:
+              primary-config:
+                url: postgresql+psycopg://db:5432/wallet
+                username: app
+                password: ${DB_PASSWORD}
+                pool-size: 20
+                data-source-properties:
+                  sslmode: require
+              jobs-config:
+                url: postgresql+psycopg://db:5432/wallet
+                username: app
+                password: ${DB_PASSWORD}
+                pool-size: 8

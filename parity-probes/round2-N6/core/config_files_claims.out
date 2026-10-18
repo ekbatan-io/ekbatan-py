@@ -1,0 +1,13 @@
+PROBE config-files.md block0.yaml load_sharding_config: (ShardIdentifier(group=0, member=0), [(20, True, {'sslmode': 'require'})])
+PROBE config-files.md block1.toml load_sharding_config: (ShardIdentifier(group=0, member=0), [(20, True, {})])
+PROBE config-files.md block2.json load_sharding_config: (ShardIdentifier(group=0, member=0), [(20, True, {})])
+PROBE config-files.md block3.ini load_sharding_config: (ShardIdentifier(group=0, member=0), [(20, True, {'sslmode': 'require'})])
+PROBE config-files.md block4.yaml load_ekbatan_config (as written, with '# ... as above'): raised ValidationError: block4.yaml: ekbatan.sharding: must be a group of keys
+PROBE unset variable with no default stops the load: raised ValidationError: x.yaml.ekbatan.sharding.groups[0].members[0].configs.primary-config.password: environment variable 'DB_PASSWORD' is not set, and the placeholder has no default
+PROBE ${DB_PASSWORD:} gives empty: ''
+PROBE value with % and $ inserted as is: True
+PROBE INI-style placeholder in YAML refused: raised ValidationError: x.yaml.ekbatan.sharding.groups[0].members[0].configs.primary-config.password: '%(ENV_...)s' is the INI style; in this file an environment variable is written '${NAME}'
+PROBE pool-size: "20" refused: raised ValidationError: x.yaml: ekbatan.sharding.groups[0].members[0].configs.primary-config.pool-size: must be a whole number
+PROBE unknown key refused with path: raised ValidationError: x.yaml: ekbatan.sharding.groups[0].members[0].configs.primary-config: unknown key 'pool-sise'; known here: data_source_properties, echo, max_overflow, password, pool_pre_ping, pool_recycle, pool_size, pool_timeout, url, username
+PROBE bare-number duration refused: raised ValidationError: j.yaml: ekbatan.jobs.pollingInterval: must be an ISO-8601 duration such as PT10S, PT0.5S or PT5M, as Java reads it
+PROBE namespace default: 'default'

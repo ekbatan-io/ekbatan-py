@@ -1,0 +1,217 @@
+COUNTS same=91 fixed=38 regressed=0 still=14 changed-still=1 py-only=1
+[changed-still] x.boundary.exact
+    java: SUCCEEDED | 1 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00
+    r1  : EXPIRED | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : EXPIRED | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00
+[fixed] c.future_event.calls
+    java: 0
+    r1  : 1
+    now : 0
+[fixed] c.future_event.row
+    java: PENDING | 0 | 2026-01-01 11:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 11:00:00 | 2026-01-01 10:00:00
+[fixed] c.order.e1.rec
+    java: PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] c.order.e2.rec
+    java: PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:01:00 | 2026-01-01 10:01:00
+    r1  : PENDING | 0 | 2026-01-01 10:01:00 | 2026-01-01 10:01:00 | 2026-01-01 10:01:00
+    now : PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:01:00 | 2026-01-01 10:01:00
+[fixed] c.order.handled
+    java: [m-2, m-1]
+    r1  : [m-1, m-2]
+    now : [m-2, m-1]
+[fixed] f.after.s0.e1.email
+    java: SUCCEEDED | 1 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.after.s0.e1.indexer
+    java: SUCCEEDED | 1 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.after.s0.e2.email
+    java: SUCCEEDED | 1 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.after.s0.e2.indexer
+    java: SUCCEEDED | 1 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.after.s0.e6.email
+    java: SUCCEEDED | 1 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.after.s0.e6.indexer
+    java: SUCCEEDED | 1 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.after.s1.e5.email
+    java: SUCCEEDED | 1 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.after.s1.e5.indexer
+    java: SUCCEEDED | 1 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.late.e3_row
+    java: PENDING | 0 | 2026-01-01 09:53:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:53:00 | 2026-01-01 10:00:00
+[fixed] f.s0.e1.email
+    java: PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.s0.e1.indexer
+    java: PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:55:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.s0.e2.email
+    java: PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.s0.e2.indexer
+    java: PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:50:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.s0.e6.email
+    java: PENDING | 0 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.s0.e6.indexer
+    java: PENDING | 0 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:56:40 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.s1.e5.email
+    java: PENDING | 0 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] f.s1.e5.indexer
+    java: PENDING | 0 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 09:57:00 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+[fixed] j.handling.schedule_default
+    java: FixedDelay
+    r1  : DisabledSchedule
+    now : FixedDelay
+[fixed] r.fanout.any
+    java: false
+    r1  : true
+    now : false
+[fixed] r.fanout.primary_notifications
+    java: 0
+    r1  : 1
+    now : 0
+[fixed] r.find_due
+    java: 1
+    r1  : 0
+    now : 1
+[fixed] r.find_undelivered
+    java: 0
+    r1  : 1
+    now : 0
+[fixed] r.handling.any
+    java: true
+    r1  : false
+    now : true
+[fixed] r.handling.calls
+    java: 1
+    r1  : 0
+    now : 1
+[fixed] t.find_due_sees_own_uncommitted
+    java: 0
+    r1  : 1
+    now : 0
+[fixed] t.find_undelivered_sees_own_uncommitted
+    java: 0
+    r1  : 1
+    now : 0
+[fixed] t.outcome_write_failed.ok_calls_after_two_rounds
+    java: 1
+    r1  : 2
+    now : 1
+[fixed] t.outcome_write_failed.ok_row
+    java: SUCCEEDED
+    r1  : PENDING
+    now : SUCCEEDED
+[fixed] t.undelivered_after_mark_in_same_tx
+    java: 1
+    r1  : 0
+    now : 1
+[fixed] x.boundary.one_second_older
+    java: EXPIRED | 0 | 2026-01-01 09:49:59 | 2026-01-01 10:00:00
+    r1  : EXPIRED | 0 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : EXPIRED | 0 | 2026-01-01 09:49:59 | 2026-01-01 10:00:00
+[fixed] x.boundary.one_second_younger
+    java: SUCCEEDED | 1 | 2026-01-01 09:50:01 | 2026-01-01 10:00:00
+    r1  : SUCCEEDED | 1 | 2026-01-01 10:00:00 | 2026-01-01 10:00:00
+    now : SUCCEEDED | 1 | 2026-01-01 09:50:01 | 2026-01-01 10:00:00
+[fixed] x.near_deadline.first_failure
+    java: EXPIRED | 1 | 2026-01-01 09:50:10 | 2026-01-01 10:00:00
+    r1  : FAILED | 1 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+    now : EXPIRED | 1 | 2026-01-01 09:50:10 | 2026-01-01 10:00:00
+[fixed] x.step5
+    java: at=+450s EXPIRED attempts=5 next=+450s calls=5
+    r1  : at=+450s FAILED attempts=5 next=+750s calls=5
+    now : at=+450s EXPIRED attempts=5 next=+450s calls=5
+[still] b.attempt_seen_by_handler
+    java: n/a (Java envelope has no attempt)
+    r1  : [1, 2, 3, 4, 5, 6, 7, 8]
+    now : [1, 2, 3, 4, 5, 6, 7, 8]
+[still] e.round1.ghost
+    java: FAILED | 1 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+    r1  : PENDING | 0 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+    now : PENDING | 0 | 2026-01-01 10:00:30 | 2026-01-01 10:00:00
+[still] e.round2.ghost
+    java: FAILED | 2 | 2026-01-01 10:01:30 | 2026-01-01 10:00:30
+    r1  : PENDING | 0 | 2026-01-01 10:01:00 | 2026-01-01 10:00:30
+    now : PENDING | 0 | 2026-01-01 10:01:00 | 2026-01-01 10:00:30
+[still] e.round3.ghost
+    java: FAILED | 3 | 2026-01-01 10:03:30 | 2026-01-01 10:01:30
+    r1  : PENDING | 0 | 2026-01-01 10:02:00 | 2026-01-01 10:01:30
+    now : PENDING | 0 | 2026-01-01 10:02:00 | 2026-01-01 10:01:30
+[still] g.blank_alias
+    java: refused: handler.aliases() cannot contain blank values
+    r1  : refused: handler.aliases cannot contain blank values
+    now : refused: handler.aliases cannot contain blank values
+[still] g.blank_name
+    java: refused: handler.name() cannot be blank
+    r1  : refused: handler.name cannot be blank
+    now : refused: handler.name cannot be blank
+[still] g.handled_event_types
+    java: [WidgetCreatedEvent, NoteCreatedEvent]
+    r1  : [NoteCreatedEvent, WidgetCreatedEvent]
+    now : [NoteCreatedEvent, WidgetCreatedEvent]
+[still] j.config.batch_zero
+    java: ok
+    r1  : refused: fanout_batch_size must be at least 1, got 0
+    now : refused: fanout_batch_size must be at least 1, got 0
+[still] j.config.poll_zero
+    java: ok
+    r1  : refused: handling_poll_delay must be positive, got 0:00:00
+    now : refused: handling_poll_delay must be positive, got 0:00:00
+[still] j.config.retention_negative
+    java: ok
+    r1  : refused: handling_retention_window must be positive, got -1 day, 23:59:59
+    now : refused: handling_retention_window must be positive, got -1 day, 23:59:59
+[still] j.job.batch_zero
+    java: refused: batchSize must be positive
+    r1  : ok
+    now : ok
+[still] j.job.blank_name
+    java: ok
+    r1  : refused: EventFanoutJob has a blank name. The name is the primary key of this job's row and how every instance recognises it as the same job.
+    now : refused: EventFanoutJob has a blank name. The name is the primary key of this job's row and how every instance recognises it as the same job.
+[still] j.job.no_clock
+    java: refused: clock is required
+    r1  : ok
+    now : ok
+[still] x.boundary.calls
+    java: [m-11, m-13]
+    r1  : [m-13]
+    now : [m-13]
+[py-only] x.step6
+    java: <missing>
+    r1  : at=+750s EXPIRED attempts=5 next=+750s calls=5
+    now : <missing>

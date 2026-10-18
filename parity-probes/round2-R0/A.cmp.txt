@@ -1,0 +1,825 @@
+COUNTS same=220 fixed=48 regressed=0 still=120 changed-still=21 py-only=17
+[changed-still] pg.addAll.null.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] pg.addAll.null_element.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] pg.add.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] pg.addNoResult.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] pg.addAllNoResult.null.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] pg.update.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] pg.updateAll.null_collection.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] mysql.addAll.null.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] mysql.addAll.null_element.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mysql.add.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mysql.addNoResult.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mysql.addAllNoResult.null.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] mysql.update.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mysql.updateAll.null_collection.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] mariadb.addAll.null.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] mariadb.addAll.null_element.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mariadb.add.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mariadb.addNoResult.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mariadb.addAllNoResult.null.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[changed-still] mariadb.update.null.err
+    java: NullPointerException
+    r1  : AttributeError
+    now : ValidationError
+[changed-still] mariadb.updateAll.null_collection.err
+    java: NullPointerException
+    r1  : <missing>
+    now : ValidationError
+[fixed] pg.add.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] pg.add.updated_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] pg.find.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] pg.find.created_date_equals_input
+    java: true
+    r1  : false
+    now : true
+[fixed] pg.addAll.null.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] pg.addAll.null_element.msg
+    java: Model in collection cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model in collection cannot be null
+[fixed] pg.add.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model cannot be null
+[fixed] pg.addNoResult.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model cannot be null
+[fixed] pg.addAllNoResult.null.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] pg.update.updated_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] pg.update.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] pg.update.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'next_version'
+    now : Model cannot be null
+[fixed] pg.updateAll.null_collection.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] pg.zone.add_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] pg.zone.updateAll_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] pg.zone.update_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.add.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.add.updated_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.find.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.find.created_date_equals_input
+    java: true
+    r1  : false
+    now : true
+[fixed] mysql.addAll.null.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] mysql.addAll.null_element.msg
+    java: Model in collection cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model in collection cannot be null
+[fixed] mysql.add.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model cannot be null
+[fixed] mysql.addNoResult.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model cannot be null
+[fixed] mysql.addAllNoResult.null.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] mysql.update.updated_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.update.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.update.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'next_version'
+    now : Model cannot be null
+[fixed] mysql.updateAll.null_collection.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] mysql.zone.add_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.zone.updateAll_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mysql.zone.update_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.add.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.add.updated_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.find.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.find.created_date_equals_input
+    java: true
+    r1  : false
+    now : true
+[fixed] mariadb.addAll.null.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] mariadb.addAll.null_element.msg
+    java: Model in collection cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model in collection cannot be null
+[fixed] mariadb.add.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model cannot be null
+[fixed] mariadb.addNoResult.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'id'
+    now : Model cannot be null
+[fixed] mariadb.addAllNoResult.null.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] mariadb.update.updated_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.update.created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.update.null.msg
+    java: Model cannot be null
+    r1  : 'NoneType' object has no attribute 'next_version'
+    now : Model cannot be null
+[fixed] mariadb.updateAll.null_collection.msg
+    java: Models collection cannot be null
+    r1  : <missing>
+    now : Models collection cannot be null
+[fixed] mariadb.zone.add_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.zone.updateAll_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[fixed] mariadb.zone.update_created_date
+    java: 2024-01-02T03:04:05.123456Z
+    r1  : 2024-01-02T03:04:05.123456
+    now : 2024-01-02T03:04:05.123456Z
+[still] pg.add.duplicate_id.err
+    java: IntegrityConstraintViolationException
+    r1  : IntegrityError
+    now : IntegrityError
+[still] pg.addAll.duplicate_id_in_batch.err
+    java: IntegrityConstraintViolationException
+    r1  : IntegrityError
+    now : IntegrityError
+[still] pg.update.stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.update.stale.msg
+    java: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] pg.updateNoResult.stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.updateNoResult.stale.msg
+    java: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] pg.update.missing.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.update.missing.msg
+    java: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] pg.updateNoResult.missing.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.updateNoResult.missing.msg
+    java: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] pg.updateAll.two.order_kept
+    java: false
+    r1  : true
+    now : true
+[still] pg.updateAll.one_stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.updateAll.one_stale.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] pg.updateAllNoResult.one_stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.updateAllNoResult.one_stale.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] pg.updateAll.same_row_twice.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.updateAll.same_row_twice.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] pg.updateAllNoResult.same_row_twice.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] pg.updateAllNoResult.same_row_twice.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] pg.updateAll.null_column_every_row
+    java: no error -> null
+    r1  : no error -> None
+    now : no error -> None
+[still] pg.getById.missing.err
+    java: EntityNotFoundException
+    r1  : EntityNotFoundError
+    now : EntityNotFoundError
+[still] pg.getById.missing.msg
+    java: No entity found with id: Dummy[id=<uuid>]
+    r1  : no Wallet with id UUID('<uuid>')
+    now : no Wallet with id UUID('<uuid>')
+[still] pg.getById.deleted.err
+    java: EntityNotFoundException
+    r1  : EntityNotFoundError
+    now : EntityNotFoundError
+[still] pg.getById.deleted.msg
+    java: No entity found with id: Dummy[id=<uuid>]
+    r1  : no Wallet with id ShardedId(value=UUID('<uuid>'))
+    now : no Wallet with id ShardedId(value=UUID('<uuid>'))
+[still] pg.findAllByIds.null
+    java: no error -> 0
+    r1  : <missing>
+    now : <missing>
+[still] pg.findOneWhere.two_matches.err
+    java: TooManyRowsException
+    r1  : ValidationError
+    now : ValidationError
+[still] pg.findOneWhere.two_matches.msg
+    java: Cursor returned more than one result
+    r1  : find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+    now : find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+[still] pg.tx.rollback.exception_seen
+    java: IllegalStateException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] pg.tx.updateAll_one_stale.exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.add.same_instance
+    java: true
+    r1  : false
+    now : false
+[still] mysql.add.events_on_result
+    java: 1
+    r1  : 0
+    now : 0
+[still] mysql.addAll.two.same_instances
+    java: true
+    r1  : false
+    now : false
+[still] mysql.addAll.two.events_on_result
+    java: 1
+    r1  : 0
+    now : 0
+[still] mysql.addAll.one.same_instance
+    java: true
+    r1  : false
+    now : false
+[still] mysql.add.duplicate_id.err
+    java: IntegrityConstraintViolationException
+    r1  : IntegrityError
+    now : IntegrityError
+[still] mysql.addAll.duplicate_id_in_batch.err
+    java: IntegrityConstraintViolationException
+    r1  : IntegrityError
+    now : IntegrityError
+[still] mysql.update.events_on_result
+    java: 1
+    r1  : 0
+    now : 0
+[still] mysql.update.stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.update.stale.msg
+    java: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mysql.updateNoResult.stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.updateNoResult.stale.msg
+    java: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mysql.update.missing.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.update.missing.msg
+    java: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mysql.updateNoResult.missing.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.updateNoResult.missing.msg
+    java: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mysql.updateAll.two.events_on_result
+    java: 1
+    r1  : 0
+    now : 0
+[still] mysql.updateAll.one_stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.updateAll.one_stale.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mysql.updateAllNoResult.one_stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.updateAllNoResult.one_stale.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mysql.updateAll.same_row_twice.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.updateAll.same_row_twice.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mysql.updateAllNoResult.same_row_twice.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mysql.updateAllNoResult.same_row_twice.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mysql.updateAll.null_column_every_row
+    java: no error -> null
+    r1  : no error -> None
+    now : no error -> None
+[still] mysql.getById.missing.err
+    java: EntityNotFoundException
+    r1  : EntityNotFoundError
+    now : EntityNotFoundError
+[still] mysql.getById.missing.msg
+    java: No entity found with id: Dummy[id=<uuid>]
+    r1  : no Wallet with id UUID('<uuid>')
+    now : no Wallet with id UUID('<uuid>')
+[still] mysql.getById.deleted.err
+    java: EntityNotFoundException
+    r1  : EntityNotFoundError
+    now : EntityNotFoundError
+[still] mysql.getById.deleted.msg
+    java: No entity found with id: Dummy[id=<uuid>]
+    r1  : no Wallet with id ShardedId(value=UUID('<uuid>'))
+    now : no Wallet with id ShardedId(value=UUID('<uuid>'))
+[still] mysql.findAllByIds.null
+    java: no error -> 0
+    r1  : <missing>
+    now : <missing>
+[still] mysql.findOneWhere.two_matches.err
+    java: TooManyRowsException
+    r1  : ValidationError
+    now : ValidationError
+[still] mysql.findOneWhere.two_matches.msg
+    java: Cursor returned more than one result
+    r1  : find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+    now : find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+[still] mysql.tx.rollback.exception_seen
+    java: IllegalStateException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] mysql.tx.updateAll_one_stale.exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.add.duplicate_id.err
+    java: IntegrityConstraintViolationException
+    r1  : IntegrityError
+    now : IntegrityError
+[still] mariadb.addAll.duplicate_id_in_batch.err
+    java: IntegrityConstraintViolationException
+    r1  : IntegrityError
+    now : IntegrityError
+[still] mariadb.update.stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.update.stale.msg
+    java: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mariadb.updateNoResult.stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.updateNoResult.stale.msg
+    java: Model Dummy[id=<uuid>, version=2] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mariadb.update.missing.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.update.missing.msg
+    java: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mariadb.updateNoResult.missing.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.updateNoResult.missing.msg
+    java: Model Dummy[id=<uuid>, version=1] was concurrently modified or not found
+    r1  : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+    now : expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+[still] mariadb.updateAll.two.events_on_result
+    java: 1
+    r1  : 0
+    now : 0
+[still] mariadb.updateAll.one_stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.updateAll.one_stale.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mariadb.updateAllNoResult.one_stale.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.updateAllNoResult.one_stale.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mariadb.updateAll.same_row_twice.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.updateAll.same_row_twice.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mariadb.updateAllNoResult.same_row_twice.err
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] mariadb.updateAllNoResult.same_row_twice.msg
+    java: Expected to update 2 records but only updated 1
+    r1  : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+    now : expected to update 2 Wallet row(s) but matched 1; one was concurrently modified or is gone
+[still] mariadb.updateAll.null_column_every_row
+    java: no error -> null
+    r1  : no error -> None
+    now : no error -> None
+[still] mariadb.getById.missing.err
+    java: EntityNotFoundException
+    r1  : EntityNotFoundError
+    now : EntityNotFoundError
+[still] mariadb.getById.missing.msg
+    java: No entity found with id: Dummy[id=<uuid>]
+    r1  : no Wallet with id UUID('<uuid>')
+    now : no Wallet with id UUID('<uuid>')
+[still] mariadb.getById.deleted.err
+    java: EntityNotFoundException
+    r1  : EntityNotFoundError
+    now : EntityNotFoundError
+[still] mariadb.getById.deleted.msg
+    java: No entity found with id: Dummy[id=<uuid>]
+    r1  : no Wallet with id ShardedId(value=UUID('<uuid>'))
+    now : no Wallet with id ShardedId(value=UUID('<uuid>'))
+[still] mariadb.findAllByIds.null
+    java: no error -> 0
+    r1  : <missing>
+    now : <missing>
+[still] mariadb.findOneWhere.two_matches.err
+    java: TooManyRowsException
+    r1  : ValidationError
+    now : ValidationError
+[still] mariadb.findOneWhere.two_matches.msg
+    java: Cursor returned more than one result
+    r1  : find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+    now : find_one_where matched more than one Wallet: the predicate is not unique. Use find_where when several rows are expected.
+[still] mariadb.tx.rollback.exception_seen
+    java: IllegalStateException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] mariadb.tx.updateAll_one_stale.exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] shard.addAll_cross.A_then_B.err
+    java: CrossShardException
+    r1  : CrossShardError
+    now : CrossShardError
+[still] shard.addAll_cross.A_then_B.msg
+    java: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+    r1  : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+    now : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+[still] shard.addAll_cross.B_then_A.err
+    java: CrossShardException
+    r1  : CrossShardError
+    now : CrossShardError
+[still] shard.addAll_cross.B_then_A.msg
+    java: Cross-shard operation detected: action started on shard ShardIdentifier(1, 0) but attempted to access shard ShardIdentifier(0, 0)
+    r1  : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+    now : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+[still] shard.addAllNoResult_cross.err
+    java: CrossShardException
+    r1  : CrossShardError
+    now : CrossShardError
+[still] shard.addAllNoResult_cross.msg
+    java: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+    r1  : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+    now : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+[still] shard.addAll_registered_and_unregistered.err
+    java: CrossShardException
+    r1  : CrossShardError
+    now : CrossShardError
+[still] shard.addAll_registered_and_unregistered.msg
+    java: Cross-shard operation detected: action started on shard ShardIdentifier(1, 0) but attempted to access shard ShardIdentifier(0, 0)
+    r1  : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+    now : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+[still] shard.updateAll_cross.err
+    java: CrossShardException
+    r1  : CrossShardError
+    now : CrossShardError
+[still] shard.updateAll_cross.msg
+    java: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+    r1  : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+    now : this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+[still] shard.nonid.findById.err
+    java: UnsupportedOperationException
+    r1  : UnsupportedError
+    now : UnsupportedError
+[still] shard.nonid.findById.msg
+    java: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+    r1  : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+    now : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+[still] shard.nonid.existsById.err
+    java: UnsupportedOperationException
+    r1  : UnsupportedError
+    now : UnsupportedError
+[still] shard.nonid.existsById.msg
+    java: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+    r1  : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+    now : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+[still] shard.nonid.findAllByIds.err
+    java: UnsupportedOperationException
+    r1  : UnsupportedError
+    now : UnsupportedError
+[still] shard.nonid.findAllByIds.msg
+    java: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+    r1  : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+    now : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+[still] shard.nonid.getById.err
+    java: UnsupportedOperationException
+    r1  : UnsupportedError
+    now : UnsupportedError
+[still] shard.nonid.getById.msg
+    java: Sharding strategy does not support ID-based shard resolution. Override this method in your repository subclass.
+    r1  : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+    now : NonIdStrategy cannot resolve a shard from an id alone, so WalletRepository has to override shard_for() to say where a row lives.
+[still] shard.tx_on_A.outer_exception
+    java: RuntimeException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] shard.fail_policy.add_unregistered.err
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] shard.fail_policy.add_unregistered.msg
+    java: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+    r1  : shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+    now : shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+[still] shard.fail_policy.findById_unregistered.err
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] shard.fail_policy.findById_unregistered.msg
+    java: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+    r1  : shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+    now : shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+[still] shard.fail_policy.findAllByIds_unregistered.err
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] shard.fail_policy.findAllByIds_unregistered.msg
+    java: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+    r1  : shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+    now : shard 2:0 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+[still] registry.two_repos_one_model
+    java: no error -> second
+    r1  : <missing>
+    now : <missing>
+[still] registry.lookup_unregistered
+    java: no error -> null
+    r1  : <missing>
+    now : <missing>
+[py-only] pg.addAll.null
+    java: <missing>
+    r1  : no error -> []
+    now : <missing>
+[py-only] pg.addAllNoResult.null
+    java: <missing>
+    r1  : no error -> ok
+    now : <missing>
+[py-only] pg.updateAll.null_collection
+    java: <missing>
+    r1  : no error -> []
+    now : <missing>
+[py-only] pg.findAllByIds.null.err
+    java: <missing>
+    r1  : TypeError
+    now : TypeError
+[py-only] pg.findAllByIds.null.msg
+    java: <missing>
+    r1  : 'NoneType' object is not iterable
+    now : 'NoneType' object is not iterable
+[py-only] mysql.addAll.null
+    java: <missing>
+    r1  : no error -> []
+    now : <missing>
+[py-only] mysql.addAllNoResult.null
+    java: <missing>
+    r1  : no error -> ok
+    now : <missing>
+[py-only] mysql.updateAll.null_collection
+    java: <missing>
+    r1  : no error -> []
+    now : <missing>
+[py-only] mysql.findAllByIds.null.err
+    java: <missing>
+    r1  : TypeError
+    now : TypeError
+[py-only] mysql.findAllByIds.null.msg
+    java: <missing>
+    r1  : 'NoneType' object is not iterable
+    now : 'NoneType' object is not iterable
+[py-only] mariadb.addAll.null
+    java: <missing>
+    r1  : no error -> []
+    now : <missing>
+[py-only] mariadb.addAllNoResult.null
+    java: <missing>
+    r1  : no error -> ok
+    now : <missing>
+[py-only] mariadb.updateAll.null_collection
+    java: <missing>
+    r1  : no error -> []
+    now : <missing>
+[py-only] mariadb.findAllByIds.null.err
+    java: <missing>
+    r1  : TypeError
+    now : TypeError
+[py-only] mariadb.findAllByIds.null.msg
+    java: <missing>
+    r1  : 'NoneType' object is not iterable
+    now : 'NoneType' object is not iterable
+[py-only] registry.two_repos_one_model.err
+    java: <missing>
+    r1  : ValidationError
+    now : ValidationError
+[py-only] registry.lookup_unregistered.err
+    java: <missing>
+    r1  : ValidationError
+    now : ValidationError

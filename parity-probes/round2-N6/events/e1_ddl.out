@@ -1,0 +1,132 @@
+PROBE ddl.postgresql.has_index: False
+PROBE ddl.postgresql.has_unique_event_handler: True
+=== postgresql
+CREATE TABLE event_notifications (
+	id UUID NOT NULL, 
+	event_id UUID NOT NULL, 
+	handler_name VARCHAR(255) NOT NULL, 
+	namespace VARCHAR(255) NOT NULL, 
+	action_id UUID NOT NULL, 
+	action_name VARCHAR(255) NOT NULL, 
+	action_params JSONB NOT NULL, 
+	started_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	model_id VARCHAR(255), 
+	model_type VARCHAR(255), 
+	event_type VARCHAR(255) NOT NULL, 
+	payload JSONB, 
+	event_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	state VARCHAR(24) NOT NULL, 
+	attempts INTEGER NOT NULL, 
+	next_retry_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	created_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	updated_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
+);
+
+CREATE TABLE events (
+	id UUID NOT NULL, 
+	namespace VARCHAR(255) NOT NULL, 
+	action_id UUID NOT NULL, 
+	action_name VARCHAR(255) NOT NULL, 
+	action_params JSONB NOT NULL, 
+	started_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	completion_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	model_id VARCHAR(255), 
+	model_type VARCHAR(255), 
+	event_type VARCHAR(255), 
+	payload JSONB, 
+	event_date TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
+	delivered BOOLEAN NOT NULL, 
+	PRIMARY KEY (id)
+);
+
+PROBE ddl.mysql.has_index: False
+PROBE ddl.mysql.has_unique_event_handler: True
+=== mysql
+CREATE TABLE event_notifications (
+	id CHAR(36) NOT NULL, 
+	event_id CHAR(36) NOT NULL, 
+	handler_name VARCHAR(255) NOT NULL, 
+	namespace VARCHAR(255) NOT NULL, 
+	action_id CHAR(36) NOT NULL, 
+	action_name VARCHAR(255) NOT NULL, 
+	action_params JSON NOT NULL, 
+	started_date DATETIME(6) NOT NULL, 
+	completion_date DATETIME(6) NOT NULL, 
+	model_id VARCHAR(255), 
+	model_type VARCHAR(255), 
+	event_type VARCHAR(255) NOT NULL, 
+	payload JSON, 
+	event_date DATETIME(6) NOT NULL, 
+	state VARCHAR(24) NOT NULL, 
+	attempts INTEGER NOT NULL, 
+	next_retry_at DATETIME(6) NOT NULL, 
+	created_date DATETIME(6) NOT NULL, 
+	updated_date DATETIME(6) NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
+);
+
+CREATE TABLE events (
+	id CHAR(36) NOT NULL, 
+	namespace VARCHAR(255) NOT NULL, 
+	action_id CHAR(36) NOT NULL, 
+	action_name VARCHAR(255) NOT NULL, 
+	action_params JSON NOT NULL, 
+	started_date DATETIME(6) NOT NULL, 
+	completion_date DATETIME(6) NOT NULL, 
+	model_id VARCHAR(255), 
+	model_type VARCHAR(255), 
+	event_type VARCHAR(255), 
+	payload JSON, 
+	event_date DATETIME(6) NOT NULL, 
+	delivered BOOL NOT NULL, 
+	PRIMARY KEY (id)
+);
+
+PROBE ddl.mariadb.has_index: False
+PROBE ddl.mariadb.has_unique_event_handler: True
+=== mariadb
+CREATE TABLE event_notifications (
+	id CHAR(36) NOT NULL, 
+	event_id CHAR(36) NOT NULL, 
+	handler_name VARCHAR(255) NOT NULL, 
+	namespace VARCHAR(255) NOT NULL, 
+	action_id CHAR(36) NOT NULL, 
+	action_name VARCHAR(255) NOT NULL, 
+	action_params JSON NOT NULL, 
+	started_date DATETIME(6) NOT NULL, 
+	completion_date DATETIME(6) NOT NULL, 
+	model_id VARCHAR(255), 
+	model_type VARCHAR(255), 
+	event_type VARCHAR(255) NOT NULL, 
+	payload JSON, 
+	event_date DATETIME(6) NOT NULL, 
+	state VARCHAR(24) NOT NULL, 
+	attempts INTEGER NOT NULL, 
+	next_retry_at DATETIME(6) NOT NULL, 
+	created_date DATETIME(6) NOT NULL, 
+	updated_date DATETIME(6) NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
+);
+
+CREATE TABLE events (
+	id CHAR(36) NOT NULL, 
+	namespace VARCHAR(255) NOT NULL, 
+	action_id CHAR(36) NOT NULL, 
+	action_name VARCHAR(255) NOT NULL, 
+	action_params JSON NOT NULL, 
+	started_date DATETIME(6) NOT NULL, 
+	completion_date DATETIME(6) NOT NULL, 
+	model_id VARCHAR(255), 
+	model_type VARCHAR(255), 
+	event_type VARCHAR(255), 
+	payload JSON, 
+	event_date DATETIME(6) NOT NULL, 
+	delivered BOOL NOT NULL, 
+	PRIMARY KEY (id)
+);
+

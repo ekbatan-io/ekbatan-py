@@ -1,0 +1,79 @@
+PROBE model.withInitialVersion: 1
+PROBE model.increaseVersion: 2
+PROBE model.explicitVersion5: 5
+PROBE model.version0: ERR ValidationError: version must be greater than or equal to 1, not 0
+PROBE model.versionNeg1: ERR ValidationError: version must be greater than or equal to 1, not -1
+PROBE model.withInitialVersionAfter5: 1
+PROBE model.versionNotSet: ERR ValidationError: version cannot be null
+PROBE model.increaseVersionWhenUnset: ERR ValidationError: version cannot be null
+PROBE model.versionLongMax.nextVersion: OK 9223372036854775808
+PROBE model.missingId: ERR ValidationError: id cannot be null
+PROBE model.missingState: ERR ValidationError: state cannot be null
+PROBE model.missingCreatedDate: ERR ValidationError: created_date cannot be null
+PROBE model.nullId: ERR ValidationError: id cannot be null
+PROBE model.nullState: ERR ValidationError: state cannot be null
+PROBE model.nullCreatedDate: ERR ValidationError: created_date cannot be null
+PROBE model.nullVersion: ERR ValidationError: version cannot be null
+PROBE model.nullEventsList: ERR TypeError: 'NoneType' object is not iterable
+PROBE model.nullEventInList: OK 1
+PROBE model.nullCheckedField: ERR ValidationError: label cannot be null
+PROBE model.nullUncheckedField: ERR ValidationError: name cannot be null
+PROBE model.oneEvent: 1
+PROBE model.twoEvents: 2
+PROBE model.eventsReplace.size: 1
+PROBE model.eventsReplace.same: True
+PROBE model.eventsImmutable: ERR AttributeError: 'tuple' object has no attribute 'append'
+PROBE model.eventsSnapshot: 0,1
+PROBE model.noEventsEmpty: 0
+PROBE model.callerListMutatedAfterBuild: 1
+PROBE model.createdDate.micros: 2025-01-01T00:00:00.123456Z
+PROBE model.createdDate.plus2: 2025-01-01T00:00:00Z
+PROBE model.createdDate.hasZone: True
+PROBE model.updatedDefaultsToCreated: True
+PROBE model.updatedExplicit: 2025-06-01T00:00:00Z
+PROBE model.updatedBeforeCreated: OK 2020-01-01T00:00:00Z
+PROBE model.createdNaiveInput: OK 2025-01-01T00:00:00Z
+PROBE model.createdDateVsClockNow.compare: OK True
+PROBE model.copy.fields: True,True,True,True,3,1
+PROBE model.copy.eventsIndependent: 1,2
+PROBE model.copy.businessFields: L,X
+PROBE model.copy.isNewInstance: True
+PROBE model.copyOverride: DELETED
+PROBE eq.sameFields: True
+PROBE eq.ignoresEvents: True
+PROBE eq.diffId: False
+PROBE eq.diffVersion: False
+PROBE eq.diffState: False
+PROBE eq.diffCreated: False
+PROBE eq.diffUpdated: False
+PROBE eq.diffBusinessField: True
+PROBE eq.otherClassSameBase: False
+PROBE eq.hashById: True
+PROBE eq.hashEqualsIdHash: True
+PROBE eq.inSetDifferentVersions: 2
+PROBE model.isModel: True
+PROBE model.nextVersion: 2,True,1,2025-06-01T00:00:00Z
+PROBE model.mutateField: ERR FrozenInstanceError: cannot assign to field 'version'
+PROBE model.isDeleted.deletedState: True
+PROBE entity.withInitialVersion: 1
+PROBE entity.increaseVersion: 2
+PROBE entity.version0: ERR ValidationError: version must be greater than or equal to 1, not 0
+PROBE entity.missingId: ERR ValidationError: id cannot be null
+PROBE entity.nullId: ERR ValidationError: id cannot be null
+PROBE entity.nullState: ERR ValidationError: state cannot be null
+PROBE entity.versionNotSet: ERR ValidationError: version cannot be null
+PROBE entity.eq.same: True
+PROBE entity.eq.diffState: False
+PROBE entity.eq.diffVersion: False
+PROBE entity.hashById: True
+PROBE entity.isModel: False
+PROBE entity.nextVersion: 2,True
+PROBE entity.copyOverride: DELETED
+PROBE event.modelIdAndName: 0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b,SampleModel
+PROBE event.nullModelId: ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+PROBE event.blankModelId: ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+PROBE event.whitespaceModelId: ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+PROBE event.equalSameFields: True
+PROBE event.equalDifferentModelId: True
+PROBE event.modelIdNotTrimmed: ' a '
+PROBE event.mutate: ERR FrozenInstanceError: cannot assign to field 'model_id'

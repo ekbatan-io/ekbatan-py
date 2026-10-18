@@ -1,0 +1,6 @@
+PROBE unit-tests: 922   (README says 250)
+PROBE integration-tests: 507   (README says 322)
+PROBE all-tests: 1436   (README says 578)
+PROBE dialects-all: 2708   (README says 1,370)
+PROBE examples: 21   (README says 21)
+PROBE unconditional-deps: ['SQLAlchemy>=2.0.30', 'ekbatan-py-db-scheduler~=0.1.0.dev0', 'PyYAML>=6.0', 'opentelemetry-api>=1.27']   (README says SQLAlchemy and db-scheduler only)

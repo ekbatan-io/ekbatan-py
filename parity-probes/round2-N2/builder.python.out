@@ -1,0 +1,16 @@
+PROBE builder.factoryName: wallet
+PROBE builder.factoryNameAcronym: h_t_t_p_request
+PROBE builder.getterAfterSet: ERR TypeError: WalletBuilder.balance() missing 1 required positional argument: 'value'
+PROBE builder.factoryFromSource: ERR TypeError: Wallet.__init__() got an unexpected keyword argument 'label'
+PROBE builder.derivedFieldSetter: ERR TypeError: Wallet.__init__() got an unexpected keyword argument 'label'
+PROBE builder.derivedFieldBuild: OK wallet
+PROBE builder.copyModelWithDerivedField: ERR TypeError: Wallet.__init__() got an unexpected keyword argument 'label'
+PROBE builder.wrongTypeAtRuntime: OK str
+PROBE builder.unknownSetter: ERR AttributeError: Wallet has no field 'no_such_field'; it has ['balance', 'created_date', 'events', 'id', 'kind', 'label', 'limits', 'memo', 'owner_id', 'state', 'updat
+PROBE builder.generic.build: OK hello
+PROBE builder.generic.builderIsGeneric: False
+PROBE builder.subclass.generated: OK SavingsWallet
+PROBE builder.subclass.copyBuilderType: OK WalletBuilder
+PROBE builder.subclass.copyBuild: ERR TypeError: Wallet.__init__() got an unexpected keyword argument 'rate'. Did you mean 'state'?
+PROBE builder.builderClassFinal: False
+PROBE builder.builderConstructorPublic: OK WalletBuilder

@@ -1,0 +1,10 @@
+PROBE wiring.md:229 EventHandlerRegistry([handler]): EventHandlerRegistry(1 handler(s), 1 event type(s))
+PROBE wiring.md:250 EventFanoutJob(registry, handlers, events=, notifications=, config=, clock=): <ekbatan.events.jobs.EventFanoutJob object at 0x10a44da70>
+PROBE wiring.md:252 EventHandlingJob(registry, handlers, notifications=, config=, clock=, enabled=): <ekbatan.events.jobs.EventHandlingJob object at 0x10a44da70>
+PROBE wiring.md:246 PostgresKeyedLockProvider(engine) positional: <ekbatan.locks.sql.PostgresKeyedLockProvider object at 0x10a396900>
+PROBE wiring.md:258 job_registry().workers exists: True
+PROBE wiring.md:307 duplicate action registration refused: raised ValidationError: two instances of OpenWalletAction were registered. An action is a singleton - one instance, built with what it needs, shared by every invocation.
+PROBE wiring.md:307 duplicate repository registration refused: RepositoryRegistry(['Wallet'])
+PROBE wiring.md:299 unregistered action fails at execute with a clear error: raised ValidationError: no instance of OpenWalletAction is registered, so it cannot be run. Register it on the ActionRegistry the executor was built with; it currently holds nothing.
+PROBE wiring.md:192 with_model_repository on an entity repo refused: raised ValidationError: Alert is not a Model, so it cannot be registered that way - call with_entity_repository instead.
+PROBE wiring.md:307 two different repositories for one type: raised ValidationError: two repositories were given for Wallet: WalletRepository and WalletRepository. One model, one repository - the executor has no way to choose.

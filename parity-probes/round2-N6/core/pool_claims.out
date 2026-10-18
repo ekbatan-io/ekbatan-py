@@ -1,0 +1,6 @@
+PROBE sharding.md:85 DataSourceConfig defaults: {'username': None, 'password': None, 'pool_size': 10, 'max_overflow': 0, 'pool_timeout': 30.0, 'pool_recycle': 1800, 'pool_pre_ping': True, 'data_source_properties': <dataclasses._MISSING_TYPE object at 0x10a514980>, 'echo': False}
+PROBE sharding.md:105 pool of 3 holds 3 open connections a moment after start (all app sessions incl. this one): 4
+PROBE sharding.md:108 wrong password: caller fails with driver error: raised OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58761 failed: FATAL:  password authentication failed for user "app"
+PROBE sharding.md:108 ...only when pool_timeout (3 s) is up: waited s: 3.0
+PROBE sharding.md:111 password never logged: False
+PROBE sharding.md:150 repr of config hides password: False

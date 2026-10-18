@@ -1,0 +1,26 @@
+# jOOQ codegen (generateJooqClasses) on migrations/mysql - column | Java type | SQLDataType
+PROBE jooq.mysql.column.id: UUID | SQLDataType.CHAR(36).nullable(false)
+PROBE jooq.mysql.column.version: Long | SQLDataType.BIGINT.nullable(false)
+PROBE jooq.mysql.column.state: String | SQLDataType.VARCHAR(24).nullable(false)
+PROBE jooq.mysql.column.owner_id: UUID | SQLDataType.CHAR(36).nullable(false)
+PROBE jooq.mysql.column.ext_id: String | SQLDataType.VARCHAR(36)
+PROBE jooq.mysql.column.country_name: String | SQLDataType.CHAR(36)
+PROBE jooq.mysql.column.currency: String | SQLDataType.CHAR(3).nullable(false)
+PROBE jooq.mysql.column.balance: BigDecimal | SQLDataType.DECIMAL(19, 4).nullable(false)
+PROBE jooq.mysql.column.ratio: Double | SQLDataType.DOUBLE
+PROBE jooq.mysql.column.qty: Integer | SQLDataType.INTEGER.nullable(false).defaultValue(DSL.inline("0", SQLDataType.INTEGER))
+PROBE jooq.mysql.column.small_val: Short | SQLDataType.SMALLINT
+PROBE jooq.mysql.column.flag: Byte | SQLDataType.TINYINT.nullable(false).defaultValue(DSL.inline("0", SQLDataType.TINYINT))
+PROBE jooq.mysql.column.note: String | SQLDataType.CLOB(65535)
+PROBE jooq.mysql.column.payload: ObjectNode | SQLDataType.JSON
+PROBE jooq.mysql.column.created_date: Instant | SQLDataType.LOCALDATETIME(6).nullable(false)
+PROBE jooq.mysql.column.whole_secs: Instant | SQLDataType.LOCALDATETIME(0)
+PROBE jooq.mysql.column.ts_col: Instant | SQLDataType.LOCALDATETIME(6)
+PROBE jooq.mysql.column.birth_day: LocalDate | SQLDataType.LOCALDATE
+PROBE jooq.mysql.column.clock_time: LocalTime | SQLDataType.LOCALTIME
+PROBE jooq.mysql.column.raw_bytes: byte[] | SQLDataType.BLOB(65535)
+PROBE jooq.mysql.column.bin_id: byte[] | SQLDataType.BINARY(16)
+PROBE jooq.mysql.column.status: ProbeItemsStatus | SQLDataType.VARCHAR(4).nullable(false).defaultValue(DSL.inline("NEW", SQLDataType.VARCHAR)).asEnumDataType(ProbeItemsStatus.class)
+PROBE jooq.mysql.column.parent_id: UUID | SQLDataType.CHAR(36)
+PROBE jooq.mysql.files: DefaultCatalog.java DefaultSchema.java Indexes.java Keys.java ProbeItems.java ProbeItemsRecord.java ProbeItemsStatus.java ProbeView.java ProbeViewRecord.java Tables.java 
+PROBE jooq.mysql.keysAndIndexes: FK_PARENT IDX_PROBE_ITEMS_STATE createIndex(DSL.name("idx_probe_items_state" 

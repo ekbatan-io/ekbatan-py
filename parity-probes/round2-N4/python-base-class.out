@@ -1,0 +1,6 @@
+PROBE repository_without_to_row_from_row: TypeError caught_by_EkbatanError=False
+PROBE builder_unknown_field_setter: AttributeError caught_by_EkbatanError=False
+PROBE perform_not_overridden: NotImplementedError caught_by_EkbatanError=False
+PROBE backoff_zero_attempts: ValueError caught_by_EkbatanError=False
+PROBE streaming_from_row_missing_columns: ValueError caught_by_EkbatanError=False
+PROBE plan_outside_execution: EkbatanError caught_by_EkbatanError=True

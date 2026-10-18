@@ -1,0 +1,5 @@
+{"ekbatan": {"sharding": {
+  "defaultShard": {"group": 0, "member": 0},
+  "groups": [{"group": 0, "name": "global", "members": [{"member": 0, "configs": {
+    "primaryConfig": {"url": "postgresql+psycopg://db:5432/wallet", "username": "app",
+                      "password": "${DB_PASSWORD}", "poolSize": 20}}}]}]}}}

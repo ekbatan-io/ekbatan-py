@@ -1,0 +1,20 @@
+PROBE b1.id_shard: 0:1
+PROBE b1.widgets_shard0/shard1: 0/1
+PROBE b1.events_shard0/shard1: 0/1
+PROBE b1.found_by_id: yes
+PROBE b1.after_fanout.notifications_shard0/shard1: 0/1
+PROBE b1.after_fanout.delivered_on_shard1: 1
+PROBE b1.after_fail.notification_on_shard1: FAILED/1/30
+PROBE b1.after_retry.notification_on_shard1: SUCCEEDED/2
+PROBE b1.handler_calls: b1,b1
+PROBE b2.id_shard: 0:5
+PROBE b2.widget_in_shard0/shard1: 1/0
+PROBE b2.event_in_shard0/shard1: 1/0
+PROBE b2.found_by_id: yes
+PROBE b2.handled_from_default_shard: SUCCEEDED/1
+PROBE b2.handler_calls: b1,b1,b2
+PROBE b3.write_unknown_shard: refused
+PROBE b3.error_message: Shard ShardIdentifier(0, 5) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(0, 1)]
+PROBE b3.widget_rows_anywhere: 0
+PROBE b3.read_unknown_shard: refused
+PROBE b3.read_error_message: Shard ShardIdentifier(0, 5) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(0, 1)]

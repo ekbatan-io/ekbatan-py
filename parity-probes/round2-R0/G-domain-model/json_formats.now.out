@@ -1,0 +1,26 @@
+MISMATCH odt 2682687458,400000,0: java "2055-01-04T14:57:38.4Z" python "2055-01-04T14:57:38.400Z"
+MISMATCH odt 6012018662,600000,0: java "2160-07-06T13:11:02.6Z" python "2160-07-06T13:11:02.600Z"
+MISMATCH odt 76699784311,700000,0: java "4400-07-08T23:38:31.7Z" python "4400-07-08T23:38:31.700Z"
+PROBE formats.dbl.write: 20009/20009 same as Java
+PROBE formats.dbl.read: 20009/20009 read back exactly
+PROBE formats.bd.write: 5000/5000 same as Java
+PROBE formats.bd.read: 5000/5000 read back exactly
+PROBE formats.instant.write: 3000/3000 same as Java
+PROBE formats.instant.read: 3000/3000 read back exactly
+PROBE formats.ldt.write: 3000/3000 same as Java
+PROBE formats.ldt.read: 3000/3000 read back exactly
+PROBE formats.odt.write: 2984/3000 same as Java
+PROBE formats.odt.offsetZero: 65 of them at offset zero, written as an Instant
+PROBE formats.odt.read: 3000/3000 read back exactly
+PROBE formats.lt.write: 3000/3000 same as Java
+PROBE formats.lt.read: 3000/3000 read back exactly
+PROBE formats.ot.write: 3000/3000 same as Java
+PROBE formats.ot.read: 3000/3000 read back exactly
+PROBE formats.ld.write: 3000/3000 same as Java
+PROBE formats.ld.read: 3000/3000 read back exactly
+PROBE formats.dur.write: 3000/3000 same as Java
+PROBE formats.dur.read: 3000/3000 read back exactly
+PROBE formats.str.write: 2000/2000 same as Java
+PROBE formats.str.read: 2000/2000 read back exactly
+PROBE formats.bytes.write: 2000/2000 same as Java
+PROBE formats.bytes.read: 2000/2000 read back exactly

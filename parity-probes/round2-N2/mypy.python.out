@@ -1,0 +1,7 @@
+parity-probes/round2-N2/n2pkg/builders.py:37: error: Name "Any" is not defined  [name-defined]
+parity-probes/round2-N2/n2pkg/builders.py:37: note: Did you forget to import it from "typing"? (Suggestion: "from typing import Any")
+parity-probes/round2-N2/n2pkg/builders.py:40: error: Name "Any" is not defined  [name-defined]
+parity-probes/round2-N2/n2pkg/builders.py:40: note: Did you forget to import it from "typing"? (Suggestion: "from typing import Any")
+parity-probes/round2-N2/n2pkg/usage.py:12: error: Argument 1 to "limits" of "WalletBuilder" has incompatible type "tuple[int, int, int]"; expected "tuple[int, Any]"  [arg-type]
+parity-probes/round2-N2/n2pkg/usage.py:13: error: Argument 1 to "balance" of "WalletBuilder" has incompatible type "str"; expected "Decimal"  [arg-type]
+Found 4 errors in 2 files (checked 2 source files)

@@ -1,0 +1,16 @@
+PROBE d1.build_took: 0.5s
+PROBE d1.start_took: 0.5s
+PROBE d1.connections_open_2s_after_start: 11
+PROBE d1.action_to_handler: within 3s
+PROBE d1.threads_while_running: {ForkJoinPool-#-delayScheduler=1, ForkJoinPool-#-worker-#=5, HikariPool-#:connection-adder=3, HikariPool-#:housekeeper=3, Read-Poller=1, VirtualThread-unblocker=1, Write-Poller=1, db-scheduler-execute-due-pool-#-thread-#=1, db-scheduler-housekeeper-pool-#-thread-#=3}
+PROBE d1.stop_took: 0.0s
+PROBE d1.connections_left_after_stop: 0
+PROBE d1.threads_left_after_stop: {ForkJoinPool-#-delayScheduler=1, ForkJoinPool-#-worker-#=5, Read-Poller=1, VirtualThread-unblocker=1, Write-Poller=1}
+PROBE d2.build_took: 0.0s
+PROBE d2.start_error_names_auth: yes
+PROBE d2.start: threw IllegalStateException after 90.0s
+PROBE d2.action: failed after 30.0s
+PROBE d2.action_error_names_auth: yes
+PROBE d2.threads_while_running: {HikariPool-#:connection-adder=3, HikariPool-#:housekeeper=3, db-scheduler-execute-due-pool-#-thread-#=1, db-scheduler-housekeeper-pool-#-thread-#=3}
+PROBE d2.stop_took: 15.5s
+PROBE d2.threads_left_after_stop: {}

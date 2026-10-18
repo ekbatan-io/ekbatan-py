@@ -1,0 +1,5 @@
+COUNTS same=11 fixed=1 regressed=0 still=0 changed-still=0 py-only=0
+[fixed] redis.wait_5000ms.elapsed_bucket_ms
+    java: 5000
+    r1  : 5750
+    now : 5000

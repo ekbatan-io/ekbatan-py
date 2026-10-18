@@ -1,0 +1,10 @@
+PROBE actionevent.fields: ['id', 'namespace', 'action_id', 'action_name', 'action_params', 'started_date', 'completion_date', 'model_id', 'model_type', 'event_type', 'payload', 'event_date', 'delivered']
+PROBE actionevent.field_count: 13
+PROBE from_row.payload_amount: 10.5
+PROBE from_row.event_date: '2026-01-01T10:00:00Z'
+PROBE from_message.payload_amount: Decimal('10.50')
+PROBE from_message.event_date: datetime.datetime(2026, 1, 1, 10, 0, tzinfo=datetime.timezone.utc)
+PROBE from_row.sentinel: None
+PROBE namespace.my-service: refused ValidationError
+PROBE namespace.my_service: accepted
+PROBE namespace.com.example.finance: accepted

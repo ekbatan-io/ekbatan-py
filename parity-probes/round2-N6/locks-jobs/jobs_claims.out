@@ -1,0 +1,17 @@
+PROBE scheduled_tasks.execution_time type: DATETIME
+PROBE schema execution_time sqlalchemy type: DateTime()
+PROBE doc snippet `name = "pay-stipend"`: TypeError 'str' object is not callable
+PROBE default poll_interval: 0:00:10
+PROBE default heartbeat_interval: 0:00:10 (db-scheduler's own: 0:05:00 )
+PROBE default shutdown_max_wait (db-scheduler): 0:30:00
+PROBE default missed_heartbeats_limit: 6
+PROBE missed_heartbeats_limit(3): ValueError Heartbeat-limit must be at least 4
+PROBE default workers (2 jobs): 2
+PROBE stop_on_exit default registered: True
+PROBE fraction_dead right after start: 1.0333333333333333e-06
+PROBE ctx.scheduler_state.is_shutting_down exists: True
+PROBE stop() with 1s shutdown_max_wait returned after: 1.0s; job finished by then: False
+PROBE stop log: INFO db_scheduler.executor Letting running executions finish. Will wait up to 0:00:01.
+PROBE stop log: INFO db_scheduler.executor Cannot interrupt executor service threads in Python; leaving 1 running execution(s) to finish on their own.
+PROBE stop log: WARNING db_scheduler.executor Scheduler stopped, but some tasks did not complete. Was currently running the following executions:
+PROBE register_shutdown_hook off main thread: ValidationError: register_shutdown_hook() needs the main thread - CPython only allows a signal handler to be installed there. Build the JobRegistry on the main 

@@ -1,0 +1,785 @@
+PROBE d1.build_took: 0.0s
+PROBE d1.start_took: 0.0s
+PROBE d1.connections_open_2s_after_start: 11
+PROBE d1.action_to_handler: within 3s
+PROBE d1.threads_while_running: {'db-scheduler-detect-dead': 1, 'db-scheduler-due': 1, 'db-scheduler-heartbeat': 1, 'db-scheduler-worker-#': 2, 'ekbatan-pool-filler': 3}
+PROBE d1.stop_took: 0.0s
+PROBE d1.connections_left_after_stop: 0
+PROBE d1.threads_left_after_stop: {}
+PROBE d2.build_took: 0.0s
+ERROR:db_scheduler.scheduler:Unexpected error while executing OnStartup tasks. Continuing.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 326, in execute_on_startup
+    task.on_startup(on_startup_client, self.clock)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 579, in on_startup
+    self._schedule_on_startup.apply(scheduler, clock, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 368, in apply
+    preexisting_execution = scheduler.get_scheduled_execution(instance_without_data)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/client.py", line 363, in get_scheduled_execution
+    execution = self.task_repository.get_execution(
+        task_instance_id.task_name, task_instance_id.id
+    )
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 221, in get_execution
+    with self.engine.connect() as conn:
+         ~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3295, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 146, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2450, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+ERROR:db_scheduler.scheduler:Unexpected error while executing OnStartup tasks. Continuing.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 326, in execute_on_startup
+    task.on_startup(on_startup_client, self.clock)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 579, in on_startup
+    self._schedule_on_startup.apply(scheduler, clock, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 368, in apply
+    preexisting_execution = scheduler.get_scheduled_execution(instance_without_data)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/client.py", line 363, in get_scheduled_execution
+    execution = self.task_repository.get_execution(
+        task_instance_id.task_name, task_instance_id.id
+    )
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 221, in get_execution
+    with self.engine.connect() as conn:
+         ~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3295, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 146, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2450, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+ERROR:db_scheduler.scheduler:Unhandled exception. Will keep running.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 98, in run
+    self._to_run()
+    ~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/poll.py", line 104, in run
+    fetched = self._task_repository.get_due(now, executions_to_fetch)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 214, in get_due
+    with self.engine.connect() as conn:
+         ~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3295, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 146, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2450, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+ERROR:db_scheduler.scheduler:Unhandled exception. Will keep running.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 133, in run
+    self._to_run()
+    ~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 419, in detect_dead_executions
+    old_executions = self.scheduler_task_repository.get_dead_executions(old_age_limit)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 369, in get_dead_executions
+    with self.engine.connect() as conn:
+         ~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3295, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 146, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2450, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+PROBE d2.start_error_names_auth: yes
+PROBE d2.start: threw ValidationError after 90.0s
+ERROR:io.ekbatan.core.action.ActionExecutor:WidgetCreateAction failed: OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+PROBE d2.action: failed after 30.0s
+PROBE d2.action_error_names_auth: yes
+PROBE d2.threads_while_running: {'db-scheduler-detect-dead': 1, 'db-scheduler-due': 1, 'db-scheduler-heartbeat': 1, 'ekbatan-pool-filler': 3}
+ERROR:db_scheduler.scheduler:Unhandled exception. Will keep running.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 98, in run
+    self._to_run()
+    ~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/poll.py", line 104, in run
+    fetched = self._task_repository.get_due(now, executions_to_fetch)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 214, in get_due
+    with self.engine.connect() as conn:
+         ~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3295, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 146, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2450, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+ERROR:db_scheduler.scheduler:Unhandled exception. Will keep running.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+psycopg.OperationalError: connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 133, in run
+    self._to_run()
+    ~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 419, in detect_dead_executions
+    old_executions = self.scheduler_task_repository.get_dead_executions(old_age_limit)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 369, in get_dead_executions
+    with self.engine.connect() as conn:
+         ~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3295, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 146, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2450, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 144, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 3319, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+    rec = pool._do_get()
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/persistence.py", line 460, in _do_get
+    return super()._do_get()
+           ~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 178, in _do_get
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/impl.py", line 176, in _do_get
+    return self._create_connection()
+           ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+    return _ConnectionRecord(self)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/connection.py", line 130, in connect
+    raise new_ex.with_traceback(None)
+sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+Multiple connection attempts failed. All failures were:
+- host: 'localhost', port: 58601, hostaddr: '::1': connection failed: connection to server at "::1", port 58601 failed: FATAL:  password authentication failed for user "test"
+- host: 'localhost', port: 58601, hostaddr: '127.0.0.1': connection failed: connection to server at "127.0.0.1", port 58601 failed: FATAL:  password authentication failed for user "test"
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+PROBE d2.stop_took: 20.0s
+PROBE d2.threads_left_after_stop: {}

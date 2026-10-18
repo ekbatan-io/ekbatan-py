@@ -1,0 +1,49 @@
+PROBE json.event: {"amount":"10.50","at":"2025-01-01T00:00:00.000000Z","atMicros":"2025-01-01T00:00:00.123456Z","atMillis":"2025-01-01T00:00:00.120000Z","atOffset":"2025-01-01T00:00:00.000000Z","attrs":{"10":3,"9":4,"a":2,"z":1},"clock":"10:15:30","count":1152921504606846976,"day":"2025-01-31","flag":true,"huge":"123456789012345678901234567890.123456789","localAt":"2025-01-01T10:00:00.000000Z","missing":null,"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","negative":"-0.5","nested":{"amount":"5.00","currency":"EUR"},"note":"café € </tag> \"q\" \\ \n \u0001","ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","ratio":"0.1","raw":"0102ff","sci":"1000","state":"OPENED","tags":["b","a"],"tiny":"0.0000001","zero":"0.00"}
+PROBE json.event.pythonDefaultNames: {"amount":"10.50","at_micros":"2025-01-01T00:00:00.123456Z","modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","new_balance":"20.00","owner_id":"f47ac10b-58cc-4372-a567-0e02b2c3d479"}
+PROBE json.event.keyOrder: [amount, at, atMicros, atMillis, atOffset, attrs, clock, count, day, flag, huge, localAt, missing, modelId, modelName, negative, nested, note, ownerId, ratio, raw, sci, state, tags, tiny, zero]
+PROBE json.field.amount: {"v":"10.50"}
+PROBE json.field.at: {"v":"2025-01-01T00:00:00.000000Z"}
+PROBE json.field.atMicros: {"v":"2025-01-01T00:00:00.123456Z"}
+PROBE json.field.atMillis: {"v":"2025-01-01T00:00:00.120000Z"}
+PROBE json.field.atOffset: {"v":"2025-01-01T00:00:00.000000Z"}
+PROBE json.field.attrs: {"v":{"10":3,"9":4,"a":2,"z":1}}
+PROBE json.field.clock: {"v":"10:15:30"}
+PROBE json.field.count: {"v":1152921504606846976}
+PROBE json.field.day: {"v":"2025-01-31"}
+PROBE json.field.flag: {"v":true}
+PROBE json.field.huge: {"v":"123456789012345678901234567890.123456789"}
+PROBE json.field.localAt: {"v":"2025-01-01T10:00:00.000000Z"}
+PROBE json.field.missing: {"v":null}
+PROBE json.field.modelId: {"v":"01941f29-7c7b-7abc-8042-123456789abc"}
+PROBE json.field.modelName: {"v":"Wallet"}
+PROBE json.field.negative: {"v":"-0.5"}
+PROBE json.field.nested: {"v":{"amount":"5.00","currency":"EUR"}}
+PROBE json.field.note: {"v":"café € </tag> \"q\" \\ \n \u0001"}
+PROBE json.field.ownerId: {"v":"f47ac10b-58cc-4372-a567-0e02b2c3d479"}
+PROBE json.field.ratio: {"v":"0.1"}
+PROBE json.field.raw: {"v":"0102ff"}
+PROBE json.field.sci: {"v":"1000"}
+PROBE json.field.state: {"v":"OPENED"}
+PROBE json.field.tags: {"v":["b","a"]}
+PROBE json.field.tiny: {"v":"0.0000001"}
+PROBE json.field.zero: {"v":"0.00"}
+PROBE json.idsEvent: {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","shard":{"group":1,"member":2},"walletId":"01941f29-7c7b-7abc-8042-123456789abc","walletNumber":"W-1"}
+PROBE json.params: {"amount":"10.50","memo":null,"requestedAt":"2025-01-01T00:00:00.120000Z","walletId":"01941f29-7c7b-7abc-8042-123456789abc"}
+PROBE json.ownRoundTrip: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale 0) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00+00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={10=3, 9=4, a=2, z=1} | nested=5.00 (scale 2) EUR | raw=str:0102ff
+PROBE json.readOtherPort: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.0000001 (scale 7) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=str:AQL/
+PROBE json.readOtherPort.withoutRaw: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.0000001 (scale 7) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=0102ff
+PROBE json.readOtherPortDefaultNames: n/a (Java writes only its field names)
+PROBE in.exact: OK modelId=m amount=1.50 (scale 2) note=n (text)
+PROBE in.unknownField: OK modelId=m amount=1.50 (scale 2) note=n (text)
+PROBE in.missingFields: ERR TypeError: SmallEvent.__init__() missing 2 required keyword-only arguments: 'amount' and 'note'
+PROBE in.missingModelId: ERR TypeError: SmallEvent.__init__() missing 1 required keyword-only argument: 'model_id'
+PROBE in.missingModelName: OK modelId=m amount=1.50 (scale 2) note=n (text)
+PROBE in.otherModelName: OK Wallet
+PROBE in.amountNumber: OK modelId=m amount=1.5 (scale 1) note=n (text)
+PROBE in.amountHugeNumber: OK modelId=m amount=123456789012345680000000000000 (scale -13) note=n (text)
+PROBE in.amountInt: OK modelId=m amount=7 (scale 0) note=n (text)
+PROBE in.amountBadString: ERR InvalidOperation: [<class 'decimal.ConversionSyntax'>]
+PROBE in.noteNumber: OK modelId=m amount=1 (scale 0) note=5 (int)
+PROBE in.nullAmount: OK modelId=m amount=None note=n (text)
+PROBE in.duplicateKey: OK modelId=m amount=2 (scale 0) note=n (text)
+PROBE in.snakeCaseKeys: ERR TypeError: SmallEvent.__init__() missing 1 required keyword-only argument: 'note'

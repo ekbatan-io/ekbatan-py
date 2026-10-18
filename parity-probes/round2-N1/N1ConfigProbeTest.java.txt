@@ -1,0 +1,139 @@
+package io.ekbatan.spring.n1probe;
+
+import io.ekbatan.core.config.DataSourceConfig;
+import io.ekbatan.spring.EkbatanCoreConfiguration;
+import io.ekbatan.spring.EkbatanProperties;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
+
+class N1ConfigProbeTest {
+
+    static final Path DIR = Path.of("/Users/mike/workspace/ekbatan-py/parity-probes/round2-N1/scenarios");
+    static final Set<String> MARKERS = Set.of("fallback-marker", "ns", "${N1_LITERAL}", "\\${N1_LITERAL}", "$${N1_LITERAL}", "u", "from-env");
+
+    @Configuration
+    static class Empty {}
+
+    static void p(String key, Object value) {
+        System.out.println("PROBE " + key + ": " + value);
+    }
+
+    static String err(Throwable t) {
+        var root = t;
+        var chain = new StringBuilder(t.getClass().getSimpleName());
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        var msg = String.valueOf(root.getMessage()).split("\n")[0];
+        if (msg.length() > 220) msg = msg.substring(0, 220) + "...";
+        return "error " + root.getClass().getSimpleName() + ": " + msg;
+    }
+
+    static String pw(DataSourceConfig c) {
+        return c.password.map(v -> MARKERS.contains(v) ? v : "<other len " + v.length() + ">").orElse("<none>");
+    }
+
+    void run(String scenario, Map<String, Object> extraEnv) throws Exception { run(scenario, scenario, extraEnv); }
+
+    void run(String scenario, String file, Map<String, Object> extraEnv) throws Exception {
+        var yaml = Files.readString(DIR.resolve(file + ".yaml"))
+                .replace("@URL_KEY@", "jdbcUrl")
+                .replace("@URL@", "jdbc:postgresql://localhost:5432/db")
+                .replace("@POOL_KEY@", "maximumPoolSize");
+        var tmp = Files.createTempFile("n1", ".yml");
+        Files.writeString(tmp, yaml);
+        var app = new SpringApplication(Empty.class);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setBannerMode(org.springframework.boot.Banner.Mode.OFF);
+        app.setLogStartupInfo(false);
+        var args = new String[] {"--spring.config.location=file:" + tmp, "--logging.level.root=OFF"};
+        ConfigurableApplicationContext ctx;
+        try {
+            ctx = app.run(args);
+        } catch (Exception e) {
+            p(scenario + ".boot", err(e));
+            return;
+        }
+        try {
+            var env = (ConfigurableEnvironment) ctx.getEnvironment();
+            if (!extraEnv.isEmpty()) {
+                var merged = new HashMap<String, Object>(System.getenv());
+                merged.putAll(extraEnv);
+                env.getPropertySources()
+                        .replace(
+                                StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME,
+                                new SystemEnvironmentPropertySource(
+                                        StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, merged));
+            }
+            var cfg = new EkbatanCoreConfiguration();
+            try {
+                var props = Binder.get(env).bindOrCreate("ekbatan", Bindable.of(EkbatanProperties.class));
+                p(scenario + ".namespace", "[" + props.namespace() + "]");
+            } catch (Exception e) {
+                p(scenario + ".namespace", err(e));
+            }
+            try {
+                var sh = cfg.ekbatanShardingConfig(env);
+                var c = sh.groups.get(0).members.get(0).configs.get("primaryConfig");
+                p(scenario + ".pool", c.maximumPoolSize);
+                p(scenario + ".username", c.username.orElse("<none>"));
+                p(scenario + ".password", pw(c));
+                p(scenario + ".dsp", new TreeMap<>(c.dataSourceProperties));
+            } catch (Exception e) {
+                p(scenario + ".sharding", err(e));
+            }
+            try {
+                var j = cfg.ekbatanJobsConfig(env);
+                p(scenario + ".jobs", "polling=" + j.pollingInterval.map(Object::toString).orElse("-") + " heartbeat="
+                        + j.heartbeatInterval.map(Object::toString).orElse("-") + " shutdown="
+                        + j.shutdownMaxWait.map(Object::toString).orElse("-"));
+            } catch (Exception e) {
+                p(scenario + ".jobs", err(e));
+            }
+            try {
+                var l = cfg.ekbatanLocalEventHandlerConfig(env);
+                p(scenario + ".leh", "fanoutBatch=" + l.fanoutBatchSize.map(Object::toString).orElse("-")
+                        + " handlingPoll=" + l.handlingPollDelay.map(Object::toString).orElse("-")
+                        + " enabled=" + l.handling.enabled);
+            } catch (Exception e) {
+                p(scenario + ".leh", err(e));
+            }
+            // what @ConditionalOnProperty(havingValue = "true") on the handling job sees
+            var raw = env.getProperty("ekbatan.local-event-handler.handling.enabled");
+            p(scenario + ".handling_job_created", raw != null && raw.equalsIgnoreCase("true"));
+        } finally {
+            ctx.close();
+        }
+    }
+
+    @Test
+    void probe() throws Exception {
+        try (var files = Files.list(DIR)) {
+            for (var f : files.sorted().toList()) {
+                var name = f.getFileName().toString().replace(".yaml", "");
+                run(name, Map.of());
+            }
+        }
+        // per-key overrides from the environment, as a 12-factor deployment sets them
+        run("s99_env_override", "s00_base", Map.of(
+                "EKBATAN_NAMESPACE", "from-env",
+                "EKBATAN_JOBS_POLLINGINTERVAL", "PT7S",
+                "EKBATAN_JOBS_POLLING_INTERVAL", "PT7S",
+                "EKBATAN_SHARDING_GROUPS_0_MEMBERS_0_CONFIGS_PRIMARYCONFIG_MAXIMUMPOOLSIZE", "7",
+                "EKBATAN_LOCALEVENTHANDLER_HANDLING_ENABLED", "true"));
+    }
+}

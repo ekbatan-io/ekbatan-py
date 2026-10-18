@@ -1,0 +1,189 @@
+COUNTS same=155 fixed=11 regressed=0 still=33 changed-still=1 py-only=2
+[changed-still] s2.action_params
+    java: {"walletId": "01a14b03-a0f7-7bf2-8000-e2347ab1a5d8"}
+    r1  : {"wallet_id": "01a14b03-b479-7738-8000-e1708edb3c67"}
+    now : {"walletId": "01a14c3b-98fb-7d52-8000-c13154688e19"}
+[fixed] s1.row.action_params
+    java: {"countryCode": "DE"}
+    r1  : {"country_code": "DE"}
+    now : {"countryCode": "DE"}
+[fixed] s1.row.payload_minus_ids
+    java: {"currency": "EUR", "modelName": "Wallet", "initialBalance": 10}
+    r1  : {"currency": "EUR", "modelName": "Wallet", "initial_balance": "10"}
+    now : {"currency": "EUR", "modelName": "Wallet", "initialBalance": 10}
+[fixed] s2.payload_minus_ids
+    java: {"amount": 5, "modelName": "Wallet", "newBalance": 15.0000}
+    r1  : {"amount": "5", "modelName": "Wallet", "new_balance": "15.0000"}
+    now : {"amount": 5, "modelName": "Wallet", "newBalance": 15.0000}
+[fixed] s4.payload
+    java: null
+    r1  : JSON null
+    now : null
+[fixed] s4.payload_sql_null
+    java: true
+    r1  : false
+    now : true
+[fixed] s5.row.payload_minus_ids
+    java: null
+    r1  : JSON null
+    now : null
+[fixed] s5.row.payload_sql_null
+    java: true
+    r1  : false
+    now : true
+[fixed] s32.action_clock_differs_from_executor_clock
+    java: none
+    r1  : ValidationError
+    now : none
+[fixed] s37.no_event_persister
+    java: none
+    r1  : ValidationError
+    now : none
+[fixed] s43.wallets_after_outer_rollback
+    java: 1
+    r1  : 0
+    now : 1
+[fixed] s43.outbox_after_outer_rollback
+    java: 1
+    r1  : 0
+    now : 1
+[still] s6.caller_exception
+    java: RuntimeException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] s7.caller_exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] s8.caller_exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] s9.caller_exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] s12.caller_exception
+    java: RuntimeException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] s14.caller_exception
+    java: CrossShardException
+    r1  : CrossShardError
+    now : CrossShardError
+[still] s14.active_shard
+    java: 1:0
+    r1  : 0:0
+    now : 0:0
+[still] s14.requested_shard
+    java: 0:0
+    r1  : 1:0
+    now : 1:0
+[still] s16.caller_exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] s17.caller_exception
+    java: StaleRecordException
+    r1  : StaleRecordError
+    now : StaleRecordError
+[still] s19.caller_exception
+    java: NullPointerException
+    r1  : ValidationError
+    now : ValidationError
+[still] s20.caller_exception
+    java: IllegalArgumentException
+    r1  : none
+    now : none
+[still] s20.wallets
+    java: 0
+    r1  : 1
+    now : 1
+[still] s20.outbox
+    java: 0
+    r1  : 1
+    now : 1
+[still] s21.caller_exception
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] s23.add-add.caller_exception
+    java: IllegalStateException
+    r1  : ValidationError
+    now : ValidationError
+[still] s23.add-update.caller_exception
+    java: IllegalStateException
+    r1  : ValidationError
+    now : ValidationError
+[still] s23.update-update.caller_exception
+    java: IllegalStateException
+    r1  : ValidationError
+    now : ValidationError
+[still] s26.second
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] s27.persister_failure_exception
+    java: IllegalStateException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] s29.outer_exception
+    java: RuntimeException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] s30.plan_outside_execute
+    java: IllegalStateException
+    r1  : EkbatanError
+    now : EkbatanError
+[still] s30.plan_on_new_thread
+    java: IllegalStateException
+    r1  : EkbatanError
+    now : EkbatanError
+[still] s33.caller_exception
+    java: IntegrityConstraintViolationException
+    r1  : IntegrityError
+    now : IntegrityError
+[still] s35.negative_max_retries
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] s35.negative_delay
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] s36.duplicate_registration
+    java: none
+    r1  : ValidationError
+    now : ValidationError
+[still] s38.empty_repository_registry
+    java: none
+    r1  : ValidationError
+    now : ValidationError
+[still] s38.unknown_type_exception
+    java: IllegalStateException
+    r1  : ValidationError
+    now : ValidationError
+[still] s43.caller_exception
+    java: RuntimeException
+    r1  : RuntimeError
+    now : RuntimeError
+[still] s39.throws_wrong_type
+    java: AssertionError / Expected IllegalStateException but got IllegalArgumentException
+    r1  : AssertionError / Expected LookupError but got ValueError
+    now : AssertionError / Expected LookupError but got ValueError
+[still] s39.throws_nothing
+    java: AssertionError / Expected RuntimeException to be thrown but nothing was thrown
+    r1  : AssertionError / Expected Exception to be thrown but nothing was thrown
+    now : AssertionError / Expected Exception to be thrown but nothing was thrown
+[still] s39.plan_outside
+    java: IllegalStateException
+    r1  : EkbatanError
+    now : EkbatanError
+[py-only] s20.stored_action_params
+    java: <missing>
+    r1  : {}
+    now : {}
+[py-only] s39.py_only.verifier_returning_zero
+    java: <missing>
+    r1  : AssertionError
+    now : AssertionError

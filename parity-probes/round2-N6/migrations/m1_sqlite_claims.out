@@ -1,0 +1,90 @@
+PROBE history_table_name: ekbatan_schema_history
+PROBE result_type: Result fields=target,migrate_result
+PROBE result_repr: Result(target=Target(shard=ShardIdentifier(group=0, member=0), name='default/member-0', data_source=DataSourceConfig(url='sqlite:////var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/m1.db', username=None, password=None, pool_size=10, max_overflow=0, pool_timeout=30.0, pool_recycle=1800, pool_pre_ping=True, data_source_properties={}, echo=False)), migrate_result=MigrateResult(initial_sch
+PROBE tables_after_first: ['ekbatan_schema_history', 'hook_runs', 'wallet_totals', 'wallets']
+PROBE history_rows: [(1, '0001', 'create wallets', 'SQL', 'V0001__create_wallets.sql', 1), (2, '0002', 'add owner index', 'SQL', 'V0002__add_owner_index.SQL', 1), (3, '0003', 'backfill currency', 'SQL', '2026/V0003__backfill_currency.sql', 1), (4, None, 'wallet totals', 'SQL', 'R__wallet_totals.sql', 1)]
+PROBE history_columns: ['installed_rank', 'version', 'description', 'type', 'script', 'checksum', 'installed_by', 'installed_on', 'execution_time', 'success']
+PROBE hook_runs_after_1: 1
+PROBE hook_runs_after_2_nothing_pending (doc: post-apply runs every migrate): 2
+PROBE hook_recorded_in_history: 0
+PROBE lockfile_beside_db: ['m1.db', 'm1.db-ekbatan-migrate.lock']
+Migrating default/member-0 (0:0) failed
+Stopped at default/member-0 (0:0); already migrated: []
+PROBE crlf_edit_accepted: MigrationError: default/member-0 (0:0): the migrations here do not match what this database has applied, so nothing was run:
+  - V0001__create_wallets.sql has changed since it was applied (15e758300501 then, cc0b571cc2de now). An applied migration is history: put the file back as it was, and make the change in a new migration.
+Already migrated: none. Targets are migrated one at a time, so the rest
+Migrating default/member-0 (0:0) failed
+Stopped at default/member-0 (0:0); already migrated: []
+PROBE bom_edit_accepted: MigrationError: default/member-0 (0:0): the migrations here do not match what this database has applied, so nothing was run:
+  - V0001__create_wallets.sql has changed since it was applied (15e758300501 then, cc0b571cc2de now). An applied migration is history: put the file back as it was, and make the change in a new migration.
+Already migrated: none. Targets are migrated one at a time, so the rest
+Migrating default/member-0 (0:0) failed
+Stopped at default/member-0 (0:0); already migrated: []
+PROBE real_edit_refused: MigrationError: default/member-0 (0:0): the migrations here do not match what this database has applied, so nothing was run:
+  - V0001__create_wallets.sql has changed since it was applied (15e758300501 then, 09db6f8a27b5 now). An applied migration is history: put the file back as it was, and make the change in a new migration.
+Already migrated: none. Targets are migrated one at a time, so the rest
+PROBE version_respelled_and_moved_accepted: ok 'migrated'
+Migrating default/member-0 (0:0) failed
+Stopped at default/member-0 (0:0); already migrated: []
+PROBE description_change_refused: MigrationError: default/member-0 (0:0): the migrations here do not match what this database has applied, so nothing was run:
+  - version 0002 was applied as 'add owner index', and its file V2__add_owner_idx.SQL now says 'add owner idx'. An applied migration is history: put the old name back - or, if only the name changed, run repair() to record the new one.
+Already migrated: none. Targets are migr
+Migrating default/member-0 (0:0) failed
+Stopped at default/member-0 (0:0); already migrated: []
+PROBE older_new_refused: MigrationError: default/member-0 (0:0): the migrations here do not match what this database has applied, so nothing was run:
+  - V0001_5__late.sql has not been applied, but version 0003 already has. Migrations run in version order, so this one would never run in the place its number says: give it a version after 0003.
+Already migrated: none. Targets are migrated one at a time, so the rest are unto
+default/member-0 (0:0): 2026/V0003__backfill_currency.sql (version 0003) has been applied to this database but is newer than every migration here - a newer release migrated it. Left alone, as Flyway leaves it.
+PROBE gone_file_refused: ok [Result(target=Target(shard=ShardIdentifier(group=0, member=0), name='default/member-0', data_source=DataSourceConfig(url='sqlite:////var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/m1.db', username=None, password=None, pool_size=10, max_overflow=0, pool_timeout=30.0, pool_recycle=180
+PROBE repeatable_rows_after_change: 2
+PROBE info_row: Versioned 0001 create wallets Success
+PROBE info_row: Versioned 0002 add owner index Success
+PROBE info_row: Versioned 0003 backfill currency Success
+PROBE info_row: Repeatable None wallet totals Superseded
+PROBE info_row: Repeatable None wallet totals Success
+PROBE info_problems_attr: True
+PROBE states: ['Pending', 'Success', 'Failed', 'Outdated', 'Superseded', 'Missing', 'Failed (Missing)', 'Future', 'Failed (Future)', 'Ignored', 'Deleted', 'Baseline', 'Below Baseline', 'Ignored (Baseline)']
+PROBE validate[misnamed]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_misnamed/V1_create.sql: a migration's file name must be V<version>__<description>.sql, like V0001__create_wallets.sql, or R__<description>.sql for a repeatable one, or start with post-apply for a hook. A file that does not match would otherwise be skipped without a word, and never run.
+PROBE validate[dup_version]: MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description:
+  version 01: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_dup_version/V01__b.sql, /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_dup_version/V1__a.sql
+PROBE validate[dup_version_1.0]: MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description:
+  version 1.0: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_dup_version_1_0/V1.0__b.sql, /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_dup_version_1_0/V1__a.sql
+PROBE validate[dup_repeatable_desc]: MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description:
+  repeatable 'a b': /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_dup_repeatable_desc/R__a b.sql, /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_dup_repeatable_desc/R__a_b.
+PROBE validate[R_with_version]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_R_with_version/R1__x.sql: a repeatable migration has no version - name it R__<description>.sql. Flyway would skip this file, and it would never run.
+PROBE validate[long_desc]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_long_desc/V1__xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.sql: the description is 201 characters, and the history keeps 200. Shorten the file name.
+PROBE validate[rollback]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_rollback/V1__a.rollback.sql: rollback files are not supported. To undo a migration that has run, add a new one that reverses it - an applied migration is history.
+PROBE validate[python]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_python/V2__backfill.py: only SQL migrations are supported. A file named like a migration that is not one - a script, an editor's backup - does not belong beside them.
+PROBE validate[callback_afterMigrate]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_callback_afterMigrate/afterMigrate.sql: Flyway callbacks are not run here. The one this has is yoyo's post-apply hook, which is Flyway's afterMigrate: a file named post-apply.sql runs at the end of every migrate.
+PROBE validate[conf_file]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_conf_file/V2__x.sql.conf: Flyway's script configuration files are not read here. To run a migration outside a transaction, make `-- transactional: false` its first line.
+PROBE validate[delimiter]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_delimiter/V1__a.sql: `DELIMITER` is a command of the mysql client, not SQL, and is not understood here. Leave it out: a procedure's or a trigger's BEGIN ... END body is kept whole without it, and every other statement ends at its `;`.
+PROBE validate[depends]: MigrationError: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/c_depends/V1__a.sql: `-- depends:` is not supported. Migrations run in the order of their version numbers and nothing else; give this one a version after the migrations it depends on.
+PROBE validate[hidden_dir_ignored]: ok ['V1__a.sql']
+PROBE validate[version_order_numeric]: ok ['V2__two.sql', 'V10__ten.sql']
+PROBE validate[dup_across_dirs]: MigrationError: two migrations are one migration - each version, and each repeatable migration's description, belongs to one file. Give one of them the next free version, or another description:
+  version 1: /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/multi1/V1__a.sql, /var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/multi2/V1__b.sql
+PROBE description_order: ['B', 'a', 'a b', 'a-b', 'ab', 'b']
+Migrating default/member-0 (0:0) failed
+Stopped at default/member-0 (0:0); already migrated: []
+PROBE nonempty_without_history_refused: MigrationError: default/member-0 (0:0) already has t but no ekbatan_schema_history, so nothing says which migrations built it. If it is what your migrations up to some version make, record that with baseline(version=...) and run again - the migrations after it then run. If it should be empty, this is the wrong database.
+Already migrated: none. Targets are migrated one at a time, so the rest are un
+PROBE baseline: ok [BaselineResult(target=Target(shard=ShardIdentifier(group=0, member=0), name='default/member-0', data_source=DataSourceConfig(url='sqlite:////var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/pre.db', username=None, password=None, pool_size=10, max_overflow=0, pool_timeout=30.0, pool_re
+PROBE after_baseline_migrate: ok [('V10__ten.sql',)]
+PROBE baseline_empty_refused: MigrationError: default/member-0 (0:0) is empty, so there is nothing to baseline - baselining it would skip the migrations that build it. Run migrate instead.
+Already baselined: none. Targets are baselined one at a time, so the rest are untouched - fix this one and run again; what was done is skipped.
+PROBE baseline_nonempty_history_refused: MigrationError: default/member-0 (0:0) already has migrations in its history, so there is nothing to baseline: the history already says what built it.
+Already baselined: none. Targets are baselined one at a time, so the rest are untouched - fix this one and run again; what was done is skipped.
+PROBE fail_error: MigrationError: migrating default/member-0 (0:0) failed in V2__b.sql: OperationalError: no such table: nope Applied by this run before that: V1__a.sql. Nothing of V2__b.sql remains: it was rolled back as a whole.
+Already migrated: none. Targets are migrated one at a time, so the rest are untouched - fix this one and run again; what was applied is skipped.
+PROBE fail_log: ERROR io.ekbatan.flyway.FlywayMigrator Migrating default/member-0 (0:0) failed
+PROBE fail_log: ERROR io.ekbatan.flyway.FlywayMigrator Stopped at default/member-0 (0:0); already migrated: []
+PROBE fail_tables: ['a', 'ekbatan_schema_history']
+PROBE fail_next_run: ok [('V2__b.sql',)]
+PROBE transactional_false: ok ['a', 'ekbatan_schema_history']
+PROBE select_logged: [' 42 ']
+PROBE select_logged_when_off: []
+PROBE builder: ok 1
+PROBE migrate_data_source: ok 'MigrateResult'
+PROBE targets: ok ['default/member-0 (0:0)']
+PROBE repair: ok [RepairResult(target=Target(shard=ShardIdentifier(group=0, member=0), name='default/member-0', data_source=DataSourceConfig(url='sqlite:////var/folders/gs/8t9ryvtx3sz97v9z2_hdt5700000gn/T/tmp_k_v3p5p/fail.db', username=None, password=None, pool_size=10, max_overflow=0, pool_timeout=30.0, pool_rec
+PROBE emit_ddl_has_create: True

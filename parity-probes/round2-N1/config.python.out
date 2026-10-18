@@ -1,0 +1,115 @@
+PROBE s00_base.namespace: [ns]
+PROBE s00_base.pool: 10
+PROBE s00_base.username: u
+PROBE s00_base.password: <none>
+PROBE s00_base.dsp: {}
+PROBE s00_base.jobs: polling=- heartbeat=- shutdown=-
+PROBE s00_base.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s01_duration_bare_quoted.load: error ValidationError: <file>: ekbatan.jobs.polling-interval: must be an ISO-8601 duration such as PT10S, PT0.5S or PT5M, as Java reads it
+PROBE s02_duration_bare_int.load: error ValidationError: <file>: ekbatan.jobs.polling-interval: must be an ISO-8601 duration such as PT10S, PT0.5S or PT5M, as Java reads it
+PROBE s03_duration_10s.load: error ValidationError: <file>: ekbatan.jobs.polling-interval: must be an ISO-8601 duration such as PT10S, PT0.5S or PT5M, as Java reads it
+PROBE s04_duration_iso_variants.namespace: [ns]
+PROBE s04_duration_iso_variants.pool: 10
+PROBE s04_duration_iso_variants.username: u
+PROBE s04_duration_iso_variants.password: <none>
+PROBE s04_duration_iso_variants.dsp: {}
+PROBE s04_duration_iso_variants.jobs: polling=PT10S heartbeat=PT26H shutdown=PT0.5S
+PROBE s04_duration_iso_variants.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s05_duration_zero.load: error ValidationError: <file>: ekbatan.jobs: ekbatan.jobs.polling-interval must be positive, but was 0:00:00. A zero or negative interval makes db-scheduler skip its wait entirely and poll in a tight loop.
+PROBE s06_duration_null.load: error ValidationError: <file>: ekbatan.jobs.polling-interval: must be an ISO-8601 duration such as PT10S, PT0.5S or PT5M, as Java reads it
+PROBE s07_namespace_null.load: error ValidationError: <file>: ekbatan.namespace: needs a value
+PROBE s08_pool_quoted.load: error ValidationError: <file>: ekbatan.sharding.groups[0].members[0].configs.primaryConfig.poolSize: must be a whole number
+PROBE s09_enabled_quoted.load: error ValidationError: <file>: ekbatan.local-event-handler.handling.enabled: must be true or false
+PROBE s10_enabled_upper.namespace: [ns]
+PROBE s10_enabled_upper.pool: 10
+PROBE s10_enabled_upper.username: u
+PROBE s10_enabled_upper.password: <none>
+PROBE s10_enabled_upper.dsp: {}
+PROBE s10_enabled_upper.jobs: polling=- heartbeat=- shutdown=-
+PROBE s10_enabled_upper.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s11_enabled_yes.namespace: [ns]
+PROBE s11_enabled_yes.pool: 10
+PROBE s11_enabled_yes.username: u
+PROBE s11_enabled_yes.password: <none>
+PROBE s11_enabled_yes.dsp: {}
+PROBE s11_enabled_yes.jobs: polling=- heartbeat=- shutdown=-
+PROBE s11_enabled_yes.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s12_nested_placeholder.namespace: [ns]
+PROBE s12_nested_placeholder.pool: 10
+PROBE s12_nested_placeholder.username: u
+PROBE s12_nested_placeholder.password: <other len 29>
+PROBE s12_nested_placeholder.dsp: {}
+PROBE s12_nested_placeholder.jobs: polling=- heartbeat=- shutdown=-
+PROBE s12_nested_placeholder.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s13_property_reference.load: error ValidationError: <file>.ekbatan.sharding.groups[0].members[0].configs.primaryConfig.password: environment variable 'ekbatan.namespace' is not set, and the placeholder has no default
+PROBE s14_unresolved.load: error ValidationError: <file>.ekbatan.sharding.groups[0].members[0].configs.primaryConfig.password: environment variable 'N1_UNSET_PW' is not set, and the placeholder has no default
+PROBE s15_two_spellings.load: error ValidationError: <file>: ekbatan.jobs: 'pollingInterval' is given twice, in two spellings
+PROBE s16_snake_leaf.namespace: [ns]
+PROBE s16_snake_leaf.pool: 10
+PROBE s16_snake_leaf.username: u
+PROBE s16_snake_leaf.password: <none>
+PROBE s16_snake_leaf.dsp: {}
+PROBE s16_snake_leaf.jobs: polling=PT3S heartbeat=- shutdown=-
+PROBE s16_snake_leaf.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s17_snake_parent.namespace: [ns]
+PROBE s17_snake_parent.pool: 10
+PROBE s17_snake_parent.username: u
+PROBE s17_snake_parent.password: <none>
+PROBE s17_snake_parent.dsp: {}
+PROBE s17_snake_parent.jobs: polling=- heartbeat=- shutdown=-
+PROBE s17_snake_parent.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s18_empty_jobs.load: error ValidationError: <file>: ekbatan.jobs: must be a group of keys
+PROBE s19_empty_leh.load: error ValidationError: <file>: ekbatan.local-event-handler: must be a group of keys
+PROBE s20_dsp_nested.namespace: [ns]
+PROBE s20_dsp_nested.pool: 10
+PROBE s20_dsp_nested.username: u
+PROBE s20_dsp_nested.password: <none>
+PROBE s20_dsp_nested.dsp: {'ssl': {'mode': 'require'}}
+PROBE s20_dsp_nested.jobs: polling=- heartbeat=- shutdown=-
+PROBE s20_dsp_nested.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s21_batch_zero.load: error ValidationError: <file>: ekbatan.local-event-handler: fanout_batch_size must be at least 1, got 0
+PROBE s22_empty_default.namespace: []
+PROBE s22_empty_default.pool: 10
+PROBE s22_empty_default.username: u
+PROBE s22_empty_default.password: <none>
+PROBE s22_empty_default.dsp: {}
+PROBE s22_empty_default.jobs: polling=- heartbeat=- shutdown=-
+PROBE s22_empty_default.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s23_pool_float.load: error ValidationError: <file>: ekbatan.sharding.groups[0].members[0].configs.primaryConfig.poolSize: must be a whole number
+PROBE s24_case_leaf.namespace: [ns]
+PROBE s24_case_leaf.pool: 10
+PROBE s24_case_leaf.username: u
+PROBE s24_case_leaf.password: <none>
+PROBE s24_case_leaf.dsp: {}
+PROBE s24_case_leaf.jobs: polling=PT4S heartbeat=- shutdown=-
+PROBE s24_case_leaf.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s25_escaped_placeholder.load: error ValidationError: <file>.ekbatan.sharding.groups[0].members[0].configs.primaryConfig.password: environment variable 'N1_LITERAL' is not set, and the placeholder has no default
+PROBE s26_dollar_dollar.namespace: [ns]
+PROBE s26_dollar_dollar.pool: 10
+PROBE s26_dollar_dollar.username: u
+PROBE s26_dollar_dollar.password: ${N1_LITERAL}
+PROBE s26_dollar_dollar.dsp: {}
+PROBE s26_dollar_dollar.jobs: polling=- heartbeat=- shutdown=-
+PROBE s26_dollar_dollar.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s27_handling_off.namespace: [ns]
+PROBE s27_handling_off.pool: 10
+PROBE s27_handling_off.username: u
+PROBE s27_handling_off.password: <none>
+PROBE s27_handling_off.dsp: {}
+PROBE s27_handling_off.jobs: polling=- heartbeat=- shutdown=-
+PROBE s27_handling_off.leh: fanoutBatch=- handlingPoll=PT0.2S enabled=false
+PROBE s28_python_example.namespace: [example.fastapi_wallet_saga_pg]
+PROBE s28_python_example.pool: 10
+PROBE s28_python_example.username: ekbatan
+PROBE s28_python_example.password: <other len 7>
+PROBE s28_python_example.dsp: {'application_name': 'wallet-service'}
+PROBE s28_python_example.jobs: polling=- heartbeat=- shutdown=-
+PROBE s28_python_example.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s29_java_example.load: error ValidationError: <file>: ekbatan.sharding.groups[0].members[0].configs.primaryConfig: unknown key 'jdbcUrl'; known here: data_source_properties, echo, max_overflow, password, pool_pre_ping, pool_recycle, pool_size, pool_timeout, url, use
+PROBE s99_env_override.namespace: [ns]
+PROBE s99_env_override.pool: 10
+PROBE s99_env_override.username: u
+PROBE s99_env_override.password: <none>
+PROBE s99_env_override.dsp: {}
+PROBE s99_env_override.jobs: polling=- heartbeat=- shutdown=-
+PROBE s99_env_override.leh: fanoutBatch=- handlingPoll=- enabled=false

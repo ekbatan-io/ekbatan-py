@@ -1,0 +1,9 @@
+ekbatan:
+  namespace: example.wallet
+  sharding:
+    # ... as above
+  jobs:
+    pollingInterval: PT10S
+  local-event-handler:
+    handling:
+      enabled: true

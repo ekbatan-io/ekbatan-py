@@ -1,0 +1,5 @@
+PROBE HandlingConfig() enabled default: False
+PROBE handling job built by hand, config handling off -> schedule: FixedDelay(duration=0:00:01)
+PROBE enabled=config.handling.enabled -> schedule: DisabledSchedule
+PROBE doc's configuration snippet builds: True
+PROBE fan-out job schedule by default: FixedDelay(duration=0:00:01)

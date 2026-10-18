@@ -1,0 +1,3 @@
+PROBE registry.two_repos_one_model.err: ValidationError
+PROBE registry.same_repo_twice: no error -> first
+PROBE registry.lookup_unregistered.err: ValidationError

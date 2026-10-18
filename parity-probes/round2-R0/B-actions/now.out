@@ -1,0 +1,202 @@
+PROBE s1.result_version: 1
+PROBE s1.result_events_attached: 1
+PROBE s1.wallets_global: 1
+PROBE s1.wallets_mexico: 0
+PROBE s1.outbox_global: 1
+PROBE s1.outbox_mexico: 0
+PROBE s1.row.namespace: parity.actions
+PROBE s1.row.action_name: CreateAction
+PROBE s1.row.action_params: {"countryCode": "DE"}
+PROBE s1.row.model_type: Wallet
+PROBE s1.row.event_type: WalletCreatedEvent
+PROBE s1.row.payload_minus_ids: {"currency": "EUR", "modelName": "Wallet", "initialBalance": 10}
+PROBE s1.row.delivered: false
+PROBE s1.row.id_uuid_version: 4
+PROBE s1.row.action_id_uuid_version: 4
+PROBE s1.row.started_le_completion: true
+PROBE s1.row.event_date_eq_completion: true
+PROBE s1.row.started_is_utc_now: true
+PROBE s1.row.model_id_null: false
+PROBE s1.row.payload_sql_null: false
+PROBE s1.row.model_id_is_wallet_id: true
+PROBE s1.principal_seen: alice
+PROBE s1.db_version: 1
+PROBE s40.null_principal_seen: null
+PROBE s40.outbox_has_principal_column: 0
+PROBE s2.result_version: 2
+PROBE s2.db_version: 2
+PROBE s2.db_balance: 15.0000
+PROBE s2.updated_date_unchanged: true
+PROBE s2.outbox_rows: 1
+PROBE s2.event_type: WalletMoneyDepositedEvent
+PROBE s2.payload_minus_ids: {"amount": 5, "modelName": "Wallet", "newBalance": 15.0000}
+PROBE s2.action_params: {"walletId": "01a14c3b-98fb-7d52-8000-c13154688e19"}
+PROBE s3.event_types_in_insert_order: [WalletCreatedEvent, WalletMoneyDepositedEvent]
+PROBE s3.db_version: 1
+PROBE s3.same_action_id: true
+PROBE s4.outbox_rows: 1
+PROBE s4.event_type: null
+PROBE s4.payload: null
+PROBE s4.payload_sql_null: true
+PROBE s4.model_type: null
+PROBE s4.result_version: 2
+PROBE s4.db_version: 2
+PROBE s5.result: null
+PROBE s5.outbox_global: 1
+PROBE s5.outbox_mexico: 0
+PROBE s5.row.namespace: parity.actions
+PROBE s5.row.action_name: NothingAction
+PROBE s5.row.action_params: {}
+PROBE s5.row.model_type: null
+PROBE s5.row.event_type: null
+PROBE s5.row.payload_minus_ids: null
+PROBE s5.row.delivered: false
+PROBE s5.row.id_uuid_version: 4
+PROBE s5.row.action_id_uuid_version: 4
+PROBE s5.row.started_le_completion: true
+PROBE s5.row.event_date_eq_completion: true
+PROBE s5.row.started_is_utc_now: true
+PROBE s5.row.model_id_null: true
+PROBE s5.row.payload_sql_null: true
+PROBE s6.caller_exception: RuntimeError
+PROBE s6.same_instance: true
+PROBE s6.attempts: 1
+PROBE s6.wallets: 0
+PROBE s6.outbox: 0
+PROBE s7.caller_exception: StaleRecordError
+PROBE s7.attempts: 2
+PROBE s8.caller_exception: StaleRecordError
+PROBE s8.attempts: 2
+PROBE s8.elapsed_ge_100ms: true
+PROBE s8.elapsed_lt_1000ms: true
+PROBE s8.outbox: 0
+PROBE s8.db_version: 1
+PROBE s9.caller_exception: StaleRecordError
+PROBE s9.attempts: 1
+PROBE s10.attempts: 4
+PROBE s11.exact_attempts: 3
+PROBE s11.subclass_attempts: 1
+PROBE s11.default_dropped_when_other_added: 2
+PROBE s12.attempts: 2
+PROBE s12.caller_exception: RuntimeError
+PROBE s13.attempts: 2
+PROBE s13.wallets: 1
+PROBE s13.result_is_second_attempt: true
+PROBE s13.outbox: 1
+PROBE s14.caller_exception: CrossShardError
+PROBE s14.active_shard: 0:0
+PROBE s14.requested_shard: 1:0
+PROBE s14.wallets_global: 0
+PROBE s14.wallets_mexico: 0
+PROBE s14.outbox_global: 0
+PROBE s14.outbox_mexico: 0
+PROBE s15.commit_order: [1:0, 0:0]
+PROBE s15.wallets_global: 1
+PROBE s15.wallets_mexico: 1
+PROBE s15.outbox_global: 1
+PROBE s15.outbox_mexico: 1
+PROBE s15.same_action_id: true
+PROBE s15.same_started_date: true
+PROBE s15.global_row_is_global_wallet: true
+PROBE s15.mexico_row_is_mexico_wallet: true
+PROBE s16.caller_exception: StaleRecordError
+PROBE s16.attempts: 1
+PROBE s16.wallets_global: 1
+PROBE s16.wallets_mexico: 1
+PROBE s16.outbox_global: 1
+PROBE s16.outbox_mexico: 0
+PROBE s17.caller_exception: StaleRecordError
+PROBE s17.attempts: 2
+PROBE s17.wallets_global: 2
+PROBE s17.outbox_global: 2
+PROBE s18.wallets_global: 1
+PROBE s18.outbox_global: 1
+PROBE s18.outbox_mexico: 0
+PROBE s19.caller_exception: ValidationError
+PROBE s20.caller_exception: none
+PROBE s20.wallets: 1
+PROBE s20.outbox: 1
+PROBE s20.stored_action_params: {}
+PROBE s21.caller_exception: ValidationError
+PROBE s21.wallets: 0
+PROBE s23.add-add.caller_exception: ValidationError
+PROBE s23.add-add.attempts: 1
+PROBE s23.add-add.wallets: 0
+PROBE s23.add-update.caller_exception: ValidationError
+PROBE s23.add-update.attempts: 1
+PROBE s23.add-update.wallets: 0
+PROBE s23.update-update.caller_exception: ValidationError
+PROBE s23.update-update.attempts: 1
+PROBE s23.update-update.wallets: 0
+PROBE s26.first: none
+PROBE s26.second: ValidationError
+PROBE s26.wallets: 1
+PROBE s26.first_again: none
+PROBE s27.during_other_connection_sees_wallet: 0
+PROBE s27.during_in_transaction_sees_wallet: 1
+PROBE s27.after_other_connection_sees_wallet: 1
+PROBE s27.persister_failure_exception: RuntimeError
+PROBE s27.persister_failure_wallets: 0
+PROBE s27.persister_failure_outbox: 0
+PROBE s28.read_sees_staged: false
+PROBE s29.outer_plan_still_has_its_add: 1
+PROBE s29.outer_exception: RuntimeError
+PROBE s29.wallets: 1
+PROBE s29.inner_wallet_committed: true
+PROBE s29.outbox_rows: 1
+PROBE s30.plan_outside_execute: EkbatanError
+PROBE s30.plan_on_new_thread: EkbatanError
+PROBE s31.errors: []
+PROBE s31.attempts: 3
+PROBE s31.final_balance: 12.0000
+PROBE s31.final_version: 3
+PROBE s32.started_date: 2026-01-01 10:00:00.123456
+PROBE s32.completion_date: 2026-01-01 10:00:00.123456
+PROBE s32.event_date: 2026-01-01 10:00:00.123456
+PROBE s32.action_clock_differs_from_executor_clock: none
+PROBE s33.caller_exception: IntegrityError
+PROBE s33.attempts: 1
+PROBE s34.ns0: refused
+PROBE s34.ns1: refused
+PROBE s34.ns2: refused
+PROBE s34.ns3: refused
+PROBE s34.ns4: accepted
+PROBE s34.ns5: accepted
+PROBE s34.ns6: refused
+PROBE s34.ns7: refused
+PROBE s34.ns8: refused
+PROBE s34.ns9: refused
+PROBE s34.ns10: refused
+PROBE s35.negative_max_retries: ValidationError
+PROBE s35.negative_delay: ValidationError
+PROBE s35.zero_retries: none
+PROBE s36.duplicate_registration: ValidationError
+PROBE s37.no_event_persister: none
+PROBE s38.empty_repository_registry: ValidationError
+PROBE s38.unknown_type_exception: ValidationError
+PROBE s38.outbox: 0
+PROBE s42.event_types_in_insert_order: [WalletCreatedEvent, WalletMoneyDepositedEvent]
+PROBE s42.three_adds_insert_order_is_staging_order: true
+PROBE s43.caller_exception: RuntimeError
+PROBE s43.wallets_after_outer_rollback: 1
+PROBE s43.outbox_after_outer_rollback: 1
+PROBE s39.pass_chain: none
+PROBE s39.added_count_wrong: AssertionError / Expected 2 addition(s) of Wallet but found 1
+PROBE s39.emitted_missing: AssertionError / Expected at least 1 event of WalletMoneyDepositedEvent but none were emitted
+PROBE s39.updated_one_missing: AssertionError / Expected exactly 1 update of Wallet but found 0
+PROBE s39.no_changes: AssertionError / Expected no additions but found 1
+PROBE s39.total_additions_wrong: AssertionError / Expected 3 total addition(s) but found 1
+PROBE s39.emitted_base_class_count: passed
+PROBE s39.added_base_class: AssertionError / Expected 1 addition(s) of Model but found 0
+PROBE s39.no_events: AssertionError / Expected no events but found 1
+PROBE s39.not_emitted_present: AssertionError / Expected no events of WalletCreatedEvent but found 1
+PROBE s39.verifier_failure: AssertionError
+PROBE s39.result_verifier_gets_result: none
+PROBE s39.nothing_persisted: 0
+PROBE s39.principal_seen: alice
+PROBE s39.throws_subclass_ok: none
+PROBE s39.throws_wrong_type: AssertionError / Expected LookupError but got ValueError
+PROBE s39.throws_nothing: AssertionError / Expected Exception to be thrown but nothing was thrown
+PROBE s39.throws_verifier_runs: AssertionError
+PROBE s39.plan_outside: EkbatanError
+PROBE s39.py_only.verifier_returning_zero: AssertionError

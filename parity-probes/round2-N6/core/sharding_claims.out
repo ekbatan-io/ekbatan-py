@@ -1,0 +1,24 @@
+PROBE sharding.md:162 sharded Wallet.open snippet as written: raised ValidationError: created_date cannot be null
+PROBE sharding.md:233 add routes by id shard (one row each): {'0:0': 1, '1:0': 1}
+PROBE sharding.md:294 id.shard / minted_at: (ShardIdentifier(group=1, member=0), 'datetime', datetime.timezone.utc)
+PROBE sharding.md:239 find_where scatters every shard: 2
+PROBE sharding.md:240 find_many([]) -> []: []
+PROBE sharding.md:232 repo has delete(): False
+PROBE sharding.md:20 str(ShardIdentifier(0,0)): '0:0'
+PROBE sharding.md:349 find on unregistered shard falls back: None
+PROBE sharding.md:353 warning text: ["WARNING io.ekbatan.core.shard.DatabaseRegistry shard 9:9 is not registered, routing to default 0:0 [registered=['0:0', '1:0']]"]
+PROBE sharding.md:376 unknown_shard_policy='fail' find(unknown): raised ValidationError: shard 9:9 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+PROBE sharding.md:376 unknown_shard_policy='FAIL' find(unknown): raised ValidationError: shard 9:9 is not registered and unknown_shard_policy is 'fail'; registered: ['0:0', '1:0']
+PROBE sharding.md:376 unknown_shard_policy='useDefaultShard' find(unknown): None
+PROBE sharding.md:376 unknown_shard_policy='use_default_shard' find(unknown): None
+PROBE sharding.md:376 unknown_shard_policy='USE-DEFAULT-SHARD' find(unknown): None
+PROBE sharding.md:376 unknown_shard_policy='' find(unknown): None
+PROBE sharding.md:376 unknown_shard_policy=None find(unknown): None
+PROBE sharding.md:272 unsharded repo dbs() shards: ['0:0']
+PROBE sharding.md:316 vs :333 non-id strategy: refused at construction or first id call?: raised UnsupportedError: NoIdStrategy cannot resolve a shard from an id alone, so R has to override shard_for() to say where a row lives.
+PROBE sharding.md:389 cross-shard refused, naming two shards: raised CrossShardError: this unit of work started on shard 0:0 and then reached shard 1:0; there is no cross-shard transaction. Pass allow_cross_shard=True to commit each shard independently, understanding that a later shard failing leaves earlier ones committed.
+PROBE sharding.md:398 cross-shard: outbox row on every shard, same id: {'0:0': [{'id': '72053396-357d-4048-abea-0f84ad9a972b', 'action_id': 'f6b7e6b8-e17b-46cf-b318-2981cfc760fe', 'model_id': '01a14c41-d6bb-7742-8000-87a4d60511cb', 'event_type': 'MoneyDepositedEvent'}], '1:0': [{'id': 'efc85567-f950-4bf0-91b8-f0bee2a61bb2', 'action_id': 'f6b7e6b8-e17b-46cf-b318-2981cfc760fe', 'model_id': '01a14c41-d6bd-73a4-8040-c5b83d1feb1b', 'event_type': 'MoneyDepositedEvent'}]}
+PROBE action.mdx:186 cross-shard log lines: ["WARNING io.ekbatan.core.action.ActionExecutor TouchBoth spans 2 shards ['0:0', '1:0']; each committed on its own"]
+PROBE partial cross-shard failure raises: raised OperationalError: (sqlite3.OperationalError) no such table: wallets
+PROBE action.mdx:187 partial-failure log levels: ["WARNING io.ekbatan.core.action.ActionExecutor BreakSecond spans 2 shards ['0:0', '1:0']; each committed on its own", 'WARNING io.ekbatan.core.persistence.TransactionManager transaction rolled back [shard=1:0]: OperationalError', "CRITICAL io.ekbatan.core.action.ActionExecutor BreakSecond PARTIALLY COMMITTED: shards ['0:0'] are committed and will not roll back; shard 1:0 failed with OperationalError: (sqlite3.OperationalError) "]
+PROBE sharding.md:299 8-f id sorts before 0-7 id: True

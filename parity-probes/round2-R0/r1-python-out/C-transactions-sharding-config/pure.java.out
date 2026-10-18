@@ -1,0 +1,153 @@
+PROBE id.mint.0_0.version: 7
+PROBE id.mint.0_0.variant: 2
+PROBE id.mint.0_0.decoded_self: 0:0
+PROBE id.mint.1_2.version: 7
+PROBE id.mint.1_2.variant: 2
+PROBE id.mint.1_2.decoded_self: 1:2
+PROBE id.mint.255_63.version: 7
+PROBE id.mint.255_63.variant: 2
+PROBE id.mint.255_63.decoded_self: 255:63
+PROBE id.mint.128_32.version: 7
+PROBE id.mint.128_32.variant: 2
+PROBE id.mint.128_32.decoded_self: 128:32
+PROBE id.mint.7_0.version: 7
+PROBE id.mint.7_0.variant: 2
+PROBE id.mint.7_0.decoded_self: 7:0
+PROBE id.mint.0_63.version: 7
+PROBE id.mint.0_63.variant: 2
+PROBE id.mint.0_63.decoded_self: 0:63
+PROBE id.mint.255_0.version: 7
+PROBE id.mint.255_0.variant: 2
+PROBE id.mint.255_0.decoded_self: 255:0
+PROBE id.cross.0_0.decoded_by_other: 0:0
+PROBE id.cross.1_2.decoded_by_other: 1:2
+PROBE id.cross.255_63.decoded_by_other: 255:63
+PROBE id.cross.128_32.decoded_by_other: 128:32
+PROBE id.cross.7_0.decoded_by_other: 7:0
+PROBE id.cross.0_63.decoded_by_other: 0:63
+PROBE id.cross.255_0.decoded_by_other: 255:0
+PROBE id.fixed_v7.shard: 243:14
+PROBE id.fixed_v7.instant_ms: 1688096058518
+PROBE id.v4.strategy_by_id: none
+PROBE id.v4.raw_decode: ok 156:22
+PROBE id.unique_of_10000: 10000
+PROBE id.instant_is_now: yes
+PROBE sid.of_256_0: error: group must be 0 or 255 or between them
+PROBE sid.of_0_64: error: member must be 0 or 63 or between them
+PROBE sid.of_-1_0: error: group must be 0 or 255 or between them
+PROBE sid.of_255_63: ok
+PROBE sid.str_1_2: ShardIdentifier(1, 2)
+PROBE sid.equal: true
+PROBE sid.hash_equal: true
+PROBE sid.default: 0:0
+PROBE policy.yaml.fail: fail
+PROBE policy.yaml.FAIL: fail
+PROBE policy.yaml.Fail: fail
+PROBE policy.yaml.useDefaultShard: use_default_shard
+PROBE policy.yaml.use_default_shard: use_default_shard
+PROBE policy.yaml.USE-DEFAULT-SHARD: use_default_shard
+PROBE policy.yaml.use-default-shard: use_default_shard
+PROBE policy.yaml.UseDefaultShard: use_default_shard
+PROBE policy.yaml.padded_fail: fail
+PROBE policy.yaml.empty_string: use_default_shard
+PROBE policy.yaml.null_value: use_default_shard
+PROBE policy.yaml.shrug: error
+PROBE policy.yaml.omitted: use_default_shard
+PROBE policy.yaml.shrug.msg_names_both_values: yes
+PROBE policy.config_builder_null: use_default_shard
+PROBE policy.config_builder_omitted: use_default_shard
+PROBE yaml.default_shard: 0:0
+PROBE yaml.groups: 2
+PROBE yaml.group1.number: 1
+PROBE yaml.group0.name: global
+PROBE yaml.member0.name: global-eu-1
+PROBE yaml.member_mx.name: none
+PROBE yaml.member_mx.number: 3
+PROBE yaml.primary.max_pool: 20
+PROBE yaml.secondary.present: true
+PROBE yaml.secondary.max_pool_default: 10
+PROBE yaml.lock_config.present: true
+PROBE yaml.mx.secondary.present: false
+PROBE yaml.mx.username: none
+PROBE yaml.dsp.connectTimeout: 10 (text)
+PROBE yaml.dsp.ha.enableJMX: true (text)
+PROBE yaml.dsp.names_kept: [ApplicationName, ha.enableJMX, connectTimeout]
+PROBE yaml.group_number_missing: ok
+PROBE yaml.group_number_missing.value: 0
+PROBE yaml.member_number_missing: ok
+PROBE yaml.unknown_key: error
+PROBE yaml.unknown_key.names_key: yes
+PROBE yaml.no_primary: error: configs.primaryConfig is required
+PROBE yaml.no_groups: error: at least one group is required
+PROBE yaml.no_default_shard: error
+PROBE yaml.group_no_name: error
+PROBE yaml.default_names_nothing: ok
+PROBE yaml.duplicate_shard: ok
+PROBE yaml.mixed_dialects: ok
+PROBE yaml.kebab_keys.core_binding: error
+PROBE yaml.kebab_keys.di_normalizer: defaultShard.group groups[0].members[0].configs.primaryConfig.maximumPoolSize
+PROBE yaml.bad_pool_value.marker_in_error: yes
+PROBE yaml.password_as_map.marker_in_error: no
+PROBE yaml.password_as_list.marker_in_error: no
+PROBE yaml.password_ok.result: ok
+PROBE dsc.default.max_connections: 10
+PROBE dsc.default.username: none
+PROBE dsc.default.password: none
+PROBE dsc.pool_0: error: maximumPoolSize must be at least 1
+PROBE dsc.pool_-1: error: maximumPoolSize must be at least 1
+PROBE dsc.url_blank: error: jdbcUrl is required
+PROBE dsc.url_missing: error: jdbcUrl is required
+PROBE dsc.username_blank: error: username cannot be empty; leave it out when the driver or a plugin supplies the user
+PROBE dsc.username_empty: error: username cannot be empty; leave it out when the driver or a plugin supplies the user
+PROBE dsc.password_empty: ok
+PROBE dsc.password_only: ok
+PROBE dsc.dialect.postgres: POSTGRES
+PROBE dsc.dialect.mysql: MYSQL
+PROBE dsc.dialect.mariadb: MARIADB
+PROBE dsc.dialect.oracle: error: Cannot determine the database dialect from the URL. A JDBC URL looks like jdbc:postgresql://host:5432/db.
+PROBE dsc.dialect.sqlite: error: URL resolves to SQLITE, which Ekbatan does not support. Supported dialects: PostgreSQL, MySQL, MariaDB.
+PROBE dsc.dialect.garbage: error: Cannot determine the database dialect from the URL. A JDBC URL looks like jdbc:postgresql://host:5432/db.
+PROBE dsc.dsp.user: error: 'user' does not belong in dataSourceProperties, where it would silently win over username; set username instead
+PROBE dsc.dsp.PASSWORD: error: 'PASSWORD' does not belong in dataSourceProperties, where it would silently win over password; set password instead
+PROBE dsc.dsp.passwd: ok
+PROBE dsc.dsp.null_value: error: dataSourceProperties 'ssl' has no value
+PROBE dsc.dsp.nested: error: dataSourceProperties 'ssl' holds a nested block, which no driver setting can; write each setting as one name, such as ha.enableJMX
+PROBE dsc.dsp.list: error: dataSourceProperties 'ssl' must be a single value, not a list
+PROBE dsc.dsp.blank_name: error: a dataSourceProperties name cannot be blank
+PROBE dsc.dsp.number_kept_as: text
+PROBE dsc.url_query_password: error
+PROBE dsc.url_query_password.marker_in_error: no
+PROBE dsc.url_userinfo_password: error
+PROBE dsc.url_userinfo_password.marker_in_error: no
+PROBE dsc.url_query_user: error
+PROBE dsc.url_query_sslpassword: error
+PROBE dsc.url_query_sslpassword.marker_in_error: no
+PROBE dsc.dsp.password.marker_in_error: no
+PROBE dsc.printed.marker: no
+PROBE dsc.member_printed.marker: no
+PROBE dsc.layout_printed.marker: no
+PROBE reg.empty: error: at least one database is required
+PROBE reg.two_no_default: error: withDefaultDatabase must be called when more than one database is registered
+PROBE reg.one_no_default.default: 0:0
+PROBE reg.null_policy: use_default_shard
+PROBE reg.default: 0:0
+PROBE reg.manager_unknown: error: No database registered for shard: ShardIdentifier(9, 9)
+PROBE reg.manager_known: 1:0
+PROBE reg.effective.registered: 1:0
+PROBE reg.effective.unknown_default_policy: 0:0
+PROBE reg.effective.unknown.warn_lines: 1
+PROBE reg.effective.unknown.warn_text: WARN io.ekbatan.core.shard.DatabaseRegistry - Shard ShardIdentifier(5, 5) is not registered, routing to default ShardIdentifier(0, 0) [registered=[ShardIdentifier(0, 0), ShardIdentifier(1, 0)]]
+PROBE reg.effective.unknown.warn_every_call: 2
+PROBE reg.effective.null_default_policy: 0:0
+PROBE reg.effective.null.warn_lines: 2
+PROBE reg.effective.unknown_fail_policy: error: Shard ShardIdentifier(5, 5) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+PROBE reg.effective.null_fail_policy: error: Shard null is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+PROBE reg.effective.registered_fail_policy: 1:0
+PROBE reg.shards_order: [0:0, 1:0]
+PROBE reg.from_config.no_replica_shares_pool: true
+PROBE reg.from_config.replica_own_pool: true
+PROBE reg.from_config.policy_default: use_default_shard
+PROBE reg.from_config.default_names_nothing: error: defaultShard must reference a registered database
+PROBE reg.from_config.duplicate_shard: ok
+PROBE reg.from_config.duplicate_shard.registered: 1
+PROBE reg.close_twice: ok

@@ -1,0 +1,23 @@
+PROBE builder.factoryName: wallet
+PROBE builder.factoryNameAcronym: hTTPRequest
+PROBE builder.getterAfterSet: OK 1.00
+PROBE builder.factoryFromSource: n/a (wallet() takes no source; copy() or copyBase(model) does it)
+PROBE builder.derivedFieldSetter: OK wallet
+PROBE builder.derivedFieldBuild: OK wallet
+PROBE builder.copyModelWithDerivedField: OK wallet
+PROBE builder.wrongTypeAtRuntime: n/a (compile error)
+PROBE builder.unknownSetter: n/a (compile error)
+PROBE builder.generic.build: OK hello
+PROBE builder.generic.builderIsGeneric: true
+PROBE builder.subclass.generated: n/a (compile error, see builder.subclass.java.out)
+PROBE builder.builderClassFinal: true
+PROBE builder.builderConstructorPublic: false
+--- subclass compile
+/private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/N2/builder/src2/nprobe2/SubclassProbe.java:22: error: @AutoBuilder requires nprobe2.SubclassProbe.SavingsWallet to directly extend io.ekbatan.core.domain.Model or io.ekbatan.core.domain.Entity, but it extends nprobe2.SubclassProbe.Wallet
+    public static final class SavingsWallet extends Wallet {
+                        ^
+/private/tmp/claude-501/-Users-mike-workspace-ekbatan/73e3c410-5a5d-4b46-86a8-40a1e2b99616/scratchpad/N2/builder/src2/nprobe2/SubclassProbe.java:25: error: cannot find symbol
+        SavingsWallet(SavingsWalletBuilder b) {
+                      ^
+  symbol:   class SavingsWalletBuilder
+  location: class SavingsWallet

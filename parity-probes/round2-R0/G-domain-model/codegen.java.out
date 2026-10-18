@@ -1,0 +1,9 @@
+PROBE codegen.build: OK 1.00
+PROBE codegen.missingBusinessField: ERR NullPointerException: ownerId cannot be null
+PROBE codegen.missingBaseField: ERR NullPointerException: id cannot be null
+PROBE codegen.nullSetterThenBuild: ERR NullPointerException: ownerId cannot be null
+PROBE codegen.uncheckedFieldUnset: OK null
+PROBE codegen.copyKeepsBusinessFields: true,1.00,m
+PROBE codegen.copyChange: 2.00,1.00
+PROBE codegen.builderReuse: OK 1.00,3.00
+PROBE codegen.unknownSetter: n/a (compile error)

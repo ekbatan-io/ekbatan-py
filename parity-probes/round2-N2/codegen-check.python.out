@@ -1,0 +1,2 @@
+                                 modules [modules ...]
+python -m ekbatan.codegen: error: unrecognized arguments: --check

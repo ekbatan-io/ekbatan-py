@@ -1,0 +1,25 @@
+diff --git a/ekbatan-integration-tests/local-event-handler/pg/build.gradle.kts b/ekbatan-integration-tests/local-event-handler/pg/build.gradle.kts
+index 58fac7a..c635b12 100644
+--- a/ekbatan-integration-tests/local-event-handler/pg/build.gradle.kts
++++ b/ekbatan-integration-tests/local-event-handler/pg/build.gradle.kts
+@@ -63,6 +63,8 @@ dependencies {
+     testImplementation(project(":ekbatan-flyway"))
+ 
+     testImplementation("org.testcontainers:testcontainers-postgresql:${project.property("testcontainersVersion")}")
++    testImplementation("io.opentelemetry:opentelemetry-sdk-testing:${project.property("opentelemetryVersion")}")
++    testRuntimeOnly("org.slf4j:slf4j-jdk14:${project.property("slf4jVersion")}")
+ }
+ 
+ tasks.withType<Test> {
+diff --git a/ekbatan-integration-tests/postgres-sharded/build.gradle.kts b/ekbatan-integration-tests/postgres-sharded/build.gradle.kts
+index 461d297..e920e28 100644
+--- a/ekbatan-integration-tests/postgres-sharded/build.gradle.kts
++++ b/ekbatan-integration-tests/postgres-sharded/build.gradle.kts
+@@ -77,6 +77,7 @@ dependencies {
+     // A real SLF4J backend for the tests only, so what Flyway and the migrator log - and what
+     // they put in the MDC - can be captured and checked. Without one, both are silently dropped.
+     testRuntimeOnly("org.slf4j:slf4j-jdk14:${project.property("slf4jVersion")}")
++    testImplementation("io.opentelemetry:opentelemetry-sdk-testing:${project.property("opentelemetryVersion")}")
+ 
+     // @AutoBuilder generation for the Wallet domain models; compileOnly exposes the annotation
+     // to javac, annotationProcessor runs the processor. Neither leaks to runtime.

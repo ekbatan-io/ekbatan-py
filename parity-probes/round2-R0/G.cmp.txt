@@ -1,0 +1,528 @@
+##### clock
+COUNTS same=14 fixed=0 regressed=0 still=6 changed-still=0 py-only=0
+[still] system.subMicroNonZero
+    java: False
+    r1  : n/a (datetime holds microseconds)
+    now : n/a (datetime holds microseconds)
+[still] virtual.default.advance
+    java: ERR IllegalStateException: Cannot advance: clock is not paused
+    r1  : ERR EkbatanError: cannot advance: the clock is not paused. Call pause() or pause_at(...) first, or construct it with an instant.
+    now : ERR EkbatanError: cannot advance: the clock is not paused. Call pause() or pause_at(...) first, or construct it with an instant.
+[still] virtual.resumeFrom.advance
+    java: ERR IllegalStateException: Cannot advance: clock is not paused
+    r1  : ERR EkbatanError: cannot advance: the clock is not paused. Call pause() or pause_at(...) first, or construct it with an instant.
+    now : ERR EkbatanError: cannot advance: the clock is not paused. Call pause() or pause_at(...) first, or construct it with an instant.
+[still] virtual.constructedAtInstant.advance
+    java: ERR IllegalStateException: Cannot advance: clock is not paused
+    r1  : OK 2025-01-01T00:00:01.123456Z
+    now : OK 2025-01-01T00:00:01.123456Z
+[still] virtual.nanosInstant
+    java: 2025-01-01T00:00:00.123456789Z
+    r1  : n/a (datetime holds microseconds)
+    now : n/a (datetime holds microseconds)
+[still] toStorage.plus2
+    java: n/a (Instant has no zone)
+    r1  : 2025-01-01T00:00:00Z
+    now : 2025-01-01T00:00:00Z
+##### codegen
+COUNTS same=4 fixed=0 regressed=0 still=2 changed-still=3 py-only=0
+[changed-still] codegen.missingBusinessField
+    java: ERR NullPointerException: ownerId cannot be null
+    r1  : ERR TypeError: Wallet.__init__() missing 1 required keyword-only argument: 'owner_id'
+    now : ERR ValidationError: owner_id cannot be null
+[changed-still] codegen.missingBaseField
+    java: ERR NullPointerException: id cannot be null
+    r1  : ERR TypeError: Wallet.__init__() missing 1 required keyword-only argument: 'id'
+    now : ERR ValidationError: id cannot be null
+[changed-still] codegen.uncheckedFieldUnset
+    java: OK null
+    r1  : ERR TypeError: Wallet.__init__() missing 1 required keyword-only argument: 'memo'
+    now : ERR ValidationError: memo cannot be null
+[still] codegen.nullSetterThenBuild
+    java: ERR NullPointerException: ownerId cannot be null
+    r1  : ERR ValidationError: owner_id cannot be null
+    now : ERR ValidationError: owner_id cannot be null
+[still] codegen.unknownSetter
+    java: n/a (compile error)
+    r1  : ERR AttributeError: Wallet has no field 'nonexistent'; it has ['balance', 'created_date', 'events', 'id', 'memo', 'owner_id', 'state', 'updated_date', 'version']
+    now : ERR AttributeError: Wallet has no field 'nonexistent'; it has ['balance', 'created_date', 'events', 'id', 'memo', 'owner_id', 'state', 'updated_date', 'version']
+##### ids
+COUNTS same=35 fixed=4 regressed=0 still=25 changed-still=0 py-only=0
+[fixed] order.id.msbHighBitVsZero
+    java: -1
+    r1  : 1
+    now : -1
+[fixed] order.shardedId.msbHighBitVsZero
+    java: -1
+    r1  : 1
+    now : -1
+[fixed] order.id.lsbVariant10vs00
+    java: -1
+    r1  : 1
+    now : -1
+[fixed] order.id.sorted
+    java: ['80000000', '00000000', '7fffffff']
+    r1  : ['00000000', '7fffffff', '80000000']
+    now : ['80000000', '00000000', '7fffffff']
+[still] v4.shard
+    java: OK (149, 39)
+    r1  : ERR ValidationError: f47ac10b-58cc-4372-a567-0e02b2c3d479 carries no shard - it is a version 4 uuid. Use Id for one that does not, or ShardedId.generate(shard) for one that does.
+    now : ERR ValidationError: f47ac10b-58cc-4372-a567-0e02b2c3d479 carries no shard - it is a version 4 uuid. Use Id for one that does not, or ShardedId.generate(shard) for one that does.
+[still] v4.instantMs
+    java: OK 268808061933772
+    r1  : OK None
+    now : OK None
+[still] id.of.noDashes
+    java: ERR IllegalArgumentException: Invalid UUID string: f47ac10b58cc4372a5670e02b2c3d479
+    r1  : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+    now : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+[still] shardedId.of.noDashes
+    java: ERR IllegalArgumentException: Invalid UUID string: f47ac10b58cc4372a5670e02b2c3d479
+    r1  : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+    now : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+[still] id.of.braces
+    java: ERR IllegalArgumentException: UUID string too large
+    r1  : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+    now : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+[still] shardedId.of.braces
+    java: ERR IllegalArgumentException: UUID string too large
+    r1  : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+    now : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+[still] id.of.urn
+    java: ERR IllegalArgumentException: UUID string too large
+    r1  : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+    now : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+[still] shardedId.of.urn
+    java: ERR IllegalArgumentException: UUID string too large
+    r1  : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+    now : OK f47ac10b-58cc-4372-a567-0e02b2c3d479
+[still] id.of.shortGroups
+    java: OK 00000001-0001-0001-0001-000000000001
+    r1  : ERR ValidationError: '1-1-1-1-1' is not a uuid
+    now : ERR ValidationError: '1-1-1-1-1' is not a uuid
+[still] shardedId.of.shortGroups
+    java: OK 00000001-0001-0001-0001-000000000001
+    r1  : ERR ValidationError: '1-1-1-1-1' is not a uuid
+    now : ERR ValidationError: '1-1-1-1-1' is not a uuid
+[still] id.of.empty
+    java: ERR IllegalArgumentException: Invalid UUID string: 
+    r1  : ERR ValidationError: '' is not a uuid
+    now : ERR ValidationError: '' is not a uuid
+[still] shardedId.of.empty
+    java: ERR IllegalArgumentException: Invalid UUID string: 
+    r1  : ERR ValidationError: '' is not a uuid
+    now : ERR ValidationError: '' is not a uuid
+[still] id.of.garbage
+    java: ERR IllegalArgumentException: Invalid UUID string: not-a-uuid
+    r1  : ERR ValidationError: 'not-a-uuid' is not a uuid
+    now : ERR ValidationError: 'not-a-uuid' is not a uuid
+[still] shardedId.of.garbage
+    java: ERR IllegalArgumentException: Invalid UUID string: not-a-uuid
+    r1  : ERR ValidationError: 'not-a-uuid' is not a uuid
+    now : ERR ValidationError: 'not-a-uuid' is not a uuid
+[still] id.of.null
+    java: ERR NullPointerException: Cannot invoke "String.length()" because "name" is null
+    r1  : ERR ValidationError: Id value cannot be null
+    now : ERR ValidationError: Id value cannot be null
+[still] shardedId.of.null
+    java: ERR NullPointerException: Cannot invoke "java.util.UUID.toString()" because the return value of "io.ekbatan.core.shard.ShardedUUID.value()" is null
+    r1  : ERR ValidationError: ShardedId value cannot be null
+    now : ERR ValidationError: ShardedId value cannot be null
+[still] typed.toString
+    java: WalletNumber{x}
+    r1  : x
+    now : x
+[still] typed.null
+    java: ERR NullPointerException: value cannot be null
+    r1  : ERR ValidationError: WalletNumber value cannot be null
+    now : ERR ValidationError: WalletNumber value cannot be null
+[still] typed.equals.subclass
+    java: False
+    r1  : True
+    now : True
+[still] typed.compare
+    java: n/a (TypedValue is not Comparable: compile error)
+    r1  : OK True
+    now : OK True
+[still] shard.of.256_0
+    java: ERR IllegalArgumentException: group must be 0 or 255 or between them
+    r1  : ERR ValidationError: group must be 0..255, got 256
+    now : ERR ValidationError: group must be 0..255, got 256
+[still] shard.of.0_64
+    java: ERR IllegalArgumentException: member must be 0 or 63 or between them
+    r1  : ERR ValidationError: member must be 0..63, got 64
+    now : ERR ValidationError: member must be 0..63, got 64
+[still] shard.of.-1_0
+    java: ERR IllegalArgumentException: group must be 0 or 255 or between them
+    r1  : ERR ValidationError: group must be 0..255, got -1
+    now : ERR ValidationError: group must be 0..255, got -1
+[still] shard.toString
+    java: ShardIdentifier(1, 2)
+    r1  : 1:2
+    now : 1:2
+[still] readShard.v4
+    java: (149, 39)
+    r1  : None
+    now : None
+##### json
+COUNTS same=19 fixed=21 regressed=2 still=2 changed-still=6 py-only=0
+[regressed] in.amountNumber
+    java: OK modelId=m amount=1.5 (scale 1) note=n (text)
+    r1  : OK modelId=m amount=1.5 (scale 1) note=n (text)
+    now : OK modelId=m amount=1.50 (scale 2) note=n (text)
+[regressed] in.amountHugeNumber
+    java: OK modelId=m amount=123456789012345680000000000000 (scale -13) note=n (text)
+    r1  : OK modelId=m amount=123456789012345680000000000000 (scale -13) note=n (text)
+    now : OK modelId=m amount=123456789012345678901234567890.123456789 (scale 9) note=n (text)
+[changed-still] json.event.pythonDefaultNames
+    java: n/a (Java field names are the keys)
+    r1  : {"amount":"10.50","at_micros":"2025-01-01T00:00:00.123456Z","modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","new_balance":"20.00","owner_id":"f47ac10b-58cc-4372-a567-0e02b2c3d479"}
+    now : {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","amount":10.50,"ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","atMicros":"2025-01-01T00:00:00.123456Z","newBalance":20.00}
+[changed-still] json.ownRoundTrip
+    java: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.00000010 (scale 8) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=0102ff
+    r1  : OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale 0) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00+00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={10=3, 9=4, a=2, z=1} | nested=5.00 (scale 2) EUR | raw=str:0102ff
+    now : OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale -3) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T02:00:00+02:00 | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.00 (scale 2) EUR | raw=0102ff
+[changed-still] json.readOtherPort
+    java: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.00000010 (scale 8) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=0102ff
+    r1  : OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.0000001 (scale 7) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=str:AQL/
+    now : OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale -3) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T02:00:00+02:00 | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.00 (scale 2) EUR | raw=0102ff
+[changed-still] json.readOtherPort.withoutRaw
+    java: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.00000010 (scale 8) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=None
+    r1  : OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.5 (scale 1) | zero=0.0 (scale 1) | sci=1000.0 (scale 1) | tiny=0.0000001 (scale 7) | huge=123456789012345680000000000000 (scale -13) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120000Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00:00 | day=str:2025-01-31 | clock=str:10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.0 (scale 1) EUR | raw=0102ff
+    now : OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale -3) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T02:00:00+02:00 | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.00 (scale 2) EUR | raw=0102ff
+[changed-still] in.missingModelId
+    java: ERR ValueInstantiationException: Cannot construct instance of `io.ekbatan.core.domain.JsonParityProbeTest$SmallEvent`, problem: modelId cannot be null or blank
+    r1  : ERR TypeError: SmallEvent.__init__() missing 1 required keyword-only argument: 'model_id'
+    now : ERR ValidationError: model_id cannot be None or blank: SmallEvent needs the id of the Wallet it is about - pass model_id=str(self.id). The model_id column is what a consumer correla
+[changed-still] in.amountBadString
+    java: ERR InvalidFormatException: Cannot deserialize value of type `java.math.BigDecimal` from String "abc": not a valid representation
+    r1  : ERR InvalidOperation: [<class 'decimal.ConversionSyntax'>]
+    now : ERR ValidationError: SmallEvent.amount: cannot read 'abc' from JSON key 'amount' as Decimal: [<class 'decimal.ConversionSyntax'>]
+[fixed] json.event
+    java: {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","amount":10.50,"zero":0.00,"sci":1E+3,"tiny":1E-7,"huge":123456789012345678901234567890.123456789,"negative":-0.5,"ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","at":"2025-01-01T00:00:00Z","atMicros":"2025-01-01T00:00:00.123456Z","atMillis":"2025-01-01T00:00:00.120Z","atOffset":"2025-01-01T02:00:00+02:00","localAt":"2025-01-01T10:00:00","day":"2025-01-31","clock":"10:15:30","state":"OPENED","note":"café € </tag> \"q\" \\ \n \u0001","missing":null,"count":1152921504606846976,"ratio":0.1,"flag":true,"tags":["b","a"],"attrs":{"z":1,"a":2,"10":3,"9":4},"nested":{"amount":5.00,"currency":"EUR"},"raw":"AQL/"}
+    r1  : {"amount":"10.50","at":"2025-01-01T00:00:00.000000Z","atMicros":"2025-01-01T00:00:00.123456Z","atMillis":"2025-01-01T00:00:00.120000Z","atOffset":"2025-01-01T00:00:00.000000Z","attrs":{"10":3,"9":4,"a":2,"z":1},"clock":"10:15:30","count":1152921504606846976,"day":"2025-01-31","flag":true,"huge":"123456789012345678901234567890.123456789","localAt":"2025-01-01T10:00:00.000000Z","missing":null,"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","negative":"-0.5","nested":{"amount":"5.00","currency":"EUR"},"note":"café € </tag> \"q\" \\ \n \u0001","ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","ratio":"0.1","raw":"0102ff","sci":"1000","state":"OPENED","tags":["b","a"],"tiny":"0.0000001","zero":"0.00"}
+    now : {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","amount":10.50,"zero":0.00,"sci":1E+3,"tiny":1E-7,"huge":123456789012345678901234567890.123456789,"negative":-0.5,"ownerId":"f47ac10b-58cc-4372-a567-0e02b2c3d479","at":"2025-01-01T00:00:00Z","atMicros":"2025-01-01T00:00:00.123456Z","atMillis":"2025-01-01T00:00:00.120Z","atOffset":"2025-01-01T02:00:00+02:00","localAt":"2025-01-01T10:00:00","day":"2025-01-31","clock":"10:15:30","state":"OPENED","note":"café € </tag> \"q\" \\ \n \u0001","missing":null,"count":1152921504606846976,"ratio":0.1,"flag":true,"tags":["b","a"],"attrs":{"z":1,"a":2,"10":3,"9":4},"nested":{"amount":5.00,"currency":"EUR"},"raw":"AQL/"}
+[fixed] json.event.keyOrder
+    java: [modelId, modelName, amount, zero, sci, tiny, huge, negative, ownerId, at, atMicros, atMillis, atOffset, localAt, day, clock, state, note, missing, count, ratio, flag, tags, attrs, nested, raw]
+    r1  : [amount, at, atMicros, atMillis, atOffset, attrs, clock, count, day, flag, huge, localAt, missing, modelId, modelName, negative, nested, note, ownerId, ratio, raw, sci, state, tags, tiny, zero]
+    now : [modelId, modelName, amount, zero, sci, tiny, huge, negative, ownerId, at, atMicros, atMillis, atOffset, localAt, day, clock, state, note, missing, count, ratio, flag, tags, attrs, nested, raw]
+[fixed] json.field.amount
+    java: {"v":10.50}
+    r1  : {"v":"10.50"}
+    now : {"v":10.50}
+[fixed] json.field.zero
+    java: {"v":0.00}
+    r1  : {"v":"0.00"}
+    now : {"v":0.00}
+[fixed] json.field.sci
+    java: {"v":1E+3}
+    r1  : {"v":"1000"}
+    now : {"v":1E+3}
+[fixed] json.field.tiny
+    java: {"v":1E-7}
+    r1  : {"v":"0.0000001"}
+    now : {"v":1E-7}
+[fixed] json.field.huge
+    java: {"v":123456789012345678901234567890.123456789}
+    r1  : {"v":"123456789012345678901234567890.123456789"}
+    now : {"v":123456789012345678901234567890.123456789}
+[fixed] json.field.negative
+    java: {"v":-0.5}
+    r1  : {"v":"-0.5"}
+    now : {"v":-0.5}
+[fixed] json.field.at
+    java: {"v":"2025-01-01T00:00:00Z"}
+    r1  : {"v":"2025-01-01T00:00:00.000000Z"}
+    now : {"v":"2025-01-01T00:00:00Z"}
+[fixed] json.field.atMillis
+    java: {"v":"2025-01-01T00:00:00.120Z"}
+    r1  : {"v":"2025-01-01T00:00:00.120000Z"}
+    now : {"v":"2025-01-01T00:00:00.120Z"}
+[fixed] json.field.atOffset
+    java: {"v":"2025-01-01T02:00:00+02:00"}
+    r1  : {"v":"2025-01-01T00:00:00.000000Z"}
+    now : {"v":"2025-01-01T02:00:00+02:00"}
+[fixed] json.field.localAt
+    java: {"v":"2025-01-01T10:00:00"}
+    r1  : {"v":"2025-01-01T10:00:00.000000Z"}
+    now : {"v":"2025-01-01T10:00:00"}
+[fixed] json.field.ratio
+    java: {"v":0.1}
+    r1  : {"v":"0.1"}
+    now : {"v":0.1}
+[fixed] json.field.attrs
+    java: {"v":{"z":1,"a":2,"10":3,"9":4}}
+    r1  : {"v":{"10":3,"9":4,"a":2,"z":1}}
+    now : {"v":{"z":1,"a":2,"10":3,"9":4}}
+[fixed] json.field.nested
+    java: {"v":{"amount":5.00,"currency":"EUR"}}
+    r1  : {"v":{"amount":"5.00","currency":"EUR"}}
+    now : {"v":{"amount":5.00,"currency":"EUR"}}
+[fixed] json.field.raw
+    java: {"v":"AQL/"}
+    r1  : {"v":"0102ff"}
+    now : {"v":"AQL/"}
+[fixed] json.idsEvent
+    java: {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","walletId":{"id":"01941f29-7c7b-7abc-8042-123456789abc","value":"01941f29-7c7b-7abc-8042-123456789abc"},"walletNumber":{"value":"W-1"},"shard":{"group":1,"member":2}}
+    r1  : {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","shard":{"group":1,"member":2},"walletId":"01941f29-7c7b-7abc-8042-123456789abc","walletNumber":"W-1"}
+    now : {"modelId":"01941f29-7c7b-7abc-8042-123456789abc","modelName":"Wallet","walletId":{"id":"01941f29-7c7b-7abc-8042-123456789abc","value":"01941f29-7c7b-7abc-8042-123456789abc"},"walletNumber":{"value":"W-1"},"shard":{"group":1,"member":2}}
+[fixed] json.params
+    java: {"walletId":"01941f29-7c7b-7abc-8042-123456789abc","amount":10.50,"requestedAt":"2025-01-01T00:00:00.120Z","memo":null}
+    r1  : {"amount":"10.50","memo":null,"requestedAt":"2025-01-01T00:00:00.120000Z","walletId":"01941f29-7c7b-7abc-8042-123456789abc"}
+    now : {"walletId":"01941f29-7c7b-7abc-8042-123456789abc","amount":10.50,"requestedAt":"2025-01-01T00:00:00.120Z","memo":null}
+[fixed] in.missingFields
+    java: OK modelId=m amount=None note=None (None)
+    r1  : ERR TypeError: SmallEvent.__init__() missing 2 required keyword-only arguments: 'amount' and 'note'
+    now : OK modelId=m amount=None note=None (None)
+[fixed] in.noteNumber
+    java: OK modelId=m amount=1 (scale 0) note=5 (text)
+    r1  : OK modelId=m amount=1 (scale 0) note=5 (int)
+    now : OK modelId=m amount=1 (scale 0) note=5 (text)
+[fixed] in.snakeCaseKeys
+    java: OK modelId=m amount=1 (scale 0) note=None (None)
+    r1  : ERR TypeError: SmallEvent.__init__() missing 1 required keyword-only argument: 'note'
+    now : OK modelId=m amount=1 (scale 0) note=None (None)
+[still] json.readOtherPortDefaultNames
+    java: ERR MismatchedInputException: Cannot map `null` into type `long` (set `DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES` to 'false' to allow)
+    r1  : n/a (Java writes only its field names)
+    now : n/a (Java writes only its field names)
+[still] json.ownRoundTrip.withBigDecimalForFloats
+    java: OK modelId=01941f29-7c7b-7abc-8042-123456789abc | modelName=Wallet | amount=10.50 (scale 2) | zero=0.00 (scale 2) | sci=1000 (scale -3) | tiny=0.0000001 (scale 7) | huge=123456789012345678901234567890.123456789 (scale 9) | negative=-0.5 (scale 1) | ownerId=f47ac10b-58cc-4372-a567-0e02b2c3d479 | at=2025-01-01T00:00:00Z | atMicros=2025-01-01T00:00:00.123456Z | atMillis=2025-01-01T00:00:00.120Z | atOffset=2025-01-01T00:00:00Z | localAt=2025-01-01T10:00 | day=2025-01-31 | clock=10:15:30 | state=OPENED | note=same | missing=None | count=1152921504606846976 | ratio=0.1 | flag=True | tags=[b, a] | attrs={z=1, a=2, 10=3, 9=4} | nested=5.00 (scale 2) EUR | raw=0102ff
+    r1  : <missing>
+    now : <missing>
+##### json_formats
+COUNTS same=0 fixed=0 regressed=0 still=1 changed-still=0 py-only=23
+[still] formats.written
+    java: 50009
+    r1  : <missing>
+    now : <missing>
+[py-only] formats.dbl.write
+    java: <missing>
+    r1  : <missing>
+    now : 20009/20009 same as Java
+[py-only] formats.dbl.read
+    java: <missing>
+    r1  : <missing>
+    now : 20009/20009 read back exactly
+[py-only] formats.bd.write
+    java: <missing>
+    r1  : <missing>
+    now : 5000/5000 same as Java
+[py-only] formats.bd.read
+    java: <missing>
+    r1  : <missing>
+    now : 5000/5000 read back exactly
+[py-only] formats.instant.write
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 same as Java
+[py-only] formats.instant.read
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 read back exactly
+[py-only] formats.ldt.write
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 same as Java
+[py-only] formats.ldt.read
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 read back exactly
+[py-only] formats.odt.write
+    java: <missing>
+    r1  : <missing>
+    now : 2984/3000 same as Java
+[py-only] formats.odt.offsetZero
+    java: <missing>
+    r1  : <missing>
+    now : 65 of them at offset zero, written as an Instant
+[py-only] formats.odt.read
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 read back exactly
+[py-only] formats.lt.write
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 same as Java
+[py-only] formats.lt.read
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 read back exactly
+[py-only] formats.ot.write
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 same as Java
+[py-only] formats.ot.read
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 read back exactly
+[py-only] formats.ld.write
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 same as Java
+[py-only] formats.ld.read
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 read back exactly
+[py-only] formats.dur.write
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 same as Java
+[py-only] formats.dur.read
+    java: <missing>
+    r1  : <missing>
+    now : 3000/3000 read back exactly
+[py-only] formats.str.write
+    java: <missing>
+    r1  : <missing>
+    now : 2000/2000 same as Java
+[py-only] formats.str.read
+    java: <missing>
+    r1  : <missing>
+    now : 2000/2000 read back exactly
+[py-only] formats.bytes.write
+    java: <missing>
+    r1  : <missing>
+    now : 2000/2000 same as Java
+[py-only] formats.bytes.read
+    java: <missing>
+    r1  : <missing>
+    now : 2000/2000 read back exactly
+##### model
+COUNTS same=46 fixed=1 regressed=0 still=25 changed-still=8 py-only=0
+[changed-still] model.versionNotSet
+    java: ERR NullPointerException: version cannot be null
+    r1  : OK 1
+    now : ERR ValidationError: version cannot be null
+[changed-still] model.increaseVersionWhenUnset
+    java: ERR NullPointerException: Cannot invoke "java.lang.Long.longValue()" because "this.version" is null
+    r1  : OK 1
+    now : ERR ValidationError: version cannot be null
+[changed-still] model.missingId
+    java: ERR NullPointerException: id cannot be null
+    r1  : ERR TypeError: SampleModel.__init__() missing 1 required keyword-only argument: 'id'
+    now : ERR ValidationError: id cannot be null
+[changed-still] model.missingState
+    java: ERR NullPointerException: state cannot be null
+    r1  : ERR TypeError: SampleModel.__init__() missing 1 required keyword-only argument: 'state'
+    now : ERR ValidationError: state cannot be null
+[changed-still] model.missingCreatedDate
+    java: ERR NullPointerException: createdDate cannot be null
+    r1  : ERR TypeError: SampleModel.__init__() missing 1 required keyword-only argument: 'created_date'
+    now : ERR ValidationError: created_date cannot be null
+[changed-still] model.createdDate.hasZone
+    java: n/a (Instant)
+    r1  : False
+    now : True
+[changed-still] entity.missingId
+    java: ERR NullPointerException: id cannot be null
+    r1  : ERR TypeError: SampleEntity.__init__() missing 1 required keyword-only argument: 'id'
+    now : ERR ValidationError: id cannot be null
+[changed-still] entity.versionNotSet
+    java: ERR NullPointerException: version cannot be null
+    r1  : OK 1
+    now : ERR ValidationError: version cannot be null
+[fixed] model.createdDateVsClockNow.compare
+    java: OK True
+    r1  : ERR TypeError: can't compare offset-naive and offset-aware datetimes
+    now : OK True
+[still] model.version0
+    java: ERR IllegalArgumentException: version must be greater than or equal to 1
+    r1  : ERR ValidationError: version must be greater than or equal to 1, not 0
+    now : ERR ValidationError: version must be greater than or equal to 1, not 0
+[still] model.versionNeg1
+    java: ERR IllegalArgumentException: version must be greater than or equal to 1
+    r1  : ERR ValidationError: version must be greater than or equal to 1, not -1
+    now : ERR ValidationError: version must be greater than or equal to 1, not -1
+[still] model.versionLongMax.nextVersion
+    java: ERR IllegalArgumentException: version must be greater than or equal to 1
+    r1  : OK 9223372036854775808
+    now : OK 9223372036854775808
+[still] model.nullId
+    java: ERR NullPointerException: id cannot be null
+    r1  : ERR ValidationError: id cannot be null
+    now : ERR ValidationError: id cannot be null
+[still] model.nullState
+    java: ERR NullPointerException: state cannot be null
+    r1  : ERR ValidationError: state cannot be null
+    now : ERR ValidationError: state cannot be null
+[still] model.nullCreatedDate
+    java: ERR NullPointerException: createdDate cannot be null
+    r1  : ERR ValidationError: created_date cannot be null
+    now : ERR ValidationError: created_date cannot be null
+[still] model.nullVersion
+    java: ERR NullPointerException: version cannot be null
+    r1  : ERR ValidationError: version cannot be null
+    now : ERR ValidationError: version cannot be null
+[still] model.nullEventsList
+    java: ERR NullPointerException: Cannot invoke "java.util.Collection.toArray()" because "c" is null
+    r1  : ERR TypeError: 'NoneType' object is not iterable
+    now : ERR TypeError: 'NoneType' object is not iterable
+[still] model.nullEventInList
+    java: ERR NullPointerException: null
+    r1  : OK 1
+    now : OK 1
+[still] model.nullCheckedField
+    java: ERR NullPointerException: label cannot be null
+    r1  : ERR ValidationError: label cannot be null
+    now : ERR ValidationError: label cannot be null
+[still] model.nullUncheckedField
+    java: OK null
+    r1  : ERR ValidationError: name cannot be null
+    now : ERR ValidationError: name cannot be null
+[still] model.eventsImmutable
+    java: ERR UnsupportedOperationException: null
+    r1  : ERR AttributeError: 'tuple' object has no attribute 'append'
+    now : ERR AttributeError: 'tuple' object has no attribute 'append'
+[still] model.createdNaiveInput
+    java: n/a (Instant has no zone-less form)
+    r1  : OK 2025-01-01T00:00:00Z
+    now : OK 2025-01-01T00:00:00Z
+[still] model.createdDate.nanos
+    java: 2025-01-01T00:00:00.123456Z
+    r1  : <missing>
+    now : <missing>
+[still] model.mutateField
+    java: n/a (final field: compile error)
+    r1  : ERR FrozenInstanceError: cannot assign to field 'version'
+    now : ERR FrozenInstanceError: cannot assign to field 'version'
+[still] model.isDeleted.deletedState
+    java: n/a (no isDeleted on Model)
+    r1  : True
+    now : True
+[still] entity.version0
+    java: ERR IllegalArgumentException: version must be >= 1
+    r1  : ERR ValidationError: version must be greater than or equal to 1, not 0
+    now : ERR ValidationError: version must be greater than or equal to 1, not 0
+[still] entity.nullId
+    java: ERR NullPointerException: id cannot be null
+    r1  : ERR ValidationError: id cannot be null
+    now : ERR ValidationError: id cannot be null
+[still] entity.nullState
+    java: ERR NullPointerException: state cannot be null
+    r1  : ERR ValidationError: state cannot be null
+    now : ERR ValidationError: state cannot be null
+[still] event.nullModelId
+    java: ERR NullPointerException: modelId cannot be null or blank
+    r1  : ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+    now : ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+[still] event.blankModelId
+    java: ERR IllegalArgumentException: modelId cannot be null or blank
+    r1  : ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+    now : ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+[still] event.whitespaceModelId
+    java: ERR IllegalArgumentException: modelId cannot be null or blank
+    r1  : ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+    now : ERR ValidationError: model_id cannot be None or blank: SampleEvent needs the id of the SampleModel it is about - pass model_id=str(self.id). The model_id column is what a consumer correlates the event back on
+[still] event.equalSameFields
+    java: False
+    r1  : True
+    now : True
+[still] event.equalDifferentModelId
+    java: False
+    r1  : True
+    now : True
+[still] event.mutate
+    java: n/a (final field: compile error)
+    r1  : ERR FrozenInstanceError: cannot assign to field 'model_id'
+    now : ERR FrozenInstanceError: cannot assign to field 'model_id'

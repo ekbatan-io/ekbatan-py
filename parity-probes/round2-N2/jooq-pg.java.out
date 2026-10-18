@@ -1,0 +1,30 @@
+# jOOQ codegen (generateJooqClasses) on migrations/pg - column | Java type | SQLDataType
+PROBE jooq.pg.column.id: UUID | SQLDataType.UUID.nullable(false)
+PROBE jooq.pg.column.version: Long | SQLDataType.BIGINT.nullable(false)
+PROBE jooq.pg.column.state: String | SQLDataType.VARCHAR(24).nullable(false)
+PROBE jooq.pg.column.owner_id: UUID | SQLDataType.UUID.nullable(false)
+PROBE jooq.pg.column.ext_id: String | SQLDataType.VARCHAR(36)
+PROBE jooq.pg.column.currency: String | SQLDataType.CHAR(3).nullable(false)
+PROBE jooq.pg.column.balance: BigDecimal | SQLDataType.NUMERIC(19, 4).nullable(false)
+PROBE jooq.pg.column.bare_numeric: BigDecimal | SQLDataType.NUMERIC
+PROBE jooq.pg.column.ratio: Double | SQLDataType.DOUBLE
+PROBE jooq.pg.column.real_val: Float | SQLDataType.REAL
+PROBE jooq.pg.column.qty: Integer | SQLDataType.INTEGER.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.INTEGER))
+PROBE jooq.pg.column.small_val: Short | SQLDataType.SMALLINT
+PROBE jooq.pg.column.flag: Boolean | SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN))
+PROBE jooq.pg.column.note: String | SQLDataType.CLOB
+PROBE jooq.pg.column.payload: ObjectNode | SQLDataType.JSONB
+PROBE jooq.pg.column.plain_json: JSON | SQLDataType.JSON
+PROBE jooq.pg.column.created_date: Instant | SQLDataType.LOCALDATETIME(6).nullable(false)
+PROBE jooq.pg.column.precise_ts: Instant | SQLDataType.LOCALDATETIME(3)
+PROBE jooq.pg.column.zoned_ts: OffsetDateTime | SQLDataType.TIMESTAMPWITHTIMEZONE(6)
+PROBE jooq.pg.column.birth_day: LocalDate | SQLDataType.LOCALDATE
+PROBE jooq.pg.column.clock_time: LocalTime | SQLDataType.LOCALTIME(6)
+PROBE jooq.pg.column.raw_bytes: byte[] | SQLDataType.BLOB
+PROBE jooq.pg.column.tags: String[] | SQLDataType.CLOB.array()
+PROBE jooq.pg.column.status: String | SQLDataType.VARCHAR(10).nullable(false).defaultValue(DSL.field(DSL.raw("'NEW'::character varying"), SQLDataType.VARCHAR))
+PROBE jooq.pg.column.parent_id: UUID | SQLDataType.UUID
+PROBE jooq.pg.column.camelCol: String | SQLDataType.VARCHAR(5)
+PROBE jooq.pg.column.class: Integer | SQLDataType.INTEGER
+PROBE jooq.pg.files: Audit.java DefaultCatalog.java DefaultSchema.java Entries.java EntriesRecord.java Indexes.java Keys.java Keys.java Order.java OrderRecord.java ProbeItems.java ProbeItemsRecord.java ProbeView.java ProbeViewRecord.java Tables.java Tables.java 
+PROBE jooq.pg.keysAndIndexes: FKEY IDX_PROBE_ITEMS_STATE PKEY createIndex(DSL.name("idx_probe_items_state" createIndex(DSL.name("uq_probe_items_ext" 

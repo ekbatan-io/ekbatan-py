@@ -1,0 +1,60 @@
+PROBE ekbatan.locks exports: ['KeyedLockProvider', 'Lease', 'MariaDBKeyedLockProvider', 'MySQLKeyedLockProvider', 'PostgresKeyedLockProvider', 'SqlKeyedLockProvider', 'SqlKeyedLockProviderBuilder', 'lock_key_hash']
+PROBE any InProcess provider in ekbatan.locks: False
+PROBE watchdog threads before any hold: []
+PROBE pg try_acquire free key: True
+PROBE pg re-entry same thread returns: True
+PROBE pg other thread while held -> : None after 0.32s
+PROBE pg other thread after inner close (outer still open): None
+PROBE pg other thread after outer close gets it: True
+released the lock on 'n6:pg:hold': its hold limit elapsed
+PROBE pg after outer max_hold=2s (re-entry asked 60s), other thread gets it: True
+PROBE pg after provider.close(), open lease still excludes: True
+PROBE pg acquire on event loop thread: ValidationError
+PROBE mysql try_acquire free key: True
+PROBE mysql re-entry same thread returns: True
+PROBE mysql other thread while held -> : None after 0.02s
+PROBE mysql other thread after inner close (outer still open): None
+PROBE mysql other thread after outer close gets it: True
+released the lock on 'n6:mysql:hold': its hold limit elapsed
+PROBE mysql after outer max_hold=2s (re-entry asked 60s), other thread gets it: True
+PROBE mysql after provider.close(), open lease still excludes: True
+PROBE mysql acquire on event loop thread: ValidationError
+PROBE mariadb try_acquire free key: True
+PROBE mariadb re-entry same thread returns: True
+PROBE mariadb other thread while held -> : None after 0.33s
+PROBE mariadb other thread after inner close (outer still open): None
+PROBE mariadb other thread after outer close gets it: True
+released the lock on 'n6:mariadb:hold': its hold limit elapsed
+PROBE mariadb after outer max_hold=2s (re-entry asked 60s), other thread gets it: True
+PROBE mariadb after provider.close(), open lease still excludes: True
+PROBE mariadb acquire on event loop thread: ValidationError
+PROBE redis try_acquire free key: True
+PROBE redis re-entry same thread returns: True
+PROBE redis other thread while held -> : None after 0.30s
+PROBE redis other thread after inner close (outer still open): None
+PROBE redis other thread after outer close gets it: True
+released the lock on 'n6:redis:hold': its hold limit elapsed
+PROBE redis after outer max_hold=2s (re-entry asked 60s), other thread gets it: True
+PROBE redis after provider.close(), open lease still excludes: True
+PROBE redis acquire on event loop thread: ValidationError
+PROBE watchdog threads after holds: ['ekbatan-lock-watchdog']
+PROBE mysql try_acquire 250ms on a held key waited: 0.00s, got=False
+PROBE mysql try_acquire 500ms on a held key waited: 1.00s, got=False
+PROBE mysql try_acquire 1000ms on a held key waited: 1.01s, got=False
+PROBE mysql try_acquire 1500ms on a held key waited: 2.01s, got=False
+PROBE mysql lock name for wallet:abc (doc says 813e4046e5b48a46): 813e4046e5b48a46
+PROBE mysql IS_USED_LOCK of the held key's name is set: True
+PROBE mariadb try_acquire 250ms on a held key waited: 0.26s, got=False
+PROBE mariadb try_acquire 500ms on a held key waited: 0.51s, got=False
+PROBE mariadb try_acquire 1000ms on a held key waited: 1.01s, got=False
+PROBE mariadb try_acquire 1500ms on a held key waited: 1.51s, got=False
+PROBE mariadb lock name for wallet:abc (doc says 813e4046e5b48a46): 813e4046e5b48a46
+PROBE mariadb IS_USED_LOCK of the held key's name is set: True
+PROBE pg unreachable db raises: LockAcquisitionError
+PROBE mysql unreachable db raises: LockAcquisitionError
+PROBE redis key type at ekbatan-lock:wallet:abc: hash
+PROBE redis hash fields (client:thread -> count): {True: '1'}
+PROBE redis PTTL ms (max_hold 300 s): 299996
+PROBE redis message on release: ('redisson_lock__channel:{ekbatan-lock:wallet:abc}', '0')
+PROBE pg distinct waits seen by the waiter in 12 s (5 s segments -> 3): 3
+PROBE pg lock_timeout on a pooled connection after a timed-out try: 0

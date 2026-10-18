@@ -1,0 +1,236 @@
+PROBE s00_base.namespace: [ns]
+PROBE s00_base.pool: 10
+PROBE s00_base.username: u
+PROBE s00_base.password: <none>
+PROBE s00_base.dsp: {}
+PROBE s00_base.jobs: polling=- heartbeat=- shutdown=-
+PROBE s00_base.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s00_base.handling_job_created: false
+PROBE s01_duration_bare_quoted.namespace: [ns]
+PROBE s01_duration_bare_quoted.pool: 10
+PROBE s01_duration_bare_quoted.username: u
+PROBE s01_duration_bare_quoted.password: <none>
+PROBE s01_duration_bare_quoted.dsp: {}
+PROBE s01_duration_bare_quoted.jobs: polling=PT10S heartbeat=- shutdown=-
+PROBE s01_duration_bare_quoted.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s01_duration_bare_quoted.handling_job_created: false
+PROBE s02_duration_bare_int.namespace: [ns]
+PROBE s02_duration_bare_int.pool: 10
+PROBE s02_duration_bare_int.username: u
+PROBE s02_duration_bare_int.password: <none>
+PROBE s02_duration_bare_int.dsp: {}
+PROBE s02_duration_bare_int.jobs: polling=PT10S heartbeat=- shutdown=-
+PROBE s02_duration_bare_int.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s02_duration_bare_int.handling_job_created: false
+PROBE s03_duration_10s.namespace: [ns]
+PROBE s03_duration_10s.pool: 10
+PROBE s03_duration_10s.username: u
+PROBE s03_duration_10s.password: <none>
+PROBE s03_duration_10s.dsp: {}
+PROBE s03_duration_10s.jobs: error DateTimeParseException: Text cannot be parsed to a Duration
+PROBE s03_duration_10s.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s03_duration_10s.handling_job_created: false
+PROBE s04_duration_iso_variants.namespace: [ns]
+PROBE s04_duration_iso_variants.pool: 10
+PROBE s04_duration_iso_variants.username: u
+PROBE s04_duration_iso_variants.password: <none>
+PROBE s04_duration_iso_variants.dsp: {}
+PROBE s04_duration_iso_variants.jobs: polling=PT10S heartbeat=PT26H shutdown=PT0.5S
+PROBE s04_duration_iso_variants.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s04_duration_iso_variants.handling_job_created: false
+PROBE s05_duration_zero.namespace: [ns]
+PROBE s05_duration_zero.pool: 10
+PROBE s05_duration_zero.username: u
+PROBE s05_duration_zero.password: <none>
+PROBE s05_duration_zero.dsp: {}
+PROBE s05_duration_zero.jobs: error IllegalArgumentException: ekbatan.jobs.polling-interval must be positive, but was PT0S. A zero or negative interval makes db-scheduler skip its wait entirely and poll in a tight loop.
+PROBE s05_duration_zero.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s05_duration_zero.handling_job_created: false
+PROBE s06_duration_null.namespace: [ns]
+PROBE s06_duration_null.pool: 10
+PROBE s06_duration_null.username: u
+PROBE s06_duration_null.password: <none>
+PROBE s06_duration_null.dsp: {}
+PROBE s06_duration_null.jobs: polling=- heartbeat=- shutdown=-
+PROBE s06_duration_null.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s06_duration_null.handling_job_created: false
+PROBE s07_namespace_null.namespace: []
+PROBE s07_namespace_null.pool: 10
+PROBE s07_namespace_null.username: u
+PROBE s07_namespace_null.password: <none>
+PROBE s07_namespace_null.dsp: {}
+PROBE s07_namespace_null.jobs: polling=- heartbeat=- shutdown=-
+PROBE s07_namespace_null.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s07_namespace_null.handling_job_created: false
+PROBE s08_pool_quoted.namespace: [ns]
+PROBE s08_pool_quoted.pool: 20
+PROBE s08_pool_quoted.username: u
+PROBE s08_pool_quoted.password: <none>
+PROBE s08_pool_quoted.dsp: {}
+PROBE s08_pool_quoted.jobs: polling=- heartbeat=- shutdown=-
+PROBE s08_pool_quoted.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s08_pool_quoted.handling_job_created: false
+PROBE s09_enabled_quoted.namespace: [ns]
+PROBE s09_enabled_quoted.pool: 10
+PROBE s09_enabled_quoted.username: u
+PROBE s09_enabled_quoted.password: <none>
+PROBE s09_enabled_quoted.dsp: {}
+PROBE s09_enabled_quoted.jobs: polling=- heartbeat=- shutdown=-
+PROBE s09_enabled_quoted.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s09_enabled_quoted.handling_job_created: true
+PROBE s10_enabled_upper.namespace: [ns]
+PROBE s10_enabled_upper.pool: 10
+PROBE s10_enabled_upper.username: u
+PROBE s10_enabled_upper.password: <none>
+PROBE s10_enabled_upper.dsp: {}
+PROBE s10_enabled_upper.jobs: polling=- heartbeat=- shutdown=-
+PROBE s10_enabled_upper.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s10_enabled_upper.handling_job_created: true
+PROBE s11_enabled_yes.namespace: [ns]
+PROBE s11_enabled_yes.pool: 10
+PROBE s11_enabled_yes.username: u
+PROBE s11_enabled_yes.password: <none>
+PROBE s11_enabled_yes.dsp: {}
+PROBE s11_enabled_yes.jobs: polling=- heartbeat=- shutdown=-
+PROBE s11_enabled_yes.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s11_enabled_yes.handling_job_created: true
+PROBE s12_nested_placeholder.namespace: [ns]
+PROBE s12_nested_placeholder.pool: 10
+PROBE s12_nested_placeholder.username: u
+PROBE s12_nested_placeholder.password: fallback-marker
+PROBE s12_nested_placeholder.dsp: {}
+PROBE s12_nested_placeholder.jobs: polling=- heartbeat=- shutdown=-
+PROBE s12_nested_placeholder.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s12_nested_placeholder.handling_job_created: false
+PROBE s13_property_reference.namespace: [ns]
+PROBE s13_property_reference.pool: 10
+PROBE s13_property_reference.username: u
+PROBE s13_property_reference.password: ns
+PROBE s13_property_reference.dsp: {}
+PROBE s13_property_reference.jobs: polling=- heartbeat=- shutdown=-
+PROBE s13_property_reference.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s13_property_reference.handling_job_created: false
+PROBE s14_unresolved.namespace: [ns]
+PROBE s14_unresolved.sharding: error PlaceholderResolutionException: Could not resolve placeholder 'N1_UNSET_PW' in value "${N1_UNSET_PW}"
+PROBE s14_unresolved.jobs: polling=- heartbeat=- shutdown=-
+PROBE s14_unresolved.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s14_unresolved.handling_job_created: false
+PROBE s15_two_spellings.namespace: [ns]
+PROBE s15_two_spellings.pool: 10
+PROBE s15_two_spellings.username: u
+PROBE s15_two_spellings.password: <none>
+PROBE s15_two_spellings.dsp: {}
+PROBE s15_two_spellings.jobs: polling=PT1S heartbeat=- shutdown=-
+PROBE s15_two_spellings.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s15_two_spellings.handling_job_created: false
+PROBE s16_snake_leaf.namespace: [ns]
+PROBE s16_snake_leaf.pool: 10
+PROBE s16_snake_leaf.username: u
+PROBE s16_snake_leaf.password: <none>
+PROBE s16_snake_leaf.dsp: {}
+PROBE s16_snake_leaf.jobs: error UnrecognizedPropertyException: Unrecognized property "polling_interval" (class io.ekbatan.distributedjobs.config.JobsConfig$Builder), not marked as ignorable (3 known properties: "heartbeatInterval", "pollingInterval", "shutdownMaxWait")
+PROBE s16_snake_leaf.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s16_snake_leaf.handling_job_created: false
+PROBE s17_snake_parent.namespace: [ns]
+PROBE s17_snake_parent.pool: 10
+PROBE s17_snake_parent.username: u
+PROBE s17_snake_parent.password: <none>
+PROBE s17_snake_parent.dsp: {}
+PROBE s17_snake_parent.jobs: polling=- heartbeat=- shutdown=-
+PROBE s17_snake_parent.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s17_snake_parent.handling_job_created: true
+PROBE s18_empty_jobs.namespace: [ns]
+PROBE s18_empty_jobs.pool: 10
+PROBE s18_empty_jobs.username: u
+PROBE s18_empty_jobs.password: <none>
+PROBE s18_empty_jobs.dsp: {}
+PROBE s18_empty_jobs.jobs: polling=- heartbeat=- shutdown=-
+PROBE s18_empty_jobs.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s18_empty_jobs.handling_job_created: false
+PROBE s19_empty_leh.namespace: [ns]
+PROBE s19_empty_leh.pool: 10
+PROBE s19_empty_leh.username: u
+PROBE s19_empty_leh.password: <none>
+PROBE s19_empty_leh.dsp: {}
+PROBE s19_empty_leh.jobs: polling=- heartbeat=- shutdown=-
+PROBE s19_empty_leh.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s19_empty_leh.handling_job_created: false
+PROBE s20_dsp_nested.namespace: [ns]
+PROBE s20_dsp_nested.pool: 10
+PROBE s20_dsp_nested.username: u
+PROBE s20_dsp_nested.password: <none>
+PROBE s20_dsp_nested.dsp: {ssl.mode=require}
+PROBE s20_dsp_nested.jobs: polling=- heartbeat=- shutdown=-
+PROBE s20_dsp_nested.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s20_dsp_nested.handling_job_created: false
+PROBE s21_batch_zero.namespace: [ns]
+PROBE s21_batch_zero.pool: 10
+PROBE s21_batch_zero.username: u
+PROBE s21_batch_zero.password: <none>
+PROBE s21_batch_zero.dsp: {}
+PROBE s21_batch_zero.jobs: polling=- heartbeat=- shutdown=-
+PROBE s21_batch_zero.leh: fanoutBatch=0 handlingPoll=- enabled=false
+PROBE s21_batch_zero.handling_job_created: false
+PROBE s22_empty_default.namespace: []
+PROBE s22_empty_default.pool: 10
+PROBE s22_empty_default.username: u
+PROBE s22_empty_default.password: <none>
+PROBE s22_empty_default.dsp: {}
+PROBE s22_empty_default.jobs: polling=- heartbeat=- shutdown=-
+PROBE s22_empty_default.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s22_empty_default.handling_job_created: false
+PROBE s23_pool_float.namespace: [ns]
+PROBE s23_pool_float.sharding: error InvalidFormatException: Cannot deserialize value of type `int` from String "10.0": not a valid `int` value
+PROBE s23_pool_float.jobs: polling=- heartbeat=- shutdown=-
+PROBE s23_pool_float.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s23_pool_float.handling_job_created: false
+PROBE s24_case_leaf.namespace: [ns]
+PROBE s24_case_leaf.pool: 10
+PROBE s24_case_leaf.username: u
+PROBE s24_case_leaf.password: <none>
+PROBE s24_case_leaf.dsp: {}
+PROBE s24_case_leaf.jobs: error UnrecognizedPropertyException: Unrecognized property "PollingInterval" (class io.ekbatan.distributedjobs.config.JobsConfig$Builder), not marked as ignorable (3 known properties: "heartbeatInterval", "pollingInterval", "shutdownMaxWait")
+PROBE s24_case_leaf.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s24_case_leaf.handling_job_created: false
+PROBE s25_escaped_placeholder.namespace: [ns]
+PROBE s25_escaped_placeholder.pool: 10
+PROBE s25_escaped_placeholder.username: u
+PROBE s25_escaped_placeholder.password: ${N1_LITERAL}
+PROBE s25_escaped_placeholder.dsp: {}
+PROBE s25_escaped_placeholder.jobs: polling=- heartbeat=- shutdown=-
+PROBE s25_escaped_placeholder.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s25_escaped_placeholder.handling_job_created: false
+PROBE s26_dollar_dollar.namespace: [ns]
+PROBE s26_dollar_dollar.sharding: error PlaceholderResolutionException: Could not resolve placeholder 'N1_LITERAL' in value "$${N1_LITERAL}"
+PROBE s26_dollar_dollar.jobs: polling=- heartbeat=- shutdown=-
+PROBE s26_dollar_dollar.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s26_dollar_dollar.handling_job_created: false
+PROBE s27_handling_off.namespace: [ns]
+PROBE s27_handling_off.pool: 10
+PROBE s27_handling_off.username: u
+PROBE s27_handling_off.password: <none>
+PROBE s27_handling_off.dsp: {}
+PROBE s27_handling_off.jobs: polling=- heartbeat=- shutdown=-
+PROBE s27_handling_off.leh: fanoutBatch=- handlingPoll=PT0.2S enabled=false
+PROBE s27_handling_off.handling_job_created: false
+PROBE s28_python_example.namespace: [example.fastapi_wallet_saga_pg]
+PROBE s28_python_example.sharding: error UnrecognizedPropertyException: Unrecognized property "url" (class io.ekbatan.core.config.DataSourceConfig$Builder), not marked as ignorable (9 known properties: "dataSourceProperties", "driverClassName", "idleTimeout", "jdbcUrl", "leakDetectionThresho...
+PROBE s28_python_example.jobs: polling=- heartbeat=- shutdown=-
+PROBE s28_python_example.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s28_python_example.handling_job_created: true
+PROBE s29_java_example.namespace: [example.wallet.saga]
+PROBE s29_java_example.pool: 20
+PROBE s29_java_example.username: wallet
+PROBE s29_java_example.password: <other len 6>
+PROBE s29_java_example.dsp: {ApplicationName=wallet-service}
+PROBE s29_java_example.jobs: polling=- heartbeat=- shutdown=-
+PROBE s29_java_example.leh: fanoutBatch=- handlingPoll=- enabled=true
+PROBE s29_java_example.handling_job_created: true
+PROBE s99_env_override.namespace: [from-env]
+PROBE s99_env_override.pool: 10
+PROBE s99_env_override.username: u
+PROBE s99_env_override.password: <none>
+PROBE s99_env_override.dsp: {}
+PROBE s99_env_override.jobs: polling=- heartbeat=- shutdown=-
+PROBE s99_env_override.leh: fanoutBatch=- handlingPoll=- enabled=false
+PROBE s99_env_override.handling_job_created: true

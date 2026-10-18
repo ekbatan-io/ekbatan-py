@@ -1,0 +1,17 @@
+  from testcontainers.mysql import MySqlContainer
+  from testcontainers.postgres import PostgresContainer
+PROBE pg.timestamptz.session_UTC.wrote: 2025-01-01T12:00:00+00:00
+PROBE pg.timestamptz.session_UTC.storedUtc: 2025-01-01 12:00:00
+PROBE pg.timestamptz.session_UTC.readBack: 2025-01-01T12:00:00+00:00
+PROBE pg.timestamptz.session_UTC.equal: True
+PROBE pg.timestamptz.session_Asia/Tehran.wrote: 2025-01-01T12:00:00+00:00
+PROBE pg.timestamptz.session_Asia/Tehran.storedUtc: 2025-01-01 08:30:00
+PROBE pg.timestamptz.session_Asia/Tehran.readBack: 2025-01-01T08:30:00+00:00
+PROBE pg.timestamptz.session_Asia/Tehran.equal: False
+PROBE pg.varchar36Id.readNonUuidText: OK not-a-uuid-but-36-characters-long!!!
+PROBE pg.varchar36Id.whereEqualsUuid: ERR ProgrammingError: (psycopg.errors.UndefinedFunction) operator does not exist: character varying = uuid
+PROBE pg.varchar36Id.insertUuid: OK -1
+PROBE mariadb.nativeUuid.insert: OK 1
+PROBE mariadb.nativeUuid.whereEquals.found: True
+PROBE mariadb.nativeUuid.readType: UUID
+PROBE mariadb.nativeUuid.rawText: True

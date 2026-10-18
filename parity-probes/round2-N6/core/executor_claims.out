@@ -1,0 +1,15 @@
+transaction rolled back [shard=0:0]: ValidationError
+ScalarAction failed: ValidationError: action_params must be a JSON object; give the action a params dataclass rather than a bare scalar or list - `Action[DepositParams, Wallet]`, not `Action[str, Wallet]`. An action with no parameters takes None; got str
+OpenWalletAction failed: ValidationError: no repository is registered for Wallet, so a change staged for it cannot be written. Register one on the RepositoryRegistry the executor was built with; it currently holds ['Alert'].
+PROBE action.mdx:57 execute(an instance) 'no registry is needed': raised ValidationError: execute takes the action's type, as Java's takes its class - pass DepositMoneyAction, not an instance of it, and register the instance with the executor's ActionRegistry. An instance would run unregistered. To run one you just built in a test, use ActionSpec.of(action).
+PROBE action-plan.mdx:52 add returns the stamped row, not the object you passed: {'same_object': True}
+PROBE action-plan.mdx changes() is a read-only view: 'read-only (AttributeError)'
+PROBE action-plan.mdx:96 no change still writes one sentinel row, event_type null: [('NoopAction', None, {})]
+PROBE action.mdx:46 bare scalar params refused: raised ValidationError: action_params must be a JSON object; give the action a params dataclass rather than a bare scalar or list - `Action[DepositParams, Wallet]`, not `Action[str, Wallet]`. An action with no parameters takes None; got str
+PROBE action.mdx:117 principal kwarg passed to perform: 'ada'
+PROBE action.mdx:121 events table has no principal column: []
+PROBE action-executor.mdx:118 hyphen in namespace refused: raised ValidationError: namespace 'my-service' must be dot-separated identifiers, like a package: letters, digits and underscore, each segment starting with a letter or underscore. Hyphens are not legal in a protobuf package or an Avro namespace, and this value is used as one - write 'my_service' rather than 'my-service'.
+PROBE action-executor.mdx:65 registry=None refused: raised ValidationError: registry is required
+PROBE action-executor.mdx:60 repositories=None refused: raised ValidationError: repositories is required
+PROBE action-executor.mdx:58 events left out -> default persister writes framework events table: 1
+PROBE action-executor.mdx:57 a staged type with no repository: names type and lists registered: raised ValidationError: no repository is registered for Wallet, so a change staged for it cannot be written. Register one on the RepositoryRegistry the executor was built with; it currently holds ['Alert'].

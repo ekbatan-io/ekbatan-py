@@ -1,0 +1,61 @@
+PROBE e1.get_missing.type: EntityNotFoundException
+PROBE e1.get_missing.msg: No entity found with id: Wallet[id=01a14c45-dbda-75a0-8000-6ae663b7eb21]
+PROBE e1.get_missing.chain: EntityNotFoundException
+PROBE e1.get_missing.caught_by_framework_base: RuntimeException
+PROBE e2.update_stale.type: StaleRecordException
+PROBE e2.update_stale.msg: Model Wallet[id=01a14c45-dccb-7719-8000-7b02befd129f, version=1] was concurrently modified or not found
+PROBE e2.update_stale.chain: StaleRecordException
+PROBE e2.update_stale.caught_by_framework_base: RuntimeException
+PROBE e3.unregistered.type: NullPointerException
+PROBE e3.unregistered.msg: No action registered for class
+PROBE e3.unregistered.chain: NullPointerException
+PROBE e3.unregistered.caught_by_framework_base: RuntimeException
+PROBE e4.plan_outside.type: IllegalStateException
+PROBE e4.plan_outside.msg: plan() called outside an action execution. Actions must be invoked via ActionExecutor.execute(...) or testsupport ActionSpec.execute(...).
+PROBE e4.plan_outside.chain: IllegalStateException
+PROBE e4.plan_outside.caught_by_framework_base: RuntimeException
+PROBE e5.cross_shard.type: CrossShardException
+PROBE e5.cross_shard.msg: Cross-shard operation detected: action started on shard ShardIdentifier(0, 0) but attempted to access shard ShardIdentifier(1, 0)
+PROBE e5.cross_shard.chain: CrossShardException
+PROBE e5.cross_shard.caught_by_framework_base: RuntimeException
+PROBE e6.fail_policy_execute.type: IllegalArgumentException
+PROBE e6.fail_policy_execute.msg: Shard ShardIdentifier(2, 0) is not registered and unknownShardPolicy is FAIL; registered: [ShardIdentifier(0, 0), ShardIdentifier(1, 0)]
+PROBE e6.fail_policy_execute.chain: IllegalArgumentException
+PROBE e6.fail_policy_execute.caught_by_framework_base: RuntimeException
+PROBE e6.wallets_global: 0
+PROBE e9.duplicate_key.type: IntegrityConstraintViolationException
+PROBE e9.duplicate_key.msg: SQL [insert into "wallets" ("id", "version", "state", "owner_id", "currency", "balance", "created_date", "updated_date") values (cast(? as uuid), ?, ?, cast(? as uuid), ?, ?, cast(? as timestamp(6)), cast(? as timestamp(
+PROBE e9.duplicate_key.chain: IntegrityConstraintViolationException <- PSQLException
+PROBE e9.duplicate_key.caught_by_framework_base: RuntimeException
+PROBE e10.unwritable_params.type: none
+PROBE e10.unwritable_params.msg: none
+PROBE e10.unwritable_params.chain: none
+PROBE e10.unwritable_params.caught_by_framework_base: no
+PROBE e10.wallets: 1
+PROBE e10.outbox: 1
+PROBE e10.stored_params: [{"thing": {}}]
+PROBE e10b.plain_class_with_public_fields.stored_params: [{"thing": {"amount": 5, "currency": "EUR"}}]
+PROBE e12.policy_on_base_class.attempts: 1
+PROBE e12.policy_on_base_class.type: StaleRecordException
+PROBE e13.stale_no_arg_constructor: none
+PROBE e7.unreachable.registry_build: none
+PROBE e7.unreachable.read.type: DataAccessException
+PROBE e7.unreachable.read.msg: Error getting connection from data source HikariDataSource (HikariPool-6)
+PROBE e7.unreachable.read.chain: DataAccessException <- SQLTransientConnectionException <- PSQLException <- ConnectException
+PROBE e7.unreachable.read.caught_by_framework_base: RuntimeException
+PROBE e7.unreachable.is_ConnectivityError: n/a (no such class)
+PROBE e7.unreachable.seconds_to_fail_rounded_to_5: 30
+PROBE e8.lock_unreachable.type: LockAcquisitionException
+PROBE e8.lock_unreachable.msg: Failed to acquire lock for key wallet:1: could not obtain a connection
+PROBE e8.lock_unreachable.chain: LockAcquisitionException <- RuntimeException <- SQLTransientConnectionException <- PSQLException <- ConnectException
+PROBE e8.lock_unreachable.caught_by_framework_base: RuntimeException
+PROBE e8.lock_unreachable.key_field: wallet:1
+PROBE e11.vclock_advance_running.type: IllegalStateException
+PROBE e11.vclock_advance_running.msg: Cannot advance: clock is not paused
+PROBE e11.vclock_advance_running.chain: IllegalStateException
+PROBE e11.vclock_advance_running.caught_by_framework_base: RuntimeException
+PROBE t1.assert_throws_other_type_action_asserts.type: AssertionError
+PROBE t1.assert_throws_other_type_action_asserts.msg: assert inside perform
+PROBE t1.assert_throws_other_type_action_asserts.chain: AssertionError
+PROBE t2.assert_throws_broadest_action_asserts: AssertionError
+PROBE t3.null_clock_action.type: none

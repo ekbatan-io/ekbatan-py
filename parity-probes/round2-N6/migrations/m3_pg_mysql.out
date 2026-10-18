@@ -1,0 +1,12 @@
+PROBE pg.still_waiting_at_65s: True
+PROBE pg.result_after_release: ('V1__a.sql',)
+PROBE pg.waited_s: 65
+PROBE pg.wait_log: [(0, 'INFO', 'default/member-0 (0:0): another process is migrating this database; waiting for it to finish'), (30, 'INFO', 'default/member-0 (0:0): still waiting (30s)'), (61, 'INFO', 'default/member-0 (0:0): still waiting (61s)')]
+PROBE mysql.lock_names_seen: ['ekbatan-migrate:n6']
+PROBE mysql.half.error: migrating default/member-0 (0:0) failed in V2__half.sql: ProgrammingError: (1146, "Table 'n6.no_such' doesn't exist") Any change V2__half.sql had already made stays - MySQL and MariaDB commit each one on its own. It is recorded as failed, so the next run stops here until the database has been checked and put right, and repair() has been run.
+PROBE mysql.half.history: (('1', 1), ('2', 0))
+PROBE mysql.half.tables: ['a', 'b', 'ekbatan_schema_history']
+PROBE mysql.half.next_run:   - version 2 (V2__half.sql) failed on an earlier run and is recorded as failed, because what it did could not be rolled back - MySQL and MariaDB keep every schema change on their own, and a file marked `-- transactional: false` runs outside a transaction - so part of it may be in the database. Put 
+PROBE mysql.after_repair: ('V2__half.sql',)
+PROBE mysql.read_only: MigrationError: default/member-0 (0:0) is read-only (read_only is on), so it is a replica or has been set aside. Migrations must run against the primary: point this shard's primaryConfig at it directly. A user with SUPER could write past read_only, which is why this
+PROBE password_in_any_log: False

@@ -1,0 +1,10 @@
+transaction rolled back [shard=0:0]: OperationalError
+transaction rolled back [shard=0:0]: Boom
+PROBE actions.md:53 plan.update stamps updated_date / moves version: {'version_in': 1, 'version_out': 2, 'updated_date_changed': False}
+PROBE actions.md:160 DEFAULT_RETRIES: (RetryConfig(on=<class 'ekbatan.errors.StaleRecordError'>, max_retries=1, delay=0.1),)
+PROBE tm.md:69-80 nested block (sqlite): {'inner_is_new_connection': True, 'inner_sees_outer_write': 'EUR', 'tx_db_inside_inner_is_inner': True, 'inner_write_after_outer': 'OperationalError: (sqlite3.OperationalError) database is locked', 'tx_db_after_inner_is_outer': True}
+PROBE tm.md:82 action inside rolled-back block stays committed (balance 105?): '105.0000'
+PROBE tm.md:120 second manager same shard current() inside first's block: None
+PROBE tm.md:96 inherited get inside block (committed state?): {'inside_inherited_get': 'USD', 'after_commit': 'GBP'}
+PROBE tm.md:156-160 tm.connection join / autocommit: {'connection_joins': True, 'readonly_joins': True, 'autocommit_write_kept': 'CHF'}
+PROBE repositories.md: db() inside a block opens its own: {'db_is_tx': False}

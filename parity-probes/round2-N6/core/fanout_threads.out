@@ -1,0 +1,2 @@
+PROBE fan-out round on 2 shards, 0.5 s each: elapsed s: 0.5
+PROBE threads used: ['ekbatan-fanout-shard_0', 'ekbatan-fanout-shard_1']

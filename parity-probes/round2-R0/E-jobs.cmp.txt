@@ -1,0 +1,17 @@
+COUNTS same=43 fixed=0 regressed=0 still=4 changed-still=0 py-only=0
+[still] j2.row
+    java: j2-fixed|recurring|t|f|t|0|t|t|3|null
+    r1  : j2-fixed|recurring|t|f|t|0|t|t|3|90
+    now : j2-fixed|recurring|t|f|t|0|t|t|3|90
+[still] j6.type
+    java: IllegalStateException
+    r1  : ValidationError
+    now : ValidationError
+[still] j8b.job_interrupted
+    java: true
+    r1  : false
+    now : false
+[still] j8b.job_done_later
+    java: false
+    r1  : true
+    now : true

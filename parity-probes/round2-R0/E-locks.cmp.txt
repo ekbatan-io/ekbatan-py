@@ -1,0 +1,165 @@
+COUNTS same=200 fixed=31 regressed=0 still=8 changed-still=1 py-only=1
+[changed-still] pg.backend_down.type
+    java: LockAcquisitionException
+    r1  : OperationalError
+    now : LockAcquisitionError
+[fixed] pg.inner_close_x3.outer_held
+    java: true
+    r1  : false
+    now : true
+[fixed] pg.inner_close_x3.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] pg.inner_close_once.inner_held
+    java: false
+    r1  : true
+    now : false
+[fixed] pg.outer_first.outer_held
+    java: false
+    r1  : true
+    now : false
+[fixed] pg.provider_close.lease_held
+    java: true
+    r1  : false
+    now : true
+[fixed] pg.provider_close.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] mysql.inner_close_x3.outer_held
+    java: true
+    r1  : false
+    now : true
+[fixed] mysql.inner_close_x3.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] mysql.inner_close_once.inner_held
+    java: false
+    r1  : true
+    now : false
+[fixed] mysql.outer_first.outer_held
+    java: false
+    r1  : true
+    now : false
+[fixed] mysql.try_held.wait_500ms.elapsed_bucket_ms
+    java: 1000
+    r1  : 0
+    now : 1000
+[fixed] mysql.provider_close.lease_held
+    java: true
+    r1  : false
+    now : true
+[fixed] mysql.provider_close.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] mariadb.inner_close_x3.outer_held
+    java: true
+    r1  : false
+    now : true
+[fixed] mariadb.inner_close_x3.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] mariadb.inner_close_once.inner_held
+    java: false
+    r1  : true
+    now : false
+[fixed] mariadb.outer_first.outer_held
+    java: false
+    r1  : true
+    now : false
+[fixed] mariadb.provider_close.lease_held
+    java: true
+    r1  : false
+    now : true
+[fixed] mariadb.provider_close.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] redis.name.wallet_abc
+    java: [ekbatan-lock:wallet:abc|hash]
+    r1  : [ekbatan-lock:wallet:abc|string]
+    now : [ekbatan-lock:wallet:abc|hash]
+[fixed] redis.name.unicode_cafe
+    java: [ekbatan-lock:café:1|hash]
+    r1  : [ekbatan-lock:café:1|string]
+    now : [ekbatan-lock:café:1|hash]
+[fixed] redis.inner_close_x3.outer_held
+    java: true
+    r1  : false
+    now : true
+[fixed] redis.inner_close_x3.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] redis.inner_close_once.inner_held
+    java: false
+    r1  : true
+    now : false
+[fixed] redis.outer_first.outer_held
+    java: false
+    r1  : true
+    now : false
+[fixed] redis.try_held.wait_1000ms.elapsed_bucket_ms
+    java: 1000
+    r1  : 1250
+    now : 1000
+[fixed] redis.try_held.wait_1500ms.elapsed_bucket_ms
+    java: 1500
+    r1  : 1750
+    now : 1500
+[fixed] redis.provider_close.lease_held
+    java: true
+    r1  : false
+    now : true
+[fixed] redis.provider_close.other_can_acquire
+    java: false
+    r1  : true
+    now : false
+[fixed] pg.lock_timeout_after_timed_out_try.next_borrower_sees
+    java: 0
+    r1  : 200ms
+    now : 0
+[fixed] pg.backend_down.is_lock_acquisition_error
+    java: true
+    r1  : false
+    now : true
+[still] pg.validate.type_blank_key
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] pg.interrupt_waiting_acquire
+    java: InterruptedException
+    r1  : no-api
+    now : no-api
+[still] mysql.validate.type_blank_key
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] mysql.interrupt_waiting_acquire
+    java: InterruptedException
+    r1  : no-api
+    now : no-api
+[still] mariadb.validate.type_blank_key
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] mariadb.interrupt_waiting_acquire
+    java: InterruptedException
+    r1  : no-api
+    now : no-api
+[still] redis.validate.type_blank_key
+    java: IllegalArgumentException
+    r1  : ValidationError
+    now : ValidationError
+[still] redis.interrupt_waiting_acquire
+    java: InterruptedException
+    r1  : no-api
+    now : no-api
+[py-only] pg.on_asyncio_loop
+    java: <missing>
+    r1  : ValidationError
+    now : ValidationError

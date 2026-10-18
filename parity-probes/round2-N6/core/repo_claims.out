@@ -1,0 +1,15 @@
+PROBE repositories.md:71 add -> M 'stamped' (same values as passed?): {'equal': True, 'same': False, 'version': 1}
+PROBE repositories.md:73 update -> version already moved: (1, 2, 2)
+PROBE find missing -> None: None
+PROBE get missing raises EntityNotFoundError: raised EntityNotFoundError: no Wallet with id ShardedId(value=UUID('01a14c3f-d7a2-7b99-8000-ee9e50d9e99a'))
+PROBE find_many: 2
+PROBE all(): 2
+PROBE find_one_where: True
+PROBE find_where AND: 1
+PROBE count/exists/exists_where: (2, True, False)
+PROBE soft-deleted filtered on reads (find, all, count, find_where): (None, 1, 1, 0)
+PROBE stale update raises StaleRecordError: raised StaleRecordError: expected to update 1 Wallet row(s) but matched 0; one was concurrently modified or is gone
+PROBE add_no_result/update_no_result exist: (True, True, True, True)
+PROBE no offset pagination: all(offset=...): raised TypeError: AbstractRepository.all() got an unexpected keyword argument 'offset'
+PROBE 0304 add_all(None): raised ValidationError: Models collection cannot be null
+PROBE 0304 add(None): raised ValidationError: Model cannot be null

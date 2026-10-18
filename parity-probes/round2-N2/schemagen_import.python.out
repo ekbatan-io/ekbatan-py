@@ -1,0 +1,13 @@
+PROBE schemagen.pg.imports: ERR ImportError: cannot import name 'BYTEA' from 'sqlalchemy' (/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/__init__.py)
+PROBE schemagen.pg.namesNotInSqlalchemy: ['BYTEA']
+PROBE schemagen.pg.column.raw_bytes: ERR emitted BYTEA(...), not importable from sqlalchemy
+PROBE schemagen.pg.column.tags: ERR TypeError: ARRAY.__init__() missing 1 required positional argument: 'item_type'
+PROBE schemagen.mysql.imports: ERR ImportError: cannot import name 'ENUM' from 'sqlalchemy' (/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/__init__.py)
+PROBE schemagen.mysql.namesNotInSqlalchemy: ['ENUM', 'TINYINT']
+PROBE schemagen.mysql.column.flag: ERR emitted TINYINT(...), not importable from sqlalchemy
+PROBE schemagen.mysql.column.status: ERR emitted ENUM(...), not importable from sqlalchemy
+PROBE schemagen.mariadb.imports: ERR ImportError: cannot import name 'ENUM' from 'sqlalchemy' (/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/__init__.py)
+PROBE schemagen.mariadb.namesNotInSqlalchemy: ['ENUM', 'LONGTEXT', 'TINYINT']
+PROBE schemagen.mariadb.column.flag: ERR emitted TINYINT(...), not importable from sqlalchemy
+PROBE schemagen.mariadb.column.payload: ERR emitted LONGTEXT(...), not importable from sqlalchemy
+PROBE schemagen.mariadb.column.status: ERR emitted ENUM(...), not importable from sqlalchemy

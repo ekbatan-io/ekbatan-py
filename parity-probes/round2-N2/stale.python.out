@@ -1,0 +1,3 @@
+PROBE stale.fresh.import: OK id,name
+PROBE stale.afterNewMigration.import: ERR ValidationError: schema.py was generated from migrations fingerprinted 38e0a3feb2f19d2c, but /Users/mike/workspace/ekbatan-py/parity-probes/round2-N2/stale/migrations now fingerprints 3eec422656fc76dd. Regenerate it:
+PROBE stale.migrationRemovedAgain.import: OK id,name

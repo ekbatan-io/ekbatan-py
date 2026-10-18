@@ -1,0 +1,10 @@
+PROBE layout-helper ShardingConfig.single exists: False
+PROBE getting-started:135 repository with no to_row/from_row: TypeError: WalletRepository cannot be created: from_row() and to_row() have not been written, and the mapping between a row and a model is not guessed here.
+PROBE getting-started:172 ActionExecutor(namespace=,registry=,repositories=,actions=,events=): OK <ekbatan.action.executor.ActionExecutor object at 0x109d013c0>
+PROBE getting-started:198 ActionSpec with_principal/assert_emitted(lambda): OK 'passed'
+PROBE README:236 assert_emitted(MoneyDepositedEvent, 1): OK 'passed'
+PROBE README:244 run_action: AssertionError: 
+PROBE README:15 Model[UUID, WalletState] subscript: OK ekbatan.domain.Model[uuid.UUID, wallet_service_sqlite.model.WalletState, ekbatan.domain.ModelBuilder[typing.Any, typing.Any, typing.Any]]
+PROBE README:116 model.evolve(balance=..., emit=event): OK (WalletOpenedEvent(model_id='01a14c3d-3984-72c2-8000-afb87d0b807d', model_name='Wallet', owner_id=UUID('0f0059d2-133f-48ee-b1ff-2d49a972261a'), currency='EUR', opening_balance=Decimal('100.00')), MoneyDepositedEvent(model_id='01a14c3d-3984-72c2-8000-afb87d0b807d', model_name='Wallet', amount=Decimal('1'), new_balance=Decimal('1')))
+PROBE README:244 updated len: 1 same object as result: False equal: False
+PROBE README:244 differing fields: ['version']

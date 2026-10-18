@@ -1,0 +1,80 @@
+PROBE model.withInitialVersion: 1
+PROBE model.increaseVersion: 2
+PROBE model.explicitVersion5: 5
+PROBE model.version0: ERR IllegalArgumentException: version must be greater than or equal to 1
+PROBE model.versionNeg1: ERR IllegalArgumentException: version must be greater than or equal to 1
+PROBE model.withInitialVersionAfter5: 1
+PROBE model.versionNotSet: ERR NullPointerException: version cannot be null
+PROBE model.increaseVersionWhenUnset: ERR NullPointerException: Cannot invoke "java.lang.Long.longValue()" because "this.version" is null
+PROBE model.versionLongMax.nextVersion: ERR IllegalArgumentException: version must be greater than or equal to 1
+PROBE model.missingId: ERR NullPointerException: id cannot be null
+PROBE model.missingState: ERR NullPointerException: state cannot be null
+PROBE model.missingCreatedDate: ERR NullPointerException: createdDate cannot be null
+PROBE model.nullId: ERR NullPointerException: id cannot be null
+PROBE model.nullState: ERR NullPointerException: state cannot be null
+PROBE model.nullCreatedDate: ERR NullPointerException: createdDate cannot be null
+PROBE model.nullVersion: ERR NullPointerException: version cannot be null
+PROBE model.nullEventsList: ERR NullPointerException: Cannot invoke "java.util.Collection.toArray()" because "c" is null
+PROBE model.nullEventInList: ERR NullPointerException: null
+PROBE model.nullCheckedField: ERR NullPointerException: label cannot be null
+PROBE model.nullUncheckedField: OK null
+PROBE model.oneEvent: 1
+PROBE model.twoEvents: 2
+PROBE model.eventsReplace.size: 1
+PROBE model.eventsReplace.same: True
+PROBE model.eventsImmutable: ERR UnsupportedOperationException: null
+PROBE model.eventsSnapshot: 0,1
+PROBE model.noEventsEmpty: 0
+PROBE model.callerListMutatedAfterBuild: 1
+PROBE model.createdDate.micros: 2025-01-01T00:00:00.123456Z
+PROBE model.createdDate.plus2: 2025-01-01T00:00:00Z
+PROBE model.createdDate.hasZone: n/a (Instant)
+PROBE model.updatedDefaultsToCreated: True
+PROBE model.updatedExplicit: 2025-06-01T00:00:00Z
+PROBE model.updatedBeforeCreated: OK 2020-01-01T00:00:00Z
+PROBE model.createdNaiveInput: n/a (Instant has no zone-less form)
+PROBE model.createdDateVsClockNow.compare: OK True
+PROBE model.createdDate.nanos: 2025-01-01T00:00:00.123456Z
+PROBE model.copy.fields: True,True,True,True,3,1
+PROBE model.copy.eventsIndependent: 1,2
+PROBE model.copy.businessFields: L,X
+PROBE model.copy.isNewInstance: True
+PROBE model.copyOverride: DELETED
+PROBE eq.sameFields: True
+PROBE eq.ignoresEvents: True
+PROBE eq.diffId: False
+PROBE eq.diffVersion: False
+PROBE eq.diffState: False
+PROBE eq.diffCreated: False
+PROBE eq.diffUpdated: False
+PROBE eq.diffBusinessField: True
+PROBE eq.otherClassSameBase: False
+PROBE eq.hashById: True
+PROBE eq.hashEqualsIdHash: True
+PROBE eq.inSetDifferentVersions: 2
+PROBE model.isModel: True
+PROBE model.nextVersion: 2,True,1,2025-06-01T00:00:00Z
+PROBE model.mutateField: n/a (final field: compile error)
+PROBE model.isDeleted.deletedState: n/a (no isDeleted on Model)
+PROBE entity.withInitialVersion: 1
+PROBE entity.increaseVersion: 2
+PROBE entity.version0: ERR IllegalArgumentException: version must be >= 1
+PROBE entity.missingId: ERR NullPointerException: id cannot be null
+PROBE entity.nullId: ERR NullPointerException: id cannot be null
+PROBE entity.nullState: ERR NullPointerException: state cannot be null
+PROBE entity.versionNotSet: ERR NullPointerException: version cannot be null
+PROBE entity.eq.same: True
+PROBE entity.eq.diffState: False
+PROBE entity.eq.diffVersion: False
+PROBE entity.hashById: True
+PROBE entity.isModel: False
+PROBE entity.nextVersion: 2,True
+PROBE entity.copyOverride: DELETED
+PROBE event.modelIdAndName: 0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b,SampleModel
+PROBE event.nullModelId: ERR NullPointerException: modelId cannot be null or blank
+PROBE event.blankModelId: ERR IllegalArgumentException: modelId cannot be null or blank
+PROBE event.whitespaceModelId: ERR IllegalArgumentException: modelId cannot be null or blank
+PROBE event.equalSameFields: False
+PROBE event.equalDifferentModelId: False
+PROBE event.modelIdNotTrimmed: ' a '
+PROBE event.mutate: n/a (final field: compile error)

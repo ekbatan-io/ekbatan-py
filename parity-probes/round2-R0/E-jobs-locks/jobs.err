@@ -1,0 +1,483 @@
+Job 'j5-throws' execution failed: RuntimeError: boom
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Unhandled exception RuntimeError: 'boom' during execution of task with name 'j5-throws'. Treating as failure.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/executor.py", line 453, in _execute_picked_execution
+    completion = chain.proceed(execution.task_instance, context)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/event/__init__.py", line 264, in proceed
+    return self._execution_handler(task_instance, execution_context)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 594, in execute
+    self.execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 589, in execute_recurringly
+    self._execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Failed to find implementation for task with name 'j4-repeat'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Job 'j5-throws' execution failed: RuntimeError: boom
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Unhandled exception RuntimeError: 'boom' during execution of task with name 'j5-throws'. Treating as failure.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/executor.py", line 453, in _execute_picked_execution
+    completion = chain.proceed(execution.task_instance, context)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/event/__init__.py", line 264, in proceed
+    return self._execution_handler(task_instance, execution_context)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 594, in execute
+    self.execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 589, in execute_recurringly
+    self._execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Job 'j5-throws' execution failed: RuntimeError: boom
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Unhandled exception RuntimeError: 'boom' during execution of task with name 'j5-throws'. Treating as failure.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/executor.py", line 453, in _execute_picked_execution
+    completion = chain.proceed(execution.task_instance, context)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/event/__init__.py", line 264, in proceed
+    return self._execution_handler(task_instance, execution_context)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 594, in execute
+    self.execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 589, in execute_recurringly
+    self._execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Job 'j5-throws' execution failed: RuntimeError: boom
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Unhandled exception RuntimeError: 'boom' during execution of task with name 'j5-throws'. Treating as failure.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/executor.py", line 453, in _execute_picked_execution
+    completion = chain.proceed(execution.task_instance, context)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/event/__init__.py", line 264, in proceed
+    return self._execution_handler(task_instance, execution_context)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 594, in execute
+    self.execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 589, in execute_recurringly
+    self._execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Job 'j5-throws' execution failed: RuntimeError: boom
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Unhandled exception RuntimeError: 'boom' during execution of task with name 'j5-throws'. Treating as failure.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/executor.py", line 453, in _execute_picked_execution
+    completion = chain.proceed(execution.task_instance, context)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/event/__init__.py", line 264, in proceed
+    return self._execution_handler(task_instance, execution_context)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 594, in execute
+    self.execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 589, in execute_recurringly
+    self._execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Job 'j5-throws' execution failed: RuntimeError: boom
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Unhandled exception RuntimeError: 'boom' during execution of task with name 'j5-throws'. Treating as failure.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/executor.py", line 453, in _execute_picked_execution
+    completion = chain.proceed(execution.task_instance, context)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/event/__init__.py", line 264, in proceed
+    return self._execution_handler(task_instance, execution_context)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 594, in execute
+    self.execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 589, in execute_recurringly
+    self._execute_recurringly(task_instance, execution_context)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/src/ekbatan/distributedjobs/__init__.py", line 621, in run
+    job.execute(ctx)
+    ~~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 80, in execute
+    self._body(ctx)
+    ~~~~~~~~~~^^^^^
+  File "/Users/mike/workspace/ekbatan-py/parity-probes/round2-R0/E-jobs-locks/jobs_probe.py", line 183, in boom
+    raise RuntimeError("boom")
+RuntimeError: boom
+Unexpected error while executing OnStartup tasks. Continuing.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedTable: relation "scheduled_tasks" does not exist
+LINE 2: FROM scheduled_tasks 
+             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 326, in execute_on_startup
+    task.on_startup(on_startup_client, self.clock)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 579, in on_startup
+    self._schedule_on_startup.apply(scheduler, clock, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/task/helper.py", line 368, in apply
+    preexisting_execution = scheduler.get_scheduled_execution(instance_without_data)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/client.py", line 363, in get_scheduled_execution
+    execution = self.task_repository.get_execution(
+        task_instance_id.task_name, task_instance_id.id
+    )
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 222, in get_execution
+    rows = list(conn.execute(statement))
+                ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "scheduled_tasks" does not exist
+LINE 2: FROM scheduled_tasks 
+             ^
+[SQL: SELECT scheduled_tasks.task_name, scheduled_tasks.task_instance, scheduled_tasks.task_data, scheduled_tasks.execution_time, scheduled_tasks.picked, scheduled_tasks.picked_by, scheduled_tasks.last_success, scheduled_tasks.last_failure, scheduled_tasks.consecutive_failures, scheduled_tasks.last_heartbeat, scheduled_tasks.version, scheduled_tasks.priority 
+FROM scheduled_tasks 
+WHERE scheduled_tasks.task_name = %(task_name_1)s::VARCHAR AND scheduled_tasks.task_instance = %(task_instance_1)s::VARCHAR]
+[parameters: {'task_name_1': 'j6-missing', 'task_instance_1': 'recurring'}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+Unhandled exception. Will keep running.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedTable: relation "scheduled_tasks" does not exist
+LINE 2: FROM scheduled_tasks 
+             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 98, in run
+    self._to_run()
+    ~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/poll.py", line 104, in run
+    fetched = self._task_repository.get_due(now, executions_to_fetch)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 215, in get_due
+    return self._to_executions(conn.execute(statement))
+                               ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "scheduled_tasks" does not exist
+LINE 2: FROM scheduled_tasks 
+             ^
+[SQL: SELECT scheduled_tasks.task_name, scheduled_tasks.task_instance, scheduled_tasks.task_data, scheduled_tasks.execution_time, scheduled_tasks.picked, scheduled_tasks.picked_by, scheduled_tasks.last_success, scheduled_tasks.last_failure, scheduled_tasks.consecutive_failures, scheduled_tasks.last_heartbeat, scheduled_tasks.version, scheduled_tasks.priority 
+FROM scheduled_tasks 
+WHERE scheduled_tasks.picked = false AND scheduled_tasks.execution_time <= %(execution_time_1)s::TIMESTAMP WITH TIME ZONE ORDER BY scheduled_tasks.execution_time ASC 
+ LIMIT %(param_1)s::INTEGER]
+[parameters: {'execution_time_1': datetime.datetime(2026, 10, 17, 23, 42, 31, 719823, tzinfo=datetime.timezone.utc), 'param_1': 3}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+Unhandled exception. Will keep running.
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedTable: relation "scheduled_tasks" does not exist
+LINE 2: FROM scheduled_tasks 
+             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 133, in run
+    self._to_run()
+    ~~~~~~~~~~~~^^
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/scheduler.py", line 419, in detect_dead_executions
+    old_executions = self.scheduler_task_repository.get_dead_executions(old_age_limit)
+  File "/Users/mike/workspace/ekbatan-py/db-scheduler/src/db_scheduler/jdbc/repository.py", line 370, in get_dead_executions
+    return self._to_executions(conn.execute(statement))
+                               ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mike/workspace/ekbatan-py/.venv/lib/python3.14/site-packages/psycopg/cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "scheduled_tasks" does not exist
+LINE 2: FROM scheduled_tasks 
+             ^
+[SQL: SELECT scheduled_tasks.task_name, scheduled_tasks.task_instance, scheduled_tasks.task_data, scheduled_tasks.execution_time, scheduled_tasks.picked, scheduled_tasks.picked_by, scheduled_tasks.last_success, scheduled_tasks.last_failure, scheduled_tasks.consecutive_failures, scheduled_tasks.last_heartbeat, scheduled_tasks.version, scheduled_tasks.priority 
+FROM scheduled_tasks 
+WHERE scheduled_tasks.picked = true AND scheduled_tasks.last_heartbeat <= %(last_heartbeat_1)s::TIMESTAMP WITH TIME ZONE ORDER BY scheduled_tasks.last_heartbeat ASC]
+[parameters: {'last_heartbeat_1': datetime.datetime(2026, 10, 17, 23, 41, 31, 720778, tzinfo=datetime.timezone.utc)}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+Failed to find implementation for task with name 'ghost'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j4-repeat'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j5-throws'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'ghost'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j4-repeat'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j5-throws'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'ghost'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j4-repeat'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j5-throws'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j7-real'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Scheduler stopped, but some tasks did not complete. Was currently running the following executions:
+Execution(task=j8b-slow, id=recurring, execution_time=2026-10-17T23:42:34.953172+00:00, picked=True, version=2)
+Failed to find implementation for task with name 'ghost'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j4-repeat'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j5-throws'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j7-real'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'ghost'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j4-repeat'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j5-throws'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j7-real'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'ghost'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j4-repeat'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j5-throws'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
+Failed to find implementation for task with name 'j7-real'. Execution will be excluded from due. The scheduler normally delete unresolved tasks after 14d. To handle manually, either delete the execution from the database, or add an implementation for it. 
