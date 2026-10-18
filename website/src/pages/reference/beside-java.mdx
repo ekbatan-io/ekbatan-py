@@ -94,7 +94,8 @@ Two differences, both on PostgreSQL and neither a problem:
 - **Index names and order.** Java names them `execution_time_idx`, `last_heartbeat_idx` and
   `priority_execution_time_idx`, with the priority index `(priority DESC, execution_time ASC)`.
   This framework puts the table name in front of each and gives the priority index no direction.
-  PostgreSQL reads an index backwards as easily as forwards, so both serve the same queries.
+  Both tables hold the same rows and work with both schedulers; the priority index only matters
+  when priority ordering is turned on.
 
 ### Migrations
 
