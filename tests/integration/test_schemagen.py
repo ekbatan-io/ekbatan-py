@@ -233,6 +233,49 @@ def test_a_char_36_id_is_text_until_the_project_says_it_holds_a_uuid(
     assert 'Column("note", uuid_column()' not in forced, "not an id-like name"
 
 
+def test_one_table_left_out_of_the_uuid_rule_takes_a_rule_of_its_own(
+    tmp_path: Path, backend: Backend, dialect: str
+) -> None:
+    """The schemagen page's example, as written there: every id is a uuid except in one table,
+    whose CHAR(36) columns get another type."""
+    if _family(dialect) != "mysql":
+        pytest.skip("a uuid has its own type here, or is a CHAR(32)")
+    source = migrations(
+        tmp_path / "migrations",
+        "CREATE TABLE wallets (id CHAR(36) NOT NULL PRIMARY KEY, owner_id CHAR(36) NOT NULL, "
+        "note CHAR(36));\n"
+        "CREATE TABLE legacy_accounts (id CHAR(36) NOT NULL PRIMARY KEY, "
+        "owner_id CHAR(36) NOT NULL);\n",
+    )
+    rules = (
+        ForcedType(
+            name="uuid_column",
+            include_types=r"CHAR\(36\)",
+            include_expression=r".*\.id|.*_id",
+            exclude_expression=r"legacy_accounts\..*",
+        ),
+        ForcedType(
+            name="String(36)",
+            include_types=r"CHAR\(36\)",
+            include_expression=r"legacy_accounts\..*",
+        ),
+    )
+
+    text_ = generate(
+        source,
+        tmp_path / "app" / "schema.py",
+        url=fresh(backend),
+        config=SchemagenConfig(forced_types=rules),
+    )
+    legacy, wallets = text_.split("LEGACY_ACCOUNTS = Table(")[1].split("WALLETS = Table(")
+
+    assert 'Column("id", String(36), primary_key=True)' in legacy
+    assert 'Column("owner_id", String(36), nullable=False)' in legacy
+    assert 'Column("id", uuid_column(), primary_key=True)' in wallets
+    assert 'Column("owner_id", uuid_column(), nullable=False)' in wallets
+    assert 'Column("note", CHAR(length=36))' in wallets
+
+
 def test_a_naive_reflection_would_have_got_that_wrong() -> None:
     """Evidence rather than assertion: the same column, reflected and left alone, is the bug."""
     from sqlalchemy import Column, DateTime, Uuid

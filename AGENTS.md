@@ -221,6 +221,8 @@ PostgreSQL `UUID`), which every Java example's build forces too. Four rules hold
   is **not** forced by default: the project adds the rule (`CHAR\(36\)` + `.*\.id|.*_id`), as
   each Java MySQL build adds `UuidStringConverter` itself. The MySQL/MariaDB examples carry it
   (`UUID_IDS` in `scripts/sync-examples.py`). Do not bring the name guess back as a default.
+  To leave a column or a whole table out of it, `exclude-expression` on the rule (plus a rule
+  of its own for that table); the schemagen page shows both, proven on MySQL and MariaDB.
 - **Every other type is written faithfully** (`schemagen/_types.py`): a generic SQLAlchemy type
   where one says the same, the dialect's own type imported from its dialect module where not,
   and nothing reflection merely decorates (MariaDB's `BIGINT(20)` display width). A type

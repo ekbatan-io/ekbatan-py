@@ -272,16 +272,70 @@ include-expression = ".*\\.id|.*_id"
 ```
 
 Now every `CHAR(36)` named `id` or ending in `_id` is a `uuid_column()` and reads as a
-`uuid.UUID`. Any other `CHAR(36)` stays a `str`. To keep one id-like column a string, put a rule
-for it first - the first rule that matches wins:
+`uuid.UUID`. Any other `CHAR(36)` stays a `str`. The same works on MariaDB. Its own `UUID` type
+needs no rule.
+
+**Leave one column out** with `exclude-expression`. The column keeps its own type, `CHAR(36)`,
+and reads as a `str`:
 
 ```toml
 [[tool.ekbatan.schemagen.forced-types]]
-name = "String(36)"
-include-expression = "orders\\.tracking_id"
+name = "uuid_column"
+include-types = "CHAR\\(36\\)"
+include-expression = ".*\\.id|.*_id"
+exclude-expression = "orders\\.tracking_id"
 ```
 
-The same works on MariaDB. Its own `UUID` type needs no rule.
+**Leave a whole table out, and give it a type of its own.** Exclude the table from the uuid
+rule, and add a second rule for it. Here `legacy_accounts` holds ids from another system that
+are not uuids, so its `CHAR(36)` columns become `String(36)`:
+
+```toml
+[[tool.ekbatan.schemagen.forced-types]]
+name = "uuid_column"
+include-types = "CHAR\\(36\\)"
+include-expression = ".*\\.id|.*_id"
+exclude-expression = "legacy_accounts\\..*"
+
+[[tool.ekbatan.schemagen.forced-types]]
+name = "String(36)"
+include-types = "CHAR\\(36\\)"
+include-expression = "legacy_accounts\\..*"
+```
+
+With these tables:
+
+```sql
+CREATE TABLE wallets (id CHAR(36) NOT NULL PRIMARY KEY, owner_id CHAR(36) NOT NULL, note CHAR(36));
+CREATE TABLE legacy_accounts (id CHAR(36) NOT NULL PRIMARY KEY, owner_id CHAR(36) NOT NULL);
+```
+
+`schema.py` comes out as:
+
+```python
+LEGACY_ACCOUNTS = Table(
+    "legacy_accounts",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("owner_id", String(36), nullable=False),
+)
+
+WALLETS = Table(
+    "wallets",
+    metadata,
+    Column("id", uuid_column(), primary_key=True),
+    Column("owner_id", uuid_column(), nullable=False),
+    Column("note", CHAR(length=36)),
+)
+```
+
+`note` is not id-like, so no rule takes it. The second rule can be anything a forced type can
+be: a SQLAlchemy type, one of Ekbatan's helpers, or your own converter.
+
+Instead of the exclude, you can put the table's rule **first**: the first rule that matches a
+column wins. The exclude says it in one place, so the order does not matter.
+
+Names are case-sensitive. Write the table as the database reports it.
 
 ## Forced types
 
