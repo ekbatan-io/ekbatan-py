@@ -31,6 +31,16 @@ ekbatan:
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolTimeout: 5
+              # Held lock leases: one connection per lease that can be held at once. A lock is
+              # about a wallet's key, not its rows, so one database holds every key.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
               # The scheduler's own pool. One scheduler serves every shard, polling this database;
               # the fan-out and handling jobs it runs reach every shard through the registry.
               jobsConfig:

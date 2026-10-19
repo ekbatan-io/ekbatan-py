@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
@@ -36,6 +37,14 @@ from .app import ShardedWallets, build
 from .model import Wallet
 
 MONEY = Decimal("0.01")
+
+#: How long a deposit may wait for the wallet's lock, and how long it may hold it.
+#:
+#: `max_hold` is not a timeout on your code - it is the promise that the lock is released even
+#: if this process dies holding it. Set it above the worst case for the work inside, and
+#: `max_wait` to something a caller is willing to wait rather than be refused.
+LOCK_WAIT = timedelta(seconds=5)
+LOCK_HOLD = timedelta(seconds=30)
 
 
 class OpenWalletRequest(BaseModel):
@@ -171,16 +180,32 @@ def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
 
     @app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
     def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
-        return WalletResponse.of(
-            service.executor.execute(
-                DepositMoneyAction,
-                DepositParams(
-                    wallet_id=ShardedId[Wallet](wallet_id),
-                    amount=body.amount,
-                    recipient=body.recipient,
-                ),
+        """A deposit, serialised per wallet by a keyed lock taken around the unit of work.
+
+        The lease spans both `perform()` and the commit, on whichever shard the wallet is on.
+        Another request on the same wallet waits its turn - and then succeeds, rather than
+        losing the version check.
+        """
+        # `try_acquire`, not `acquire`: a request must not wait for ever. None is contention,
+        # not a failure - a 503 with Retry-After.
+        lease = service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
+        if lease is None:
+            raise HTTPException(
+                status_code=503,
+                detail="that wallet is busy; retry",
+                headers={"Retry-After": "1"},
             )
-        )
+        with lease:
+            return WalletResponse.of(
+                service.executor.execute(
+                    DepositMoneyAction,
+                    DepositParams(
+                        wallet_id=ShardedId[Wallet](wallet_id),
+                        amount=body.amount,
+                        recipient=body.recipient,
+                    ),
+                )
+            )
 
     @app.post("/wallets/{wallet_id}/transfers", response_model=list[WalletResponse])
     def transfer(wallet_id: UUID, body: TransferRequest, service: Service) -> list[WalletResponse]:

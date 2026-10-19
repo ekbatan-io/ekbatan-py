@@ -383,6 +383,30 @@ def test_the_totals_endpoint_asks_every_database(client: TestClient) -> None:
     assert client.get("/shards").json() == {"0:0": "25.0000", "1:0": "10.0000"}
 
 
+def test_concurrent_deposits_on_a_mexican_wallet_are_serialised_by_the_keyed_lock(
+    client: TestClient,
+) -> None:
+    """The keyed lock around the unit of work, on a wallet on the second shard: eight deposits
+    at once, each request waiting its turn. Every one lands - none is a 409 - and the balance is
+    exact."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    wallet_id = open_via_http(client, "MX", "0.00")["id"]
+
+    def deposit(_: int) -> int:
+        response = client.post(
+            f"/wallets/{wallet_id}/deposits",
+            json={"amount": "1.00", "recipient": "mexico@example.com"},
+        )
+        return response.status_code
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        codes = list(pool.map(deposit, range(8)))
+
+    assert codes == [200] * 8, "the lock made every caller wait rather than lose"
+    assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "8.00"
+
+
 def test_the_service_runs_on_the_layout_in_ekbatan_yaml(service: ShardedWallets) -> None:
     """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: both
     shards, their names, the namespace, and the driver setting reaching each server."""
@@ -395,6 +419,10 @@ def test_the_service_runs_on_the_layout_in_ekbatan_yaml(service: ShardedWallets)
             # `options: -c TimeZone=UTC`: every session on UTC, whatever the server's default.
             zone = conn.execute(text("SELECT current_setting('TimeZone')")).scalar()
             assert zone == "UTC"
+    assert type(service.locks).__name__ == "PostgresKeyedLockProvider"
+    assert service.lock_engine.pool.size() == 5
+    with service.lock_engine.connect() as conn:
+        assert conn.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
 
 
 def test_a_request_that_waits_out_the_pool_is_a_503(client: TestClient) -> None:

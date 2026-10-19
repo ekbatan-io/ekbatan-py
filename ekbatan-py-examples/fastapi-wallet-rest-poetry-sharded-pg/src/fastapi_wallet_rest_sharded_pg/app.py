@@ -4,6 +4,10 @@ Add a shard by adding a member to a group - or a group - in `ekbatan.yaml`. No c
 repository already routes by id, and the actions already never name a database. The layout is
 Java's, in the same keys as its `application.yml`: groups of members, each member a named map of
 datasources.
+
+**Locks** get the global member's `lockConfig`. A lease holds its connection for as long as it is
+held. One database holds every key: a lock is about a wallet's key, not its rows, so the deposit
+takes it on the global member whichever shard the wallet is on.
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import JobRegistry, job_registry
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob
+from ekbatan.locks import KeyedLockProvider, PostgresKeyedLockProvider
 from ekbatan.migrations import migrate
 
 from .actions import (
@@ -56,9 +61,12 @@ class ShardedWallets:
     wallets: WalletRepository
     alerts: AlertRepository
     executor: ActionExecutor
+    #: The deposit's keyed lock, over the global member's `lockConfig`.
+    locks: KeyedLockProvider
     jobs: JobRegistry
-    #: Built from the default shard's `jobsConfig`. The registry owns only the pools it built, so
-    #: this one is disposed here.
+    #: Built from the global member's `lockConfig` and the default shard's `jobsConfig`. The
+    #: registry owns only the pools it built, so these two are disposed here.
+    lock_engine: Engine
     jobs_engine: Engine
 
     def start(self) -> None:
@@ -69,6 +77,8 @@ class ShardedWallets:
     def close(self) -> None:
         # Stop taking work before closing what the work runs on.
         self.jobs.stop()
+        self.locks.close()
+        self.lock_engine.dispose()
         self.jobs_engine.dispose()
         self.registry.close()
 
@@ -123,6 +133,10 @@ def build(
     if jobs_config is None:
         raise ValueError("groups[0].members[0].configs.jobsConfig is required")
     jobs_engine = engine_for(jobs_config)
+    lock_config = default.config_for("lockConfig")
+    if lock_config is None:
+        raise ValueError("groups[0].members[0].configs.lockConfig is required")
+    lock_engine = engine_for(lock_config)
     handlers = (
         EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
     )
@@ -133,6 +147,8 @@ def build(
         wallets=wallets,
         alerts=alerts,
         executor=executor,
+        locks=PostgresKeyedLockProvider.builder().engine(lock_engine).build(),
+        lock_engine=lock_engine,
         jobs_engine=jobs_engine,
         jobs=(
             job_registry()

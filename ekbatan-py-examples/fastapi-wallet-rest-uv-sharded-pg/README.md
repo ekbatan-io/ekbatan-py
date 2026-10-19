@@ -21,7 +21,7 @@ application that knows there is more than one database is the country code on `P
 ```
 POST /wallets            {"country": "MX", ...}   -> id carries shard 1:0
 GET  /wallets/{id}                                -> routed by the id, no hint
-POST /wallets/{id}/deposits                       -> names no database
+POST /wallets/{id}/deposits                       -> names no database; under a keyed lock
 POST /wallets/{id}/transfers  (same shard)        -> 200
 POST /wallets/{id}/transfers  (across shards)     -> 422, and says to use a saga
 GET  /shards                                      -> one query per database
@@ -103,6 +103,7 @@ in the table, and through the API.
 | `repository.py` | one repository over every shard, and what a query without an id costs |
 | `ekbatan.yaml` | the only file that knows how many databases there are, in the keys of Java's `application.yml`; every pool on UTC (`options: -c TimeZone=UTC`) |
 | `app.py` | the wiring, reading the layout from `ekbatan.yaml` |
+| `api.py` | the deposit under a keyed lock - one database, the global member, holds every key, whichever shard the wallet is on; a request that waits out the pool is a 503 |
 
 ## Three things the tests pin
 
@@ -121,6 +122,26 @@ that disagreed.
 
 Moving money *between* shards is therefore a saga, not a transaction — see
 [`../fastapi-wallet-saga-uv-pg`](../fastapi-wallet-saga-uv-pg).
+
+## The pools
+
+Every pool puts its sessions on UTC with `options: -c TimeZone=UTC`.
+
+| pool | member | used by |
+| --- | --- | --- |
+| `primaryConfig` | each shard | the requests, the handler, fan-out and dispatch on every shard; past `poolSize` a request waits at most `poolTimeout`, then gets a 503 |
+| `lockConfig` | global | the deposit's keyed lock - one connection per held lease. A lock is about a wallet's key, not its rows, so one database holds every key |
+| `jobsConfig` | global | db-scheduler: one scheduler for every shard |
+
+## Its test
+
+```
+make
+```
+
+Twenty-two cases against two databases on one PostgreSQL in Testcontainers. One says what the
+keyed lock is for: eight deposits at once on a Mexican wallet all land, none a 409, and the
+balance is exact.
 
 ## Two databases, one server
 

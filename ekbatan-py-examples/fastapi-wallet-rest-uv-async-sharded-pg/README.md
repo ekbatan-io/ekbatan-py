@@ -37,13 +37,22 @@ GET  /shards                                      -> one query per database, all
 GET  /wallets/{id}/alerts                         -> what the deposit handler wrote
 ```
 
-`DepositMoneyAction` mentions no shard at all:
+## The whole idea, in one line
+
+The shard is packed into the identifier. `WalletId.generate(MEXICO)` mints an id that carries
+its coordinate, and every read and write afterwards follows it — no tenant column, no lookup
+table, no argument saying where to look.
+
+Which means `DepositMoneyAction` mentions no shard at all:
 
 ```python
 async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
     wallet = await self.wallets.get(params.wallet_id)  # routed by the id
     return self.plan.update(wallet.deposit(params.amount))
 ```
+
+That is the property worth protecting. Business logic that named a database would have to be
+edited every time the layout changed.
 
 ## What is async, and what is not
 
@@ -70,6 +79,55 @@ its sessions on UTC with `options: -c TimeZone=UTC`, which both drivers read.
 | `handlersConfig` | global | the event handler, on the handler loop; alerts all live on the default shard | asyncpg |
 | `jobsConfig` | each shard | db-scheduler (global), and fan-out and dispatch on every shard | psycopg |
 
+## Two forced types
+
+`pyproject.toml` tells schemagen to turn two plain text columns into small classes of this
+app's own:
+
+```toml
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_async_sharded_pg.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_async_sharded_pg.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+```
+
+and schemagen writes these two lines into `schema.py`:
+
+```python
+Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
+Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
+```
+
+- **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A
+  wallet's `currency` is a `Currency`, which takes only three capital letters: `"eur"` is
+  refused.
+- **Picked by name.** `alerts.recipient` is an `EmailAddress`. A bad address is refused when
+  the deposit is made (a 400), rather than later in the handler that writes the alert, where it
+  would fail on every retry.
+
+The two classes are in `model.py` and the converters in `converters.py`; neither knows
+SQLAlchemy. The repository hands the table a `Currency` and gets one back, and the column holds
+`EUR`. Action parameters and events keep the plain text, `"currency": "EUR"`, because they are
+written to the outbox as JSON for other services to read. The test checks each value in Python,
+in the table, and through the API.
+
+## What to look at
+
+| File | What it shows |
+|---|---|
+| `actions.py` | `OpenWalletAction` — the **one** place a shard is chosen, from a country code |
+| `model.py` | `WalletId(ShardedId)`, and nothing else about sharding |
+| `schema.py` | no shard column anywhere; every database holds the same tables |
+| `repository.py` | one async repository over every shard, and what a query without an id costs - asked of every shard at once |
+| `ekbatan.yaml` | the only file that knows how many databases there are, in the keys of Java's `application.yml`; every pool on UTC (`options: -c TimeZone=UTC`) |
+| `app.py` | the wiring, reading the layout from `ekbatan.yaml` |
+| `api.py` | `async def` endpoints; the deposit under an async keyed lock - one database, the global member, holds every key, whichever shard the wallet is on; a request that waits out the pool is a 503 |
+
 ## Three things the tests pin
 
 **Isolation is checked from the outside.** A Mexican wallet is on the Mexican database and not
@@ -88,15 +146,20 @@ database. A question you ask often should be answerable from one shard.
 make
 ```
 
-Twenty-two cases against two databases on one PostgreSQL in Testcontainers - the sync twin's
-twenty, and two more. A test that drives the service directly awaits on a loop of its own (a
-`HandlerLoop`); one through HTTP awaits on the app's loop, through `client.portal`. The two
-extra say what this example is for: eight deposits at once on a Mexican wallet all land under
-the keyed lock, and the requests, the lock and the handler really run on asyncpg while the
-jobs run on psycopg.
+Twenty-three cases against two databases on one PostgreSQL in Testcontainers - the sync twin's
+twenty-two, and one more. A test that drives the service directly awaits on a loop of its own (a
+`HandlerLoop`); one through HTTP awaits on the app's loop, through `client.portal`. The extra one
+says what this example is for: the requests, the lock and the handler really run on asyncpg
+while the jobs run on psycopg.
 
 ## Two databases, one server
 
 The tests create `shard_global` and `shard_mexico` on one Postgres container. The framework
 opens a pool per url and cannot tell that one process is behind both, so the routing is
 genuinely exercised.
+
+## Ids that name a shard you have not configured
+
+`default_shard` is where those land, rather than being refused. That is what lets one
+environment read another's ids — a staging deployment with one database can read a production
+id minted for shard 3 instead of throwing at it.
