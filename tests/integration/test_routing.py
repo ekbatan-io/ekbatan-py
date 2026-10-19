@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+import sqlalchemy.exc
 from sqlalchemy import Row, create_engine, event, func, select
 
 from ekbatan import Transaction
@@ -371,8 +372,9 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
     """Java's findOneWhere short-circuits; a fan-out that always visits every shard turns a
     one-row lookup into one query per database for the whole life of the deployment.
 
-    `ekbatan.aio` asks every shard at once instead - one round trip's wait, one query per
-    shard - and reads the answers in shard order, so the row found is the same."""
+    `ekbatan.aio` asks every shard at once instead - one round trip's wait - and takes the
+    answers in shard order, so the row found is the same; the reads after the shard that
+    answered are cancelled, so a later shard may or may not have run its query."""
     repo = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
@@ -390,13 +392,79 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
     for shard in sharded_registry.shards:
         event.listen(sharded_registry.manager(shard).primary, "before_cursor_execute", watch(shard))
 
-    asked = {GLOBAL: 1, MEXICO: 0} if mode == "sync" else {GLOBAL: 1, MEXICO: 1}
+    later = {0} if mode == "sync" else {0, 1}
     assert repo.find_one_where(WALLETS.c.currency == "SEK") is not None
-    assert selects == asked
+    assert selects[GLOBAL] == 1 and selects[MEXICO] in later
 
     selects.update(dict.fromkeys(selects, 0))
     assert repo.exists_where(WALLETS.c.currency == "SEK") is True
-    assert selects == asked
+    assert selects[GLOBAL] == 1 and selects[MEXICO] in later
+
+
+@pytest.fixture
+def mexico_down(backend, clock, mode, portal):
+    """Two shards, the second one broken: its database has no tables, so any read there fails
+    with the database's own error. The first shard is migrated and empty."""
+    from ekbatan.config import ShardingConfig
+    from fixtures.config import group, member
+    from fixtures.logins import data_source
+    from fixtures.schema import metadata
+
+    backend.prepare("ekbatan_down_global", metadata)
+    backend.truncate("ekbatan_down_global", metadata)
+    registry = DatabaseRegistry.from_config(
+        ShardingConfig(
+            default_shard=GLOBAL,
+            groups=(
+                group(
+                    0,
+                    "global",
+                    member(0, data_source(backend.url("ekbatan_down_global")), name="global"),
+                ),
+                group(
+                    1,
+                    "mexico",
+                    member(0, data_source(backend.url("ekbatan_down_mexico")), name="mexico"),
+                ),
+            ),
+        )
+    )
+    try:
+        yield WalletRepository(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+        )
+    finally:
+        registry.close() if mode == "sync" else registry.aclose()
+
+
+def test_a_shard_after_the_one_that_answers_cannot_fail_the_lookup(mexico_down):
+    """`find_one_where` and `exists_where` answer from the first shard, in shard order, that
+    has the row. A broken shard after it is never reached by the sync call, and the async call,
+    which asks every shard at once, gives the same answer rather than the broken shard's error."""
+    found = mexico_down.add(a_wallet(GLOBAL, "SEK"))
+
+    one = mexico_down.find_one_where(WALLETS.c.currency == "SEK")
+    assert one is not None and one.id == found.id
+    assert mexico_down.exists_where(WALLETS.c.currency == "SEK") is True
+
+
+def test_a_broken_shard_the_lookup_reaches_fails_it_and_is_named(mexico_down):
+    """When every shard before the broken one says "not here", the broken one is reached - in
+    both modes - and its own error is raised, with a note naming the shard. So is a read that
+    needs every shard."""
+    for read in (
+        lambda: mexico_down.find_one_where(WALLETS.c.currency == "SEK"),
+        lambda: mexico_down.exists_where(WALLETS.c.currency == "SEK"),
+        lambda: mexico_down.find_where(),
+        lambda: mexico_down.count(),
+    ):
+        with pytest.raises(sqlalchemy.exc.DBAPIError) as failed:
+            read()
+        notes = "\n".join(getattr(failed.value, "__notes__", []))
+        assert "ekbatan: reading shard 1:0 (mexico) failed, so the whole read failed" in notes
+        assert not isinstance(failed.value, BaseExceptionGroup)
+
+    assert mexico_down.find_where(shard=GLOBAL) == [], "the first shard still reads"
 
 
 # ------------------------------------------- the repository opens no transaction of its own

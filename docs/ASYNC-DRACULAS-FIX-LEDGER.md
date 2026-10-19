@@ -15,8 +15,8 @@ landed after the list was written).
 | 2 | stipend job missing in async REST + SQLite twins | add it, its work awaited on a `HandlerLoop` as `job-worker-uv-async-pg` does | todo | |
 | 3 | load caps only in async | add 503 handler, `poolTimeout`, `limit_concurrency` to sync REST, saga, sharded; test the 503 in sync | todo | |
 | 4 | sharded keyed lock only in async | add the lock and its test to the sync sharded example | todo | |
-| 5 | async `find_one_where`/`exists_where` fail on a down shard sync never reaches | async stops at the first shard in order with the answer; docs; test both modes | todo | |
-| 6 | shard note on scatter-read errors only in async | add the note in sync | todo | |
+| 5 | async `find_one_where`/`exists_where` fail on a down shard sync never reaches | async stops at the first shard in order with the answer; docs; test both modes | fixed: async `_first_answer` asks all shards at once, answers in shard order, cancels the rest; a later broken shard no longer fails it; tested both modes, one shard down | EKB-0392 |
+| 6 | shard note on scatter-read errors only in async | add the note in sync | fixed: the note-making moved into `_RepositoryCore._shard_failure`; sync scatter reads add the same note (no "cancelled" clause) | EKB-0392 |
 | 7 | async MySQL/MariaDB drop `innodb_lock_wait_timeout` | put it back + its assertion | todo | |
 | 8 | async UTC test weakened | port the Tehran test to the three async twins | todo | |
 | 9 | other REST tests dropped in async | port 422, recipient and currency checks | todo | |

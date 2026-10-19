@@ -226,8 +226,10 @@ There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them o
 - **The pool is the cap.** No semaphore of the framework's own; the async pool takes the same
   `DataSourceConfig` settings as a sync one.
 - **Reads across shards run at once** (`TaskGroup`): all or nothing, the failing shard's own
-  error with a note naming it, never a group, never partial rows. `dbs()` / `readonly_dbs()`
-  stay sequential.
+  error with a note naming it (the sync reads add the same note), never a group, never partial
+  rows. `find_one_where` / `exists_where` answer as the sync calls do: the first shard in order
+  with the row wins, the reads after it are cancelled, and a broken shard after it does not
+  fail them (`_first_answer`). `dbs()` / `readonly_dbs()` stay sequential.
 - **Tests run both ways.** A test module sets `MODES = ("sync", "async")` and `tests/modes.py`
   runs each test a second time against `ekbatan.aio` through a blocking portal, every call a
   thread makes in one task of its own; a test's own actions get async twins with `twin`,

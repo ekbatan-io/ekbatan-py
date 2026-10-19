@@ -196,12 +196,14 @@ costs about one shard's round trip rather than one per shard. The answer is the 
 
 - rows come back first shard first, as in sync;
 - if one shard fails, the whole read fails: the reads still running on the other shards are
-  cancelled, and that shard's own error is raised - the same exception the sync read raises -
-  with a note naming the shard, e.g. `ekbatan: reading shard 1:0 (mexico) failed, so the whole
-  read failed and the reads still running on the other shards were cancelled`. There are no
-  partial results;
-- `find_one_where` asks every shard and takes the first, in shard order, that has the row - the
-  sync call stops at that shard instead.
+  cancelled, and that shard's own error is raised - the same exception the sync read raises,
+  with the same note naming the shard, e.g. `ekbatan: reading shard 1:0 (mexico) failed, so the
+  whole read failed and the reads still running on the other shards were cancelled`. There are
+  no partial results;
+- `find_one_where` and `exists_where` take the answers in shard order and stop at the first
+  shard that has the row, as the sync calls do: the reads after it are cancelled, and a broken
+  shard after it does not fail the call. A shard fails them only when every shard before it
+  said "not here" - exactly when the sync call, which asks one shard at a time, would reach it.
 
 `dbs()` and `readonly_dbs()` hand connections to your own code, so they stay as in sync: one
 shard at a time, and lazy - `async for shard, conn in wallets.readonly_dbs():`.

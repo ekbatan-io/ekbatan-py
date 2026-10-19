@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Protocol
 
@@ -199,29 +199,49 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
                 raise
             # Raised outside the handler, so the error is the shard's own and not chained to
             # the group that carried it.
-            failed = self._shard_failure(shards, failures)
+            failed = self._shard_failure(shards, failures, cancelled=True)
         else:
             return [answers[shard] for shard in shards]
         raise failed
 
-    def _shard_failure(
-        self, shards: Sequence[ShardIdentifier], failures: Mapping[ShardIdentifier, Exception]
-    ) -> Exception:
-        """The first failed shard's error, in shard order, with notes saying which shard it
-        was and which others failed too - by kind only, never by message."""
-        failed = [shard for shard in shards if shard in failures]
-        first = failures[failed[0]]
-        first.add_note(
-            f"ekbatan: reading shard {failed[0]} ({self.registry.manager(failed[0]).label}) "
-            f"failed, so the whole read failed and the reads still running on the other "
-            f"shards were cancelled"
-        )
-        for other in failed[1:]:
-            first.add_note(f"ekbatan: shard {other} failed too: {type(failures[other]).__name__}")
-        return first
+    async def _first_answer[T](
+        self,
+        shards: Sequence[ShardIdentifier],
+        read: Callable[[ShardIdentifier], Coroutine[Any, Any, T | None]],
+    ) -> T | None:
+        """``read`` on every shard at the same time, answered as the sync call answers.
 
-    def _shards(self, shard: ShardIdentifier | None) -> tuple[ShardIdentifier, ...]:
-        return (shard,) if shard is not None else self._scatter_shards()
+        The sync call asks shard by shard and stops at the first that answers. Here every shard
+        is asked at once, but the answers are taken in shard order: the first shard with an
+        answer wins and the reads still running are cancelled, and a shard's failure fails the
+        read only when every shard before it answered ``None`` - exactly when the sync call
+        would have reached it. A broken shard after the one that answers costs nothing, in
+        either mode. ``None`` is "not here".
+        """
+        if len(shards) == 1:
+            return await read(shards[0])
+        tasks: dict[ShardIdentifier, asyncio.Task[T | None]] = {
+            each: asyncio.create_task(read(each)) for each in shards
+        }
+        try:
+            for each in shards:
+                try:
+                    found = await tasks[each]
+                except Exception as error:
+                    failed, failure = each, error
+                    break
+                if found is not None:
+                    return found
+            else:
+                return None
+        finally:
+            for task in tasks.values():
+                task.cancel()
+            # Every task is waited for, so each connection is back in its pool and no error
+            # is left unretrieved.
+            await asyncio.gather(*tasks.values(), return_exceptions=True)
+        # Raised outside the handler, so the error is the shard's own and not chained.
+        raise self._shard_failure(shards, {failed: failure}, cancelled=True)
 
     # ------------------------------------------------------------------ reads
 
@@ -260,21 +280,17 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
     ) -> M | None:
         """The one row matching, or ``None``; a shard holding two is refused.
 
-        Across shards every shard is asked at once and the answers are read in shard order, so
-        the answer is the sync one's: the first shard that has the row. Unlike the sync call,
-        which stops at that shard, every shard is queried.
+        Across shards every shard is asked at once, and the answer is the sync one's: the first
+        shard in order that has the row; the reads after it are cancelled, and a shard after it
+        that fails does not fail the read.
         """
         stmt = self._one_where(*criteria)
 
-        async def read(each: ShardIdentifier) -> list[Row[Any]]:
+        async def read(each: ShardIdentifier) -> M | None:
             async with self._reader(shard=each) as conn:
-                return list(await conn.execute(stmt))
+                return self._unique(list(await conn.execute(stmt)))
 
-        for rows in await self._on_each(self._shards(shard), read):
-            found = self._unique(rows)
-            if found is not None:
-                return found
-        return None
+        return await self._first_answer(self._shards(shard), read)
 
     async def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
         return await self.find_where(shard=shard)
@@ -287,14 +303,15 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
     async def exists_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> bool:
-        """Whether any row matches - one row read per shard at most, the shards at once."""
+        """Whether any row matches - one row read per shard at most, the shards at once, the
+        answer the sync one's: the first shard in order with a row settles it."""
         stmt = self._presence(*criteria)
 
-        async def read(each: ShardIdentifier) -> bool:
+        async def read(each: ShardIdentifier) -> bool | None:
             async with self._reader(shard=each) as conn:
-                return (await conn.execute(stmt)).first() is not None
+                return True if (await conn.execute(stmt)).first() is not None else None
 
-        return any(await self._on_each(self._shards(shard), read))
+        return await self._first_answer(self._shards(shard), read) is not None
 
     async def count(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None

@@ -623,6 +623,34 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
             return (self.registry.default_shard,)
         return tuple(self.registry.shards)
 
+    def _shards(self, shard: ShardIdentifier | None) -> tuple[ShardIdentifier, ...]:
+        """The shard named, or every shard a read with none named visits."""
+        return (shard,) if shard is not None else self._scatter_shards()
+
+    def _shard_failure(
+        self,
+        shards: Sequence[ShardIdentifier],
+        failures: Mapping[ShardIdentifier, Exception],
+        *,
+        cancelled: bool = False,
+    ) -> Exception:
+        """The first failed shard's error, in shard order, with notes saying which shard it
+        was and which others failed too - by kind only, never by message. What a read across
+        more than one shard raises, in both modes; ``cancelled`` says the reads still running
+        on the other shards were stopped, which only the async read can do."""
+        failed = [shard for shard in shards if shard in failures]
+        first = failures[failed[0]]
+        note = (
+            f"ekbatan: reading shard {failed[0]} ({self.registry.manager(failed[0]).label}) "
+            f"failed, so the whole read failed"
+        )
+        if cancelled:
+            note += " and the reads still running on the other shards were cancelled"
+        first.add_note(note)
+        for other in failed[1:]:
+            first.add_note(f"ekbatan: shard {other} failed too: {type(failures[other]).__name__}")
+        return first
+
     def _by_id(self, key: K) -> Any:
         """``SELECT … WHERE id = ?`` on a live row."""
         return select(self.table).where(*self._live(self.id_column == _to_column(key)))
@@ -816,20 +844,6 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         with self.db(key=key, shard=shard) as conn:
             yield conn
 
-    def _readers(self) -> Iterator[tuple[ShardIdentifier, Db]]:
-        """Every shard's primary - the scatter counterpart to :meth:`_reader`.
-
-        An unsharded repository visits **only the default shard**, even when the registry holds
-        more - the same guard Java applies in ``dbs()`` and ``readonlyDbs()``. Without it a
-        repository that opted out of sharding would still scatter across every database a
-        sibling repository happens to use.
-
-        Lazy, so a caller who stops at the first shard that answers has not queried the rest.
-        """
-        for shard in self._scatter_shards():
-            with self._reader(shard=shard) as conn:
-                yield shard, conn
-
     @contextmanager
     def readonly_db(
         self, *, key: K | None = None, shard: ShardIdentifier | None = None
@@ -918,11 +932,13 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         accident, not an instruction to fetch it twice. An empty input is an empty result:
         never ``IN ()``, and never an accidental full-table read.
         """
-        found: list[M] = []
-        for shard, shard_keys in self._keys_by_shard(keys).items():
+        by_shard = self._keys_by_shard(keys)
+
+        def read(shard: ShardIdentifier) -> list[M]:
             with self._reader(shard=shard) as conn:
-                found += [self.from_row(r) for r in conn.execute(self._among(conn, shard_keys))]
-        return found
+                return [self.from_row(r) for r in conn.execute(self._among(conn, by_shard[shard]))]
+
+        return [model for found in self._on_each(list(by_shard), read) for model in found]
 
     def find_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
@@ -943,20 +959,12 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         the person who will not notice that it was not.
         """
         stmt = self._one_where(*criteria)
-        for conn in self._one_or_every(shard):
-            found = self._unique(list(conn.execute(stmt)))
-            if found is not None:
-                return found
-        return None
 
-    def _one_or_every(self, shard: ShardIdentifier | None) -> Iterator[Db]:
-        """The shard named, or every shard lazily, so a caller can stop at the first answer."""
-        if shard is not None:
-            with self._reader(shard=shard) as conn:
-                yield conn
-        else:
-            for _, conn in self._readers():
-                yield conn
+        def read(each: ShardIdentifier) -> M | None:
+            with self._reader(shard=each) as conn:
+                return self._unique(list(conn.execute(stmt)))
+
+        return self._first_answer(self._shards(shard), read)
 
     def all(self, *, shard: ShardIdentifier | None = None) -> list[M]:
         return self.find_where(shard=shard)
@@ -976,10 +984,12 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         shape a "does this customer have any orders" check most often takes.
         """
         stmt = self._presence(*criteria)
-        if shard is not None:
-            with self._reader(shard=shard) as conn:
-                return conn.execute(stmt).first() is not None
-        return any(conn.execute(stmt).first() is not None for _, conn in self._readers())
+
+        def read(each: ShardIdentifier) -> bool | None:
+            with self._reader(shard=each) as conn:
+                return True if conn.execute(stmt).first() is not None else None
+
+        return self._first_answer(self._shards(shard), read) is not None
 
     def count(self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None) -> int:
         return sum(int(r[0]) for r in self._read(self._count(*criteria), shard))
@@ -991,10 +1001,47 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         predicate says nothing about where its rows live - so this fans out, and the caller
         that knows better narrows it with ``shard=``.
         """
-        if shard is not None:
-            with self._reader(shard=shard) as conn:
+
+        def read(each: ShardIdentifier) -> list[Row[Any]]:
+            with self._reader(shard=each) as conn:
                 return list(conn.execute(stmt))
-        return [row for _, conn in self._readers() for row in conn.execute(stmt)]
+
+        return [row for rows in self._on_each(self._shards(shard), read) for row in rows]
+
+    def _on_each[T](
+        self, shards: Sequence[ShardIdentifier], read: Callable[[ShardIdentifier], T]
+    ) -> list[T]:
+        """``read`` on every shard, one after another, the answers in shard order.
+
+        All or nothing: the first shard that fails fails the read, with a note naming the
+        shard when the read spans more than one. There are no partial results.
+        """
+        return [self._read_one(shards, each, read) for each in shards]
+
+    def _first_answer[T](
+        self, shards: Sequence[ShardIdentifier], read: Callable[[ShardIdentifier], T | None]
+    ) -> T | None:
+        """``read`` shard by shard, in shard order, stopping at the first that answers - so a
+        lookup across sixteen shards is one query when it is lucky, and a shard after the one
+        that answered is never asked. ``None`` is "not here"."""
+        for each in shards:
+            found = self._read_one(shards, each, read)
+            if found is not None:
+                return found
+        return None
+
+    def _read_one[T](
+        self,
+        shards: Sequence[ShardIdentifier],
+        shard: ShardIdentifier,
+        read: Callable[[ShardIdentifier], T],
+    ) -> T:
+        try:
+            return read(shard)
+        except Exception as error:
+            if len(shards) > 1:
+                self._shard_failure(shards, {shard: error})
+            raise
 
     # ----------------------------------------------------------------- writes
 

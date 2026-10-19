@@ -273,6 +273,12 @@ What it changes about the inherited reads and writes:
 | `find_where`, `find_one_where`, `exists_where`, `count` | **every shard** — a predicate says nothing about placement |
 | anything passed `shard=` | that shard, and only that one |
 
+A read across every shard visits them in shard order. `find_one_where` and `exists_where` stop at
+the first shard that has the row, so a lookup that is lucky costs one query, and a shard after
+that one is never asked. If a shard fails, the whole read fails with that shard's own error and
+a note naming it - `ekbatan: reading shard 1:0 (mexico) failed, so the whole read failed`. There
+are no partial results.
+
 `find_many(ids)` is the one worth calling out: it **groups the ids by shard and queries each
 shard once**, rather than one query per id. Duplicates are collapsed first, and an empty input
 returns an empty list without going near a database — never `IN ()`, and never an accidental
