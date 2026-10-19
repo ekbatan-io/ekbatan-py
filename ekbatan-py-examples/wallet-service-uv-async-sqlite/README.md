@@ -38,18 +38,19 @@ stay plain functions, written in each repository as in the sync twin.
 its own. It still runs after the deposit has committed, never inside it: dispatch runs it on
 its handler loop, one event loop on a thread of its own.
 
+**`jobs.py`** - the daily stipend is still a sync job: db-scheduler claims its row and calls
+`execute` on one of its threads. Its work is a coroutine, handed to the handler loop with
+`loop.run(...)`, where it awaits the handler's executor and repository.
+
 **`app.py`** - an `AsyncDatabaseRegistry` and an `AsyncActionExecutor` for the units of work; a
-second async registry and executor for the handler, used only on the handler loop; and a sync
-`DatabaseRegistry` for what polls - db-scheduler, fan-out and dispatch - built from the same
-`ekbatan.yaml`. `aclose()` closes them in order.
+second async registry and executor for the handler and the stipend's work, used only on the
+handler loop; and a sync `DatabaseRegistry` for what polls - db-scheduler, fan-out, dispatch and
+the stipend - built from the same `ekbatan.yaml`. `start()` is awaited and returns once the
+stipend's first run is over; `aclose()` closes everything in order.
 
 **`__main__.py`** - the narration is a coroutine, run with `asyncio.run`.
 
 ## What it leaves out
-
-The sync twin's daily stipend job. Distributed jobs always run on threads, through the sync API,
-so a job in an async service is written exactly as the sync twin's `jobs.py`, over a sync
-executor of its own; repeating it here would show nothing async.
 
 Keyed locks: neither twin takes one. SQLite has no advisory locks, so there is no keyed lock
 provider for it, sync or async; a service on SQLite that needs one uses the Redis provider

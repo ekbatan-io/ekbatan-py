@@ -383,18 +383,20 @@ events_config = ekbatan.local_event_handler  # `local-event-handler` in the file
 
 ```python
 # The async handler awaits an executor of its own, on a registry of its own: an async pool
-# belongs to the loop it is used on, and the handler runs on dispatch's handler loop.
+# belongs to the loop it is used on, and the handler runs on dispatch's handler loop. The
+# stipend job's work runs on the same loop, so it uses them too.
 handler_loop = HandlerLoop()
 handler_registry = (
     AsyncDatabaseRegistry.builder()
     .with_default_database(AsyncTransactionManager(layout.default_shard, handler_engine))
     .build()
 )
+handler_wallets = WalletRepository(handler_registry, clock=running)
 handler_executor = AsyncActionExecutor(
     namespace=ekbatan.namespace,
     registry=handler_registry,
-    repositories=[AlertRepository(handler_registry, clock=running)],
-    actions=[RaiseAlertAction(clock)],
+    repositories=[handler_wallets, AlertRepository(handler_registry, clock=running)],
+    actions=[DepositMoneyAction(handler_wallets, clock), RaiseAlertAction(clock)],
     events=EVENTS,
     clock=running,
 )
@@ -452,6 +454,7 @@ jobs = (
                          # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled,
                          handler_loop=handler_loop),
+        PayStipendJob(handler_loop, handler_executor, handler_wallets),
     ])
     .with_config(ekbatan.jobs)  # `jobs` in the file, if any
     .workers(config.job_workers)
@@ -465,9 +468,10 @@ the same leader election, the same heartbeat and the same dead-execution recover
 and `jobs.start()` runs the pipeline. Leave them out and events accumulate unread.
 
 Jobs are sync in both modes: `DistributedJob.execute` is a plain `def`, run on a worker thread.
-An async service registers them on a sync registry, as above. A job of its own, like the sync
-block's `PayStipendJob`, is written the same way in an async service, over a sync executor of its
-own; the async example leaves it out.
+An async service registers them on a sync registry, as above. A job's *work* can still be
+awaited: in the async block, `PayStipendJob.execute` hands a coroutine to the handler loop with
+`handler_loop.run(...)` and waits for it, so the work awaits the handler's executor and
+repositories; a failure and its retry stay db-scheduler's.
 
 ### Three pools, and why
 

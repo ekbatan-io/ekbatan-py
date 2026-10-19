@@ -9,11 +9,16 @@ import asyncio
 import os
 import tempfile
 import time
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
+from db_scheduler.clock import SettableClock
 from sqlalchemy import select
+
+from ekbatan.clock import SystemClock
+from ekbatan.distributedjobs import job_registry
 
 from .actions import (
     CloseWalletAction,
@@ -24,6 +29,7 @@ from .actions import (
     WalletIdParams,
 )
 from .app import WalletService, build
+from .jobs import PayStipendJob
 from .schema import EVENTS
 
 
@@ -43,10 +49,10 @@ async def serve(service: WalletService) -> None:
 
 async def run(service: WalletService) -> None:
     say("start the jobs")
-    # Fan-out and handling start polling here, on their own threads, as they would in any
-    # service. Nothing below calls them.
-    service.start()
-    print("   fan-out and handling are polling")
+    # Fan-out, handling and the stipend start polling here, on their own threads, as they would
+    # in any service. Nothing below calls them.
+    await service.start()
+    print("   fan-out, handling and the stipend are polling")
 
     say("open a wallet")
     wallet = await service.executor.execute(
@@ -75,6 +81,24 @@ async def run(service: WalletService) -> None:
     for alert in await service.alerts.all():
         print(f"   alert for {alert.recipient}: {alert.message}")
     print("   the handler read the recipient off the action's parameters, not the event")
+
+    say("a day later, the daily stipend runs, as one instance of a cluster would")
+    # The stipend ran once at startup, before this wallet existed, and is next due in a day.
+    # Rather than wait a day, a scheduler of its own whose clock says a day has passed picks
+    # the same row from `scheduled_tasks` and runs it once - on a thread, as db-scheduler does,
+    # its work awaited on the handler loop.
+    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+    stipend_only = (
+        job_registry()
+        .engine(service.events_registry.default.primary)
+        .with_jobs(
+            [PayStipendJob(service.handler_loop, service.handler_executor, service.handler_wallets)]
+        )
+        .build_manual(a_day_later)
+    )
+    stipend_only.start()
+    await asyncio.to_thread(stipend_only.scheduler.run_any_due_executions)
+    print(f"   balance {(await service.wallets.get(wallet.id)).balance}")
 
     say("close it")
     await service.executor.execute(CloseWalletAction, WalletIdParams(wallet_id=wallet.id))

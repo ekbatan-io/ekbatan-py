@@ -12,16 +12,19 @@ built from the same `ekbatan.yaml`: the sync side connects with sqlite3, the asy
 aiosqlite.
 
 Three pools over the one file, each for what uses it: the requests' (async), the handler's
-(async, used only on dispatch's handler loop - an async pool belongs to the loop it is used on)
-and the jobs' (sync).
+(async, used only on dispatch's handler loop - an async pool belongs to the loop it is used on -
+by the event handler and by the stipend job's work) and the jobs' (sync).
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+from sqlalchemy import select
 
 from ekbatan import ActionRegistry, DatabaseRegistry, RepositoryRegistry
 from ekbatan.aio import (
@@ -38,8 +41,9 @@ from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJo
 
 from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
 from .handlers import MoneyDepositedEventHandler
+from .jobs import STIPEND_JOB_NAME, PayStipendJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, metadata
+from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
 
 #: The service's Ekbatan settings, read once at startup.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
@@ -54,18 +58,41 @@ class WalletService:
     wallets: WalletRepository
     alerts: AlertRepository
     executor: AsyncActionExecutor
-    #: The handler side: its own async registry and executor, used only on `handler_loop`.
+    #: The handler side: its own async registry and executor, used only on `handler_loop` -
+    #: by the event handler and by the stipend job's work.
     handler_loop: HandlerLoop
     handler_registry: AsyncDatabaseRegistry
+    handler_wallets: WalletRepository
+    handler_executor: AsyncActionExecutor
     #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over it.
     events_registry: DatabaseRegistry
     jobs: JobRegistry
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Begin polling. Fan-out and handling are two of the jobs, so this is what starts the
         event pipeline - on its own threads, off the event loop: from here on, a committed event
-        reaches its handler on its own."""
+        reaches its handler on its own.
+
+        Returns once the stipend's first run is over. A `FixedDelay` job is due the moment it is
+        registered, so the stipend pays every open wallet right at startup; waiting for that
+        here means a wallet opened afterwards is not paid by surprise half a second later.
+        Awaited, so the wait does not hold up the event loop.
+        """
         self.jobs.start()
+        deadline = time.monotonic() + 15
+        while not await self._stipend_has_run():
+            if time.monotonic() > deadline:
+                raise RuntimeError("the stipend's first run did not finish within 15 seconds")
+            await asyncio.sleep(0.05)
+
+    async def _stipend_has_run(self) -> bool:
+        async with self.registry.default.connection(readonly=True) as conn:
+            found = await conn.execute(
+                select(SCHEDULED_TASKS.c.last_success).where(
+                    SCHEDULED_TASKS.c.task_name == STIPEND_JOB_NAME
+                )
+            )
+            return found.scalar_one_or_none() is not None
 
     async def aclose(self) -> None:
         # Stop taking work before closing what the work runs on. Stopping the jobs waits for a
@@ -129,6 +156,7 @@ def build(
     )
 
     # -- the handler side, async on dispatch's handler loop ------------------------------------
+    # The stipend job hands its work to the same loop, so it runs on this side too.
     member = layout.groups[0].members[0]
     primary = member.config_for("primaryConfig")
     if primary is None:
@@ -141,16 +169,23 @@ def build(
         )
         .build()
     )
+    handler_wallets = WalletRepository(handler_registry, clock=running)
     handler_executor = (
         AsyncActionExecutor.builder()
         .namespace(ekbatan.namespace)
         .database_registry(handler_registry)
         .repository_registry(
             RepositoryRegistry.builder()
+            .with_model_repository(handler_wallets)
             .with_entity_repository(AlertRepository(handler_registry, clock=running))
             .build()
         )
-        .action_registry(ActionRegistry.builder().with_action(RaiseAlertAction(running)).build())
+        .action_registry(
+            ActionRegistry.builder()
+            .with_action(DepositMoneyAction(handler_wallets, running))
+            .with_action(RaiseAlertAction(running))
+            .build()
+        )
         .event_persister(AsyncSingleTableJsonEventPersister(handler_registry, EVENTS))
         .clock(running)
         .build()
@@ -196,6 +231,8 @@ def build(
         executor=executor,
         handler_loop=handler_loop,
         handler_registry=handler_registry,
+        handler_wallets=handler_wallets,
+        handler_executor=handler_executor,
         events_registry=events_registry,
         # The jobs run on db-scheduler, sync, on threads of their own. A real deployment would
         # give them a dedicated pool (`jobsConfig`), as the server-database examples do: a job
@@ -203,7 +240,9 @@ def build(
         jobs=(
             job_registry()
             .engine(events_registry.default.primary)
-            .with_jobs([fanout, dispatch])
+            .with_jobs(
+                [fanout, dispatch, PayStipendJob(handler_loop, handler_executor, handler_wallets)]
+            )
             .with_config(ekbatan.jobs)
             .build()
         ),

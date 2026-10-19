@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -77,6 +78,20 @@ def open_wallet(client: TestClient, balance: str = "100.00") -> str:
     assert created.status_code == 201, created.text
     wallet_id: str = created.json()["id"]
     return wallet_id
+
+
+def stipend_has_run(jobs_engine: Any, within: float = 15.0) -> None:
+    """Wait for the stipend's run at startup: a `FixedDelay` job is due the moment it is
+    registered, and its row records the run once it is over."""
+    deadline = time.monotonic() + within
+    query = text("SELECT last_success FROM scheduled_tasks WHERE task_name = 'wallet-stipend'")
+    while True:
+        with jobs_engine.connect() as connection:
+            if connection.execute(query).scalar_one_or_none() is not None:
+                return
+        if time.monotonic() > deadline:
+            raise AssertionError("the stipend's run at startup did not finish")
+        time.sleep(0.1)
 
 
 def test_the_service_comes_up_and_answers(client: TestClient) -> None:
@@ -295,6 +310,37 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
         # `application_name` under `dataSourceProperties`, reaching the server.
         reported = connection.execute(text("SELECT current_setting('application_name')"))
         assert reported.scalar() == "wallet-service"
+
+
+def test_the_stipend_job_pays_every_open_wallet(client: TestClient) -> None:
+    """The stipend ran at startup and is next due in a day. A scheduler whose clock says a day
+    has passed picks the same row from `scheduled_tasks` and runs it - once."""
+    from datetime import timedelta
+
+    from db_scheduler.clock import SettableClock
+
+    from ekbatan.clock import SystemClock
+    from ekbatan.distributedjobs import job_registry
+
+    from .jobs import PayStipendJob
+
+    service = client.app.state.service
+    stipend_has_run(service.jobs_engine)
+    wallet_id = open_wallet(client, "0.00")
+
+    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+    stipend_only = (
+        job_registry()
+        .engine(service.jobs_engine)
+        .with_jobs([PayStipendJob(service.executor, service.wallets)])
+        .build_manual(a_day_later)
+    )
+    stipend_only.start()
+
+    stipend_only.scheduler.run_any_due_executions()
+    assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "1.00"
+    stipend_only.scheduler.run_any_due_executions()  # its slot rescheduled; nothing due
+    assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "1.00"
 
 
 def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) -> None:

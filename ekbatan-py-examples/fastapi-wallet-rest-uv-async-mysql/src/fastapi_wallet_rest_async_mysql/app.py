@@ -25,6 +25,7 @@ a request connection. Size it for the leases held at once, not for traffic.
 
 **The handler** gets `handlersConfig`, async, used only on dispatch's handler loop: an async pool
 belongs to the loop it is used on, so the handler's is its own, and it is closed on that loop.
+The stipend job's work runs on the same loop, over the same pool.
 
 **Jobs** get `jobsConfig`, sync: db-scheduler, and the fan-out and dispatch jobs' reads and
 writes of the queue. db-scheduler writes a heartbeat; size the pool past the job workers so a
@@ -66,6 +67,7 @@ from ekbatan.migrations import migrate
 
 from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
 from .handlers import MoneyDepositedEventHandler
+from .jobs import PayStipendJob
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS
 
@@ -100,9 +102,11 @@ class WalletService:
     #: The deposit's keyed lock, async, over `lockConfig`.
     locks: AsyncKeyedLockProvider
     lock_engine: AsyncEngine
-    #: The handler side: its own async registry and executor, used only on `handler_loop`.
+    #: The handler side: its own async registry and executor, used only on `handler_loop` -
+    #: by the event handler and by the stipend job's work.
     handler_loop: HandlerLoop
     handler_registry: AsyncDatabaseRegistry
+    handler_wallets: WalletRepository
     handler_executor: AsyncActionExecutor
     #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over `events_registry`.
     events_registry: DatabaseRegistry
@@ -177,6 +181,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
     # -- the handler side ---------------------------------------------------------------------
     # Async, on dispatch's handler loop: an async pool belongs to the loop it is used on, so the
     # handler's registry is its own. Building it opens no connection; the loop's first use does.
+    # The stipend job hands its work to the same loop, so it runs on this side too.
     handler_loop = HandlerLoop()
     handler_registry = (
         AsyncDatabaseRegistry.builder()
@@ -187,16 +192,23 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         )
         .build()
     )
+    handler_wallets = WalletRepository(handler_registry, clock=running)
     handler_executor = (
         AsyncActionExecutor.builder()
         .namespace(ekbatan.namespace)
         .database_registry(handler_registry)
         .repository_registry(
             RepositoryRegistry.builder()
+            .with_model_repository(handler_wallets)
             .with_entity_repository(AlertRepository(handler_registry, clock=running))
             .build()
         )
-        .action_registry(ActionRegistry.builder().with_action(RaiseAlertAction(running)).build())
+        .action_registry(
+            ActionRegistry.builder()
+            .with_action(DepositMoneyAction(handler_wallets, running))
+            .with_action(RaiseAlertAction(running))
+            .build()
+        )
         .event_persister(AsyncSingleTableJsonEventPersister(handler_registry, EVENTS))
         .clock(running)
         .build()
@@ -225,6 +237,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         lock_engine=lock_engine,
         handler_loop=handler_loop,
         handler_registry=handler_registry,
+        handler_wallets=handler_wallets,
         handler_executor=handler_executor,
         events_registry=events_registry,
         jobs_engine=jobs_engine,
@@ -253,6 +266,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                     .enabled(events_config.handling.enabled)
                     .clock(running)
                     .build(),
+                    PayStipendJob(handler_loop, handler_executor, handler_wallets),
                 ]
             )
             .with_config(ekbatan.jobs)

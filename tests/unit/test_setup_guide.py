@@ -45,6 +45,7 @@ SHARED_ASYNC = (
     "handlers.py",
     "api.py",
     "repository.py",
+    "jobs.py",
 )
 MIGRATIONS = tuple(
     f"migrations/{name}.sql"

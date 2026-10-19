@@ -13,6 +13,7 @@ closed around it - the async pools belong to the loop they are used on.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
@@ -49,8 +50,9 @@ def drive(tmp_path: Path, scenario: Scenario) -> None:
             {"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'wallet.db'}"},
             clock=VirtualClock(SystemClock().now()),
         )
-        # Started before any wallet exists, as a service is: the jobs poll from here on.
-        service.start()
+        # Started before any wallet exists, as a service is: the jobs poll from here on, and
+        # `start()` returns once the stipend's run at startup - on an empty database - is over.
+        await service.start()
         try:
             await scenario(service)
         finally:
@@ -196,6 +198,47 @@ def test_the_event_pipeline_runs_as_two_distributed_jobs_on_threads(tmp_path: Pa
 
         await settled(service)
         assert await service.alerts.find_for_wallet(wallet.id), "the handler ran, driven by the job"
+
+    drive(tmp_path, scenario)
+
+
+def test_the_stipend_job_pays_every_open_wallet(tmp_path: Path) -> None:
+    """The stipend ran at startup, before this wallet existed, and is next due in a day. A
+    scheduler whose clock says a day has passed picks the same row and runs it - once. The job
+    is sync, on a thread; its work is a coroutine on the handler loop - recorded from inside."""
+    from datetime import timedelta
+
+    from db_scheduler.clock import SettableClock
+
+    from ekbatan.distributedjobs import job_registry
+
+    from .jobs import PayStipendJob
+
+    async def scenario(service: WalletService) -> None:
+        wallet = await a_wallet(service, "0.00")
+        job = PayStipendJob(service.handler_loop, service.handler_executor, service.handler_wallets)
+        seen: list[str] = []
+        pay = job.pay
+
+        async def recorded() -> None:
+            seen.append(threading.current_thread().name)
+            await pay()
+
+        job.pay = recorded  # type: ignore[method-assign]
+        a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+        stipend_only = (
+            job_registry()
+            .engine(service.events_registry.default.primary)
+            .with_jobs([job])
+            .build_manual(a_day_later)
+        )
+        stipend_only.start()
+
+        await asyncio.to_thread(stipend_only.scheduler.run_any_due_executions)
+        assert (await service.wallets.get(wallet.id)).balance == Decimal("1.0000")
+        assert seen == ["ekbatan-handler-loop"], "the work ran on the handler loop"
+        await asyncio.to_thread(stipend_only.scheduler.run_any_due_executions)  # nothing due
+        assert (await service.wallets.get(wallet.id)).balance == Decimal("1.0000")
 
     drive(tmp_path, scenario)
 

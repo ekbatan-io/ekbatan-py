@@ -35,7 +35,7 @@ ekbatan:
                 poolSize: 10
                 poolTimeout: 5
               # The event handler's units of work, async, on dispatch's handler loop - a batch
-              # of handlers at once.
+              # of handlers at once - and the stipend job's, on the same loop.
               handlersConfig:
                 dataSourceProperties:
                   init_command: SET time_zone = '+00:00'

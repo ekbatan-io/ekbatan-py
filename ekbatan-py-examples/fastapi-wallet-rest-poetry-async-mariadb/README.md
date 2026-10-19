@@ -4,7 +4,8 @@ A wallet service over HTTP on **MariaDB**, with its request path on **native asy
 `ekbatan.aio`: every endpoint an `async def` that awaits an `AsyncActionExecutor` and async
 repositories, on aiomysql, and the deposit under an async keyed lock. The event handler is async too:
 it runs after the deposit, on dispatch's handler loop, and awaits an executor of its own. The jobs
-that poll - db-scheduler, fan-out, dispatch - stay on threads. The same service as [`fastapi-wallet-rest-uv-mariadb`](../fastapi-wallet-rest-uv-mariadb)
+that poll - db-scheduler, fan-out, dispatch, the daily stipend - stay on threads; the stipend's
+work is awaited on the handler loop. The same service as [`fastapi-wallet-rest-uv-mariadb`](../fastapi-wallet-rest-uv-mariadb)
 otherwise - the same model, events, converters and migrations - and the same again on
 PostgreSQL in [`fastapi-wallet-rest-uv-async-pg`](../fastapi-wallet-rest-uv-async-pg) and MySQL in
 [`fastapi-wallet-rest-uv-async-mysql`](../fastapi-wallet-rest-uv-async-mysql).
@@ -32,7 +33,7 @@ Needs `poetry` 2 on the path.
 | the request path | `AsyncDatabaseRegistry`, `WalletRepository` and `AlertRepository` on the async bases, `AsyncAction`s, an `AsyncActionExecutor` |
 | the keyed lock | async: `ekbatan.aio.locks`, taken around `await executor.execute(...)` on the deposit |
 | the event handler | async: `MoneyDepositedEventHandler.handle` is `async def` and awaits `RaiseAlertAction` through its own `AsyncActionExecutor`, on dispatch's handler loop - after the deposit has committed |
-| the jobs | sync: db-scheduler, and fan-out and dispatch, on its threads |
+| the jobs | sync: db-scheduler, and fan-out, dispatch and `PayStipendJob`, on its threads; the stipend's work is a coroutine, run on the handler loop with `loop.run(...)` (`jobs.py`) |
 | migrations, `schemagen` | sync, through PyMySQL |
 
 `to_row` and `from_row` stay plain functions - mapping waits on nothing - written in each
@@ -69,7 +70,8 @@ task - and then succeeds; one that cannot get the key within five seconds is a *
 balance is exact.
 
 The handler's registry and executor are its own, built on `handlersConfig` and used only on the
-handler loop - an async pool belongs to the loop it is used on. At shutdown the jobs stop first,
+handler loop - an async pool belongs to the loop it is used on. The stipend job hands its work to
+the same loop, so it deposits through the same executor. At shutdown the jobs stop first,
 then the handler's registry is closed on that loop, then the loop.
 
 ## Its test

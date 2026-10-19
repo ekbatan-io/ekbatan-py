@@ -12,7 +12,7 @@ landed after the list was written).
 | # | what | plan | state | commit |
 |---|---|---|---|---|
 | 1 | `*Rows` mixins in async repositories | mapping back inside each async repository; async SQLite test as the sync twin's; every doc/website sample | fixed: mapping inlined from each sync twin (verbatim, same position), `*Rows` deleted in 7 async examples x 3 builds; async SQLite test as the sync one; 13 doc/website places rewritten | EKB-0394 |
-| 2 | stipend job missing in async REST + SQLite twins | add it, its work awaited on a `HandlerLoop` as `job-worker-uv-async-pg` does | todo | |
+| 2 | stipend job missing in async REST + SQLite twins | add it, its work awaited on a `HandlerLoop` as `job-worker-uv-async-pg` does | fixed: async REST trio + async SQLite get `PayStipendJob`, sync job, work awaited on the handler loop (handler registry/executor gain the wallets repo and `DepositMoneyAction`); a stipend test in all 8 (sync REST had none); async SQLite `start()` awaited and waits for the first run, narration has the day-later step; docs, READMEs, setup guide step 12 | EKB-0401 |
 | 3 | load caps only in async | add 503 handler, `poolTimeout`, `limit_concurrency` to sync REST, saga, sharded; test the 503 in sync | todo | |
 | 4 | sharded keyed lock only in async | add the lock and its test to the sync sharded example | todo | |
 | 5 | async `find_one_where`/`exists_where` fail on a down shard sync never reaches | async stops at the first shard in order with the answer; docs; test both modes | fixed: async `_first_answer` asks all shards at once, answers in shard order, cancels the rest; a later broken shard no longer fails it; tested both modes, one shard down | EKB-0392 |

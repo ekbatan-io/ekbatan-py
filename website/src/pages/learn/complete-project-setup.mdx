@@ -57,6 +57,8 @@ import sqlite_model_py from "../../../../ekbatan-py-examples/wallet-service-uv-s
 import sqlite_repository_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/repository.py?raw";
 import sqlite_actions_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/actions.py?raw";
 import sqlite_handlers_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/handlers.py?raw";
+import async_jobs_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/jobs.py?raw";
+import sqlite_async_jobs_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/jobs.py?raw";
 import sqlite_jobs_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/jobs.py?raw";
 import sqlite_app_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/app.py?raw";
 import sqlite_main_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/__main__.py?raw";
@@ -238,6 +240,7 @@ wallet/
    ├─ repository.py         the queries this app asks, awaited
    ├─ actions.py            the units of work, async
    ├─ handlers.py           in-process event handlers, async
+   ├─ jobs.py               cluster-exclusive background work, its work awaited
    ├─ app.py                the wiring, all of it
    ├─ api.py                the HTTP layer, and nothing else
    └─ test_wallet.py
@@ -283,6 +286,7 @@ wallet/
    ├─ repository.py         the queries this app asks, awaited
    ├─ actions.py            the units of work, async
    ├─ handlers.py           in-process event handlers, async
+   ├─ jobs.py               cluster-exclusive background work, its work awaited
    ├─ app.py                the wiring, all of it
    └─ test_wallet.py
 ```
@@ -1701,19 +1705,27 @@ them on that loop.
 
 </div>
 
-<div data-mode="sync">
+<div data-db="pg mysql mariadb" data-mode="async">
+
+<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={async_jobs_py} />
+
+</div>
+
+<div data-db="sqlite" data-mode="async">
+
+<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={sqlite_async_jobs_py} />
+
+</div>
 
 Exclusivity comes from the `scheduled_tasks` row: whichever instance claims it runs. **The body
 must still tolerate running twice** - a claim can be lost to a dead-execution timeout.
 
-</div>
-
 <div data-mode="async">
 
-Nothing to add here in async mode. Distributed jobs always run on threads, through the sync API -
-`execute` is a plain `def` - so a job in an async service is written exactly as in the sync tab of
-this step, over a sync executor of its own. This project has two jobs anyway: the event fan-out
-and dispatch, which `app.py` registers on the scheduler. See [Sync or
+The job itself is sync in async mode too: db-scheduler claims its row and calls `execute` - a
+plain `def` - on one of its threads. Its *work* is a coroutine: `execute` hands it to the
+handler loop with `loop.run(...)` and waits, so it awaits the handler's executor and repository,
+built for that loop in `app.py` (step 13). See [Sync or
 async?](/learn/sync-or-async/#what-always-runs-on-threads).
 
 </div>
@@ -1771,11 +1783,11 @@ async?](/learn/sync-or-async/#what-always-runs-on-threads).
 
 **Async where it waits, threads where they poll, one config file.** The requests get an
 `AsyncDatabaseRegistry`, async repositories, an `AsyncActionExecutor` and an async keyed lock. The
-handler gets an async registry and executor of its own, used only on its `HandlerLoop`. What polls
-- the scheduler, and fan-out and dispatch - gets a sync `DatabaseRegistry` on `jobsConfig`. All of
-it is built from the same `ekbatan.yaml`, and `aclose()` closes it in order: the jobs first, then
-the handler's pool on its own loop, then the rest. `app.py` is the same file on all three
-databases: the lock provider is picked by `registry.dialect`.
+handler gets an async registry and executor of its own, used only on its `HandlerLoop` - by the
+handler and by the stipend's work. What polls - the scheduler, fan-out, dispatch and the stipend
+job - gets a sync `DatabaseRegistry` on `jobsConfig`. All of it is built from the same
+`ekbatan.yaml`, and `aclose()` closes it in order: the jobs first, then the handler's pool on its
+own loop, then the rest. Each database's `app.py` names its own lock provider.
 
 </div>
 
@@ -1783,9 +1795,10 @@ databases: the lock provider is picked by `registry.dialect`.
 
 **Async where it waits, threads where they poll, one config file.** The units of work get an
 `AsyncDatabaseRegistry`, async repositories and an `AsyncActionExecutor`. The handler gets an
-async registry and executor of its own, used only on its `HandlerLoop`. What polls - the
-scheduler, and fan-out and dispatch - gets a sync `DatabaseRegistry`, which also creates the
-tables. `aclose()` closes it all in order.
+async registry and executor of its own, used only on its `HandlerLoop` - by the handler and by
+the stipend's work. What polls - the scheduler, fan-out, dispatch and the stipend job - gets a
+sync `DatabaseRegistry`, which also creates the tables. `start()` is awaited and returns once the
+stipend's first run is over; `aclose()` closes it all in order.
 
 </div>
 
