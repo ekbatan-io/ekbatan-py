@@ -29,7 +29,7 @@ landed after the list was written).
 | 16 | config-file sample import path | `from ekbatan import DatabaseRegistry` | fixed: sync tab imports `from ekbatan import DatabaseRegistry`, both copies | EKB-0390 |
 | 17 | async locks not exported from `ekbatan.aio` | export them; surface test compares package exports | fixed: async lock classes exported from `ekbatan.aio`; surface test compares package exports both ways | EKB-0393 |
 | 18 | job worker README says `stop()` | say `close()` | fixed: sync README and app docstring say `close()` | EKB-0391 |
-| 19 | one url, two drivers | kept by choice | todo | |
+| 19 | one url, two drivers | kept by choice | kept by choice (user): one url names the sync driver, async connects with its async default | - |
 
 Side notes from the list: "Fifteen cases" in the REST READMEs (sync has sixteen tests);
 the surface test's gaps (row 17 extends it).
