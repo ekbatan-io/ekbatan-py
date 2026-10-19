@@ -161,13 +161,30 @@ def script_for(
     db: str, install: str, mode: str, items: list[Item], python: Path, shims: Path
 ) -> str:
     """One bash script that does what the reader does, step by step."""
-    cleanup = "pkill -f 'uvicorn --factory wallet.api' || true"
+    # The service, stopped for real before its database goes: a reloader that outlives one
+    # run answers the next run's health check from a database that is gone. TERM first, KILL
+    # if it will not go, until nothing listens on the port.
+    stop_service = (
+        "stop_service() { for i in $(seq 1 30); do "
+        "pids=$( (lsof -ti tcp:8000 -sTCP:LISTEN; pgrep -f 'uvicorn --factory wallet.api') "
+        '2>/dev/null | sort -u); [ -z "$pids" ] && return 0; '
+        "if [ $i -lt 15 ]; then kill $pids 2>/dev/null || true; "
+        "else kill -9 $pids 2>/dev/null || true; fi; "
+        "sleep 1; done; }"
+    )
+    cleanup = "stop_service"
     if db in CONTAINERS:
         cleanup += f"; docker rm -f {CONTAINERS[db]} >/dev/null 2>&1 || true"
     parts = [
         "set -e",
+        # A reader's fresh shell has no virtualenv active. This one is started by `uv run`, and
+        # Poetry installs into whatever VIRTUAL_ENV names - this repository's own environment.
+        "unset VIRTUAL_ENV",
+        "export PATH=\"$(echo \"$PATH\" | tr ':' '\\n' "
+        f"| grep -v '^{ROOT}/.venv' | paste -sd: -)\"",
         f'export PATH="{shims}:$PATH"',
         # Whatever happens - a failed step stops the script - nothing is left running.
+        stop_service,
         cleanup,
         f'trap "{cleanup}" EXIT',
     ]
