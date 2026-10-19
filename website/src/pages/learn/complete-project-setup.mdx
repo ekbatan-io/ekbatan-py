@@ -47,7 +47,9 @@ import mariadb_async_test from "../../../../ekbatan-py-examples/fastapi-wallet-r
 import async_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/repository.py?raw";
 import async_actions_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/actions.py?raw";
 import async_handlers_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/handlers.py?raw";
-import async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/app.py?raw";
+import pg_async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/app.py?raw";
+import mysql_async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src/fastapi_wallet_rest_async_mysql/app.py?raw";
+import mariadb_async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src/fastapi_wallet_rest_async_mariadb/app.py?raw";
 import async_api_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/api.py?raw";
 import sqlite_ekbatan_yaml from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/ekbatan.yaml?raw";
 import sqlite_schema_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/schema.py?raw";
@@ -1736,9 +1738,21 @@ async?](/learn/sync-or-async/#what-always-runs-on-threads).
 
 </div>
 
-<div data-db="pg mysql mariadb" data-mode="async">
+<div data-db="pg" data-mode="async">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={async_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={pg_async_app_py} />
+
+</div>
+
+<div data-db="mysql" data-mode="async">
+
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mysql_async_app_py} />
+
+</div>
+
+<div data-db="mariadb" data-mode="async">
+
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mariadb_async_app_py} />
 
 </div>
 

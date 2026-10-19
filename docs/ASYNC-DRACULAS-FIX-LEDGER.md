@@ -22,7 +22,7 @@ landed after the list was written).
 | 9 | other REST tests dropped in async | port 422, recipient and currency checks | todo | |
 | 10 | unused repository helpers on the sync side | keep only what each example uses, both twins the same | todo | |
 | 11 | `RaiseAlertAction` in `handlers.py` in async REST twins | move back to `actions.py` | fixed: `RaiseAlertAction`/`RaiseAlertParams` back in `actions.py` in the 3 async REST twins, same place as sync | EKB-0395 |
-| 12 | lock provider picked from a dict in async | name the provider directly | todo | |
+| 12 | lock provider picked from a dict in async | name the provider directly | fixed: each async REST app names its provider (`AsyncPostgresKeyedLockProvider` etc.); setup guide shows async `app.py` per database | EKB-0396 |
 | 13 | async READMEs drop shared sections | restore them | todo | |
 | 14 | deprecated `testcontainers.postgres` in sync tests | `testcontainers.community.postgres` | todo | |
 | 15 | `tm.transaction()` timestamp sample | re-check | already resolved: both tabs write `clock.now()` as is (EKB-0384-0388) | - |
