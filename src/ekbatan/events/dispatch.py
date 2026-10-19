@@ -165,8 +165,8 @@ class EventDispatch:
         """One batch on every shard, the shards concurrently.
 
         Java forks a virtual thread per shard here too. Returns how many notifications
-        reached a new state. Within one shard a batch is still delivered in order - that
-        half is its own divergence, under "Dispatch delivers one notification at a time".
+        reached a new state. Within one shard a batch's handlers run at the same time too,
+        one thread per notification, bounded by the batch size; a batch of one runs inline.
         """
         return sum(self._shards.run(self._registry.shards, self._drain_shard))
 
