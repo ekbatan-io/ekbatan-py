@@ -26,7 +26,7 @@ landed after the list was written).
 | 13 | async READMEs drop shared sections | restore them | todo | |
 | 14 | deprecated `testcontainers.postgres` in sync tests | `testcontainers.community.postgres` | todo | |
 | 15 | `tm.transaction()` timestamp sample | re-check | already resolved: both tabs write `clock.now()` as is (EKB-0384-0388) | - |
-| 16 | config-file sample import path | `from ekbatan import DatabaseRegistry` | todo | |
+| 16 | config-file sample import path | `from ekbatan import DatabaseRegistry` | fixed: sync tab imports `from ekbatan import DatabaseRegistry`, both copies | EKB-0390 |
 | 17 | async locks not exported from `ekbatan.aio` | export them; surface test compares package exports | todo | |
 | 18 | job worker README says `stop()` | say `close()` | todo | |
 | 19 | one url, two drivers | kept by choice | todo | |

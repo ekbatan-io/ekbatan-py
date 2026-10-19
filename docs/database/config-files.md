@@ -8,8 +8,8 @@ driver setting named `password` are refused exactly as they are in code.
 **Sync**
 
 ```python
+from ekbatan import DatabaseRegistry
 from ekbatan.config_files import load_sharding_config
-from ekbatan.persistence import DatabaseRegistry
 
 layout = load_sharding_config("ekbatan.yaml")
 registry = DatabaseRegistry.from_config(layout)
