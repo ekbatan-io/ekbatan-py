@@ -159,6 +159,7 @@ ekbatan:
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 10
+                poolTimeout: 5      # past this, a waiting request fails: a 503
               jobsConfig:   # the same url and login
                 poolSize: 8
               lockConfig:   # the same url and login
@@ -488,9 +489,10 @@ The jobs pool default is 8, not 3, for a reason worth repeating: a job body hold
 connection starves the heartbeat. db-scheduler warns at startup when the pool is too small for
 the worker count - and did, while the example was being written.
 
-An async service has a fourth, `handlersConfig`: the async handler's own pool, used only on the
-loop the handler runs on. Its request pool is also the cap on requests waiting for the database:
-past `poolSize` they queue, for at most `poolTimeout`, then fail.
+The request pool is also the cap on requests waiting for the database, in both modes: past
+`poolSize` they queue, for at most `poolTimeout`, then fail - a 503 once mapped
+([Wiring with FastAPI](wiring-fastapi.md#cap-the-load-in-both-modes)). An async service has a
+fourth pool, `handlersConfig`: the async handler's own, used only on the loop the handler runs on.
 
 ## What changes if you skip a feature
 

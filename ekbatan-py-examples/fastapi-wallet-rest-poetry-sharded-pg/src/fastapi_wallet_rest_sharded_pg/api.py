@@ -19,6 +19,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from ekbatan.errors import CrossShardError, EntityNotFoundError, StaleRecordError, ValidationError
 from ekbatan.ids import ShardedId
@@ -120,6 +121,14 @@ def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
     @app.exception_handler(StaleRecordError)
     async def _lost_a_race(request: Request, error: Exception) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": "the wallet changed; retry"})
+
+    @app.exception_handler(PoolTimeoutError)
+    async def _too_busy(request: Request, error: Exception) -> JSONResponse:
+        # Waited `pool_timeout` for a database connection and got none: the service is past
+        # what its pool can serve. A 503 with Retry-After tells the caller to come back.
+        return JSONResponse(
+            status_code=503, content={"detail": "too busy; retry"}, headers={"Retry-After": "1"}
+        )
 
     @app.exception_handler(CrossShardError)
     async def _two_databases(request: Request, error: Exception) -> JSONResponse:

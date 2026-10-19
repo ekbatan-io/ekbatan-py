@@ -20,6 +20,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
 from ekbatan.ids import ShardedId
@@ -153,6 +154,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def _lost_a_race(request: Request, error: Exception) -> JSONResponse:
         # 409, not 500. The caller did nothing wrong and the right response is to try again.
         return JSONResponse(status_code=409, content={"detail": "the wallet changed; retry"})
+
+    @app.exception_handler(PoolTimeoutError)
+    async def _too_busy(request: Request, error: Exception) -> JSONResponse:
+        # Waited `pool_timeout` for a database connection and got none: the service is past
+        # what its pool can serve. A 503 with Retry-After tells the caller to come back.
+        return JSONResponse(
+            status_code=503, content={"detail": "too busy; retry"}, headers={"Retry-After": "1"}
+        )
 
     @app.post("/wallets", response_model=WalletResponse, status_code=201)
     def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:

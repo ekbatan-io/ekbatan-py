@@ -159,8 +159,9 @@ and aiomysql both read.
 
 ## 6. The endpoints
 
-`async def`, and `await` every call into the service. One more error to map: a request that
-waited `pool_timeout` for a connection and got none.
+`async def`, and `await` every call into the service. The error mapping stays as it is: a
+request that waited `poolTimeout` for a connection fails with the same SQLAlchemy `TimeoutError`
+in both modes, so the 503 handler is unchanged.
 
 ```python
 @app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
@@ -172,12 +173,6 @@ async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> Wa
                           recipient=body.recipient),
         )
     )
-
-
-@app.exception_handler(sqlalchemy.exc.TimeoutError)
-async def _too_busy(request: Request, error: Exception) -> JSONResponse:
-    return JSONResponse(status_code=503, content={"detail": "too busy; retry"},
-                        headers={"Retry-After": "1"})
 ```
 
 Never call the sync API from one of these: it would block the event loop for every request.
@@ -217,16 +212,16 @@ class MoneyDepositedEventHandler:
         await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
 ```
 
-## 8. Run it, with a cap at the door
+## 8. Run it, with the same cap at the door
 
 ```sh
 uvicorn fastapi_wallet_rest_async_pg.api:create_app --factory --limit-concurrency 50
 ```
 
-The request pool is the cap on work waiting on the database - ten connections, each request
-waiting at most `poolTimeout` for one. `--limit-concurrency` is the cap before that: past 50 open
-requests uvicorn answers 503 itself. Keep it a small multiple of the pool, so a burst waits
-briefly or is refused quickly.
+As in the sync service: the request pool is the cap on work waiting on the database - ten
+connections, each request waiting at most `poolTimeout` for one - and `--limit-concurrency` is
+the cap before that: past 50 open requests uvicorn answers 503 itself. Keep it a small multiple
+of the pool, so a burst waits briefly or is refused quickly.
 
 ## 9. Test it
 

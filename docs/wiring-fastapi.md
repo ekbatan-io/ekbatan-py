@@ -139,14 +139,9 @@ The other way: build the request path on the async API, and every endpoint is an
 awaits - the Async samples on this page. Nothing blocks the event loop, and under load it does
 more work than a thread pool does.
 
-`service.executor` is an `AsyncActionExecutor` and `service.wallets` an async repository. Four
-things to add over the sync service:
+`service.executor` is an `AsyncActionExecutor` and `service.wallets` an async repository. Two
+things change over the sync service:
 
-- **A 503 for a full pool.** The connection pool is the cap on requests waiting on the database:
-  one that waits `pool_timeout` for a connection fails with SQLAlchemy's `TimeoutError`. Map it,
-  once, to a 503 with `Retry-After`.
-- **A cap at the door.** `uvicorn --limit-concurrency 50` answers 503 itself past 50 open
-  requests, before they reach the app. Keep it a small multiple of the pool.
 - **A keyed lock around the unit of work**, from `ekbatan.aio.locks`: `async with
   locks.acquire(key, max_hold):` around `await executor.execute(...)`. Its holder is the task.
 - **Handlers run after the action, on dispatch's threads.** A handler may be `async def` and await
@@ -156,6 +151,17 @@ things to add over the sync service:
 [Going async](going-async.md) walks through it, and
 [`fastapi-wallet-rest-uv-async-pg`](../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) runs
 it.
+
+## Cap the load, in both modes
+
+Two caps, the same whichever API the endpoints use:
+
+- **A 503 for a full pool.** The connection pool is the cap on requests waiting on the database:
+  one that waits `poolTimeout` (`pool_timeout`) for a connection fails with SQLAlchemy's
+  `TimeoutError`, in both modes. Map it, once, to a 503 with `Retry-After`. Without it the caller
+  gets a 500, after the default 30 seconds.
+- **A cap at the door.** `uvicorn --limit-concurrency 50` answers 503 itself past 50 open
+  requests, before they reach the app. Keep it a small multiple of the pool.
 
 ## Map the framework's errors once
 

@@ -18,6 +18,7 @@ ekbatan:
             name: global
             configs:
               # Requests. Sized for how many requests are served at once.
+              # Past poolSize they queue, for at most poolTimeout seconds, then fail with a 503.
               primaryConfig:
                 # Extra driver settings, each name exactly as the driver spells it; handed to the
                 # driver beside the url, never printed.
@@ -31,6 +32,7 @@ ekbatan:
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 10
+                poolTimeout: 5
               # The scheduler. At least twice the job worker threads: a job body holding the last
               # connection would starve the heartbeat, and an execution whose heartbeat stops is
               # declared dead and run again elsewhere. Warned at startup if short.

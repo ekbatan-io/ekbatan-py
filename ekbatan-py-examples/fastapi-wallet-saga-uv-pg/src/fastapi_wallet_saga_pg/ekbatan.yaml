@@ -16,6 +16,8 @@ ekbatan:
           - member: 0
             name: global
             configs:
+              # Requests. Past poolSize they queue, for at most poolTimeout seconds, then fail
+              # with a 503.
               primaryConfig:
                 # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
@@ -25,6 +27,7 @@ ekbatan:
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolTimeout: 5
               # The scheduler's own pool, which the fan-out and handling jobs run on.
               jobsConfig:
                 # Every session in UTC, as the columns hold UTC wall-clock time.

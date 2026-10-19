@@ -418,6 +418,33 @@ def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) ->
         admin.dispose()
 
 
+def test_a_request_that_waits_out_the_pool_is_a_503(client: TestClient) -> None:
+    """The request pool is the cap on requests waiting on the database: past `poolSize` they
+    queue for a connection, and one that waits longer than `poolTimeout` (five seconds in
+    `ekbatan.yaml`) is a 503 with `Retry-After`, not a 500. Every connection is held first, on
+    the app's loop."""
+    primary = client.app.state.service.registry.default.primary
+    assert client.portal is not None
+    portal = client.portal
+
+    async def hold() -> list[Any]:
+        return [await primary.connect().start() for _ in range(primary.sync_engine.pool.size())]
+
+    async def release(held: list[Any]) -> None:
+        for connection in held:
+            await connection.close()
+
+    held = portal.call(hold)
+    try:
+        refused = client.get(f"/wallets/{uuid4()}")
+    finally:
+        portal.call(release, held)
+
+    assert refused.status_code == 503, refused.text
+    assert refused.headers["Retry-After"] == "1"
+    assert client.get(f"/wallets/{uuid4()}").status_code == 404, "served again once one is free"
+
+
 def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:
     assert [script.script for script in validate_scripts(MIGRATIONS)] == [
         "V0001__eventlog.sql",

@@ -31,6 +31,10 @@ def main() -> None:
         host=os.environ.get("WALLET_HOST", "127.0.0.1"),
         port=int(os.environ.get("WALLET_PORT", "8000")),
         reload=os.environ.get("WALLET_RELOAD") == "1",
+        # The first cap on work in flight, before any of it reaches the app: past this many
+        # open requests uvicorn answers 503 itself. The second is the request pool, ten
+        # connections in `ekbatan.yaml`, where requests queue for at most `pool_timeout`.
+        limit_concurrency=int(os.environ.get("WALLET_LIMIT_CONCURRENCY", "50")),
     )
 
 
