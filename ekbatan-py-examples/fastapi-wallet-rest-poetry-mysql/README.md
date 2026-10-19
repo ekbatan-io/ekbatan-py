@@ -79,6 +79,13 @@ commit every schema change on its own, so a migration that fails after one leave
 be put right by hand before it runs again - where PostgreSQL rolls the whole file back. Several
 statements in one file are otherwise fine; the migrator splits a file itself.
 
+## The caps
+
+The request pool is the cap on requests waiting on the database: ten connections, each request
+waiting at most `poolTimeout` (5 s) for one, then a **503** with `Retry-After`. Before that,
+`__main__.py` runs uvicorn with `limit_concurrency` (50 by default, `WALLET_LIMIT_CONCURRENCY`):
+past 50 open requests uvicorn answers 503 itself.
+
 ## What to look at
 
 **`api.py`** - the HTTP layer, and nothing else. Every endpoint is four lines: read the request,
@@ -91,7 +98,8 @@ name a unit of work, hand it parameters, shape the reply.
 - **`try_acquire`, not `acquire`.** An HTTP request must not block forever. A lease that cannot
   be had is `None` - *contention*, which the framework keeps distinguishable from failure - and
   here becomes a 503 with `Retry-After`.
-- **Error kinds map to status codes once**: not-found 404, validation 400, stale **409** not 500.
+- **Error kinds map to status codes once**: not-found 404, validation 400, stale **409** not 500,
+  a request that waited out the pool **503**.
 
 **`app.py`** - three pools. Requests get one, the scheduler its own (a job body holding the last
 connection starves the heartbeat), and held lock leases a third (a lease *is* a held
@@ -110,6 +118,6 @@ the test fills them from its container.
 make
 ```
 
-Fifteen cases against a real MySQL in Testcontainers, including one that asserts this project is
+Eighteen cases against a real MySQL in Testcontainers, including one that asserts this project is
 actually running on MySQL - three projects differing only by url makes a wrong one invisible,
 and every other test would still pass.
