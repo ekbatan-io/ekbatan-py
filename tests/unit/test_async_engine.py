@@ -5,7 +5,9 @@ the sync ones' public surface, so the two hierarchies cannot drift apart unnotic
 
 from __future__ import annotations
 
+import importlib
 import inspect
+import pkgutil
 
 import pytest
 
@@ -214,3 +216,47 @@ def test_what_waits_on_the_database_is_a_coroutine_and_nothing_else_is():
         if not callable(member):
             continue
         assert inspect.iscoroutinefunction(member) == (name in waits), name
+
+
+def _twin_name(name: str) -> str:
+    """The async twin's name: ``Async`` in front, ``AbstractAsync`` for an abstract class,
+    ``async_`` for a function."""
+    if name.startswith("Abstract"):
+        return "AbstractAsync" + name.removeprefix("Abstract")
+    if name[0].islower():
+        return "async_" + name
+    return "Async" + name
+
+
+def _untwinned(name: str) -> str | None:
+    """The sync name an ``ekbatan.aio`` name is the twin of, or ``None`` if it is not one."""
+    for prefix, sync in (("AbstractAsync", "Abstract"), ("Async", ""), ("async_", "")):
+        if name.startswith(prefix):
+            return sync + name.removeprefix(prefix)
+    return None
+
+
+def test_ekbatan_aio_exports_the_twin_of_everything_ekbatan_exports():
+    """A sync class exported from ``ekbatan`` whose async twin exists is exported from
+    ``ekbatan.aio`` too, and the other way round - so an import line changes only by its
+    module and the ``Async`` prefix. The keyed locks were once missed here."""
+    import ekbatan
+    import ekbatan.aio
+
+    twins: set[str] = set()
+    for info in pkgutil.walk_packages(ekbatan.aio.__path__, "ekbatan.aio."):
+        twins |= set(vars(importlib.import_module(info.name)))
+
+    exported_sync, exported_async = set(ekbatan.__all__), set(ekbatan.aio.__all__)
+    missing = {
+        _twin_name(name) for name in exported_sync if _twin_name(name) in twins
+    } - exported_async
+    assert missing == set(), f"exported from ekbatan, their twins not from ekbatan.aio: {missing}"
+
+    # `async_url` turns a url into its async form; it has no sync counterpart.
+    unmatched = {
+        name
+        for name in exported_async
+        if _untwinned(name) is not None and _untwinned(name) not in exported_sync
+    } - {"async_url"}
+    assert unmatched == set(), f"exported from ekbatan.aio, their sync twins not: {unmatched}"

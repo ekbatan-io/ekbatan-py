@@ -7,13 +7,22 @@ config, migrations - is shared with the sync API as it is, and so is every rule:
 statements, the routing, the optimistic lock, soft delete and the retry policy are one copy.
 
 A service is all-sync or all-async on its request path. The keyed locks' async twins are in
-``ekbatan.aio.locks``; an event handler may be ``async def``. Event fan-out and dispatch and
-distributed jobs stay sync, on threads, beside it. Needs an async driver: the ``postgres-async``,
-``mysql-async``, ``mariadb-async`` or ``sqlite-async`` extra.
+``ekbatan.aio.locks`` and exported here, as the sync ones are from ``ekbatan`` (Redis's, as on
+the sync side, from its own module); an event handler may be ``async def``. Event fan-out and
+dispatch and distributed jobs stay sync, on threads, beside it. Needs an async driver: the
+``postgres-async``, ``mysql-async``, ``mariadb-async`` or ``sqlite-async`` extra.
 """
 
 from .action import AsyncAction
 from .executor import AsyncActionExecutor, AsyncActionExecutorBuilder
+from .locks import (
+    AsyncKeyedLockProvider,
+    AsyncLease,
+    AsyncMariaDBKeyedLockProvider,
+    AsyncMySQLKeyedLockProvider,
+    AsyncPostgresKeyedLockProvider,
+    AsyncSqlKeyedLockProviderBuilder,
+)
 from .outbox import AsyncEventPersister, AsyncSingleTableJsonEventPersister
 from .persistence import (
     ASYNC_DEFAULT_DRIVERS,
@@ -47,9 +56,15 @@ __all__ = [
     "AsyncDb",
     "AsyncEntityRepository",
     "AsyncEventPersister",
+    "AsyncKeyedLockProvider",
+    "AsyncLease",
+    "AsyncMariaDBKeyedLockProvider",
     "AsyncModelRepository",
+    "AsyncMySQLKeyedLockProvider",
+    "AsyncPostgresKeyedLockProvider",
     "AsyncRepository",
     "AsyncSingleTableJsonEventPersister",
+    "AsyncSqlKeyedLockProviderBuilder",
     "AsyncTransaction",
     "AsyncTransactionManager",
     "async_engine_for",
