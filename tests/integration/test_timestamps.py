@@ -184,7 +184,11 @@ def test_an_action_writes_the_clocks_own_value_to_the_outbox(executor, registry,
             CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")),
         )
 
-    assert _handed(seen, PRECISE)[0], "the clock's value is handed to SQLAlchemy as it is"
+    rows = [c for compiled, _ in seen for c in compiled if "event_date" in c]
+    assert rows, "the outbox insert was seen"
+    for c in rows:
+        for name in ("started_date", "completion_date", "event_date"):
+            assert c[name] is PRECISE, (name, c[name])
     row = next(r for r in outbox() if r["action_name"] == "CreateWalletAction")
     assert row["started_date"] == row["completion_date"] == row["event_date"] == PRECISE
     assert row["started_date"].tzinfo is None

@@ -77,12 +77,18 @@ def test_fan_out_and_dispatch_write_the_clocks_own_value(
     finally:
         stop()
 
-    writes = [(compiled, sent) for verb, compiled, sent in seen if verb in ("INSERT", "UPDATE")]
-    assert any(v is PRECISE for compiled, _ in writes for v in _flat(compiled)), (
-        "the clock's value is handed to SQLAlchemy as it is"
-    )
+    inserted = [c for verb, compiled, _ in seen if verb == "INSERT" for c in compiled]
+    updated = [c for verb, compiled, _ in seen if verb == "UPDATE" for c in compiled]
+    queued = [c for c in inserted if "next_retry_at" in c]
+    outcomes = [c for c in updated if "updated_date" in c]
+    assert queued and outcomes
+    for c in queued:  # fan-out: the notification's own times, from the clock
+        assert c["created_date"] is PRECISE and c["updated_date"] is PRECISE, c
+    for c in outcomes:  # dispatch: the outcome's time, from the clock
+        assert c["updated_date"] is PRECISE, c
     if dialect != "sqlite":  # SQLAlchemy writes SQLite's DATETIME as text
-        assert any(v is PRECISE for _, sent in writes for v in _flat(sent)), "and to the driver"
+        sent = [v for verb, _, params in seen if verb == "UPDATE" for v in _flat(params)]
+        assert any(v is PRECISE for v in sent), "and on to the driver as it is"
 
     with registry.default.connection(readonly=True) as conn:
         rows = conn.execute(select(EVENT_NOTIFICATIONS)).mappings().all()
