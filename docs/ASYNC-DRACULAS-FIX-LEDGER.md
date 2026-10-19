@@ -17,7 +17,7 @@ landed after the list was written).
 | 4 | sharded keyed lock only in async | add the lock and its test to the sync sharded example | todo | |
 | 5 | async `find_one_where`/`exists_where` fail on a down shard sync never reaches | async stops at the first shard in order with the answer; docs; test both modes | fixed: async `_first_answer` asks all shards at once, answers in shard order, cancels the rest; a later broken shard no longer fails it; tested both modes, one shard down | EKB-0392 |
 | 6 | shard note on scatter-read errors only in async | add the note in sync | fixed: the note-making moved into `_RepositoryCore._shard_failure`; sync scatter reads add the same note (no "cancelled" clause) | EKB-0392 |
-| 7 | async MySQL/MariaDB drop `innodb_lock_wait_timeout` | put it back + its assertion | todo | |
+| 7 | async MySQL/MariaDB drop `innodb_lock_wait_timeout` | put it back + its assertion | fixed: async MySQL/MariaDB request pool sets `innodb_lock_wait_timeout=10` again; settings test reads it back through aiomysql (MySQL run: 15 passed) | EKB-0399 |
 | 8 | async UTC test weakened | port the Tehran test to the three async twins | todo | |
 | 9 | other REST tests dropped in async | port 422, recipient and currency checks | todo | |
 | 10 | unused repository helpers on the sync side | keep only what each example uses, both twins the same | fixed: each pair carries what it uses - REST: `find_for_wallet` only (sync lost 6 helpers, async 2); job worker: `find_open_below` + `find_for_wallet` (sync lost 5) | EKB-0397 |

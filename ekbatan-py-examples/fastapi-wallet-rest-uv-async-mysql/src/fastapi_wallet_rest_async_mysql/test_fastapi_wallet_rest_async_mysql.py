@@ -279,6 +279,8 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     sizes = (requests.size(), locks.size(), handlers.size(), running.jobs_engine.pool.size())  # type: ignore[attr-defined]
     assert sizes == (10, 5, 5, 8)
     assert scalar(client, text("SELECT @@session.time_zone")) == "+00:00"
+    # `init_command` under `dataSourceProperties`, reaching the server through aiomysql.
+    assert scalar(client, text("SELECT @@SESSION.innodb_lock_wait_timeout")) == 10
 
     async def zone_on(engine: Any) -> Any:
         async with engine.connect() as connection:

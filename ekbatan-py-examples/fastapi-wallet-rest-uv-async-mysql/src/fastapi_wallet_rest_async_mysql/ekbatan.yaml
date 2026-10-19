@@ -24,10 +24,10 @@ ekbatan:
               # poolSize they queue, for at most poolTimeout seconds, then fail with a 503.
               primaryConfig:
                 # Extra driver settings, handed to the driver beside the url, never printed.
-                # PyMySQL and aiomysql spell init_command alike: it runs on each new connection.
-                # Every session runs in UTC, as the columns hold UTC wall-clock time.
+                # PyMySQL and aiomysql spell init_command alike: it runs on each new connection;
+                # time_zone puts the session on UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
-                  init_command: SET time_zone = '+00:00'
+                  init_command: SET SESSION innodb_lock_wait_timeout=10, time_zone = '+00:00'
                 url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:root}
