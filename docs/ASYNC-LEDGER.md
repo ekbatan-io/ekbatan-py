@@ -138,7 +138,7 @@ sync by decision.
 |---|---|---|
 | W1 | `docs/runtime/async.md` (and the website page beside it, written together) | done - `docs/runtime/async.md` and `reference/runtime/async.mdx` |
 | W2 | the concurrency page: when async helps and when threads are fine (use the numbers below) | done - the concurrency page points to it, with the measured numbers |
-| W3 | an async FastAPI example (`fastapi-wallet-rest-async-uv-pg`), uv/pip/Poetry | done - `fastapi-wallet-rest-*-async-pg` and `-async-mariadb`, uv/pip/Poetry, 15 tests each |
+| W3 | an async FastAPI example (`fastapi-wallet-rest-async-uv-pg`), uv/pip/Poetry | done - `fastapi-wallet-rest-*-async-pg`, `-async-mysql` (added at the user's request) and `-async-mariadb`, uv/pip/Poetry, 15 tests each |
 | W4 | setup guide: the async extras | done - step 19 of the setup guide, `docs/getting-started.md`, the install page |
 | W5 | `DIVERGENCE.md`: Java has no async API (it uses virtual threads) | done - `DIVERGENCE.md`, a **chosen** section |
 | W6 | `scripts/check-api.py` will check the new names once documented | done - `check-api.py` checks the async pages' imports and snippets |

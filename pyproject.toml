@@ -142,6 +142,7 @@ files = [
     "ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src",
+    "ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src",
     "ekbatan-py-examples/fastapi-wallet-saga-uv-pg/src",
     "ekbatan-py-examples/job-worker-uv-pg/src",

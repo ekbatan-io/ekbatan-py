@@ -6,7 +6,8 @@ repositories, on aiomysql, and the deposit under an async keyed lock. The event 
 it runs after the deposit, on dispatch's handler loop, and awaits an executor of its own. The jobs
 that poll - db-scheduler, fan-out, dispatch - stay on threads. The same service as [`fastapi-wallet-rest-uv-mariadb`](../fastapi-wallet-rest-uv-mariadb)
 otherwise - the same model, events, converters and migrations - and the same again on
-PostgreSQL in [`fastapi-wallet-rest-uv-async-pg`](../fastapi-wallet-rest-uv-async-pg).
+PostgreSQL in [`fastapi-wallet-rest-uv-async-pg`](../fastapi-wallet-rest-uv-async-pg) and MySQL in
+[`fastapi-wallet-rest-uv-async-mysql`](../fastapi-wallet-rest-uv-async-mysql).
 
 ```
 docker run -d -p 3306:3306 -e MARIADB_ROOT_PASSWORD=ekbatan -e MARIADB_DATABASE=wallet mariadb:11.4

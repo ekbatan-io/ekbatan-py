@@ -59,6 +59,7 @@ the whole file back.
 | | uv | pip | Poetry |
 |---|---|---|---|
 | PostgreSQL | [`fastapi-wallet-rest-uv-async-pg`](fastapi-wallet-rest-uv-async-pg/) | [`fastapi-wallet-rest-pip-async-pg`](fastapi-wallet-rest-pip-async-pg/) | [`fastapi-wallet-rest-poetry-async-pg`](fastapi-wallet-rest-poetry-async-pg/) |
+| MySQL | [`fastapi-wallet-rest-uv-async-mysql`](fastapi-wallet-rest-uv-async-mysql/) | [`fastapi-wallet-rest-pip-async-mysql`](fastapi-wallet-rest-pip-async-mysql/) | [`fastapi-wallet-rest-poetry-async-mysql`](fastapi-wallet-rest-poetry-async-mysql/) |
 | MariaDB | [`fastapi-wallet-rest-uv-async-mariadb`](fastapi-wallet-rest-uv-async-mariadb/) | [`fastapi-wallet-rest-pip-async-mariadb`](fastapi-wallet-rest-pip-async-mariadb/) | [`fastapi-wallet-rest-poetry-async-mariadb`](fastapi-wallet-rest-poetry-async-mariadb/) |
 
 The same service with its request path on `ekbatan.aio`: `async def` endpoints that await an

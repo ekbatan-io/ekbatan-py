@@ -1,0 +1,64 @@
+[project]
+name = "fastapi-wallet-rest-async-mysql"
+version = "0.1.0"
+description = "A wallet service over HTTP on MySQL, on native asyncio, built with Poetry."
+requires-python = ">=3.13"
+dependencies = [
+    "ekbatan[mysql,mysql-async,migrations]",
+    # ekbatan's own dependency, listed only so that the path below applies to it: Poetry
+    # applies [tool.poetry.dependencies] only to what is listed here. Delete with that.
+    "ekbatan-py-db-scheduler",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0,<3.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "fastapi_wallet_rest_async_mysql", from = "src" }]
+
+# Poetry leaves a gitignored file out of the package, and schema.py is one. Name it.
+[[tool.poetry.include]]
+path = "src/fastapi_wallet_rest_async_mysql/schema.py"
+format = ["sdist", "wheel"]
+
+# ekbatan is not on PyPI yet. Until it is, it - and its scheduler - come from this
+# repository; delete this once it is published.
+[tool.poetry.dependencies]
+ekbatan = { path = "../..", develop = true }
+ekbatan-py-db-scheduler = { path = "../../db-scheduler", develop = true }
+
+[tool.poetry.group.dev.dependencies]
+# The schema generator: a build step, never a runtime dependency.
+ekbatan = { path = "../..", develop = true, extras = ["codegen"] }
+pytest = ">=8.0"
+testcontainers = { version = ">=4.15", extras = ["mysql"] }
+httpx = ">=0.27"
+
+# schemagen's settings, as Java's build script carries jOOQ's: `make schema` runs
+# `python -m ekbatan.schemagen`, which reads them. A flag on the command wins.
+[tool.ekbatan.schemagen]
+migrations = "src/fastapi_wallet_rest_async_mysql/migrations"
+out = "src/fastapi_wallet_rest_async_mysql/schema.py"
+image = "mysql:8.4"
+
+# A uuid is stored as CHAR(36) here, like any text, so say which columns hold one: the ids.
+[[tool.ekbatan.schemagen.forced-types]]
+name = "uuid_column"
+include-types = "CHAR\\(36\\)"
+include-expression = ".*\\.id|.*_id"
+
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_async_mysql.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "fastapi_wallet_rest_async_mysql.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+
+[tool.pytest.ini_options]
+addopts = "-q"

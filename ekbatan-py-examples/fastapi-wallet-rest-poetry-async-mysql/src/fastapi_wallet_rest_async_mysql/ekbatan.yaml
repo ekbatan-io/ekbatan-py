@@ -1,0 +1,69 @@
+# The service's Ekbatan settings: the database layout, the namespace, the jobs and the event
+# handling. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+#
+# `${NAME:default}` is an environment variable with a default, so the file runs as it is against
+# a local server and the same file runs anywhere else with the variables set. The test fills them
+# from its container.
+#
+# The urls name the sync driver, PyMySQL. The sync pools connect with it; the async registry
+# reads the same url as "this MySQL" and connects with aiomysql, the async default.
+ekbatan:
+  namespace: example.fastapi_wallet_rest_async_mysql
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            name: global
+            configs:
+              # Requests, on ekbatan.aio. The cap on requests waiting on the database: past
+              # poolSize they queue, for at most poolTimeout seconds, then fail with a 503.
+              primaryConfig:
+                # Extra driver settings, handed to the driver beside the url, never printed.
+                # PyMySQL and aiomysql spell init_command alike: it runs on each new connection.
+                # Every session runs in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
+                url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+                poolTimeout: 5
+              # The event handler's units of work, async, on dispatch's handler loop - a batch
+              # of handlers at once.
+              handlersConfig:
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
+                url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
+              # Held lock leases, async: one connection per lease that can be held at once.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
+                url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
+              # The scheduler, and the fan-out and dispatch jobs' reads and writes of the
+              # queue. At least the job worker threads plus three: a job body holding the last
+              # connection would starve the heartbeat.
+              jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
+                url: ${WALLET_DATABASE_URL:mysql+pymysql://localhost:3306/wallet}
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 8
+
+  local-event-handler:
+    handling:
+      enabled: true

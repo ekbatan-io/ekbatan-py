@@ -28,6 +28,7 @@ EXAMPLES := \
 	fastapi-wallet-rest-uv-mariadb fastapi-wallet-rest-pip-mariadb fastapi-wallet-rest-poetry-mariadb \
 	fastapi-wallet-rest-uv-sharded-pg fastapi-wallet-rest-pip-sharded-pg fastapi-wallet-rest-poetry-sharded-pg \
 	fastapi-wallet-rest-uv-async-pg fastapi-wallet-rest-pip-async-pg fastapi-wallet-rest-poetry-async-pg \
+	fastapi-wallet-rest-uv-async-mysql fastapi-wallet-rest-pip-async-mysql fastapi-wallet-rest-poetry-async-mysql \
 	fastapi-wallet-rest-uv-async-mariadb fastapi-wallet-rest-pip-async-mariadb fastapi-wallet-rest-poetry-async-mariadb \
 	fastapi-wallet-saga-uv-pg fastapi-wallet-saga-pip-pg fastapi-wallet-saga-poetry-pg \
 	job-worker-uv-pg job-worker-pip-pg job-worker-poetry-pg \
@@ -56,6 +57,7 @@ GENERATES := \
 	fastapi-wallet-rest-uv-mariadb \
 	fastapi-wallet-rest-uv-sharded-pg \
 	fastapi-wallet-rest-uv-async-pg \
+	fastapi-wallet-rest-uv-async-mysql \
 	fastapi-wallet-rest-uv-async-mariadb \
 	fastapi-wallet-saga-uv-pg \
 	job-worker-uv-pg

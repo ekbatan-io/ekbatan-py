@@ -1,0 +1,66 @@
+"""Reacting to your own events, in the same process - after the deposit has committed.
+
+No broker, no connector, no second runtime. The unit of work commits, fan-out turns each
+committed event into work, and dispatch runs it - at least once, which is the only guarantee
+anything on this side of a database can honestly make.
+
+A handler runs later than the action that emitted its event, never inside it: fan-out and
+dispatch poll on their own threads. This one is `async def`, so dispatch runs it on its handler
+loop - one event loop on a thread of its own - where it awaits an `AsyncActionExecutor`, as the
+requests do. Its executor and registry belong to that loop: they are built for the handler, and
+closed on that loop at shutdown (`app.py`). A handler reads its envelope and nothing else, which
+is what would let it move into a broker consumer later without its body changing.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from ekbatan.aio import AsyncAction, AsyncActionExecutor
+from ekbatan.events import EventEnvelope
+from ekbatan.ids import ShardedId
+
+from .model import Alert, EmailAddress, MoneyDepositedEvent, Wallet
+
+
+@dataclass(frozen=True, kw_only=True)
+class RaiseAlertParams:
+    wallet_id: ShardedId[Wallet]
+    recipient: str
+    message: str
+
+
+class RaiseAlertAction(AsyncAction[RaiseAlertParams, Alert]):
+    """Writes an entity. Emits nothing, and is still audited."""
+
+    async def perform(self, principal: str | None, params: RaiseAlertParams) -> Alert:
+        return self.plan.add(
+            Alert.create(
+                wallet_id=params.wallet_id,
+                recipient=EmailAddress(params.recipient),
+                message=params.message,
+            )
+        )
+
+
+class MoneyDepositedEventHandler:
+    """Tells the owner money arrived, by starting another unit of work - awaited."""
+
+    name = "wallet-deposit-alert"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        await self.executor.execute(
+            RaiseAlertAction,
+            RaiseAlertParams(
+                wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
+                # Off the producing action's parameters, not the event. The event says what
+                # happened to the wallet; where to send a message about it is this handler's
+                # business and nobody else's.
+                recipient=str(envelope.action_params.get("recipient", "")),
+                message=f"{envelope.event.amount} received, balance {envelope.event.new_balance}",
+            ),
+        )

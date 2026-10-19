@@ -1194,7 +1194,7 @@ build files differing:
 | [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) | this project, on PostgreSQL |
 | [`fastapi-wallet-rest-uv-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mysql) · [`fastapi-wallet-rest-uv-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb) | the same, on the other databases |
 | [`fastapi-wallet-rest-uv-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) | two databases, with placement asserted |
-| [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) · [`fastapi-wallet-rest-uv-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb) | this project with an async request path, `ekbatan.aio` |
+| [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) · [`fastapi-wallet-rest-uv-async-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql) · [`fastapi-wallet-rest-uv-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb) | this project with an async request path, `ekbatan.aio` |
 | [`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg) | a transfer across shards, with compensation |
 | [`job-worker-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-pg) | no HTTP at all - a worker running distributed jobs |
 | [`wallet-service-uv-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-sqlite) | one module set, one command, no container |
@@ -1319,7 +1319,8 @@ Then, file by file - every change is in the async examples, which pass their own
 The urls stay the sync ones: the async registry reads `postgresql+psycopg://` as "this
 PostgreSQL" and connects with asyncpg (`mysql+pymysql://` with aiomysql). The step by step is
 [Going async](/learn/async/); the examples are
-[`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg)
+[`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg),
+[`fastapi-wallet-rest-uv-async-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql)
 and
 [`fastapi-wallet-rest-uv-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb).
 

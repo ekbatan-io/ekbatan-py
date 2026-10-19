@@ -308,7 +308,8 @@ Without `.handler_loop(...)` the dispatch makes its own, started only when an as
 runs. Fan-out and dispatch themselves read and write the `events` and `event_notifications`
 tables through a sync registry, built from the same layout file.
 
-The `fastapi-wallet-rest-uv-async-pg` and `fastapi-wallet-rest-uv-async-mariadb` examples are
+The `fastapi-wallet-rest-uv-async-pg`, `fastapi-wallet-rest-uv-async-mysql` and
+`fastapi-wallet-rest-uv-async-mariadb` examples are
 this shape: async requests under an async keyed lock, an async handler, four pools.
 
 ## One kind per service

@@ -169,6 +169,17 @@ MATRIX = (
         forced=(UUID_IDS, *WALLET_FORCED),
     ),
     Example(
+        "fastapi-wallet-rest",
+        "mysql",
+        "fastapi_wallet_rest_async_mysql",
+        "A wallet service over HTTP on MySQL, on native asyncio",
+        ("mysql", "mysql-async", "migrations"),
+        variant="async",
+        image="mysql:8.4",
+        containers="mysql",
+        forced=(UUID_IDS, *WALLET_FORCED),
+    ),
+    Example(
         "fastapi-wallet-saga",
         "pg",
         "fastapi_wallet_saga_pg",

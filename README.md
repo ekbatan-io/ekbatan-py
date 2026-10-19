@@ -209,6 +209,7 @@ ekbatan-py-examples/                 each one built three ways: -uv-, -pip-, -po
   fastapi-wallet-rest-uv-mariadb/     the same service, on MariaDB
   fastapi-wallet-rest-uv-sharded-pg/  the same service, over two databases
   fastapi-wallet-rest-uv-async-pg/    the same service on native asyncio, ekbatan.aio
+  fastapi-wallet-rest-uv-async-mysql/    and on MySQL
   fastapi-wallet-rest-uv-async-mariadb/  and on MariaDB
   fastapi-wallet-saga-uv-pg/          a saga: two services, choreography, compensation
   job-worker-uv-pg/                   a distributed job, no HTTP at all
