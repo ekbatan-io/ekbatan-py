@@ -205,6 +205,17 @@ MATRIX = (
         image=None,
         containers=None,
     ),
+    Example(
+        "wallet-service",
+        "sqlite",
+        "wallet_service_async_sqlite",
+        "A wallet, end to end, on SQLite, on native asyncio",
+        ("sqlite-async",),
+        web=False,
+        variant="async",
+        image=None,
+        containers=None,
+    ),
 )
 
 SOURCE_NOTE = (

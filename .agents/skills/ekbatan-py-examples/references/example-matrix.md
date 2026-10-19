@@ -1,6 +1,6 @@
 # Example matrix
 
-Seven examples, each built three ways - with uv, pip and Poetry - so 21 projects:
+Eleven examples, each built three ways - with uv, pip and Poetry - so 33 projects:
 `<stack>-<domain>-<style>-<build>[-variant]-<db>`, Java's own naming. Only the REST example is
 replicated per database, the same shape the Java port uses.
 
@@ -13,6 +13,12 @@ replicated per database, the same shape the Java port uses.
 | `fastapi-wallet-saga-{build}-pg` | PostgreSQL | choreography, compensation, and a 202 | yes |
 | `job-worker-{build}-pg` | PostgreSQL | cluster-exclusive jobs, no HTTP at all | yes |
 | `wallet-service-{build}-sqlite` | SQLite | the smallest one. No container, no web stack | no |
+| `fastapi-wallet-rest-{build}-async-pg` | PostgreSQL | the REST service on `ekbatan.aio` (asyncpg) | yes |
+| `fastapi-wallet-rest-{build}-async-mysql` | MySQL | the same, on aiomysql | yes |
+| `fastapi-wallet-rest-{build}-async-mariadb` | MariaDB | the same, on aiomysql | yes |
+| `wallet-service-{build}-async-sqlite` | SQLite | the SQLite one on `ekbatan.aio` (aiosqlite) | no |
+
+The async twins leave out the stipend job: jobs always run on threads through the sync API.
 
 The uv project is the source; `scripts/sync-examples.py` writes the other two from it.
 

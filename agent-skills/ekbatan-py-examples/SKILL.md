@@ -1,6 +1,6 @@
 ---
 name: ekbatan-py-examples
-description: Maintain the ekbatan-py example applications. Use when adding, updating, auditing or verifying anything under ekbatan-py-examples across the PostgreSQL, MySQL, MariaDB, sharded, saga, job-worker and SQLite examples, each built with uv, pip and Poetry.
+description: Maintain the ekbatan-py example applications. Use when adding, updating, auditing or verifying anything under ekbatan-py-examples across the PostgreSQL, MySQL, MariaDB, sharded, saga, job-worker and SQLite examples and their async twins, each built with uv, pip and Poetry.
 ---
 
 # ekbatan-py examples
@@ -17,13 +17,19 @@ across the matrix.
 
 ## Matrix discipline
 
-Seven examples, **each carried three times** - `-uv-`, `-pip-`, `-poetry-` - as Java carries its
+Eleven examples, **each carried three times** - `-uv-`, `-pip-`, `-poetry-` - as Java carries its
 examples per Gradle and Maven. Only the REST example is replicated per database.
 
 | | |
 | --- | --- |
 | per database | `fastapi-wallet-rest-{build}-pg`, `-mysql`, `-mariadb` |
+| per database, async | `fastapi-wallet-rest-{build}-async-pg`, `-async-mysql`, `-async-mariadb`, `wallet-service-{build}-async-sqlite` |
 | one of a kind | `fastapi-wallet-rest-{build}-sharded-pg`, `fastapi-wallet-saga-{build}-pg`, `job-worker-{build}-pg`, `wallet-service-{build}-sqlite` |
+
+**Two modes.** Each database the setup guide covers has a sync example and an async twin on
+`ekbatan.aio` - the complete-project-setup page shows both, and `scripts/check-setup-guide.py`
+builds both. A change to a sync example's behaviour goes into its async twin too, or the twin's
+README says why not.
 
 **Edit only the uv project**, then run `uv run python scripts/sync-examples.py`: it writes the
 pip and Poetry twins (the same `src/`, byte for byte) and every project's `pyproject.toml`,

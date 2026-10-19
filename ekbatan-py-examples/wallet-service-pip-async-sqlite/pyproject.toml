@@ -1,0 +1,20 @@
+[project]
+name = "wallet-service-async-sqlite"
+version = "0.1.0"
+description = "A wallet, end to end, on SQLite, on native asyncio, built with pip and setuptools."
+requires-python = ">=3.13"
+dependencies = ["ekbatan[sqlite-async]"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+# setuptools packs only .py files unless told. The service reads these at startup.
+[tool.setuptools.package-data]
+wallet_service_async_sqlite = ["ekbatan.yaml"]
+
+[tool.pytest.ini_options]
+addopts = "-q"

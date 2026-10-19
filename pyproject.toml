@@ -147,6 +147,7 @@ files = [
     "ekbatan-py-examples/fastapi-wallet-saga-uv-pg/src",
     "ekbatan-py-examples/job-worker-uv-pg/src",
     "ekbatan-py-examples/wallet-service-uv-sqlite/src",
+    "ekbatan-py-examples/wallet-service-uv-async-sqlite/src",
 ]
 # An example's own test is a test, and is held to the same bar as the rest of them.
 exclude = "ekbatan-py-examples/.*/test_.*\\.py$"

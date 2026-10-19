@@ -11,7 +11,7 @@ here instead, every change made for coverage would land in the documentation and
 for clarity would break the suite. So they do not meet, and `tests/test_structure.py` keeps it
 that way.
 
-## Nine examples, each built three ways
+## Eleven examples, each built three ways
 
 Java carries each of its examples per build tool - `*-gradle-*` and `*-maven-*`. Python projects
 are built three common ways, so each example here is carried three times, with only its build
@@ -90,6 +90,14 @@ nothing to install. No Java counterpart - there, the smallest example still need
 make -C ekbatan-py-examples/wallet-service-uv-sqlite run     # runs now, needs nothing
 ```
 
+And its async twin, `wallet-service-{uv,pip,poetry}-async-sqlite`: the same wallet with every unit
+of work awaited on `ekbatan.aio`, through aiosqlite. Its README lists what changes and what
+stays the same.
+
+```
+make -C ekbatan-py-examples/wallet-service-uv-async-sqlite run
+```
+
 ## The schema is generated, not written
 
 Every project here except the SQLite ones generates its `schema.py` from the database its **own
@@ -141,7 +149,7 @@ In the code, the same conventions as the Java side: `...Action` for a unit of wo
 for something that happened, `...EventHandler` for what reacts to one, `...Job` for scheduled
 work, `...Repository` for reads.
 
-## Why 27 and not Java's 36
+## Why 33 and not Java's 36
 
 Java's grid is three DI frameworks x two build tools x three databases, each JVM and native.
 Here there is one web framework worth targeting and no native image, so those axes collapse. The
@@ -151,7 +159,7 @@ decides what a wheel holds, which is the one thing an example cannot show from t
 ## Running them
 
 ```
-make examples                    # all 27, each in its own environment, each as its wheel
+make examples                    # all 33, each in its own environment, each as its wheel
 make -C ekbatan-py-examples/fastapi-wallet-rest-pip-mysql      # or one
 ```
 

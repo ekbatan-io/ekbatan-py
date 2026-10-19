@@ -86,7 +86,7 @@ src/ekbatan/
   locks/             base.py, sql.py, redis.py, _holder.py, _deadlines.py
   distributedjobs/   DistributedJob, JobRegistry, JobsConfig
 db-scheduler/        a separate distribution: the port of kagkarlsson/db-scheduler
-ekbatan-py-examples/ nine examples x uv/pip/Poetry: 27 standalone projects
+ekbatan-py-examples/ eleven examples x uv/pip/Poetry: 33 standalone projects
 ```
 
 `db-scheduler/` is **its own distribution** with its own lock file, tests, CI workflow and ruff

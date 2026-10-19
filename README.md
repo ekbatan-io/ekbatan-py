@@ -214,13 +214,14 @@ ekbatan-py-examples/                 each one built three ways: -uv-, -pip-, -po
   fastapi-wallet-saga-uv-pg/          a saga: two services, choreography, compensation
   job-worker-uv-pg/                   a distributed job, no HTTP at all
   wallet-service-uv-sqlite/           the smallest one. No container, no web stack
+  wallet-service-uv-async-sqlite/     the same, on native asyncio
 ```
 
 One REST example per dialect and one of everything else, which is the shape of Java's matrix -
 there, too, only the REST project is replicated per database. And each is carried once per build
 tool, as Java's are per Gradle and Maven: `fastapi-wallet-rest-uv-pg`,
 `fastapi-wallet-rest-pip-pg`, `fastapi-wallet-rest-poetry-pg`, the same code with its own
-`pyproject.toml` and `Makefile` - 27 projects, kept in step by `scripts/sync-examples.py`. Each is
+`pyproject.toml` and `Makefile` - 33 projects, kept in step by `scripts/sync-examples.py`. Each is
 standalone: `cd` into one and `make` builds it, tests it as its installed wheel, and needs
 nothing else from this repository but the framework.
 
@@ -264,8 +265,9 @@ uv run pytest tests/unit              # no database at all, about a second
 uv run pytest                         # the whole suite, on SQLite
 uv run pytest --dialects=postgres     # in a container
 uv run pytest --dialects=all          # every test, on all four
-make examples                         # all 27 examples, each as its installed wheel
+make examples                         # all 33 examples, each as its installed wheel
 make -C ekbatan-py-examples/wallet-service-uv-sqlite run
+make -C ekbatan-py-examples/wallet-service-uv-async-sqlite run
 
 uv run mypy                           # strict, on the library and the examples
 uv run ruff check .

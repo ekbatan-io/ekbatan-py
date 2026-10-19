@@ -132,3 +132,5 @@ sufficient.
 - [Multiple dialects](multi-database.md) - where the four disagree
 - [`wallet-service-uv-sqlite`](../../ekbatan-py-examples/wallet-service-uv-sqlite) - no container, no
   web stack
+- [`wallet-service-uv-async-sqlite`](../../ekbatan-py-examples/wallet-service-uv-async-sqlite) - the
+  same, async, on aiosqlite

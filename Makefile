@@ -19,7 +19,7 @@
 
 UV := uv run
 
-# The examples: nine, each a project of its own and each built three ways - with uv, pip and
+# The examples: eleven, each a project of its own and each built three ways - with uv, pip and
 # Poetry - as Java carries each of its examples per build tool. `scripts/sync-examples.py` writes
 # the pip and Poetry projects from the uv one and keeps them in step.
 EXAMPLES := \
@@ -32,7 +32,8 @@ EXAMPLES := \
 	fastapi-wallet-rest-uv-async-mariadb fastapi-wallet-rest-pip-async-mariadb fastapi-wallet-rest-poetry-async-mariadb \
 	fastapi-wallet-saga-uv-pg fastapi-wallet-saga-pip-pg fastapi-wallet-saga-poetry-pg \
 	job-worker-uv-pg job-worker-pip-pg job-worker-poetry-pg \
-	wallet-service-uv-sqlite wallet-service-pip-sqlite wallet-service-poetry-sqlite
+	wallet-service-uv-sqlite wallet-service-pip-sqlite wallet-service-poetry-sqlite \
+	wallet-service-uv-async-sqlite wallet-service-pip-async-sqlite wallet-service-poetry-async-sqlite
 
 .PHONY: all lint format test test-all test-psycopg-async test-gevent examples schema build clean help website website-dev
 .DEFAULT_GOAL := all
@@ -145,6 +146,7 @@ examples:
 		echo "== $$e"; $(MAKE) --no-print-directory -C ekbatan-py-examples/$$e PYTHON=$(EXAMPLE_PYTHON); \
 	done
 	$(MAKE) --no-print-directory -C ekbatan-py-examples/wallet-service-uv-sqlite run
+	$(MAKE) --no-print-directory -C ekbatan-py-examples/wallet-service-uv-async-sqlite run
 
 # -- the website -------------------------------------------------------------------------------
 #

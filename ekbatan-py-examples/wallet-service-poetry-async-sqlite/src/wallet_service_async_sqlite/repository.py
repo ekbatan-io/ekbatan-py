@@ -1,0 +1,186 @@
+"""Repositories, on `ekbatan.aio`.
+
+A repository is where a query that means something to the business lives. The framework's own
+reads - by id, by predicate, counting, existence - are inherited, so what is left here is the
+handful of questions this application actually asks.
+
+**All async.** Every read and write is awaited. `to_row` and `from_row` stay plain functions -
+mapping waits on nothing - and each mapping is written once, in a small class the repository
+takes it from. The base refuses a repository that has no mapping.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import Row, delete, func, select
+
+from ekbatan import ShardIdentifier
+from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
+from ekbatan.clock import Clock, to_storage
+from ekbatan.domain import GenericState
+from ekbatan.errors import ValidationError
+from ekbatan.ids import Id, ShardedId
+from ekbatan.sharding import EmbeddedBitsShardingStrategy
+
+from .model import Alert, Wallet, WalletState
+from .schema import ALERTS, WALLETS
+
+
+class WalletRows:
+    """The wallet as one row, and back. Plain functions: nothing here waits on anything."""
+
+    def to_row(self, wallet: Wallet) -> dict[str, Any]:
+        """Every column, named. A typed id goes in as its `uuid`, an enum as its `name`, a
+        timestamp through `to_storage`, which drops the zone - the column holds UTC wall-clock
+        time."""
+        return {
+            "id": wallet.id.value,
+            "version": wallet.version,
+            "state": wallet.state.name,
+            "owner_id": wallet.owner_id,
+            "currency": wallet.currency,
+            "balance": wallet.balance,
+            "created_date": to_storage(wallet.created_date),
+            # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
+            # constructed model - the declared type keeps the `| None` because a builder may
+            # leave it unset. The column is NOT NULL.
+            "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+        }
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        values = row._mapping if isinstance(row, Row) else row
+        return Wallet(
+            id=ShardedId[Wallet](values["id"]),
+            version=values["version"],
+            state=WalletState[values["state"]],
+            owner_id=values["owner_id"],
+            currency=values["currency"],
+            balance=values["balance"],
+            created_date=values["created_date"],
+            updated_date=values["updated_date"],
+        )
+
+
+class AlertRows:
+    """The alert as one row, and back: six columns, no timestamps - an entity carries none."""
+
+    def to_row(self, alert: Alert) -> dict[str, Any]:
+        return {
+            "id": alert.id.value,
+            "version": alert.version,
+            "state": alert.state.name,
+            "wallet_id": alert.wallet_id.value,
+            "recipient": alert.recipient,
+            "message": alert.message,
+        }
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Alert:
+        values = row._mapping if isinstance(row, Row) else row
+        return Alert(
+            id=Id[Alert](values["id"]),
+            version=values["version"],
+            state=GenericState[values["state"]],
+            wallet_id=ShardedId[Wallet](values["wallet_id"]),
+            recipient=values["recipient"],
+            message=values["message"],
+        )
+
+
+class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    """Wallets, awaited, routed by the shard packed into each id.
+
+    A model repository, because a wallet's changes are events. Saying so is what lets the
+    framework check that this table can hold the timestamps a model carries.
+    """
+
+    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+        )
+
+    async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+        """Every wallet an owner has, on whichever databases they live.
+
+        A predicate says nothing about where its rows are, so this asks all of them - at once.
+        Deleted rows are excluded here as everywhere - that filter is applied once, in the
+        framework, rather than remembered at each call site.
+        """
+        return await self.find_where(WALLETS.c.owner_id == owner_id)
+
+    async def find_open_below(self, threshold: Decimal) -> list[Wallet]:
+        """Open wallets running low - what a top-up job would ask for."""
+        return await self.find_where(
+            WALLETS.c.state == WalletState.OPENED.name,
+            WALLETS.c.balance < threshold,
+        )
+
+    async def find_on_shard(self, shard: ShardIdentifier) -> list[Wallet]:
+        """Everything on one database - for a migration, or a per-shard report."""
+        return await self.all(shard=shard)
+
+    async def exists_on_shard(self, shard: ShardIdentifier, wallet_id: ShardedId[Wallet]) -> bool:
+        """Whether a particular database holds this row, rather than wherever its id says.
+
+        Worth asking during a rebalance, when the two can legitimately disagree.
+        """
+        async with self.readonly_db(shard=shard) as conn:
+            found = await conn.execute(select(WALLETS.c.id).where(self.id_matches(wallet_id)))
+            return found.first() is not None
+
+    async def erase(self, wallet_id: ShardedId[Wallet]) -> bool:
+        """Remove a wallet for real, and only if it holds nothing.
+
+        The inherited `delete` is a soft delete - it moves the row to DELETED and every read
+        stops seeing it, which is what an application almost always wants, because the row is
+        still the other side of every event already published about it. This is the other
+        kind, written out because the rule it enforces is this application's: a wallet with
+        money in it is not something to erase.
+
+        `tx_db_else_db` rather than `db`, so this joins a transaction if the caller has one
+        open - erasing a wallet and writing the audit row of why usually belong together.
+        """
+        held = await self.find(wallet_id)
+        if held is None:
+            return False
+        if held.balance != 0:
+            raise ValidationError(
+                f"wallet {wallet_id} still holds {held.balance} {held.currency}; move the "
+                f"balance off it before erasing, or use delete() to close it and keep the row"
+            )
+        async with self.tx_db_else_db(key=wallet_id) as conn:
+            erased = await conn.execute(delete(WALLETS).where(self.id_matches(wallet_id)))
+            return erased.rowcount == 1
+
+    async def total_balance(self) -> Decimal:
+        """The sum across every shard - a query of this repository's own.
+
+        `readonly_dbs()` hands over each shard's replica in turn; a report can be a second out
+        of date. A shard holding nothing contributes zero rather than a null. The
+        `state != DELETED` filter is spelled out because this is *your* statement: the
+        inherited reads apply it for you, one you build carries only what you put in it.
+        """
+        query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(
+            WALLETS.c.state != WalletState.DELETED.name
+        )
+        total = Decimal(0)
+        async for _, conn in self.readonly_dbs():
+            total += Decimal(str((await conn.execute(query)).scalar_one()))
+        return total
+
+
+class AlertRepository(AlertRows, AsyncEntityRepository[Alert, Id[Alert]]):
+    """Alerts, awaited. Not sharded - they are looked up by wallet, not by their own id.
+
+    An entity repository, because writing one is not news: no events, and no timestamps for
+    the table to hold.
+    """
+
+    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
+        super().__init__(Alert, ALERTS, registry, clock=clock)
+
+    async def find_for_wallet(self, wallet_id: ShardedId[Wallet]) -> list[Alert]:
+        return await self.find_where(ALERTS.c.wallet_id == wallet_id.value)
