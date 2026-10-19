@@ -11,7 +11,7 @@ both can work on the same data:
 
 | shared | what lines up |
 | --- | --- |
-| [the framework's tables](#the-shared-tables) | `events`, `event_notifications`, `scheduled_tasks`: same columns, same values |
+| [the framework's tables](#the-shared-tables) | `events`, `event_notifications`: same columns, same values |
 | [ids](#ids) | the same uuid text, the same shard bits, the same sort order |
 | [event payloads](#event-payloads) | the same JSON, byte for byte |
 | [keyed locks](#keyed-locks) | the same lock, on Redis and on the SQL servers |
@@ -84,24 +84,9 @@ the column, so the default is never used. It matters only if you insert rows by 
 
 ### `scheduled_tasks`
 
-This is [db-scheduler](https://github.com/kagkarlsson/db-scheduler)'s own table, and both
-frameworks keep it as db-scheduler wrote it. The Python scheduler, `ekbatan-py-db-scheduler`, is
-a port of db-scheduler and reads and writes the table the same way - so a Java worker and a
-Python worker take turns at the same executions.
-
-Two differences, both on PostgreSQL and neither a problem:
-
-- **The time columns are `timestamptz` in the Java migration** and `TIMESTAMP` here. The
-  Python scheduler stores its times as given and its default clock gives naive UTC, which is
-  right for `TIMESTAMP`. On Java's `timestamptz` table, give the Python scheduler a clock that
-  gives aware UTC - one line, shown in
-  [`scheduled_tasks`](database/tables/scheduled-tasks.md#if-the-time-columns-are-timestamptz). Without it
-  the Python worker logs `TypeError` comparing naive and aware times.
-- **Index names and order.** Java names them `execution_time_idx`, `last_heartbeat_idx` and
-  `priority_execution_time_idx`, with the priority index `(priority DESC, execution_time ASC)`.
-  This framework puts the table name in front of each and gives the priority index no direction.
-  Both tables hold the same rows and work with both schedulers; the priority index only matters
-  when priority ordering is turned on.
+Not shared. This is [db-scheduler](https://github.com/kagkarlsson/db-scheduler)'s own table, and
+each service keeps its jobs in its own database: a Java service and a Python service do not share
+one database, so they never share this table, and nothing in it has to line up.
 
 ### Migrations
 

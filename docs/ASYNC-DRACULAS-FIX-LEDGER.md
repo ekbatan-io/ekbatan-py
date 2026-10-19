@@ -42,6 +42,14 @@ the surface test's gaps (row 17 extends it).
 - (b) event-JSON time without `Z`: user undecided - decision marked "open, user undecided",
   nothing changed.
 
+Done in `EKB-0402`: both decisions marked; `beside-java` (docs + website) no longer lists
+`scheduled_tasks` as shared and its section says the table is never shared; the
+`scheduled_tasks` and distributed-jobs pages lost their "share it with Java" links and "(the
+Java migration does)"; AGENTS.md "This is a port" says the two never share one database. The
+generic aware-clock section for a `timestamptz` table stays. Left as is: the `eventlog` schema
+step and the "Migrations" note on `beside-java`, which also speak of a shared database - not
+about the scheduler table, so outside what was asked (logged in DECISIONS).
+
 ## Runs
 
 Baseline at `ca9321f`, in a separate checkout (`git worktree` under `/private/tmp`), so edits

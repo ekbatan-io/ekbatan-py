@@ -15,8 +15,7 @@ table in a model. The schema here is db-scheduler's own, unchanged.
 
 The scheduler itself is published from this repository as `ekbatan-py-db-scheduler` - a port of
 db-scheduler, a separate distribution with its own tests, pinned to the version `ekbatan` was cut
-with. Because the table is db-scheduler's, a Java service running db-scheduler can share it; see
-[Running beside a Java service](/reference/beside-java/#scheduled_tasks).
+with.
 
 ## DDL
 
@@ -118,7 +117,7 @@ MariaDB.
 The scheduler writes and reads its times exactly as it is given them, as the rest of the
 framework does, and its default clock gives the current UTC time with no zone attached - the
 right kind for the `TIMESTAMP` columns above. A table created by another migration may declare
-the PostgreSQL time columns `timestamptz` instead (the Java migration does). Those hand back
+the PostgreSQL time columns `timestamptz` instead. Those hand back
 times *with* a zone, so give the scheduler a clock that has one too:
 
 ```python

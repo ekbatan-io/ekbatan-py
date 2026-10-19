@@ -303,8 +303,7 @@ from ekbatan.schema import scheduled_tasks_table
 ```
 
 Its times are `TIMESTAMP` with no zone, as in every framework table; [the table's page](../database/tables/scheduled-tasks.md#if-the-time-columns-are-timestamptz) covers a table whose times are
-`timestamptz`. To share the table with a Java service, see
-[Running beside a Java service](../beside-java.md#scheduled_tasks).
+`timestamptz`.
 
 **What exclusivity does and does not mean.** When a task's `execution_time` arrives, exactly one
 instance wins the atomic claim *for that slot*, and that instance runs it. Each running instance

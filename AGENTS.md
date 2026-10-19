@@ -39,9 +39,9 @@ Mapping is by field name, so a repository usually declares nothing about columns
 
 `ekbatan-py` is a port of [`ekbatan`](https://github.com/ekbatan-io/ekbatan), a Java framework.
 The two are expected to interoperate: a Java service and a Python service can read each other's
-outbox rows, contend for the same keyed lock, and share one `scheduled_tasks` table. Several
-things that look like arbitrary choices are cross-language contracts, and the code says so where
-that is true.
+outbox rows and contend for the same keyed lock. They do not share one database, so never one
+`scheduled_tasks` table. Several things that look like arbitrary choices are cross-language
+contracts, and the code says so where that is true.
 
 Four documents carry that relationship, and **an agent working here should read the relevant one
 before changing behaviour**:
