@@ -142,6 +142,37 @@ mechanism works under a threaded server and an asyncio one. Work handed to a poo
 unit of work does **not** inherit it - which is correct, and is pinned by
 `tests/integration/test_concurrency.py`.
 
+### Two modes: sync and async are both first-class
+
+Every reader picks a mode - the sync API or `ekbatan.aio` - and every part of this repository
+serves both. The rules:
+
+- **Every new public feature works in both modes**, or the docs say why not (as they do for
+  jobs, migrations and `schemagen`, which are sync in both, and for SQLite, which has no keyed
+  lock provider in either).
+- **Logic lives in the shared private cores, never copied.** The async class adds only the lines
+  that await (see the next section).
+- **Each test scenario runs in both modes**: a test module sets `MODES = ("sync", "async")` and
+  `tests/modes.py` runs it again against `ekbatan.aio`. A scenario that cannot run through the
+  harness gets a native coroutine test in `tests/integration/test_async.py`.
+- **Each example has an async twin** (`fastapi-wallet-rest-*-async-{pg,mysql,mariadb}`,
+  `wallet-service-*-async-sqlite`). A change to a sync example's behaviour goes into its twin,
+  or the twin's README says why not. The one-of-a-kind examples (sharded, saga, job worker) have
+  none yet.
+- **Each code sample on the website and in `docs/` shows both modes where they differ.** On the
+  website, wrap it in `<ModeTabs>` (`website/src/components/ModeTabs.astro`, slots `sync` and
+  `async`); the choice is shared across pages with the setup guide's picker. In the `docs/` copy,
+  put the two blocks one after the other under `**Sync**` and `**Async**` lines. A sample that is
+  the same in both modes stays single.
+- **The setup guide covers both modes.** `complete-project-setup.mdx` shows the async example's
+  real files when the picker says Async (`data-mode`; any picker attribute may list several
+  values, space-separated), `tests/unit/test_setup_guide.py` fails when an example has a file the
+  page does not show, and `scripts/check-setup-guide.py` builds every database x installer x
+  mode - 24 runs - in an empty folder. When the guide and an example disagree, fix the guide or
+  the example, not the checker.
+- How to choose, for readers, is `docs/sync-or-async.md` (website `learn/sync-or-async`); the
+  async-only details are `docs/runtime/async.md`.
+
 ### Async lives in `ekbatan.aio`, on the sync code's private cores
 
 There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them one framework:
@@ -197,6 +228,7 @@ make test        # unit, then the whole suite on SQLite
 make test-all    # PostgreSQL, MySQL and MariaDB too - needs Docker
 make test-psycopg-async   # the PostgreSQL suite, its async runs on psycopg's async mode
 make examples    # every example, each as its built wheel installed
+uv run python scripts/check-setup-guide.py   # the setup guide, followed as written: 24 runs
 ```
 
 - `tests/unit/` is **database-free by rule**, not by luck, and a test enforces it.
