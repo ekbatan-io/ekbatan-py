@@ -101,6 +101,10 @@ Earlier runs, and what they found:
 | fastapi-wallet-saga-*-async-pg | 19 passed | 19 passed | 19 passed |
 | job-worker-*-async-pg | 12 passed | 12 passed | 12 passed |
 
+Re-run on the final code after the last commit: the same nine results. `make lint` clean; unit
+tests and `tests/test_structure.py` 1290 passed; `tests/unit/test_setup_guide.py` 42 passed;
+website `npm run build` (58 pages) and `npm run check` clean. Nothing in `src/` changed.
+
 Each is its sync twin's tests (20, 17, 10) plus the checks that it really runs async. Planted
 faults, each red, then restored: the deposit without its lock (sharded: 409s among the eight);
 the saga's handlers given the request executor (cross-loop errors, the saga never settles);
@@ -151,7 +155,7 @@ uv, pip and Poetry; three docs leftovers; AGENTS.md. Judgement calls:
 | A10 | Task 2: sagas.md repeated section; local-event-handler.md repeated section; website copies checked | done |
 | A11 | Task 2: SHORTCOMINGS.md against the code (fan-out, examples count, async) - measured | done |
 | A12 | AGENTS.md "Two modes" and example counts | done |
-| A13 | Verify: make lint, unit tests, website build + check, test_setup_guide | open |
+| A13 | Verify: make lint, unit tests, website build + check, test_setup_guide | done |
 
 ### Example runs
 
@@ -160,6 +164,10 @@ uv, pip and Poetry; three docs leftovers; AGENTS.md. Judgement calls:
 | fastapi-wallet-rest-*-async-sharded-pg | 22 passed | 22 passed | 22 passed |
 | fastapi-wallet-saga-*-async-pg | 19 passed | 19 passed | 19 passed |
 | job-worker-*-async-pg | 12 passed | 12 passed | 12 passed |
+
+Re-run on the final code after the last commit: the same nine results. `make lint` clean; unit
+tests and `tests/test_structure.py` 1290 passed; `tests/unit/test_setup_guide.py` 42 passed;
+website `npm run build` (58 pages) and `npm run check` clean. Nothing in `src/` changed.
 
 Each is its sync twin's tests (20, 17, 10) plus the checks that it really runs async. Planted
 faults, each red, then restored: the deposit without its lock (sharded: 409s among the eight);
