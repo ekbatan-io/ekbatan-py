@@ -33,7 +33,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Self
 
-from .clock import to_instant
 from .errors import EkbatanError, ValidationError
 
 __all__ = [
@@ -677,17 +676,9 @@ class Model[
 
         # `created_date` is required, and `super().__post_init__()` has already refused a null
         # one - its annotation is `datetime`, not `datetime | None`.
-        #
-        # Java keeps an `Instant`; here that is an aware UTC datetime, so the model's timestamps
-        # compare with `clock.now()` and equal the same instant read back. A value with no zone
-        # is taken as UTC. (`datetime` has microseconds only: Java's `.truncatedTo(MICROS)`.)
-        object.__setattr__(self, "created_date", to_instant(self.created_date))
-        # Java: `builder.updatedDate != null ? ... : this.createdDate`.
-        object.__setattr__(
-            self,
-            "updated_date",
-            self.created_date if self.updated_date is None else to_instant(self.updated_date),
-        )
+        # Both are kept exactly as given: no zone is added, removed or moved.
+        if self.updated_date is None:
+            object.__setattr__(self, "updated_date", self.created_date)
 
     @property
     def is_model(self) -> bool:

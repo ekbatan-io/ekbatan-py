@@ -132,12 +132,12 @@ def test_an_action_with_another_clock_reaches_the_executor_as_in_java(
     registry, wallets, notifications
 ):
     """Java's executor builds with actions holding any clock; so does this one now."""
-    from datetime import UTC, datetime
+    from datetime import datetime
 
     from ekbatan import VirtualClock
 
-    executor_clock = VirtualClock(datetime(2026, 1, 1, tzinfo=UTC))
-    elsewhere = VirtualClock(datetime(1999, 1, 1, tzinfo=UTC))
+    executor_clock = VirtualClock(datetime(2026, 1, 1))
+    elsewhere = VirtualClock(datetime(1999, 1, 1))
 
     built = ActionExecutor(
         namespace="example.wallet",

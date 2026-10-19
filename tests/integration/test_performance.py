@@ -207,10 +207,8 @@ def test_a_column_that_needs_no_conversion_is_not_inspected_per_row(wallets):
     assert wallets._to_col["version"] is _identity
     assert wallets._to_col["state"] is not _identity, "an enum is stored by name"
     assert wallets._to_col["id"] is not _identity, "a typed id is unwrapped"
-    assert wallets._to_col["created_date"] is not _identity, (
-        "an optional timestamp is still normalised - `datetime | None` is a union, and the "
-        "half that matters is the half that is not None"
-    )
+    assert wallets._to_col["created_date"] is _identity, "a time goes in exactly as it is"
+    assert wallets._from_col["created_date"] is _identity, "and comes back exactly as read"
 
 
 def test_a_batch_statement_is_composed_once_per_size(wallets):

@@ -860,8 +860,9 @@ def test_an_optional_field_never_set_is_none():
 # -- timestamps are instants (Java's `Instant`) -------------------------------------------------
 
 
-def test_a_models_timestamps_are_aware_utc_and_compare_with_the_clock():
-    from datetime import UTC, timedelta, timezone
+def test_a_models_timestamps_are_kept_exactly_as_given():
+    """No zone added, removed or moved - the model holds what it was built with."""
+    from datetime import datetime, timedelta, timezone
 
     from ekbatan.clock import VirtualClock
 
@@ -873,8 +874,11 @@ def test_a_models_timestamps_are_aware_utc_and_compare_with_the_clock():
         balance=Decimal("1"),
         created_date=clock.now(),
     )
-    assert wallet.created_date == clock.now()
-    assert wallet.created_date.tzinfo is UTC
-    assert wallet.created_date < clock.now() + timedelta(seconds=1), "no TypeError"
-    moved = wallet.copy().updated_date(NOW.astimezone(timezone(timedelta(hours=2)))).build()
-    assert moved.updated_date == NOW and moved.updated_date.tzinfo is UTC, "moved to UTC"
+    assert wallet.created_date is clock.now()
+    assert wallet.updated_date is wallet.created_date, "falls back to created_date"
+    tehran = NOW.replace(tzinfo=timezone(timedelta(hours=3, minutes=30)))
+    moved = wallet.copy().updated_date(tehran).build()
+    assert moved.updated_date is tehran, "kept as given, offset and all"
+    naive = datetime(2026, 1, 1, 10, 0, 0, 123456)
+    plain = wallet.copy().updated_date(naive).build()
+    assert plain.updated_date is naive and plain.updated_date.tzinfo is None

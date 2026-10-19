@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -25,8 +25,8 @@ from fixtures.schema import EVENTS
 #: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
 MODES = ("sync", "async")
 
-STARTED = datetime(2026, 1, 15, 10, 0, tzinfo=UTC)
-COMPLETED = datetime(2026, 1, 15, 10, 0, 1, tzinfo=UTC)
+STARTED = datetime(2026, 1, 15, 10, 0)
+COMPLETED = datetime(2026, 1, 15, 10, 0, 1)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -235,7 +235,7 @@ def test_the_timestamps_are_the_ones_the_invocation_was_given(write, registry):
     assert row["started_date"] == STARTED
     assert row["completion_date"] == COMPLETED
     assert row["event_date"] == COMPLETED, "the event's own time"
-    assert row["started_date"].tzinfo is UTC, "read back aware, as Java reads an Instant"
+    assert row["started_date"].tzinfo is None, "read back as given: no zone added"
 
 
 # -- what it refuses ----------------------------------------------------------------------------

@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import Row, select
 
 from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
-from ekbatan.clock import Clock, to_storage
+from ekbatan.clock import Clock
 from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
@@ -28,9 +28,10 @@ class WalletRows:
     """The wallet as one row, and back. Plain functions: nothing here waits on anything."""
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
-        """Every column, named. A typed id goes in as its `uuid`, an enum as its `name`, a
-        timestamp through `to_storage`, which drops the zone - the column holds UTC wall-clock
-        time. `currency` goes in as the `Currency` it is; the column's converter does the text.
+        """Every column, named. A typed id goes in as its `uuid`, an enum as its `name`; the
+        timestamps go in exactly as they are - the clock gives UTC with no zone attached, and
+        that is what the column holds. `currency` goes in as the `Currency` it is; the column's
+        converter does the text.
         """
         return {
             "id": wallet.id.value,
@@ -39,11 +40,11 @@ class WalletRows:
             "owner_id": wallet.owner_id,
             "currency": wallet.currency,
             "balance": wallet.balance,
-            "created_date": to_storage(wallet.created_date),
+            "created_date": wallet.created_date,
             # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
             # constructed model - the declared type keeps the `| None` because a builder may
             # leave it unset. The column is NOT NULL.
-            "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+            "updated_date": wallet.updated_date or wallet.created_date,
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:

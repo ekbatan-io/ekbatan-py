@@ -17,7 +17,7 @@ import subprocess
 import sys
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -44,7 +44,7 @@ from schemagen_support import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-WHEN = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=UTC)
+WHEN = datetime(2026, 1, 2, 3, 4, 5, 123456)
 
 
 def _family(dialect: str) -> str:
@@ -511,7 +511,7 @@ def test_every_kind_of_target_is_written_imported_built_and_used(
             db.dispose()
         assert back["tg_uuid"] == one
         assert back["tg_json"] == {"k": [1, 2]}
-        assert back["tg_at"] == WHEN and back["tg_at"].tzinfo == UTC
+        assert back["tg_at"] == WHEN and back["tg_at"].tzinfo is None
         assert back["tg_num"] == Decimal("12.3456")
         seen = back["tg_dialect"] if dialect_seen is None else dialect_seen(back["tg_dialect"])
         assert seen == dialect_value

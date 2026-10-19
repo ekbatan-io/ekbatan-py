@@ -4,6 +4,10 @@ Every timestamp the framework writes comes from a clock it was handed, never fro
 ``datetime.now()`` reached for at the point of use. Tests need to freeze it, the conformance
 scenarios freeze it (``given.now``), and a framework that calls the wall clock from six places
 cannot be frozen from one.
+
+**What a clock gives is what is stored.** The framework never changes a time's zone or value on
+its way to or from the database. :class:`SystemClock` gives the current UTC time with no zone
+attached; a clock of your own may give anything, and that is what gets written and compared.
 """
 
 from __future__ import annotations
@@ -14,23 +18,32 @@ from typing import Protocol, runtime_checkable
 
 from .errors import EkbatanError
 
-__all__ = ["Clock", "SystemClock", "VirtualClock", "to_instant", "to_storage"]
+__all__ = ["Clock", "SystemClock", "VirtualClock"]
 
 
 @runtime_checkable
 class Clock(Protocol):
     def now(self) -> datetime:
-        """The current instant, timezone-aware and in UTC."""
+        """The current time.
+
+        Whatever this returns is what the framework stores and compares, as it is: nothing is
+        shifted or given a zone. :class:`SystemClock` returns UTC with no zone attached.
+        """
         ...
 
 
 class SystemClock:
-    """The wall clock. The default everywhere."""
+    """The wall clock. The default everywhere.
+
+    The current UTC time with no zone attached - ``2026-10-19 08:30:00.123456``, not
+    ``...+00:00``. That is the value a zone-less ``TIMESTAMP`` column holds, so what is written
+    reads back equal and compares with the next ``now()``.
+    """
 
     __slots__ = ()
 
     def now(self) -> datetime:
-        return datetime.now(UTC)
+        return _utc_now()
 
     def __repr__(self) -> str:
         return "SystemClock()"
@@ -53,6 +66,9 @@ class VirtualClock:
 
     Not only for tests. The conformance scenarios freeze it too, through ``given.now``.
 
+    An instant handed to it is kept exactly as given, zone or no zone. In real time it reads
+    what :class:`SystemClock` reads: UTC, no zone attached.
+
     Every mode change and every read takes a lock. Java uses an ``AtomicReference`` and has a
     test that eight threads advancing a thousand times each lose nothing; a bare ``+=`` here
     would be a read, an add and a write, and two of those interleaving silently drops one.
@@ -62,7 +78,7 @@ class VirtualClock:
 
     def __init__(self, now: datetime | None = None) -> None:
         self._lock = threading.Lock()
-        self._frozen: datetime | None = None if now is None else _as_utc(now)
+        self._frozen: datetime | None = now
         self._virtual_anchor: datetime | None = None
         self._real_anchor: datetime | None = None
 
@@ -79,7 +95,7 @@ class VirtualClock:
     def pause_at(self, instant: datetime) -> None:
         """Freeze at a particular instant."""
         with self._lock:
-            self._frozen = _as_utc(instant)
+            self._frozen = instant
             self._virtual_anchor = self._real_anchor = None
 
     def advance(self, delta: timedelta) -> None:
@@ -99,8 +115,8 @@ class VirtualClock:
     def resume_from(self, instant: datetime) -> None:
         """Run at wall-clock rate, but anchored somewhere other than now."""
         with self._lock:
-            self._virtual_anchor = _as_utc(instant)
-            self._real_anchor = datetime.now(UTC)
+            self._virtual_anchor = instant
+            self._real_anchor = _utc_now()
             self._frozen = None
 
     def resume(self) -> None:
@@ -113,8 +129,8 @@ class VirtualClock:
         if self._frozen is not None:
             return self._frozen
         if self._virtual_anchor is not None and self._real_anchor is not None:
-            return self._virtual_anchor + (datetime.now(UTC) - self._real_anchor)
-        return datetime.now(UTC)
+            return self._virtual_anchor + (_utc_now() - self._real_anchor)
+        return _utc_now()
 
     def __repr__(self) -> str:
         with self._lock:
@@ -125,24 +141,6 @@ class VirtualClock:
             return "VirtualClock(real time)"
 
 
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def to_instant(value: datetime) -> datetime:
-    """An instant as the framework hands every timestamp back: aware, in UTC - Java's ``Instant``.
-
-    A value with no zone is taken as UTC, which is what the timestamp columns hold. So a
-    timestamp read back equals the one written, and compares with ``clock.now()``.
-    """
-    return _as_utc(value)
-
-
-def to_storage(value: datetime) -> datetime:
-    """Normalise an instant to what the timestamp columns hold: UTC, no zone, microseconds.
-
-    The columns are zone-less, as Java's are, and Java writes an ``Instant`` into them as its
-    UTC wall-clock time; this writes the same value. Only the stored form drops the zone: every
-    timestamp the framework hands back is aware (:func:`to_instant`).
-    """
-    return _as_utc(value).replace(tzinfo=None)
+def _utc_now() -> datetime:
+    """The current UTC time, no zone attached. The one place the framework reads the wall clock."""
+    return datetime.now(UTC).replace(tzinfo=None)

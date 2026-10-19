@@ -11,7 +11,6 @@ from sqlalchemy import (
     CHAR,
     BigInteger,
     Column,
-    DateTime,
     Integer,
     MetaData,
     Numeric,
@@ -25,6 +24,7 @@ from ekbatan.schema import (
     notifications_table,
     outbox_table,
     scheduled_tasks_table,
+    timestamp_column,
     uuid_column,
 )
 
@@ -39,8 +39,8 @@ WALLETS = Table(
     Column("owner_id", uuid_column(), nullable=False),
     Column("currency", CHAR(3), nullable=False),
     Column("balance", Numeric(19, 4), nullable=False),
-    Column("created_date", DateTime, nullable=False),
-    Column("updated_date", DateTime, nullable=False),
+    Column("created_date", timestamp_column(), nullable=False),
+    Column("updated_date", timestamp_column(), nullable=False),
     # Two columns that exist only so the repository suite has something to catch with.
     # Java's `Dummy` fixture carries the same pair for the same reasons.
     #

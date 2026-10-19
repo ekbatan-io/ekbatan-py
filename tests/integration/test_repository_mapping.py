@@ -79,7 +79,7 @@ def test_asking_for_the_by_name_mapping_is_a_line_you_write(registry, clock):
 
 
 def a_wallet() -> Wallet:
-    from datetime import UTC, datetime
+    from datetime import datetime
     from decimal import Decimal
     from uuid import uuid4
 
@@ -88,5 +88,5 @@ def a_wallet() -> Wallet:
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
-        created_date=datetime(2026, 1, 1, tzinfo=UTC),
+        created_date=datetime(2026, 1, 1),
     )

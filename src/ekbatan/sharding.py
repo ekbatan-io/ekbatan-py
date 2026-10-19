@@ -15,10 +15,13 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from typing import Protocol, runtime_checkable
 
 from .errors import ValidationError
+
+#: The epoch, no zone attached.
+_EPOCH = datetime(1970, 1, 1)
 
 __all__ = [
     "DEFAULT_SHARD",
@@ -106,10 +109,13 @@ def uuid_instant(value: uuid.UUID) -> datetime | None:
     by creation time. Reading it back gives you a free created-at for anything holding an id -
     useful for a range scan on the primary key, or for spotting a row far older than its
     neighbours without joining anything.
+
+    UTC with no zone attached, as :class:`~ekbatan.clock.SystemClock` gives it, so the two
+    compare.
     """
     if value.version != 7:
         return None
-    return datetime.fromtimestamp((value.int >> 80) / 1000, tz=UTC)
+    return _EPOCH + timedelta(milliseconds=value.int >> 80)
 
 
 def read_shard(value: uuid.UUID) -> ShardIdentifier | None:

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, event
 
-from ekbatan.clock import VirtualClock, to_storage
+from ekbatan.clock import VirtualClock
 from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
 from ekbatan.persistence import DatabaseRegistry, TransactionManager
@@ -61,7 +61,7 @@ def test_an_inserted_row_reads_back_exactly(wallets, clock):
         "the instant the model was built with is the instant that was written - the "
         "repository does not supply one, as Java's does not"
     )
-    assert found.created_date.tzinfo is UTC, "read back aware, as Java reads an Instant"
+    assert found.created_date.tzinfo is None, "read back as written: no zone added"
     assert found.created_date - clock.now() == NOW - clock.now(), "comparable with the clock"
 
 
@@ -437,7 +437,7 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
         # `add()` would route it back to the default shard, which is the thing being tested.
         row = wallets.to_row(a_wallet("99.00"))
         # Zone-less, as the column holds it: asyncpg refuses an aware value for a TIMESTAMP.
-        row["created_date"] = row["updated_date"] = to_storage(clock.now())
+        row["created_date"] = row["updated_date"] = clock.now()
         with managers[other].connection() as conn:
             conn.execute(WALLETS.insert(), row)
 

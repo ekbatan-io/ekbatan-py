@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -30,7 +30,6 @@ from sqlalchemy import (
 )
 
 from ekbatan import AbstractRepository, Model
-from ekbatan.clock import to_storage
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from modes import rebased
@@ -55,7 +54,7 @@ PURSES = Table(
 )
 
 
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 
 class PurseState(Enum):
@@ -98,8 +97,8 @@ class PurseRepository(AbstractRepository[Purse, Id[Purse]]):
             "state": purse.state.name,
             "currency": purse.currency,
             "balance": purse.balance,
-            "created_date": to_storage(purse.created_date),
-            "updated_date": to_storage(purse.updated_date or purse.created_date),
+            "created_date": purse.created_date,
+            "updated_date": purse.updated_date or purse.created_date,
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Purse:

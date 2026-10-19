@@ -18,7 +18,6 @@ from sqlalchemy import Row, create_engine, event, func, select
 
 from ekbatan import Transaction
 from ekbatan.action import Action, ActionExecutor
-from ekbatan.clock import to_storage
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.ids import ShardedId
 from ekbatan.persistence import DatabaseRegistry, TransactionManager
@@ -197,8 +196,8 @@ def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
                 "balance": wallet.balance,
                 "aliases": wallet.aliases,
                 "reward_points": wallet.reward_points,
-                "created_date": to_storage(wallet.created_date),
-                "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+                "created_date": wallet.created_date,
+                "updated_date": wallet.updated_date or wallet.created_date,
             }
 
         def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:

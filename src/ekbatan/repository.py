@@ -49,7 +49,7 @@ from sqlalchemy import (
 )
 
 from ._tracing import span
-from .clock import Clock, SystemClock, to_instant, to_storage
+from .clock import Clock, SystemClock
 from .domain import DELETED, Entity, Model, Persistable
 from .errors import (
     CrossShardError,
@@ -1174,8 +1174,9 @@ def _resolve_refs(hint: Any, namespace: Mapping[str, Any]) -> Any:
     return copy_with(resolved) if copy_with is not None else hint
 
 
-#: Types the driver takes as they are. Nothing to convert, so nothing to check per row.
-_VERBATIM = (str, int, float, bool, bytes, uuid.UUID, Decimal, date, time)
+#: Types the driver takes as they are. Nothing to convert, so nothing to check per row. A
+#: ``datetime`` is one of them: it goes to the driver, and comes back, exactly as it is.
+_VERBATIM = (str, int, float, bool, bytes, uuid.UUID, Decimal, date, datetime, time)
 
 
 def _bare(hint: Any) -> Any:
@@ -1195,8 +1196,6 @@ def _writer_for(hint: Any) -> Callable[[Any], Any]:
             return lambda v: v.value if isinstance(v, TypedValue) else v
         if issubclass(origin, Enum):
             return lambda v: v.name if isinstance(v, Enum) else v
-        if issubclass(origin, datetime):
-            return lambda v: to_storage(v) if v is not None else None
         if origin in _VERBATIM:
             return _identity
     # An untyped or unrecognised column: fall back to inspecting each value.
@@ -1212,9 +1211,6 @@ def _reader_for(hint: Any) -> Callable[[Any], Any]:
             return lambda v: None if v is None else (v if isinstance(v, origin) else origin(v))
         if issubclass(origin, Enum):
             return lambda v: None if v is None else (v if isinstance(v, Enum) else origin[str(v)])
-        if issubclass(origin, datetime):
-            # An aware UTC datetime, as Java reads an `Instant`, whatever the column type.
-            return lambda v: None if v is None else to_instant(v)
     return _identity
 
 
@@ -1227,8 +1223,6 @@ def _to_column(value: Any) -> Any:
         return _to_column(value.value)
     if isinstance(value, Enum):
         return value.name
-    if isinstance(value, datetime):
-        return to_storage(value)
     return value
 
 

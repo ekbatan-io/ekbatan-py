@@ -24,7 +24,7 @@ from ..action.action import _Binding
 from ..action.executor import DEFAULT, ExecutionConfiguration, _ExecutorBuilder, _ExecutorCore
 from ..action.plan import ActionPlan, PersistableChanges
 from ..action.registry import ActionRegistry
-from ..clock import Clock, to_instant
+from ..clock import Clock
 from ..repository import RepositoryRegistry
 from ..schema import outbox_table
 from ..sharding import ShardIdentifier
@@ -101,7 +101,7 @@ class AsyncActionExecutor(_ExecutorCore):
         with self._started(name, principal) as execution:
             started_at = time.monotonic()
             while True:
-                started = to_instant(self.clock.now())
+                started = self.clock.now()
                 # A fresh plan per attempt, as in sync.
                 plan = ActionPlan(self.clock)
                 try:
@@ -156,7 +156,7 @@ class AsyncActionExecutor(_ExecutorCore):
                 action_name=action_name,
                 params=params,
                 started=started,
-                completed=to_instant(self.clock.now()),
+                completed=self.clock.now(),
                 action_id=action_id,
             )
 

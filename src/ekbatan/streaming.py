@@ -26,11 +26,14 @@ from __future__ import annotations
 import uuid as _uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from typing import Any, Self
 
 from ._builder import FieldBuilder
 from ._json import loads
+
+#: The epoch, no zone attached.
+_EPOCH = datetime(1970, 1, 1)
 
 __all__ = ["ActionEvent", "ActionEventBuilder"]
 
@@ -71,13 +74,6 @@ class ActionEvent:
     #: Whether the in-process fan-out has already turned this row into notifications. A CDC
     #: consumer has no use for it; it is here because it is a column and the row is the contract.
     delivered: bool = False
-
-    def __post_init__(self) -> None:
-        # Aware UTC, as Java's `Instant`s are, when a row hands back zone-less timestamps.
-        for name in ("started_date", "completion_date", "event_date"):
-            value = getattr(self, name)
-            if isinstance(value, datetime) and value.tzinfo is None:
-                object.__setattr__(self, name, value.replace(tzinfo=UTC))
 
     @classmethod
     def builder(cls) -> ActionEventBuilder:
@@ -135,7 +131,8 @@ class ActionEvent:
             for column in ("started_date", "completion_date", "event_date"):
                 value = adjusted.get(column)
                 if isinstance(value, int):
-                    adjusted[column] = datetime.fromtimestamp(value / 1_000_000, tz=UTC)
+                    # The column's own value, no zone attached: what the zone-less column holds.
+                    adjusted[column] = _EPOCH + timedelta(microseconds=value)
         for column in ("id", "action_id"):
             value = adjusted.get(column)
             if isinstance(value, str):

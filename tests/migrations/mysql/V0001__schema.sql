@@ -82,8 +82,8 @@ CREATE TABLE wallets (
 	owner_id CHAR(36) NOT NULL,
 	currency CHAR(3) NOT NULL,
 	balance NUMERIC(19, 4) NOT NULL,
-	created_date DATETIME NOT NULL,
-	updated_date DATETIME NOT NULL,
+	created_date DATETIME(6) NOT NULL,
+	updated_date DATETIME(6) NOT NULL,
 	aliases JSON,
 	reward_points INTEGER,
 	PRIMARY KEY (id)

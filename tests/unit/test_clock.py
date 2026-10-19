@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from ekbatan.clock import SystemClock, VirtualClock, to_storage
+from ekbatan.clock import SystemClock, VirtualClock
 from ekbatan.errors import EkbatanError
 
 TARGET = datetime(2025, 6, 15, 12, 0, tzinfo=UTC)
@@ -25,9 +25,9 @@ def test_a_clock_with_no_instant_reads_the_wall_clock():
     of these by accident still tells the time."""
     clock = VirtualClock()
 
-    before = datetime.now(UTC)
+    before = datetime.now(UTC).replace(tzinfo=None)
     reading = clock.now()
-    after = datetime.now(UTC)
+    after = datetime.now(UTC).replace(tzinfo=None)
 
     assert before <= reading <= after
 
@@ -101,9 +101,9 @@ def test_resume_returns_to_the_wall_clock():
 
     clock.resume()
 
-    before = datetime.now(UTC)
+    before = datetime.now(UTC).replace(tzinfo=None)
     reading = clock.now()
-    after = datetime.now(UTC)
+    after = datetime.now(UTC).replace(tzinfo=None)
     assert before <= reading <= after
 
 
@@ -154,21 +154,30 @@ def test_concurrent_advances_do_not_lose_any():
     assert clock.now() == TARGET + timedelta(milliseconds=workers * each)
 
 
-def test_the_system_clock_is_utc_and_aware():
+def test_the_system_clock_is_utc_with_no_zone_attached():
+    """The default clock gives the current UTC time, naive - what a zone-less column holds."""
     reading = SystemClock().now()
+    utc_now = datetime.now(UTC).replace(tzinfo=None)
 
-    assert reading.tzinfo is not None
-    assert reading.utcoffset() == timedelta(0)
+    assert reading.tzinfo is None
+    assert abs(reading - utc_now) < timedelta(seconds=1)
 
 
-def test_storage_form_is_naive_utc_at_microseconds():
-    """What the timestamp columns hold. A value that does not survive its own round trip is a
-    bug waiting for a test to find it, usually in an equality check about something else."""
+def test_a_virtual_clock_keeps_the_instant_it_is_given_as_it_is():
+    """No zone added, removed or moved: a naive instant stays naive, an aware one keeps its
+    own offset."""
     from zoneinfo import ZoneInfo
 
     tehran = datetime(2026, 1, 1, 13, 30, tzinfo=ZoneInfo("Asia/Tehran"))
+    naive = datetime(2026, 1, 1, 10, 0, 0, 123456)
 
-    stored = to_storage(tehran)
+    assert VirtualClock(tehran).now() is tehran
+    assert VirtualClock(naive).now() is naive
+    paused = VirtualClock()
+    paused.pause_at(tehran)
+    assert paused.now() is tehran
+    assert paused.now().utcoffset() == timedelta(hours=3, minutes=30)
 
-    assert stored.tzinfo is None
-    assert stored == datetime(2026, 1, 1, 10, 0)
+
+def test_a_virtual_clock_in_real_time_reads_as_the_system_clock_does():
+    assert VirtualClock().now().tzinfo is None

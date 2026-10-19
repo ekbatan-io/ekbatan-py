@@ -22,7 +22,6 @@ from datetime import datetime
 from sqlalchemy import Connection, Table, select, update
 
 from ..action.outbox import OUTBOX_COLUMNS, EventEntity
-from ..clock import to_storage
 from ..errors import ValidationError
 from ..fetching import Db
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
@@ -155,7 +154,7 @@ class EventNotificationRepository(_ShardRepository):
                     table.c.state.in_(
                         [EventNotificationState.PENDING.value, EventNotificationState.FAILED.value]
                     ),
-                    table.c.next_retry_at <= to_storage(now),
+                    table.c.next_retry_at <= now,
                 )
                 .order_by(table.c.next_retry_at)
                 .limit(limit)
@@ -229,11 +228,11 @@ class EventNotificationRepository(_ShardRepository):
         if not ids:
             return
         table = self._table
-        # Bound as the columns hold them - UTC, no zone - whatever the column type.
-        values: dict[str, object] = {"state": state.value, "updated_date": to_storage(now)}
+        # Times are bound exactly as the clock gave them.
+        values: dict[str, object] = {"state": state.value, "updated_date": now}
         if attempt:
             values["attempts"] = table.c.attempts + 1
         if next_retry_at is not None:
-            values["next_retry_at"] = to_storage(next_retry_at)
+            values["next_retry_at"] = next_retry_at
         with self._tx_db_else_db(shard) as conn:
             conn.execute(update(table).where(table.c.id.in_(ids)).values(**values))

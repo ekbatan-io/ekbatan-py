@@ -19,8 +19,8 @@ puts them too: `V0001__eventlog.sql`.
 
 Two rules that outlive any one dialect:
 
-- **Timestamp columns carry no zone**, as Java's do; the values read back are aware UTC
-  ``datetime`` values, as Java's are ``Instant`` values.
+- **Timestamp columns carry no zone**, and hold exactly the value written: the framework
+  never shifts a time or gives it a zone, on the way in or out.
 - **``model_id`` is a string.** Not every model is keyed by a UUID; typing it as one would
   exclude every aggregate keyed by an account number or an ISIN.
 """
@@ -60,13 +60,11 @@ __all__ = [
 ]
 
 
-class _UtcTimestamp(TypeDecorator[datetime]):
-    """A zone-less timestamp column that is UTC on the way in and aware UTC on the way out.
+class _Timestamp(TypeDecorator[datetime]):
+    """A zone-less timestamp column with microseconds, on every dialect.
 
-    Stored exactly as Java stores an ``Instant`` - its UTC wall-clock time - and read back as
-    one: an aware ``datetime`` in UTC, so the value read equals the value written and compares
-    with ``clock.now()``. A value bound with no zone is taken as UTC; one with a zone is moved
-    to UTC first, never shifted by the session's offset.
+    Nothing more: a value is handed to the driver exactly as given and read back exactly as the
+    driver returns it. No zone is added, removed or moved.
     """
 
     impl = DateTime
@@ -80,32 +78,19 @@ class _UtcTimestamp(TypeDecorator[datetime]):
             return dialect.type_descriptor(mysql.DATETIME(fsp=6))
         return dialect.type_descriptor(DateTime())
 
-    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
-        from .clock import to_storage
 
-        return None if value is None else to_storage(value)
+def timestamp_column() -> _Timestamp:
+    """The type every timestamp column has: no zone, microsecond precision.
 
-    def process_result_value(self, value: Any, dialect: Dialect) -> datetime | None:
-        from .clock import to_instant
-
-        if value is None:
-            return None
-        if isinstance(value, str):  # SQLite under a raw text() query
-            value = datetime.fromisoformat(value)
-        return to_instant(value)
-
-
-def timestamp_column() -> _UtcTimestamp:
-    """The type every timestamp column has: UTC, no zone, microsecond precision.
-
-    The zone is left off the column, as Java's columns leave it off; the value read back is an
-    aware UTC ``datetime``, as Java's is an ``Instant``.
+    What you write is what is stored and what you read back - the framework does not convert
+    it. Write UTC (``SystemClock`` gives UTC with no zone attached) and keep the database
+    session in UTC; see the "UTC everywhere" docs.
 
     The precision is not decoration. MySQL's bare ``DATETIME`` stores whole seconds and
     silently drops the rest, so a value written at 10:00:00.123456 reads back as 10:00:00 and
     every ordering derived from it is wrong in a way nothing reports.
     """
-    return _UtcTimestamp()
+    return _Timestamp()
 
 
 class _CanonicalUuid(TypeDecorator[uuid.UUID]):

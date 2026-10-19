@@ -692,9 +692,9 @@ def _an_id(dialect: str) -> Any:
 
 
 def _now() -> Any:
-    from datetime import UTC, datetime
+    from datetime import datetime
 
-    return datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    return datetime(2026, 1, 2, 3, 4, 5)
 
 
 def test_a_column_is_forced_by_its_sql_type(

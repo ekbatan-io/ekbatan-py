@@ -46,6 +46,8 @@ from schemagen_support import (
 
 SAME = object()
 WHEN = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=UTC)
+#: What a zone-less column holds: the value as given - here UTC, as SystemClock gives it.
+NAIVE = WHEN.replace(tzinfo=None)
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
 ID = uuid.UUID("0190a8a1-1c2b-7c3d-8e4f-5a6b7c8d9e0f")
 
@@ -96,12 +98,12 @@ POSTGRES = (
     Case("uuid", "UUID", "uuid_column()", ID),
     Case("json", "JSON", "JSON(none_as_null=True)", {"a": [1, "b"]}, where=False),
     Case("jsonb", "JSONB", "json_column()", {"k": "v", "n": 2}, where=False),
-    Case("timestamp", "TIMESTAMP", "timestamp_column()", WHEN),
+    Case("timestamp", "TIMESTAMP", "timestamp_column()", NAIVE),
     Case(
         "timestamp_3",
         "TIMESTAMP(3)",
         "timestamp_column()",
-        WHEN.replace(microsecond=123000),
+        NAIVE.replace(microsecond=123000),
         rebuilt="timestamp without time zone",
     ),
     Case(
@@ -231,19 +233,19 @@ MYSQL = (
     Case("mediumblob", "MEDIUMBLOB", "mysql.MEDIUMBLOB()", b"\x02" * 70_000, where=False),
     Case("longblob", "LONGBLOB", "mysql.LONGBLOB()", b"\x03" * 70_000, where=False),
     Case("json", "JSON", "json_column()", {"a": [1, "b"]}, where=False),
-    Case("datetime_6", "DATETIME(6)", "timestamp_column()", WHEN),
+    Case("datetime_6", "DATETIME(6)", "timestamp_column()", NAIVE),
     Case(
         "datetime",
         "DATETIME",
         "timestamp_column()",
-        WHEN.replace(microsecond=0),
+        NAIVE.replace(microsecond=0),
         rebuilt="datetime(6)",
     ),
     Case(
         "timestamp_6",
         "TIMESTAMP(6) NULL",
         "timestamp_column()",
-        WHEN,
+        NAIVE,
         rebuilt="datetime(6)",
     ),
     Case("date", "DATE", "DATE()", date(2026, 1, 2)),
@@ -283,8 +285,8 @@ SQLITE = (
     Case("text", "TEXT", "TEXT()", "x" * 10_000),
     Case("blob", "BLOB", "BLOB()", b"\x00\x01\xff"),
     Case("json", "JSON", "json_column()", {"a": [1, "b"]}, where=False),
-    Case("datetime", "DATETIME", "timestamp_column()", WHEN),
-    Case("timestamp", "TIMESTAMP", "timestamp_column()", WHEN, rebuilt="datetime"),
+    Case("datetime", "DATETIME", "timestamp_column()", NAIVE),
+    Case("timestamp", "TIMESTAMP", "timestamp_column()", NAIVE, rebuilt="datetime"),
     Case("date", "DATE", "DATE()", date(2026, 1, 2)),
     Case("time", "TIME", "TIME()", time(12, 34, 56, 789000)),
 )
@@ -420,9 +422,10 @@ def test_the_module_imports_exactly_what_it_uses(matrix: Matrix) -> None:
     assert unused_and_undefined(matrix.text) == (set(), set())
 
 
-def test_timestamps_stay_zone_less_and_read_back_aware_utc(matrix: Matrix, dialect: str) -> None:
+def test_timestamps_stay_zone_less_and_hold_what_was_written(matrix: Matrix, dialect: str) -> None:
     """The UTC recommendation, end to end: the column built has no zone (TIMESTAMP, DATETIME(6)),
-    the value stored is the UTC wall-clock time, and it reads back aware, in UTC."""
+    and a naive UTC value goes in, is stored and comes back exactly as written - no zone added,
+    to the microsecond."""
     from sqlalchemy import text
 
     name = {"postgres": "c_timestamp", "sqlite": "c_datetime"}.get(dialect, "c_datetime_6")
@@ -437,9 +440,7 @@ def test_timestamps_stay_zone_less_and_read_back_aware_utc(matrix: Matrix, diale
     db = engine(matrix.rebuilt)
     try:
         with db.begin() as connection:
-            connection.execute(
-                insert(table).values({"pk": 7_000_001, name: WHEN.astimezone(TEHRAN)})
-            )
+            connection.execute(insert(table).values({"pk": 7_000_001, name: NAIVE}))
             back = connection.execute(
                 select(table.c[name]).where(table.c.pk == 7_000_001)
             ).scalar_one()
@@ -448,10 +449,10 @@ def test_timestamps_stay_zone_less_and_read_back_aware_utc(matrix: Matrix, diale
             ).scalar_one()
     finally:
         db.dispose()
-    assert back == WHEN and back.tzinfo == UTC
+    assert back == NAIVE and back.tzinfo is None
     if isinstance(stored, str):  # SQLite keeps text
         stored = datetime.fromisoformat(stored)
-    assert stored == WHEN.replace(tzinfo=None), "the UTC wall-clock time, with no zone"
+    assert stored == NAIVE, "the value as written, with no zone"
 
 
 def test_what_is_outside_the_recommendation_is_said(matrix: Matrix, dialect: str) -> None:

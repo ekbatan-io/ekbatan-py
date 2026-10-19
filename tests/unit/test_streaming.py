@@ -152,7 +152,10 @@ def test_epoch_microsecond_timestamps_can_be_undone():
 
     event = ActionEvent.from_message(row, timestamps_are_epoch_micros=True)
 
-    assert event.started_date == PRECISE
+    # The column's own value, to the microsecond, with no zone attached - a zone-less column
+    # holds none, so none is made up.
+    assert event.started_date == PRECISE.replace(tzinfo=None)
+    assert event.started_date.tzinfo is None
 
 
 def test_uuids_arriving_as_strings_are_always_undone():

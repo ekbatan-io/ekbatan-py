@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from uuid import UUID
@@ -21,7 +21,7 @@ from .builders import NotificationBuilder, WalletBuilder
 
 #: A fixed instant for a model built outside a unit of work. A test asserting on a
 #: timestamp against a moving clock passes on the machine it was written on.
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 
 class WalletState(Enum):

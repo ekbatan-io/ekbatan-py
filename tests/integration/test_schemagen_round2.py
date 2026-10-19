@@ -12,7 +12,7 @@ hold or find a plain text id.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +32,7 @@ def _an_id(dialect: str) -> Any:
 
 
 def _now() -> datetime:
-    return datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    return datetime(2026, 1, 2, 3, 4, 5)
 
 
 COMMON = {

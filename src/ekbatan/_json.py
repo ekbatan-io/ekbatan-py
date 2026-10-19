@@ -33,7 +33,7 @@ import types
 import typing
 import uuid
 from collections.abc import Mapping, Sequence
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import ROUND_HALF_EVEN, Context, Decimal
 from enum import Enum
 from typing import Any
@@ -176,9 +176,8 @@ def _datetime(value: datetime) -> str:
         # LocalDateTime, through ISO_LOCAL_DATE_TIME.
         return f"{value.date().isoformat()}T{clock}{_fraction(value.microsecond, groups=False)}"
     if offset == timedelta(0):
-        # Instant, through ISO_INSTANT.
-        utc = value.astimezone(UTC)
-        return f"{utc.date().isoformat()}T{utc:%H:%M:%S}{_fraction(utc.microsecond, groups=True)}Z"
+        # Instant, through ISO_INSTANT. The offset is zero, so the value's own digits are UTC's.
+        return f"{value.date().isoformat()}T{clock}{_fraction(value.microsecond, groups=True)}Z"
     # OffsetDateTime, through ISO_OFFSET_DATE_TIME.
     return (
         f"{value.date().isoformat()}T{clock}"

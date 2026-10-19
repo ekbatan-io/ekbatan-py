@@ -23,7 +23,7 @@ from uuid import UUID
 from sqlalchemy import Row, delete, func, select
 
 from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository, ShardIdentifier
-from ekbatan.clock import Clock, to_storage
+from ekbatan.clock import Clock
 from ekbatan.domain import GenericState
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
@@ -48,9 +48,10 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
         """Every column, named - the model as one row.
 
-        Three of the eight are conversions rather than copies, and each is a decision about how
-        the value is stored: a typed id goes in as its `uuid`, an enum as its `name` rather
-        than its value, and a timestamp through `to_storage`, which is what drops the zone.
+        Two of the eight are conversions rather than copies, and each is a decision about how
+        the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
+        than its value. The timestamps go in exactly as they are - the clock gives UTC with no
+        zone attached, and that is what the column holds.
 
         `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
         turns it into text, and turns the text back into a `Currency` on every read.
@@ -62,11 +63,11 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
             "owner_id": wallet.owner_id,
             "currency": wallet.currency,
             "balance": wallet.balance,
-            "created_date": to_storage(wallet.created_date),
+            "created_date": wallet.created_date,
             # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
             # constructed model - the declared type keeps the `| None` because a builder may
             # leave it unset. The column is NOT NULL.
-            "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+            "updated_date": wallet.updated_date or wallet.created_date,
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:

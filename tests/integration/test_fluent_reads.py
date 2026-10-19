@@ -16,7 +16,6 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import Row, func, select
 
-from ekbatan.clock import to_storage
 from ekbatan.domain import DELETED
 from ekbatan.fetching import Db
 from ekbatan.ids import ShardedId
@@ -47,8 +46,8 @@ class WalletRepository(AbstractRepository[Wallet, ShardedId[Wallet]]):
             "balance": wallet.balance,
             "aliases": wallet.aliases,
             "reward_points": wallet.reward_points,
-            "created_date": to_storage(wallet.created_date),
-            "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+            "created_date": wallet.created_date,
+            "updated_date": wallet.updated_date or wallet.created_date,
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:

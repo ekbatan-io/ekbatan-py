@@ -20,7 +20,6 @@ from typing import Any
 from sqlalchemy import Row
 
 from ekbatan.aio import AbstractAsyncRepository, AsyncEntityRepository, AsyncModelRepository
-from ekbatan.clock import to_storage
 from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
 from ekbatan.repository import AbstractRepository, EntityRepository, ModelRepository
@@ -47,11 +46,11 @@ class _WalletRows:
             # Nullable on purpose, and nothing may default it: a batch in which every row
             # leaves it null is what exposes an untyped NULL bind.
             "reward_points": wallet.reward_points,
-            "created_date": to_storage(wallet.created_date),
+            "created_date": wallet.created_date,
             # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
             # constructed model - the declared type keeps the `| None` because a builder may
             # leave it unset.
-            "updated_date": to_storage(wallet.updated_date or wallet.created_date),
+            "updated_date": wallet.updated_date or wallet.created_date,
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:

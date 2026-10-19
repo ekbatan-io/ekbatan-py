@@ -8,7 +8,7 @@ each method on its own: what it selects, what it changes, and what it leaves alo
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -20,7 +20,7 @@ from ekbatan.events.repository import EventEntityRepository, EventNotificationRe
 from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS
 
-NOW = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 3, 1, 12, 0)
 
 
 def an_event(event_type: str | None = "WalletCreatedEvent", minutes: int = 0) -> EventEntity:
@@ -215,15 +215,14 @@ def test_marking_nothing_touches_nothing(notifications):
     notifications.mark_failed_bucket([], NOW, NOW, DEFAULT_SHARD)
 
 
-def test_the_timestamps_come_back_aware_utc(notifications):
-    """As Java's come back as `Instant`s: equal to what was written, comparable with
-    `clock.now()`."""
+def test_the_timestamps_come_back_as_they_were_written(notifications):
+    """Equal to what was written, no zone added - so comparable with the default clock."""
     notification = a_notification()
     notifications.add_all_no_result([notification], DEFAULT_SHARD)
     (back,) = notifications.find_due(DEFAULT_SHARD, 10, NOW)
     assert back.created_date == NOW
-    assert back.created_date.tzinfo is UTC
-    assert back.event_date.tzinfo is UTC
+    assert back.created_date.tzinfo is None
+    assert back.event_date.tzinfo is None
 
 
 # -- which connection a read takes ---------------------------------------------------------------

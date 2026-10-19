@@ -59,7 +59,8 @@ def test_a_random_id_carries_no_shard_and_a_generated_one_does():
     routed = ShardedId[Purse].generate(MEXICO)
     assert routed.shard == MEXICO
     assert routed.minted_at is not None
-    assert (datetime.now(UTC) - routed.minted_at).total_seconds() < 5, (
+    assert routed.minted_at.tzinfo is None, "UTC with no zone attached, as SystemClock gives it"
+    assert (datetime.now(UTC).replace(tzinfo=None) - routed.minted_at).total_seconds() < 5, (
         "a version 7 id carries when it was minted, free of charge"
     )
 

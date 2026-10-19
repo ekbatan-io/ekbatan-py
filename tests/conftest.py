@@ -22,7 +22,7 @@ from __future__ import annotations
 import importlib
 import sys
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -224,7 +224,7 @@ def of_mode(mode: str, sync: Any) -> Any:
 
 @pytest.fixture
 def clock() -> VirtualClock:
-    return VirtualClock(datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC))
+    return VirtualClock(datetime(2026, 1, 1, 10, 0, 0))
 
 
 def _registry(

@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -56,14 +56,10 @@ class ReadsTheClockAction(Action[None, datetime]):
 def test_an_action_reads_the_clock_it_was_built_with(executor, clock):
     """An action calling datetime.now() directly is one that cannot be tested at a fixed
     instant, and whose timestamps disagree with the row it is writing."""
-    assert run(executor, ReadsTheClockAction(executor.clock), None) == datetime(
-        2026, 1, 1, 10, 0, tzinfo=UTC
-    )
+    assert run(executor, ReadsTheClockAction(executor.clock), None) == datetime(2026, 1, 1, 10, 0)
 
     clock.advance(timedelta(hours=3))
-    assert run(executor, ReadsTheClockAction(executor.clock), None) == datetime(
-        2026, 1, 1, 13, 0, tzinfo=UTC
-    )
+    assert run(executor, ReadsTheClockAction(executor.clock), None) == datetime(2026, 1, 1, 13, 0)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -134,7 +130,7 @@ def test_an_action_holding_a_different_clock_is_accepted_as_in_java(executor, cl
     from ekbatan import ActionRegistry, VirtualClock
     from fixtures.schema import EVENTS
 
-    elsewhere = VirtualClock(datetime(1999, 1, 1, tzinfo=UTC))
+    elsewhere = VirtualClock(datetime(1999, 1, 1))
     other = ActionExecutor(
         namespace="example.wallet",
         registry=executor.registry,
@@ -144,9 +140,9 @@ def test_an_action_holding_a_different_clock_is_accepted_as_in_java(executor, cl
         clock=clock,
     )
 
-    assert other.execute(ReadsTheClockAction, None) == datetime(1999, 1, 1, tzinfo=UTC)
+    assert other.execute(ReadsTheClockAction, None) == datetime(1999, 1, 1)
     (row,) = outbox()
-    assert row["completion_date"] == datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+    assert row["completion_date"] == datetime(2026, 1, 1, 10, 0)
 
 
 # --------------------------------------------------------------------------------- retries

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -30,7 +30,7 @@ from ekbatan.errors import ValidationError
 from ekbatan.schemagen import ForcedType, SchemagenConfig, generate
 from schemagen_support import column_sources, engine, fresh, load, migrations, normal, raw_types
 
-WHEN = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=UTC)
+WHEN = datetime(2026, 1, 2, 3, 4, 5, 123456)
 
 CONVERTERS = '''"""Converters an application might write: plain classes, no SQLAlchemy in them."""
 import ipaddress
@@ -61,10 +61,10 @@ class MoneyConverter(Converter[Decimal, Money]):
 
 class IsoText:
     """Without it: any object with from_db and to_db. Checks it is handed what the column's
-    helper gives - an aware UTC datetime - and not what the bare column type would."""
+    helper gives - the value as stored, no zone added - and not a string."""
 
     def from_db(self, value: datetime) -> str:
-        assert value.tzinfo is UTC, f"got {value!r}"
+        assert isinstance(value, datetime) and value.tzinfo is None, f"got {value!r}"
         return value.isoformat()
 
     def to_db(self, value: str) -> datetime:
@@ -326,7 +326,7 @@ def test_a_converter_is_handed_what_the_column_would_give_without_it(
     tmp_path: Path, backend: Backend, dialect: str, converters: str
 ) -> None:
     """A converter on a timestamp column wraps Ekbatan's `timestamp_column()`, so it receives
-    an aware UTC `datetime` on every database - the value the default mapping documents."""
+    the `datetime` the driver read, as it is, on every database."""
     module, url, sources = _generate(
         tmp_path,
         backend,
