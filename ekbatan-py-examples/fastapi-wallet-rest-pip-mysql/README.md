@@ -5,7 +5,7 @@ connection pools, and a keyed lock around the endpoint that needs one.
 
 One of three databases for the same service - the Python counterpart to Java's `*-wallet-rest-*`
 grid - and each built three ways, with uv, pip and Poetry. See [`../README.md`](../README.md) for
-why the matrix is 21 projects here and 36 there.
+why the matrix is 42 projects here and 36 there.
 
 ```
 docker run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=ekbatan -e MYSQL_DATABASE=wallet mysql:8.4

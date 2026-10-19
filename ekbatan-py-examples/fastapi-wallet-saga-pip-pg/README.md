@@ -1,7 +1,8 @@
 # fastapi-wallet-saga-pip-pg
 
 A wallet-to-wallet transfer, decomposed into three single-aggregate steps chained by events,
-with compensation when a step cannot finish.
+with compensation when a step cannot finish. Its async twin, the same saga and tests on
+`ekbatan.aio`, is [`fastapi-wallet-saga-uv-async-pg`](../fastapi-wallet-saga-uv-async-pg).
 
 No broker, no orchestrator, no saga framework. The whole choreography runs through the same
 in-process event handler every other example uses — just chained differently.
@@ -101,7 +102,7 @@ happened or the transfer was failed instead, because what it guards is "step two
 | `actions.py` | three steps, each one aggregate, each its own transaction |
 | `handlers.py` | the chaining — nine lines each, and no coordinator anywhere |
 | `schema.py` | the unique constraint that does the idempotency |
-| `test_wallet_saga.py` | happy path, three compensation paths, and a replay that credits nothing |
+| `test_fastapi_wallet_saga_pg.py` | happy path, three compensation paths, and a replay that credits nothing |
 
 ## Two forced types
 

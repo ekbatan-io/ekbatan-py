@@ -1,7 +1,8 @@
 # job-worker-pip-pg
 
 A worker process: jobs, no HTTP. The Python counterpart to Java's
-`spring-boot-job-worker-gradle-pg`.
+`spring-boot-job-worker-gradle-pg`. Its async twin, [`job-worker-uv-async-pg`](../job-worker-uv-async-pg),
+keeps the jobs on threads and runs their work on a loop, awaited.
 
 <!-- build: written by scripts/sync-examples.py -->
 ```

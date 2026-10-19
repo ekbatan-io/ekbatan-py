@@ -208,20 +208,24 @@ ekbatan-py-examples/                 each one built three ways: -uv-, -pip-, -po
   fastapi-wallet-rest-uv-mysql/       the same service, on MySQL
   fastapi-wallet-rest-uv-mariadb/     the same service, on MariaDB
   fastapi-wallet-rest-uv-sharded-pg/  the same service, over two databases
+  fastapi-wallet-rest-uv-async-sharded-pg/  and on native asyncio
   fastapi-wallet-rest-uv-async-pg/    the same service on native asyncio, ekbatan.aio
   fastapi-wallet-rest-uv-async-mysql/    and on MySQL
   fastapi-wallet-rest-uv-async-mariadb/  and on MariaDB
   fastapi-wallet-saga-uv-pg/          a saga: two services, choreography, compensation
+  fastapi-wallet-saga-uv-async-pg/    the same saga, its steps awaited, on native asyncio
   job-worker-uv-pg/                   a distributed job, no HTTP at all
+  job-worker-uv-async-pg/             the same jobs, their work awaited on a worker loop
   wallet-service-uv-sqlite/           the smallest one. No container, no web stack
   wallet-service-uv-async-sqlite/     the same, on native asyncio
 ```
 
 One REST example per dialect and one of everything else, which is the shape of Java's matrix -
-there, too, only the REST project is replicated per database. And each is carried once per build
+there, too, only the REST project is replicated per database. Every one of them also has an
+async twin on `ekbatan.aio`, with the same tests. And each is carried once per build
 tool, as Java's are per Gradle and Maven: `fastapi-wallet-rest-uv-pg`,
 `fastapi-wallet-rest-pip-pg`, `fastapi-wallet-rest-poetry-pg`, the same code with its own
-`pyproject.toml` and `Makefile` - 33 projects, kept in step by `scripts/sync-examples.py`. Each is
+`pyproject.toml` and `Makefile` - 42 projects, kept in step by `scripts/sync-examples.py`. Each is
 standalone: `cd` into one and `make` builds it, tests it as its installed wheel, and needs
 nothing else from this repository but the framework.
 
@@ -265,7 +269,7 @@ uv run pytest tests/unit              # no database at all, about a second
 uv run pytest                         # the whole suite, on SQLite
 uv run pytest --dialects=postgres     # in a container
 uv run pytest --dialects=all          # every test, on all four
-make examples                         # all 33 examples, each as its installed wheel
+make examples                         # all 42 examples, each as its installed wheel
 make -C ekbatan-py-examples/wallet-service-uv-sqlite run
 make -C ekbatan-py-examples/wallet-service-uv-async-sqlite run
 

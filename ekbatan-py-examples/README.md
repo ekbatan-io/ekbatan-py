@@ -11,7 +11,7 @@ here instead, every change made for coverage would land in the documentation and
 for clarity would break the suite. So they do not meet, and `tests/test_structure.py` keeps it
 that way.
 
-## Eleven examples, each built three ways
+## Fourteen examples, each built three ways
 
 Java carries each of its examples per build tool - `*-gradle-*` and `*-maven-*`. Python projects
 are built three common ways, so each example here is carried three times, with only its build
@@ -81,6 +81,14 @@ database - a second copy per database would demonstrate nothing the REST service
 | `fastapi-wallet-saga-{uv,pip,poetry}-pg` | a transfer as three single-aggregate steps chained by events, with forward-only compensation - and `POST /transfers` answering **202**, because only step one has committed |
 | `job-worker-{uv,pip,poetry}-pg` | a worker process with **no HTTP at all**: two jobs, once per slot across a cluster, and shutdown done properly |
 
+Each has an async twin, the same service with the same tests, on `ekbatan.aio`:
+
+| | Shows |
+|---|---|
+| `fastapi-wallet-rest-{uv,pip,poetry}-async-sharded-pg` | the sharded service with `async def` endpoints, an async keyed lock and an async handler; a read that names no shard asks both databases **at the same time** |
+| `fastapi-wallet-saga-{uv,pip,poetry}-async-pg` | the saga with step one awaited in the request, and steps two and three run by `async def` handlers on dispatch's handler loop |
+| `job-worker-{uv,pip,poetry}-async-pg` | the worker with its jobs still sync on db-scheduler's threads - as every distributed job is - and each job's **work** a coroutine run on a worker loop (a `HandlerLoop`), awaiting an `AsyncActionExecutor` |
+
 ## Start here instead
 
 `wallet-service-{uv,pip,poetry}-sqlite`: one wallet end to end on SQLite, with no server and
@@ -125,8 +133,8 @@ columns by their type, the other one column by its name:
 
 | example | picked by type | picked by name |
 |---|---|---|
-| REST (all four), job worker | every `CHAR(3)` column becomes a `Currency` | `alerts.recipient` becomes an `EmailAddress` |
-| saga | every `CHAR(3)` column becomes a `Currency` | `transfer_steps.step` becomes the `StepName` enum |
+| REST (all eight), job worker (both) | every `CHAR(3)` column becomes a `Currency` | `alerts.recipient` becomes an `EmailAddress` |
+| saga (both) | every `CHAR(3)` column becomes a `Currency` | `transfer_steps.step` becomes the `StepName` enum |
 
 Each example's README shows the rules and the `schema.py` lines they produce. The rules are the
 same in all three builds of an example, so `scripts/sync-examples.py` writes them into every
@@ -149,17 +157,19 @@ In the code, the same conventions as the Java side: `...Action` for a unit of wo
 for something that happened, `...EventHandler` for what reacts to one, `...Job` for scheduled
 work, `...Repository` for reads.
 
-## Why 33 and not Java's 36
+## Why 42 and not Java's 36
 
 Java's grid is three DI frameworks x two build tools x three databases, each JVM and native.
 Here there is one web framework worth targeting and no native image, so those axes collapse. The
 **database** axis does not, for the four reasons above, and neither does the **build** axis: it
 decides what a wheel holds, which is the one thing an example cannot show from the source tree.
+And one axis Java does not have: **sync or async**. Every example has a twin on `ekbatan.aio`,
+because a reader picks a mode before anything else.
 
 ## Running them
 
 ```
-make examples                    # all 33, each in its own environment, each as its wheel
+make examples                    # all 42, each in its own environment, each as its wheel
 make -C ekbatan-py-examples/fastapi-wallet-rest-pip-mysql      # or one
 ```
 

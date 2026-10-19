@@ -1,7 +1,8 @@
 # fastapi-wallet-rest-pip-sharded-pg
 
 The REST wallet service again, over **two databases**, with routing that needs no lookup table. The Python counterpart to Java's
-`spring-boot-wallet-rest-gradle-sharded-pg`.
+`spring-boot-wallet-rest-gradle-sharded-pg`. Its async twin, the same service and tests on
+`ekbatan.aio`, is [`fastapi-wallet-rest-uv-async-sharded-pg`](../fastapi-wallet-rest-uv-async-sharded-pg).
 
 <!-- build: written by scripts/sync-examples.py -->
 ```

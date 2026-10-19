@@ -17,19 +17,23 @@ across the matrix.
 
 ## Matrix discipline
 
-Eleven examples, **each carried three times** - `-uv-`, `-pip-`, `-poetry-` - as Java carries its
-examples per Gradle and Maven. Only the REST example is replicated per database.
+Fourteen examples, **each carried three times** - `-uv-`, `-pip-`, `-poetry-` - as Java carries its
+examples per Gradle and Maven: 42 projects. Only the REST example is replicated per database, and
+every example has an async twin.
 
 | | |
 | --- | --- |
 | per database | `fastapi-wallet-rest-{build}-pg`, `-mysql`, `-mariadb` |
 | per database, async | `fastapi-wallet-rest-{build}-async-pg`, `-async-mysql`, `-async-mariadb`, `wallet-service-{build}-async-sqlite` |
 | one of a kind | `fastapi-wallet-rest-{build}-sharded-pg`, `fastapi-wallet-saga-{build}-pg`, `job-worker-{build}-pg`, `wallet-service-{build}-sqlite` |
+| one of a kind, async | `fastapi-wallet-rest-{build}-async-sharded-pg`, `fastapi-wallet-saga-{build}-async-pg`, `job-worker-{build}-async-pg` |
 
-**Two modes.** Each database the setup guide covers has a sync example and an async twin on
-`ekbatan.aio` - the complete-project-setup page shows both, and `scripts/check-setup-guide.py`
-builds both. A change to a sync example's behaviour goes into its async twin too, or the twin's
-README says why not.
+**Two modes.** Every example has an async twin on `ekbatan.aio`, with the same tests plus a
+check that it really runs async (its drivers, its loop). The complete-project-setup page shows
+both for each database, and `scripts/check-setup-guide.py` builds both. A change to a sync
+example's behaviour goes into its async twin too, or the twin's README says why not; a new
+example gets an async twin. In the job worker's twin the jobs stay sync (every distributed job
+is) and their work runs on a `HandlerLoop` with `loop.run(...)`.
 
 **Edit only the uv project**, then run `uv run python scripts/sync-examples.py`: it writes the
 pip and Poetry twins (the same `src/`, byte for byte) and every project's `pyproject.toml`,
@@ -54,8 +58,9 @@ all three REST databases' uv projects; those are not generated from one another.
 - Actions are `OpenWalletAction`, `DepositMoneyAction` - imperative, verb first, `Action` suffix.
   Events are `WalletOpenedEvent`, `MoneyDepositedEvent` - past tense, `Event` suffix. Handlers
   end `EventHandler`, jobs end `Job`.
-- Endpoints are plain `def`, never `async def`. FastAPI runs a plain `def` in a threadpool; an
-  `async def` calling into the synchronous framework blocks the whole event loop.
+- In a sync example, endpoints are plain `def`, never `async def`. FastAPI runs a plain `def` in
+  a threadpool; an `async def` calling into the synchronous framework blocks the whole event
+  loop. In an async twin every endpoint is `async def` and awaits `ekbatan.aio`.
 - Three pools - requests, jobs, locks - and the jobs pool is at least twice the worker count.
 - A keyed lock lease must span `executor.execute(...)`, not just the read.
 - Generated `schema.py` is gitignored. Never commit one, and never edit one.

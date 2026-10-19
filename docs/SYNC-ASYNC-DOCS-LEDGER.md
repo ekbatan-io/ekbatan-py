@@ -145,8 +145,8 @@ uv, pip and Poetry; three docs leftovers; AGENTS.md. Judgement calls:
 | A4 | `job-worker-uv-async-pg` (job work on a `HandlerLoop`; no library change) | done |
 | A5 | `scripts/sync-examples.py`, Makefile `EXAMPLES` / `GENERATES`, root mypy paths, CI comment; pip and Poetry copies written | done |
 | A6 | `make` in all three builds of each new example | done |
-| A7 | READMEs: root, `ekbatan-py-examples/README.md`, sibling links in the sync twins | open |
-| A8 | Skill files listing examples (`agent-skills/`, `.claude/skills/`) | open |
+| A7 | READMEs: root, `ekbatan-py-examples/README.md`, sibling links in the sync twins | done |
+| A8 | Skill files listing examples (`agent-skills/`, `.claude/skills/`) | done |
 | A9 | Docs + website: setup guide example table, async pages, sync-or-async, sharding / saga / jobs pages (switches where code differs) | open |
 | A10 | Task 2: sagas.md repeated section; local-event-handler.md repeated section; website copies checked | open |
 | A11 | Task 2: SHORTCOMINGS.md against the code (fan-out, examples count, async) - measured | open |
