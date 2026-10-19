@@ -13,6 +13,7 @@ reaches past HTTP into the service awaits on that same loop, through `client.por
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +22,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.pool import NullPool
 from testcontainers.community.mysql import MySqlContainer
 
 from ekbatan.config import split_login
@@ -46,17 +48,21 @@ def database() -> Iterator[str]:
         yield container.get_connection_url()
 
 
-@pytest.fixture
-def client(database: str) -> Iterator[TestClient]:
-    from .api import create_app
-
+def environ_for(database: str) -> dict[str, str]:
+    """The placeholders `ekbatan.yaml` reads, filled from the container: its url and login."""
     url, username, password = split_login(database)
-    environ = {
+    return {
         "WALLET_DATABASE_URL": url,
         "WALLET_DATABASE_USERNAME": username or "",
         "WALLET_DATABASE_PASSWORD": password or "",
     }
-    app = create_app(Settings(environ=environ, job_workers=3))
+
+
+@pytest.fixture
+def client(database: str) -> Iterator[TestClient]:
+    from .api import create_app
+
+    app = create_app(Settings(environ=environ_for(database), job_workers=3))
     # `with` runs the lifespan: the migrations, the pools and the scheduler.
     with TestClient(app) as running:
         yield running
@@ -167,6 +173,7 @@ def test_the_currency_is_a_currency_in_python_and_text_in_the_database(
     )
     assert stored == "EUR", "the column holds the plain code"
     assert opened["currency"] == "EUR", "and so does the event"
+    assert client.get(f"/wallets/{wallet_id}").json()["currency"] == "EUR"
 
 
 def test_a_currency_that_is_not_three_capitals_is_a_400(client: TestClient) -> None:
@@ -177,7 +184,10 @@ def test_a_currency_that_is_not_three_capitals_is_a_400(client: TestClient) -> N
     assert "three capital letters" in refused.json()["detail"]
 
 
-def test_the_recipient_is_an_email_address_in_python(client: TestClient) -> None:
+def test_the_recipient_is_an_email_address_in_python_and_text_in_the_database(
+    client: TestClient,
+) -> None:
+    """The forced type that picks `alerts.recipient` by name, end to end."""
     wallet_id = open_wallet(client)
     client.post(
         f"/wallets/{wallet_id}/deposits", json={"amount": "1.00", "recipient": "ada@example.com"}
@@ -194,6 +204,11 @@ def test_the_recipient_is_an_email_address_in_python(client: TestClient) -> None
 
     assert alerts, "the handler never ran"
     assert alerts[0].recipient == EmailAddress("ada@example.com"), "read back as an EmailAddress"
+    stored = scalar(
+        client, text("SELECT recipient FROM alerts WHERE wallet_id = :id"), id=wallet_id
+    )
+    assert stored == "ada@example.com", "the column holds the plain address"
+    assert client.get(f"/wallets/{wallet_id}/alerts").json()[0]["recipient"] == "ada@example.com"
 
 
 def test_a_deposit_for_a_bad_address_is_a_400_and_moves_nothing(client: TestClient) -> None:
@@ -209,6 +224,20 @@ def test_a_deposit_for_a_bad_address_is_a_400_and_moves_nothing(client: TestClie
 
 def test_a_missing_wallet_is_a_404_not_a_500(client: TestClient) -> None:
     assert client.get(f"/wallets/{uuid4()}").status_code == 404
+
+
+def test_a_bad_deposit_is_a_400(client: TestClient) -> None:
+    """The domain refuses it, and the refusal reaches the caller as their mistake."""
+    wallet_id = open_wallet(client)
+
+    # Pydantic rejects a non-positive amount before the domain sees it; 422 is FastAPI's own
+    # validation status. Both are "your request", which is the distinction that matters.
+    assert (
+        client.post(
+            f"/wallets/{wallet_id}/deposits", json={"amount": "-1.00", "recipient": "a@b.com"}
+        ).status_code
+        == 422
+    )
 
 
 def test_closing_a_wallet_twice_is_not_an_error(client: TestClient) -> None:
@@ -279,6 +308,8 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     sizes = (requests.size(), locks.size(), handlers.size(), running.jobs_engine.pool.size())  # type: ignore[attr-defined]
     assert sizes == (10, 5, 5, 8)
     assert scalar(client, text("SELECT @@session.time_zone")) == "+00:00"
+    # `init_command` under `dataSourceProperties`, reaching the server through aiomysql.
+    assert scalar(client, text("SELECT @@SESSION.innodb_lock_wait_timeout")) == 10
 
     async def zone_on(engine: Any) -> Any:
         async with engine.connect() as connection:
@@ -289,6 +320,54 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     assert running.handler_loop.run(zone_on(handler_engine)) == "+00:00"
     with running.jobs_engine.connect() as connection:
         assert connection.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
+
+
+def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) -> None:
+    """The third part of the UTC rule: each session is put on UTC by `ekbatan.yaml`
+    (`time_zone = '+00:00'` in every pool's `init_command`), not by the server's default. The
+    server's own default is moved to Tehran's offset first: a plain connection then reports it -
+    the control - and every pool the service builds reports UTC: the requests', the lock's and
+    the handler's on aiomysql, the jobs' on PyMySQL."""
+    from .app import build
+
+    async def zone_on(engine: Any) -> Any:
+        async with engine.connect() as connection:
+            return (await connection.execute(text("SELECT @@session.time_zone"))).scalar()
+
+    def sync_zone_on(engine: Any) -> Any:
+        with engine.connect() as connection:
+            return connection.execute(text("SELECT @@session.time_zone")).scalar()
+
+    async def every_pool(service: WalletService) -> list[Any]:
+        # Each async pool is asked on the loop it belongs to - the handler's on its own - and
+        # the service is closed on this one, where the requests' and the lock's pools were used.
+        try:
+            return [
+                await zone_on(service.registry.default.primary),
+                await zone_on(service.lock_engine),
+                await asyncio.to_thread(
+                    service.handler_loop.run, zone_on(service.handler_registry.default.primary)
+                ),
+                await asyncio.to_thread(sync_zone_on, service.jobs_engine),
+            ]
+        finally:
+            await service.aclose()
+
+    admin = create_engine(database, isolation_level="AUTOCOMMIT", poolclass=NullPool)
+    with admin.connect() as connection:
+        previous = connection.execute(text("SELECT @@global.time_zone")).scalar()
+        connection.execute(text("SET GLOBAL time_zone = '+03:30'"))
+    try:
+        with admin.connect() as connection:
+            control = connection.execute(text("SELECT @@session.time_zone")).scalar()
+        assert control == "+03:30", "the control: off UTC without the setting"
+
+        service = build(Settings(environ=environ_for(database)))
+        assert asyncio.run(every_pool(service)) == ["+00:00"] * 4
+    finally:
+        with admin.connect() as connection:
+            connection.execute(text(f"SET GLOBAL time_zone = '{previous}'"))
+        admin.dispose()
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:
