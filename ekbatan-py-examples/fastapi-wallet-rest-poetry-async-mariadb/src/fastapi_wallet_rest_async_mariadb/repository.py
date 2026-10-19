@@ -21,11 +21,9 @@ stopped matching.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from decimal import Decimal
 from typing import Any
-from uuid import UUID
 
-from sqlalchemy import Row, func, select
+from sqlalchemy import Row
 
 from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
 from ekbatan.clock import Clock
@@ -87,26 +85,6 @@ class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
             created_date=values["created_date"],
             updated_date=values["updated_date"],
         )
-
-    async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        """Every wallet an owner has. A predicate says nothing about where its rows are, so
-        this asks every database - all at once, on `ekbatan.aio`."""
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
-
-    async def total_balance(self) -> Decimal:
-        """The sum across every shard - a query of this repository's own.
-
-        `readonly_dbs()` hands over each shard's replica in turn; a report can be a second out
-        of date. The `state != DELETED` filter is spelled out because this is *your* statement:
-        the inherited reads apply it for you, one you build carries only what you put in it.
-        """
-        query = select(func.coalesce(func.sum(WALLETS.c.balance), 0)).where(
-            WALLETS.c.state != WalletState.DELETED.name
-        )
-        total = Decimal(0)
-        async for _, conn in self.readonly_dbs():
-            total += Decimal(str((await conn.execute(query)).scalar_one()))
-        return total
 
 
 class AlertRepository(AsyncEntityRepository[Alert, Id[Alert]]):

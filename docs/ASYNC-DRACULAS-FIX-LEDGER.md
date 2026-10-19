@@ -20,7 +20,7 @@ landed after the list was written).
 | 7 | async MySQL/MariaDB drop `innodb_lock_wait_timeout` | put it back + its assertion | todo | |
 | 8 | async UTC test weakened | port the Tehran test to the three async twins | todo | |
 | 9 | other REST tests dropped in async | port 422, recipient and currency checks | todo | |
-| 10 | unused repository helpers on the sync side | keep only what each example uses, both twins the same | todo | |
+| 10 | unused repository helpers on the sync side | keep only what each example uses, both twins the same | fixed: each pair carries what it uses - REST: `find_for_wallet` only (sync lost 6 helpers, async 2); job worker: `find_open_below` + `find_for_wallet` (sync lost 5) | EKB-0397 |
 | 11 | `RaiseAlertAction` in `handlers.py` in async REST twins | move back to `actions.py` | fixed: `RaiseAlertAction`/`RaiseAlertParams` back in `actions.py` in the 3 async REST twins, same place as sync | EKB-0395 |
 | 12 | lock provider picked from a dict in async | name the provider directly | fixed: each async REST app names its provider (`AsyncPostgresKeyedLockProvider` etc.); setup guide shows async `app.py` per database | EKB-0396 |
 | 13 | async READMEs drop shared sections | restore them | todo | |
