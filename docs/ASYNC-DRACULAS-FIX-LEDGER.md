@@ -24,7 +24,7 @@ landed after the list was written).
 | 11 | `RaiseAlertAction` in `handlers.py` in async REST twins | move back to `actions.py` | fixed: `RaiseAlertAction`/`RaiseAlertParams` back in `actions.py` in the 3 async REST twins, same place as sync | EKB-0395 |
 | 12 | lock provider picked from a dict in async | name the provider directly | fixed: each async REST app names its provider (`AsyncPostgresKeyedLockProvider` etc.); setup guide shows async `app.py` per database | EKB-0396 |
 | 13 | async READMEs drop shared sections | restore them | todo | |
-| 14 | deprecated `testcontainers.postgres` in sync tests | `testcontainers.community.postgres` | todo | |
+| 14 | deprecated `testcontainers.postgres` in sync tests | `testcontainers.community.postgres` | fixed: 4 sync tests x 3 builds import `testcontainers.community.postgres` | EKB-0398 |
 | 15 | `tm.transaction()` timestamp sample | re-check | already resolved: both tabs write `clock.now()` as is (EKB-0384-0388) | - |
 | 16 | config-file sample import path | `from ekbatan import DatabaseRegistry` | fixed: sync tab imports `from ekbatan import DatabaseRegistry`, both copies | EKB-0390 |
 | 17 | async locks not exported from `ekbatan.aio` | export them; surface test compares package exports | fixed: async lock classes exported from `ekbatan.aio`; surface test compares package exports both ways | EKB-0393 |

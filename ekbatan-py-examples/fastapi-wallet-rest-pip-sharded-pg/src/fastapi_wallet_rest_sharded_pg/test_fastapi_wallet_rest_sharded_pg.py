@@ -44,7 +44,7 @@ from .model import Currency, EmailAddress, Wallet
 @pytest.fixture(scope="module")
 def environ() -> Iterator[dict[str, str]]:
     """What fills `ekbatan.yaml`'s placeholders: one url per shard, and the login."""
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
         base = container.get_connection_url()

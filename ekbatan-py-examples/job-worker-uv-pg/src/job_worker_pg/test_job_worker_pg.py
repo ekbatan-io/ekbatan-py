@@ -164,7 +164,7 @@ class Harness:
 
 @pytest.fixture(scope="module")
 def database() -> Iterator[str]:
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     # PostgreSQL, because the directory says so. Java's counterpart is `-pg` too, and the
     # reason is the same: running once per slot across a cluster is the thing this shows, and

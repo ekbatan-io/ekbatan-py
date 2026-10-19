@@ -38,7 +38,7 @@ from .schema import EVENT_NOTIFICATIONS, EVENTS, TRANSFER_STEPS
 
 @pytest.fixture(scope="module")
 def database() -> Iterator[str]:
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     # PostgreSQL, because the directory says so. Java's counterpart is `-pg` too, and the
     # reason is the same: a saga is about steps that commit independently, and a database that
