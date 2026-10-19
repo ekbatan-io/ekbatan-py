@@ -213,9 +213,11 @@ There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them o
   `schemagen`. An async service builds a sync registry beside its async one, from the same layout
   file, for those.
 - **Keyed locks** have async twins in `ekbatan.aio.locks` (PG, MySQL, MariaDB, Redis on
-  `redis.asyncio`), on the sync providers' cores (`_HoldingCore`, `_HolderCore`, `_LeaseCore`,
-  the statement and result helpers in `locks/sql.py` and `locks/redis.py`). The caller takes the
-  lock around `await executor.execute(...)`; the holder is the task.
+  `redis.asyncio`; all but Redis exported from `ekbatan.aio` too, as the sync ones are from
+  `ekbatan` - `test_async_engine.py` compares the two packages' exports), on the sync
+  providers' cores (`_HoldingCore`, `_HolderCore`, `_LeaseCore`, the statement and result
+  helpers in `locks/sql.py` and `locks/redis.py`). The caller takes the lock around
+  `await executor.execute(...)`; the holder is the task.
 - **Event handlers run after the action**, on dispatch's threads, never inside it. A handler may
   be `async def`: dispatch runs it on its `HandlerLoop` (one loop on its own thread) and records
   the outcome exactly as for a sync handler. What an async handler awaits belongs to that loop.

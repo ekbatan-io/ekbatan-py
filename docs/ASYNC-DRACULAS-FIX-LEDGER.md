@@ -57,8 +57,37 @@ here cannot touch it.
 
 | suite | before | after |
 |---|---|---|
-| unit | | |
-| `pytest --dialects=all` | | |
-| `make test-psycopg-async` | | |
+| unit | 1297 passed, 4 xfailed | 1298 passed, 4 xfailed (+1: the package-export test) |
+| `pytest --dialects=all` (SQLite, PostgreSQL, MySQL, MariaDB; sync and async) | 5266 passed, 143 skipped | 5251 passed, 143 skipped, 32 errors - all setup errors in one stretch of `test_accounting`/`test_action_testing`/`test_actions` [async-postgres], a Docker hiccup; those three modules re-run on PostgreSQL: 64 passed. So 5283 = 5266 + 16 (the two new routing tests, 2 modes x 4 databases) + 1 |
+| `make test-psycopg-async` | 1158 passed, 14 skipped | 1162 passed, 14 skipped (+4) |
+
+After-runs at `35f1e3e`, in the same separate checkout. `make lint`: exit 0. Website:
+`npm run build` (58 pages) and `npm run check` both exit 0.
 
 ## Log
+
+Examples (each as its built wheel, installed), final run at `35f1e3e`:
+
+- uv, all 14: REST pg/mysql/mariadb 18 each, async twins 19 each; sharded 22, async 23; saga 18,
+  async 20; job worker 10, async 12; SQLite 19 and 19; `make run` of both SQLite scripts ok.
+- pip and Poetry, one example per family, both builds of the same one: `rest-pg` 18/18,
+  `rest-async-mysql` 19/19, `rest-sharded-pg` 22/22, `saga-async-pg` 20/20, `job-worker-pg`
+  10/10, `wallet-service-async-sqlite` 19/19.
+- The one warning left in the REST runs is Starlette's (`httpx` with its test client), in both
+  twins; the job worker's sync tests run clean under `-W error::DeprecationWarning`.
+
+Setup guide, `scripts/check-setup-guide.py --install uv`: pg, mysql, mariadb, sqlite x sync,
+async - 8 of 8 ok.
+
+Red runs (each test shown to fail without its fix): the routing tests on the old repository
+code (sync: no note; async: the down shard failed the lookup); the export test on the old
+`ekbatan/aio/__init__.py`; the async Tehran test with `options: -c statement_timeout=0` in place
+of the UTC setting; the sync 503 test with the handler pointed at another exception; the sync
+sharded lock test with the lock replaced by a no-op (409s from `StaleRecordError`).
+
+## Log
+
+- `EKB-0395` also carries row 12's edits to the three async `app.py` files (same import lines);
+  `EKB-0404` also carries row 13's async sharded README.
+- Not done: a test comparing every sync/async method's parameters (the side note's other half);
+  the signatures were checked by a one-off run when the list was written.
