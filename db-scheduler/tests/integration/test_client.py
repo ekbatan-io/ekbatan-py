@@ -8,7 +8,7 @@ refusals it makes are about what is in the table.
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +38,7 @@ from db_scheduler.task import (
     TaskInstanceId,
 )
 
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 
 class RecordingListeners(SchedulerListeners):

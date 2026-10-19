@@ -13,7 +13,7 @@ two schedulers race for a row and exactly one may win.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -27,15 +27,17 @@ from db_scheduler.task import (
     TaskInstance,
 )
 
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 
 def an_instance(task: str = "a-task", id: str = "an-id", data: Any = None) -> TaskInstance[Any]:
     return TaskInstance[Any](task, id, data)
 
 
-def scheduled(instance: TaskInstance[Any], at: datetime = NOW) -> SchedulableInstance[Any]:
-    return SchedulableTaskInstance(instance, at)
+def scheduled(
+    instance: TaskInstance[Any], at: datetime | None = None
+) -> SchedulableInstance[Any]:
+    return SchedulableTaskInstance(instance, NOW if at is None else at)
 
 
 class RepositoryContract:

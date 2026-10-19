@@ -9,7 +9,7 @@ after ``start()`` that the jobs are actually registered.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -28,7 +28,7 @@ from fixtures.schema import SCHEDULED_TASKS
 
 #: Where the scheduler's clock starts. Any fixed instant will do; a fixed one keeps the tests
 #: from depending on when they run.
-SCHEDULER_EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+SCHEDULER_EPOCH = datetime(2026, 1, 1, 12, 0)
 
 
 @pytest.fixture

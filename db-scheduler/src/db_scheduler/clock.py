@@ -15,18 +15,23 @@ __all__ = ["Clock", "SettableClock", "SystemClock"]
 
 @runtime_checkable
 class Clock(Protocol):
-    """The current instant, always timezone-aware and in UTC."""
+    """The current time.
+
+    Whatever this returns is what the scheduler stores and compares, as it is: nothing shifts it
+    or gives it a zone. :class:`SystemClock` returns UTC with no zone attached.
+    """
 
     def now(self) -> datetime: ...
 
 
 class SystemClock:
-    """The wall clock. What production uses."""
+    """The wall clock. What production uses: the current UTC time, no zone attached - the value
+    a zone-less column holds, so what is written reads back equal to it."""
 
     __slots__ = ()
 
     def now(self) -> datetime:
-        return datetime.now(UTC)
+        return _utc_now()
 
     def __repr__(self) -> str:
         return "SystemClock()"
@@ -38,18 +43,21 @@ class SettableClock:
     The counterpart to db-scheduler's `SettableClock` in its `testhelper` package. Time only
     changes when something asks it to, so a test that means "a day passes" says so rather than
     waiting a day - or, worse, sleeping just long enough to be flaky on a loaded machine.
+
+    An instant handed to it is kept exactly as given; with none it starts at the current UTC
+    time, no zone attached, as :class:`SystemClock` reads it.
     """
 
     __slots__ = ("_now",)
 
     def __init__(self, now: datetime | None = None) -> None:
-        self._now = _aware(now if now is not None else datetime.now(UTC))
+        self._now = now if now is not None else _utc_now()
 
     def now(self) -> datetime:
         return self._now
 
     def set(self, now: datetime) -> None:
-        self._now = _aware(now)
+        self._now = now
 
     def tick(self, amount: timedelta) -> datetime:
         """Move forward. Returns the new instant, so a test can assert against it directly."""
@@ -60,16 +68,6 @@ class SettableClock:
         return f"SettableClock({self._now.isoformat()})"
 
 
-def _aware(moment: datetime) -> datetime:
-    """Refuse a naive datetime rather than guess which zone it meant.
-
-    A scheduler compares instants written by other machines, in other zones. A naive value here
-    is not a small imprecision - it is an execution time that is wrong by the offset, and only
-    outside UTC, which is exactly the bug nobody reproduces.
-    """
-    if moment.tzinfo is None:
-        raise ValueError(
-            f"{moment!r} has no timezone. A scheduler compares instants across machines, so a "
-            f"naive datetime is ambiguous - pass one with tzinfo, e.g. datetime.now(UTC)."
-        )
-    return moment.astimezone(UTC)
+def _utc_now() -> datetime:
+    """The current UTC time, no zone attached. The one place the scheduler reads the wall clock."""
+    return datetime.now(UTC).replace(tzinfo=None)

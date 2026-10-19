@@ -77,6 +77,13 @@ Every integration test runs twice per dialect, once for each timestamp shape:
 which is db-scheduler's own default and therefore the shape of a table a Java instance created).
 Reading a table in the wrong shape is an hour's silent drift, not an error.
 
+**Times are stored as given** (a divergence from db-scheduler, which converts an `Instant` at the
+JDBC boundary). The repository binds a time exactly as the clock or the caller gave it and hands
+back what the driver returns; the default `SystemClock` gives naive UTC, which is what the
+zone-less shape holds. A zoned table hands back aware times, so it needs a clock that gives
+aware UTC - the suite's zoned PostgreSQL runs use one. Schedules (`Daily`, cron) read a naive
+time as UTC for their zone arithmetic and answer in the kind they were asked in.
+
 MySQL runs twice on purpose. 8.4 is the LTS most deployments are on; 26.7 is the current release
 - MySQL left semantic versioning after 9.4, so the major number jumped to a calendar year. The
 two take different branches of the version check in `AutodetectJdbcCustomization`, and only the
@@ -90,7 +97,8 @@ What the container runs prove that SQLite alone cannot:
 
 - `SELECT ... FOR UPDATE SKIP LOCKED` in both forms - PostgreSQL's single statement, MySQL 8's
   transaction-scoped one
-- that timestamps round-trip as UTC on MySQL and MariaDB, which have no zoned type
+- that a time round-trips exactly as written - naive UTC to the microsecond on every dialect, and
+  aware on PostgreSQL's zoned shape - with nothing converting it on the way
 - that the schema is one MySQL will actually create - `varchar(100)` keys, `datetime(6)`
 - that two schedulers over one table run each of 30 executions exactly once, under real
   concurrency rather than a simulation of it

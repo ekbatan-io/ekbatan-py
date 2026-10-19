@@ -192,6 +192,11 @@ Every integration test runs twice per dialect, once for each timestamp shape - z
 columns, and the zoned columns a Java-created table has. Reading a table in the wrong shape is
 an hour's silent drift rather than an error, so both are exercised rather than assumed.
 
+Times are stored exactly as given and read back as the driver returns them - nothing converts
+them. The default clock gives the current UTC time with no zone attached, right for zone-less
+columns; a zoned (`timestamptz`) table needs a clock that gives aware UTC, set with
+`.clock(...)` on the builder.
+
 The skips are lock-and-fetch on the dialects that have no `SELECT ... FOR UPDATE SKIP LOCKED`,
 plus the test asserting the refusal on those — so the counts differ by exactly the dialects'
 real capabilities.

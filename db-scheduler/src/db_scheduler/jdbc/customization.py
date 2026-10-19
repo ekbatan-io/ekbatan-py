@@ -15,9 +15,10 @@ so does this: an emulation would be a claim that does not hold, which is the one
 library exists to prevent. MariaDB and Oracle *do* have `SKIP LOCKED` in recent versions;
 db-scheduler leaves both off pending the right syntax, and this follows rather than guessing.
 
-**How timestamps go in and come out.** Which is what `persist_timestamp_in_utc` is for, and why
-it lives here rather than on the repository: it is a per-database decision, and MySQL and
-MariaDB have no zoned type at all, so they warn when it is off.
+**Which column type holds a time** - zone-less or zoned; values go in as given either way.
+Which is what `persist_timestamp_in_utc` is for, and why it lives here rather than on the
+repository: it is a per-database decision, and MySQL and MariaDB have no zoned type at all, so
+they warn when it is off.
 """
 
 from __future__ import annotations

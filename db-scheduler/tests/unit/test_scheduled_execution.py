@@ -24,7 +24,7 @@ from db_scheduler.task import (
     TaskInstanceId,
 )
 
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 
 def an_execution(data: Any = None, **kwargs: Any) -> Execution:
@@ -123,6 +123,14 @@ class TestExecutionTimeAndId:
         cursor = ExecutionTimeAndId(NOW, "customer:42:retry")
 
         assert ExecutionTimeAndId.from_encoded_string(cursor.to_encoded_string()) == cursor
+
+    def test_an_aware_time_encodes_as_the_same_instant(self) -> None:
+        """The token counts seconds from the epoch in the value's own terms, so an aware UTC
+        time and the same time with no zone attached give the same token - and it decodes to
+        naive UTC, the default clock's kind."""
+        aware = ExecutionTimeAndId(NOW.replace(tzinfo=UTC), "an-id").to_encoded_string()
+        assert aware == ExecutionTimeAndId(NOW, "an-id").to_encoded_string()
+        assert ExecutionTimeAndId.from_encoded_string(aware).execution_time == NOW
 
     def test_the_encoded_form_is_opaque_and_url_safe_enough_to_hand_out(self) -> None:
         encoded = ExecutionTimeAndId(NOW, "an-id").to_encoded_string()

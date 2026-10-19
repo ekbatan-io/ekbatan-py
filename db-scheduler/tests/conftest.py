@@ -30,7 +30,7 @@ from db_scheduler.jdbc import JdbcTaskRepository, scheduled_tasks_table
 from db_scheduler.resolver import TaskResolver
 from db_scheduler.task.helper import Tasks
 
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 #: SQLite is what keeps the inner loop fast. It is not a database this library claims to
 #: support - the claim is Postgres, MySQL and MariaDB, and that claim rests on the containers.
@@ -161,6 +161,33 @@ def engine(engine_url: str) -> Iterator[Engine]:
 #: `True` is what it recommends and what this port defaults to. Both have to work, because
 #: reading a table in the wrong shape is an hour's silent drift, not an error.
 TIMESTAMP_SHAPES = (True, False)
+
+
+#: The suite's "now", in the kind the table hands back. The framework stores a time exactly as
+#: given and reads it back as the driver returns it, so a test - like an application - keeps
+#: its clock in step with its columns: naive UTC for a zone-less column (and on MySQL, MariaDB
+#: and SQLite, which have no zoned type), aware UTC only for PostgreSQL's zoned shape.
+AWARE_NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+
+class AwareUtcClock:
+    """The wall clock with its zone: what an application gives a scheduler over zoned columns."""
+
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+
+@pytest.fixture(autouse=True)
+def _now_follows_the_table(request: Any, monkeypatch: Any) -> None:
+    params = getattr(getattr(request.node, "callspec", None), "params", {})
+    zoned = params.get("persist_timestamp_in_utc") is False
+    if not (zoned and params.get("dialect") == "postgres"):
+        return
+    for module in (sys.modules[__name__], request.module, sys.modules.get("repository_contract")):
+        if module is not None and isinstance(getattr(module, "NOW", None), datetime):
+            monkeypatch.setattr(module, "NOW", AWARE_NOW)
+    if hasattr(request.module, "SystemClock"):
+        monkeypatch.setattr(request.module, "SystemClock", AwareUtcClock)
 
 
 @pytest.fixture(params=TIMESTAMP_SHAPES, ids=["utc", "zoned"])

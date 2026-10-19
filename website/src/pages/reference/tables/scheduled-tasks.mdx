@@ -115,14 +115,39 @@ MariaDB.
 
 ### If the time columns are `timestamptz`
 
-A table created by another migration may declare the PostgreSQL time columns `timestamptz`. The
-scheduler works with that too, and that was checked: its clock returns `datetime.now(UTC)` - an
-*aware* datetime - and an aware datetime stores correctly in a `timestamptz` column whatever the
-session timezone is.
+The scheduler writes and reads its times exactly as it is given them, as the rest of the
+framework does, and its default clock gives the current UTC time with no zone attached - the
+right kind for the `TIMESTAMP` columns above. A table created by another migration may declare
+the PostgreSQL time columns `timestamptz` instead (the Java migration does). Those hand back
+times *with* a zone, so give the scheduler a clock that has one too:
 
-The trap is worth spelling out, because it is the one that would have bitten. Writing a **naive**
-datetime into a `timestamptz` column makes PostgreSQL interpret it in the *session* timezone.
-Measured, writing `2026-09-15 12:00:00`:
+```python
+from datetime import UTC, datetime
+
+
+class AwareUtcClock:
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+
+registry = (
+    job_registry()
+    .engine(engine)
+    .with_job(job)
+    .customize_scheduler(lambda scheduler: scheduler.clock(AwareUtcClock()))
+    .build()
+)
+```
+
+Without it the scheduler compares its naive clock with the zoned times PostgreSQL hands back,
+and Python refuses. Measured with a one-second job on a `timestamptz` table: the job still ran,
+but every restart logged `TypeError: can't compare offset-naive and offset-aware datetimes`
+while reconciling the recurring job with its row, and the scheduler's other comparisons of a
+stored time with the clock (purging rows of unknown tasks, for one) fail the same way. With the
+aware clock: no error.
+
+Keep the session in UTC either way. Writing a **naive** datetime into a `timestamptz` column
+makes PostgreSQL interpret it in the *session* timezone. Measured, writing `2026-09-15 12:00:00`:
 
 | session timezone | naive value lands as | aware value lands as |
 | --- | --- | --- |
@@ -131,10 +156,8 @@ Measured, writing `2026-09-15 12:00:00`:
 
 Four hours off, silently, and every execution fires at the wrong time. This is why the framework
 tables use `TIMESTAMP` without a zone everywhere else, and why CI runs the PostgreSQL suite a
-second time under a non-UTC process.
-
-So with either column type, nothing is required of you - the aware clock already handles it. If
-you write to this table yourself, pass aware datetimes.
+second time under a non-UTC process. If you write to this table yourself, write the same kind of
+time the scheduler's clock gives.
 
 ## Indexes
 

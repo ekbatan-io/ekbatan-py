@@ -7,7 +7,7 @@ are claimed through `scheduled_tasks` like any other job.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -181,7 +181,7 @@ def a_job_registry(registry, jobs):
         job_registry()
         .engine(registry.default.primary)
         .with_jobs(jobs)
-        .build_manual(SettableClock(datetime(2026, 1, 1, 12, 0, tzinfo=UTC)))
+        .build_manual(SettableClock(datetime(2026, 1, 1, 12, 0)))
     )
 
 

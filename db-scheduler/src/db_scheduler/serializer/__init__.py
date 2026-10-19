@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, is_dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
@@ -214,7 +214,7 @@ def _encode(value: Any) -> Any:
     if is_dataclass(value) and not isinstance(value, type):
         return asdict(value)
     if isinstance(value, datetime):
-        return value.astimezone(UTC).isoformat()
+        return value.isoformat()
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, Decimal):

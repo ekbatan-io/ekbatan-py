@@ -25,6 +25,7 @@ __all__ = [
 ]
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_NAIVE_EPOCH = datetime(1970, 1, 1)
 
 #: `<epoch seconds>,<nanos>:<task instance id>`, before base64. The id may contain anything,
 #: including colons, so only the first two fields are delimited.
@@ -54,7 +55,9 @@ class ExecutionTimeAndId:
         return cls(execution.execution_time, execution.task_instance.id)
 
     def to_encoded_string(self) -> str:
-        moment = self.execution_time.astimezone(UTC) - _EPOCH
+        # Seconds since the epoch, counted in the value's own terms - no zone moved.
+        epoch = _NAIVE_EPOCH if self.execution_time.tzinfo is None else _EPOCH
+        moment = self.execution_time - epoch
         seconds = moment.days * 86_400 + moment.seconds
         nanos = moment.microseconds * 1000
         return base64.b64encode(
@@ -69,7 +72,10 @@ class ExecutionTimeAndId:
             if found is None:
                 raise ValueError("Invalid execution time and id format")
             seconds, nanos, task_id = found.groups()
-            moment = _EPOCH + timedelta(seconds=int(seconds), microseconds=int(nanos) // 1000)
+            # Naive UTC, as the default clock gives and a zone-less column holds.
+            moment = _NAIVE_EPOCH + timedelta(
+                seconds=int(seconds), microseconds=int(nanos) // 1000
+            )
             return cls(moment, task_id)
         except Exception as exc:
             raise ValueError(f"Invalid execution time and id: {encoded}") from exc

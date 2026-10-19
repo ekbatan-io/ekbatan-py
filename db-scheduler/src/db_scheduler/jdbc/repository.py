@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Engine, Table, and_, case, delete, func, insert, or_, select, update
@@ -99,8 +99,9 @@ class JdbcTaskRepository:
         self.task_resolver = task_resolver or TaskResolver(SchedulerListeners(), self.clock)
 
     def _bind(self, moment: datetime | None) -> datetime | None:
-        """One place that knows which timestamp shape this table uses."""
-        return _to_column(moment, self.persist_timestamp_in_utc)
+        """A time to write: exactly as given. No zone is added, removed or moved - what the
+        clock or the caller gave is what the column gets, and what it reads back."""
+        return moment
 
     def _excluding_unresolved(self, statement: Any) -> Any:
         """`task_name not in (...)`, for the names this instance has no task for.
@@ -348,9 +349,9 @@ class JdbcTaskRepository:
                     running_count=int(row.running_count or 0),
                     failing_count=int(row.failing_count or 0),
                     scheduled_count=int(row.scheduled_count or 0),
-                    earliest_execution_time=_aware(row.earliest_execution_time),
-                    latest_last_success=_aware(row.latest_last_success),
-                    latest_last_failure=_aware(row.latest_last_failure),
+                    earliest_execution_time=row.earliest_execution_time,
+                    latest_last_success=row.latest_last_success,
+                    latest_last_failure=row.latest_last_failure,
                     max_consecutive_failures=int(row.max_consecutive_failures or 0),
                 )
                 for row in conn.execute(statement)
@@ -756,7 +757,7 @@ class JdbcTaskRepository:
         class, so the bytes are deserialized into it; an unknown one - a standalone client, or a
         task this instance does not deploy - gets the raw bytes back rather than a guess.
         """
-        execution_time = _aware(row.execution_time)
+        execution_time = row.execution_time
         assert execution_time is not None, "execution_time is NOT NULL in the schema"
         task = self.task_resolver.resolve(
             Resolvable.of(row.task_name, execution_time), add_unresolved_to_exclusion_filter
@@ -796,10 +797,10 @@ class JdbcTaskRepository:
             task_instance=instance,
             picked=bool(row.picked),
             picked_by=row.picked_by,
-            last_success=_aware(row.last_success),
-            last_failure=_aware(row.last_failure),
+            last_success=row.last_success,
+            last_failure=row.last_failure,
             consecutive_failures=row.consecutive_failures or 0,
-            last_heartbeat=_aware(row.last_heartbeat),
+            last_heartbeat=row.last_heartbeat,
             version=row.version,
         )
 
@@ -829,28 +830,3 @@ def _tuple_in(table: Table, candidates: Any) -> Any:
     return tuple_(table.c.task_name, table.c.task_instance).in_(
         select(candidates.c.task_name, candidates.c.task_instance)
     )
-
-
-def _to_column(moment: datetime | None, persist_in_utc: bool) -> datetime | None:
-    """The value to bind, in the shape the column expects.
-
-    Zone-less UTC when the column is zone-less, an aware UTC value when it is not. Getting this
-    the wrong way round is the whole hazard: a naive value bound to a `timestamptz` is read as
-    the session's local time, which is right only where that is UTC.
-    """
-    if moment is None:
-        return None
-    if moment.tzinfo is None:
-        raise ValueError(
-            f"{moment!r} has no timezone. Instants written here are compared across machines, "
-            f"so a naive datetime is ambiguous."
-        )
-    as_utc = moment.astimezone(UTC)
-    return as_utc.replace(tzinfo=None) if persist_in_utc else as_utc
-
-
-def _aware(moment: datetime | None) -> datetime | None:
-    """The other direction. A zone-less column holds UTC, so say so; a zoned one already knows."""
-    if moment is None:
-        return None
-    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)

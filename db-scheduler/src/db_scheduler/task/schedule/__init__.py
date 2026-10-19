@@ -203,6 +203,19 @@ class FixedDelay(Schedule):
         return f"FixedDelay(duration={self.duration})"
 
 
+def _in_zone(moment: datetime, zone: datetime_tzinfo) -> datetime:
+    """The moment on the zone's clock. Working out "eight in Rome" needs to know which instant
+    a time is, so a naive one is read as UTC - what the default clock gives and a zone-less
+    column holds. Schedule arithmetic only: nothing here is written back as given."""
+    return (moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment).astimezone(zone)
+
+
+def _like(result: datetime, given: datetime) -> datetime:
+    """The answer in the kind it was asked in: naive UTC for a naive time, aware UTC else."""
+    utc = result.astimezone(UTC)
+    return utc.replace(tzinfo=None) if given.tzinfo is None else utc
+
+
 class Daily(Schedule):
     """One or more times of day, in a named zone.
 
@@ -221,14 +234,15 @@ class Daily(Schedule):
         self.zone = zone
 
     def next_execution_time(self, completion: ExecutionComplete) -> datetime:
-        done = completion.time_done.astimezone(self.zone)
+        given = completion.time_done
+        done = _in_zone(given, self.zone)
         today = done.date()
         for candidate_time in self.times:
             candidate = datetime.combine(today, candidate_time, tzinfo=self.zone)
             if candidate > done:
-                return candidate.astimezone(UTC)
+                return _like(candidate, given)
         tomorrow = today + timedelta(days=1)
-        return datetime.combine(tomorrow, self.times[0], tzinfo=self.zone).astimezone(UTC)
+        return _like(datetime.combine(tomorrow, self.times[0], tzinfo=self.zone), given)
 
     @property
     def is_deterministic(self) -> bool:
@@ -336,7 +350,8 @@ class CronSchedule(Schedule):
 
         if self.is_disabled:
             raise self._unsupported()
-        last = completion.time_done.astimezone(self.zone)
+        given = completion.time_done
+        last = _in_zone(given, self.zone)
         if self._quartz is not None:
             found = self._quartz.next_after(last)
             if found is None:
@@ -346,8 +361,8 @@ class CronSchedule(Schedule):
                     'far-future, aka "NEVER" (%s)',
                     NEVER,
                 )
-                return NEVER
-            return found.astimezone(UTC)
+                return _like(NEVER, given)
+            return _like(found, given)
         iterator = croniter(
             self.pattern, last, second_at_beginning=self.cron_style.seconds_first
         )
@@ -363,8 +378,8 @@ class CronSchedule(Schedule):
                 'far-future, aka "NEVER" (%s)',
                 NEVER,
             )
-            return NEVER
-        return following.astimezone(UTC)
+            return _like(NEVER, given)
+        return _like(following, given)
 
     @property
     def is_deterministic(self) -> bool:

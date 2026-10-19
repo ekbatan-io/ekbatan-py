@@ -11,7 +11,7 @@ import enum
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Protocol, Self
 
 __all__ = [
@@ -457,8 +457,6 @@ class ExecutionComplete:
         return self.time_done - self.time_started
 
 
-def _utc(moment: datetime) -> datetime:
-    return moment.astimezone(UTC) if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 _ = field  # re-exported for submodules that build dataclasses on this model

@@ -94,11 +94,12 @@ Python worker take turns at the same executions.
 
 Two differences, both on PostgreSQL and neither a problem:
 
-- **The time columns are `timestamptz` in the Java migration** and `TIMESTAMP` here. Either
-  works with either service: the Python scheduler always writes aware UTC datetimes, which land
-  correctly in a `timestamptz` column whatever the session's time zone. If you write to that
-  table yourself, pass aware datetimes too - see
-  [`scheduled_tasks`](/reference/tables/scheduled-tasks/#dialect-types).
+- **The time columns are `timestamptz` in the Java migration** and `TIMESTAMP` here. The
+  Python scheduler stores its times as given and its default clock gives naive UTC, which is
+  right for `TIMESTAMP`. On Java's `timestamptz` table, give the Python scheduler a clock that
+  gives aware UTC - one line, shown in
+  [`scheduled_tasks`](/reference/tables/scheduled-tasks/#if-the-time-columns-are-timestamptz). Without it
+  the Python worker logs `TypeError` comparing naive and aware times.
 - **Index names and order.** Java names them `execution_time_idx`, `last_heartbeat_idx` and
   `priority_execution_time_idx`, with the priority index `(priority DESC, execution_time ASC)`.
   This framework puts the table name in front of each and gives the priority index no direction.

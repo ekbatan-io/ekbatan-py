@@ -23,7 +23,7 @@ from db_scheduler.task.helper import Tasks
 from db_scheduler.task.schedule import Daily, DisabledSchedule, FixedDelay
 from db_scheduler.testhelper import ManualSchedulerBuilder, create_manual_scheduler
 
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 
 @pytest.fixture
@@ -243,7 +243,7 @@ class TestARedeployThatChangesTheSchedule:
             .start()
         )
         rows = scheduler.get_scheduled_executions(ScheduledExecutionsFilter.all())
-        return rows[0].execution_time.astimezone(UTC) if rows else None
+        return rows[0].execution_time if rows else None
 
     def test_an_unchanged_schedule_leaves_the_row_alone(self, engine: Any, table: Any) -> None:
         first = self._deploy(engine, table, Daily(time(8, 0), zone=UTC))
@@ -259,7 +259,7 @@ class TestARedeployThatChangesTheSchedule:
 
         moved = self._deploy(engine, table, Daily(time(9, 0), zone=UTC))
 
-        assert moved == datetime(2026, 1, 2, 9, 0, tzinfo=UTC)
+        assert moved == datetime(2026, 1, 2, 9, 0, tzinfo=NOW.tzinfo), "in the kind the table holds"
 
     def test_a_non_deterministic_schedule_never_pushes_the_row_later(
         self, engine: Any, table: Any

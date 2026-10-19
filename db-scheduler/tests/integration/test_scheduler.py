@@ -35,7 +35,7 @@ from db_scheduler.task.handlers import CancelDeadExecution, OnCompleteReplace, m
 from db_scheduler.task.helper import PlainScheduleAndData, Tasks
 from db_scheduler.task.schedule import FixedDelay
 
-NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+NOW = datetime(2026, 1, 1, 12, 0)
 
 #: Real threads need a real bound. Long enough not to flake on a loaded machine, short enough
 #: that a genuine hang fails the run rather than stalling it.
@@ -79,6 +79,8 @@ def builder(engine: Any, table: Any) -> SchedulerBuilder:
         .scheduler_name(Fixed("test-scheduler"))
         .shutdown_max_wait(timedelta(seconds=5))
         .failure_logging(LogLevel.DEBUG, False)
+        # The clock suits the table: naive UTC, or aware on PostgreSQL's zoned shape (conftest).
+        .clock(SystemClock())
     )
 
 

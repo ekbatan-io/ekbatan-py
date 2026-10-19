@@ -21,17 +21,18 @@ like.
 
 Timestamps come in two shapes, and db-scheduler supports both:
 
-    persist_timestamp_in_utc=True    zone-less columns everywhere, values written as UTC.
-                                     Portable, and what db-scheduler recommends - it warns on
-                                     MySQL when you do not use it.
+    persist_timestamp_in_utc=True    zone-less columns everywhere. Portable, and what
+                                     db-scheduler recommends - it warns on MySQL when you do
+                                     not use it.
     persist_timestamp_in_utc=False   zoned columns where the dialect has them: `timestamptz` on
                                      Postgres. This is db-scheduler's *default*, so it is the
                                      shape of a table created by a Java instance that was not
                                      told otherwise.
 
-The flag has to match whatever created the table. A naive value written into a `timestamptz`
-column is interpreted in the session's timezone, which is correct only where that happens to be
-UTC - the kind of wrong that shows up as an hour's drift in one region.
+The flag only picks the column type. Times are written exactly as given and read back as the
+driver returns them, so the clock has to suit the columns: naive UTC (the default clock) for
+zone-less ones, aware UTC for zoned ones. A naive value written into a `timestamptz` column is
+interpreted in the session's timezone - keep the session in UTC.
 """
 
 from __future__ import annotations
