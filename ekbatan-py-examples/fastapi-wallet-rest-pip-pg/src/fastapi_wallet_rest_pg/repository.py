@@ -64,9 +64,9 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
             "currency": wallet.currency,
             "balance": wallet.balance,
             "created_date": wallet.created_date,
-            # `Model.__post_init__` falls this back to `created_date`, so it is never
-            # None on a constructed model - the declared type keeps the `| None`
-            # because a builder may leave it unset. The column is NOT NULL.
+            # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
+            # constructed model - the declared type keeps the `| None` because a builder may
+            # leave it unset. The column is NOT NULL.
             "updated_date": wallet.updated_date or wallet.created_date,
         }
 

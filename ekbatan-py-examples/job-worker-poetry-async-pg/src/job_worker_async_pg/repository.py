@@ -5,8 +5,17 @@ reads - by id, by predicate, counting, existence - are inherited, so what is lef
 handful of questions this worker actually asks.
 
 **All async.** The jobs' work and the event handler run on `ekbatan.aio`, on the worker loop, so
-every repository here is an async one. `to_row` and `from_row` are plain functions; each mapping
-is written once, in a small class the repository takes it from.
+every repository here is an async one. `to_row` and `from_row` stay plain functions - mapping
+waits on nothing.
+
+**The mapping is written, as Java's is.** `AbstractRepository` declares `fromRecord` and
+`toRecord` abstract there, so every repository implements both; here they are `to_row` and
+`from_row` and the base refuses until they exist.
+
+Where the names line up - which is the usual case, because a dataclass already knows its own
+fields - that is two lines saying so. It was the default until `EKB-0217`, and being the default
+is what made it magic: rename a column without renaming the field and the mapping silently
+stopped matching, where Java gets a compile error.
 """
 
 from __future__ import annotations
@@ -27,14 +36,24 @@ from .model import Alert, Wallet, WalletState
 from .schema import ALERTS, WALLETS
 
 
-class WalletRows:
-    """The wallet as one row, and back. Plain functions: nothing here waits on anything."""
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    """Wallets, awaited, routed by the shard packed into each id."""
+
+    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+        )
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
-        """Every column, named. A typed id goes in as its `uuid`, an enum as its `name`; the
-        timestamps go in exactly as they are - the clock gives UTC with no zone attached, and
-        that is what the column holds. `currency` goes in as the `Currency` it is; the column's
-        converter does the text.
+        """Every column, named - the counterpart to Java's `toRecord`.
+
+        Two of the eight are conversions rather than copies, and each is a decision about how
+        the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
+        than its value. The timestamps go in exactly as they are - the clock gives UTC with no
+        zone attached, and that is what the column holds.
+
+        `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
+        turns it into text, and turns the text back into a `Currency` on every read.
         """
         return {
             "id": wallet.id.value,
@@ -51,6 +70,11 @@ class WalletRows:
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        """And back - the counterpart to Java's `fromRecord`.
+
+        A plain mapping rather than a row is how an insert without `RETURNING` rebuilds what it
+        just wrote, on a dialect that has none.
+        """
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
             id=ShardedId[Wallet](values["id"]),
@@ -63,12 +87,20 @@ class WalletRows:
             updated_date=values["updated_date"],
         )
 
+    async def find_open_below(self, threshold: Decimal) -> list[Wallet]:
+        """Open wallets running low - what a top-up job would ask for."""
+        return await self.find_where(
+            WALLETS.c.state == WalletState.OPENED.name,
+            WALLETS.c.balance < threshold,
+        )
 
-class AlertRows:
-    """The alert as one row, and back: six columns, no timestamps - an entity carries none.
-    `recipient` is an `EmailAddress` both ways; its converter in `schema.py` does the text."""
+
+class AlertRepository(AsyncEntityRepository[Alert, Id[Alert]]):
+    """Alerts, awaited. Not sharded - they are looked up by wallet, not by their own id."""
 
     def to_row(self, alert: Alert) -> dict[str, Any]:
+        """Six columns, and no timestamps - an entity carries none. `recipient` is an
+        `EmailAddress` both ways; its converter in `schema.py` does the text."""
         return {
             "id": alert.id.value,
             "version": alert.version,
@@ -88,26 +120,6 @@ class AlertRows:
             recipient=values["recipient"],
             message=values["message"],
         )
-
-
-class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
-    """Wallets, awaited, routed by the shard packed into each id."""
-
-    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(
-            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
-        )
-
-    async def find_open_below(self, threshold: Decimal) -> list[Wallet]:
-        """Open wallets running low - what a top-up job would ask for."""
-        return await self.find_where(
-            WALLETS.c.state == WalletState.OPENED.name,
-            WALLETS.c.balance < threshold,
-        )
-
-
-class AlertRepository(AlertRows, AsyncEntityRepository[Alert, Id[Alert]]):
-    """Alerts, awaited. Not sharded - they are looked up by wallet, not by their own id."""
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Alert, ALERTS, registry, clock=clock)

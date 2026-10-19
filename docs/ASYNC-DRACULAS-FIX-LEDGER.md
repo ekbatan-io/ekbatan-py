@@ -11,7 +11,7 @@ landed after the list was written).
 
 | # | what | plan | state | commit |
 |---|---|---|---|---|
-| 1 | `*Rows` mixins in async repositories | mapping back inside each async repository; async SQLite test as the sync twin's; every doc/website sample | todo | |
+| 1 | `*Rows` mixins in async repositories | mapping back inside each async repository; async SQLite test as the sync twin's; every doc/website sample | fixed: mapping inlined from each sync twin (verbatim, same position), `*Rows` deleted in 7 async examples x 3 builds; async SQLite test as the sync one; 13 doc/website places rewritten | EKB-0394 |
 | 2 | stipend job missing in async REST + SQLite twins | add it, its work awaited on a `HandlerLoop` as `job-worker-uv-async-pg` does | todo | |
 | 3 | load caps only in async | add 503 handler, `poolTimeout`, `limit_concurrency` to sync REST, saga, sharded; test the 503 in sync | todo | |
 | 4 | sharded keyed lock only in async | add the lock and its test to the sync sharded example | todo | |

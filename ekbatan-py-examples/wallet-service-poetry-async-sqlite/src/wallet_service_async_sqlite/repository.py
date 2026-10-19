@@ -5,8 +5,8 @@ reads - by id, by predicate, counting, existence - are inherited, so what is lef
 handful of questions this application actually asks.
 
 **All async.** Every read and write is awaited. `to_row` and `from_row` stay plain functions -
-mapping waits on nothing - and each mapping is written once, in a small class the repository
-takes it from. The base refuses a repository that has no mapping.
+mapping waits on nothing - and every repository implements both; the base refuses one that
+does not.
 """
 
 from __future__ import annotations
@@ -30,13 +30,26 @@ from .model import Alert, Wallet, WalletState
 from .schema import ALERTS, WALLETS
 
 
-class WalletRows:
-    """The wallet as one row, and back. Plain functions: nothing here waits on anything."""
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    """Wallets, awaited, routed by the shard packed into each id.
+
+    A model repository, because a wallet's changes are events. Saying so is what lets the
+    framework check that this table can hold the timestamps a model carries.
+    """
+
+    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+        )
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
-        """Every column, named. A typed id goes in as its `uuid`, an enum as its `name`; the
-        timestamps go in exactly as they are - the clock gives UTC with no zone attached, and
-        that is what the column holds."""
+        """Every column, named.
+
+        Two of the eight are conversions rather than copies, and each is a decision about how
+        the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
+        than its value. The timestamps go in exactly as they are - the clock gives UTC with no
+        zone attached, and that is what the column holds.
+        """
         return {
             "id": wallet.id.value,
             "version": wallet.version,
@@ -52,6 +65,11 @@ class WalletRows:
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        """And back.
+
+        A plain mapping rather than a row is how an insert without `RETURNING` rebuilds what it
+        just wrote, on a dialect that has none.
+        """
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
             id=ShardedId[Wallet](values["id"]),
@@ -62,44 +80,6 @@ class WalletRows:
             balance=values["balance"],
             created_date=values["created_date"],
             updated_date=values["updated_date"],
-        )
-
-
-class AlertRows:
-    """The alert as one row, and back: six columns, no timestamps - an entity carries none."""
-
-    def to_row(self, alert: Alert) -> dict[str, Any]:
-        return {
-            "id": alert.id.value,
-            "version": alert.version,
-            "state": alert.state.name,
-            "wallet_id": alert.wallet_id.value,
-            "recipient": alert.recipient,
-            "message": alert.message,
-        }
-
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Alert:
-        values = row._mapping if isinstance(row, Row) else row
-        return Alert(
-            id=Id[Alert](values["id"]),
-            version=values["version"],
-            state=GenericState[values["state"]],
-            wallet_id=ShardedId[Wallet](values["wallet_id"]),
-            recipient=values["recipient"],
-            message=values["message"],
-        )
-
-
-class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
-    """Wallets, awaited, routed by the shard packed into each id.
-
-    A model repository, because a wallet's changes are events. Saying so is what lets the
-    framework check that this table can hold the timestamps a model carries.
-    """
-
-    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(
-            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
         )
 
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
@@ -172,12 +152,34 @@ class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet
         return total
 
 
-class AlertRepository(AlertRows, AsyncEntityRepository[Alert, Id[Alert]]):
+class AlertRepository(AsyncEntityRepository[Alert, Id[Alert]]):
     """Alerts, awaited. Not sharded - they are looked up by wallet, not by their own id.
 
     An entity repository, because writing one is not news: no events, and no timestamps for
     the table to hold.
     """
+
+    def to_row(self, alert: Alert) -> dict[str, Any]:
+        """Six columns, and no timestamps - an entity carries none."""
+        return {
+            "id": alert.id.value,
+            "version": alert.version,
+            "state": alert.state.name,
+            "wallet_id": alert.wallet_id.value,
+            "recipient": alert.recipient,
+            "message": alert.message,
+        }
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Alert:
+        values = row._mapping if isinstance(row, Row) else row
+        return Alert(
+            id=Id[Alert](values["id"]),
+            version=values["version"],
+            state=GenericState[values["state"]],
+            wallet_id=ShardedId[Wallet](values["wallet_id"]),
+            recipient=values["recipient"],
+            message=values["message"],
+        )
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Alert, ALERTS, registry, clock=clock)

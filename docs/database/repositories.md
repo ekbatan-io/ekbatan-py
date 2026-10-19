@@ -19,7 +19,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 **Async**
 
 ```python
-class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)
@@ -70,8 +70,7 @@ value - a `datetime` included - goes to the column exactly as the model holds it
 or moved ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)).
 
 Where a name or a shape differs, write the mapping out instead. `to_row` and `from_row` are
-plain `def` in both modes - mapping waits on nothing - so an async repository can take them from
-a small class of their own (`class WalletRepository(WalletRows, AsyncModelRepository[...])`).
+plain `def` in both modes - mapping waits on nothing.
 
 **This was the default until `EKB-0217`, and being the default is what made it wrong.** Rename a
 column without renaming the field and the mapping silently stopped matching - no error, no

@@ -310,12 +310,17 @@ def test_alerts_are_found_by_the_wallet_they_are_about(tmp_path: Path) -> None:
 
 
 def test_the_repository_writes_its_row_mapping(tmp_path: Path) -> None:
-    """Every repository writes `to_row` and `from_row`; here they are plain functions in a
-    small class the async repository takes them from."""
-    from .repository import WalletRepository, WalletRows
+    """Every repository implements `to_row` and `from_row`, as of `EKB-0217`.
 
-    assert issubclass(WalletRepository, WalletRows)
-    assert "from_row" in vars(WalletRows) and "to_row" in vars(WalletRows)
+    This test used to assert the opposite - that neither was written, because the mapping was
+    by field name unless you said otherwise. That default was the one piece of magic left in
+    the read and write paths: rename a column without renaming the field and it silently
+    stopped matching, with no error anywhere.
+    """
+    from .repository import WalletRepository
+
+    assert "from_row" in vars(WalletRepository), "the mapping is written, not inherited"
+    assert "to_row" in vars(WalletRepository)
 
     async def scenario(service: WalletService) -> None:
         wallet = await a_wallet(service, "3.00")

@@ -217,7 +217,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 **Async**
 
 ```python
-class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()

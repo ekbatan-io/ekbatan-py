@@ -35,8 +35,8 @@ The venv is made with `python3`, which must be 3.13 or later - `make PYTHON=pyth
 | the jobs | sync: db-scheduler, and fan-out and dispatch, on its threads |
 | migrations, `schemagen` | sync, through PyMySQL |
 
-`to_row` and `from_row` are plain functions, so each mapping is written once (`WalletRows`,
-`AlertRows`) in a small class the repository takes it from.
+`to_row` and `from_row` stay plain functions - mapping waits on nothing - written in each
+repository, as in the sync twin.
 
 ## One config file, two drivers
 

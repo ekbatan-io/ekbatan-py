@@ -1603,8 +1603,8 @@ your business asks.
 
 The repositories extend `AsyncModelRepository` and `AsyncEntityRepository`: `get`,
 `find_where`, `add`, `update`, counting and existence are inherited, and every one is awaited, as
-is every query you add. `to_row` and `from_row` stay plain `def` - mapping waits on nothing - so
-each is written once, in a small class (`WalletRows`, `AlertRows`) the repository takes it from.
+is every query you add. `to_row` and `from_row` say how a row and a dataclass map onto each
+other, as in sync, and stay plain `def` - mapping waits on nothing.
 A read with no shard named asks every shard at the same time.
 
 </div>

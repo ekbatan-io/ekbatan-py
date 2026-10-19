@@ -39,16 +39,14 @@ uv add "ekbatan[mariadb,mariadb-async,migrations]"          # MariaDB: aiomysql 
 
 ## 2. The repositories
 
-The mapping is plain functions, so write it once in a small class the repository takes it
-from:
+The base class changes and your own queries become `async def`. The mapping stays as it is,
+inside the repository: `to_row` and `from_row` are plain `def`, as mapping waits on nothing.
 
 ```python
-class WalletRows:
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
     def to_row(self, wallet: Wallet) -> dict[str, Any]: ...
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet: ...
 
-
-class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         return await self.find_where(WALLETS.c.owner_id == owner_id)
 

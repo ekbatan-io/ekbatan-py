@@ -34,7 +34,7 @@ stages is the same.
 
 **`repository.py`** - the repositories extend `AsyncModelRepository` and
 `AsyncEntityRepository`, and every query of their own is `async def`. `to_row` and `from_row`
-stay plain functions, written once in `WalletRows` and `AlertRows`.
+stay plain functions, written in each repository as in the sync twin.
 
 **`handlers.py`** - `MoneyDepositedEventHandler.handle` is `async def` and awaits an executor of
 its own. It still runs after the deposit has committed, never inside it: dispatch runs it on

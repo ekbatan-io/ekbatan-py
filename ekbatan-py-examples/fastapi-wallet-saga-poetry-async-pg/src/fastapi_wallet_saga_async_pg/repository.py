@@ -2,8 +2,8 @@
 
 **All async.** The requests and the handlers both run on `ekbatan.aio`, so every repository here
 is an async one: every read and write is awaited. The handlers' wallets and steps go through the
-same classes, built over the handlers' own registry. `to_row` and `from_row` are plain
-functions; each mapping is written once, in a small class the repository takes it from.
+same classes, built over the handlers' own registry. `to_row` and `from_row` stay plain
+functions - mapping waits on nothing.
 """
 
 from __future__ import annotations
@@ -24,14 +24,24 @@ from .model import StepName, TransferStep, Wallet, WalletState
 from .schema import TRANSFER_STEPS, WALLETS
 
 
-class WalletRows:
-    """The wallet as one row, and back. Plain functions: nothing here waits on anything."""
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    """Wallets, awaited, routed by the shard packed into each id."""
+
+    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+        )
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
-        """Every column, named. A typed id goes in as its `uuid`, an enum as its `name`; the
-        timestamps go in exactly as they are - the clock gives UTC with no zone attached, and
-        that is what the column holds. `currency` goes in as the `Currency` it is; the column's
-        converter does the text.
+        """Every column, named - the counterpart to Java's `toRecord`.
+
+        Two of the eight are conversions rather than copies, and each is a decision about how
+        the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
+        than its value. The timestamps go in exactly as they are - the clock gives UTC with no
+        zone attached, and that is what the column holds.
+
+        `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
+        turns it into text, and turns the text back into a `Currency` on every read.
         """
         return {
             "id": wallet.id.value,
@@ -48,6 +58,11 @@ class WalletRows:
         }
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        """And back - the counterpart to Java's `fromRecord`.
+
+        A plain mapping rather than a row is how an insert without `RETURNING` rebuilds what it
+        just wrote, on a dialect that has none.
+        """
         values = row._mapping if isinstance(row, Row) else row
         return Wallet(
             id=ShardedId[Wallet](values["id"]),
@@ -61,12 +76,18 @@ class WalletRows:
         )
 
 
-class TransferStepRows:
-    """The step marker as one row, and back. `step` goes in as the `StepName` it is: the
-    column's converter in `schema.py` writes its name, and reads a `StepName` back. `state` is
-    still written by hand, because the framework reads that column as text."""
+class TransferStepRepository(AsyncEntityRepository[TransferStep, Id[TransferStep]]):
+    """The idempotency markers.
+
+    Nothing in the saga reads these - the unique constraint does the work, and a read would
+    lose the race it exists to win. They are queryable so an operator can ask what happened to
+    a transfer, and so the tests can show that a replay wrote nothing.
+    """
 
     def to_row(self, step: TransferStep) -> dict[str, Any]:
+        """Five columns. `step` goes in as the `StepName` it is: the column's converter in
+        `schema.py` writes its name, and reads a `StepName` back. `state` is still written by
+        hand, because the framework reads that column as text."""
         return {
             "id": step.id.value,
             "version": step.version,
@@ -84,26 +105,6 @@ class TransferStepRows:
             transfer_id=values["transfer_id"],
             step=values["step"],
         )
-
-
-class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
-    """Wallets, awaited, routed by the shard packed into each id."""
-
-    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(
-            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
-        )
-
-
-class TransferStepRepository(
-    TransferStepRows, AsyncEntityRepository[TransferStep, Id[TransferStep]]
-):
-    """The idempotency markers.
-
-    Nothing in the saga reads these - the unique constraint does the work, and a read would
-    lose the race it exists to win. They are queryable so an operator can ask what happened to
-    a transfer, and so the tests can show that a replay wrote nothing.
-    """
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(TransferStep, TRANSFER_STEPS, registry, clock=clock)
