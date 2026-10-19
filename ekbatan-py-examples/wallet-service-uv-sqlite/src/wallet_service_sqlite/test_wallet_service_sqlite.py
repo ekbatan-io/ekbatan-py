@@ -97,9 +97,9 @@ def test_a_deposit_writes_the_balance_and_its_event_together(service):
     assert service.wallets.get(wallet.id).balance == Decimal("125.5000")
     deposited = [r for r in outbox(service) if r.event_type == "MoneyDepositedEvent"]
     assert len(deposited) == 1
-    # The JSON a Java service writes for the same event: Java's field names, decimals as JSON
-    # numbers (read back as Decimal, scale kept). The event's own identity travels *inside* the
-    # payload as well as in its columns, because Java's `@JsonCreator` requires both.
+    # The payload's JSON: camelCase field names, decimals as JSON numbers (read back as Decimal,
+    # scale kept). The event's own identity travels *inside* the payload as well as in its
+    # columns, so a consumer reading the payload alone knows what it is about.
     assert deposited[0].payload == {
         "modelId": str(wallet.id),
         "modelName": "Wallet",
@@ -322,13 +322,12 @@ def test_alerts_are_found_by_the_wallet_they_are_about(service):
 
 
 def test_the_repository_writes_its_row_mapping(service):
-    """Java declares `fromRecord` and `toRecord` abstract, so every repository implements both.
-    So does every repository here, as of `EKB-0217`.
+    """Every repository implements `to_row` and `from_row`, as of `EKB-0217`.
 
     This test used to assert the opposite - that neither was written, because the mapping was
     by field name unless you said otherwise. That default was the one piece of magic left in
     the read and write paths: rename a column without renaming the field and it silently
-    stopped matching, where Java gets a compile error.
+    stopped matching, with no error anywhere.
     """
     from .repository import WalletRepository
 
@@ -377,8 +376,8 @@ def test_erasing_joins_a_transaction_the_caller_opened(service):
 
 
 def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service) -> None:
-    """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: the
-    database, the namespace and the handling job switched on all come from it."""
+    """`ekbatan.yaml` is the service's Ekbatan config: the database, the namespace and the
+    handling job switched on all come from it."""
     assert service.executor.namespace == "example.wallet_service_sqlite"
     assert any("event-handling" in name for name in service.jobs._names_requiring_registration), (
         "a switched-off handling job is registered but never scheduled"

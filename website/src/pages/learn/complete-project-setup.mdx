@@ -2,7 +2,7 @@
 layout: ../../layouts/DocLayout.astro
 title: Complete project setup
 activeSection: learn
-lead: Every file of a working service, for your database and your installer - each one the real file of an example project that is tested on every commit.
+lead: Every file of a working service, for your database, your installer and your mode - each one the real file of an example project that is tested on every commit.
 ---
 
 import SetupPicker from "../../components/SetupPicker.astro";
@@ -38,27 +38,65 @@ import shared_actions_py from "../../../../ekbatan-py-examples/fastapi-wallet-re
 import shared_handlers_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/handlers.py?raw";
 import shared_jobs_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/jobs.py?raw";
 import shared_api_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/api.py?raw";
+import pg_async_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/ekbatan.yaml?raw";
+import pg_async_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/test_fastapi_wallet_rest_async_pg.py?raw";
+import mysql_async_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src/fastapi_wallet_rest_async_mysql/ekbatan.yaml?raw";
+import mysql_async_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src/fastapi_wallet_rest_async_mysql/test_fastapi_wallet_rest_async_mysql.py?raw";
+import mariadb_async_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src/fastapi_wallet_rest_async_mariadb/ekbatan.yaml?raw";
+import mariadb_async_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src/fastapi_wallet_rest_async_mariadb/test_fastapi_wallet_rest_async_mariadb.py?raw";
+import async_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/repository.py?raw";
+import async_actions_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/actions.py?raw";
+import async_handlers_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/handlers.py?raw";
+import async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/app.py?raw";
+import async_api_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/api.py?raw";
+import sqlite_ekbatan_yaml from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/ekbatan.yaml?raw";
+import sqlite_schema_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/schema.py?raw";
+import sqlite_model_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/model.py?raw";
+import sqlite_repository_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/repository.py?raw";
+import sqlite_actions_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/actions.py?raw";
+import sqlite_handlers_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/handlers.py?raw";
+import sqlite_jobs_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/jobs.py?raw";
+import sqlite_app_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/app.py?raw";
+import sqlite_main_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/__main__.py?raw";
+import sqlite_test from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/test_wallet_service_sqlite.py?raw";
+import sqlite_async_ekbatan_yaml from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/ekbatan.yaml?raw";
+import sqlite_async_repository_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/repository.py?raw";
+import sqlite_async_actions_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/actions.py?raw";
+import sqlite_async_handlers_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/handlers.py?raw";
+import sqlite_async_app_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/app.py?raw";
+import sqlite_async_main_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/__main__.py?raw";
+import sqlite_async_test from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/test_wallet_service_async_sqlite.py?raw";
 
 <SetupPicker />
 
-Everything below follows the picker. Choose your database and your installer once and the whole
-page rewrites itself; the choice persists across pages.
+Everything below follows the picker. Choose your database, your installer and the mode - the
+sync API, or `ekbatan.aio` with every database call awaited - and the whole page rewrites
+itself; the choice persists across pages. Not sure which mode? [Sync or
+async?](/learn/sync-or-async/) takes two minutes.
+
+**Every file on this page is the real file** of an example project that is tested on every
+commit, read from it when this site is built, so it cannot drift. Each example exists once per
+database, once per installer and once per mode - the picker's *Example* row names the one for
+your choices, `fastapi-wallet-rest-uv-pg` to `wallet-service-poetry-async-sqlite` - and each of
+those builds its wheel and tests it installed. Copy each file to the path in its header and the
+project runs; the steps were checked by doing exactly that, in an empty folder, for every
+database, installer and mode.
+
+<div data-db="pg mysql mariadb">
 
 This is a **complete** service: migrations, generated schema, domain, actions, repository,
-handler, job, wiring, HTTP layer, a test and a Makefile. **Every file on this page is the real
-file** of an example project that is tested on every commit, read from it when this site is
-built, so it cannot drift. Each example exists once per database and once per installer - the
-picker's *Example* row names the one for your choices, `fastapi-wallet-rest-uv-pg` to
-`fastapi-wallet-rest-poetry-mariadb` - and each of those builds its wheel and tests it installed.
-Copy each file to the path in its header and the project runs; the steps were checked by doing
-exactly that, in an empty folder, with each installer.
+handler, keyed lock, wiring, HTTP layer, a test and a Makefile.
 
 You need Python 3.13 or later, and Docker: the database in step 2, the schema generator and the
 test each run a container.
 
+</div>
+
 <div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+On SQLite the service is smaller, and runs with nothing installed but Python 3.13 or later: no
+web layer, no migrations, no container. One module set, a hand-written schema, a script that
+drives it, and a test.
 
 </div>
 
@@ -71,6 +109,7 @@ uv init wallet && cd wallet
 ```
 
 </div>
+
 <div data-install="pip">
 
 ```bash
@@ -80,6 +119,8 @@ python3 -m venv .venv && source .venv/bin/activate
 ```
 
 pip has no scaffold of its own, so the project file is yours to write - setuptools finds the `src/` layout by itself:
+
+<div data-db="pg mysql mariadb">
 
 ```toml
 # pyproject.toml
@@ -98,11 +139,35 @@ wallet = ["ekbatan.yaml", "migrations/*.sql"]
 ```
 
 </div>
+<div data-db="sqlite">
+
+```toml
+# pyproject.toml
+[project]
+name = "wallet"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+# setuptools packs only .py files unless told: the config file rides along here
+[tool.setuptools.package-data]
+wallet = ["ekbatan.yaml"]
+```
+
+</div>
+
+</div>
+
 <div data-install="poetry">
 
 ```bash
 poetry new wallet && cd wallet
 ```
+
+<div data-db="pg mysql mariadb">
 
 Poetry leaves a gitignored file out of the package, and `schema.py` will be one (below), so name it:
 
@@ -117,8 +182,12 @@ EOF
 
 </div>
 
+</div>
+
 You end with this - the package under `src/`, and everything the service reads at runtime inside
-it, so a wheel carries the migrations and the config file along with the code:
+it, so a wheel carries it along with the code:
+
+<div data-db="pg mysql mariadb" data-mode="sync">
 
 ```
 wallet/
@@ -145,6 +214,81 @@ wallet/
    └─ test_wallet.py
 ```
 
+</div>
+<div data-db="pg mysql mariadb" data-mode="async">
+
+```
+wallet/
+├─ Makefile
+├─ pyproject.toml
+└─ src/wallet/
+   ├─ __init__.py
+   ├─ ekbatan.yaml          the settings: database, pools, namespace
+   ├─ migrations/           the SQL files, run in order at startup
+   │  ├─ V0001__eventlog.sql
+   │  ├─ V0002__scheduled_tasks.sql
+   │  ├─ V0003__wallets.sql
+   │  └─ V0004__alerts.sql
+   ├─ model.py              the domain
+   ├─ converters.py         column values as the domain's own classes
+   ├─ builders.py           GENERATED, committed
+   ├─ schema.py             GENERATED, gitignored
+   ├─ repository.py         the queries this app asks, awaited
+   ├─ actions.py            the units of work, async
+   ├─ handlers.py           in-process event handlers, async
+   ├─ app.py                the wiring, all of it
+   ├─ api.py                the HTTP layer, and nothing else
+   └─ test_wallet.py
+```
+
+</div>
+
+<div data-db="sqlite" data-mode="sync">
+
+```
+wallet/
+├─ Makefile
+├─ pyproject.toml
+└─ src/wallet/
+   ├─ __init__.py
+   ├─ __main__.py           the script that drives the service
+   ├─ ekbatan.yaml          the settings: database, namespace
+   ├─ schema.py             the tables, written by hand
+   ├─ model.py              the domain
+   ├─ builders.py           GENERATED, committed
+   ├─ repository.py         the queries this app asks
+   ├─ actions.py            the units of work
+   ├─ handlers.py           in-process event handlers
+   ├─ jobs.py               cluster-exclusive background work
+   ├─ app.py                the wiring, all of it
+   └─ test_wallet.py
+```
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+```
+wallet/
+├─ Makefile
+├─ pyproject.toml
+└─ src/wallet/
+   ├─ __init__.py
+   ├─ __main__.py           the script that drives the service, a coroutine
+   ├─ ekbatan.yaml          the settings: database, namespace
+   ├─ schema.py             the tables, written by hand
+   ├─ model.py              the domain
+   ├─ builders.py           GENERATED, committed
+   ├─ repository.py         the queries this app asks, awaited
+   ├─ actions.py            the units of work, async
+   ├─ handlers.py           in-process event handlers, async
+   ├─ app.py                the wiring, all of it
+   └─ test_wallet.py
+```
+
+</div>
+
+<div data-db="pg mysql mariadb">
+
 Two generated files, and the difference between them matters: **`builders.py` is committed**
 because it is derived from source you already have; **`schema.py` is gitignored** because it is
 derived from a database you have to start. The Makefile in step 7 makes both.
@@ -153,10 +297,24 @@ derived from a database you have to start. The Makefile in step 7 makes both.
 echo "src/wallet/schema.py" >> .gitignore
 ```
 
+</div>
+
+<div data-db="sqlite">
+
+One generated file, **`builders.py`, committed** - it is derived from source you already have.
+`schema.py` is written by hand here (step 6), because this project has no migrations to
+generate it from.
+
+</div>
+
 ## 2. Start a database
 
-The service connects to it in step 8; the schema generator and the test start throwaway
+<div data-db="pg mysql mariadb">
+
+The service connects to it in step 16; the schema generator and the test start throwaway
 containers of their own.
+
+</div>
 
 <div data-db="pg">
 
@@ -167,6 +325,7 @@ docker run --rm -d --name wallet-pg \
 ```
 
 </div>
+
 <div data-db="mysql">
 
 ```bash
@@ -176,6 +335,7 @@ docker run --rm -d --name wallet-mysql \
 ```
 
 </div>
+
 <div data-db="mariadb">
 
 ```bash
@@ -185,20 +345,26 @@ docker run --rm -d --name wallet-mariadb \
 ```
 
 </div>
-<div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
-
-</div>
+<div data-db="pg mysql mariadb">
 
 The login matches the defaults in `ekbatan.yaml` (step 4), so the service runs against this
 container with nothing set. Elsewhere, set the variables the file names.
+
+</div>
+
+<div data-db="sqlite">
+
+Nothing to start: a SQLite database is a file, made on first use. The script and the test each
+point the service at one in a temporary folder.
+
+</div>
 
 ## 3. Add dependencies
 
 <div data-install="uv">
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 ```bash
 uv add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
@@ -206,7 +372,15 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 ```
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+```bash
+uv add "ekbatan[postgres,postgres-async,migrations]" fastapi "uvicorn[standard]" httpx
+uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+```
+
+</div>
+<div data-db="mysql" data-mode="sync">
 
 ```bash
 uv add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
@@ -214,7 +388,15 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 ```
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+```bash
+uv add "ekbatan[mysql,mysql-async,migrations]" fastapi "uvicorn[standard]" httpx
+uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
+
+</div>
+<div data-db="mariadb" data-mode="sync">
 
 ```bash
 uv add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
@@ -222,16 +404,36 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 ```
 
 </div>
-<div data-db="sqlite">
+<div data-db="mariadb" data-mode="async">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+```bash
+uv add "ekbatan[mariadb,mariadb-async,migrations]" fastapi "uvicorn[standard]" httpx
+uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+```
+
+</div>
+<div data-db="sqlite" data-mode="sync">
+
+```bash
+uv add ekbatan
+uv add --dev pytest
+```
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+```bash
+uv add "ekbatan[sqlite-async]"
+uv add --dev pytest
+```
 
 </div>
 
 </div>
+
 <div data-install="pip">
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 ```bash
 pip install "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
@@ -240,7 +442,16 @@ pip install -e .
 ```
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+```bash
+pip install "ekbatan[postgres,postgres-async,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[codegen]" pytest "testcontainers[postgres]"
+pip install -e .
+```
+
+</div>
+<div data-db="mysql" data-mode="sync">
 
 ```bash
 pip install "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
@@ -249,7 +460,16 @@ pip install -e .
 ```
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+```bash
+pip install "ekbatan[mysql,mysql-async,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install -e .
+```
+
+</div>
+<div data-db="mariadb" data-mode="sync">
 
 ```bash
 pip install "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
@@ -258,16 +478,39 @@ pip install -e .
 ```
 
 </div>
-<div data-db="sqlite">
+<div data-db="mariadb" data-mode="async">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+```bash
+pip install "ekbatan[mariadb,mariadb-async,migrations]" fastapi "uvicorn[standard]" httpx
+pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install -e .
+```
+
+</div>
+<div data-db="sqlite" data-mode="sync">
+
+```bash
+pip install ekbatan
+pip install pytest
+pip install -e .
+```
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+```bash
+pip install "ekbatan[sqlite-async]"
+pip install pytest
+pip install -e .
+```
 
 </div>
 
 </div>
+
 <div data-install="poetry">
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 ```bash
 poetry add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
@@ -276,7 +519,16 @@ poetry install
 ```
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+```bash
+poetry add "ekbatan[postgres,postgres-async,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+poetry install
+```
+
+</div>
+<div data-db="mysql" data-mode="sync">
 
 ```bash
 poetry add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
@@ -285,7 +537,16 @@ poetry install
 ```
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+```bash
+poetry add "ekbatan[mysql,mysql-async,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry install
+```
+
+</div>
+<div data-db="mariadb" data-mode="sync">
 
 ```bash
 poetry add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
@@ -294,9 +555,31 @@ poetry install
 ```
 
 </div>
-<div data-db="sqlite">
+<div data-db="mariadb" data-mode="async">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+```bash
+poetry add "ekbatan[mariadb,mariadb-async,migrations]" fastapi "uvicorn[standard]" httpx
+poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry install
+```
+
+</div>
+<div data-db="sqlite" data-mode="sync">
+
+```bash
+poetry add ekbatan
+poetry add --group dev pytest
+poetry install
+```
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+```bash
+poetry add "ekbatan[sqlite-async]"
+poetry add --group dev pytest
+poetry install
+```
 
 </div>
 
@@ -305,32 +588,75 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 The quotes are load-bearing: `zsh`, the macOS default shell, reads bare brackets as a glob and
 stops with *"no matches found"*.
 
+<div data-db="pg mysql mariadb">
+
 **`codegen` is a development dependency, not a runtime one.** It starts a database container to
 reflect your schema - a thing your build does and your deployment must never do.
 
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="async">
+
+**The async extra sits beside the sync one, not instead of it.** `postgres-async` brings
+asyncpg, `mysql-async` and `mariadb-async` bring aiomysql. Migrations, the schema generator, the
+jobs and the event fan-out and dispatch are sync in both modes and use the sync driver.
+
+</div>
+
+<div data-db="sqlite" data-mode="async">
+
+`sqlite-async` brings aiosqlite. Creating the tables and the event fan-out and dispatch stay
+sync and use Python's own sqlite3.
+
+</div>
+
 ## 4. Configure the DB connection
 
-The framework reads its coordinates from `ekbatan.yaml`. One shard is still a sharding layout - the single-database case is the
-one-member case, which is why going to two databases later changes this file and nothing else.
+The framework reads its coordinates from `ekbatan.yaml`. One shard is still a sharding layout -
+the single-database case is the one-member case, which is why going to two databases later
+changes this file and nothing else.
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 <CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={pg_ekbatan_yaml} />
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={pg_async_ekbatan_yaml} />
+
+</div>
+
+<div data-db="mysql" data-mode="sync">
 
 <CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mysql_ekbatan_yaml} />
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mysql_async_ekbatan_yaml} />
+
+</div>
+
+<div data-db="mariadb" data-mode="sync">
 
 <CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mariadb_ekbatan_yaml} />
 
 </div>
-<div data-db="sqlite">
+<div data-db="mariadb" data-mode="async">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mariadb_async_ekbatan_yaml} />
+
+</div>
+
+<div data-db="sqlite" data-mode="sync">
+
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={sqlite_ekbatan_yaml} />
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={sqlite_async_ekbatan_yaml} />
 
 </div>
 
@@ -338,20 +664,70 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 stops startup naming it. YAML, TOML, JSON and INI all work - see
 [Config files](/reference/config-files/).
 
+<div data-db="pg mysql mariadb">
+
 **The url names the database and where it is - never the login.** `username` and `password` are
 fields of their own, because a url is logged and repeated, and one carrying a password is
 refused.
 
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="sync">
+
 **Three pools on one member.** `primaryConfig` is for requests. `jobsConfig` is the scheduler's,
 sized at least twice its worker count, because the scheduler heartbeats from a housekeeping
 thread and a job body holding the last connection starves it. `lockConfig` holds keyed-lock
-leases, one connection each for as long as the lease is held. `app.py` (step 9) builds the last
+leases, one connection each for as long as the lease is held. `app.py` (step 13) builds the last
 two with `engine_for` and disposes them.
+
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="async">
+
+**Four pools on one member, one url.** The url names the sync driver; the async side reads it as
+"this database" and connects through its async default - asyncpg for PostgreSQL, aiomysql for
+MySQL and MariaDB.
+
+- `primaryConfig` - requests, async. It is also the cap on requests waiting on the database:
+  past `poolSize` they queue, for at most `poolTimeout` seconds, then fail with a 503.
+- `handlersConfig` - the event handler's units of work, async, used only on the loop the handler
+  runs on.
+- `lockConfig` - keyed-lock leases, async: one connection each for as long as a lease is held.
+- `jobsConfig` - sync: the scheduler, and the fan-out and dispatch jobs. At least the job
+  workers plus three, because the scheduler heartbeats and a job body holding the last
+  connection starves it.
+
+</div>
+
+<div data-db="pg mysql mariadb">
 
 **Every session in UTC, on every pool.** `options: -c TimeZone=UTC` on PostgreSQL,
 `time_zone = '+00:00'` in `init_command` on MySQL and MariaDB. The columns hold UTC wall-clock
 time; this puts the database's own clock - `NOW()`, a column default - on UTC too, whatever the
 server's default zone is. See [Always UTC](/reference/multi-database/#always-utc).
+
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="async">
+
+The same setting reaches the async drivers unchanged: asyncpg receives libpq's `options` as its
+own `server_settings`, and aiomysql runs `init_command` as PyMySQL does.
+
+</div>
+
+<div data-db="sqlite">
+
+**One url, no login.** SQLite has neither a server nor users. Handling is switched on under
+`local-event-handler`, so the in-process handler runs.
+
+</div>
+
+<div data-db="sqlite" data-mode="async">
+
+The url names no driver: the sync side connects with sqlite3, the async side with aiosqlite,
+SQLite's async default.
+
+</div>
 
 **The namespace** is written into every outbox row, which is what lets two applications share
 one database without reading each other's events. Change it after the fact and the rows already
@@ -359,10 +735,12 @@ written are, correctly, no longer yours.
 
 ## 5. Add the migrations
 
+<div data-db="pg mysql mariadb">
+
 Plain SQL files, named `V<version>__<description>.sql` and run in version order - one file per
-concern, so each can be read and reviewed on its own. **The framework does not ship its tables as a bundled
-migration**: they are your tables, reviewed like every other, and the framework only says what
-shape they must have.
+concern, so each can be read and reviewed on its own. **The framework does not ship its tables as
+a bundled migration**: they are your tables, reviewed like every other, and the framework only
+says what shape they must have. They are the same in both modes.
 
 | File | What it is |
 |---|---|
@@ -370,6 +748,8 @@ shape they must have.
 | `V0002__scheduled_tasks.sql` | the job scheduler's table; the event handlers run on the scheduler |
 | `V0003__wallets.sql` | your domain table |
 | `V0004__alerts.sql` | what the deposit handler (step 11) writes |
+
+</div>
 
 <div data-db="pg">
 
@@ -379,6 +759,7 @@ shape they must have.
 <CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={pg_V0004__alerts_sql} />
 
 </div>
+
 <div data-db="mysql">
 
 <CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={mysql_V0001__eventlog_sql} />
@@ -387,6 +768,7 @@ shape they must have.
 <CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={mysql_V0004__alerts_sql} />
 
 </div>
+
 <div data-db="mariadb">
 
 <CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={mariadb_V0001__eventlog_sql} />
@@ -395,11 +777,8 @@ shape they must have.
 <CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={mariadb_V0004__alerts_sql} />
 
 </div>
-<div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
-
-</div>
+<div data-db="pg mysql mariadb">
 
 They were generated once with `emit_ddl` and pasted, rather than built from `schema.py` at
 migration time - a migration has to mean the same thing forever:
@@ -418,10 +797,22 @@ print(emit_ddl(metadata, "postgresql"))  # or "mysql", "mariadb"
 
 An applied file is never edited: the migrator records a checksum of each one and refuses to start
 when an applied file has changed, been renamed or gone missing. A change goes in the next file.
-`app.py` runs them at startup with `migrate(layout, MIGRATIONS)`, before anything opens a pool,
-and the test checks their names without a database through `validate_scripts`.
+`app.py` runs them at startup with `migrate(layout, MIGRATIONS)`, before anything opens a pool -
+sync in both modes - and the test checks their names without a database through
+`validate_scripts`.
 
-## 6. Generate the schema module
+</div>
+
+<div data-db="sqlite">
+
+No migrations in this project: the next step's `schema.py` is the whole schema, and `app.py`
+builds the tables from it with `create_all` at startup. That is for development only - a real
+deployment migrates from files, because `create_all` has no answer for a column that changed. The
+server-database setups on this page show how.
+
+</div>
+
+## 6. The schema module
 
 <div data-db="mysql">
 
@@ -439,6 +830,7 @@ EOF
 ```
 
 </div>
+
 <div data-db="mariadb">
 
 The ids are `CHAR(36)` columns, and nothing in the database says they hold uuids. Say so first,
@@ -482,11 +874,6 @@ uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 ```
 
 </div>
-<div data-db="sqlite">
-
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
-
-</div>
 
 </div>
 <div data-install="pip">
@@ -513,11 +900,6 @@ python -m ekbatan.schemagen --migrations src/wallet/migrations \
 python -m ekbatan.schemagen --migrations src/wallet/migrations \
   --out src/wallet/schema.py --image mariadb:11.4
 ```
-
-</div>
-<div data-db="sqlite">
-
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
@@ -548,30 +930,42 @@ poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 ```
 
 </div>
-<div data-db="sqlite">
-
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
 
 </div>
 
-</div>
+<div data-db="pg mysql mariadb">
 
-It starts a throwaway container, runs **your** migrations into it, reflects the result and writes a
-module of SQLAlchemy `Table` definitions for your repositories to query. You rarely run this
-by hand; the Makefile does, when a migration changes.
+It starts a throwaway container, runs **your** migrations into it, reflects the result and writes
+a module of SQLAlchemy `Table` definitions for your repositories to query - the same module in
+both modes. You rarely run this by hand; the Makefile does, when a migration changes.
 
 The flags can live in `pyproject.toml` instead, under `[tool.ekbatan.schemagen]` (`migrations`,
 `out`, `image`), and the command then runs bare - which is how the example projects do it, and
 where forced types, includes and excludes go. See [schemagen](/reference/schemagen/).
 
+</div>
+
+<div data-db="sqlite">
+
+Written by hand, so the whole service reads in one place - the same file in both modes. The
+framework's own tables are built by its helpers rather than transcribed: their shape is a
+contract a CDC connector or another service binds to.
+
+<CodeBlock filename="src/wallet/schema.py" language="python" shadow="yellow" code={sqlite_schema_py} />
+
+In a project with migrations this file is generated instead - `python -m ekbatan.schemagen`
+reads SQLite without Docker (`image = "sqlite"`). See [schemagen](/reference/schemagen/).
+
+</div>
+
 ## 7. The Makefile
 
-`uv` has no task runner and no dependency graph - nothing that knows `schema.py` comes from the
-migrations and rebuilds it when they change. A Makefile is that, in a few lines.
+`uv` has no task runner and no dependency graph - nothing that knows a generated file comes from
+its source and rebuilds it when that changes. A Makefile is that, in a few lines.
 
 <div data-install="uv">
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 ```make
 IMAGE := postgres:17-alpine
@@ -589,7 +983,25 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+```make
+IMAGE := postgres:17-alpine
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	uv run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
+```
+
+</div>
+<div data-db="mysql" data-mode="sync">
 
 ```make
 IMAGE := mysql:8.4
@@ -607,7 +1019,25 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+```make
+IMAGE := mysql:8.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	uv run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
+```
+
+</div>
+<div data-db="mariadb" data-mode="sync">
 
 ```make
 IMAGE := mariadb:11.4
@@ -625,11 +1055,44 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
+<div data-db="mariadb" data-mode="async">
+
+```make
+IMAGE := mariadb:11.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	uv run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	uv run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
+```
 
 </div>
+<div data-db="sqlite">
+
+```make
+PKG := src/wallet
+
+$(PKG)/builders.py: $(PKG)/model.py
+	uv run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/builders.py ; uv run python -m wallet
+test: $(PKG)/builders.py ; uv run pytest
+```
+
+</div>
+
+</div>
+
 <div data-install="pip">
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 ```make
 IMAGE := postgres:17-alpine
@@ -647,7 +1110,25 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+```make
+IMAGE := postgres:17-alpine
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
+```
+
+</div>
+<div data-db="mysql" data-mode="sync">
 
 ```make
 IMAGE := mysql:8.4
@@ -665,7 +1146,25 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+```make
+IMAGE := mysql:8.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
+```
+
+</div>
+<div data-db="mariadb" data-mode="sync">
 
 ```make
 IMAGE := mariadb:11.4
@@ -683,11 +1182,44 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
+<div data-db="mariadb" data-mode="async">
+
+```make
+IMAGE := mariadb:11.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
+```
 
 </div>
+<div data-db="sqlite">
+
+```make
+PKG := src/wallet
+
+$(PKG)/builders.py: $(PKG)/model.py
+	python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/builders.py ; python -m wallet
+test: $(PKG)/builders.py ; pytest
+```
+
+</div>
+
+</div>
+
 <div data-install="poetry">
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 ```make
 IMAGE := postgres:17-alpine
@@ -705,7 +1237,25 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+```make
+IMAGE := postgres:17-alpine
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	poetry run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
+```
+
+</div>
+<div data-db="mysql" data-mode="sync">
 
 ```make
 IMAGE := mysql:8.4
@@ -723,7 +1273,25 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+```make
+IMAGE := mysql:8.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	poetry run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
+```
+
+</div>
+<div data-db="mariadb" data-mode="sync">
 
 ```make
 IMAGE := mariadb:11.4
@@ -741,18 +1309,83 @@ test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
+<div data-db="mariadb" data-mode="async">
+
+```make
+IMAGE := mariadb:11.4
+PKG   := src/wallet
+
+$(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
+	poetry run python -m ekbatan.schemagen --migrations $(PKG)/migrations --out $@ --image $(IMAGE)
+
+$(PKG)/builders.py: $(PKG)/model.py
+	poetry run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
+test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
+```
+
+</div>
+<div data-db="sqlite">
+
+```make
+PKG := src/wallet
+
+$(PKG)/builders.py: $(PKG)/model.py
+	poetry run python -m ekbatan.codegen wallet.model --out $@
+
+.PHONY: run test
+run:  $(PKG)/builders.py ; poetry run python -m wallet
+test: $(PKG)/builders.py ; poetry run pytest
+```
 
 </div>
 
-**It regenerates only what is out of date**: `schema.py` when a migration or `pyproject.toml` changed, `builders.py`
-when the model did - a container starts when it has to and not otherwise. `builders.py` is
-generated on the first run too, before it exists, though the model already imports it.
+</div>
+
+<div data-db="pg mysql mariadb">
+
+**It regenerates only what is out of date**: `schema.py` when a migration or `pyproject.toml`
+changed, `builders.py` when the model did - a container starts when it has to and not otherwise.
+`builders.py` is generated on the first run too, before it exists, though the model already
+imports it.
+
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="async">
+
+`--limit-concurrency 50` is the first cap on work in flight, before any of it reaches the app:
+past 50 open requests uvicorn answers 503 itself. The second is the request pool, ten
+connections, where requests queue for at most `poolTimeout`. Keep the first a small multiple of
+the second.
+
+</div>
+
+<div data-db="sqlite">
+
+**It regenerates only what is out of date**: `builders.py` when the model changed.
+`builders.py` is generated on the first run too, before it exists, though the model already
+imports it.
+
+</div>
 
 ## 8. The model
 
+<div data-db="pg mysql mariadb">
+
 <CodeBlock filename="src/wallet/model.py" language="python" shadow="yellow" code={shared_model_py} />
 
-Read `Wallet.deposit` first. Events are produced inside the model, staged inside an action and
+</div>
+
+<div data-db="sqlite">
+
+<CodeBlock filename="src/wallet/model.py" language="python" shadow="yellow" code={sqlite_model_py} />
+
+</div>
+
+The model is the same file in both modes: nothing in it waits on anything. Read
+`Wallet.deposit` first. Events are produced inside the model, staged inside an action and
 persisted by the framework - a balance cannot change without the event that explains it, because
 there is no other way to change one.
 
@@ -766,6 +1399,7 @@ uv run python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
 ```
 
 </div>
+
 <div data-install="pip">
 
 ```bash
@@ -773,6 +1407,7 @@ python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
 ```
 
 </div>
+
 <div data-install="poetry">
 
 ```bash
@@ -782,6 +1417,8 @@ poetry run python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
 </div>
 
 ### Converters: the currency as a class of its own
+
+<div data-db="pg mysql mariadb">
 
 `Wallet.currency` is a `Currency`, not a string: a small class that takes only three capital
 letters. The table stores plain text, so something has to turn one into the other. That is a
@@ -834,11 +1471,6 @@ uv run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 ```
 
 </div>
-<div data-db="sqlite">
-
-SQLite: nothing to regenerate here.
-
-</div>
 
 </div>
 <div data-install="pip">
@@ -865,11 +1497,6 @@ python -m ekbatan.schemagen --migrations src/wallet/migrations \
 python -m ekbatan.schemagen --migrations src/wallet/migrations \
   --out src/wallet/schema.py --image mariadb:11.4
 ```
-
-</div>
-<div data-db="sqlite">
-
-SQLite: nothing to regenerate here.
 
 </div>
 
@@ -900,11 +1527,6 @@ poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 ```
 
 </div>
-<div data-db="sqlite">
-
-SQLite: nothing to regenerate here.
-
-</div>
 
 </div>
 
@@ -917,6 +1539,16 @@ Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=Fals
 From then on the repository writes a `Currency` and reads one back. More on picking columns and
 writing converters: [schemagen](/reference/schemagen/#write-your-own-converter).
 
+</div>
+
+<div data-db="sqlite">
+
+Not in this project: `currency` stays a plain string, so there is nothing to convert. A
+converter is a small class with `from_db` and `to_db` that schemagen wires to a column - see
+[schemagen](/reference/schemagen/#write-your-own-converter).
+
+</div>
+
 `balance` is `Decimal`, never `float`. And there is no id class to write: the id is
 `ShardedId[Wallet]`, which carries its shard inside the uuid - what lets you add a second database
 later, see [Adding a shard](/learn/sharding/). `Alert` is an entity: tracked by the persistence
@@ -924,102 +1556,311 @@ layer, invisible to the event stream.
 
 ## 9. The repository
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 <CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={pg_repository_py} />
 
 </div>
-<div data-db="mysql">
+
+<div data-db="mysql" data-mode="sync">
 
 <CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={mysql_repository_py} />
 
 </div>
-<div data-db="mariadb">
+
+<div data-db="mariadb" data-mode="sync">
 
 <CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={mariadb_repository_py} />
 
 </div>
-<div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+<div data-db="pg mysql mariadb" data-mode="async">
+
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={async_repository_py} />
 
 </div>
 
-`get`, `find_where`, `add`, `update`, counting and existence are inherited, and the mapping between
-table and dataclass is by field name. What you add are the questions your business asks.
+<div data-db="sqlite" data-mode="sync">
+
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sqlite_repository_py} />
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sqlite_async_repository_py} />
+
+</div>
+
+<div data-mode="sync">
+
+`get`, `find_where`, `add`, `update`, counting and existence are inherited, and `to_row` and
+`from_row` say how a row and a dataclass map onto each other. What you add are the questions
+your business asks.
+
+</div>
+
+<div data-mode="async">
+
+The repositories extend `AsyncModelRepository` and `AsyncEntityRepository`: `get`,
+`find_where`, `add`, `update`, counting and existence are inherited, and every one is awaited, as
+is every query you add. `to_row` and `from_row` stay plain `def` - mapping waits on nothing - so
+each is written once, in a small class (`WalletRows`, `AlertRows`) the repository takes it from.
+A read with no shard named asks every shard at the same time.
+
+</div>
 
 ## 10. The actions
 
+<div data-db="pg mysql mariadb" data-mode="sync">
+
 <CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={shared_actions_py} />
+
+</div>
+<div data-db="pg mysql mariadb" data-mode="async">
+
+<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={async_actions_py} />
+
+</div>
+
+<div data-db="sqlite" data-mode="sync">
+
+<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={sqlite_actions_py} />
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={sqlite_async_actions_py} />
+
+</div>
+
+<div data-mode="sync">
+
+`perform` reads, changes and stages; it writes nothing. The executor runs it, then opens one
+transaction for the rows and their events.
+
+</div>
+
+<div data-mode="async">
+
+`AsyncAction`, and `perform` is `async def`: it awaits its reads. What it stages is the same,
+and so is what the executor does with it - one transaction for the rows and their events, awaited.
+
+</div>
 
 ## 11. An event handler
 
+<div data-db="pg mysql mariadb" data-mode="sync">
+
 <CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={shared_handlers_py} />
+
+</div>
+<div data-db="pg mysql mariadb" data-mode="async">
+
+<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={async_handlers_py} />
+
+</div>
+
+<div data-db="sqlite" data-mode="sync">
+
+<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={sqlite_handlers_py} />
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={sqlite_async_handlers_py} />
+
+</div>
 
 The handler takes the **executor**, not a connection: it does its work as its own unit of work,
 after the one that produced the event has committed. **Delivery is at-least-once** - make the body
 idempotent - and the handler's `name` is stored on every notification row, so keep it stable.
 
+<div data-mode="async">
+
+`handle` is `async def` and awaits an executor of its own. It still runs after the deposit, never
+inside it: fan-out and dispatch are jobs on their own threads, and dispatch runs an async handler
+on its **handler loop** - one event loop on a thread of its own. What the handler awaits belongs
+to that loop, so `app.py` (step 13) builds the handler its own registry and executor, and closes
+them on that loop.
+
+</div>
+
 ## 12. A distributed job
 
+<div data-db="pg mysql mariadb" data-mode="sync">
+
 <CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={shared_jobs_py} />
+
+</div>
+
+<div data-db="sqlite" data-mode="sync">
+
+<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={sqlite_jobs_py} />
+
+</div>
+
+<div data-mode="sync">
 
 Exclusivity comes from the `scheduled_tasks` row: whichever instance claims it runs. **The body
 must still tolerate running twice** - a claim can be lost to a dead-execution timeout.
 
+</div>
+
+<div data-mode="async">
+
+Nothing to add here in async mode. Distributed jobs always run on threads, through the sync API -
+`execute` is a plain `def` - so a job in an async service is written exactly as in the sync tab of
+this step, over a sync executor of its own. This project has two jobs anyway: the event fan-out
+and dispatch, which `app.py` registers on the scheduler. See [Sync or
+async?](/learn/sync-or-async/#what-always-runs-on-threads).
+
+</div>
+
 ## 13. The wiring
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 <CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={pg_app_py} />
 
 </div>
-<div data-db="mysql">
+
+<div data-db="mysql" data-mode="sync">
 
 <CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mysql_app_py} />
 
 </div>
-<div data-db="mariadb">
+
+<div data-db="mariadb" data-mode="sync">
 
 <CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mariadb_app_py} />
 
 </div>
-<div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+<div data-db="pg mysql mariadb" data-mode="async">
+
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={async_app_py} />
+
+</div>
+
+<div data-db="sqlite" data-mode="sync">
+
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={sqlite_app_py} />
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={sqlite_async_app_py} />
+
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="async">
+
+**Async where it waits, threads where they poll, one config file.** The requests get an
+`AsyncDatabaseRegistry`, async repositories, an `AsyncActionExecutor` and an async keyed lock. The
+handler gets an async registry and executor of its own, used only on its `HandlerLoop`. What polls
+- the scheduler, and fan-out and dispatch - gets a sync `DatabaseRegistry` on `jobsConfig`. All of
+it is built from the same `ekbatan.yaml`, and `aclose()` closes it in order: the jobs first, then
+the handler's pool on its own loop, then the rest. `app.py` is the same file on all three
+databases: the lock provider is picked by `registry.dialect`.
+
+</div>
+
+<div data-db="sqlite" data-mode="async">
+
+**Async where it waits, threads where they poll, one config file.** The units of work get an
+`AsyncDatabaseRegistry`, async repositories and an `AsyncActionExecutor`. The handler gets an
+async registry and executor of its own, used only on its `HandlerLoop`. What polls - the
+scheduler, and fan-out and dispatch - gets a sync `DatabaseRegistry`, which also creates the
+tables. `aclose()` closes it all in order.
 
 </div>
 
 ## 14. The HTTP layer
 
+<div data-db="pg mysql mariadb" data-mode="sync">
+
 <CodeBlock filename="src/wallet/api.py" language="python" shadow="yellow" code={shared_api_py} />
 
 Endpoints are plain `def`, not `async def`: FastAPI runs a `def` on a worker thread, where a
-blocking database call blocks one thread. This project uses the sync API, and on the event loop
-itself a sync keyed lock is refused. For `async def` endpoints on the async API - with its own
-keyed lock - see
-[step 19](#19-going-async-optional).
+blocking database call blocks one thread. The deposit is taken under a keyed lock, around the
+unit of work. On the event loop itself a sync keyed lock is refused - for `async def` endpoints,
+pick **Async** in the picker.
+
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="async">
+
+<CodeBlock filename="src/wallet/api.py" language="python" shadow="yellow" code={async_api_py} />
+
+Endpoints are `async def` and await: they run on the event loop itself, and nothing in them
+blocks it. The deposit takes an async keyed lock with `try_acquire` - its holder is the request's
+task, and waiting for it does not block the loop - and answers 503 when the wallet stays busy. A
+request that waited `poolTimeout` for a connection gets a 503 with `Retry-After`, too. A sync call
+here - the sync executor, a sync repository - would block every request at once.
+
+</div>
+
+<div data-db="sqlite">
+
+No HTTP here: a script drives the service - opens a wallet, deposits, waits for the handler and
+prints the outbox.
+
+<div data-mode="sync">
+
+<CodeBlock filename="src/wallet/__main__.py" language="python" shadow="yellow" code={sqlite_main_py} />
+
+</div>
+<div data-mode="async">
+
+<CodeBlock filename="src/wallet/__main__.py" language="python" shadow="yellow" code={sqlite_async_main_py} />
+
+</div>
+
+</div>
 
 ## 15. The test
 
-<div data-db="pg">
+<div data-db="pg" data-mode="sync">
 
 <CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={pg_test} />
 
 </div>
-<div data-db="mysql">
+<div data-db="pg" data-mode="async">
+
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={pg_async_test} />
+
+</div>
+
+<div data-db="mysql" data-mode="sync">
 
 <CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mysql_test} />
 
 </div>
-<div data-db="mariadb">
+<div data-db="mysql" data-mode="async">
+
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mysql_async_test} />
+
+</div>
+
+<div data-db="mariadb" data-mode="sync">
 
 <CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mariadb_test} />
 
 </div>
-<div data-db="sqlite">
+<div data-db="mariadb" data-mode="async">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mariadb_async_test} />
+
+</div>
+
+<div data-db="sqlite" data-mode="sync">
+
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={sqlite_test} />
+
+</div>
+<div data-db="sqlite" data-mode="async">
+
+<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={sqlite_async_test} />
 
 </div>
 
@@ -1027,8 +1868,26 @@ SQLite has no step here: this page builds a FastAPI service on a server database
 make test
 ```
 
+<div data-db="pg mysql mariadb">
+
 **The `with TestClient(...)` matters.** `TestClient` runs the lifespan only inside a context
 manager; without it `app.state.service` is never set and every request fails on the dependency.
+
+</div>
+
+<div data-db="pg mysql mariadb" data-mode="async">
+
+The app's async pools live on the loop the test client runs the app on. A test that reaches past
+HTTP into the service awaits on that same loop, through `client.portal`.
+
+</div>
+
+<div data-db="sqlite" data-mode="async">
+
+Each test is a coroutine, run on a loop of its own by `drive`, with the service built, started and
+closed around it - an async pool belongs to the loop it is used on.
+
+</div>
 
 ## 16. Run + verify
 
@@ -1036,8 +1895,12 @@ manager; without it `app.state.service` is never set and every request fails on 
 make run
 ```
 
+<div data-db="pg mysql mariadb">
+
 Migrations run at startup. Check the tables are there - a migration that never ran shows up as a
 confusing error on the first write rather than at boot:
+
+</div>
 
 <div data-db="pg">
 
@@ -1046,6 +1909,7 @@ docker exec wallet-pg psql -U ekbatan -d wallet -c '\dt'
 ```
 
 </div>
+
 <div data-db="mysql">
 
 ```bash
@@ -1053,6 +1917,7 @@ docker exec wallet-mysql mysql -uroot -pekbatan wallet -e 'SHOW TABLES'
 ```
 
 </div>
+
 <div data-db="mariadb">
 
 ```bash
@@ -1060,11 +1925,8 @@ docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e 'SHOW TABLES'
 ```
 
 </div>
-<div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
-
-</div>
+<div data-db="pg mysql mariadb">
 
 `alerts`, `ekbatan_schema_history` (the migrator's own), `event_notifications`, `events`,
 `scheduled_tasks` and `wallets`.
@@ -1087,6 +1949,8 @@ The alert arrives within a poll interval or two: the deposit's event is fanned o
 which raises the alert in a unit of work of its own. Then read the outbox, which is the whole
 point:
 
+</div>
+
 <div data-db="pg">
 
 ```bash
@@ -1101,6 +1965,7 @@ docker exec wallet-pg psql -U ekbatan -d wallet -c \
 | `RaiseAlertAction` |  |  | `f` |
 
 </div>
+
 <div data-db="mysql">
 
 ```bash
@@ -1115,6 +1980,7 @@ docker exec wallet-mysql mysql -uroot -pekbatan wallet -e \
 | `RaiseAlertAction` | `NULL` | `NULL` | `0` |
 
 </div>
+
 <div data-db="mariadb">
 
 ```bash
@@ -1129,17 +1995,100 @@ docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e \
 | `RaiseAlertAction` | `NULL` | `NULL` | `0` |
 
 </div>
-<div data-db="sqlite">
 
-SQLite has no step here: this page builds a FastAPI service on a server database. Read the SQLite example the picker names instead - `wallet-service-uv-sqlite`, `-pip-` or `-poetry-` - one module set, a hand-written schema, no container.
+<div data-db="pg mysql mariadb">
+
+Three rows, each written in the same transaction as the change it describes - the same three in
+both modes. Only the deposit is delivered: a handler subscribes to `MoneyDepositedEvent`, and
+nothing subscribes to the opened wallet - an event nobody handles stays undelivered rather than
+being marked done and thrown away, so a handler added later still finds it. The alert's row
+carries no event at all: writing an entity emits nothing, and the unit of work is recorded
+anyway.
 
 </div>
 
-Three rows, each written in the same transaction as the change it describes. Only the deposit is
-delivered: a handler subscribes to `MoneyDepositedEvent`, and nothing subscribes to the opened
-wallet - an event nobody handles stays undelivered rather than being marked done and thrown away,
-so a handler added later still finds it. The alert's row carries no event at all: writing an
-entity emits nothing, and the unit of work is recorded anyway.
+<div data-db="sqlite">
+
+The script makes a database in a temporary folder, builds the service on it and narrates what
+happens:
+
+<div data-mode="sync">
+
+```text
+== start the jobs
+   fan-out, handling and the stipend are polling
+
+== open a wallet
+   01a15385-dcb7-7a8f-8000-ebb10ad856f4  balance 100.00  on shard 0:0
+
+== deposit into it
+   balance 125.5000, version 2
+   the row and its event were written by one transaction
+
+== let the in-process handler react
+   alert for ada@example.com: 25.50 received, balance 125.5000
+   the handler read the recipient off the action's parameters, not the event
+
+== a day later, the daily stipend runs, as one instance of a cluster would
+   balance 126.5000
+
+== close it
+   closed twice; the second time changed nothing and emitted nothing
+
+== what a consumer reads from the outbox
+   action                 event              delivered  payload
+   OpenWalletAction       WalletOpenedEvent  False      {'modelId': ..., 'openingBalance': Decimal('100.00')}
+   DepositMoneyAction     MoneyDepositedEvent True       {'modelId': ..., 'amount': Decimal('25.50'), ...}
+   RaiseAlertAction       (none - a sentinel) False
+   DepositMoneyAction     MoneyDepositedEvent False      {'modelId': ..., 'amount': Decimal('1.00'), ...}
+   CloseWalletAction      WalletClosedEvent  False      {'modelId': ..., 'modelName': 'Wallet'}
+   CloseWalletAction      (none - a sentinel) False
+
+   6 rows, every one written in the same transaction as the change it describes.
+```
+
+</div>
+<div data-mode="async">
+
+```text
+== start the jobs
+   fan-out and handling are polling
+
+== open a wallet
+   01a15381-1ef0-7794-8000-a10859a830b6  balance 100.00  on shard 0:0
+
+== deposit into it
+   balance 125.5000, version 2
+   the row and its event were written by one transaction
+
+== let the in-process handler react
+   alert for ada@example.com: 25.50 received, balance 125.5000
+   the handler read the recipient off the action's parameters, not the event
+
+== close it
+   closed twice; the second time changed nothing and emitted nothing
+
+== what a consumer reads from the outbox
+   action                 event              delivered  payload
+   OpenWalletAction       WalletOpenedEvent  False      {'modelId': ..., 'openingBalance': Decimal('100.00')}
+   DepositMoneyAction     MoneyDepositedEvent True       {'modelId': ..., 'amount': Decimal('25.50'), ...}
+   RaiseAlertAction       (none - a sentinel) False
+   CloseWalletAction      WalletClosedEvent  False      {'modelId': ..., 'modelName': 'Wallet'}
+   CloseWalletAction      (none - a sentinel) False
+
+   5 rows, every one written in the same transaction as the change it describes.
+```
+
+</div>
+
+Every row was written in the same transaction as the change it describes. Only the first deposit
+is delivered by the time the outbox is printed: a handler subscribes to `MoneyDepositedEvent`, and
+nothing subscribes to the opened or closed wallet - an event nobody handles stays undelivered
+rather than being thrown away, so a handler added later still finds it. The alert's row and the
+second close carry no event at all: they changed nothing that is news, and the unit of work is
+recorded anyway.
+
+</div>
 
 ## 17. Package it
 
@@ -1154,6 +2103,7 @@ python3 -m zipfile -l dist/*.whl | grep -E 'schema.py|ekbatan.yaml|\.sql'
 ```
 
 </div>
+
 <div data-install="pip">
 
 ```bash
@@ -1162,6 +2112,7 @@ python3 -m zipfile -l dist/*.whl | grep -E 'schema.py|ekbatan.yaml|\.sql'
 ```
 
 </div>
+
 <div data-install="poetry">
 
 ```bash
@@ -1171,10 +2122,22 @@ python3 -m zipfile -l dist/*.whl | grep -E 'schema.py|ekbatan.yaml|\.sql'
 
 </div>
 
+<div data-db="pg mysql mariadb">
+
 `schema.py`, `ekbatan.yaml` and the four migrations must all be listed: the service imports the
 first and reads the others at startup, and a wheel without them fails there, not here. Each tool
 has its own rule, which is why step 1 carries a line for two of them. Checked by building a
 wheel with each:
+
+</div>
+
+<div data-db="sqlite">
+
+`schema.py` and `ekbatan.yaml` must both be listed: the service imports the first and reads the
+second at startup, and a wheel without them fails there, not here. Each tool has its own rule,
+which is why step 1 carries a line for pip. Checked by building a wheel with each:
+
+</div>
 
 | build tool | a gitignored `schema.py` | the `.yaml` and `.sql` files |
 | --- | --- | --- |
@@ -1191,154 +2154,30 @@ build files differing:
 
 | | |
 | --- | --- |
-| [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) | this project, on PostgreSQL |
-| [`fastapi-wallet-rest-uv-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mysql) · [`fastapi-wallet-rest-uv-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb) | the same, on the other databases |
+| [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) · [`-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mysql) · [`-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb) | this project, sync |
+| [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) · [`-async-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql) · [`-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb) | this project, async |
+| [`wallet-service-uv-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-sqlite) · [`wallet-service-uv-async-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-async-sqlite) | this project on SQLite, sync and async |
 | [`fastapi-wallet-rest-uv-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) | two databases, with placement asserted |
-| [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) · [`fastapi-wallet-rest-uv-async-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql) · [`fastapi-wallet-rest-uv-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb) | this project with an async request path, `ekbatan.aio` |
 | [`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg) | a transfer across shards, with compensation |
 | [`job-worker-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-pg) | no HTTP at all - a worker running distributed jobs |
-| [`wallet-service-uv-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-sqlite) | one module set, one command, no container |
 
-The [examples index](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples) lists all 27.
-
-## 19. Going async (optional)
-
-The project above serves each request on a worker thread through the sync API. To make the
-request path natively async instead - `async def` endpoints that await the database - add the
-async driver beside the sync one, which migrations, `schemagen` and the jobs keep using:
-
-<div data-install="uv">
-
-<div data-db="pg">
-
-```sh
-uv add "ekbatan[postgres,postgres-async,migrations]"
-```
-
-</div>
-<div data-db="mysql">
-
-```sh
-uv add "ekbatan[mysql,mysql-async,migrations]"
-```
-
-</div>
-<div data-db="mariadb">
-
-```sh
-uv add "ekbatan[mariadb,mariadb-async,migrations]"
-```
-
-</div>
-<div data-db="sqlite">
-
-```sh
-uv add "ekbatan[sqlite-async]"
-```
-
-</div>
-
-</div>
-<div data-install="pip">
-
-<div data-db="pg">
-
-```sh
-pip install "ekbatan[postgres,postgres-async,migrations]"
-```
-
-</div>
-<div data-db="mysql">
-
-```sh
-pip install "ekbatan[mysql,mysql-async,migrations]"
-```
-
-</div>
-<div data-db="mariadb">
-
-```sh
-pip install "ekbatan[mariadb,mariadb-async,migrations]"
-```
-
-</div>
-<div data-db="sqlite">
-
-```sh
-pip install "ekbatan[sqlite-async]"
-```
-
-</div>
-
-</div>
-<div data-install="poetry">
-
-<div data-db="pg">
-
-```sh
-poetry add "ekbatan[postgres,postgres-async,migrations]"
-```
-
-</div>
-<div data-db="mysql">
-
-```sh
-poetry add "ekbatan[mysql,mysql-async,migrations]"
-```
-
-</div>
-<div data-db="mariadb">
-
-```sh
-poetry add "ekbatan[mariadb,mariadb-async,migrations]"
-```
-
-</div>
-<div data-db="sqlite">
-
-```sh
-poetry add "ekbatan[sqlite-async]"
-```
-
-</div>
-
-</div>
-
-Then, file by file - every change is in the async examples, which pass their own tests:
-
-| file | what changes |
-| --- | --- |
-| `repository.py` | the mapping moves into a small class the repository takes it from; the repositories extend `AsyncModelRepository` / `AsyncEntityRepository`, and your own queries become `async def` |
-| `actions.py` | `AsyncAction`, `async def perform`, `await` on each read |
-| `handlers.py` | `async def handle`, awaiting an async executor of its own; the action it runs is an `AsyncAction` |
-| `app.py` | an `AsyncDatabaseRegistry` and an `AsyncActionExecutor` for requests, built from the same `ekbatan.yaml`; an async keyed lock; the handler's own async registry on a `HandlerLoop`; a sync registry for fan-out, dispatch and the jobs; `await service.aclose()` |
-| `api.py` | `async def` endpoints that `await`, a 503 for a full pool; the deposit under `async with` an async keyed lock |
-| `ekbatan.yaml` | the same urls; one more pool, `handlersConfig`, for the handler; the UTC setting on every pool, which asyncpg reads too |
-| `__main__.py` | `limit_concurrency`, the cap at the door |
-
-The urls stay the sync ones: the async registry reads `postgresql+psycopg://` as "this
-PostgreSQL" and connects with asyncpg (`mysql+pymysql://` with aiomysql). The step by step is
-[Going async](/learn/async/); the examples are
-[`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg),
-[`fastapi-wallet-rest-uv-async-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql)
-and
-[`fastapi-wallet-rest-uv-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb).
+The [examples index](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples) lists all 33.
 
 ## After setup
 
-You have a service that writes domain rows and their events in one transaction, a schema
-generated from your own migrations, and a test that exercises it over HTTP. What is left is
-operational: how many pools, how many threads, and what to watch.
+You have a service that writes domain rows and their events in one transaction, and a test that
+exercises it. What is left is operational: how many pools, how many threads, and what to watch.
 
 <LearnPager current="complete-project-setup" />
 
 ## See also
 
+- [Sync or async?](/learn/sync-or-async/) - how to choose, and what is the same either way
 - [Going to production](/learn/going-to-production/) - threads, pool sizing, what to alert on
-- [Going async](/learn/async/) - the request path on `ekbatan.aio`
 - [Wiring a service](/learn/wiring-a-service/) - the `build()` function in detail
 - [Consuming events](/learn/consuming-events/) - turning those outbox rows into work
 - Reference: [schemagen](/reference/schemagen/),
   [Migrations](/reference/migrations/),
   [Wiring with FastAPI](/reference/wiring-fastapi/),
+  [Native asyncio](/reference/runtime/async/),
   [everything else](/reference/)

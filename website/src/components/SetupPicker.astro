@@ -1,14 +1,18 @@
 ---
-// Persistent dialect/installer picker for the /learn/ path.
+// Persistent dialect/installer/mode picker for the /learn/ path.
 //
 // Java's StackPicker has three dimensions - stack, build tool, dialect. Two of them do not
 // exist in this port: there is no Spring/Quarkus/Micronaut split, and there is no Maven to
 // mirror. What is left is the dialect, which matters everywhere, and how you install, which is
-// the one thing a Python reader genuinely chooses between.
+// the one thing a Python reader genuinely chooses between - and the mode: the sync API or
+// `ekbatan.aio`, which changes most of the files a service is made of.
 //
-// Selecting a value writes data-active-{db,install} on <body> and persists to localStorage, so
-// the choice carries across pages. Any element with data-db="..." or data-install="..." is
-// shown only when it matches (or is unset). Vanilla JS, no hydration.
+// Selecting a value writes data-active-{db,install,mode} on <body> and persists to localStorage,
+// so the choice carries across pages - the mode under the same key `ModeTabs` reads, so a reader
+// who picks Async here sees async samples on every reference page. Any element with
+// data-db="...", data-install="..." or data-mode="..." is shown only when it matches (or is
+// unset); a value may list several, space-separated (`data-db="pg mysql mariadb"`). Vanilla JS,
+// no hydration.
 const rows = [
     {
         label: "Database",
@@ -29,19 +33,32 @@ const rows = [
             { id: "poetry", label: "Poetry" },
         ],
     },
+    {
+        label: "Mode",
+        dim: "mode",
+        options: [
+            { id: "sync", label: "Sync" },
+            { id: "async", label: "Async" },
+        ],
+    },
 ] as const;
 
-// Link to the example project for the current database AND installer - each example is carried
-// once per build tool, as Java's are per Gradle and Maven. Rendered as an extra row at the bottom;
-// only the entry matching both choices is visible, by the same data-db/data-install rule as the
-// content blocks in MDX.
+// Link to the example project for the current database, installer AND mode - each example is
+// carried once per build tool, and each has an async twin. Rendered as an extra row at the
+// bottom; only the entry matching every choice is visible, by the same rule as the content
+// blocks in MDX.
 const installs = ["uv", "pip", "poetry"] as const;
-const examples = installs.flatMap((install) => [
-    { db: "pg", install, slug: `fastapi-wallet-rest-${install}-pg` },
-    { db: "mysql", install, slug: `fastapi-wallet-rest-${install}-mysql` },
-    { db: "mariadb", install, slug: `fastapi-wallet-rest-${install}-mariadb` },
-    { db: "sqlite", install, slug: `wallet-service-${install}-sqlite` },
-]);
+const examples = installs.flatMap((install) =>
+    (["sync", "async"] as const).flatMap((mode) => {
+        const twin = mode === "async" ? "async-" : "";
+        return [
+            { db: "pg", install, mode, slug: `fastapi-wallet-rest-${install}-${twin}pg` },
+            { db: "mysql", install, mode, slug: `fastapi-wallet-rest-${install}-${twin}mysql` },
+            { db: "mariadb", install, mode, slug: `fastapi-wallet-rest-${install}-${twin}mariadb` },
+            { db: "sqlite", install, mode, slug: `wallet-service-${install}-${twin}sqlite` },
+        ];
+    }),
+);
 ---
 
 <!-- Sticky-state sentinel: 1px tall, sits immediately above the picker. The
@@ -86,7 +103,7 @@ const examples = installs.flatMap((install) => [
             </span>
             <span class="font-mono text-[10px] whitespace-nowrap">
                 {examples.map((e) => (
-                    <span data-db={e.db} data-install={e.install}>
+                    <span data-db={e.db} data-install={e.install} data-mode={e.mode}>
                         → <a href={`https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/${e.slug}`}>{e.slug}</a>
                     </span>
                 ))}
@@ -181,13 +198,14 @@ const examples = installs.flatMap((install) => [
     // authored content can target a selection with plain CSS data attributes:
     //   <div data-db="pg">…the PostgreSQL snippet…</div>
     //   <div data-install="uv">…the uv snippet…</div>
-    //   <div data-db="pg" data-install="uv">…both…</div>
+    //   <div data-mode="async">…the async snippet…</div>
+    //   <div data-db="pg mysql mariadb">…any server database…</div>
     //
-    // Visibility rule: an element is hidden when ANY of its data-db/-install
-    // -db attributes is set AND does not match the active body attribute.
+    // Visibility rule: an element is hidden when ANY of its data-db/-install/-mode
+    // attributes is set AND does not list the active value.
     (function () {
-        const DIMS = ["db", "install"];
-        const DEFAULTS = { db: "pg", install: "uv" };
+        const DIMS = ["db", "install", "mode"];
+        const DEFAULTS = { db: "pg", install: "uv", mode: "sync" };
         const STORAGE_KEY = "ekbatan-py.picker";
 
         function read() {
@@ -214,11 +232,11 @@ const examples = installs.flatMap((install) => [
                 btn.classList.toggle("text-ink", !active);
                 btn.setAttribute("aria-pressed", String(active));
             });
-            document.querySelectorAll("[data-db],[data-install]").forEach((el) => {
+            document.querySelectorAll("[data-db],[data-install],[data-mode]").forEach((el) => {
                 let visible = true;
                 for (const d of DIMS) {
                     const want = el.getAttribute("data-" + d);
-                    if (want && want !== state[d]) {
+                    if (want && !want.split(" ").includes(state[d])) {
                         visible = false;
                         break;
                     }
@@ -245,7 +263,8 @@ const examples = installs.flatMap((install) => [
             const dim = btn.getAttribute("data-picker-dim");
             const val = btn.getAttribute("data-picker-value");
             if (!dim || !val) return;
-            state[dim] = val;
+            // Re-read first: a ModeTabs switch on this page may have changed the mode.
+            Object.assign(state, read(), { [dim]: val });
             write(state);
             apply(state);
         });

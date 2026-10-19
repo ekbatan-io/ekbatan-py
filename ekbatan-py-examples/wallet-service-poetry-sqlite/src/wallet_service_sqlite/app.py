@@ -2,8 +2,7 @@
 
 Which database, which shard, which pool, which handler: configuration, expressed once, away
 from the code that expresses domain behaviour. Nothing above this file knows any of it. The
-database, the namespace and the handling switch are in `ekbatan.yaml`, in the same keys as the
-Java examples' `application.yml`.
+database, the namespace and the handling switch are in `ekbatan.yaml`.
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ from .jobs import STIPEND_JOB_NAME, PayStipendJob
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
 
-#: The service's Ekbatan settings, in the same keys as the Java examples' `application.yml`.
+#: The service's Ekbatan settings, read once at startup.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
@@ -156,7 +155,7 @@ def build(
         .handlers(handlers)
         .notifications(EVENT_NOTIFICATIONS)
         .config(events_config)
-        # Java's DI makes this job only if `handling.enabled`; this is that check.
+        # Off unless `handling.enabled` is set in `ekbatan.yaml`.
         .enabled(events_config.handling.enabled)
         .clock(running)
         .build()
@@ -167,9 +166,9 @@ def build(
         wallets=wallets,
         alerts=alerts,
         executor=executor,
-        # The jobs run on db-scheduler, against the same `scheduled_tasks` table the Java
-        # implementation uses - so a Java instance and a Python instance coordinate through one
-        # row per job rather than each running the stipend.
+        # The jobs run on db-scheduler, against the `scheduled_tasks` table - so every instance
+        # of the service coordinates through one row per job rather than each running the
+        # stipend.
         #
         # A real deployment would give this a *dedicated* engine, separate from the one serving
         # requests: db-scheduler polls continuously, and a task body holding the last connection

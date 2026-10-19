@@ -2,7 +2,7 @@
 
 Written by hand here so the whole example reads in one place. In a real project this file is
 generated - `python -m ekbatan.schemagen` starts a container, runs the migrations into it and
-reflects the result, as Java's build does - so the Python and the database cannot drift.
+reflects the result - so the Python and the database cannot drift.
 `fastapi_wallet_rest_pg` is the example that does it that way.
 
 The framework's own tables are built rather than transcribed: their shape is a contract that a

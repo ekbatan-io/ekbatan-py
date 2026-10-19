@@ -117,8 +117,8 @@ def test_a_deposit_writes_the_balance_and_its_event_together(tmp_path: Path) -> 
         assert (await service.wallets.get(wallet.id)).balance == Decimal("125.5000")
         deposited = [r for r in await outbox(service) if r.event_type == "MoneyDepositedEvent"]
         assert len(deposited) == 1
-        # The JSON a Java service writes for the same event: Java's field names, decimals as
-        # JSON numbers (read back as Decimal, scale kept).
+        # The payload's JSON: camelCase field names, decimals as JSON numbers (read back as
+        # Decimal, scale kept).
         assert deposited[0].payload == {
             "modelId": str(wallet.id),
             "modelName": "Wallet",
