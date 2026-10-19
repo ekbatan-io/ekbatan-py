@@ -19,7 +19,7 @@
 
 UV := uv run
 
-# The examples: eleven, each a project of its own and each built three ways - with uv, pip and
+# The examples: fourteen, each a project of its own and each built three ways - with uv, pip and
 # Poetry - as Java carries each of its examples per build tool. `scripts/sync-examples.py` writes
 # the pip and Poetry projects from the uv one and keeps them in step.
 EXAMPLES := \
@@ -27,11 +27,14 @@ EXAMPLES := \
 	fastapi-wallet-rest-uv-mysql fastapi-wallet-rest-pip-mysql fastapi-wallet-rest-poetry-mysql \
 	fastapi-wallet-rest-uv-mariadb fastapi-wallet-rest-pip-mariadb fastapi-wallet-rest-poetry-mariadb \
 	fastapi-wallet-rest-uv-sharded-pg fastapi-wallet-rest-pip-sharded-pg fastapi-wallet-rest-poetry-sharded-pg \
+	fastapi-wallet-rest-uv-async-sharded-pg fastapi-wallet-rest-pip-async-sharded-pg fastapi-wallet-rest-poetry-async-sharded-pg \
 	fastapi-wallet-rest-uv-async-pg fastapi-wallet-rest-pip-async-pg fastapi-wallet-rest-poetry-async-pg \
 	fastapi-wallet-rest-uv-async-mysql fastapi-wallet-rest-pip-async-mysql fastapi-wallet-rest-poetry-async-mysql \
 	fastapi-wallet-rest-uv-async-mariadb fastapi-wallet-rest-pip-async-mariadb fastapi-wallet-rest-poetry-async-mariadb \
 	fastapi-wallet-saga-uv-pg fastapi-wallet-saga-pip-pg fastapi-wallet-saga-poetry-pg \
+	fastapi-wallet-saga-uv-async-pg fastapi-wallet-saga-pip-async-pg fastapi-wallet-saga-poetry-async-pg \
 	job-worker-uv-pg job-worker-pip-pg job-worker-poetry-pg \
+	job-worker-uv-async-pg job-worker-pip-async-pg job-worker-poetry-async-pg \
 	wallet-service-uv-sqlite wallet-service-pip-sqlite wallet-service-poetry-sqlite \
 	wallet-service-uv-async-sqlite wallet-service-pip-async-sqlite wallet-service-poetry-async-sqlite
 
@@ -57,11 +60,14 @@ GENERATES := \
 	fastapi-wallet-rest-uv-mysql \
 	fastapi-wallet-rest-uv-mariadb \
 	fastapi-wallet-rest-uv-sharded-pg \
+	fastapi-wallet-rest-uv-async-sharded-pg \
 	fastapi-wallet-rest-uv-async-pg \
 	fastapi-wallet-rest-uv-async-mysql \
 	fastapi-wallet-rest-uv-async-mariadb \
 	fastapi-wallet-saga-uv-pg \
-	job-worker-uv-pg
+	fastapi-wallet-saga-uv-async-pg \
+	job-worker-uv-pg \
+	job-worker-uv-async-pg
 
 .PHONY: $(addprefix schema-,$(GENERATES))
 $(addprefix schema-,$(GENERATES)): schema-%:

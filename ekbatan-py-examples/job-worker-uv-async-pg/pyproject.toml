@@ -1,0 +1,39 @@
+[project]
+name = "job-worker-async-pg"
+version = "0.1.0"
+description = "A worker running distributed jobs whose work is async, no HTTP, built with uv."
+requires-python = ">=3.13"
+dependencies = ["ekbatan[postgres,postgres-async,migrations]"]
+
+[dependency-groups]
+dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[postgres]>=4.15"]
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+# schemagen's settings, as Java's build script carries jOOQ's: `make schema` runs
+# `python -m ekbatan.schemagen`, which reads them. A flag on the command wins.
+[tool.ekbatan.schemagen]
+migrations = "src/job_worker_async_pg/migrations"
+out = "src/job_worker_async_pg/schema.py"
+image = "postgres:17-alpine"
+
+# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "job_worker_async_pg.converters.CurrencyConverter"
+include-types = "CHAR\\(3\\)"
+
+# One column, picked by its name.
+[[tool.ekbatan.schemagen.forced-types]]
+converter = "job_worker_async_pg.converters.EmailAddressConverter"
+include-expression = "alerts\\.recipient"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+# ekbatan is not on PyPI yet. Until it is, it - and its scheduler - come from this
+# repository; delete this once it is published.
+[tool.uv.sources]
+ekbatan = { path = "../..", editable = true }
+ekbatan-py-db-scheduler = { path = "../../db-scheduler", editable = true }

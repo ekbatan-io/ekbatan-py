@@ -97,6 +97,14 @@ Earlier runs, and what they found:
 
 | example | uv | pip | poetry |
 |---|---|---|---|
+| fastapi-wallet-rest-*-async-sharded-pg | 22 passed | 22 passed | 22 passed |
+| fastapi-wallet-saga-*-async-pg | 19 passed | 19 passed | 19 passed |
+| job-worker-*-async-pg | 12 passed | 12 passed | 12 passed |
+
+Each is its sync twin's tests (20, 17, 10) plus the checks that it really runs async. Planted
+faults, each red, then restored: the deposit without its lock (sharded: 409s among the eight);
+the saga's handlers given the request executor (cross-loop errors, the saga never settles);
+the stipend run with `asyncio.run` instead of the worker loop (five job tests red).
 | wallet-service-*-async-sqlite (new) | 18 passed | 18 passed | 18 passed |
 | wallet-service-*-sqlite (comments changed) | 19 passed | 19 passed | 19 passed |
 
@@ -120,3 +128,42 @@ Playwright (Chromium) against the dev server, 2026-10-19, storage cleared first:
 - reference/keyed-locks: 5 switches, Async shows `await locks.acquire(...)`; screenshot looked right.
 
 ## Findings
+
+## Async twins of the last three examples, and three docs leftovers (2026-10-19)
+
+Asked on 2026-10-19: async twins of the sharded, saga and job-worker examples, each built with
+uv, pip and Poetry; three docs leftovers; AGENTS.md. Judgement calls:
+`docs/DECISIONS-TO-REVIEW.md#async-examples-sharded-saga-job-worker`.
+
+### Steps
+
+| # | Step | State |
+|---|---|---|
+| A1 | Read AGENTS.md, this ledger, sync-examples, the async examples and the three sync twins, `HandlerLoop`, fan-out and dispatch | done |
+| A2 | `fastapi-wallet-rest-uv-async-sharded-pg` | done |
+| A3 | `fastapi-wallet-saga-uv-async-pg` | done |
+| A4 | `job-worker-uv-async-pg` (job work on a `HandlerLoop`; no library change) | done |
+| A5 | `scripts/sync-examples.py`, Makefile `EXAMPLES` / `GENERATES`, root mypy paths, CI comment; pip and Poetry copies written | done |
+| A6 | `make` in all three builds of each new example | done |
+| A7 | READMEs: root, `ekbatan-py-examples/README.md`, sibling links in the sync twins | open |
+| A8 | Skill files listing examples (`agent-skills/`, `.claude/skills/`) | open |
+| A9 | Docs + website: setup guide example table, async pages, sync-or-async, sharding / saga / jobs pages (switches where code differs) | open |
+| A10 | Task 2: sagas.md repeated section; local-event-handler.md repeated section; website copies checked | open |
+| A11 | Task 2: SHORTCOMINGS.md against the code (fan-out, examples count, async) - measured | open |
+| A12 | AGENTS.md "Two modes" and example counts | open |
+| A13 | Verify: make lint, unit tests, website build + check, test_setup_guide | open |
+
+### Example runs
+
+| example | uv | pip | poetry |
+|---|---|---|---|
+| fastapi-wallet-rest-*-async-sharded-pg | 22 passed | 22 passed | 22 passed |
+| fastapi-wallet-saga-*-async-pg | 19 passed | 19 passed | 19 passed |
+| job-worker-*-async-pg | 12 passed | 12 passed | 12 passed |
+
+Each is its sync twin's tests (20, 17, 10) plus the checks that it really runs async. Planted
+faults, each red, then restored: the deposit without its lock (sharded: 409s among the eight);
+the saga's handlers given the request executor (cross-loop errors, the saga never settles);
+the stipend run with `asyncio.run` instead of the worker loop (five job tests red).
+
+### Findings

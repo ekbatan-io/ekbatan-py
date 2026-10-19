@@ -141,11 +141,14 @@ files = [
     "ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg/src",
+    "ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src",
     "ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src",
     "ekbatan-py-examples/fastapi-wallet-saga-uv-pg/src",
+    "ekbatan-py-examples/fastapi-wallet-saga-uv-async-pg/src",
     "ekbatan-py-examples/job-worker-uv-pg/src",
+    "ekbatan-py-examples/job-worker-uv-async-pg/src",
     "ekbatan-py-examples/wallet-service-uv-sqlite/src",
     "ekbatan-py-examples/wallet-service-uv-async-sqlite/src",
 ]
@@ -172,3 +175,8 @@ src = ["src", "tests", "ekbatan-py-examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Written by `python -m ekbatan.codegen`, whose first line names the module it read: a long
+# package name makes it longer than a line. Generated, and checked by scripts/check-builders.py.
+"ekbatan-py-examples/*/src/*/builders.py" = ["E501"]

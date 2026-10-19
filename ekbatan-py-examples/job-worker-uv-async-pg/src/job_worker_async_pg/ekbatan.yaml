@@ -1,0 +1,54 @@
+# The worker's Ekbatan settings - the same keys, in the same places, as the Java job worker's
+# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+#
+# `${NAME:default}` is an environment variable with a default, so the file runs as it is against
+# a local server; the test fills them from its container.
+#
+# The urls name the sync driver, psycopg. The scheduler's pool connects with it; the jobs' work
+# reads the same url as "this PostgreSQL" and connects with asyncpg, the async default.
+ekbatan:
+  namespace: example.job_worker_async_pg
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: global
+        members:
+          - member: 0
+            name: global
+            configs:
+              # The jobs' work and the event handler, async, on the worker loop: job bodies and
+              # a batch of handlers at once.
+              primaryConfig:
+                # Extra driver settings, handed to the driver beside the url, never printed.
+                # Written as libpq spells them; asyncpg gets them as its own server_settings.
+                # Every session runs in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  application_name: wallet-worker
+                  options: -c TimeZone=UTC
+                url: ${WORKER_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WORKER_DATABASE_USERNAME:ekbatan}
+                password: ${WORKER_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+              # The scheduler's own pool, sync, which fan-out and dispatch read the queue through -
+              # at least twice the worker threads: a job body holding the last connection would
+              # starve the heartbeat. See app.py's docstring.
+              jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
+                url: ${WORKER_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                username: ${WORKER_DATABASE_USERNAME:ekbatan}
+                password: ${WORKER_DATABASE_PASSWORD:ekbatan}
+                poolSize: 8
+
+  # ISO-8601, as Java's Duration.parse reads it: PT10S. A bare number or "10s" is refused.
+  jobs:
+    pollingInterval: PT10S
+
+  local-event-handler:
+    handling:
+      enabled: true
