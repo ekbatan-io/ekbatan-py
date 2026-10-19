@@ -7,6 +7,7 @@ lead: After your first action commits, events holds a durable event row. From th
 
 import AliasRenameFlow from "../../components/AliasRenameFlow.astro";
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 The framework's job is to persist events safely: when an action commits, the domain rows and the
 `events` rows are written in the same transaction. What happens to them afterwards is your
@@ -112,10 +113,25 @@ There is no module to add — the in-process path ships in the framework. It is 
 register a handler and the handling job. `handling.enabled` (default off) is the switch your
 wiring reads to decide whether to register the job; once registered, the job runs:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 ```
+
+</div>
+<div slot="async">
+
+```python
+# The async handler gets an executor of its own, used only on dispatch's handler loop.
+handlers = EventHandlerRegistry([MoneyDepositedEventHandler(handler_executor)])
+events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+```
+
+</div>
+</ModeTabs>
 
 Without it the executor still writes every event with `delivered = false`, which is exactly the
 right state for a deployment that consumes the outbox externally. Both paths can be on at once.
@@ -126,6 +142,9 @@ transaction that produced the event, and it must not be — that transaction com
 away before the handler ran.
 
 ### A.2 Write the handler
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 class MoneyDepositedEventHandler:
@@ -140,13 +159,33 @@ class MoneyDepositedEventHandler:
         print(f"deposited {event.amount}, new balance {event.new_balance}")
 ```
 
+</div>
+<div slot="async">
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        event = envelope.event
+        print(f"deposited {event.amount}, new balance {event.new_balance}")
+```
+
+</div>
+</ModeTabs>
+
 No base class, no decorator, no annotation — two attributes and a method. There is nothing to
 inherit because there is nothing the framework needs to give you.
 
 - **`name`** — the durable subscription id, written to `event_notifications.handler_name`.
   Cluster-stable; see below.
 - **`event_type`** — the payload class this handler accepts. It drives deserialisation.
-- **`handle(envelope)`** — your logic. `envelope.event` is the typed payload;
+- **`handle(envelope)`** — your logic, `def` or `async def`; it runs after the action, on
+  dispatch's threads, in either mode. `envelope.event` is the typed payload;
   `envelope.action_params` is the source action's parameters, which is where routing concerns
   live when you do not want them polluting the event.
 
@@ -323,6 +362,9 @@ The shape worth internalising is that **idempotency is a unique constraint insid
 transaction that does the work**, not a check-then-act in application code. A check-then-act has
 a window. This has none:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
@@ -331,6 +373,21 @@ def perform(self, principal: str | None, params: CompleteTransferParams) -> Wall
     self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
     ...
 ```
+
+</div>
+<div slot="async">
+
+```python
+async def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
+    # Staged *before* the credit, so the unique constraint decides whether this delivery is
+    # the first one. A replay stages the same marker, the insert is refused, and the credit
+    # beside it is rolled back with it - which is why the money cannot arrive twice.
+    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    ...
+```
+
+</div>
+</ModeTabs>
 
 What you must **not** rely on: ordering between events, ordering between handlers on one event,
 or a handler being called exactly once. Plan for two.

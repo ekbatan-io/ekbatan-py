@@ -56,6 +56,11 @@ until `perform()` returns.
 
 ## Writing an action
 
+The sync API and `ekbatan.aio` differ only where something waits on the database, so each sample
+below that differs shows both.
+
+**Sync**
+
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
     def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
@@ -67,13 +72,38 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
+**Async**
+
+```python
+class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
 Read from a repository, build a new immutable `Wallet` with an event attached, stage it. No write
-happens here.
+happens here. In async mode the action is an `AsyncAction`, `perform` is `async def`, and each
+read is awaited; what it stages is the same.
 
 Calling it:
 
+**Sync**
+
 ```python
 wallet = executor.execute(
+    DepositMoneyAction,
+    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+)
+```
+
+**Async**
+
+```python
+wallet = await executor.execute(
     DepositMoneyAction,
     DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -86,7 +116,8 @@ the `MoneyDepositedEvent` row, commits. If anything raises, both roll back.
 
 The accumulator for this invocation. A property rather than a field: it resolves the
 `ContextVar` bound for the duration of `perform()`, so one shared action instance serves every
-concurrent invocation safely. See [ActionPlan](../concepts/actions.md).
+concurrent invocation safely. The plan is the same object in both modes: an async action stages
+on it exactly as a sync one does, and nothing on it is awaited.
 
 Ambient because it cannot be anything else. A repository call three frames down stages onto the
 same plan without ever mentioning it, and threading it through every signature between would put
@@ -107,7 +138,10 @@ stages onto the same plan without mentioning it. The other two can be passed, so
 - **An action must not have mutable instance state.** Anything beyond the constructor breaks
   under concurrency.
 - **`self.plan` must be reached from the thread or task that is running `perform()`.** A
-  `ContextVar` is per-context; work handed to a pool does not inherit the binding.
+  `ContextVar` is per-context; work handed to a thread pool does not inherit the binding. A task
+  started inside an async `perform()` - `asyncio.gather` makes one per read - gets a copy of the
+  context, so `self.plan` resolves there; stage from `perform()` anyway, after the gather, so the
+  order of what is staged does not depend on which read finished first.
 - **Pass the executor's clock to the action.** Nothing checks it: the action reads
   its own clock in `perform()` and the rows are stamped from the executor's, so a test that
   freezes one and not the other asserts on two different instants.
@@ -121,7 +155,8 @@ outlived the unit of work while holding its connection is exactly the bug this p
 Deliberately. Internally it is a plain `dict` keyed by type, holding plain dicts keyed by id, and
 nothing guards them. Within `perform()`, `add`, `add_all`, `update` and `update_all` must all
 happen on the thread that entered it. If the action fans work out to a pool to gather data,
-**join the children first and only then stage from the thread that invoked `perform()`.**
+**join the children first and only then stage from the thread that invoked `perform()`.** In
+async mode the same rule holds for tasks: gather the reads, then stage from `perform()` itself.
 
 The GIL is not the reprieve it looks like. A single dict assignment is atomic; the staging path
 is not — it checks whether the id is already staged, stamps the row, and then assigns, and two
@@ -149,11 +184,22 @@ transaction got there first, zero rows match and `StaleRecordError` unwinds the 
 The default is one retry after 100 ms - enough to absorb ordinary contention, not enough to hide
 a real problem. Tune it per call:
 
+**Sync**
+
 ```python
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
 executor.execute(DepositMoneyAction, params, config=config)
+```
+
+**Async**
+
+```python
+config = ExecutionConfiguration(
+    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
+)
+await executor.execute(DepositMoneyAction, params, config=config)
 ```
 
 `ExecutionConfiguration.no_retry()` is the other end: a failure reaches the caller unchanged, for
@@ -183,9 +229,18 @@ only precedence rule, so put narrow policies first.
 
 An action whose changes span shards raises `CrossShardError`. Opt in per call:
 
+**Sync**
+
 ```python
 executor.execute(TransferAction, params,
                  config=ExecutionConfiguration(allow_cross_shard=True))
+```
+
+**Async**
+
+```python
+await executor.execute(TransferAction, params,
+                       config=ExecutionConfiguration(allow_cross_shard=True))
 ```
 
 With it enabled, each shard gets its own transaction and commits independently - there is no

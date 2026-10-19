@@ -6,6 +6,7 @@ lead: One function, one object, three pools — and why the third one exists.
 ---
 
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 A service is wired by hand, in one function. There is no container, no scanning and no
 annotation to register things with - and nothing is missing because of it. In Python, listing
@@ -16,6 +17,9 @@ because you can see it.
 
 One function returning one object. Nothing above it knows which database, which handlers or
 which jobs; nothing below it does either.
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -36,7 +40,38 @@ class WalletService:
         self.registry.close()
 ```
 
+</div>
+<div slot="async">
+
+```python
+@dataclass(frozen=True, slots=True)
+class WalletService:
+    registry: AsyncDatabaseRegistry      # the requests, awaited
+    wallets: WalletRepository
+    executor: AsyncActionExecutor
+    locks: AsyncKeyedLockProvider
+    events_registry: DatabaseRegistry    # sync: fan-out, dispatch and the jobs
+    jobs: JobRegistry
+
+    def start(self) -> None:
+        self.jobs.start()
+
+    async def aclose(self) -> None:
+        # Order matters: stop taking work before closing what the work runs on. Stopping the
+        # jobs waits for work in flight, so it runs on a thread, off the event loop.
+        await asyncio.to_thread(self.jobs.stop)
+        self.events_registry.close()
+        self.locks.close()
+        await self.registry.aclose()
+```
+
+</div>
+</ModeTabs>
+
 ## Migrate before anything opens a pool
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 if config.run_migrations:
@@ -44,6 +79,19 @@ if config.run_migrations:
 
 registry = DatabaseRegistry.from_config(layout)
 ```
+
+</div>
+<div slot="async">
+
+```python
+if config.run_migrations:
+    migrate(layout, MIGRATIONS)      # sync in both modes, before the first await
+
+registry = AsyncDatabaseRegistry.from_config(layout)
+```
+
+</div>
+</ModeTabs>
 
 `migrate` runs plain SQL files through yoyo as a **library** — there is no config file and no
 binary, because a config file that has to be found is a config file that is missing in the one
@@ -55,6 +103,9 @@ Several replicas starting at once is
 safe: each database is locked while it is migrated, one process migrates and the rest wait.
 
 ## Register what exists
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 executor = ActionExecutor(
@@ -70,6 +121,27 @@ executor = ActionExecutor(
     events=EVENTS,
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+executor = AsyncActionExecutor(
+    namespace="com.example.wallets",
+    registry=registry,
+    repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
+    actions=(
+        ActionRegistry.builder()
+        .with_action(OpenWalletAction(clock))
+        .with_action(DepositMoneyAction(wallets, clock))
+        .build()
+    ),
+    events=EVENTS,
+)
+```
+
+</div>
+</ModeTabs>
 
 There is no `@EkbatanAction` and nothing scanning your package for one. The framework knows
 about exactly what you put in a registry. That is a real trade:
@@ -97,9 +169,16 @@ The jobs pool default is 8, not 3, for a reason worth repeating: a job body hold
 connection starves the heartbeat. The scheduler warns at startup when the pool is too small —
 and did, while the examples were being written.
 
+An async service keeps all three - the requests and the locks async, the jobs sync - and adds a
+fourth for an async event handler, which runs on a loop of its own. See
+[Wiring](/reference/wiring/).
+
 ## Under FastAPI
 
 Build once, in a lifespan:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 @asynccontextmanager
@@ -112,6 +191,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         service.close()
 ```
+
+</div>
+<div slot="async">
+
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    service = build(settings)        # sync: building opens no connection
+    service.start()
+    app.state.service = service
+    try:
+        yield
+    finally:
+        await service.aclose()
+```
+
+</div>
+</ModeTabs>
 
 Three traps, all of which cost real time:
 
@@ -130,8 +227,8 @@ endpoint, naming a field nobody declared.
 threadpool, so a blocking database call blocks one worker thread. An `async def` endpoint runs
 on the event loop, where the same call stops **every** request on that worker. Measured: a 0.5s
 call from an `async def` handler let a heartbeat tick 5 times where a free loop manages about 55.
-For `async def` endpoints, build the request path on `ekbatan.aio` instead —
-[Going async](/learn/async/).
+For `async def` endpoints, build the request path on `ekbatan.aio` instead - the Async samples
+on this page, and [Wiring with FastAPI](/reference/wiring-fastapi/).
 
 **An exception handler must `return` a response, not raise one.** A raise from inside a handler
 is not caught again and becomes a 500 — the opposite of what they exist for.

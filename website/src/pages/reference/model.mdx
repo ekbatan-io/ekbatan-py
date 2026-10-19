@@ -5,6 +5,8 @@ activeSection: reference
 lead: "A persistent aggregate that emits domain events. Every change worth telling the rest of the system about — opened, deposited, closed, refunded — is attached to the model as a ModelEvent and persisted atomically alongside the domain row when the action commits."
 ---
 
+The same class in both modes, sync and async: nothing on a model waits on the database.
+
 ## Type signature
 
 ```python

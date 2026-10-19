@@ -48,6 +48,8 @@ Fan out, **join**, and only then touch the plan. A new thread starts with its ow
 values, so work handed to a pool from inside a unit of work does **not** inherit the ambient
 transaction.
 
+**Sync**
+
 ```python
 def perform(self, principal: str | None, params: Params) -> Result:
     with ThreadPoolExecutor() as pool:
@@ -55,7 +57,17 @@ def perform(self, principal: str | None, params: Params) -> Result:
     return self.plan.update(portfolio.priced(prices))              # back on this thread
 ```
 
-Read and compute in the pool; stage on the thread that owns the plan. `current_plan()` raises
+**Async**
+
+```python
+async def perform(self, principal: str | None, params: Params) -> Result:
+    # Gathered reads run at the same time, each on a connection of its own.
+    prices = await asyncio.gather(*(self.fetch_price(s) for s in params.symbols))
+    return self.plan.update(portfolio.priced(prices))              # after the gather
+```
+
+Read and compute in the pool; stage on the thread that owns the plan. In async mode the same
+rule reads: gather the reads, then stage, once they are all back. `current_plan()` raises
 rather than returning `None`, so getting it wrong is loud rather than subtle.
 
 That a worker does not inherit the transaction is correct, not a limitation - a pool thread
@@ -170,6 +182,9 @@ wallet = await asyncio.to_thread(wallets.get, wallet_id)
 # right, in Starlette or FastAPI
 from starlette.concurrency import run_in_threadpool
 wallet = await run_in_threadpool(wallets.get, wallet_id)
+
+# right, with ekbatan.aio: an async repository, awaited
+wallet = await wallets.get(wallet_id)
 ```
 
 Two things make this less painful than it sounds.

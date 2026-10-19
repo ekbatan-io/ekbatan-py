@@ -6,9 +6,14 @@ lead: Build a wallet deposit end to end — define the event, define the model, 
 ---
 
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 This lesson builds on [Getting started](/learn/getting-started/). We write actual domain code: a
 `Wallet` that emits a `MoneyDepositedEvent`, and a `DepositMoneyAction` that moves the balance.
+
+The event and the model are the same in both modes; the repository, the action and the endpoint
+are shown both ways - the switch above each sample picks sync or async, and the choice is
+remembered on every page. Not sure which? See [Sync or async?](/learn/sync-or-async/).
 
 The model and action code are the same whatever serves your HTTP. The endpoint below uses
 FastAPI only to show where an application calls the executor. For a complete runnable project,
@@ -103,6 +108,9 @@ sees the field types, which is the one thing Python cannot work out for itself �
 
 ## 3. A repository
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
@@ -115,6 +123,24 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
         return self.model_by_field_name(row)
 ```
 
+</div>
+<div slot="async">
+
+```python
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    def __init__(self, registry: AsyncDatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry)
+
+    def to_row(self, wallet: Wallet) -> dict[str, Any]:       # plain def: mapping waits on nothing
+        return self.columns_by_field_name(wallet)
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        return self.model_by_field_name(row)
+```
+
+</div>
+</ModeTabs>
+
 That is the whole repository. `get`, `find_where`, `add`, `update`, counting and existence are
 inherited. The mapping between a row and the model is yours to write, and when the names line up
 it is the two methods above: every field to the column of the same name. A repository without
@@ -123,10 +149,24 @@ name or a shape differs, write the mapping out instead.
 
 What you add are the questions your business actually asks:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
     def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         return self.find_where(WALLETS.c.owner_id == owner_id)
 ```
+
+</div>
+<div slot="async">
+
+```python
+    async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+        return await self.find_where(WALLETS.c.owner_id == owner_id)
+```
+
+</div>
+</ModeTabs>
 
 See [Repositories](/reference/repository/) for the inherited surface, and for what to
 reach for when it runs out.
@@ -135,6 +175,9 @@ reach for when it runs out.
 
 The action does three things in `perform()`: read, mutate, stage. **No database writes happen
 here** — the executor opens the transaction *after* `perform()` returns.
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -154,6 +197,30 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
+</div>
+<div slot="async">
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class DepositParams:
+    wallet_id: ShardedId[Wallet]
+    amount: Decimal
+    recipient: str
+
+
+class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+</div>
+</ModeTabs>
+
 `self.plan.update` **writes nothing.** It stages. Nothing discovers this class either: you put
 it in a registry in your wiring, where you can see it. See [Actions](/learn/actions/) and
 [Wiring](/reference/wiring/).
@@ -162,6 +229,9 @@ it in a registry in your wiring, where you can see it. See [Actions](/learn/acti
 
 The caller can be an HTTP endpoint, a message handler, a scheduled job or a CLI command. What
 matters is that it goes through `executor.execute(...)`.
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 class DepositRequest(BaseModel):
@@ -183,11 +253,38 @@ def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletRe
     )
 ```
 
+</div>
+<div slot="async">
+
+```python
+class DepositRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    recipient: str
+
+
+@app.post("/wallets/{wallet_id}/deposits", response_model=WalletResponse)
+async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
+    return WalletResponse.of(
+        await service.executor.execute(
+            DepositMoneyAction,
+            DepositParams(
+                wallet_id=ShardedId[Wallet](wallet_id),
+                amount=body.amount,
+                recipient=body.recipient,
+            ),
+        )
+    )
+```
+
+</div>
+</ModeTabs>
+
 `service` is the one built at startup, handed over by a FastAPI dependency — not built per
 request, which would open a connection pool per request.
 [Wiring with FastAPI](/reference/wiring-fastapi/) is that seam, and names the other sharp
-mistake: calling this sync API from an `async def` endpoint blocks the event loop. (An async
-service uses `ekbatan.aio` instead - [Going async](/learn/async/).)
+mistake: calling the sync API from an `async def` endpoint blocks the event loop. A sync
+endpoint is a plain `def`, which FastAPI runs on a worker thread; an async one is `async def`
+and awaits `ekbatan.aio`.
 
 Who is acting is a separate concern. The executor takes a principal; in a real service it comes
 from your authentication layer.
@@ -236,7 +333,11 @@ an outbox anywhere. There is no second table to remember, because you never writ
 
 ## Test it without a database
 
-An action's logic needs none. `ActionSpec` runs the action and checks what it staged and emitted:
+An action's logic needs none. `ActionSpec` (`AsyncActionSpec` in async mode, from
+`ekbatan.aio.testing`) runs the action and checks what it staged and emitted:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 (ActionSpec.of(DepositMoneyAction(wallets, clock))
@@ -247,9 +348,30 @@ An action's logic needs none. `ActionSpec` runs the action and checks what it st
     .assert_no_additions())
 ```
 
+</div>
+<div slot="async">
+
+```python
+checked = await (
+    AsyncActionSpec.of(DepositMoneyAction(wallets, clock))
+    .with_principal("alice")
+    .execute(DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"))
+)
+(checked
+    .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
+    .assert_emitted(MoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
+    .assert_no_additions())
+```
+
+</div>
+</ModeTabs>
+
 A verifier can be a `lambda` returning its verdict or a function that asserts inside itself. A
 falsy verdict fails, so a `lambda` cannot pass by accident. When plain `assert` reads better,
-`run_action` hands back the same information as data:
+`run_action` (`async_run_action`) hands back the same information as data:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 staged = run_action(
@@ -260,6 +382,22 @@ staged = run_action(
 assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
 ```
+
+</div>
+<div slot="async">
+
+```python
+staged = await async_run_action(
+    DepositMoneyAction(wallets, clock),
+    DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
+)
+
+assert staged.result.balance == Decimal("150.00")
+assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+```
+
+</div>
+</ModeTabs>
 
 Both bind the plan through the same mechanism the executor uses, so `self.plan`,
 `self.clock` and the `principal` argument behave exactly as in production. Nothing is written.

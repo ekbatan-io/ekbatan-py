@@ -5,7 +5,12 @@ activeSection: reference
 lead: "The framework's main entry point. Runs actions atomically against the configured shards — application code calls executor.execute(MyAction, params) and never touches an action directly."
 ---
 
+import ModeTabs from "../../components/ModeTabs.astro";
+
 ## Type signature
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 class ActionExecutor:
@@ -19,15 +24,40 @@ class ActionExecutor:
     ) -> R: ...
 ```
 
+</div>
+<div slot="async">
+
+```python
+class AsyncActionExecutor:
+    async def execute[P, R](
+        self,
+        action: type[AsyncAction[P, R]],
+        params: P,
+        *,
+        principal: str | None = None,
+        config: ExecutionConfiguration | None = None,
+    ) -> R: ...
+```
+
+</div>
+</ModeTabs>
+
+In async mode it is `AsyncActionExecutor` from `ekbatan.aio`, and `execute` is awaited; it runs
+`AsyncAction`s only, as the sync one runs `Action`s only. Everything else on this page - the
+transaction, the cross-shard rule, retries, tracing - is the same code in both.
+
 Takes the action's **type**, and runs the instance registered for it. Callers depend on a class, not on a
 constructed object with repositories hanging off it, and everything a service can do is listed in
 its `ActionRegistry`.
 
 An instance is refused, with a message saying so: it would run whether it was registered or not.
 To run an action you just built in a test,
-use `ActionSpec.of(action)` — see [Test it without a database](/learn/your-first-action/#test-it-without-a-database).
+use `ActionSpec.of(action)` (`AsyncActionSpec` in async mode) — see [Test it without a database](/learn/your-first-action/#test-it-without-a-database).
 
 Construction:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 class ActionExecutor:
@@ -42,6 +72,26 @@ class ActionExecutor:
         clock: Clock | None = None,
     ) -> None: ...
 ```
+
+</div>
+<div slot="async">
+
+```python
+class AsyncActionExecutor:
+    def __init__(
+        self,
+        *,
+        namespace: str,
+        registry: AsyncDatabaseRegistry,
+        repositories: RepositoryRegistry | Iterable[AsyncRepository],
+        actions: ActionRegistry | Iterable[AsyncAction] = (),
+        events: Table | None = None,
+        clock: Clock | None = None,
+    ) -> None: ...
+```
+
+</div>
+</ModeTabs>
 
 All keyword-only: an executor takes six collaborators, and positional order for six is a mistake
 waiting to be made silently.
@@ -108,6 +158,9 @@ only** — with no SDK registered every call is a no-op. See
 
 ## Building one
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 executor = ActionExecutor(
     registry=databases,
@@ -116,7 +169,27 @@ executor = ActionExecutor(
     namespace="com.example.finance",
     clock=clock,
 )
+
+wallet = executor.execute(DepositMoneyAction, params)
 ```
+
+</div>
+<div slot="async">
+
+```python
+executor = AsyncActionExecutor(
+    registry=databases,                 # an AsyncDatabaseRegistry
+    repositories=repositories,          # async repositories
+    actions=actions,                    # AsyncActions
+    namespace="com.example.finance",
+    clock=clock,
+)
+
+wallet = await executor.execute(DepositMoneyAction, params)
+```
+
+</div>
+</ModeTabs>
 
 `namespace` goes on every outbox row and becomes the topic prefix downstream. It must be
 dot-separated identifiers shaped like a package — a hyphen is refused up front, because the
@@ -124,11 +197,14 @@ namespace doubles as a protobuf package and `package my-service;` is a syntax er
 
 ## Custom event persister
 
-The default, `SingleTableJsonEventPersister`, writes one JSON row per event into the outbox
-table. Supply your own to write a different shape — a second table, a different column layout,
+The default, `SingleTableJsonEventPersister` (`AsyncSingleTableJsonEventPersister` in async
+mode), writes one JSON row per event into the outbox table. Supply your own to write a different shape — a second table, a different column layout,
 encrypted payloads — while keeping the same transaction.
 
-The protocol is one method:
+The protocol is one method, awaited in async mode:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 class EventPersister(Protocol):
@@ -144,6 +220,27 @@ class EventPersister(Protocol):
         action_event_id: uuid.UUID,
     ) -> None: ...
 ```
+
+</div>
+<div slot="async">
+
+```python
+class AsyncEventPersister(Protocol):
+    async def persist_action_events(
+        self,
+        namespace: str,
+        action_name: str,
+        started_date: datetime,
+        completion_date: datetime,
+        action_params: Any,
+        model_events: Sequence[ModelEvent],
+        shard: ShardIdentifier,
+        action_event_id: uuid.UUID,
+    ) -> None: ...
+```
+
+</div>
+</ModeTabs>
 
 It is called inside the transaction the domain rows are being written in, and a write through
 the registry joins it: `registry.manager(shard).connection()` hands back the open transaction

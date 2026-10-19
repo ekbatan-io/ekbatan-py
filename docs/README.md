@@ -14,7 +14,9 @@ Linked from the top-level [README](../README.md). Each section has its own index
 - **[Wiring](wiring.md)** - the complete bootstrap, block by block
 - **[Wiring with FastAPI](wiring-fastapi.md)** - the lifespan, the dependency, and three sharp
   traps
-- **[Going async](going-async.md)** - the request path on `ekbatan.aio`, file by file
+- **[Sync or async?](sync-or-async.md)** - how to pick one per service, and what is the same
+  either way
+- **[Going async](going-async.md)** - moving a sync service to `ekbatan.aio`, file by file
 - **[Database](database/README.md)** - the framework's tables, repositories, transactions, keyed
   locks, sharding, migrations, the four dialects, schemagen
 - **[Events out](events/README.md)** - in-process handlers, and Debezium

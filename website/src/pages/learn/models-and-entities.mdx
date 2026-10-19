@@ -9,7 +9,9 @@ import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
 
 Both are immutable, both version-tracked, both with a `state` column that supports soft
-deletion. The difference is whether their changes are news.
+deletion. The difference is whether their changes are news. They are the same classes in both
+modes, sync and async: nothing on a model or an entity waits on the database, so every sample on
+this page is the same either way.
 
 | | `Model` | `Entity` |
 | --- | :---: | :---: |
@@ -296,7 +298,8 @@ def delete(self) -> Wallet:
     return self.copy().with_event(WalletDeletedEvent(model_id=str(self.id))).state(WalletState.DELETED).build()
 ```
 
-then `repo.update(wallet.delete())`, or `plan.update(wallet.delete())` inside an action.
+then `repo.update(wallet.delete())` (`await repo.update(...)` on an async repository), or
+`plan.update(wallet.delete())` inside an action.
 
 There is no `delete()` on the repository, and that is deliberate: a row that
 silently stopped existing would leave every event already published about it with nothing on the

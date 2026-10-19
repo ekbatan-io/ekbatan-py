@@ -10,6 +10,9 @@ gets wrong for a service that runs in more than one process: a real lock, checks
 match what each database has applied, a history written in the same transaction as the
 migration, repeatable migrations, and a way back from a migration that failed half-way.
 
+Migrations are sync in both modes: an async service runs them at startup the same way, before it
+opens its async pools.
+
 ```
 uv add "ekbatan[migrations]"
 ```

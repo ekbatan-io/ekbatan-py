@@ -32,7 +32,14 @@ Each one owns four things, for exactly one shard:
   `tm.transaction()` block. A `ContextVar` rather than a thread local, so the binding follows an
   `await` and a `ThreadPoolExecutor` does not inherit one by accident.
 
+In async mode the registry is an `AsyncDatabaseRegistry` and each manager an
+`AsyncTransactionManager`, from `ekbatan.aio`: the same four things, with `AsyncEngine` pools,
+and every block below is `async with`. A cancelled task rolls its transaction back like any
+other failure.
+
 ## The `tm.transaction()` family
+
+**Sync**
 
 ```python
 with tm.transaction() as tx:
@@ -45,6 +52,26 @@ with tm.transaction() as tx:
         tx.execute(insert(AUDIT_LOG).values(at=clock.now(), note="currency backfill",
                                             affected=len(orphans)))
 ```
+
+**Async**
+
+```python
+async with tm.transaction() as tx:
+    found = await tx.execute(
+        select(WALLETS.c.id).where(WALLETS.c.currency.is_(None)).with_for_update()
+    )
+    orphans = found.scalars().all()
+
+    if orphans:
+        await tx.execute(update(WALLETS).where(WALLETS.c.id.in_(orphans)).values(currency="EUR"))
+        await tx.execute(insert(AUDIT_LOG).values(at=to_storage(clock.now()),
+                                                  note="currency backfill",
+                                                  affected=len(orphans)))
+```
+
+The async tab passes `to_storage(clock.now())` for the timestamp: asyncpg refuses an aware
+`datetime` for a zone-less column, and `to_storage` gives the UTC wall-clock time the column
+holds.
 
 Both writes commit together or neither does - the same atomicity an action gives you, without any
 of the action machinery: no plan, no outbox row, no retry on a lost version race.
@@ -98,15 +125,31 @@ issues an explicit `COMMIT`; MySQL and MariaDB send `SET autocommit=1`, which th
 implicit commit. Restoring it after a failed rollback would commit the very transaction that just
 failed to roll back. Physically closing the connection makes the server discard what was pending.
 
+**A failed commit is not on its own grounds for eviction.** The `COMMIT` is issued inside the
+`try`, so a commit that raises falls into the same `except` as any other failure and gets a
+`ROLLBACK` like any other transaction. If that rollback succeeds, the connection is clean and
+goes back to the pool normally. Only a rollback that *also* fails leaves the state unknown, and
+only then is the connection thrown away.
+
 ## Repository writes join automatically
 
 Because the connection is bound into the ambient context rather than passed around, a repository
 write inside the block uses it:
 
+**Sync**
+
 ```python
 with tm.transaction():
     wallet = wallets.get(wallet_id)          # a primary read, by design
     wallets.update(wallet.close())           # joins this transaction
+```
+
+**Async**
+
+```python
+async with tm.transaction():
+    wallet = await wallets.get(wallet_id)    # a primary read, by design
+    await wallets.update(wallet.close())     # joins this transaction
 ```
 
 Reads are a choice. Inherited reads see committed state on the primary; if a read must see this
@@ -129,10 +172,14 @@ Two consequences follow, and both are the point rather than side effects:
 
 - **A repository method written once works in both places.** The same `wallets.update(...)` is
   part of your transaction inside the block and a standalone write outside it.
-- **The binding does not propagate to other threads or tasks.** Work handed to a pool from
-  inside a transaction does not inherit it, which is correct: another thread is another
-  connection, and quietly sharing one would corrupt both. See
+- **The binding does not propagate to a thread pool.** Work handed to a pool
+  (`ThreadPoolExecutor.submit`) from inside a transaction does not inherit it, which is correct:
+  another thread is another connection, and quietly sharing one would corrupt both. See
   [Concurrency](../runtime/concurrency.md).
+- **It does propagate to a task, and to `asyncio.to_thread`.** Both copy the caller's context,
+  so work started that way inside the transaction sees it open and uses its connection. In an
+  async transaction, statements from tasks then take turns on that one connection. Keep such
+  work inside the `with` block, and do not hand a sync transaction to `to_thread`.
 
 What does *not* join is a read you route yourself. `db()` and `readonly_db()` open their own
 connections deliberately — see [Repositories](../database/repositories.md#picking-the-right-one).
@@ -158,9 +205,18 @@ wants to be an action.
 
 If you only read, you need no transaction:
 
+**Sync**
+
 ```python
 with tm.connection() as conn: ...                  # primary, freshest committed state
 with tm.connection(readonly=True) as conn: ...     # the replica, tolerates lag
+```
+
+**Async**
+
+```python
+async with tm.connection() as conn: ...              # primary, freshest committed state
+async with tm.connection(readonly=True) as conn: ... # the replica, tolerates lag
 ```
 
 Inside a `tm.transaction()` block these hand you that transaction's connection instead, so a
@@ -180,9 +236,19 @@ A transaction manager is **per shard**, and there is no two-phase commit. If you
 across shards you cannot have them atomically - that is a property of distributed systems, not of
 this framework.
 
+**Sync**
+
 ```python
 with registry.manager(GLOBAL).transaction(): ...   # work A
 with registry.manager(MEXICO).transaction(): ...   # work B
+# if B fails, A is already committed.
+```
+
+**Async**
+
+```python
+async with registry.manager(GLOBAL).transaction(): ...   # work A
+async with registry.manager(MEXICO).transaction(): ...   # work B
 # if B fails, A is already committed.
 ```
 

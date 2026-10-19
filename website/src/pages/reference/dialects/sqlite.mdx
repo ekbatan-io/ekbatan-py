@@ -121,7 +121,7 @@ For that last case it genuinely works: accept that the scheduler is not cluster-
 because there is no cluster, and you have a working event-sourced service in one file with no
 infrastructure. Keyed locks are the one thing it cannot give you on its own - SQLite has no
 advisory locks, and there is no in-process provider - so use
-`RedisKeyedLockProvider` if you need them. Optimistic locking needs nothing and is always on.
+`RedisKeyedLockProvider` if you need them (`AsyncRedisKeyedLockProvider` in async mode). Optimistic locking needs nothing and is always on.
 
 ## The claim this framework makes
 

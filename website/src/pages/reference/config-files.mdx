@@ -5,10 +5,15 @@ activeSection: reference
 lead: "The layout and the rest of the ekbatan section read from a YAML, TOML, JSON or INI file - the same objects code builds, with environment variables filled in and no error ever showing a value."
 ---
 
+import ModeTabs from "../../components/ModeTabs.astro";
+
 `load_sharding_config` reads the layout from a file and builds the same `ShardingConfig` that code
 builds; `load_ekbatan_config` reads the whole `ekbatan` section - namespace, jobs and
 local-event-handler too. Every check stays in the config classes - a url with a login in it, a blank username, a
 driver setting named `password` are refused exactly as they are in code.
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 from ekbatan.config_files import load_sharding_config
@@ -17,6 +22,20 @@ from ekbatan.persistence import DatabaseRegistry
 layout = load_sharding_config("ekbatan.yaml")
 registry = DatabaseRegistry.from_config(layout)
 ```
+
+</div>
+<div slot="async">
+
+```python
+from ekbatan.aio import AsyncDatabaseRegistry
+from ekbatan.config_files import load_sharding_config
+
+layout = load_sharding_config("ekbatan.yaml")
+registry = AsyncDatabaseRegistry.from_config(layout)    # the same file, the async driver
+```
+
+</div>
+</ModeTabs>
 
 The format comes from the file's extension: `.yaml` or `.yml`, `.toml`, `.json`, or `.ini`. No
 library beyond PyYAML is involved: TOML, JSON and INI are read by Python's own `tomllib`, `json` and
@@ -119,6 +138,9 @@ INI has one level of sections, so a group is a dotted section name and a list it
 `load_ekbatan_config` reads everything under `ekbatan` - the namespace, the shard layout, the jobs
 and the local event handler - and returns one `EkbatanConfig`:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 from ekbatan.config_files import load_ekbatan_config
 
@@ -134,6 +156,31 @@ handling_builder = (
     .enabled(ekbatan.local_event_handler.handling.enabled)
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+from ekbatan.config_files import load_ekbatan_config
+
+ekbatan = load_ekbatan_config("ekbatan.yaml")
+
+registry = AsyncDatabaseRegistry.from_config(ekbatan.sharding)
+executor_builder = AsyncActionExecutor.builder().namespace(ekbatan.namespace)
+# The jobs, fan-out and dispatch stay sync, over a sync registry from the same layout.
+events_registry = DatabaseRegistry.from_config(ekbatan.sharding)
+jobs_builder = job_registry().with_config(ekbatan.jobs)
+handling_builder = (
+    EventHandlingJob.builder()
+    .registry(events_registry)
+    .config(ekbatan.local_event_handler)
+    # The job does not read the switch itself; the wiring does.
+    .enabled(ekbatan.local_event_handler.handling.enabled)
+)
+```
+
+</div>
+</ModeTabs>
 
 ```yaml
 ekbatan:

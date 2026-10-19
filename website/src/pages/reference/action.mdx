@@ -5,7 +5,12 @@ activeSection: reference
 lead: "Action[P, R] is the unit of business work. It stages new and changed domain objects on its ActionPlan during phase one; the ActionExecutor commits them in a single transaction during phase two."
 ---
 
+import ModeTabs from "../../components/ModeTabs.astro";
+
 ## Type signature
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 class Action[P, R]:
@@ -13,6 +18,23 @@ class Action[P, R]:
     def plan(self) -> ActionPlan: ...
     def perform(self, principal: str | None, params: P) -> R: ...
 ```
+
+</div>
+<div slot="async">
+
+```python
+class AsyncAction[P, R]:
+    @property
+    def plan(self) -> ActionPlan: ...
+    async def perform(self, principal: str | None, params: P) -> R: ...
+```
+
+</div>
+</ModeTabs>
+
+In async mode the class is `AsyncAction` from `ekbatan.aio`, and `perform` is a coroutine; the
+plan, the clock and everything below are the same. An executor runs one kind only: the sync one
+refuses an `AsyncAction`, and the async one refuses an `Action`.
 
 `P` is the parameter type, `R` what the action returns. Both are held to at the call site:
 `executor.execute(DepositMoneyAction, DepositParams(...))` returns a `Wallet` with no cast, and
@@ -22,6 +44,9 @@ There is no abstract base to satisfy beyond `perform`. No decorator, no registra
 nothing scans for it.
 
 ## Declaring an action
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -39,6 +64,29 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         wallet = self.wallets.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
+
+</div>
+<div slot="async">
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class DepositParams:
+    wallet_id: ShardedId[Wallet]
+    amount: Decimal
+
+
+class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+</div>
+</ModeTabs>
 
 Dependencies come through `__init__`, once, in the wiring. An action with no parameters is
 invoked with `None`; a bare scalar is refused, because a string in the `action_params` column is
@@ -139,13 +187,16 @@ instance state. What the constructor sets — repositories, the clock — is fin
 not change.
 
 The plan is the only per-invocation value that is ambient, and it lives in a `ContextVar`, which
-is per-thread *and* per-async-task. Work handed to a pool does **not** inherit the binding. That
-is correct rather than a limitation: fan out, join, and stage only on the thread running
-`perform()`.
+is per-thread *and* per-async-task. Work handed to a thread pool does **not** inherit the
+binding. That is correct rather than a limitation: fan out, join, and stage only where
+`perform()` runs.
 
 ## Retry semantics
 
 The default is one retry after 100 ms, on `StaleRecordError`.
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 config = ExecutionConfiguration(
@@ -153,6 +204,19 @@ config = ExecutionConfiguration(
 )
 executor.execute(DepositMoneyAction, params, config=config)
 ```
+
+</div>
+<div slot="async">
+
+```python
+config = ExecutionConfiguration(
+    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
+)
+await executor.execute(DepositMoneyAction, params, config=config)
+```
+
+</div>
+</ModeTabs>
 
 - **`max_retries` counts retries, not attempts.** `max_retries=1` runs the action twice.
 - **Matching looks through the cause chain**, so a driver wrapping a conflict still matches —
@@ -171,6 +235,9 @@ safe to repeat.
 By default an action's staged changes must all route to one shard; one that spans two raises
 `CrossShardError`, naming both. Opt in for a single invocation:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 executor.execute(
     TransferAction,
@@ -178,6 +245,20 @@ executor.execute(
     config=ExecutionConfiguration(allow_cross_shard=True),
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+await executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+</div>
+</ModeTabs>
 
 The executor then opens **one transaction per shard**, each committing independently. There is no
 two-phase commit — not as an omission, but because there is no atomic commit across separate

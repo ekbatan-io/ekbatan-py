@@ -82,8 +82,21 @@ and no coordinator to ask.
 Delivery is at-least-once, so a handler can run twice. The example's shape is worth copying
 exactly:
 
+**Sync**
+
 ```python
 def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
+    # Staged *before* the credit, so the unique constraint decides whether this delivery is
+    # the first one. A replay stages the same marker, the insert is refused, and the credit
+    # beside it is rolled back with it - which is why the money cannot arrive twice.
+    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    ...
+```
+
+**Async**
+
+```python
+async def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.
@@ -134,6 +147,8 @@ own transaction and its own durable outcome.
 
 The runnable example uses in-process handlers, because every step lives in one application:
 
+**Sync**
+
 ```python
 class TransferInitiatedEventHandler:
     """Step one committed; run step two."""
@@ -147,6 +162,32 @@ class TransferInitiatedEventHandler:
     def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
         event = envelope.event
         self.executor.execute(
+            CompleteTransferAction,
+            CompleteTransferParams(
+                transfer_id=event.transfer_id,
+                from_wallet_id=ShardedId[Wallet](event.from_wallet_id),
+                to_wallet_id=ShardedId[Wallet](event.to_wallet_id),
+                amount=event.amount,
+                currency=event.currency,
+            ),
+        )
+```
+
+**Async**
+
+```python
+class TransferInitiatedEventHandler:
+    """Step one committed; run step two - awaited, on dispatch's handler loop."""
+
+    name = "transfer-initiated"
+    event_type = TransferInitiatedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+        event = envelope.event
+        await self.executor.execute(
             CompleteTransferAction,
             CompleteTransferParams(
                 transfer_id=event.transfer_id,
@@ -183,8 +224,21 @@ params to know what to do next. Put the identifiers and the amount in the event.
 **Make every step idempotent.** Delivery is at-least-once; a handler can run twice after a crash.
 The example's shape is worth copying exactly:
 
+**Sync**
+
 ```python
 def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
+    # Staged *before* the credit, so the unique constraint decides whether this delivery is
+    # the first one. A replay stages the same marker, the insert is refused, and the credit
+    # beside it is rolled back with it - which is why the money cannot arrive twice.
+    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    ...
+```
+
+**Async**
+
+```python
+async def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.

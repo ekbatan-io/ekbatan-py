@@ -61,6 +61,7 @@ layout = ShardingConfig(
     ),
 )
 registry = DatabaseRegistry.from_config(layout)
+# async mode: the same layout, AsyncDatabaseRegistry.from_config(layout) from ekbatan.aio
 ```
 
 A member's `(group, member)` is its `ShardIdentifier`. Its `configs` map has two reserved names
@@ -195,7 +196,7 @@ registry.effective_shard(key)     # where this key lives
 registry.shards                   # every configured identifier
 ```
 
-You need these rarely. A repository routes for you; these are for the admin script, the
+An `AsyncDatabaseRegistry` answers the same four. You need these rarely. A repository routes for you; these are for the admin script, the
 reconciliation job, and the test that asserts placement.
 
 ## Sharded repositories
@@ -203,9 +204,21 @@ reconciliation job, and the test that asserts placement.
 Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The bundled
 `EmbeddedBitsShardingStrategy` decodes the shard from the id's embedded bits:
 
+**Sync**
+
 ```python
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
+        super().__init__(
+            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
+        )
+```
+
+**Async**
+
+```python
+class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
         )
@@ -234,12 +247,25 @@ When an inherited method does not cover the question, the accessors take the sam
 information the inherited ones use — so a hand-written query lands on the right database without
 you working out which one that is:
 
+**Sync**
+
 ```python
 def find_all_by_owner_beside(self, wallet_id: ShardedId[Wallet], owner_id: UUID) -> list[Wallet]:
     with self.readonly_db(key=wallet_id) as conn:          # that wallet's shard
         return conn.rows(
             select(WALLETS).where(WALLETS.c.owner_id == owner_id)
         ).fetch(self.from_row)
+```
+
+**Async**
+
+```python
+async def find_all_by_owner_beside(
+    self, wallet_id: ShardedId[Wallet], owner_id: UUID
+) -> list[Wallet]:
+    async with self.readonly_db(key=wallet_id) as conn:    # that wallet's shard
+        found = await conn.rows(select(WALLETS).where(WALLETS.c.owner_id == owner_id))
+        return found.fetch(self.from_row)
 ```
 
 | accessor | connection |
@@ -382,9 +408,18 @@ scatter accessors visit only that shard.
 
 Refused by default. `CrossShardError` names the two shards involved.
 
+**Sync**
+
 ```python
 executor.execute(TransferAction, params,
                  config=ExecutionConfiguration(allow_cross_shard=True))
+```
+
+**Async**
+
+```python
+await executor.execute(TransferAction, params,
+                       config=ExecutionConfiguration(allow_cross_shard=True))
 ```
 
 With it on: one transaction per shard, each committing independently, and the action's outbox row
@@ -418,12 +453,15 @@ migrate(layout, MIGRATIONS, shards=[MEXICO])       # one
 ```
 
 Ordered by the configuration rather than by the argument, and an unknown identifier is refused
-rather than skipped. See [Migrations](migrations.md).
+rather than skipped. Migrations are sync in both modes: an async service runs this at startup,
+before it opens its async pools. See [Migrations](migrations.md).
 
 ## What sharding does not provide
 
-A scatter read visits shards **one at a time**, not side by side: on eight shards it takes eight
-round trips' time rather than one. The event jobs are different - they drain every shard at once,
+In sync mode a scatter read visits shards **one at a time**, not side by side: on eight shards it
+takes eight round trips' time rather than one. In async mode the inherited reads ask every shard
+at the same time, so they cost about one round trip; `dbs()` and `readonly_dbs()` still go one
+shard at a time in both modes. The event jobs are different - they drain every shard at once,
 see [Concurrency](../runtime/concurrency.md#5-fan-out-and-dispatch---shards-and-handlers-side-by-side).
 
 ## See also

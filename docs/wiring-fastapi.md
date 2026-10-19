@@ -11,6 +11,8 @@ seam between the two.
 
 ## Build once, in a lifespan
 
+**Sync**
+
 ```python
 def create_app(settings: Settings | None = None) -> FastAPI:
 
@@ -23,6 +25,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             service.close()
+
+    app = FastAPI(title="Wallet", lifespan=lifespan)
+```
+
+**Async**
+
+```python
+def create_app(settings: Settings | None = None) -> FastAPI:
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        service = build(settings)      # sync: it runs the migrations, once, before any request
+        service.start()
+        app.state.service = service
+        try:
+            yield
+        finally:
+            await service.aclose()     # the async pools close with `aclose()`
 
     app = FastAPI(title="Wallet", lifespan=lifespan)
 ```
@@ -57,11 +77,27 @@ The symptom is a 422 on every endpoint, naming a field nobody declared. It cost 
 
 ## With the sync API, a plain `def` endpoint is the right endpoint
 
+**Sync**
+
 ```python
 @app.post("/wallets", response_model=WalletResponse, status_code=201)
 def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         service.executor.execute(
+            OpenWalletAction,
+            OpenWalletParams(owner_id=body.owner_id, currency=body.currency,
+                             opening_balance=body.opening_balance),
+        )
+    )
+```
+
+**Async**
+
+```python
+@app.post("/wallets", response_model=WalletResponse, status_code=201)
+async def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
+    return WalletResponse.of(
+        await service.executor.execute(
             OpenWalletAction,
             OpenWalletParams(owner_id=body.owner_id, currency=body.currency,
                              opening_balance=body.opening_balance),
@@ -100,32 +136,10 @@ See [Concurrency](runtime/concurrency.md).
 ## `async def` endpoints, on `ekbatan.aio`
 
 The other way: build the request path on the async API, and every endpoint is an `async def` that
-awaits. Nothing blocks the event loop, and under load it does more work than a thread pool does.
+awaits - the Async samples on this page. Nothing blocks the event loop, and under load it does
+more work than a thread pool does.
 
-```python
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    service = build(settings)          # sync: it runs the migrations, once, before any request
-    service.start()
-    app.state.service = service
-    try:
-        yield
-    finally:
-        await service.aclose()         # the async registry closes with `aclose()`
-
-
-@app.post("/wallets", response_model=WalletResponse, status_code=201)
-async def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
-    return WalletResponse.of(
-        await service.executor.execute(
-            OpenWalletAction,
-            OpenWalletParams(owner_id=body.owner_id, currency=body.currency,
-                             opening_balance=body.opening_balance),
-        )
-    )
-```
-
-`service.executor` is an `AsyncActionExecutor` and `service.wallets` an async repository. Three
+`service.executor` is an `AsyncActionExecutor` and `service.wallets` an async repository. Four
 things to add over the sync service:
 
 - **A 503 for a full pool.** The connection pool is the cap on requests waiting on the database:
@@ -176,6 +190,8 @@ somebody.
 
 ## Keyed locks across a request
 
+**Sync**
+
 ```python
 lease = service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
 if lease is None:
@@ -185,11 +201,24 @@ with lease:
     return WalletResponse.of(service.executor.execute(DepositMoneyAction, params))
 ```
 
+**Async**
+
+```python
+lease = await service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
+if lease is None:
+    raise HTTPException(status_code=503, detail="that wallet is busy; retry",
+                        headers={"Retry-After": "1"})
+async with lease:
+    return WalletResponse.of(await service.executor.execute(DepositMoneyAction, params))
+```
+
 Three things here.
 
 **The lease spans `execute`, not just the read.** It has to cover `perform()` *and* the
 executor's commit, or the race it exists to prevent reopens in the gap. The `with` block holds
-the lease for exactly that long and lets go however the block ends.
+the lease for exactly that long and lets go however the block ends. In async mode the lock is
+from `ekbatan.aio.locks`, its holder is the request's task, and waiting for it does not block
+the loop.
 
 **`try_acquire`, not `acquire`.** An HTTP request must not block forever. A lease that cannot be
 had within the wait comes back as `None` - which is *contention*, not a failure, and the two are
@@ -234,7 +263,8 @@ with TestClient(create_app(settings)) as client:
 
 The `with` matters: `TestClient` only runs the lifespan inside a context manager, so without it
 `app.state.service` is never set and every request fails on the dependency. That is the third
-trap and the least interesting one.
+trap and the least interesting one. The same in both modes; in async mode, a test that reaches
+past HTTP into the service awaits on the app's own loop, through `client.portal`.
 
 ## See also
 

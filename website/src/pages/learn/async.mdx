@@ -2,12 +2,14 @@
 layout: ../../layouts/DocLayout.astro
 title: "Going async"
 activeSection: learn
-lead: "Take a wallet service whose endpoints are async def and make its request path natively async with ekbatan.aio: the same models, events and rules, with every database call awaited. Its handler becomes async too; the jobs that poll stay on threads."
+lead: "Move an existing sync service to ekbatan.aio: the same models, events and rules, with every database call awaited. Its handler becomes async too; the jobs that poll stay on threads."
 ---
 
 import LearnPager from "../../components/LearnPager.astro";
 
-This walks through what changes, file by file. The finished service is the
+This walks through what changes, file by file, for a service you already have. Starting a new
+one? Pick **Async** in the [Complete project setup](/learn/complete-project-setup/) and take its files; deciding
+whether to? See [Sync or async?](/learn/sync-or-async/). The finished service is the
 `fastapi-wallet-rest-uv-async-pg` example (and `fastapi-wallet-rest-uv-async-mysql`, `fastapi-wallet-rest-uv-async-mariadb`), which
 passes its own tests; every snippet here is from it. The full reference is
 [Native asyncio](/reference/runtime/async/).

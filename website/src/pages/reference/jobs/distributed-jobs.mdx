@@ -27,6 +27,10 @@ Nothing about being a job makes the work special. It goes through an ordinary ac
 outbox row it writes is indistinguishable from one a request produced - `action_name` says
 `DepositMoneyAction` either way, and nothing downstream can tell or needs to.
 
+**The same in an async service.** Jobs always run on threads: `execute` is a plain `def`, and a
+job takes a sync executor and sync repositories, built from the same config file as the async
+ones. So this page has no async samples.
+
 ## Coordination semantics (inherited from db-scheduler)
 
 - Every instance polls the shared `scheduled_tasks` table.

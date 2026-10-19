@@ -7,6 +7,7 @@ lead: Two phases, one transaction, and a short list of things the framework refu
 
 import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 An **action** is one unit of business work. It does **not** write to the database. It stages new
 and updated domain objects on its plan. Only after `perform()` returns does the executor open a
@@ -60,6 +61,9 @@ until `perform()` returns.
 
 ## Writing an action
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 @dataclass(frozen=True, kw_only=True)
 class DepositParams:
@@ -77,6 +81,32 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
+</div>
+<div slot="async">
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class DepositParams:
+    wallet_id: ShardedId[Wallet]
+    amount: Decimal
+
+
+class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+</div>
+</ModeTabs>
+
+In async mode the action is an `AsyncAction`, `perform` is `async def`, and each read is
+awaited. What it stages is the same, and so is everything else on this page.
+
 Typed parameters in, a domain object out. The action reads through a repository, builds a new
 immutable wallet with an event already attached — that happened inside `wallet.deposit(...)` —
 and stages it. **No database write happens in `perform()`.**
@@ -87,12 +117,28 @@ cast.
 
 Calling it:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 wallet = executor.execute(
     DepositMoneyAction,
     DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+wallet = await executor.execute(
+    DepositMoneyAction,
+    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+)
+```
+
+</div>
+</ModeTabs>
 
 The executor opens one transaction, writes the wallet row with its incremented version, writes
 the `MoneyDepositedEvent` row into `events`, and commits. If anything raises, both roll back
@@ -143,7 +189,11 @@ action. Two hard rules:
 That second rule is why the non-propagation is correct rather than a limitation: a pool thread
 outliving the unit of work while holding its connection is exactly the bug it prevents.
 
-The supported pattern is fan out, **join**, and only then stage — from the invoking thread:
+The supported pattern is fan out, **join**, and only then stage — from the invoking thread, or,
+in async mode, from `perform()` itself after the gather:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 def perform(self, principal: str | None, params: Params) -> Order:
@@ -152,19 +202,38 @@ def perform(self, principal: str | None, params: Params) -> Order:
     return self.plan.add(build_order(customer, quote))   # back on this thread
 ```
 
+</div>
+<div slot="async">
+
+```python
+async def perform(self, principal: str | None, params: Params) -> Order:
+    customer, quote = await asyncio.gather(
+        self.customers.get(params.customer_id),     # each read on a connection of its own
+        self.quotes.get(params.quote_id),           # neither touches the plan
+    )
+    return self.plan.add(build_order(customer, quote))   # staged here, after both
+```
+
+</div>
+</ModeTabs>
+
 For *reads*, prefer doing the fan-out **before** `executor.execute(...)` — at the caller — so
 the parallel work uses ordinary pool connections rather than anything belonging to the action.
 Inside `perform()`, keep parallelism to work that needs none of the action's state: external
 calls, replica reads on their own connections, pure computation.
 
-Under asyncio the same rule applies with a sharper edge: a `ContextVar` is per-task as well as
-per-thread, so work handed to another task does not inherit the binding either. See
-[Concurrency](/reference/runtime/concurrency/).
+Under asyncio the rule is the same, for a different reason. A task started inside `perform()` -
+`asyncio.gather` makes one per read - gets a copy of the context, so `self.plan` does resolve
+there. Stage from `perform()` anyway, after the gather: the order of what is staged then does not
+depend on which read finished first. See [Concurrency](/reference/runtime/concurrency/).
 
 ## Retries on optimistic-lock conflicts
 
 The default is one retry after 100 ms — enough to absorb ordinary contention, not enough to hide
 a real problem.
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 config = ExecutionConfiguration(
@@ -172,6 +241,19 @@ config = ExecutionConfiguration(
 )
 executor.execute(DepositMoneyAction, params, config=config)
 ```
+
+</div>
+<div slot="async">
+
+```python
+config = ExecutionConfiguration(
+    retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
+)
+await executor.execute(DepositMoneyAction, params, config=config)
+```
+
+</div>
+</ModeTabs>
 
 Three details worth knowing:
 
@@ -218,6 +300,9 @@ Refused unless you ask. An action whose staged changes span shards raises `Cross
 naming the two that disagreed — the check is on what was staged, so it fires at the boundary
 between `perform()` and the commit rather than half way through writing.
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 executor.execute(
     TransferAction,
@@ -225,6 +310,20 @@ executor.execute(
     config=ExecutionConfiguration(allow_cross_shard=True),
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+await executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+</div>
+</ModeTabs>
 
 With that, each shard gets its own transaction and commits independently. **There is no
 two-phase commit**, and there is no way to add one: the shards are separate databases, and an

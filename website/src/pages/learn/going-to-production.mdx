@@ -24,8 +24,11 @@ than one thread.
 # wrong, inside an async def
 wallet = wallets.get(wallet_id)
 
-# right
+# right, with the sync API
 wallet = await run_in_threadpool(wallets.get, wallet_id)
+
+# right, with ekbatan.aio: an async repository, awaited
+wallet = await wallets.get(wallet_id)
 ```
 
 A plain `def` endpoint in FastAPI is already run in a threadpool, so the ordinary way of writing

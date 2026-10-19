@@ -6,22 +6,38 @@ lead: One dependency line, two generators, and four lines of Makefile that keep 
 ---
 
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 ## What you need
 
 **Python 3.13 or newer**, and a database: PostgreSQL, MySQL or MariaDB.
 
-SQLite works and the test suite runs on it, but it is not a supported production dialect — it
-has no `SKIP LOCKED`, so the job scheduler and the keyed lock degrade to behaviour that is fine
-for one process and wrong for a cluster.
+SQLite works, in both modes, and the test suite runs on it, but it is not a supported production
+dialect — it has no `SKIP LOCKED`, so the job scheduler degrades to behaviour that is fine for one
+process and wrong for a cluster, and it has no keyed lock of its own (use the Redis one).
 
 ## Install
+
+<ModeTabs>
+<div slot="sync">
 
 ```bash
 uv add "ekbatan[postgres]"
 ```
 
-Everything optional is an extra, and nothing you do not name is installed:
+</div>
+<div slot="async">
+
+```bash
+# the async extra sits beside the sync one: migrations, schemagen and the jobs use it
+uv add "ekbatan[postgres,postgres-async]"
+```
+
+</div>
+</ModeTabs>
+
+Everything optional is an extra, and nothing you do not name is installed. Async mode adds one
+extra per database; see [Sync or async?](/learn/sync-or-async/) for choosing:
 
 | extra | brings | when |
 |---|---|---|

@@ -5,6 +5,8 @@ activeSection: reference
 lead: "For applications that do not need to fan events out to other services - a small monolith, an internal tool, anywhere a Kafka cluster would be overkill - events are delivered to handlers registered in your own application, by two background jobs polling the same outbox. Handlers feel like callbacks a"
 ---
 
+import ModeTabs from "../../../components/ModeTabs.astro";
+
 ```
 Your application
    │  one transaction per action
@@ -45,6 +47,9 @@ its execution revived elsewhere, and both jobs are written to be safe under a re
 
 ## Defining a handler
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 class MoneyDepositedEventHandler:
     name = "money-deposited"
@@ -57,6 +62,25 @@ class MoneyDepositedEventHandler:
         event = envelope.event
         ...
 ```
+
+</div>
+<div slot="async">
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        event = envelope.event
+        ...
+```
+
+</div>
+</ModeTabs>
 
 A plain class. **No base class, no decorator, no annotation** - three attributes and a method.
 There is nothing to inherit because there is nothing the framework needs to give you, and nothing
@@ -76,19 +100,9 @@ own threads - never inside the action.
 
 ### An async handler
 
-`handle` may be `async def`, for a handler that awaits an `ekbatan.aio` executor:
-
-```python
-class MoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = MoneyDepositedEvent
-
-    def __init__(self, executor: AsyncActionExecutor) -> None:
-        self.executor = executor
-
-    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
-```
+`handle` may be `async def`, for a handler that awaits an `ekbatan.aio` executor - the Async
+tab above. Either kind runs in either mode: a sync service may have an async handler, and an
+async service a sync one.
 
 Dispatch still claims and records notifications on its threads. It runs an async handler on its
 **handler loop** - one event loop on a thread of its own, for as long as the dispatch is open -
@@ -176,6 +190,9 @@ Keeping it longer costs nothing — it is a lookup, not a subscription, so an al
 does not create rows or consume work.
 ## Wiring (manual)
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
@@ -194,6 +211,40 @@ jobs = (
 )
 jobs.start()
 ```
+
+</div>
+<div slot="async">
+
+```python
+# The handler awaits an async executor of its own, used only on the handler loop.
+handler_loop = HandlerLoop()
+handlers = EventHandlerRegistry([MoneyDepositedEventHandler(handler_executor)])
+events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+
+# Fan-out and dispatch are jobs: sync, on threads, over a sync `registry` built from the same
+# layout file as the async one.
+jobs = (
+    job_registry()
+    .engine(engine)
+    .with_jobs([
+        EventFanoutJob(registry, handlers, events=EVENTS,
+                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
+        EventHandlingJob(registry, handlers,
+                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock,
+                         enabled=events_config.handling.enabled, handler_loop=handler_loop),
+    ])
+    .build()
+)
+jobs.start()
+
+# at shutdown: the jobs, then the handler's pool on its own loop, then the loop
+await asyncio.to_thread(jobs.stop)
+await asyncio.to_thread(handler_loop.run, handler_registry.aclose())
+handler_loop.close()
+```
+
+</div>
+</ModeTabs>
 
 The executor already writes every committed event with `delivered = False`, so it becomes visible
 to fan-out automatically. There is no extra persister to configure.
@@ -440,10 +491,24 @@ have acted on and check it in the same transaction as the work.
 
 A handler may instead take the executor and start another action:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
     self.executor.execute(CompleteTransferAction, params)
 ```
+
+</div>
+<div slot="async">
+
+```python
+async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+    await self.executor.execute(CompleteTransferAction, params)
+```
+
+</div>
+</ModeTabs>
 
 This is the **only** legitimate place one action chains off another's effect. The source action
 has already committed by the time a handler runs, so the new action gets its own clean

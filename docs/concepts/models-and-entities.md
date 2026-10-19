@@ -1,7 +1,9 @@
 # Models and entities
 
 Two kinds of persistable object. Both immutable, both version-tracked, both with a `state` column
-that supports soft deletion. The difference is whether their changes are news.
+that supports soft deletion. The difference is whether their changes are news. They are the same
+classes in both modes, sync and async: nothing on a model or an entity waits on the database, so
+every sample on this page is the same either way.
 
 | | `Model` | `Entity` |
 | --- | :---: | :---: |

@@ -8,6 +8,7 @@ lead: "Start here if you are new to ekbatan. This page explains the problem it s
 
 import GuidedFlow from "../../components/GuidedFlow.astro";
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 ekbatan is useful when a service needs to save a business change and also make that change
 available as an event. The event might be handled inside the same service, or it might later be
@@ -112,6 +113,9 @@ An `Action` is the unit of business work. A deposit action reads the current wal
 model for the new wallet, and stages that new wallet on the action's plan. The plan is a
 temporary list of objects the executor should persist after `perform()` finishes.
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
     def perform(self, principal: str | None, params: DepositParams) -> Wallet:
@@ -119,12 +123,30 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
+</div>
+<div slot="async">
+
+```python
+class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
+</div>
+</ModeTabs>
+
 The important part is what does **not** happen here:
 
 - no manual transaction
 - no manual `INSERT INTO events`
 - no broker publish
 - no second write to remember
+
+The framework comes in two modes: the sync API, and `ekbatan.aio`, where every database call is
+awaited. The switch above a sample shows it either way; the choice is remembered on every page.
+Only the code that waits on the database differs - here, `async def perform` and `await` on the
+read. [Sync or async?](/learn/sync-or-async/) helps you choose.
 
 `perform()` declares intent. It builds the next state and stages it.
 
@@ -137,12 +159,28 @@ For the full lifecycle, read [Actions](/learn/actions/).
 
 The caller invokes the action through the executor:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 wallet = executor.execute(
     DepositMoneyAction,
     DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+wallet = await executor.execute(
+    DepositMoneyAction,
+    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+)
+```
+
+</div>
+</ModeTabs>
 
 The executor creates a fresh plan, calls `perform()`, and only then opens the transaction that
 writes everything:
@@ -214,6 +252,8 @@ For the practical choices, read [Consuming events](/learn/consuming-events/).
 
 The whole framework grows from the same small model:
 
+- **Two modes**: the sync API and `ekbatan.aio` share every rule, so the guarantees below hold in
+  both.
 - **Repositories** map immutable dataclasses to rows, by field name.
 - **Models** emit events; **entities** do not.
 - **Actions** stage new and changed objects; they never write.

@@ -114,6 +114,10 @@ website's *Complete project setup* page.
 
 ## Your first action, end to end
 
+The framework comes in two modes: the sync API, and `ekbatan.aio`, where every database call is
+awaited. Only the code that waits on the database differs, so where a sample differs it is shown
+both ways, under **Sync** and **Async**. [Sync or async?](sync-or-async.md) helps you choose.
+
 ### 1. A model
 
 ```python
@@ -144,12 +148,28 @@ everywhere - in your code and on the database - see [Always UTC](database/multi-
 
 ### 2. A repository
 
+**Sync**
+
 ```python
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
     def to_row(self, wallet: Wallet) -> dict[str, Any]:
+        return self.columns_by_field_name(wallet)
+
+    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+        return self.model_by_field_name(row)
+```
+
+**Async**
+
+```python
+class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    def __init__(self, registry: AsyncDatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry)
+
+    def to_row(self, wallet: Wallet) -> dict[str, Any]:       # plain def: mapping waits on nothing
         return self.columns_by_field_name(wallet)
 
     def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
@@ -164,12 +184,23 @@ name or a shape differs, write the mapping out instead.
 
 What you add here are the questions your application actually asks:
 
+**Sync**
+
 ```python
     def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         return self.find_where(WALLETS.c.owner_id == owner_id)
 ```
 
+**Async**
+
+```python
+    async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+        return await self.find_where(WALLETS.c.owner_id == owner_id)
+```
+
 ### 3. An action
+
+**Sync**
 
 ```python
 class DepositMoneyAction(Action[DepositParams, Wallet]):
@@ -182,12 +213,27 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
+**Async**
+
+```python
+class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+        super().__init__(clock)
+        self.wallets = wallets
+
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+```
+
 `self.plan.update` writes nothing. It *stages*. The executor opens one transaction afterwards
 and flushes the wallet row and its event together.
 
 ### 4. Wire it
 
 See [Wiring](wiring.md) for the whole of it. The short version:
+
+**Sync**
 
 ```python
 registry = DatabaseRegistry.from_config(layout)
@@ -202,10 +248,36 @@ executor = ActionExecutor(
 )
 ```
 
+**Async**
+
+```python
+registry = AsyncDatabaseRegistry.from_config(layout)
+wallets = WalletRepository(registry)
+
+executor = AsyncActionExecutor(
+    namespace="com.example.wallets",
+    registry=registry,
+    repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
+    actions=ActionRegistry.builder().with_action(DepositMoneyAction(wallets, clock)).build(),
+    events=EVENTS,
+)
+```
+
 ### 5. Run it
+
+**Sync**
 
 ```python
 wallet = executor.execute(
+    DepositMoneyAction,
+    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+)
+```
+
+**Async**
+
+```python
+wallet = await executor.execute(
     DepositMoneyAction,
     DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
@@ -215,7 +287,10 @@ One transaction. The wallet row, its version bump and the outbox row, or none of
 
 ## Testing before there is a database
 
-An action's logic needs no database at all. `ActionSpec` runs the action and checks what it staged and emitted:
+An action's logic needs no database at all. `ActionSpec` (`AsyncActionSpec` in async mode, from
+`ekbatan.aio.testing`) runs the action and checks what it staged and emitted:
+
+**Sync**
 
 ```python
 (ActionSpec.of(DepositMoneyAction(wallets, clock))
@@ -226,12 +301,37 @@ An action's logic needs no database at all. `ActionSpec` runs the action and che
     .assert_no_additions())
 ```
 
+**Async**
+
+```python
+checked = await (
+    AsyncActionSpec.of(DepositMoneyAction(wallets, clock))
+    .with_principal("alice")
+    .execute(DepositParams(wallet_id=..., amount=Decimal("50.00")))
+)
+(checked
+    .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
+    .assert_emitted(MoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
+    .assert_no_additions())
+```
+
 A verifier can be a `lambda` returning its verdict or a function that asserts inside itself; a
 falsy verdict fails, so neither can pass by accident. When plain `assert` reads better,
-`run_action` hands back the same information as data:
+`run_action` (`async_run_action`) hands back the same information as data:
+
+**Sync**
 
 ```python
 staged = run_action(DepositMoneyAction(wallets, clock), DepositParams(wallet_id=..., amount=Decimal("50.00")))
+
+assert staged.result.balance == Decimal("150.00")
+assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+```
+
+**Async**
+
+```python
+staged = await async_run_action(DepositMoneyAction(wallets, clock), DepositParams(wallet_id=..., amount=Decimal("50.00")))
 
 assert staged.result.balance == Decimal("150.00")
 assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
@@ -242,16 +342,13 @@ Both bind the plan through the same mechanism the executor uses, so `self.plan`,
 also the limit of it: that state and events land *together* is a claim about a transaction, and
 only a test against a real database checks it.
 
-## Going async
+## Async mode
 
-The service above uses the sync API: a plain `def` endpoint runs on a worker thread. For an
-asyncio service whose `async def` endpoints await the database, add the async driver beside the
-sync one - `"ekbatan[postgres,postgres-async,migrations]"`, `mysql-async`, `mariadb-async` or
-`sqlite-async` - and build the request path on `ekbatan.aio`: `AsyncModelRepository`,
-`AsyncAction` with `async def perform`, and an `AsyncActionExecutor` you `await`. Models, events,
-migrations and the generated schema do not change; the keyed lock has an async twin in
-`ekbatan.aio.locks`, an event handler may be `async def`, and the jobs stay on threads. The
-file-by-file walk is [Going async](going-async.md), and the reference is
+The async samples above need the async driver beside the sync one -
+`"ekbatan[postgres,postgres-async,migrations]"`, `mysql-async`, `mariadb-async` or
+`sqlite-async`. Models, events, migrations and the generated schema are the same in both modes;
+the keyed lock has an async twin in `ekbatan.aio.locks`, an event handler may be `async def`, and
+the jobs stay on threads. How to choose is [Sync or async?](sync-or-async.md); the reference is
 [Native asyncio](runtime/async.md).
 
 ## Where to go next
@@ -260,5 +357,5 @@ file-by-file walk is [Going async](going-async.md), and the reference is
 - [schemagen](database/schemagen.md) - the code generation step in full
 - [Wiring with FastAPI](wiring-fastapi.md) - a lifespan, a dependency, and the three pools
 - [Concurrency](runtime/concurrency.md) - threads, the GIL, and the one way to use this wrongly
-- [Going async](going-async.md) - the request path on `ekbatan.aio`
-- [`ekbatan-py-examples/`](../ekbatan-py-examples) - nine runnable projects
+- [Sync or async?](sync-or-async.md) - how to choose, and what is the same either way
+- [`ekbatan-py-examples/`](../ekbatan-py-examples) - eleven runnable projects

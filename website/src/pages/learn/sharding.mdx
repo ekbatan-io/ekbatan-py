@@ -7,6 +7,7 @@ lead: One database to two, without changing a single action signature.
 
 import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 The claim this page makes is narrow and testable: **going from one database to two changes the
 configuration and the model's id type, and nothing else.** Your actions, your repository
@@ -18,6 +19,11 @@ is this page, running.
 ## 1. Change the model's ID type
 
 ```python
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
 ```
 
 `ShardedId` rather than `Id`. The `(group, member)` pair is packed into 14 bits of the UUID
@@ -38,12 +44,28 @@ The layout is fixed, so every service that reads it agrees - including a Java se
 Ekbatan, which puts the shard in the same bits (see
 [Running beside a Java service](/reference/beside-java/#ids)).
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy())
 ```
+
+</div>
+<div slot="async">
+
+```python
+class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    def __init__(self, registry: AsyncDatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, registry,
+                         sharding=EmbeddedBitsShardingStrategy())
+```
+
+</div>
+</ModeTabs>
 
 One argument. That is step four of four.
 
@@ -72,6 +94,9 @@ def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
 
 Then the action decides *which* shard, from business properties:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 class OpenWalletAction(Action[OpenWalletParams, Wallet]):
     def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
@@ -85,6 +110,26 @@ class OpenWalletAction(Action[OpenWalletParams, Wallet]):
             )
         )
 ```
+
+</div>
+<div slot="async">
+
+```python
+class OpenWalletAction(AsyncAction[OpenWalletParams, Wallet]):
+    async def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
+        shard = MEXICO if params.country == "MX" else GLOBAL
+        return self.plan.add(
+            Wallet.open(
+                shard=shard,
+                owner_id=params.owner_id,
+                currency=params.currency,
+                opening_balance=params.opening_balance,
+            )
+        )
+```
+
+</div>
+</ModeTabs>
 
 **That conditional is the only line in the whole application that knows there is more than one
 database.** Every other action, every endpoint, and every test that does not assert on placement
@@ -122,6 +167,7 @@ layout = ShardingConfig(
     ),
 )
 registry = DatabaseRegistry.from_config(layout)
+# async mode: the same layout, AsyncDatabaseRegistry.from_config(layout) from ekbatan.aio
 ```
 
 That is the whole configuration change. `migrate(layout, MIGRATIONS)` now visits both, in
@@ -150,6 +196,9 @@ carries its own outbox, and an event is written to the database whose row it des
 
 ## 5. Run it
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 mx = service.executor.execute(
     OpenWalletAction,
@@ -157,6 +206,20 @@ mx = service.executor.execute(
 )
 print(mx.id.shard)          # 1:0 - the bits are in the id
 ```
+
+</div>
+<div slot="async">
+
+```python
+mx = await service.executor.execute(
+    OpenWalletAction,
+    OpenWalletParams(owner_id=uuid4(), currency="MXN", country="MX", opening_balance=Decimal(0)),
+)
+print(mx.id.shard)          # 1:0 - the bits are in the id
+```
+
+</div>
+</ModeTabs>
 
 The row is only on that database, and so is its event:
 
@@ -176,11 +239,27 @@ no atomic commit across databases to have.
 
 Asking for it anyway is refused:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 executor.execute(TransferAction, params)      # raises CrossShardError
 ```
 
+</div>
+<div slot="async">
+
+```python
+await executor.execute(TransferAction, params)      # raises CrossShardError
+```
+
+</div>
+</ModeTabs>
+
 You have two honest answers. Opt in per call, and accept that each shard commits on its own:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 executor.execute(
@@ -189,6 +268,20 @@ executor.execute(
     config=ExecutionConfiguration(allow_cross_shard=True),
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+await executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+</div>
+</ModeTabs>
 
 The executor then opens **one transaction per shard**. A failure rolls back only its own shard;
 the ones that already committed stay committed, and the framework logs that loudly, naming them.
@@ -208,8 +301,9 @@ taken.
 - `wallets.find_where(...)` — has no id to route by, so it **scatters** across every shard.
 - Every action body. Every endpoint. Every test that does not assert on placement.
 
-**A predicate read hits every shard.** Latency is the sum, because the shards are visited one at
-a time. On two shards that is invisible; on eight it is the first thing you would feel.
+**A predicate read hits every shard.** In sync mode the shards are visited one at a time, so
+latency is the sum - invisible on two shards, the first thing you would feel on eight. In async
+mode they are asked at the same time, so it is the slowest shard.
 
 **A cross-shard action is refused** unless you pass `allow_cross_shard=True`, and then each shard
 commits independently. If a partial commit would need compensating, you want a

@@ -87,9 +87,18 @@ With `allow_cross_shard=True`, the executor groups changes by shard and opens **
 per shard**, each committing independently. A failure rolls back only its own shard; shards that
 already committed stay committed, and the framework logs that loudly, naming them.
 
+**Sync**
+
 ```python
 executor.execute(TransferAction, params,
                  config=ExecutionConfiguration(allow_cross_shard=True))
+```
+
+**Async**
+
+```python
+await executor.execute(TransferAction, params,
+                       config=ExecutionConfiguration(allow_cross_shard=True))
 ```
 
 Prefer opting in **per call**, so the risk is visible at the call site. An executor-wide default
@@ -109,16 +118,11 @@ The good news is that most actions never need it. Routing customers to the same 
 wallets, and orders to the same shard as their customer, removes most cross-shard pressure for
 free.
 
-## Fan-out is sequential here
+## Scatter reads: one shard at a time in sync mode
 
-Worth knowing before you plan a large deployment, and recorded in
-[SHORTCOMINGS.md](../SHORTCOMINGS.md) rather than left to be discovered: a scatter read across N
-shards, and the event fan-out round, visit shards **one at a time**, not all at once.
-
-On eight shards a fan-out round therefore takes eight batches' time rather than one. Rounds are
-short - the work per shard is one bounded batch - so it has not bitten, and the fix is a pool
-around the existing per-shard drain rather than a redesign. Eight shards is where you would
-first feel it.
+A predicate read across N shards visits them **one at a time** in sync mode: on eight shards it
+takes eight round trips' time rather than one. In async mode the inherited reads ask every shard
+at the same time. The event fan-out drains every shard at once in both modes.
 
 ## What sharding doesn't solve
 
@@ -127,7 +131,8 @@ It is a write-throughput-and-policy tool. It does not:
 - **give you cross-shard transactions** - no framework can; that is a property of distributed
   systems, not of this one;
 - **speed up scatter-gather reads** - a predicate across N members hits N databases, and the
-  latency is the max, not the mean (and here they are sequential, so it is the sum);
+  latency is the max, not the mean (in sync mode they are visited one after another, so it is
+  the sum);
 - **remove hot shards** - if 80% of traffic targets one customer, that customer's shard is hot
   however many others exist. Pre-splitting a hot tenant across members of its own group is a
   separate technique.

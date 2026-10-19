@@ -22,10 +22,8 @@ So: about one and a half times the work under load, and a much shorter wait for 
 A lone request is a little slower on asyncpg than on psycopg. The full tables, and how a pool
 timeout changes them, are [below](#the-pool-is-the-cap).
 
-Keep the sync API when the server is threaded (gunicorn, a worker loop), when a FastAPI
-endpoint is a plain `def` (it already runs on a thread), or when the service is mostly event
-handlers and jobs. Threads are fine for this work: the database wait releases the GIL either
-way, and the event loop stayed responsive in every run, both ways.
+Choosing between the two, and what stays the same, is on [Sync or async?](../sync-or-async.md). This page
+is the async details: drivers, the pool, tasks, locks, the handler loop.
 
 ## Install
 
@@ -47,13 +45,11 @@ dispatch jobs are sync, and connect through the sync driver.
 
 ## What is async, and what is not
 
-| | |
-| --- | --- |
-| **async** - awaited | `AsyncDatabaseRegistry`, `AsyncTransactionManager`, `AsyncDb`, `AsyncTransaction`; `AsyncModelRepository`, `AsyncEntityRepository`, `AbstractAsyncRepository`; `AsyncAction`; `AsyncActionExecutor`; `AsyncSingleTableJsonEventPersister`; `AsyncActionSpec`, `async_run_action`; the keyed locks in `ekbatan.aio.locks`; an event handler's `async def handle` |
-| **shared** - the same objects in both | models, entities, events, `ActionPlan`, ids, sharding strategies, `ActionRegistry`, `RepositoryRegistry`, `ExecutionConfiguration`, config and config files, `ekbatan.schema`, `count_statements` |
-| **sync**, on threads | event fan-out and dispatch (they run either kind of handler), distributed jobs, migrations, `schemagen` |
-
-`to_row` and `from_row` stay plain `def`: mapping waits on nothing.
+Every class that waits on the database has an async twin in `ekbatan.aio`, named with the
+`Async` prefix; models, events, ids, the registries of actions and repositories, and config are
+shared; fan-out, dispatch, jobs, migrations and `schemagen` stay sync, on threads. The full list,
+side by side, is on [Sync or async?](../sync-or-async.md#what-differs). `to_row` and `from_row` stay plain
+`def`: mapping waits on nothing.
 
 ## A service, written async
 
@@ -314,10 +310,10 @@ this shape: async requests under an async keyed lock, an async handler, four poo
 
 ## One kind per service
 
-A service is all-sync or all-async on its request path. Nothing stops an application building
-both registries over one database - the example does, for its handlers - but they are two pools,
-and **one transaction cannot span them**. And never call the sync API from inside an
-`async def`: it blocks the event loop for every request at once.
+A service is all-sync or all-async on its request path. Two registries over one database are
+two pools, and **one transaction cannot span them**. Never call the sync API from inside an
+`async def`: it blocks the event loop for every request at once. See
+[Sync or async?](../sync-or-async.md).
 
 ## Testing an async action
 

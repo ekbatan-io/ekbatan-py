@@ -5,6 +5,11 @@ activeSection: reference
 lead: "One repository per persistable type, extending ModelRepository or EntityRepository. The base supplies the whole read and write surface; what you add are the questions your business actually asks."
 ---
 
+import ModeTabs from "../../components/ModeTabs.astro";
+
+<ModeTabs>
+<div slot="sync">
+
 ```python
 class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
@@ -14,6 +19,22 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
     def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         return self.find_where(WALLETS.c.owner_id == owner_id)
 ```
+
+</div>
+<div slot="async">
+
+```python
+class WalletRepository(WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
+        super().__init__(Wallet, WALLETS, registry,
+                         sharding=EmbeddedBitsShardingStrategy(), clock=clock)
+
+    async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+        return await self.find_where(WALLETS.c.owner_id == owner_id)
+```
+
+</div>
+</ModeTabs>
 
 ## The four classes
 
@@ -26,7 +47,9 @@ Four classes, in layers:
 | `ModelRepository[M, K]` | extend this for a model |
 | `EntityRepository[M, K]` | extend this for an entity |
 
-An application extends `ModelRepository` or `EntityRepository` and nothing else.
+An application extends `ModelRepository` or `EntityRepository` and nothing else. In async
+mode the same four live in `ekbatan.aio` with an `Async` prefix - `AsyncModelRepository`,
+`AsyncEntityRepository` - and every read and write is awaited. The rules are the same code.
 
 ## Write the mapping
 
@@ -49,7 +72,9 @@ def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
     return self.model_by_field_name(row)
 ```
 
-Where a name or a shape differs, write the mapping out instead.
+Where a name or a shape differs, write the mapping out instead. `to_row` and `from_row` are
+plain `def` in both modes - mapping waits on nothing - so an async repository can take them from
+a small class of their own (`class WalletRepository(WalletRows, AsyncModelRepository[...])`).
 
 **This was the default until `EKB-0217`, and being the default is what made it wrong.** Rename a
 column without renaming the field and the mapping silently stopped matching - no error, no
@@ -64,6 +89,9 @@ a dataclass knows its fields. Choosing it is yours; implementing it is not.
 
 **Writes**
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 repo.add(model)          # -> M, stamped
 repo.add_all(models)     # -> list[M]
@@ -71,11 +99,27 @@ repo.update(model)       # -> M, version already moved
 repo.update_all(models)  # -> list[M]
 ```
 
+</div>
+<div slot="async">
+
+```python
+await repo.add(model)          # -> M, stamped
+await repo.add_all(models)     # -> list[M]
+await repo.update(model)       # -> M, version already moved
+await repo.update_all(models)  # -> list[M]
+```
+
+</div>
+</ModeTabs>
+
 Plus `add_no_result` / `update_no_result` and their `_all` forms, for when you are writing a
 large batch and do not need the rebuilt objects back. On a dialect without `RETURNING` the
 framework otherwise has to rebuild the rows itself, and that is not free.
 
 **Reads**
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 repo.find(key)               # -> M | None
@@ -86,7 +130,25 @@ repo.find_one_where(*criteria, shard=...)
 repo.find_where(*criteria, shard=...)
 ```
 
+</div>
+<div slot="async">
+
+```python
+await repo.find(key)               # -> M | None
+await repo.get(key)                # -> M, raises EntityNotFoundError
+await repo.find_many(keys)         # -> list[M]
+await repo.all(shard=...)          # -> list[M]
+await repo.find_one_where(*criteria, shard=...)
+await repo.find_where(*criteria, shard=...)
+```
+
+</div>
+</ModeTabs>
+
 **Counting and existence**
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 repo.count(*criteria, shard=...)
@@ -94,21 +156,46 @@ repo.exists(key)
 repo.exists_where(*criteria, shard=...)
 ```
 
+</div>
+<div slot="async">
+
+```python
+await repo.count(*criteria, shard=...)
+await repo.exists(key)
+await repo.exists_where(*criteria, shard=...)
+```
+
+</div>
+</ModeTabs>
+
 Every one of them:
 
 - **applies optimistic locking** on writes - `WHERE version = ?`, and the increment;
 - **filters soft-deleted rows** on reads, once, in the framework rather than at each call site;
 - **routes to the right shard** - by the id for key-based reads, by scatter-gather across every
-  shard for predicate-based ones;
+  shard for predicate-based ones (in async mode the shards are asked at the same time);
 - **reads from the primary** by design. Replica reads are opt-in;
 - **resolves the dialect per shard**, so a mixed-dialect deployment is not ruled out.
 
 Criteria are ordinary SQLAlchemy expressions, so the whole of `sqlalchemy` is available inside
 them:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 repo.find_where(WALLETS.c.state == "OPENED", WALLETS.c.balance < threshold)
 ```
+
+</div>
+<div slot="async">
+
+```python
+await repo.find_where(WALLETS.c.state == "OPENED", WALLETS.c.balance < threshold)
+```
+
+</div>
+</ModeTabs>
 
 Several criteria are `AND`ed. For anything else, build the expression yourself and pass it.
 
@@ -124,6 +211,9 @@ concrete repository where you know the ordering key.
 When the inherited surface is not enough, take a connection. The choice is about **consistency**,
 and picking wrongly is the mistake this section exists to prevent.
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 with self.db(key=..., model=..., shard=...) as conn: ...          # primary
 with self.readonly_db(key=..., shard=...) as conn: ...             # the replica
@@ -131,12 +221,39 @@ conn = self.tx_db(key=...)                                        # the open tra
 with self.tx_db_else_db(key=...) as conn: ...                     # that, else primary
 ```
 
+</div>
+<div slot="async">
+
+```python
+async with self.db(key=..., model=..., shard=...) as conn: ...    # primary
+async with self.readonly_db(key=..., shard=...) as conn: ...       # the replica
+conn = self.tx_db(key=...)                                        # the open transaction, or None
+async with self.tx_db_else_db(key=...) as conn: ...               # that, else primary
+```
+
+</div>
+</ModeTabs>
+
 And for every shard at once:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 for shard, conn in self.dbs(): ...
 for shard, conn in self.readonly_dbs(): ...
 ```
+
+</div>
+<div slot="async">
+
+```python
+async for shard, conn in self.dbs(): ...
+async for shard, conn in self.readonly_dbs(): ...
+```
+
+</div>
+</ModeTabs>
 
 ### Picking the right one
 
@@ -150,8 +267,9 @@ for shard, conn in self.readonly_dbs(): ...
 | "we must already be in a transaction", loudly | `tx_db(...)`, and raise on `None` |
 | a scatter-gather | `dbs()` / `readonly_dbs()` |
 
-They are context managers because a connection has a lifetime. `tx_db` is the exception: it
-returns the transaction's connection or `None`, and the transaction owns it.
+They are context managers because a connection has a lifetime - `async with` in async mode, and
+`async for` over the shards. `tx_db` is the exception: it returns the transaction's connection or
+`None`, and the transaction owns it.
 
 > **`Action.perform()` itself is not transactional.** The executor opens the transaction *after*
 > `perform()` returns, and then persists the staged plan. So a custom `tx_db_else_db(...)` write
@@ -164,9 +282,13 @@ returns the transaction's connection or `None`, and the transaction owns it.
 
 ### Examples
 
-What comes back from any of them is a `Db` - a `sqlalchemy.Connection` with one method added.
+What comes back from any of them is a `Db` - a `sqlalchemy.Connection` with one method added
+(in async mode an `AsyncDb`, SQLAlchemy's `AsyncConnection`, where `rows()` is awaited).
 Everything SQLAlchemy documents is still there and still means what its documentation says;
 `rows()` is the addition:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
@@ -177,6 +299,22 @@ def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
     with self.readonly_db() as conn:
         return conn.rows(statement).fetch(self.from_row)
 ```
+
+</div>
+<div slot="async">
+
+```python
+async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
+    statement = select(WALLETS).where(
+        WALLETS.c.owner_id == owner_id,
+        WALLETS.c.state != WalletState.DELETED.name,
+    )
+    async with self.readonly_db() as conn:
+        return (await conn.rows(statement)).fetch(self.from_row)
+```
+
+</div>
+</ModeTabs>
 
 `conn.rows(statement)` hands back a `FetchResult`, and each of its terminals takes the mapper -
 so the mapping is the last thing you read.
@@ -201,20 +339,53 @@ or takes the first of several says so in its name.
 The mapper is any callable, not only `from_row`, so a projection is the same call with a
 different argument:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 with self.readonly_db() as conn:
     return conn.rows(select(WALLETS.c.currency).distinct()).fetch(lambda row: str(row.currency))
 ```
 
+</div>
+<div slot="async">
+
+```python
+async with self.readonly_db() as conn:
+    found = await conn.rows(select(WALLETS.c.currency).distinct())
+    return found.fetch(lambda row: str(row.currency))
+```
+
+</div>
+</ModeTabs>
+
 **A query with no rows to map still uses `execute`.** A count, a rowcount, an `EXISTS`, DDL -
 `rows()` would be claiming a shape the answer does not have:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 with self.tx_db_else_db(key=wallet_id) as conn:
     return conn.execute(delete(WALLETS).where(self.id_matches(wallet_id))).rowcount == 1
 ```
 
+</div>
+<div slot="async">
+
+```python
+async with self.tx_db_else_db(key=wallet_id) as conn:
+    erased = await conn.execute(delete(WALLETS).where(self.id_matches(wallet_id)))
+    return erased.rowcount == 1
+```
+
+</div>
+</ModeTabs>
+
 Scatter-gather is a flattening comprehension over the shards:
+
+<ModeTabs>
+<div slot="sync">
 
 ```python
 return [
@@ -223,6 +394,20 @@ return [
     for wallet in conn.rows(statement).each(self.from_row)
 ]
 ```
+
+</div>
+<div slot="async">
+
+```python
+return [
+    wallet
+    async for _, conn in self.readonly_dbs()
+    for wallet in (await conn.rows(statement)).each(self.from_row)
+]
+```
+
+</div>
+</ModeTabs>
 
 > **`perform()` is not transactional.** The executor opens the transaction *after* `perform()`
 > returns. A `tx_db_else_db(...)` write from inside `perform()` finds nothing bound, falls back

@@ -10,10 +10,21 @@ The difference is what happens when two callers race. Optimistic locking is corr
 
 ## The contract
 
+**Sync**
+
 ```python
 lease = locks.acquire(key, max_hold)                     # waits as long as it takes
 lease = locks.try_acquire(key, max_wait, max_hold)       # None if it could not be had
 with lease:
+    ...
+```
+
+**Async**
+
+```python
+lease = await locks.acquire(key, max_hold)               # waits as long as it takes
+lease = await locks.try_acquire(key, max_wait, max_hold) # None if it could not be had
+async with lease:
     ...
 ```
 
@@ -25,11 +36,23 @@ for the work inside.
 on purpose: contention is a "come back shortly", a failure is a bug or an outage. In an HTTP
 handler that distinction is a 503 with a `Retry-After` rather than a 500.
 
+**Sync**
+
 ```python
 lease = service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
 if lease is None:
     raise HTTPException(503, "that wallet is busy; retry", headers={"Retry-After": "1"})
 with lease:
+    ...
+```
+
+**Async**
+
+```python
+lease = await service.locks.try_acquire(f"wallet:{wallet_id}", LOCK_WAIT, LOCK_HOLD)
+if lease is None:
+    raise HTTPException(503, "that wallet is busy; retry", headers={"Retry-After": "1"})
+async with lease:
     ...
 ```
 
@@ -46,7 +69,7 @@ wrongly under pressure:
   what lets an HTTP handler answer 503 with a `Retry-After` instead of 500.
 - **The key is a string you choose**, and its granularity is the whole design. `wallet:{id}`
   serialises one wallet; `wallets` serialises every wallet, which is a different product.
-- **Releasing is not your job.** The lease is a context manager, so the release happens on the
+- **Releasing is not your job.** The lease is a context manager (`async with` in async mode), so the release happens on the
   way out of the block whichever way you leave it — including an exception, which is the path
   that gets forgotten when release is a method call.
 
@@ -64,9 +87,18 @@ wrongly under pressure:
 └─ release lock       ←─┘
 ```
 
+**Sync**
+
 ```python
 with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
     service.executor.execute(DepositMoneyAction, params)
+```
+
+**Async**
+
+```python
+async with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
+    await service.executor.execute(DepositMoneyAction, params)
 ```
 
 The lease wraps **both** `perform()` and the executor's commit. A concurrent acquirer cannot
@@ -137,7 +169,8 @@ is stricter than the last-call-wins convention some lock libraries use, and it i
 under which the outer region's reasoning stays true: it committed to a worst case, and an inner
 call cannot pull that commitment out from under it.
 
-Re-entry is **per thread, not per call stack**: the holder is the thread. A thread you hand
+Re-entry is **per thread, not per call stack**: the holder is the thread (in async mode, the
+task - see below). A thread you hand
 work to is a different identity and will block on a key you hold. That is not a
 bug to work around: if the child could inherit the hold, "this key is held by one holder" would
 stop being true.
@@ -224,24 +257,44 @@ On MySQL and MariaDB the lock's name is the hash as bare unsigned hex, with no p
 
 ### Wiring up a backend
 
+**Sync**
+
 ```python
 locks = PostgresKeyedLockProvider(
     create_engine(url, pool_size=5, max_overflow=0)
 )
 ```
 
+**Async**
+
+```python
+locks = AsyncPostgresKeyedLockProvider(
+    create_async_engine(url, pool_size=5, max_overflow=0)
+)
+```
+
 A provider is a plain object you construct and hand to whatever needs it — there is no registry
 to declare it in and nothing discovers it. `locks.close()` does nothing: a lease still
 open stays held until it is released or its `max_hold` passes. The engine is yours — you created
-it, so you dispose it — and the order matters: let the leases end before disposing the pool they
+it, so you dispose it (`await engine.dispose()` for an async one) — and the order matters: let the leases end before disposing the pool they
 are holding connections from.
 
 Redis takes a client rather than an engine:
+
+**Sync**
 
 ```python
 from ekbatan.locks.redis import RedisKeyedLockProvider
 
 locks = RedisKeyedLockProvider(redis.Redis(host="localhost"))
+```
+
+**Async**
+
+```python
+from ekbatan.aio.locks.redis import AsyncRedisKeyedLockProvider
+
+locks = AsyncRedisKeyedLockProvider(redis.asyncio.Redis(host="localhost"))
 ```
 
 Size the SQL pool by **concurrent leases**, not by request rate: a lease is a connection for as
@@ -283,7 +336,8 @@ Three consequences:
 - **Nothing can stop a waiting `acquire`.** Python has no way to interrupt another thread, so
   a waiting `acquire` runs until it gets the lock - on any backend. Code that must be
   able to stop waiting should call `try_acquire` with a bounded `max_wait`, in a loop that checks
-  its own stop flag. This is a limit of the language, not a choice.
+  its own stop flag. This is a limit of the language, not a choice. An async wait is
+  different: it can be cancelled, or bounded with `asyncio.timeout(...)`.
 - **Fairness is best-effort.** Within a segment the waiter is genuinely queued inside the
   database, so hand-off from a releasing holder is immediate - this is not client-side spinning.
   But each new segment re-enters that queue at the *back*, so a long waiter yields position to

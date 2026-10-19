@@ -417,7 +417,8 @@ The column keeps its own type, and the converter is wrapped around it:
 Column("amount", converted(NUMERIC(precision=19, scale=4), MoneyConverter()), nullable=False)
 ```
 
-Now the column takes and gives `Money`, in inserts, reads and comparisons alike:
+Now the column takes and gives `Money`, in inserts, reads and comparisons alike - on a sync
+connection as below, or awaited on an async one; the generated module is the same for both:
 
 ```python
 from decimal import Decimal

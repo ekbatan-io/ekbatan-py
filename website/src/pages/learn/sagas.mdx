@@ -7,6 +7,7 @@ lead: Workflows that will not fit in one transaction — and what they cost the 
 
 import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 A saga models one business workflow as a sequence of smaller, independently committed actions.
 Use it when the workflow cannot honestly fit in one transaction: cross-shard transfers,
@@ -111,6 +112,9 @@ own transaction and its own durable outcome.
 
 The runnable example uses in-process handlers, because every step lives in one application:
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 class TransferInitiatedEventHandler:
     """Step one committed; run step two."""
@@ -135,6 +139,36 @@ class TransferInitiatedEventHandler:
         )
 ```
 
+</div>
+<div slot="async">
+
+```python
+class TransferInitiatedEventHandler:
+    """Step one committed; run step two - awaited, on dispatch's handler loop."""
+
+    name = "transfer-initiated"
+    event_type = TransferInitiatedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+        event = envelope.event
+        await self.executor.execute(
+            CompleteTransferAction,
+            CompleteTransferParams(
+                transfer_id=event.transfer_id,
+                from_wallet_id=ShardedId[Wallet](event.from_wallet_id),
+                to_wallet_id=ShardedId[Wallet](event.to_wallet_id),
+                amount=event.amount,
+                currency=event.currency,
+            ),
+        )
+```
+
+</div>
+</ModeTabs>
+
 Notice what the handler takes: **the executor**, not a connection. It runs the next step as its
 own unit of work, with its own transaction and its own outbox rows. The transaction that produced
 `TransferInitiatedEvent` committed and went away before this line ran — which is exactly the
@@ -154,12 +188,28 @@ no single file shows you the whole workflow — the outbox does, after the fact.
 Delivery is at-least-once, so a handler can run twice. The example's shape is worth copying
 exactly:
 
+<ModeTabs>
+<div slot="sync">
+
 <CodeBlock filename="actions.py" language="python" shadow="orange" code={`def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.
     self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
     ...`} />
+
+</div>
+<div slot="async">
+
+<CodeBlock filename="actions.py" language="python" shadow="orange" code={`async def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
+    # Staged *before* the credit, so the unique constraint decides whether this delivery is
+    # the first one. A replay stages the same marker, the insert is refused, and the credit
+    # beside it is rolled back with it - which is why the money cannot arrive twice.
+    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    ...`} />
+
+</div>
+</ModeTabs>
 
 A check-then-act has a window. This has none, because the database refuses the duplicate and
 takes the credit down with it.

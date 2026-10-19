@@ -5,12 +5,24 @@ builds; `load_ekbatan_config` reads the whole `ekbatan` section - namespace, job
 local-event-handler too. Every check stays in the config classes - a url with a login in it, a blank username, a
 driver setting named `password` are refused exactly as they are in code.
 
+**Sync**
+
 ```python
 from ekbatan.config_files import load_sharding_config
 from ekbatan.persistence import DatabaseRegistry
 
 layout = load_sharding_config("ekbatan.yaml")
 registry = DatabaseRegistry.from_config(layout)
+```
+
+**Async**
+
+```python
+from ekbatan.aio import AsyncDatabaseRegistry
+from ekbatan.config_files import load_sharding_config
+
+layout = load_sharding_config("ekbatan.yaml")
+registry = AsyncDatabaseRegistry.from_config(layout)    # the same file, the async driver
 ```
 
 The format comes from the file's extension: `.yaml` or `.yml`, `.toml`, `.json`, or `.ini`. No
@@ -114,6 +126,8 @@ INI has one level of sections, so a group is a dotted section name and a list it
 `load_ekbatan_config` reads everything under `ekbatan` - the namespace, the shard layout, the jobs
 and the local event handler - and returns one `EkbatanConfig`:
 
+**Sync**
+
 ```python
 from ekbatan.config_files import load_ekbatan_config
 
@@ -124,6 +138,27 @@ executor_builder = ActionExecutor.builder().namespace(ekbatan.namespace)
 jobs_builder = job_registry().with_config(ekbatan.jobs)
 handling_builder = (
     EventHandlingJob.builder()
+    .config(ekbatan.local_event_handler)
+    # The job does not read the switch itself; the wiring does.
+    .enabled(ekbatan.local_event_handler.handling.enabled)
+)
+```
+
+**Async**
+
+```python
+from ekbatan.config_files import load_ekbatan_config
+
+ekbatan = load_ekbatan_config("ekbatan.yaml")
+
+registry = AsyncDatabaseRegistry.from_config(ekbatan.sharding)
+executor_builder = AsyncActionExecutor.builder().namespace(ekbatan.namespace)
+# The jobs, fan-out and dispatch stay sync, over a sync registry from the same layout.
+events_registry = DatabaseRegistry.from_config(ekbatan.sharding)
+jobs_builder = job_registry().with_config(ekbatan.jobs)
+handling_builder = (
+    EventHandlingJob.builder()
+    .registry(events_registry)
     .config(ekbatan.local_event_handler)
     # The job does not read the switch itself; the wiring does.
     .enabled(ekbatan.local_event_handler.handling.enabled)

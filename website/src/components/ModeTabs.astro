@@ -1,0 +1,127 @@
+---
+// A Sync | Async switch over one code sample that differs between the two APIs.
+//
+//   <ModeTabs>
+//   <div slot="sync">
+//
+//   ```python
+//   wallet = executor.execute(DepositMoneyAction, params)
+//   ```
+//
+//   </div>
+//   <div slot="async">
+//
+//   ```python
+//   wallet = await executor.execute(DepositMoneyAction, params)
+//   ```
+//
+//   </div>
+//   </ModeTabs>
+//
+// Every switch on every page shows the same mode: picking Async on one flips them all, and the
+// choice is remembered across pages under the same localStorage key and field the setup guide's
+// picker uses (`ekbatan-py.picker`, `mode`). A sample that is the same in both modes is written
+// once, without this. The docs/ copy of a page shows the two blocks one after the other, under
+// **Sync** and **Async** labels.
+interface Props {
+    /** What the async tab is called, when "Async" is not the clearest word. */
+    asyncLabel?: string;
+}
+const { asyncLabel = "Async" } = Astro.props;
+---
+
+<div class="mode-tabs">
+    <div class="mode-tabs-bar flex gap-0 brutalist-border" role="group" aria-label="Sync or async">
+        <button
+            type="button"
+            data-mode-value="sync"
+            class="font-mono text-[10px] uppercase tracking-widest px-2.5 py-1 bg-ink text-paper border-r-2 border-ink"
+            aria-pressed="true"
+        >
+            Sync
+        </button>
+        <button
+            type="button"
+            data-mode-value="async"
+            class="font-mono text-[10px] uppercase tracking-widest px-2.5 py-1 bg-paper text-ink"
+            aria-pressed="false"
+        >
+            {asyncLabel}
+        </button>
+    </div>
+    <div data-mode="sync"><slot name="sync" /></div>
+    <div data-mode="async" hidden><slot name="async" /></div>
+</div>
+
+<style>
+    .mode-tabs {
+        margin: 1.25rem 0;
+    }
+    .mode-tabs-bar {
+        width: fit-content;
+        margin-bottom: -2px;
+        position: relative;
+        z-index: 1;
+    }
+    .mode-tabs [data-mode] > :global(:first-child) {
+        margin-top: 0;
+    }
+</style>
+
+<script is:inline>
+    // One handler for every switch on the page, however many times the component is used.
+    (function () {
+        if (window.__ekbatanModeTabs) {
+            window.__ekbatanModeTabs.apply();
+            return;
+        }
+        const STORAGE_KEY = "ekbatan-py.picker";
+
+        function read() {
+            try {
+                return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+            } catch {
+                return {};
+            }
+        }
+        function current() {
+            const mode = read().mode;
+            return mode === "async" ? "async" : "sync";
+        }
+        function apply(mode) {
+            const active = mode || current();
+            document.body.dataset.activeMode = active;
+            document.querySelectorAll("[data-mode-value]").forEach((btn) => {
+                const on = btn.getAttribute("data-mode-value") === active;
+                btn.classList.toggle("bg-ink", on);
+                btn.classList.toggle("text-paper", on);
+                btn.classList.toggle("bg-paper", !on);
+                btn.classList.toggle("text-ink", !on);
+                btn.setAttribute("aria-pressed", String(on));
+            });
+            // Only the switch's own two panes: the setup guide's picker owns every other
+            // [data-mode] element on its page.
+            document.querySelectorAll(".mode-tabs > [data-mode]").forEach((el) => {
+                el.toggleAttribute("hidden", el.getAttribute("data-mode") !== active);
+            });
+        }
+        window.__ekbatanModeTabs = { apply };
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", () => apply());
+        } else {
+            apply();
+        }
+        document.addEventListener("click", (e) => {
+            const btn = e.target instanceof Element ? e.target.closest("[data-mode-value]") : null;
+            if (!btn) return;
+            const mode = btn.getAttribute("data-mode-value");
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...read(), mode }));
+            } catch {
+                // Private mode, blocked storage: the switch still works on this page.
+            }
+            apply(mode);
+        });
+    })();
+</script>

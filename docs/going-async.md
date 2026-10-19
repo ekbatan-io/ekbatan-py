@@ -1,8 +1,10 @@
 # Going async
 
-Take a wallet service whose endpoints are async def and make its request path natively async with ekbatan.aio: the same models, events and rules, with every database call awaited. Its handler becomes async too; the jobs that poll stay on threads.
+Move an existing sync service to ekbatan.aio: the same models, events and rules, with every database call awaited. Its handler becomes async too; the jobs that poll stay on threads.
 
-This walks through what changes, file by file. The finished service is the
+This walks through what changes, file by file, for a service you already have. Starting a new
+one? Pick **Async** in the website's complete project setup, or start from the async examples;
+deciding whether to? See [Sync or async?](sync-or-async.md). The finished service is the
 `fastapi-wallet-rest-uv-async-pg` example (and `fastapi-wallet-rest-uv-async-mysql`, `fastapi-wallet-rest-uv-async-mariadb`), which
 passes its own tests; every snippet here is from it. The full reference is
 [Native asyncio](runtime/async.md).

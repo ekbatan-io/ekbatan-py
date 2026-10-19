@@ -6,6 +6,7 @@ lead: Two axes, three strategies, and why cross-shard is refused by default.
 ---
 
 import LearnPager from "../../components/LearnPager.astro";
+import ModeTabs from "../../components/ModeTabs.astro";
 
 [Adding a shard](/learn/sharding/) is the mechanics. This is the model underneath it.
 
@@ -36,9 +37,22 @@ distributes load, usually a hash.
 Everything at `DEFAULT_SHARD`. You write actions exactly as if sharding did not exist — the
 registry is still in the path, and every call resolves to the same database.
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 registry = DatabaseRegistry.from_config(ShardingConfig.single(url))
 ```
+
+</div>
+<div slot="async">
+
+```python
+registry = AsyncDatabaseRegistry.from_config(ShardingConfig.single(url))
+```
+
+</div>
+</ModeTabs>
 
 Nothing opts in, and nothing costs anything: a repository with no strategy uses
 `NoShardingStrategy`, which resolves every key to the default shard. Its scatter accessors visit
@@ -103,6 +117,9 @@ With `allow_cross_shard=True` the executor groups the staged changes by shard an
 transaction per shard**, in deterministic order, rolling each back independently on failure.
 Shards that already committed stay committed, and the framework logs that loudly, naming them.
 
+<ModeTabs>
+<div slot="sync">
+
 ```python
 executor.execute(
     TransferAction,
@@ -110,6 +127,20 @@ executor.execute(
     config=ExecutionConfiguration(allow_cross_shard=True),
 )
 ```
+
+</div>
+<div slot="async">
+
+```python
+await executor.execute(
+    TransferAction,
+    params,
+    config=ExecutionConfiguration(allow_cross_shard=True),
+)
+```
+
+</div>
+</ModeTabs>
 
 Prefer opting in on one explicit call. Setting it as an executor-wide default should be
 reserved for a dedicated executor whose actions are *all* designed for per-shard commits and
@@ -134,8 +165,9 @@ pressure for free.
 ## What sharding doesn't solve
 
 - **Cross-shard transactions.** No framework can; that is a property of distributed systems.
-- **Scatter-gather latency.** A predicate across N members hits N databases, and here they are
-  visited sequentially, so it is the sum rather than the max.
+- **Scatter-gather latency.** A predicate across N members hits N databases. In sync mode they
+  are visited one after another, so it is the sum; in async mode they are asked at the same
+  time, so it is the slowest one.
 - **Hot shards.** If 80% of traffic targets one customer, that customer's shard is hot however
   many others exist.
 

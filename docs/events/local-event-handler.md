@@ -46,6 +46,8 @@ its execution revived elsewhere, and both jobs are written to be safe under a re
 
 ## Defining a handler
 
+**Sync**
+
 ```python
 class MoneyDepositedEventHandler:
     name = "money-deposited"
@@ -55,6 +57,21 @@ class MoneyDepositedEventHandler:
         self.executor = executor
 
     def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+        event = envelope.event
+        ...
+```
+
+**Async**
+
+```python
+class MoneyDepositedEventHandler:
+    name = "money-deposited"
+    event_type = MoneyDepositedEvent
+
+    def __init__(self, executor: AsyncActionExecutor) -> None:
+        self.executor = executor
+
+    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
         event = envelope.event
         ...
 ```
@@ -77,19 +94,9 @@ own threads - never inside the action.
 
 ### An async handler
 
-`handle` may be `async def`, for a handler that awaits an `ekbatan.aio` executor:
-
-```python
-class MoneyDepositedEventHandler:
-    name = "money-deposited"
-    event_type = MoneyDepositedEvent
-
-    def __init__(self, executor: AsyncActionExecutor) -> None:
-        self.executor = executor
-
-    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
-```
+`handle` may be `async def`, for a handler that awaits an `ekbatan.aio` executor - the Async
+block above. Either kind runs in either mode: a sync service may have an async handler, and an
+async service a sync one.
 
 Dispatch still claims and records notifications on its threads. It runs an async handler on its
 **handler loop** - one event loop on a thread of its own, for as long as the dispatch is open -
@@ -178,6 +185,8 @@ does not create rows or consume work.
 
 ## Wiring
 
+**Sync**
+
 ```python
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
@@ -195,6 +204,36 @@ jobs = (
     .build()
 )
 jobs.start()
+```
+
+**Async**
+
+```python
+# The handler awaits an async executor of its own, used only on the handler loop.
+handler_loop = HandlerLoop()
+handlers = EventHandlerRegistry([MoneyDepositedEventHandler(handler_executor)])
+events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
+
+# Fan-out and dispatch are jobs: sync, on threads, over a sync `registry` built from the same
+# layout file as the async one.
+jobs = (
+    job_registry()
+    .engine(engine)
+    .with_jobs([
+        EventFanoutJob(registry, handlers, events=EVENTS,
+                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
+        EventHandlingJob(registry, handlers,
+                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock,
+                         enabled=events_config.handling.enabled, handler_loop=handler_loop),
+    ])
+    .build()
+)
+jobs.start()
+
+# at shutdown: the jobs, then the handler's pool on its own loop, then the loop
+await asyncio.to_thread(jobs.stop)
+await asyncio.to_thread(handler_loop.run, handler_registry.aclose())
+handler_loop.close()
 ```
 
 The executor already writes every committed event with `delivered = False`, so it becomes visible
@@ -407,9 +446,18 @@ have acted on and check it in the same transaction as the work.
 
 A handler may instead take the executor and start another action:
 
+**Sync**
+
 ```python
 def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
     self.executor.execute(CompleteTransferAction, params)
+```
+
+**Async**
+
+```python
+async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+    await self.executor.execute(CompleteTransferAction, params)
 ```
 
 This is the **only** legitimate place one action chains off another's effect. The source action
@@ -492,9 +540,18 @@ with consumer-group offsets rather than this pipeline.
 
 A handler may instead take the executor and start another action:
 
+**Sync**
+
 ```python
 def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
     self.executor.execute(CompleteTransferAction, params)
+```
+
+**Async**
+
+```python
+async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
+    await self.executor.execute(CompleteTransferAction, params)
 ```
 
 This is the **only** legitimate place one action chains off another's effect. The source action

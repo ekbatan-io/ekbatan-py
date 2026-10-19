@@ -1,0 +1,112 @@
+---
+layout: ../../layouts/DocLayout.astro
+title: "Sync or async?"
+activeSection: learn
+lead: "Ekbatan has two APIs: the sync one, and `ekbatan.aio`, where every database call is awaited. They are one framework: the same rules, the same tables, the same outbox rows. You pick one per service. This page says how to pick, and what changes when you do."
+---
+
+import ModeTabs from "../../components/ModeTabs.astro";
+import LearnPager from "../../components/LearnPager.astro";
+
+## How to choose
+
+Pick **async** when the service is an asyncio app - FastAPI or Starlette with `async def`
+endpoints - and many requests wait on the database at the same time. Under load it does about
+one and a half times the work of the same service on threads, and most requests wait less.
+
+Pick **sync** when:
+
+- the server is threaded (gunicorn, a worker loop), or your FastAPI endpoints are plain `def` -
+  FastAPI already runs those on a thread;
+- the service is mostly event handlers and jobs;
+- you have no reason to change. Threads are fine for database work: the wait releases the GIL
+  either way.
+
+A lone request is a little faster on sync. The numbers are on
+[Native asyncio](/reference/runtime/async/#when-to-use-it).
+
+Do not mix them on one request path. Never call the sync API from inside an `async def`: it
+blocks the event loop, and every request with it.
+
+## What is the same in both modes
+
+- models, entities, events, ids, the `ActionPlan` - the same classes, the same files;
+- what an action stages, and what the executor writes: one transaction holding the rows and
+  their events;
+- the optimistic lock, soft delete, retries, sharding and the cross-shard rule - the same code;
+- the tables, the migrations, the generated `schema.py` and `ekbatan.yaml` - one config file
+  serves both;
+- `ActionRegistry`, `RepositoryRegistry`, `ExecutionConfiguration`, config and config files;
+- the keyed locks hold the same keys, so a sync service and an async one contend for one lock;
+- handlers run after the action has committed, never inside it, at least once.
+
+## What differs
+
+| | sync | async |
+| --- | --- | --- |
+| install | `ekbatan[postgres]` | `ekbatan[postgres,postgres-async]` - the async extra beside the sync one |
+| registry | `DatabaseRegistry` | `AsyncDatabaseRegistry` |
+| repositories | `ModelRepository`, `EntityRepository` | `AsyncModelRepository`, `AsyncEntityRepository`; every read and write is awaited |
+| actions | `Action`, `def perform` | `AsyncAction`, `async def perform` |
+| executor | `ActionExecutor`, `executor.execute(...)` | `AsyncActionExecutor`, `await executor.execute(...)` |
+| transaction | `with registry.default.transaction():` | `async with registry.default.transaction():` |
+| keyed lock | `ekbatan.locks`, `with locks.acquire(...)` | `ekbatan.aio.locks`, `async with locks.acquire(...)` |
+| event handler | `def handle` | `async def handle`, awaiting an executor of its own |
+| testing | `ActionSpec`, `run_action` | `AsyncActionSpec`, `async_run_action` |
+| shutdown | `registry.close()` | `await registry.aclose()` |
+
+`to_row` and `from_row` stay plain `def` in both: mapping waits on nothing.
+
+A deposit, both ways:
+
+<ModeTabs>
+<div slot="sync">
+
+```python
+class DepositMoneyAction(Action[DepositParams, Wallet]):
+    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+
+
+wallet = executor.execute(DepositMoneyAction, params)
+```
+
+</div>
+<div slot="async">
+
+```python
+class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
+    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+        wallet = await self.wallets.get(params.wallet_id)
+        return self.plan.update(wallet.deposit(params.amount))
+
+
+wallet = await executor.execute(DepositMoneyAction, params)
+```
+
+</div>
+</ModeTabs>
+
+## What always runs on threads
+
+Some work is sync in both modes. An async service builds a sync `DatabaseRegistry` beside its
+async one, from the same `ekbatan.yaml`, for it:
+
+- **event fan-out and dispatch** - two jobs that read the outbox and run the handlers. They run
+  a sync handler on a thread and an async one on their handler loop, one event loop on a thread
+  of its own;
+- **distributed jobs** - `execute` is a plain `def`, run on the scheduler's threads;
+- **migrations** - run once at startup, before any pool opens;
+- **schemagen** and **codegen** - build steps, not part of the running service.
+
+So an async service keeps the sync driver installed too: these use it.
+
+<LearnPager current="sync-or-async" />
+
+## Where to go next
+
+- [Complete project setup](/learn/complete-project-setup/) - pick
+  **Async** in its picker for every file of an async service
+- [Going async](/learn/async/) - moving an existing sync service over, file by file
+- [Native asyncio](/reference/runtime/async/) - drivers, the pool as the cap, the handler loop, gevent

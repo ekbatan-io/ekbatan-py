@@ -3,7 +3,8 @@
 //
 // The order mirrors Java's - the problem, then the model, then building something, then the
 // harder shapes, then the whole project - minus native-image, which has no counterpart, plus
-// four this port needs and Java does not: installing, wiring by hand, going async, and what
+// five this port needs and Java does not: installing, choosing sync or async, wiring by hand,
+// going async, and what
 // concurrency actually costs on CPython.
 export const LEARN_PAGES = [
     { slug: "getting-started", title: "Getting started", blurb: "Start here. Follow one wallet change through the dual-write problem, model events, action staging, and what the executor commits." },
@@ -13,12 +14,13 @@ export const LEARN_PAGES = [
     { slug: "actions", title: "Actions", blurb: "The two-phase lifecycle: build the new state first, then let the executor commit domain rows and event rows in one transaction. Retries, and why nesting is refused." },
     { slug: "your-first-action", title: "Your first action", blurb: "Build a wallet deposit end to end: define the event, define the model, write the action, call it from an endpoint, and read the outbox row you never wrote." },
     { slug: "install", title: "Installing it", blurb: "The extras that bring each driver, the two generators and what each reads, and the Makefile that stands in for a task runner." },
+    { slug: "sync-or-async", title: "Sync or async?", blurb: "Two APIs, one framework. How to pick one per service, what is the same in both, what differs, and what always runs on threads." },
     { slug: "wiring-a-service", title: "Wiring a service", blurb: "Every collaborator a service needs, built in one function and closed in the right order - with the pools sized for what actually contends." },
     { slug: "consuming-events", title: "Consuming events", blurb: "Use committed events after the fact: handle them in the same service, publish from a handler, or stream them out with CDC. Every path is at-least-once." },
     { slug: "sharding", title: "Adding a shard", blurb: "Take a single-database service to two shards. Your action signatures, repository queries and endpoints do not change; the model's id type does." },
     { slug: "sharding-strategies", title: "Sharding strategies", blurb: "The deeper model behind groups, members, embedded-bits ids and custom routing - and why a cross-shard action is refused until you say otherwise." },
     { slug: "sagas", title: "Sagas", blurb: "Split a multi-step workflow into committed actions chained by events, with explicit compensation when a later step fails and nothing to roll back." },
-    { slug: "async", title: "Going async", blurb: "Make the request path natively async with ekbatan.aio: async repositories and actions, an awaited executor, async def endpoints - while handlers and jobs stay on threads." },
+    { slug: "async", title: "Going async", blurb: "Move an existing sync service to ekbatan.aio, file by file: async repositories and actions, an awaited executor, async def endpoints - while jobs stay on threads." },
     { slug: "going-to-production", title: "Going to production", blurb: "What concurrency costs on CPython, how migrations run at deploy, what to alert on, and what this port does not do for you yet." },
     { slug: "complete-project-setup", title: "Complete project setup", blurb: "The whole setup, for your dialect and your installer: scaffold, dependencies, connection config, migrations, generated schema, domain, HTTP layer, tests." },
 ] as const;
