@@ -131,6 +131,11 @@ model or the clock held it and comes back as the driver returns it.
 - **Never add `astimezone`, `replace(tzinfo=...)`, `fromtimestamp(..., tz=...)` or any other
   zone normalisation** to the library. `tests/unit/test_time_as_is.py` fails on it; its
   allow-list is not to be grown without the user's OK. Changing this rule needs the user's OK.
+- The same rule holds in `db-scheduler/`: its repository binds and returns times as given, its
+  `SystemClock` gives naive UTC, and its persistence path is guarded by
+  `db-scheduler/tests/unit/test_time_kept_as_given.py`. Only its schedules (`Daily`, cron) do
+  zone arithmetic, reading a naive time as UTC and answering in the kind they were asked in. A
+  `timestamptz` `scheduled_tasks` table needs an aware clock (`customize_scheduler`).
 - Getting time right is the **application's job**. A clock that gives aware values, or a zoned
   column, is the application's choice, and it must keep the two consistent: the framework
   compares what the clock gives with what the database returns (due times, retries, expiry),

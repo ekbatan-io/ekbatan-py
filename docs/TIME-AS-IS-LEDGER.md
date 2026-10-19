@@ -43,7 +43,7 @@ Commits from `EKB-0384`. Judgement calls: `docs/DECISIONS-TO-REVIEW.md#time-as-i
 | red/green proof: 11 conversions reintroduced one at a time, each turned behavioural tests red (guard excluded); the guard also fires on all 11 | done, see below | |
 | db-scheduler: same rule; suite 2340 -> 2371 passed, 0 failed, all four databases, both shapes; zoned PostgreSQL tests given an aware clock | done | EKB-0387 |
 | examples | | |
-| full verification | | |
+| full verification | done | EKB-0388 |
 
 ## Red/green proof (sqlite + postgres, sync + async, guard test excluded)
 
@@ -104,3 +104,20 @@ A one-second job through `job_registry()`, two deploys on one `timestamptz` tabl
 (naive) clock: runs 4 then 3, the second deploy logged `TypeError: can't compare offset-naive
 and offset-aware datetimes` while reconciling the recurring job. Aware UTC clock
 (`customize_scheduler(lambda b: b.clock(AwareUtcClock()))`): runs 4 then 3, no error.
+
+## Verification (after all commits)
+
+| run | before | after |
+| --- | --- | --- |
+| unit tests | 1283 passed, 4 xfailed | 1297 passed, 4 xfailed |
+| `pytest --dialects=all` (SQLite, PostgreSQL, MySQL, MariaDB; sync and async) | 5196 passed, 8 failed (mid-edit artefact, see baseline) | 5266 passed, 0 failed, 143 skipped |
+| `make test-psycopg-async` | - | 1158 passed, 14 skipped |
+| `make test-gevent` | - | 1922 passed, 438 skipped |
+| db-scheduler `pytest --dialects=all` | 2340 passed, 28 skipped | 2371 passed, 28 skipped |
+| db-scheduler `ruff check .`, `mypy` | mypy: 6 errors in `tests/unit/test_pool.py` | unchanged (no new errors) |
+| `make lint` | green | green |
+| website `npm run build`, `npm run check` | - | green (58 pages; 76/76 settled) |
+| setup guide, uv, every database x both modes (8 runs) | - | all ok |
+| examples, uv (all 14) | - | all green: 12 server ones `make` + both SQLite `make` and `make run` |
+| examples, pip | - | `fastapi-wallet-rest-pip-pg`, `-pip-mysql`, `-pip-async-mariadb`, `wallet-service-pip-sqlite`: green |
+| examples, Poetry (temp `uvx poetry` shim) | - | `fastapi-wallet-rest-poetry-async-pg`, `-poetry-async-mysql`, `-poetry-mariadb`, `wallet-service-poetry-async-sqlite`: green |
