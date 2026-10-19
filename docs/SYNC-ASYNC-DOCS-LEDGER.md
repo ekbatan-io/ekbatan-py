@@ -148,8 +148,8 @@ uv, pip and Poetry; three docs leftovers; AGENTS.md. Judgement calls:
 | A7 | READMEs: root, `ekbatan-py-examples/README.md`, sibling links in the sync twins | done |
 | A8 | Skill files listing examples (`agent-skills/`, `.claude/skills/`) | done |
 | A9 | Docs + website: setup guide example table, async pages, sync-or-async, sharding / saga / jobs pages (switches where code differs) | done |
-| A10 | Task 2: sagas.md repeated section; local-event-handler.md repeated section; website copies checked | open |
-| A11 | Task 2: SHORTCOMINGS.md against the code (fan-out, examples count, async) - measured | open |
+| A10 | Task 2: sagas.md repeated section; local-event-handler.md repeated section; website copies checked | done |
+| A11 | Task 2: SHORTCOMINGS.md against the code (fan-out, examples count, async) - measured | done |
 | A12 | AGENTS.md "Two modes" and example counts | open |
 | A13 | Verify: make lint, unit tests, website build + check, test_setup_guide | open |
 
@@ -179,3 +179,23 @@ the stipend run with `asyncio.run` instead of the worker loop (five job tests re
 | reference/runtime/concurrency | docs/runtime/concurrency.md | the job worker's twin named beside it |
 
 ### Findings
+
+- **sagas.md** repeated the idempotency sample (Sync and Async) under Design rules, and a
+  sentence of the 202 section; its design rules and section order now match the website page,
+  which already had neither repeat.
+- **local-event-handler.md** carried "A realistic handler" and "Listen-to-yourself" twice (once
+  as "## Listen to yourself"); the first copy is gone, with a repeated Kafka-path sentence. The
+  section list now matches the website's (only "Wiring" vs "Wiring (manual)" differs, as before).
+- **Fan-out is not one shard at a time.** Measured (`/tmp` probe, four SQLite shards, each
+  shard's read slowed by 0.3 s inside the real repository method): fan-out 0.32 s, dispatch
+  0.31 s, one `ekbatan-*-shard_N` thread per shard. SHORTCOMINGS was right; the measurement is
+  now in its row. Docs saying the same: `docs/database/sharding.md`, `docs/runtime/concurrency.md`.
+- **SHORTCOMINGS** stale since the async work: the examples row said 7 (now 42 projects, every
+  one with an async twin); the blocking-calls row now says a job's work may be awaited on a
+  `HandlerLoop`. No website copy exists.
+- **DIVERGENCE.md** said the per-notification fork "did not port" and pointed at a section that
+  does not exist; `test_a_batch_invokes_its_handlers_concurrently` (passes on SQLite, only if
+  four handlers run together) and SHORTCOMINGS (`EKB-0204`) say it did. Fixed. **Not fixed:** the
+  same stale sentence in `EventDispatch.drain_once`'s docstring (`src/ekbatan/events/dispatch.py`)
+  - a `src/` change, left for the user.
+

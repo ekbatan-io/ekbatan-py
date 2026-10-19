@@ -74,45 +74,7 @@ has arrived nowhere. A 200 would be a claim about something still in flight. Ret
 status URL is not politeness - it is the API telling the truth about what the database currently
 says, and it is how people avoid being surprised by a saga in production.
 
-The status endpoint reads the step markers, because that *is* the state. There is no saga table
-and no coordinator to ask.
-
-## Idempotency is a constraint, not a check
-
-Delivery is at-least-once, so a handler can run twice. The example's shape is worth copying
-exactly:
-
-**Sync**
-
-```python
-def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
-    # Staged *before* the credit, so the unique constraint decides whether this delivery is
-    # the first one. A replay stages the same marker, the insert is refused, and the credit
-    # beside it is rolled back with it - which is why the money cannot arrive twice.
-    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
-    ...
-```
-
-**Async**
-
-```python
-async def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
-    # Staged *before* the credit, so the unique constraint decides whether this delivery is
-    # the first one. A replay stages the same marker, the insert is refused, and the credit
-    # beside it is rolled back with it - which is why the money cannot arrive twice.
-    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
-    ...
-```
-
-A check-then-act has a window. This has none, because the database refuses the duplicate and
-takes the credit down with it.
-
-## Terminal failures are events, not exceptions
-
-If the destination wallet is closed, retrying will never help. `CompleteTransferAction` emits
-`TransferFailedEvent` and **returns normally**. Raising would make the handler retry a transfer
-into a closed wallet forever — and "failed" is a business outcome that deserves a durable row
-like any other.
+The status endpoint reads the step markers, because that *is* the state.
 
 ## Forward-only compensation
 
@@ -213,16 +175,10 @@ knows one thing: given *this* event, run *that* action. Adding a fourth step mea
 fifth event and a third handler, and changing nothing that already works. The trade is that
 no single file shows you the whole workflow — the outbox does, after the fact.
 
-## Design rules
+## Idempotency is a constraint, not a check
 
-**Carry a correlation id through every event.** The example mints a `transfer_id` in step one and
-carries it through all four events.
-
-**Make payloads self-contained.** A handler should not have to parse the producing action's
-params to know what to do next. Put the identifiers and the amount in the event.
-
-**Make every step idempotent.** Delivery is at-least-once; a handler can run twice after a crash.
-The example's shape is worth copying exactly:
+Delivery is at-least-once, so a handler can run twice. The example's shape is worth copying
+exactly:
 
 **Sync**
 
@@ -246,20 +202,42 @@ async def perform(self, principal: str | None, params: CompleteTransferParams) -
     ...
 ```
 
-Idempotency is a **unique constraint in the same transaction as the effect**, not a check-then-act
-in application code. A check-then-act has a window; this has none, because the database refuses
-the duplicate and takes the credit down with it.
+A check-then-act has a window. This has none, because the database refuses the duplicate and
+takes the credit down with it.
 
-**Record terminal business failures as events, not exceptions.** If the destination wallet is
-closed, retrying will never help. `CompleteTransferAction` emits `TransferFailedEvent` and returns
-normally. Raising would make the handler retry a transfer into a closed wallet forever - and
-"failed" is a business outcome that deserves a durable row like any other.
+## Terminal failures are events, not exceptions
 
-**Keep compensation forward-only.** Do not erase earlier facts. Add a compensating action and a
-new event.
+If the destination wallet is closed, retrying will never help. `CompleteTransferAction` emits
+`TransferFailedEvent` and **returns normally**. Raising would make the handler retry a transfer
+into a closed wallet forever — and "failed" is a business outcome that deserves a durable row
+like any other.
 
-**Pick the consumer by deployment shape.** In-process when every step lives in one application; a
-broker when a later step belongs to another service. The action code does not change either way.
+## Design rules
+
+**Put a correlation id in every saga event.** The example mints a `transfer_id` in
+`InitiateTransferAction` and carries it through every event of the workflow, so a human can
+reconstruct one transfer from the outbox with a single `WHERE`.
+
+**Make event payloads self-contained.** A handler should not have to parse the producing
+action's parameters to know what to do next. Put the next step's identifiers and the amount in
+the event itself. Self-describing events are what make choreography possible — a handler that
+had to look things up would need to know where they are.
+
+**Make each step idempotent**, with a unique constraint rather than a check. Delivery is
+at-least-once everywhere, so a step runs twice sooner or later. The example stages a
+`TransferStep` keyed by `(transfer_id, step)` *before* the credit, inside the same transaction:
+a replay hits the constraint and the credit beside it rolls back with it.
+
+**Record terminal business failures as events, not exceptions.** A closed destination wallet
+will still be closed on the next attempt, so retrying forever does not help. The example writes
+a `TransferFailedEvent`, and compensation reacts to it like any other event.
+
+**Keep compensation forward-only.** Do not erase earlier facts — add a new compensating action
+and its event. The debit happened; the refund is a second thing that also happened.
+
+**Choose in-process or broker by deployment shape.** The example uses in-process handlers
+because every step lives in one application. If a later step belongs to another service, let
+that service consume the event through Debezium instead. Nothing in the saga's shape changes.
 
 ## What this gives you
 

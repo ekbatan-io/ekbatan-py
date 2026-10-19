@@ -1413,10 +1413,11 @@ The contract is Java's, not just the shape: the whole round is submitted before 
 raised, so one unreachable shard does not hold back its siblings, and results come back in
 shard order rather than completion order.
 
-**The per-notification fork did not port.** Within one shard a batch is still delivered in
-order - that half is under "Dispatch delivers one notification at a time", and it is a different
-trade, because those handlers are application code running in process rather than one bounded
-query per database.
+**The per-notification fork ported too** (`EKB-0204`). Within one shard a batch's handlers run
+at the same time, one thread per notification, bounded by the batch size as Java's is; a batch
+of one runs inline. `test_a_batch_invokes_its_handlers_concurrently` pins it: four handlers that
+each wait for all four pass only if they run together. Async handlers in a batch run together on
+the handler loop.
 
 ## The sync API blocks, and blocking is free under gevent and not under asyncio
 

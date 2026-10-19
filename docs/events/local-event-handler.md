@@ -413,62 +413,6 @@ What you must not rely on:
 If a handler cannot be made idempotent in any of those ways, you want the Kafka path with
 consumer-group offsets, not this one.
 
-## Listen to yourself
-
-Most handlers reach for something to do the useful part — send a notification, write an audit
-row, post to an external API. The shape is the same as any handler; the only difference is what
-the constructor takes:
-
-```python
-class MoneyDepositedEventHandler:
-    name = "money-deposited-notification"
-    event_type = MoneyDepositedEvent
-
-    def __init__(self, notifications: NotificationService) -> None:
-        self.notifications = notifications
-
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        self.notifications.deposit_received(
-            envelope.model_id, envelope.event.amount, envelope.event.new_balance
-        )
-```
-
-Nothing injects that service. You construct the handler in your wiring, where you can see what it
-took — the same place you register it. There is no scanning and no annotation.
-
-**The external call is the part that makes idempotency hard.** A notification sent twice is a
-notification the user received twice, and the outbox cannot undo it. If the call has an
-idempotency key, pass the **event id** — it is stable across every retry of the same
-notification, and distinct for every other one. If it has none, keep a table of event ids you
-have acted on and check it in the same transaction as the work.
-
-### Listen-to-yourself
-
-A handler may instead take the executor and start another action:
-
-**Sync**
-
-```python
-def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
-    self.executor.execute(CompleteTransferAction, params)
-```
-
-**Async**
-
-```python
-async def handle(self, envelope: EventEnvelope[TransferInitiatedEvent]) -> None:
-    await self.executor.execute(CompleteTransferAction, params)
-```
-
-This is the **only** legitimate place one action chains off another's effect. The source action
-has already committed by the time a handler runs, so the new action gets its own clean
-transaction, its own retry policy and its own outbox rows. It is what a [saga](../concepts/sagas.md)
-is built from.
-
-What it must **not** do is reach for a connection and write directly. A handler that writes
-outside an action writes without an outbox row, and the thing it changed then has no event
-explaining it — which is the failure this whole framework exists to make unexpressible.
-
 ### Using a handler as a broker publisher
 
 A handler does not have to keep the work inside the database. Write one for an event type and
@@ -532,9 +476,6 @@ notification the user received twice, and the outbox cannot undo it. If the call
 idempotency key, pass the **event id** — it is stable across every retry of the same
 notification, and distinct for every other one. If it has none, keep a table of event ids you
 have acted on and check it in the same transaction as the work.
-
-If your handler cannot be made idempotent in any of those ways, you probably want the Kafka path
-with consumer-group offsets rather than this pipeline.
 
 ### Listen-to-yourself
 
