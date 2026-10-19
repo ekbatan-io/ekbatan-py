@@ -86,7 +86,7 @@ src/ekbatan/
   locks/             base.py, sql.py, redis.py, _holder.py, _deadlines.py
   distributedjobs/   DistributedJob, JobRegistry, JobsConfig
 db-scheduler/        a separate distribution: the port of kagkarlsson/db-scheduler
-ekbatan-py-examples/ eleven examples x uv/pip/Poetry: 33 standalone projects
+ekbatan-py-examples/ fourteen examples x uv/pip/Poetry: 42 standalone projects
 ```
 
 `db-scheduler/` is **its own distribution** with its own lock file, tests, CI workflow and ruff
@@ -148,17 +148,21 @@ Every reader picks a mode - the sync API or `ekbatan.aio` - and every part of th
 serves both. The rules:
 
 - **Every new public feature works in both modes**, or the docs say why not (as they do for
-  jobs, migrations and `schemagen`, which are sync in both, and for SQLite, which has no keyed
-  lock provider in either).
+  jobs, migrations and `schemagen`, which are sync in both - a job's *work* may still be awaited,
+  handed to a `HandlerLoop` with `loop.run(...)` - and for SQLite, which has no keyed lock
+  provider in either).
 - **Logic lives in the shared private cores, never copied.** The async class adds only the lines
   that await (see the next section).
 - **Each test scenario runs in both modes**: a test module sets `MODES = ("sync", "async")` and
   `tests/modes.py` runs it again against `ekbatan.aio`. A scenario that cannot run through the
   harness gets a native coroutine test in `tests/integration/test_async.py`.
-- **Each example has an async twin** (`fastapi-wallet-rest-*-async-{pg,mysql,mariadb}`,
-  `wallet-service-*-async-sqlite`). A change to a sync example's behaviour goes into its twin,
-  or the twin's README says why not. The one-of-a-kind examples (sharded, saga, job worker) have
-  none yet.
+- **Every example has an async twin**, with the same tests plus a check that it really runs
+  async (its drivers, its loop): `fastapi-wallet-rest-*-async-{pg,mysql,mariadb}`,
+  `wallet-service-*-async-sqlite`, `fastapi-wallet-rest-*-async-sharded-pg`,
+  `fastapi-wallet-saga-*-async-pg` and `job-worker-*-async-pg` - seven twins of seven, 42
+  projects in all. A change to a sync example's behaviour goes into its twin, or the twin's
+  README says why not. **A new example gets an async twin** in the same change, built with uv,
+  pip and Poetry like the rest.
 - **Each code sample on the website and in `docs/` shows both modes where they differ.** On the
   website, wrap it in `<ModeTabs>` (`website/src/components/ModeTabs.astro`, slots `sync` and
   `async`); the choice is shared across pages with the setup guide's picker. In the `docs/` copy,

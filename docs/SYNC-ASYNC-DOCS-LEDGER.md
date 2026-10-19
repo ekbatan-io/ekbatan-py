@@ -150,7 +150,7 @@ uv, pip and Poetry; three docs leftovers; AGENTS.md. Judgement calls:
 | A9 | Docs + website: setup guide example table, async pages, sync-or-async, sharding / saga / jobs pages (switches where code differs) | done |
 | A10 | Task 2: sagas.md repeated section; local-event-handler.md repeated section; website copies checked | done |
 | A11 | Task 2: SHORTCOMINGS.md against the code (fan-out, examples count, async) - measured | done |
-| A12 | AGENTS.md "Two modes" and example counts | open |
+| A12 | AGENTS.md "Two modes" and example counts | done |
 | A13 | Verify: make lint, unit tests, website build + check, test_setup_guide | open |
 
 ### Example runs
