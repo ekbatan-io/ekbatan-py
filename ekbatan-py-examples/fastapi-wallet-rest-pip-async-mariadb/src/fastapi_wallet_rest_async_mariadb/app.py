@@ -56,13 +56,7 @@ from ekbatan.aio import (
     AsyncTransactionManager,
     async_engine_for,
 )
-from ekbatan.aio.locks import (
-    AsyncKeyedLockProvider,
-    AsyncMariaDBKeyedLockProvider,
-    AsyncMySQLKeyedLockProvider,
-    AsyncPostgresKeyedLockProvider,
-    AsyncSqlKeyedLockProvider,
-)
+from ekbatan.aio.locks import AsyncKeyedLockProvider, AsyncMariaDBKeyedLockProvider
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config import DataSourceConfig, ShardMemberConfig
 from ekbatan.config_files import load_ekbatan_config
@@ -70,8 +64,8 @@ from ekbatan.distributedjobs import JobRegistry, job_registry
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob, HandlerLoop
 from ekbatan.migrations import migrate
 
-from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction
-from .handlers import MoneyDepositedEventHandler, RaiseAlertAction
+from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
+from .handlers import MoneyDepositedEventHandler
 from .repository import AlertRepository, WalletRepository
 from .schema import EVENT_NOTIFICATIONS, EVENTS
 
@@ -80,14 +74,6 @@ MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
 #: The service's Ekbatan settings - database layout, namespace, event handling - in one file.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
-
-#: The keyed lock each database holds. The same code serves this example on PostgreSQL and on
-#: MariaDB, so it picks by the database the registry is on.
-LOCKS: dict[str, type[AsyncSqlKeyedLockProvider]] = {
-    "postgres": AsyncPostgresKeyedLockProvider,
-    "mysql": AsyncMySQLKeyedLockProvider,
-    "mariadb": AsyncMariaDBKeyedLockProvider,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +172,7 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
 
     member = layout.groups[0].members[0]
     lock_engine = async_engine_for(_required(member, "lockConfig"))
-    locks = LOCKS[registry.dialect].builder().engine(lock_engine).build()
+    locks = AsyncMariaDBKeyedLockProvider.builder().engine(lock_engine).build()
 
     # -- the handler side ---------------------------------------------------------------------
     # Async, on dispatch's handler loop: an async pool belongs to the loop it is used on, so the

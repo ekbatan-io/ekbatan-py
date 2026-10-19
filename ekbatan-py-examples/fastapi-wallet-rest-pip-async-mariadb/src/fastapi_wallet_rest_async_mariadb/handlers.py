@@ -14,33 +14,12 @@ is what would let it move into a broker consumer later without its body changing
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from ekbatan.aio import AsyncAction, AsyncActionExecutor
+from ekbatan.aio import AsyncActionExecutor
 from ekbatan.events import EventEnvelope
 from ekbatan.ids import ShardedId
 
-from .model import Alert, EmailAddress, MoneyDepositedEvent, Wallet
-
-
-@dataclass(frozen=True, kw_only=True)
-class RaiseAlertParams:
-    wallet_id: ShardedId[Wallet]
-    recipient: str
-    message: str
-
-
-class RaiseAlertAction(AsyncAction[RaiseAlertParams, Alert]):
-    """Writes an entity. Emits nothing, and is still audited."""
-
-    async def perform(self, principal: str | None, params: RaiseAlertParams) -> Alert:
-        return self.plan.add(
-            Alert.create(
-                wallet_id=params.wallet_id,
-                recipient=EmailAddress(params.recipient),
-                message=params.message,
-            )
-        )
+from .actions import RaiseAlertAction, RaiseAlertParams
+from .model import MoneyDepositedEvent, Wallet
 
 
 class MoneyDepositedEventHandler:

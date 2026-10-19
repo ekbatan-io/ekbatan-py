@@ -1,4 +1,4 @@
-"""The HTTP requests' units of work, on `ekbatan.aio`.
+"""Units of work, on `ekbatan.aio`.
 
 Each one is short on purpose. Read one and you should be able to say what it does to the
 business without knowing anything about this framework: no transaction, no flush, no publish,
@@ -16,7 +16,7 @@ from ekbatan import Clock
 from ekbatan.aio import AsyncAction
 from ekbatan.ids import ShardedId
 
-from .model import Currency, EmailAddress, Wallet
+from .model import Alert, Currency, EmailAddress, Wallet
 from .repository import WalletRepository
 
 
@@ -41,6 +41,13 @@ class DepositParams:
 @dataclass(frozen=True, kw_only=True)
 class WalletIdParams:
     wallet_id: ShardedId[Wallet]
+
+
+@dataclass(frozen=True, kw_only=True)
+class RaiseAlertParams:
+    wallet_id: ShardedId[Wallet]
+    recipient: str
+    message: str
 
 
 class OpenWalletAction(AsyncAction[OpenWalletParams, Wallet]):
@@ -79,3 +86,16 @@ class CloseWalletAction(AsyncAction[WalletIdParams, Wallet]):
         # Already closed: nothing to stage, and therefore nothing to emit. The invocation is
         # still recorded, as one sentinel row.
         return self.plan.update(closed) if closed is not wallet else wallet
+
+
+class RaiseAlertAction(AsyncAction[RaiseAlertParams, Alert]):
+    """Writes an entity. Emits nothing, and is still audited."""
+
+    async def perform(self, principal: str | None, params: RaiseAlertParams) -> Alert:
+        return self.plan.add(
+            Alert.create(
+                wallet_id=params.wallet_id,
+                recipient=EmailAddress(params.recipient),
+                message=params.message,
+            )
+        )

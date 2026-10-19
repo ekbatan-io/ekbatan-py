@@ -21,7 +21,7 @@ landed after the list was written).
 | 8 | async UTC test weakened | port the Tehran test to the three async twins | todo | |
 | 9 | other REST tests dropped in async | port 422, recipient and currency checks | todo | |
 | 10 | unused repository helpers on the sync side | keep only what each example uses, both twins the same | todo | |
-| 11 | `RaiseAlertAction` in `handlers.py` in async REST twins | move back to `actions.py` | todo | |
+| 11 | `RaiseAlertAction` in `handlers.py` in async REST twins | move back to `actions.py` | fixed: `RaiseAlertAction`/`RaiseAlertParams` back in `actions.py` in the 3 async REST twins, same place as sync | EKB-0395 |
 | 12 | lock provider picked from a dict in async | name the provider directly | todo | |
 | 13 | async READMEs drop shared sections | restore them | todo | |
 | 14 | deprecated `testcontainers.postgres` in sync tests | `testcontainers.community.postgres` | todo | |
