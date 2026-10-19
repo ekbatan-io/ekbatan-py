@@ -145,5 +145,5 @@ Caching, read replicas and a read model are usually the answer.
 - [Sagas](sagas.md) - the right shape for multi-shard work
 - [The dual-write trap](the-dual-write-trap.md) - why cross-shard is conceptually a dual write
 - [Actions](actions.md) - where changes get grouped by shard
-- [`fastapi-wallet-rest-uv-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) -
+- [`fastapi-wallet-rest-uv-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) (sync) and [`fastapi-wallet-rest-uv-async-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg) (async) -
   a runnable two-database wallet routed by the shard bits in each id

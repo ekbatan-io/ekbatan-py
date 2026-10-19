@@ -147,7 +147,7 @@ uv, pip and Poetry; three docs leftovers; AGENTS.md. Judgement calls:
 | A6 | `make` in all three builds of each new example | done |
 | A7 | READMEs: root, `ekbatan-py-examples/README.md`, sibling links in the sync twins | done |
 | A8 | Skill files listing examples (`agent-skills/`, `.claude/skills/`) | done |
-| A9 | Docs + website: setup guide example table, async pages, sync-or-async, sharding / saga / jobs pages (switches where code differs) | open |
+| A9 | Docs + website: setup guide example table, async pages, sync-or-async, sharding / saga / jobs pages (switches where code differs) | done |
 | A10 | Task 2: sagas.md repeated section; local-event-handler.md repeated section; website copies checked | open |
 | A11 | Task 2: SHORTCOMINGS.md against the code (fan-out, examples count, async) - measured | open |
 | A12 | AGENTS.md "Two modes" and example counts | open |
@@ -165,5 +165,17 @@ Each is its sync twin's tests (20, 17, 10) plus the checks that it really runs a
 faults, each red, then restored: the deposit without its lock (sharded: 409s among the eight);
 the saga's handlers given the request executor (cross-loop errors, the saga never settles);
 the stipend run with `asyncio.run` instead of the worker loop (five job tests red).
+
+### Pages changed for the new twins (A9)
+
+| page | docs copy | change |
+|---|---|---|
+| learn/complete-project-setup (step 18) | none | the three twins beside their sync examples; 33 -> 42 |
+| learn/sync-or-async | docs/sync-or-async.md | a job's work may be async; a link to the examples, all with twins |
+| reference/runtime/async | docs/runtime/async.md | new section "A job whose work is async"; example list names the sharded and saga twins; reference row; "the event handlers and the jobs" (stale since handlers may be async) -> "the jobs, fan-out and dispatch" |
+| reference/jobs/distributed-jobs | docs/jobs/distributed-jobs.md | the job sample gets a Sync / Async switch (docs: both blocks); "no async samples" replaced; see-also names the twin |
+| learn/sharding, reference/sharding | docs/concepts/sharding.md, docs/database/sharding.md | async twin linked beside the sync one |
+| learn/sagas | docs/concepts/sagas.md | async twin linked beside the sync one |
+| reference/runtime/concurrency | docs/runtime/concurrency.md | the job worker's twin named beside it |
 
 ### Findings

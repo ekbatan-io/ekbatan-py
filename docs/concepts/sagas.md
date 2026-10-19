@@ -282,5 +282,5 @@ partial-commit risk.
 - [Actions](actions.md) - why actions are not nested
 - [The outbox](outbox.md) - why each step gets a durable event
 - [Sharding](sharding.md) - why cross-shard is refused by default
-- [`fastapi-wallet-saga-uv-pg`](../../ekbatan-py-examples/fastapi-wallet-saga-uv-pg) - all of it,
+- [`fastapi-wallet-saga-uv-pg`](../../ekbatan-py-examples/fastapi-wallet-saga-uv-pg) (sync) and [`fastapi-wallet-saga-uv-async-pg`](../../ekbatan-py-examples/fastapi-wallet-saga-uv-async-pg) (async) - all of it,
   running

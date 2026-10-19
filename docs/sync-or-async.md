@@ -87,7 +87,9 @@ async one, from the same `ekbatan.yaml`, for it:
 - **event fan-out and dispatch** - two jobs that read the outbox and run the handlers. They run
   a sync handler on a thread and an async one on their handler loop, one event loop on a thread
   of its own;
-- **distributed jobs** - `execute` is a plain `def`, run on the scheduler's threads;
+- **distributed jobs** - `execute` is a plain `def`, run on the scheduler's threads. The *work*
+  inside one may be async: `execute` hands a coroutine to a `HandlerLoop` and waits for it -
+  [a job whose work is async](runtime/async.md#a-job-whose-work-is-async);
 - **migrations** - run once at startup, before any pool opens;
 - **schemagen** and **codegen** - build steps, not part of the running service.
 
@@ -99,3 +101,5 @@ So an async service keeps the sync driver installed too: these use it.
   **Async** in its picker for every file of an async service
 - [Going async](going-async.md) - moving an existing sync service over, file by file
 - [Native asyncio](runtime/async.md) - drivers, the pool as the cap, the handler loop, gevent
+- [The examples](../ekbatan-py-examples) - every one has an async twin with the same tests: the REST service on
+  each database, SQLite, the sharded service, the saga and the job worker

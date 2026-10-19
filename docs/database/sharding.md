@@ -468,4 +468,4 @@ see [Concurrency](../runtime/concurrency.md#5-fan-out-and-dispatch---shards-and-
 
 - [Concepts → Sharding](../concepts/sharding.md) - the reasoning
 - [Migrations](migrations.md) - applying migrations across shards
-- [`fastapi-wallet-rest-uv-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg)
+- [`fastapi-wallet-rest-uv-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) (sync) and [`fastapi-wallet-rest-uv-async-sharded-pg`](../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg) (async)

@@ -273,7 +273,8 @@ Two consequences:
 
 If you would rather not have every web worker also be a job worker, run the jobs in their own
 process: build the service with the jobs registered and the HTTP app absent.
-[`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) is that shape.
+[`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) is that shape, and
+[`job-worker-uv-async-pg`](../../ekbatan-py-examples/job-worker-uv-async-pg) the same with the jobs' work awaited on a loop.
 
 ## The GIL, briefly
 

@@ -6,6 +6,8 @@ also publishes.
 
 ## Defining a job
 
+**Sync**
+
 ```python
 class PayStipendJob(DistributedJob):
     name = "pay-stipend"
@@ -22,13 +24,42 @@ class PayStipendJob(DistributedJob):
             self.executor.execute(DepositMoneyAction, DepositParams(...))
 ```
 
+**Async**
+
+```python
+class PayStipendJob(DistributedJob):
+    name = "pay-stipend"
+
+    def __init__(
+        self, loop: HandlerLoop, executor: AsyncActionExecutor, wallets: WalletRepository
+    ) -> None:
+        self.loop = loop                  # the loop `executor` and `wallets` were built for
+        self.executor = executor
+        self.wallets = wallets
+
+    def schedule(self) -> Schedule:
+        return FixedDelay(timedelta(hours=24))
+
+    def execute(self, context: ExecutionContext) -> None:
+        self.loop.run(self.pay())         # still on the scheduler's thread: run it there, wait
+
+    async def pay(self) -> None:
+        for wallet in await self.wallets.find_open_below(THRESHOLD):
+            await self.executor.execute(DepositMoneyAction, DepositParams(...))
+```
+
 Nothing about being a job makes the work special. It goes through an ordinary action, so the
 outbox row it writes is indistinguishable from one a request produced - `action_name` says
 `DepositMoneyAction` either way, and nothing downstream can tell or needs to.
 
-**The same in an async service.** Jobs always run on threads: `execute` is a plain `def`, and a
-job takes a sync executor and sync repositories, built from the same config file as the async
-ones. So this page has no async samples.
+**In an async service the job is still sync.** `execute` is a plain `def`, run on the
+scheduler's threads, in both modes. A job can take a sync executor and sync repositories, built
+from the same config file as the async ones - the simplest choice. Or its *work* can be async:
+`execute` hands a coroutine to a `HandlerLoop` (an event loop on a thread of its own, the kind
+dispatch runs async handlers on) with `loop.run(...)` and waits for it, so the claim, the
+heartbeat and a retry behave exactly as for a sync job. What the work awaits is built for that
+loop and closed on it after the jobs stop. See
+[a job whose work is async](../runtime/async.md#a-job-whose-work-is-async) and `job-worker-uv-async-pg`.
 
 ## Coordination semantics
 
@@ -303,4 +334,5 @@ an execution running twice.
 - [`scheduled_tasks`](../database/tables/scheduled-tasks.md) - the table, and the heartbeat column
 - [In-process event handlers](../events/local-event-handler.md) - two jobs on this registry
 - [Concurrency](../runtime/concurrency.md) - what `workers(n)` is actually sizing
-- [`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) - no HTTP at all
+- [`job-worker-uv-pg`](../../ekbatan-py-examples/job-worker-uv-pg) - no HTTP at all; its async twin
+  [`job-worker-uv-async-pg`](../../ekbatan-py-examples/job-worker-uv-async-pg) runs the jobs' work on a loop

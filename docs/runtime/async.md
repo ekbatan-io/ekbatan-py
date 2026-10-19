@@ -96,7 +96,7 @@ other kind of action when it is built, so a sync `Action` cannot end up awaited 
 
 ## One config file, two drivers
 
-An async service still has sync parts - the event handlers and the jobs - so one layout file
+An async service still has sync parts - the jobs, event fan-out and dispatch among them - so one layout file
 has to serve both. The url names the database; each side picks its own driver:
 
 | url in the file | sync registry connects with | async registry connects with |
@@ -304,9 +304,47 @@ Without `.handler_loop(...)` the dispatch makes its own, started only when an as
 runs. Fan-out and dispatch themselves read and write the `events` and `event_notifications`
 tables through a sync registry, built from the same layout file.
 
-The `fastapi-wallet-rest-uv-async-pg`, `fastapi-wallet-rest-uv-async-mysql` and
-`fastapi-wallet-rest-uv-async-mariadb` examples are
-this shape: async requests under an async keyed lock, an async handler, four pools.
+The `fastapi-wallet-rest-uv-async-pg`, `fastapi-wallet-rest-uv-async-mysql`,
+`fastapi-wallet-rest-uv-async-mariadb` and `fastapi-wallet-rest-uv-async-sharded-pg` examples are
+this shape: async requests under an async keyed lock, an async handler, a pool per use.
+`fastapi-wallet-saga-uv-async-pg` runs a whole saga's later steps as async handlers.
+
+## A job whose work is async
+
+A distributed job is sync in every service: the scheduler claims its row and calls `execute` on
+one of its threads, and heartbeats it from another. The *work* inside it can still be async.
+`execute` hands a coroutine to a `HandlerLoop` - an event loop on a thread of its own, the same
+kind dispatch runs async handlers on - with `loop.run(...)`, and waits for it:
+
+```python
+class PayStipendJob(DistributedJob):
+    def __init__(self, loop: HandlerLoop, executor: AsyncActionExecutor, wallets: WalletRepository):
+        self.loop = loop                  # the loop `executor` and `wallets` were built for
+        self.executor = executor
+        self.wallets = wallets
+
+    def execute(self, ctx: ExecutionContext) -> None:
+        self.loop.run(self.pay())         # on the scheduler's thread: run it there, and wait
+
+    async def pay(self) -> None:
+        for wallet in await self.wallets.find_open_below(Decimal("100.00")):
+            await self.executor.execute(DepositMoneyAction, DepositParams(...))
+
+
+loop = HandlerLoop(name="worker-loop")
+registry = AsyncDatabaseRegistry.from_config(layout)    # used only on `loop`
+# ... the async repositories and executor over it, PayStipendJob(loop, executor, wallets)
+# at shutdown: jobs.stop(), then loop.run(registry.aclose()), then loop.close()
+```
+
+The job's thread waits, so whatever the coroutine raises, `execute` raises: the claim, the
+heartbeat, a failure and its retry are the scheduler's, exactly as for a sync job. What the work
+awaits is built for that loop and closed on it, after the jobs have stopped. Give dispatch the
+same loop (`.handler_loop(loop)`) and an async handler shares the work's registry.
+
+Worth it when the work waits on many things at once and can await them together. A job that is
+a few statements in a row gains nothing: write it sync, over a sync executor - an async service
+can run that beside itself unchanged. `job-worker-uv-async-pg` is this shape.
 
 ## One kind per service
 
@@ -362,7 +400,7 @@ Everything is in `ekbatan.aio`, its `locks` package, and two names in `ekbatan.e
 | `AsyncChangePersister` | writes one shard's slice of a plan |
 | `AsyncActionSpec`, `async_run_action` | testing without a database |
 | `ekbatan.aio.locks`: `AsyncPostgresKeyedLockProvider`, `AsyncMySQLKeyedLockProvider`, `AsyncMariaDBKeyedLockProvider`, `AsyncKeyedLockProvider`, `AsyncLease`; `ekbatan.aio.locks.redis`: `AsyncRedisKeyedLockProvider` | keyed locks, taken around `await executor.execute(...)` |
-| `ekbatan.events`: `AsyncEventHandler`, `HandlerLoop` | an event handler with `async def handle`, and the loop dispatch runs it on |
+| `ekbatan.events`: `AsyncEventHandler`, `HandlerLoop` | an event handler with `async def handle`, and the loop dispatch runs it on - which a job can run its async work on too |
 | `async_engine_for`, `async_url`, `ASYNC_DEFAULT_DRIVERS` | the async pool for one config, and which driver it uses |
 
 ## See also
