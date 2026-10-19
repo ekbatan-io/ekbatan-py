@@ -37,10 +37,15 @@ the Java while porting go in an openspec change, not a code change.
   thing that could happen to this design.
 - Keep PostgreSQL, MySQL and MariaDB aligned unless a dialect difference is intentional and
   documented. SQLite is not a production dialect and proves less than it looks like it proves.
-- `timestamp_column()`, never a zoned type. `DATETIME(6)`, never bare `DATETIME`. Columns hold
-  the zone-less UTC time; every timestamp handed back is an aware UTC `datetime` (Java's `Instant`).
-- **UTC everywhere is the strong recommendation**, in code, docs and examples alike: time from the
-  clock (`clock.now()`, `self.now()`), never `datetime.now()` or a naive `datetime`; `TIMESTAMP`,
+- **The framework never converts time** (hard rule, AGENTS.md "Time: the framework never
+  converts it"): every time is written and read exactly as given; no `astimezone`/`tzinfo`
+  normalisation anywhere in `src/` (`tests/unit/test_time_as_is.py` guards it). The default
+  `SystemClock().now()` is UTC with no zone attached. Changing this needs the user's OK.
+- `timestamp_column()`, never a zoned type. `DATETIME(6)`, never bare `DATETIME`. It is only a
+  column type: zone-less, microseconds.
+- **UTC everywhere is the strong recommendation** - the user's job, not the framework's - in
+  code, docs and examples alike: time from the clock (`clock.now()`, `self.now()`), never
+  `datetime.now()` (local time); `TIMESTAMP`,
   never `TIMESTAMPTZ`; the database in UTC or each session put on it via `data_source_properties`.
   Say so wherever timestamps come up. Guide: `docs/database/multi-database.md#always-utc`.
 - Params and payload JSON is the text Java's default Jackson 3 mapper writes, byte for byte

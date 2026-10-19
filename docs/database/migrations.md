@@ -370,7 +370,8 @@ For a throwaway database in a test. Not for anything you will have to change lat
 Plain SQL. When you generate DDL, **use `ekbatan.schema`'s column helpers rather than raw types**
 - `uuid_column()`, `timestamp_column()`, `json_column()`. They are what make DDL portable, and they
 are what `schemagen` forces back when it reflects. `timestamp_column()` in particular pins
-microsecond precision, because MySQL's bare `DATETIME` truncates to whole seconds silently.
+microsecond precision, because MySQL's bare `DATETIME` truncates to whole seconds silently. It
+converts nothing: a time is stored and read exactly as given.
 
 ## Order at startup
 

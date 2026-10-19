@@ -213,9 +213,10 @@ Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.n
 ```
 
 `updated_date` falls back to `created_date` — a row that has never changed was last updated when
-it was created. Both are kept as aware UTC `datetime`s: a value with
-another offset is moved to UTC, one with no zone is taken as UTC. So `wallet.created_date`
-compares with `clock.now()`, and equals the same instant read back from any database.
+it was created. Both are kept exactly as given - no zone added, removed or moved - and stored
+that way ([What you give is what is stored](../database/multi-database.md#what-you-give-is-what-is-stored)). From
+`clock.now()` they are UTC with no zone attached, so `wallet.created_date` compares with the
+clock and equals the value read back from any database.
 
 **Nothing moves `updated_date` but you.** Neither the plan nor the repository touches it on a
 write. Move it on the changes where it means something:

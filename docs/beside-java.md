@@ -43,8 +43,13 @@ Three things. The first is the one people miss.
    describe both - see [the config file](#the-config-file).
 
 And keep time in UTC on both sides, as [Multi-database](database/multi-database.md#always-utc)
-recommends. Both frameworks store a timestamp as the UTC time in a column with no zone, so a time
-written by one reads back the same in the other.
+recommends. The Java framework's `InstantConverter` (wired per project through jOOQ's forced
+types) writes an `Instant` as its UTC time in a column with no zone, and reads it back as UTC.
+The Python framework writes whatever time it is given, as it is
+([What you give is what is stored](database/multi-database.md#what-you-give-is-what-is-stored)), and its default
+clock gives the UTC time with no zone attached - the same value Java writes. So a time written
+by one reads back as the same moment in the other, as long as the Python side keeps to naive
+UTC.
 
 ## The shared tables
 
@@ -141,6 +146,10 @@ and the other way round.
 | aware UTC `datetime` | `Instant` | `"2025-01-01T00:00:00.120Z"` |
 | `datetime` with another offset | `OffsetDateTime` | `"2025-01-01T02:00:00+02:00"` |
 | `datetime` with no zone | `LocalDateTime` | `"2025-01-01T10:00:00"` |
+
+A `datetime` is written as it is, so a time straight from the default clock - no zone attached -
+is a `LocalDateTime` to Java. Where the Java event declares an `Instant`, give the event an aware
+UTC value: `clock.now().replace(tzinfo=UTC)`, in your own code.
 | `date`, `time`, `timedelta` | `LocalDate`, `LocalTime`, `Duration` | `"2025-01-01"`, `"10:00:00"`, `"PT1.5S"` |
 | `bytes` | `byte[]` | base64: `"AQL/"` |
 | an `Enum` | an enum | the member's name |

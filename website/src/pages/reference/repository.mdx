@@ -72,6 +72,11 @@ def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
     return self.model_by_field_name(row)
 ```
 
+`columns_by_field_name` turns a typed id into its value and an enum into its name; every other
+value - a `datetime` included - goes to the column exactly as the model holds it, and
+`model_by_field_name` hands a time back exactly as the driver read it. No zone is added, removed
+or moved ([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)).
+
 Where a name or a shape differs, write the mapping out instead. `to_row` and `from_row` are
 plain `def` in both modes - mapping waits on nothing - so an async repository can take them from
 a small class of their own (`class WalletRepository(WalletRows, AsyncModelRepository[...])`).

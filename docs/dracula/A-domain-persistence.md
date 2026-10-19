@@ -14,9 +14,10 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 
 ### 1. ~~A model's timestamps become naive datetimes (no time zone)~~ fixed (`EKB-0294`)
 
-> Now as Java's `Instant`: a model's dates, and every timestamp read back from any database,
-> are aware UTC `datetime`s, so they equal what was written and compare with `clock.now()`.
-> The columns still hold the zone-less UTC time, exactly what Java stores.
+> Superseded (`EKB-0384`): the framework no longer converts time at all. A model keeps its
+> dates exactly as given, every read hands back what the driver returns, and
+> `SystemClock().now()` is UTC with no zone attached - so the model, the column and the clock
+> agree, and nothing compares naive with aware. See Part 1, bug 11 in `docs/DRACULAS.md`.
 
 - **What:** Whatever `created_date` / `updated_date` you pass, the model keeps a datetime with
   the zone removed, moved to UTC. `12:00+02:00` goes in and `datetime(…, 10, 0)` with no zone
@@ -153,7 +154,7 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 ### 9. Tables and queries are SQLAlchemy, written by hand, and the row mapping is a dict
 - **What:** There is no jOOQ and no generated table classes. The application writes a SQLAlchemy
   `Table(...)` per table, and `to_row` returns a `dict` in which it converts each value itself
-  (`wallet.id.value`, `wallet.state.name`, `to_storage(...)`), and `from_row` gets a `Row` *or* a
+  (`wallet.id.value`, `wallet.state.name`; times as they are), and `from_row` gets a `Row` *or* a
   plain dict. The constructor takes `(model_type, table, registry, sharding=, clock=,
   state_column=)`: no id field (it reads the table's single primary key and refuses a composite
   one), and the state column name can be changed. Two Python-only helpers,

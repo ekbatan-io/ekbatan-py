@@ -140,9 +140,10 @@ use asyncpg's own spelling, `server_settings: {TimeZone: UTC}`. Something in `op
 not a `-c` setting is refused, and so is a setting given twice; the refusal never repeats a value.
 
 **asyncpg is strict about time zones.** It refuses an aware `datetime` for a `TIMESTAMP` (zone-less)
-column, where psycopg accepts one. Every value the framework writes goes through `to_storage`
-first, so this only meets hand-written SQL: pass `to_storage(clock.now())`, which is the UTC
-wall-clock time the column holds.
+column, where psycopg accepts one. The framework hands every time to the driver as it is, so
+this meets only an aware value you give it yourself. The default clock's `now()` has no zone
+attached and passes on every driver
+([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)).
 
 ## The pool is the cap
 

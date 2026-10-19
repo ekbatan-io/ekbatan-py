@@ -406,12 +406,9 @@ this.updatedDate = builder.updatedDate != null ? builder.updatedDate.truncatedTo
 
 and its factories pass `clock.instant()` in. This port now does the same three things:
 `created_date` is required and refused when null, `updated_date` falls back to it, and both are
-kept as aware UTC `datetime`s, Python's `Instant` (`EKB-0294`): a value with another offset is
-moved to UTC and one with no zone is taken as UTC. `datetime` holds microseconds only, so
-`truncatedTo(MICROS)` has nothing to do. Every read hands back the same aware UTC value -
-the repository's reader, `timestamp_column()`, the outbox and notification rows - so a value
-read back equals the one written and compares with `clock.now()`. The columns stay zone-less
-and hold the UTC time, as Java's do.
+kept **exactly as given** - see the next entry, [time is stored as
+given](#time-is-stored-as-given-the-default-clock-gives-naive-utc). `datetime` holds
+microseconds only, so `truncatedTo(MICROS)` has nothing to do.
 
 For a while this port left both unset and stamped them from the executor's clock when the change
 was staged, on the grounds that two lines which are the same every time and wrong occasionally do
@@ -441,6 +438,27 @@ that has never been marked still reads as last-updated-when-created. That is the
 framework that does not rewrite a column the application set - which is the property that makes
 the column usable for recording when *your* change happened.
 
+
+## Time is stored as given; the default clock gives naive UTC
+
+> **chosen** - the user's rule (2026-10-19): the persistence layer writes and reads exactly what it is given, no automatic shifting. Java converts at the jOOQ boundary instead. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md), "time as is (EKB-0384-)".
+
+Java's domain holds `Instant`s, and its `InstantConverter` - wired per project through jOOQ's
+forced types - turns each into its UTC `LocalDateTime` on the way into a zone-less column and
+back into an `Instant` on the way out.
+
+This port converts nothing (`EKB-0384`). A `datetime` goes to the driver as the model, row or
+clock held it and comes back as the driver returns it: no zone added, removed or moved, in
+models, repositories, `timestamp_column()`, the outbox, notifications, event JSON or CDC rows.
+`SystemClock().now()` gives the current UTC time with no zone attached - the same value Java's
+converter writes - so the two ports still agree on what is in the column. What differs is what
+Python code holds: a naive `datetime`, not an aware one. It used to be aware UTC (`EKB-0294`);
+that conversion is gone.
+
+The cost is the one the user chose to carry: an application that hands in an aware value gets
+what its driver does with it (psycopg moves it to the session's zone, asyncpg refuses it,
+PyMySQL, aiomysql and SQLite drop the offset), and a clock that gives aware values must be
+matched by zoned columns, because the framework compares the two.
 ## The per-invocation plan lives in a `ContextVar`
 
 > **forced** - CPython has no `ScopedValue`. A `ContextVar` is the direct analogue.
@@ -1157,8 +1175,8 @@ Where the output differs:
   `Object` with a warning. Before `EKB-0328` it was `NullType()` with a note, which `create_all`
   could not build.
 - **A converter is wrapped around the column's own type**, `converted(NUMERIC(...), Money())`,
-  and receives what the column would give without it - `timestamp_column()`'s aware UTC
-  `datetime` on a timestamp, for example. jOOQ's converter receives the JDBC type of the
+  and receives what the column would give without it - on a timestamp, the `datetime` the driver
+  read, as it is. jOOQ's converter receives the JDBC type of the
   column; the effect is the same, the layering is explicit here.
 - **The module checks a fingerprint of the migrations on import**, because nothing in Python
   rebuilds it before the application runs, as Gradle does.

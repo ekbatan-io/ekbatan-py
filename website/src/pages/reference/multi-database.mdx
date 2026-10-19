@@ -100,25 +100,60 @@ is why this page is a short cheatsheet and not a pattern to follow in every repo
 
 ## Always UTC
 
-**Strongly recommended.** Not enforced - nothing refuses another zone - but every part of Ekbatan
-is built for it, and leaving it is where time bugs come from. Three parts:
+### What you give is what is stored
+
+**Ekbatan never converts a time.** A `datetime` goes to the database exactly as your code or
+your clock gave it, and comes back exactly as the driver returns it. No zone is added, removed or
+moved - not in models, repositories, the outbox, notifications, event JSON or
+`timestamp_column()`. Getting time right is your job; the rest of this section is how.
+
+```python
+from ekbatan import SystemClock
+
+now = SystemClock().now()          # datetime(2026, 10, 19, 8, 30, 0, 123456) - UTC, no zone
+wallet = wallets.add(Wallet.open(..., created_date=now))
+wallets.get(wallet.id).created_date == now   # True: the same value, to the microsecond
+```
+
+The default clock gives the current **UTC time with no zone attached**. That is exactly what a
+zone-less column holds, so what is written reads back equal, and compares with the next
+`clock.now()` - the framework does that comparison itself for event retries, due times and
+expiry.
+
+A value *with* a zone is passed on as it is, and then the driver decides. Measured with
+`13:30+03:30` written into a zone-less column:
+
+| driver | stored |
+| --- | --- |
+| psycopg (sync and async) | moved to the session's zone by the server: `10:00` with the session in UTC |
+| asyncpg | refused - `DataError` |
+| PyMySQL, aiomysql (MySQL, MariaDB) | `13:30`: the digits kept, the offset dropped |
+| SQLite (pysqlite, aiosqlite) | `13:30`: the digits kept, the offset dropped |
+
+So keep to naive UTC, as the default clock gives. If you do use aware values - your own `Clock`,
+`TIMESTAMPTZ` columns - keep them aware everywhere: the framework compares what your clock gives
+with what the database returns, and Python refuses to compare a naive `datetime` with an aware
+one.
+
+### The recommendation
+
+**Strongly recommended.** Not enforced - nothing refuses another zone - and leaving it is where
+time bugs come from. Three parts:
 
 1. **In your code, UTC.** Take the time from the framework's clock - `self.now()` in an action,
-   `clock.now()` elsewhere - which is an aware `datetime` in UTC. Not
-   `datetime.now()`, which is local, and not a naive `datetime`. Convert to a person's local time
-   only where it is shown to them.
+   `clock.now()` elsewhere - which is UTC with no zone attached. Not `datetime.now()`, which is
+   local time. Convert to a person's local time only where it is shown to them.
 2. **In the columns, no zone.** `TIMESTAMP` (`WITHOUT TIME ZONE`) on PostgreSQL, `DATETIME(6)` on
-   MySQL and MariaDB, holding the UTC wall-clock time. `timestamp_column()` gives you this, and every timestamp the framework reads back
-   is an aware UTC `datetime` again, so a value read back equals the value written and compares
-   with `clock.now()`.
+   MySQL and MariaDB, holding UTC. `timestamp_column()` builds this - a column type and nothing
+   more, with microsecond precision on every database.
    - **Not `TIMESTAMPTZ`.** It turns the session's zone into part of every write and read: two
      readers with different session zones disagree about when the thing happened.
    - **Not bare `DATETIME`** on MySQL and MariaDB: it truncates to whole seconds, silently, and
      the outbox's only ordering key is a timestamp.
-3. **On the database, UTC.** The values Ekbatan writes do not shift whatever the server's zone -
-   measured on all three databases - but the database's **own** clock does: `NOW()`,
-   `CURRENT_TIMESTAMP`, a column `DEFAULT`. SQL that mixes those with Ekbatan's columns is off by
-   the zone's offset. Run the server in UTC (`TZ=UTC` on the container; PostgreSQL's
+3. **On the database, UTC.** A naive value is stored as written whatever the session's zone -
+   measured on all three databases, both drivers each - but the database's **own** clock is not:
+   `NOW()`, `CURRENT_TIMESTAMP`, a column `DEFAULT`. SQL that mixes those with your columns is off
+   by the zone's offset. Run the server in UTC (`TZ=UTC` on the container; PostgreSQL's
    `timezone = 'UTC'`), or set it per connection in `data_source_properties`:
 
    ```python

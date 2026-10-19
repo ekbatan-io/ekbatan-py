@@ -68,17 +68,16 @@ async with tm.transaction() as tx:
 
     if orphans:
         await tx.execute(update(WALLETS).where(WALLETS.c.id.in_(orphans)).values(currency="EUR"))
-        await tx.execute(insert(AUDIT_LOG).values(at=to_storage(clock.now()),
-                                                  note="currency backfill",
+        await tx.execute(insert(AUDIT_LOG).values(at=clock.now(), note="currency backfill",
                                                   affected=len(orphans)))
 ```
 
 </div>
 </ModeTabs>
 
-The async tab passes `to_storage(clock.now())` for the timestamp: asyncpg refuses an aware
-`datetime` for a zone-less column, and `to_storage` gives the UTC wall-clock time the column
-holds.
+`clock.now()` is written exactly as it is - UTC with no zone attached, which is what the
+zone-less `at` column holds. Nothing converts it on the way in or out
+([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)).
 
 Both writes commit together or neither does - the same atomicity an action gives you, without any
 of the action machinery: no plan, no outbox row, no retry on a lost version race.

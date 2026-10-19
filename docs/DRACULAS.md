@@ -32,6 +32,7 @@ whatever is decided about the rest.
 | 8 | ~~`DIVERGENCE.md` says the built-in reads match Java; they read inside the open transaction and Java's do not~~ **fixed** (`EKB-0259`): run side by side on PostgreSQL, Java's reads did not see a row added in the open transaction; the built-in reads now use `db()` as Java's do, and `DIVERGENCE.md` says so | run, both ports | A |
 | 9 | A repository takes a `clock=` it never uses; ~~the `Transaction` docstring names `registry.transaction()`, which does not exist~~ | read | A |
 |   | → docstring **fixed** (`EKB-0258`): it names `registry.manager(shard).transaction()` and `registry.default.transaction()`, both run to check. The unused `clock=` stays, by the user's decision (2026-10-17) | | |
+| 11 | ~~The framework converted time by itself - "a very big bad dracula": `timestamp_column()`, the by-name repository mapping, models, outbox and notification rows, CDC rows, event JSON and the dispatcher all moved times to UTC and stamped `+00:00` (`EKB-0294`)~~ **fixed** (`EKB-0384`-): every time is written and read exactly as given; `SystemClock().now()` is UTC with no zone attached; UTC is the user's job, strongly recommended. Guarded by `tests/unit/test_time_as_is.py`. See `docs/TIME-AS-IS-LEDGER.md` | run (all four databases, both modes) | A |
 | 10 | Cron on clock-change days, every style: a time inside the hour skipped in spring runs at 03:00 here and not at all in Java; a daily time inside the hour repeated in autumn runs twice here and once in Java. Found while building the bug 2 fix. **Left as is** - the user's decision, 2026-10-16 | run (Amsterdam, New York) | D |
 
 ## Part 2: the Draculas
@@ -102,7 +103,7 @@ whatever is decided about the rest.
 
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
-| 43 | ~~Timestamps are stored without a time zone, `clock.now()` has one: comparing them raises `TypeError`~~ **fixed** (`EKB-0294`): every timestamp the framework hands back is aware UTC, as Java's `Instant`; the stored values are unchanged, so Java reads them as before | choice | partly | H (re-checked by run) | A1 |
+| 43 | ~~Timestamps are stored without a time zone, `clock.now()` has one: comparing them raises `TypeError`~~ **fixed differently** (`EKB-0384`, after `EKB-0294`): the default clock now gives naive UTC, the same as what the columns hand back, and nothing is converted - see Part 1, bug 11 | choice | partly | H (re-checked by run) | A1 |
 | 44 | ~~A transaction inside a transaction joins the outer one; Java's opens a second~~ **fixed** (`EKB-0301`): a nested block opens a second transaction on a second connection, as Java's; an action run inside the caller's transaction commits on its own | choice | yes | H | A3 |
 | 45 | A model names its builder as a type argument, in a different order from Java; leaving it out fails only on `copy()` | forced | partly | H | A4 |
 | 46 | Built-in reads see the open transaction's uncommitted rows | choice | yes | M | A7 |

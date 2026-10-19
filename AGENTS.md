@@ -115,25 +115,39 @@ Models and entities are `@dataclass(frozen=True, kw_only=True)`. `copy()` return
 `evolve()` is the framework's own shorthand and domain code should prefer `copy()` so every
 change in an application reads the same way.
 
-### Timestamps: zone-less UTC columns, aware UTC values
+### Time: the framework never converts it
 
-The columns carry no zone and hold the UTC wall-clock time, as Java's Ekbatan stores an
-`Instant`. Every timestamp the framework hands back is an aware `datetime` in UTC, as Java's is
-an `Instant` (`to_instant`); `to_storage` drops the zone only on the way into a column.
-`timestamp_column()` does both and also pins microsecond precision, because MySQL's bare
-`DATETIME` silently truncates to whole seconds.
+**Hard rule.** The persistence layer writes and reads exactly the time it is given. No code in
+`src/` adds, removes or moves a zone, or shifts a value, on its way to or from the database, or
+into or out of a model, row, event, notification or JSON. A value goes to the driver as the
+model or the clock held it and comes back as the driver returns it.
 
-**UTC everywhere is the framework's strong recommendation** - not enforced, but assumed
-throughout, so code, docs and examples must follow it and say so:
+- The default clock, `SystemClock().now()`, gives the current **UTC time with no zone attached**
+  (`datetime.now(UTC).replace(tzinfo=None)`, in `clock.py`'s `_utc_now()` - the one allowed read
+  of the wall clock). `VirtualClock` keeps any instant it is given as given.
+- `timestamp_column()` is only a column definition: zone-less, microsecond precision
+  (`DATETIME(6)` on MySQL and MariaDB, whose bare `DATETIME` drops the fraction). It converts
+  nothing.
+- **Never add `astimezone`, `replace(tzinfo=...)`, `fromtimestamp(..., tz=...)` or any other
+  zone normalisation** to the library. `tests/unit/test_time_as_is.py` fails on it; its
+  allow-list is not to be grown without the user's OK. Changing this rule needs the user's OK.
+- Getting time right is the **application's job**. A clock that gives aware values, or a zoned
+  column, is the application's choice, and it must keep the two consistent: the framework
+  compares what the clock gives with what the database returns (due times, retries, expiry),
+  so a naive column and an aware clock raise `TypeError` there.
 
-- in Python, time comes from the clock (`clock.now()`, `self.now()` in an action), aware UTC;
-  never `datetime.now()` or a naive `datetime`;
+**UTC everywhere is the strong recommendation** - now plainly the user's job, so code, docs and
+examples follow it and say so:
+
+- in Python, time comes from the clock (`clock.now()`, `self.now()` in an action) - UTC, no zone;
+  never `datetime.now()` (local time);
 - columns are zone-less: `TIMESTAMP` on PostgreSQL, `DATETIME(6)` on MySQL and MariaDB; never
   `TIMESTAMPTZ`, never bare `DATETIME`;
 - the database runs in UTC, or each session is put on it through `data_source_properties`
   (`options: -c TimeZone=UTC`, `init_command: SET time_zone = '+00:00'`).
 
-The user's guide is `docs/database/multi-database.md#always-utc`.
+The user's guide is `docs/database/multi-database.md#always-utc`; "What you give is what is
+stored" is its section on the rule.
 
 ### The ambient transaction lives in a `ContextVar`
 
@@ -257,8 +271,9 @@ Each of these was a real bug in the tests, found by running:
 - **`str(engine.url)` masks the password**, so a "separate connection" built from it connects to
   nothing.
 - **A module-scoped container shares state between tests.** Truncate in the fixture.
-- **asyncpg refuses an aware `datetime` for a zone-less column**, where psycopg accepts one. A
-  hand-written insert in a test passes `to_storage(...)`, as the framework does.
+- **asyncpg refuses an aware `datetime` for a zone-less column**, where psycopg accepts one. Use
+  naive UTC values in tests (`datetime(2026, 1, 1, 10, 0)`, `VirtualClock(...)` with one), as
+  the default clock gives.
 - **A patched class attribute must be restored by deleting it** when the class only inherited
   it: `AsyncDb.execute = real` leaves a copy on `AsyncDb` that hides every later patch of
   `AsyncConnection.execute`. `monkeypatch` gets this right.

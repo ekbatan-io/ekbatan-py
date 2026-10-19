@@ -102,7 +102,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `UUID` | `uuid_column()` | `uuid.UUID` |
 | `JSONB` | `json_column()` | `dict`, `list` |
 | `JSON` | `JSON(none_as_null=True)` | `dict`, `list` |
-| `TIMESTAMP`, `TIMESTAMP(p)` | `timestamp_column()` | `datetime` (UTC) |
+| `TIMESTAMP`, `TIMESTAMP(p)` | `timestamp_column()` | `datetime`, as stored |
 | `TIMESTAMPTZ` | `TIMESTAMP(timezone=True)` | `datetime` |
 | `DATE` | `DATE()` | `date` |
 | `TIME`, `TIMETZ` | `TIME()`, `TIME(timezone=True)` | `time` |
@@ -118,8 +118,9 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `xml`, `point`, `vector(3)`, ... | `sql_type("xml")`, ... | `str` |
 
 - A JSON column reads whatever the JSON holds: a `dict`, a `list`, a number or a string.
-- `timestamp_column()` reads a `datetime` in UTC, with its zone set. A `TIMESTAMPTZ` reads a
-  `datetime` with its zone set too, and a note suggests plain `TIMESTAMP`.
+- `timestamp_column()` reads the `datetime` exactly as stored - no zone added
+  ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)). A `TIMESTAMPTZ` reads a
+  `datetime` with a zone, as the driver returns it, and a note suggests plain `TIMESTAMP`.
 - `INET` and `CIDR` values come from Python's `ipaddress` module. `Range` is
   `sqlalchemy.dialects.postgresql.Range`.
 - The `MACADDR` row also covers `MACADDR8`, `VARBIT(n)` and `TSVECTOR`.
@@ -147,7 +148,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `BLOB` | `BLOB()` | `bytes` |
 | `TINYBLOB`, `LONGBLOB`, ... | `mysql.TINYBLOB()`, ... | `bytes` |
 | `JSON` | `json_column()` | `dict`, `list` |
-| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime` (UTC) |
+| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime`, as stored |
 | `DATE` | `DATE()` | `date` |
 | `TIME` | `TIME()` | `time` |
 | `TIME(p)` | `mysql.TIME(fsp=p)` | `time` |
@@ -155,7 +156,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `ENUM('NEW', 'DONE')` | `Enum("NEW", "DONE")` | `str` |
 | `SET('a', 'b')` | `mysql.SET("a", "b")` | `set` |
 
-- `timestamp_column()` reads a `datetime` in UTC, with its zone set. A bare `DATETIME` and
+- `timestamp_column()` reads the `datetime` exactly as stored - no zone added
+  ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)). A bare `DATETIME` and
   MySQL's `TIMESTAMP` type get a note saying how they differ from `DATETIME(6)`.
 - A uuid stored as `CHAR(36)` reads as a `str` until you say which columns hold one - see
   [a uuid stored as text](#a-uuid-stored-as-text).
@@ -185,7 +187,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `BLOB` | `BLOB()` | `bytes` |
 | `TINYBLOB`, `LONGBLOB`, ... | `mysql.TINYBLOB()`, ... | `bytes` |
 | `JSON` | `json_column()` | `dict`, `list` |
-| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime` (UTC) |
+| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime`, as stored |
 | `DATE` | `DATE()` | `date` |
 | `TIME` | `TIME()` | `time` |
 | `TIME(p)` | `mysql.TIME(fsp=p)` | `time` |
@@ -194,7 +196,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `SET('a', 'b')` | `mysql.SET("a", "b")` | `set` |
 | `INET6`, ... | `sql_type("inet6")`, ... | `str` |
 
-- `timestamp_column()` reads a `datetime` in UTC, with its zone set. A bare `DATETIME` and
+- `timestamp_column()` reads the `datetime` exactly as stored - no zone added
+  ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)). A bare `DATETIME` and
   the `TIMESTAMP` type get a note saying how they differ from `DATETIME(6)`.
 - MariaDB stores `JSON` as `LONGTEXT` with a `json_valid` check. schemagen reads the check and
   writes `json_column()`.
@@ -215,11 +218,12 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `TEXT` | `TEXT()` | `str` |
 | `BLOB` | `BLOB()` | `bytes` |
 | `JSON` | `json_column()` | `dict`, `list` |
-| `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime` (UTC) |
+| `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime`, as stored |
 | `DATE` | `DATE()` | `date` |
 | `TIME` | `TIME()` | `time` |
 
-- `timestamp_column()` reads a `datetime` in UTC, with its zone set.
+- `timestamp_column()` reads the `datetime` exactly as stored - no zone added
+  ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)).
 
 SQLite has no uuid type, so a uuid column is text, and schemagen cannot tell. Say which columns
 hold uuids:
@@ -454,8 +458,8 @@ Use both to take only the columns that match both.
 - **`None` never reaches it.** A `NULL` column reads as `None`, and writing `None` writes `NULL`.
   Your methods only see real values.
 - **`from_db` gets the value in [the default mapping](#the-default-mapping).** On a `NUMERIC`
-  column that is a `Decimal`. On a `TIMESTAMP` column it is a `datetime` in UTC, because the
-  converter wraps `timestamp_column()`: whatever the column would have been without the converter.
+  column that is a `Decimal`. On a `TIMESTAMP` column it is the `datetime` the driver read, as it
+  is, because the converter wraps `timestamp_column()`: whatever the column would have been without the converter.
 - **`to_db` returns that same kind of value.**
 
 ### The Converter base class is optional
@@ -581,7 +585,8 @@ Ekbatan strongly recommends UTC everywhere and columns without a zone - see
 not:
 
 - `TIMESTAMP` (PostgreSQL) and `DATETIME(6)` (MySQL, MariaDB) become `timestamp_column()`:
-  stored without a zone, read back as a `datetime` in UTC with its zone set;
+  a zone-less column with microseconds, holding and returning exactly what was written - the
+  framework converts no time;
 - a `TIMESTAMPTZ` keeps its zone, with a note;
 - MySQL's `TIMESTAMP` type, a bare `DATETIME`, a `TIMESTAMP(3)`: they become
   `timestamp_column()` too, with a note saying how the column differs from `DATETIME(6)`.
