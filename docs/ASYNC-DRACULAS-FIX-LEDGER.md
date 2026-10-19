@@ -28,7 +28,7 @@ landed after the list was written).
 | 15 | `tm.transaction()` timestamp sample | re-check | already resolved: both tabs write `clock.now()` as is (EKB-0384-0388) | - |
 | 16 | config-file sample import path | `from ekbatan import DatabaseRegistry` | fixed: sync tab imports `from ekbatan import DatabaseRegistry`, both copies | EKB-0390 |
 | 17 | async locks not exported from `ekbatan.aio` | export them; surface test compares package exports | todo | |
-| 18 | job worker README says `stop()` | say `close()` | todo | |
+| 18 | job worker README says `stop()` | say `close()` | fixed: sync README and app docstring say `close()` | EKB-0391 |
 | 19 | one url, two drivers | kept by choice | todo | |
 
 Side notes from the list: "Fifteen cases" in the REST READMEs (sync has sixteen tests);

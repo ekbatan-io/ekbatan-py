@@ -56,7 +56,7 @@ normal exit and on Ctrl-C by default, through `atexit`. SIGTERM does not run `at
 CPython, and by default no signal handler is installed, so a container stop would end the
 process with executions still picked and their rows waiting out the dead-execution window - 60
 seconds on framework defaults. `__main__.py` catches
-the signal and calls `stop()`, which is what makes a rolling deploy clean rather than merely
+the signal and calls `close()`, which is what makes a rolling deploy clean rather than merely
 survivable.
 
 `register_shutdown_hook()` on the builder does the same thing for you. It is off by default
