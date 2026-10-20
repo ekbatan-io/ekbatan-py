@@ -50,46 +50,46 @@ State: `todo`, `doing`, `done`, `n/a` (says why).
 
 | # | example | state |
 | --- | --- | --- |
-| E1 | fastapi-wallet-rest-uv-pg | todo |
-| E2 | fastapi-wallet-rest-uv-mysql | todo |
-| E3 | fastapi-wallet-rest-uv-mariadb | todo |
-| E4 | fastapi-wallet-rest-uv-sharded-pg | todo |
-| E5 | fastapi-wallet-rest-uv-async-sharded-pg | todo |
-| E6 | fastapi-wallet-rest-uv-async-pg | todo |
-| E7 | fastapi-wallet-rest-uv-async-mysql | todo |
-| E8 | fastapi-wallet-rest-uv-async-mariadb | todo |
-| E9 | fastapi-wallet-saga-uv-pg | todo |
-| E10 | fastapi-wallet-saga-uv-async-pg | todo |
-| E11 | job-worker-uv-pg | todo |
-| E12 | job-worker-uv-async-pg | todo |
-| E13 | wallet-service-uv-sqlite (hand-written schema: hand-written records) | todo |
-| E14 | wallet-service-uv-async-sqlite (the same) | todo |
-| E15 | `sync-examples.py` writes pip/Poetry; `--check` clean | todo |
+| E1 | fastapi-wallet-rest-uv-pg | done |
+| E2 | fastapi-wallet-rest-uv-mysql | done |
+| E3 | fastapi-wallet-rest-uv-mariadb | done |
+| E4 | fastapi-wallet-rest-uv-sharded-pg | done |
+| E5 | fastapi-wallet-rest-uv-async-sharded-pg | done |
+| E6 | fastapi-wallet-rest-uv-async-pg | done |
+| E7 | fastapi-wallet-rest-uv-async-mysql | done |
+| E8 | fastapi-wallet-rest-uv-async-mariadb | done |
+| E9 | fastapi-wallet-saga-uv-pg | done |
+| E10 | fastapi-wallet-saga-uv-async-pg | done |
+| E11 | job-worker-uv-pg | done |
+| E12 | job-worker-uv-async-pg | done |
+| E13 | wallet-service-uv-sqlite (hand-written schema: hand-written records) | done |
+| E14 | wallet-service-uv-async-sqlite (the same) | done |
+| E15 | `sync-examples.py` writes pip/Poetry; `--check` clean | done |
 
 ## Docs and website
 
 | # | item | state |
 | --- | --- | --- |
-| D1 | AGENTS.md: the record rule, the new names | todo |
-| D2 | DIVERGENCE.md: "SQLAlchemy Table objects, not record classes" | todo |
-| D3 | docs/DRACULAS.md: fixed row "row mapping was an untyped dict" | todo |
-| D4 | docs/database/schemagen.md + website schemagen page | todo |
-| D5 | docs/database/repositories.md + website reference/repository | todo |
-| D6 | the rest of docs/ and website/ naming the old methods (getting-started, sync-or-async, going-async, async, wiring, sharding, streaming, model-event, index, setup guide) | todo |
-| D7 | skill files (agent-skills, and the .claude / .agents copies) | todo |
-| D8 | historical ledgers and parity-probes outputs: left as history | todo |
+| D1 | AGENTS.md: the record rule, the new names | done |
+| D2 | DIVERGENCE.md: "SQLAlchemy Table objects, not record classes" | done |
+| D3 | docs/DRACULAS.md: fixed row "row mapping was an untyped dict" | done |
+| D4 | docs/database/schemagen.md + website schemagen page | done |
+| D5 | docs/database/repositories.md + website reference/repository | done |
+| D6 | the rest of docs/ and website/ naming the old methods (getting-started, sync-or-async, going-async, async, wiring, sharding, streaming, model-event, index, setup guide) | done |
+| D7 | skill files (agent-skills, and the .claude / .agents copies) | done |
+| D8 | historical ledgers and parity-probes outputs: left as history | n/a - history: `ASYNC-*`, `TIME-AS-IS-LEDGER`, `CONVERTER-AND-WEBSITE-LEDGER`, `dracula/`, `behaviour-parity/`, `parity-round-2/`, `parity-probes/` keep the names they were written with |
 
 ## Runs
 
 | # | run | before | after |
 | --- | --- | --- | --- |
-| R1 | unit | | |
-| R2 | sqlite (both modes) | | |
-| R3 | postgres | | |
-| R4 | mysql | | |
-| R5 | mariadb | | |
-| R6 | psycopg async | | |
-| R7 | make lint | | |
-| R8 | 14 uv examples' `make`; pip + Poetry for one per family | | |
-| R9 | setup-guide checker, uv x 4 databases x 2 modes | | |
-| R10 | website build + check | | |
+| R1 | unit | 1298 passed, 4 xfailed | 1337 passed, 4 xfailed (+39: `test_schemagen_records`, `test_typed_records_mypy`, one fetching test) |
+| R2 | sqlite (both modes) | 2262 passed, 103 skipped, 4 xfailed | 2303 passed, 103 skipped, 4 xfailed |
+| R3 | postgres | 2467 passed, 14 skipped, 4 xfailed | 2508 passed, 14 skipped, 4 xfailed |
+| R4 | mysql | 2471 passed, 14 skipped, 4 xfailed | 2512 passed, 14 skipped, 4 xfailed |
+| R5 | mariadb | 2481 passed, 12 skipped, 4 xfailed | 2522 passed, 12 skipped, 4 xfailed |
+| R6 | psycopg async | 1162 passed, 14 skipped | 1164 passed, 14 skipped |
+| R7 | make lint | - | clean: ruff, mypy --strict over src and the 14 uv examples (228 files), links, divergence, builders, sync-examples --check, check-api, docs-website-sync |
+| R8 | 14 uv examples' `make`; pip + Poetry for one per family | - | 14 uv: all pass (REST 18/19, sharded 22/23, saga 18/20, job worker 10/12, SQLite 19/19, both SQLite `make run`); pip+Poetry: rest-mariadb, rest-async-pg, saga-pg, job-worker-async-pg, wallet-service-sqlite - all pass |
+| R9 | setup-guide checker, uv x 4 databases x 2 modes | - | 8/8 ok (pg, mysql, mariadb, sqlite x sync, async) |
+| R10 | website build + check | - | 58 pages built; check: 0 broken, 76/76 settled |
