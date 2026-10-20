@@ -14,11 +14,6 @@ database because a JSON column takes it.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
-
-from sqlalchemy import Row
-
 from ekbatan.aio import AbstractAsyncRepository, AsyncEntityRepository, AsyncModelRepository
 from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
@@ -26,12 +21,13 @@ from ekbatan.repository import AbstractRepository, EntityRepository, ModelReposi
 from modes import twin
 
 from .domain import Notification, Wallet, WalletState
+from .schema import NotificationsRecord, WalletsRecord
 
 
 class _WalletRows:
     """The wallet mapping, shared by the three repository kinds the suite builds."""
 
-    def to_row(self, wallet: Wallet) -> dict[str, Any]:
+    def to_record(self, wallet: Wallet) -> WalletsRecord:
         return {
             "id": wallet.id.value,
             "version": wallet.version,
@@ -53,26 +49,25 @@ class _WalletRows:
             "updated_date": wallet.updated_date or wallet.created_date,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
-        values = row._mapping if isinstance(row, Row) else row
+    def from_record(self, record: WalletsRecord) -> Wallet:
         return Wallet(
-            id=ShardedId[Wallet](values["id"]),
-            version=values["version"],
-            state=WalletState[values["state"]],
-            owner_id=values["owner_id"],
-            currency=values["currency"],
-            balance=values["balance"],
-            aliases=values["aliases"] or [],
-            reward_points=values["reward_points"],
-            created_date=values["created_date"],
-            updated_date=values["updated_date"],
+            id=ShardedId[Wallet](record["id"]),
+            version=record["version"],
+            state=WalletState[record["state"]],
+            owner_id=record["owner_id"],
+            currency=record["currency"],
+            balance=record["balance"],
+            aliases=record["aliases"] or [],
+            reward_points=record["reward_points"],
+            created_date=record["created_date"],
+            updated_date=record["updated_date"],
         )
 
 
 class _NotificationRows:
     """An entity: no timestamps, because it is state rather than history."""
 
-    def to_row(self, note: Notification) -> dict[str, Any]:
+    def to_record(self, note: Notification) -> NotificationsRecord:
         return {
             "id": note.id.value,
             "version": note.version,
@@ -83,43 +78,46 @@ class _NotificationRows:
             "message": note.message,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Notification:
-        values = row._mapping if isinstance(row, Row) else row
+    def from_record(self, record: NotificationsRecord) -> Notification:
         return Notification(
-            id=Id[Notification](values["id"]),
-            version=values["version"],
-            state=GenericState[values["state"]],
-            wallet_id=ShardedId[Wallet](values["wallet_id"]),
-            kind=values["kind"],
-            recipient=values["recipient"],
-            message=values["message"],
+            id=Id[Notification](record["id"]),
+            version=record["version"],
+            state=GenericState[record["state"]],
+            wallet_id=ShardedId[Wallet](record["wallet_id"]),
+            kind=record["kind"],
+            recipient=record["recipient"],
+            message=record["message"],
         )
 
 
-class WalletRepository(_WalletRows, AbstractRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(_WalletRows, AbstractRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     """Java's `DummyRepository`: a repository that exists so the suite has one."""
 
 
-class NotificationRepository(_NotificationRows, AbstractRepository[Notification, Id[Notification]]):
-    pass
-
-
-class WalletModelRepository(_WalletRows, ModelRepository[Wallet, ShardedId[Wallet]]):
-    """For the checks that a `ModelRepository` refuses a table with no timestamps."""
-
-
-class NotificationModelRepository(
-    _NotificationRows, ModelRepository[Notification, Id[Notification]]
+class NotificationRepository(
+    _NotificationRows, AbstractRepository[Notification, NotificationsRecord, Id[Notification]]
 ):
     pass
 
 
-class WalletEntityRepository(_WalletRows, EntityRepository[Wallet, ShardedId[Wallet]]):
+class WalletModelRepository(_WalletRows, ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+    """For the checks that a `ModelRepository` refuses a table with no timestamps."""
+
+
+class NotificationModelRepository(
+    _NotificationRows, ModelRepository[Notification, NotificationsRecord, Id[Notification]]
+):
+    pass
+
+
+class WalletEntityRepository(
+    _WalletRows, EntityRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
+):
     pass
 
 
 class NotificationEntityRepository(
-    _NotificationRows, EntityRepository[Notification, Id[Notification]]
+    _NotificationRows, EntityRepository[Notification, NotificationsRecord, Id[Notification]]
 ):
     pass
 
@@ -131,36 +129,42 @@ class NotificationEntityRepository(
 
 
 @twin(WalletRepository)
-class AsyncWalletRepository(_WalletRows, AbstractAsyncRepository[Wallet, ShardedId[Wallet]]):
+class AsyncWalletRepository(
+    _WalletRows, AbstractAsyncRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
+):
     pass
 
 
 @twin(NotificationRepository)
 class AsyncNotificationRepository(
-    _NotificationRows, AbstractAsyncRepository[Notification, Id[Notification]]
+    _NotificationRows, AbstractAsyncRepository[Notification, NotificationsRecord, Id[Notification]]
 ):
     pass
 
 
 @twin(WalletModelRepository)
-class AsyncWalletModelRepository(_WalletRows, AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class AsyncWalletModelRepository(
+    _WalletRows, AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
+):
     pass
 
 
 @twin(NotificationModelRepository)
 class AsyncNotificationModelRepository(
-    _NotificationRows, AsyncModelRepository[Notification, Id[Notification]]
+    _NotificationRows, AsyncModelRepository[Notification, NotificationsRecord, Id[Notification]]
 ):
     pass
 
 
 @twin(WalletEntityRepository)
-class AsyncWalletEntityRepository(_WalletRows, AsyncEntityRepository[Wallet, ShardedId[Wallet]]):
+class AsyncWalletEntityRepository(
+    _WalletRows, AsyncEntityRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
+):
     pass
 
 
 @twin(NotificationEntityRepository)
 class AsyncNotificationEntityRepository(
-    _NotificationRows, AsyncEntityRepository[Notification, Id[Notification]]
+    _NotificationRows, AsyncEntityRepository[Notification, NotificationsRecord, Id[Notification]]
 ):
     pass

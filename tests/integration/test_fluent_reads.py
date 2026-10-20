@@ -2,15 +2,14 @@
 
 `tests/unit/test_fetching.py` pins what `FetchResult` does to rows. This pins the part that
 only a repository can show: that every accessor really does hand back a `Db`, that the mapper
-a repository passes is its own `from_row`, and that the scatter form reads across shards the
-way Java's `readonlyDbs().stream().flatMap(...)` does.
+a repository passes is its own `from_record`, handed each row as its mapping, and that the
+scatter form reads across shards the way Java's `readonlyDbs().stream().flatMap(...)` does.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -22,7 +21,7 @@ from ekbatan.ids import ShardedId
 from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Wallet, WalletState
-from fixtures.schema import WALLETS
+from fixtures.schema import WALLETS, WalletsRecord
 from modes import rebased
 
 #: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
@@ -33,10 +32,10 @@ MEXICO = ShardIdentifier(1, 0)
 
 
 @rebased
-class WalletRepository(AbstractRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AbstractRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     """What a user writes when the built-in finders run out."""
 
-    def to_row(self, wallet: Wallet) -> dict[str, Any]:
+    def to_record(self, wallet: Wallet) -> WalletsRecord:
         return {
             "id": wallet.id.value,
             "version": wallet.version,
@@ -50,8 +49,9 @@ class WalletRepository(AbstractRepository[Wallet, ShardedId[Wallet]]):
             "updated_date": wallet.updated_date or wallet.created_date,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
-        values = row._mapping if isinstance(row, Row) else row
+    def from_record(self, values: WalletsRecord) -> Wallet:
+        # Read by column name: the framework hands a row's mapping, never the row itself.
+        assert isinstance(values, Mapping) and not isinstance(values, Row), type(values)
         return Wallet(
             id=ShardedId[Wallet](values["id"]),
             version=values["version"],
@@ -73,7 +73,7 @@ class WalletRepository(AbstractRepository[Wallet, ShardedId[Wallet]]):
         return [
             wallet
             for _, conn in self.readonly_dbs()
-            for wallet in conn.rows(statement).each(self.from_row)
+            for wallet in conn.rows(statement).each(self.from_record)
         ]
 
     def find_richest_on(self, shard):
@@ -84,20 +84,20 @@ class WalletRepository(AbstractRepository[Wallet, ShardedId[Wallet]]):
             .limit(1)
         )
         with self.readonly_db(shard=shard) as conn:
-            return conn.rows(statement).fetch_first(self.from_row)
+            return conn.rows(statement).fetch_first(self.from_record)
 
     def currencies_on(self, shard):
-        """A projection - the mapper is whatever the caller wants, not `from_row`."""
+        """A projection - the mapper is whatever the caller wants, not `from_record`."""
         statement = select(WALLETS.c.currency).where(WALLETS.c.state != DELETED).distinct()
         with self.readonly_db(shard=shard) as conn:
-            return sorted(conn.rows(statement).fetch(lambda row: str(row.currency)))
+            return sorted(conn.rows(statement).fetch(lambda row: str(row["currency"])))
 
     def in_batches_on(self, shard, size):
         with self.readonly_db(shard=shard) as conn:
             statement = select(WALLETS).where(WALLETS.c.state != DELETED)
             return [
                 len(batch)
-                for batch in conn.rows(statement).yield_per(size).partitions(self.from_row)
+                for batch in conn.rows(statement).yield_per(size).partitions(self.from_record)
             ]
 
     def total_on(self, shard):
@@ -160,11 +160,11 @@ class TestTheAccessorsHandBackADb:
     def test_the_transaction_itself(self, registry):
         with registry.default.transaction() as tx:
             assert isinstance(tx.connection, Db)
-            assert tx.rows(select(WALLETS)).fetch(lambda row: row.id) == []
+            assert tx.rows(select(WALLETS)).fetch(lambda row: row["id"]) == []
 
 
 class TestAQueryARepositoryWrites:
-    def test_it_maps_with_from_row(self, wallets):
+    def test_it_maps_with_from_record(self, wallets):
         owner = uuid4()
         wallets.add(a_wallet(owner))
         wallets.add(a_wallet(owner, currency="USD", balance="50.00"))
@@ -199,7 +199,7 @@ class TestAQueryARepositoryWrites:
         assert richest is not None
         assert richest.balance == Decimal("999.0000")
 
-    def test_a_mapper_that_is_not_from_row(self, wallets):
+    def test_a_mapper_that_is_not_from_record(self, wallets):
         owner = uuid4()
         wallets.add(a_wallet(owner, currency="EUR"))
         wallets.add(a_wallet(owner, currency="USD"))

@@ -10,8 +10,8 @@ wrong one is invisible until the day the data has two.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import Iterator, Mapping
+from typing import TypedDict
 
 import pytest
 from sqlalchemy import (
@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     MetaData,
     Row,
+    RowMapping,
     String,
     Table,
     create_engine,
@@ -58,8 +59,14 @@ def db() -> Iterator[Db]:
     engine.dispose()
 
 
-def named(row: Row[Any]) -> str:
-    return str(row.name)
+def named(row: RowMapping) -> str:
+    return str(row["name"])
+
+
+class AnimalsRecord(TypedDict):
+    id: int
+    name: str
+    legs: int
 
 
 ALL = select(ANIMALS).order_by(ANIMALS.c.id)
@@ -104,7 +111,19 @@ class TestFetch:
     def test_the_mapper_decides_the_type(self, db: Db) -> None:
         """Nothing about `FetchResult` is bound to a model. The same result can be read as
         whatever the caller asks for."""
-        assert db.rows(ALL).fetch(lambda row: row.legs) == [6, 6, 4]
+        assert db.rows(ALL).fetch(lambda row: row["legs"]) == [6, 6, 4]
+
+    def test_the_mapper_is_handed_the_row_as_a_record(self, db: Db) -> None:
+        """Each row arrives read by column name - its mapping - which is what a repository's
+        `from_record` takes - not the `Row`."""
+        seen: list[object] = []
+        db.rows(ALL).fetch(seen.append)
+        assert all(isinstance(r, Mapping) and not isinstance(r, Row) for r in seen)
+
+        def from_record(record: AnimalsRecord) -> str:
+            return f"{record['name']}:{record['legs']}"
+
+        assert db.rows(ALL).fetch(from_record) == ["ant:6", "bee:6", "cat:4"]
 
 
 class TestFetchFirst:
@@ -153,7 +172,7 @@ class TestEach:
         """A caller that stops early has not paid to map the rest."""
         mapped: list[str] = []
 
-        def counting(row: Row[Any]) -> str:
+        def counting(row: RowMapping) -> str:
             mapped.append(named(row))
             return named(row)
 
@@ -182,7 +201,7 @@ class TestShaping:
 
     def test_unique_drops_duplicates(self, db: Db) -> None:
         assert db.rows(select(ANIMALS.c.legs).order_by(ANIMALS.c.legs)).unique().fetch(
-            lambda row: row.legs
+            lambda row: row["legs"]
         ) == [4, 6]
 
     def test_unique_takes_a_strategy(self, db: Db) -> None:

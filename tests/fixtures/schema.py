@@ -7,6 +7,11 @@ migration lands, so the Python and the schema cannot drift.
 
 from __future__ import annotations
 
+from datetime import datetime
+from decimal import Decimal
+from typing import TypedDict
+from uuid import UUID
+
 from sqlalchemy import (
     CHAR,
     BigInteger,
@@ -20,6 +25,7 @@ from sqlalchemy import (
 )
 
 from ekbatan.schema import (
+    JsonValue,
     json_column,
     notifications_table,
     outbox_table,
@@ -55,6 +61,22 @@ WALLETS = Table(
     Column("reward_points", Integer),
 )
 
+
+class WalletsRecord(TypedDict):
+    """A row of `wallets`, written by hand as schemagen would write it."""
+
+    id: UUID
+    version: int
+    state: str
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+    created_date: datetime
+    updated_date: datetime
+    aliases: JsonValue | None
+    reward_points: int | None
+
+
 NOTIFICATIONS = Table(
     "notifications",
     metadata,
@@ -66,6 +88,19 @@ NOTIFICATIONS = Table(
     Column("recipient", String(255), nullable=False),
     Column("message", Text),
 )
+
+
+class NotificationsRecord(TypedDict):
+    """A row of `notifications`."""
+
+    id: UUID
+    version: int
+    state: str
+    wallet_id: UUID
+    kind: str
+    recipient: str
+    message: str | None
+
 
 #: The framework's own tables. Their shape is a contract - a Debezium connector, a CDC
 #: pipeline, or another language's Ekbatan service binds to these column names - so they are

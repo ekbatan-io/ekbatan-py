@@ -5,12 +5,12 @@ into objects itself. Against a bare SQLAlchemy connection that is two steps and 
 comprehension::
 
     rows = conn.execute(statement).all()
-    return [self.from_row(row) for row in rows]
+    return [self.from_record(row._mapping) for row in rows]
 
 The Java port says it in one clause, ``fetch(this::fromRecord)``, because jOOQ ends a query
 with its mapping. SQLAlchemy has no such verb, so :class:`Db` supplies it::
 
-    return conn.rows(statement).fetch(self.from_row)
+    return conn.rows(statement).fetch(self.from_record)
 
 Nothing is taken away to make room for it. :class:`Db` **is** a
 :class:`sqlalchemy.Connection`, so ``execute``, ``begin``, ``exec_driver_sql`` and every other
@@ -27,13 +27,13 @@ contract can change in a patch release, to inherit behaviour this needs none of.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Any, Self
+from collections.abc import Callable, Iterator, Mapping
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from sqlalchemy import Connection
 
 if TYPE_CHECKING:
-    from sqlalchemy import Executable, Row
+    from sqlalchemy import Executable
     from sqlalchemy.engine import Result
 
 __all__ = ["Db", "FetchResult"]
@@ -48,6 +48,13 @@ class FetchResult:
     Not generic, deliberately: the type comes from the mapper handed to the terminal, so one of
     these can be read as wallets on one line and as currency codes on the next.
 
+    **The mapper is handed each row as a record** - the row's mapping, read by column name,
+    ``row["currency"]`` - which is what a repository's ``from_record`` takes. Its parameter
+    says which record it expects (``WalletsRecord``); the statement is not checked against it,
+    as nothing can check a SQL statement's columns against a type before it runs. A lambda's
+    row is a ``Mapping`` to a type checker, so it reads ``row["currency"]``; ``row.currency``
+    is a type error.
+
     The names do **not** follow jOOQ's, and that is the one place this deliberately parts from
     it. There, ``fetchOne`` means *at most one, raise if there are two* and ``fetchAny`` means
     *the first*. A ``fetch_one`` that did not mean "fetch one" is a trap worth more than the
@@ -61,24 +68,24 @@ class FetchResult:
 
     # ------------------------------------------------------------------ terminals
 
-    def fetch[T](self, mapper: Callable[[Row[Any]], T]) -> list[T]:
+    def fetch[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> list[T]:
         """Every row, mapped. A ``list``, not a ``Sequence``: it is yours to mutate."""
-        return [mapper(row) for row in self._result]
+        return [mapper(cast(R, row._mapping)) for row in self._result]
 
-    def fetch_first[T](self, mapper: Callable[[Row[Any]], T]) -> T | None:
+    def fetch_first[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T | None:
         """The first row, or ``None``. The read that treats absence as ordinary."""
         row = self._result.first()
-        return mapper(row) if row is not None else None
+        return mapper(cast(R, row._mapping)) if row is not None else None
 
-    def fetch_one[T](self, mapper: Callable[[Row[Any]], T]) -> T:
+    def fetch_one[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T:
         """Exactly one row, or raise.
 
         Raises if there are none *and* if there are two. For a query you believe returns one
         row - which is exactly the belief worth having checked.
         """
-        return mapper(self._result.one())
+        return mapper(cast(R, self._result.one()._mapping))
 
-    def fetch_one_or_none[T](self, mapper: Callable[[Row[Any]], T]) -> T | None:
+    def fetch_one_or_none[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T | None:
         """At most one row, or ``None``.
 
         The difference from :meth:`fetch_first` is what a second row means: here it is an
@@ -86,15 +93,15 @@ class FetchResult:
         rather than a result to choose from.
         """
         row = self._result.one_or_none()
-        return mapper(row) if row is not None else None
+        return mapper(cast(R, row._mapping)) if row is not None else None
 
-    def each[T](self, mapper: Callable[[Row[Any]], T]) -> Iterator[T]:
+    def each[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> Iterator[T]:
         """Every row, lazily - so a caller that stops early has not mapped the rest.
 
         What :meth:`fetch` would be without the list, and what a scatter-gather comprehension
         across shards wants.
         """
-        return (mapper(row) for row in self._result)
+        return (mapper(cast(R, row._mapping)) for row in self._result)
 
     # ------------------------------------------------------------------ shaping
 
@@ -106,8 +113,8 @@ class FetchResult:
         self._result = self._result.yield_per(num)
         return self
 
-    def partitions[T](
-        self, mapper: Callable[[Row[Any]], T], size: int | None = None
+    def partitions[T, R: Mapping[Any, Any]](
+        self, mapper: Callable[[R], T], size: int | None = None
     ) -> Iterator[list[T]]:
         """Batches of mapped rows, lazily.
 
@@ -115,7 +122,7 @@ class FetchResult:
         reach this - so the common call passes only the mapper.
         """
         for chunk in self._result.partitions(size):
-            yield [mapper(row) for row in chunk]
+            yield [mapper(cast(R, row._mapping)) for row in chunk]
 
     def unique(self, strategy: Callable[[Any], Any] | None = None) -> Self:
         """Drop duplicate rows, before mapping.

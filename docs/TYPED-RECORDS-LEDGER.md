@@ -28,23 +28,23 @@ State: `todo`, `doing`, `done`, `n/a` (says why).
 | L3 | schemagen: column -> Python type (plain, nullable, forced name, sqlalchemy-type, converter) | done |
 | L4 | schemagen: converter user type from `from_db` annotation, else generic base, else error | done |
 | L5 | schemagen: imports for the types, aliased on a clash; record names that clash fail | done |
-| L6 | `repository.py`: `[M, R, K]`, `to_record -> R`, `from_record(R)`, refusal text, helpers typed | todo |
-| L7 | `aio/repository.py`: the same | todo |
-| L8 | every framework call of `from_record` hands it the row's mapping (find/get/find_many/find_where/find_one_where/all/add_all/update_all, sync and async, sharded) | todo |
-| L9 | `fetching.py`: the terminals hand the mapper the row's mapping, typed by the mapper | todo |
-| L10 | `tests/modes.py` mapping names | todo |
-| L11 | the outbox / notification / `ActionEvent` `to_row`/`from_row` (not repository mappings) | todo |
+| L6 | `repository.py`: `[M, R, K]`, `to_record -> R`, `from_record(R)`, refusal text, helpers typed | done |
+| L7 | `aio/repository.py`: the same | done |
+| L8 | every framework call of `from_record` hands it the row's mapping (find/get/find_many/find_where/find_one_where/all/add_all/update_all, sync and async, sharded) | done |
+| L9 | `fetching.py`: the terminals hand the mapper the row's mapping, typed by the mapper | done |
+| L10 | `tests/modes.py` mapping names | done |
+| L11 | the outbox / notification / `ActionEvent` `to_row`/`from_row` (not repository mappings) | n/a - kept: `EventEntity`, `EventNotification` and `ActionEvent` are the framework's own row classes, not a repository's mapping (DECISIONS) |
 
 ## Tests
 
 | # | item | state |
 | --- | --- | --- |
-| T1 | `tests/fixtures/repositories.py`: hand-written records, new names | todo |
-| T2 | every test using the old names or the old generics | todo |
+| T1 | `tests/fixtures/repositories.py`: hand-written records, new names | done |
+| T2 | every test using the old names or the old generics | done |
 | T3 | unit: generator - plain, nullable, forced types, converter by annotation, by base, neither, clashes | done |
 | T4 | integration, four databases: generated records name each column with the type the driver really returns, and mypy accepts the module | done - `test_schemagen_types`: every case read back through the framework's sync engine and its async one is what `TTypesRecord` says; went red on PostgreSQL first (INET/CIDR read as `ipaddress` objects, BIT as asyncpg's `BitString`), fixed in the type table |
 | T5 | mypy test: missing column, extra/misspelled column, wrong type, converter type, wrong key read - each proven red | done - `tests/unit/test_typed_records_mypy.py`, 9 mistakes + 1 clean file in one mypy run. Red probes: every hint `Any` -> wrong_type, converter_type, read_as_wrong_type go green-for-mypy (test red); every key `NotRequired` -> missing_column red; repositories typed `dict[str, Any]` (the old mapping) -> all 9 red |
-| T6 | `test_fetching.py`: the mapper gets the mapping | todo |
+| T6 | `test_fetching.py`: the mapper gets the mapping | done |
 
 ## Examples (uv; pip and Poetry written by `scripts/sync-examples.py`)
 

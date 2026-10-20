@@ -435,7 +435,7 @@ def test_each_mode_refuses_the_other_kind_of_action(mode, backend, clock):
 
 
 def _isolation_row(wallets: Any) -> dict[str, Any]:
-    return wallets.to_row(
+    return wallets.to_record(
         Wallet.open(
             id=ShardedId[Wallet].random(),
             owner_id=uuid4(),

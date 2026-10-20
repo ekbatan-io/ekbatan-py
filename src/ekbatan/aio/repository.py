@@ -5,9 +5,9 @@ same construction checks, mapping, shard routing, soft-delete filter, statements
 optimistic-lock rules, inherited rather than copied - with the methods that run a statement
 written as coroutines::
 
-    class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
-        def to_row(self, wallet: Wallet) -> dict[str, Any]: ...      # plain def, as in sync
-        def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet: ...
+    class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+        def to_record(self, wallet: Wallet) -> WalletsRecord: ...    # plain def, as in sync
+        def from_record(self, record: WalletsRecord) -> Wallet: ...
 
         async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
             return await self.find_where(WALLETS.c.owner_id == owner_id)
@@ -20,7 +20,15 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager
 from typing import Any, Protocol
 
@@ -83,8 +91,8 @@ class AsyncRepository[M: Persistable[Any, Any]](Protocol):
     async def all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
 
 
-class AbstractAsyncRepository[M: Persistable[Any, Any], K](
-    _RepositoryCore[M, K], AsyncRepository[M]
+class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
+    _RepositoryCore[M, R, K], AsyncRepository[M]
 ):
     """Rows of one table, as models, awaited - the async
     :class:`~ekbatan.repository.AbstractRepository`.
@@ -249,7 +257,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
         """The row, or ``None``."""
         async with self._reader(key=key) as conn:
             row = (await conn.execute(self._by_id(key))).first()
-        return self.from_row(row) if row is not None else None
+        return self._read_back(row) if row is not None else None
 
     async def get(self, key: K) -> M:
         """The row, or raise."""
@@ -263,7 +271,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
         async def read(shard: ShardIdentifier) -> list[M]:
             async with self._reader(shard=shard) as conn:
                 found = await conn.execute(self._among(conn, by_shard[shard]))
-                return [self.from_row(r) for r in found]
+                return [self._read_back(r) for r in found]
 
         if not by_shard:
             return []
@@ -273,7 +281,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> list[M]:
         """Live rows matching, on the shard named or on every shard."""
-        return [self.from_row(r) for r in await self._read(self._where(*criteria), shard)]
+        return [self._read_back(r) for r in await self._read(self._where(*criteria), shard)]
 
     async def find_one_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
@@ -348,9 +356,9 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
                 written = await conn.execute(
                     self._insert_returning(), rows, execution_options=_ONE_STATEMENT
                 )
-                return [self.from_row(r) for r in written]
+                return [self._read_back(r) for r in written]
             await conn.execute(insert(self.table), rows)
-        return [self.from_row(r) for r in rows]
+        return [self.from_record(r) for r in rows]
 
     async def add_all_no_result(self, models: Sequence[M]) -> None:
         """Insert without reading anything back."""
@@ -395,7 +403,9 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], K](
         return self._updated(stamped, written, read_back=read_back, returning=returning)
 
 
-class AsyncModelRepository[M: Model[Any, Any], K](AbstractAsyncRepository[M, K]):
+class AsyncModelRepository[M: Model[Any, Any], R: Mapping[str, Any], K](
+    AbstractAsyncRepository[M, R, K]
+):
     """Rows of a :class:`~ekbatan.domain.Model`, awaited - the async
     :class:`~ekbatan.repository.ModelRepository`, held to the same declaration."""
 
@@ -403,7 +413,9 @@ class AsyncModelRepository[M: Model[Any, Any], K](AbstractAsyncRepository[M, K])
         super().__init__(_must_be_model(model_type), *args, **kwargs)
 
 
-class AsyncEntityRepository[M: Entity[Any, Any], K](AbstractAsyncRepository[M, K]):
+class AsyncEntityRepository[M: Entity[Any, Any], R: Mapping[str, Any], K](
+    AbstractAsyncRepository[M, R, K]
+):
     """Rows of an :class:`~ekbatan.domain.Entity`, awaited - the async
     :class:`~ekbatan.repository.EntityRepository`."""
 

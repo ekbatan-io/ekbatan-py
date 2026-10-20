@@ -2,8 +2,9 @@
 
 A repository is bound to one model and one table. It routes by shard, enforces the optimistic
 lock, hides soft-deleted rows from every read path, and maps between rows and models through the
-``to_row`` / ``from_row`` every repository writes, as every Java one writes ``toRecord`` /
-``fromRecord``.
+``to_record`` / ``from_record`` every repository writes, as every Java one writes ``toRecord`` /
+``fromRecord``. A row is a *record*: a ``TypedDict`` with a key per column - ``WalletsRecord``,
+which ``schemagen`` writes beside ``WALLETS`` - so the mapping is checked by a type checker.
 
 The names are Java's. :class:`Repository` is the promise - what the framework asks of a
 repository, and all it asks. :class:`AbstractRepository` keeps that promise against a table, and
@@ -28,7 +29,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self, cast
 
 from sqlalchemy import (
     ColumnElement,
@@ -36,7 +37,6 @@ from sqlalchemy import (
     Table,
     any_,
     bindparam,
-    cast,
     column,
     func,
     insert,
@@ -47,6 +47,7 @@ from sqlalchemy import (
     update,
     values,
 )
+from sqlalchemy import cast as sql_cast
 
 from ._tracing import span
 from .clock import Clock, SystemClock
@@ -112,11 +113,14 @@ def _no_row_mapping(target: type, missing: Sequence[str]) -> str:
         f"repository writes both. Write both here too:\n"
         f"\n"
         f"  class {name}(...):\n"
-        f"      def to_row(self, model) -> dict[str, Any]:\n"
+        f"      def to_record(self, model) -> TableRecord:\n"
         f"          return self.columns_by_field_name(model)\n"
         f"\n"
-        f"      def from_row(self, row) -> Model:\n"
-        f"          return self.model_by_field_name(row)\n"
+        f"      def from_record(self, record: TableRecord) -> Model:\n"
+        f"          return self.model_by_field_name(record)\n"
+        f"\n"
+        f"`TableRecord` is the table's record - `WalletsRecord` for `wallets`, which schemagen "
+        f"writes beside the table.\n"
         f"\n"
         f"`columns_by_field_name` and `model_by_field_name` map every declared field to the "
         f"column of the same name - which is what this used to do without being asked. Writing "
@@ -153,9 +157,9 @@ class Repository[M: Persistable[Any, Any]](Protocol):
         if cls is Repository and isinstance(params, tuple) and len(params) == 2:
             raise TypeError(
                 "Repository takes one type argument now - it is Java's Repository interface, the "
-                "promise the framework asks of a repository. The two-argument class that "
-                "implements it is AbstractRepository[Model, Id]; an application extends "
-                "ModelRepository[Model, Id] or EntityRepository[Model, Id]."
+                "promise the framework asks of a repository. The class that implements it is "
+                "AbstractRepository[Model, Record, Id]; an application extends "
+                "ModelRepository[Model, Record, Id] or EntityRepository[Model, Record, Id]."
             )
         return super().__class_getitem__(params)  # type: ignore[misc]
 
@@ -190,7 +194,7 @@ class Repository[M: Persistable[Any, Any]](Protocol):
     def all(self, *, shard: ShardIdentifier | None = None) -> list[M]: ...
 
 
-class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
+class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
     """Everything a repository is apart from waiting on the database - shared by
     :class:`AbstractRepository` and ``ekbatan.aio``'s ``AbstractAsyncRepository``.
 
@@ -207,12 +211,12 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
         # says what to write, which is the part a reader needs - still a TypeError, as Python's is.
         missing = sorted(getattr(cls, "__abstractmethods__", ()))
         if missing:
-            if set(missing) <= {"to_row", "from_row"}:
+            if set(missing) <= {"to_record", "from_record"}:
                 raise TypeError(_no_row_mapping(cls, missing))
             raise TypeError(
                 f"{cls.__name__} cannot be created: it does not implement {', '.join(missing)}. "
                 f"Extend {cls._EXTEND}, which implement everything but "
-                f"to_row and from_row."
+                f"to_record and from_record."
             )
         return super().__new__(cls)
 
@@ -283,49 +287,52 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
     # ---------------------------------------------------------------- mapping
 
     @abstractmethod
-    def to_row(self, model: M) -> dict[str, Any]:
-        """The model as column values. **Write this.**
+    def to_record(self, model: M) -> R:
+        """The model as its table's record. **Write this.**
 
         Java's `AbstractRepository` declares `toRecord` abstract and every repository there
-        implements it. This did the mapping by field name unless you said otherwise, and that
-        was the one piece of magic in the write path: rename a column without renaming the
-        field and the mapping silently stops matching, where Java gets a compile error.
+        implements it. The record is the table's ``TypedDict`` - ``WalletsRecord``, generated
+        beside ``WALLETS`` - so a column left out, misspelt or given the wrong type is a type
+        error, as it is a compile error in Java::
 
-        Where the names do line up, say so in a line rather than inheriting it in silence::
+            def to_record(self, wallet: Wallet) -> WalletsRecord:
+                return {"id": wallet.id.value, "version": wallet.version, ...}
 
-            def to_row(self, wallet: Wallet) -> dict[str, Any]:
-                return self.columns_by_field_name(wallet)
+        Where the names line up, say so in a line rather than inheriting it in silence:
+        ``return self.columns_by_field_name(wallet)``.
         """
-        raise NotImplementedError(_no_row_mapping(type(self), ["to_row"]))
+        raise NotImplementedError(_no_row_mapping(type(self), ["to_record"]))
 
     @abstractmethod
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> M:
-        """A row as a model. **Write this**, alongside :meth:`to_row`.
+    def from_record(self, record: R) -> M:
+        """A record as a model. **Write this**, alongside :meth:`to_record`.
 
-        The counterpart to Java's abstract `fromRecord`. It is handed a result row or a plain
-        mapping - the latter is how an insert with no ``RETURNING`` rebuilds what it wrote::
+        The counterpart to Java's abstract `fromRecord`. The framework hands it a row read by
+        column name - a result row's mapping, or, where an insert or update has no
+        ``RETURNING``, the record :meth:`to_record` wrote::
 
-            def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
-                return self.model_by_field_name(row)
+            def from_record(self, record: WalletsRecord) -> Wallet:
+                return Wallet(id=ShardedId[Wallet](record["id"]), ...)
         """
-        raise NotImplementedError(_no_row_mapping(type(self), ["from_row"]))
+        raise NotImplementedError(_no_row_mapping(type(self), ["from_record"]))
 
     # ------------------------------------------- the by-name mapping, asked for rather than assumed
 
-    def columns_by_field_name(self, model: M) -> dict[str, Any]:
-        """Every declared field, under the column of the same name.
+    def columns_by_field_name(self, model: M) -> R:
+        """Every declared field, under the column of the same name, as the table's record.
 
-        What `to_row` used to do without being asked. A dataclass knows its own fields, so this
-        needs writing once in the framework rather than once per repository - but *choosing* it
-        is a line in your repository, and a column that stops matching is then a line somebody
-        can find.
+        What `to_record` used to do without being asked. A dataclass knows its own fields, so
+        this needs writing once in the framework rather than once per repository - but
+        *choosing* it is a line in your repository, and a column that stops matching is then a
+        line somebody can find. The type checker takes the record on trust here - it is built
+        from the fields at run time - so a mapping written out key by key is the checked one.
         """
-        return {name: write(getattr(model, name)) for name, write in self._to_col.items()}
+        return cast(R, {name: write(getattr(model, name)) for name, write in self._to_col.items()})
 
-    def model_by_field_name(self, row: Row[Any] | Mapping[str, Any]) -> M:
+    def model_by_field_name(self, record: R) -> M:
         """Every column, into the field of the same name. The counterpart to
         :meth:`columns_by_field_name`."""
-        mapping = row._mapping if isinstance(row, Row) else row
+        mapping: Mapping[str, Any] = record
         try:
             # The common case is a full row, and asking "is this column present?" once per
             # column per row is forty thousand questions to read five thousand rows, all with
@@ -526,8 +533,14 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
             self._single_stmt[returning] = stmt.returning(self.table) if returning else stmt
         return self._single_stmt[returning]
 
+    def _read_back(self, row: Row[Any]) -> M:
+        """A result row, as a model: :meth:`from_record` is handed the row's mapping, read by
+        column name. The row's own mapping, not a copy - reading ten thousand rows makes no
+        dicts."""
+        return self.from_record(cast(R, row._mapping))
+
     def _bind(self, model: M) -> dict[str, Any]:
-        row = self.to_row(model)
+        row = self.to_record(model)
         return {
             "_id": row[self.id_column.name],
             "_prior": model.version - 1,
@@ -569,11 +582,12 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
         types = self._derived_types()
         rows = [
             tuple(
-                cast(null(), types[name]) if value is None else value
+                sql_cast(null(), types[name]) if value is None else value
                 for name, value in zip(types, raw, strict=True)
             )
             for raw in (
-                (m.version - 1, *(self.to_row(m)[name] for name in self._columns)) for m in models
+                (m.version - 1, *(self.to_record(m)[name] for name in self._columns))
+                for m in models
             )
         ]
         source = values(*[column(name, types[name]) for name in types], name="v").data(rows)
@@ -598,7 +612,7 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
     def _union_binds(self, models: Sequence[M]) -> dict[str, Any]:
         binds: dict[str, Any] = {}
         for i, model in enumerate(models):
-            row = self.to_row(model)
+            row = self.to_record(model)
             binds[f"b{i}_{_PRIOR}"] = model.version - 1
             for name in self._columns:
                 binds[f"b{i}_{name}"] = row[name]
@@ -671,7 +685,7 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
                 f"find_one_where matched more than one {self.model_type.__name__}: the "
                 f"predicate is not unique. Use find_where when several rows are expected."
             )
-        return self.from_row(rows[0]) if rows else None
+        return self._read_back(rows[0]) if rows else None
 
     def _keys_by_shard(self, keys: Iterable[K]) -> dict[ShardIdentifier, list[Any]]:
         """``find_many``'s keys, duplicates dropped, grouped by the shard each lives on - in the
@@ -694,9 +708,9 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
             raise EntityNotFoundError(self.model_type.__name__, key)
         return found
 
-    def _insert_rows(self, models: Sequence[M]) -> tuple[ShardIdentifier, list[dict[str, Any]]]:
+    def _insert_rows(self, models: Sequence[M]) -> tuple[ShardIdentifier, list[R]]:
         """The shard a batch goes to, and its rows."""
-        return self.shard_of_all(models), [self.to_row(m) for m in models]
+        return self.shard_of_all(models), [self.to_record(m) for m in models]
 
     def _insert_returning(self) -> Any:
         """An insert that reads its rows back. Run it with ``execution_options=_ONE_STATEMENT``."""
@@ -776,19 +790,25 @@ class _RepositoryCore[M: Persistable[Any, Any], K](ABC):
             # persisted, and the next update writes them a second time. Every other dialect
             # returns a row, and a row has no events. `add_all` takes the same care for the
             # same reason.
-            return [self.from_row(self.to_row(m)) for m in stamped]
+            return [self.from_record(self.to_record(m)) for m in stamped]
         # RETURNING makes no promise about order, and a caller handing in a list expects the
         # same list back.
         by_id = {row._mapping[self.id_column.name]: row for row in written}
-        return [self.from_row(by_id[self.to_row(m)[self.id_column.name]]) for m in stamped]
+        return [self._read_back(by_id[self.to_record(m)[self.id_column.name]]) for m in stamped]
 
 
-class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Repository[M]):
+class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
+    _RepositoryCore[M, R, K], Repository[M]
+):
     """Rows of one table, as models - Java's ``AbstractRepository``.
 
-    Abstract for Java's reason: ``to_row`` and ``from_row`` are the repository's to write, and a
-    repository without them cannot be created at all - the nearest this language comes to the
-    compile error Java gives. Applications extend :class:`ModelRepository` or
+    Generic in the model, the table's record and the id - ``ModelRepository[Wallet,
+    WalletsRecord, ShardedId[Wallet]]`` - as Java's is in the model, the record, the table and
+    the id; the table here is a value, not a type, so it is not a parameter.
+
+    Abstract for Java's reason: ``to_record`` and ``from_record`` are the repository's to
+    write, and a repository without them cannot be created at all - the nearest this language
+    comes to the compile error Java gives. Applications extend :class:`ModelRepository` or
     :class:`EntityRepository`, which say which kind of thing the table holds.
     """
 
@@ -919,7 +939,7 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         stmt = self._by_id(key)
         with self._reader(key=key) as conn:
             row = conn.execute(stmt).first()
-        return self.from_row(row) if row is not None else None
+        return self._read_back(row) if row is not None else None
 
     def get(self, key: K) -> M:
         """The row, or raise. The lookup for callers that cannot continue without it."""
@@ -936,7 +956,9 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
 
         def read(shard: ShardIdentifier) -> list[M]:
             with self._reader(shard=shard) as conn:
-                return [self.from_row(r) for r in conn.execute(self._among(conn, by_shard[shard]))]
+                return [
+                    self._read_back(r) for r in conn.execute(self._among(conn, by_shard[shard]))
+                ]
 
         return [model for found in self._on_each(list(by_shard), read) for model in found]
 
@@ -944,7 +966,7 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> list[M]:
         stmt = self._where(*criteria)
-        return [self.from_row(r) for r in self._read(stmt, shard)]
+        return [self._read_back(r) for r in self._read(stmt, shard)]
 
     def find_one_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
@@ -1079,9 +1101,9 @@ class AbstractRepository[M: Persistable[Any, Any], K](_RepositoryCore[M, K], Rep
                 written = conn.execute(
                     self._insert_returning(), rows, execution_options=_ONE_STATEMENT
                 )
-                return [self.from_row(r) for r in written]
+                return [self._read_back(r) for r in written]
             conn.execute(insert(self.table), rows)
-        return [self.from_row(r) for r in rows]
+        return [self.from_record(r) for r in rows]
 
     def add_all_no_result(self, models: Sequence[M]) -> None:
         """Insert without reading anything back.
@@ -1306,7 +1328,7 @@ def _must_be_entity[T](model_type: type[T]) -> type[T]:
     return model_type
 
 
-class ModelRepository[M: Model[Any, Any], K](AbstractRepository[M, K]):
+class ModelRepository[M: Model[Any, Any], R: Mapping[str, Any], K](AbstractRepository[M, R, K]):
     """Rows of a :class:`~ekbatan.domain.Model` - state whose changes are events.
 
     Everything is inherited; what this adds is the declaration. Saying which of the two you
@@ -1318,7 +1340,7 @@ class ModelRepository[M: Model[Any, Any], K](AbstractRepository[M, K]):
         super().__init__(_must_be_model(model_type), *args, **kwargs)
 
 
-class EntityRepository[M: Entity[Any, Any], K](AbstractRepository[M, K]):
+class EntityRepository[M: Entity[Any, Any], R: Mapping[str, Any], K](AbstractRepository[M, R, K]):
     """Rows of an :class:`~ekbatan.domain.Entity` - state whose changes are not events.
 
     The counterpart to :class:`ModelRepository`, and the same bargain: declare which one it is

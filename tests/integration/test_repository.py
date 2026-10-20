@@ -22,14 +22,16 @@ from fixtures.repositories import (
     WalletModelRepository,
     WalletRepository,
 )
-from fixtures.schema import NOTIFICATIONS, WALLETS
+from fixtures.schema import NOTIFICATIONS, WALLETS, WalletsRecord
 
 #: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
 MODES = ("sync", "async")
 
 
 @pytest.fixture
-def wallets(registry: DatabaseRegistry, clock: VirtualClock) -> AbstractRepository[Wallet, UUID]:
+def wallets(
+    registry: DatabaseRegistry, clock: VirtualClock
+) -> AbstractRepository[Wallet, WalletsRecord, UUID]:
     return WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
 
@@ -435,7 +437,7 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
 
         # Put a row on the other shard behind the repository's back. Stamped by hand because
         # `add()` would route it back to the default shard, which is the thing being tested.
-        row = wallets.to_row(a_wallet("99.00"))
+        row = wallets.to_record(a_wallet("99.00"))
         # Zone-less, as the column holds it: asyncpg refuses an aware value for a TIMESTAMP.
         row["created_date"] = row["updated_date"] = clock.now()
         with managers[other].connection() as conn:

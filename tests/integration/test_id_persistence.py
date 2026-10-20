@@ -7,12 +7,11 @@ wrapper or the bare uuid, and that routing reads the shard off it with nothing e
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import TypedDict
 from uuid import UUID
 
 import pytest
@@ -23,7 +22,6 @@ from sqlalchemy import (
     DateTime,
     MetaData,
     Numeric,
-    Row,
     String,
     Table,
     Uuid,
@@ -52,6 +50,16 @@ PURSES = Table(
     Column("created_date", DateTime, nullable=False),
     Column("updated_date", DateTime, nullable=False),
 )
+
+
+class PursesRecord(TypedDict):
+    id: UUID
+    version: int
+    state: str
+    currency: str
+    balance: Decimal
+    created_date: datetime
+    updated_date: datetime
 
 
 NOW = datetime(2026, 1, 1, 12, 0)
@@ -83,14 +91,15 @@ def _prepare(registry):
 
 
 @rebased
-class PurseRepository(AbstractRepository[Purse, Id[Purse]]):
-    """The mapping written out, as Java's `fromRecord` / `toRecord` are.
+class PurseRepository(AbstractRepository[Purse, PursesRecord, Id[Purse]]):
+    """The mapping written out, as Java's `fromRecord` / `toRecord` are: `to_record` /
+    `from_record`, typed by the table's record.
 
     This file is about what a *typed id* does on the way to a column and back, so the two lines
     that matter are the first of each: `purse.id.value` going out, `Id[Purse](...)` coming back.
     """
 
-    def to_row(self, purse: Purse) -> dict[str, Any]:
+    def to_record(self, purse: Purse) -> PursesRecord:
         return {
             "id": purse.id.value,
             "version": purse.version,
@@ -101,8 +110,7 @@ class PurseRepository(AbstractRepository[Purse, Id[Purse]]):
             "updated_date": purse.updated_date or purse.created_date,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Purse:
-        values = row._mapping if isinstance(row, Row) else row
+    def from_record(self, values: PursesRecord) -> Purse:
         return Purse(
             id=Id[Purse](values["id"]),
             version=values["version"],

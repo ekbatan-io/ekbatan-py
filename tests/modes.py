@@ -658,7 +658,7 @@ def portaled(async_twin: Any) -> Any:
 
 
 #: Methods the framework calls itself, on the loop: never given a blocking `self`.
-_MAPPING = frozenset({"to_row", "from_row", "perform", "shard_for", "shard_of"})
+_MAPPING = frozenset({"to_record", "from_record", "perform", "shard_for", "shard_of"})
 
 
 def _blocking_self(function: Callable[..., Any]) -> Callable[..., Any]:
