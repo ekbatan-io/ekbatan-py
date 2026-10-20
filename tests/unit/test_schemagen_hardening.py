@@ -1016,7 +1016,7 @@ def test_a_module_from_before_the_format_number_fails_on_import_and_says_to_rege
     message = str(raised.value)
     assert "schema.py was written by an older schemagen (format 1" in message
     assert f"this ekbatan writes {schemagen.SCHEMA_FORMAT}" in message
-    assert "make schema" in message
+    assert "`make clean && make`" in message
 
 
 def test_a_module_of_another_format_fails_even_when_its_migrations_are_not_shipped(

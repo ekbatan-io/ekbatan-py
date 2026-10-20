@@ -732,7 +732,7 @@ schema.py was written by an older schemagen (format 1; this ekbatan writes 2). R
 ```
 
 A build that only regenerates when the migrations change, like the examples' `Makefile`, keeps
-the old file, so delete it and run `make schema` again. Unlike the fingerprint, this check runs in
+the old file, so run `make clean && make` (or delete it and run `python -m ekbatan.schemagen`). Unlike the fingerprint, this check runs in
 an installed wheel too: a module and an ekbatan that disagree are broken there as well.
 
 ## Notes

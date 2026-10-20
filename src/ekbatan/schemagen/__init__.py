@@ -176,9 +176,8 @@ def check_fingerprint(
     if schema_format != SCHEMA_FORMAT:
         raise ValidationError(
             f"{Path(generated).name} was written by an older schemagen (format "
-            f"{schema_format or 1}; this ekbatan writes {SCHEMA_FORMAT}). Regenerate it - "
-            f"`make schema`, or `python -m ekbatan.schemagen` - and delete it first if your build "
-            f"only regenerates when the migrations change."
+            f"{schema_format or 1}; this ekbatan writes {SCHEMA_FORMAT}). Regenerate it: "
+            f"`make clean && make`, or delete it and run `python -m ekbatan.schemagen`."
         )
     if migrations is None:
         return
