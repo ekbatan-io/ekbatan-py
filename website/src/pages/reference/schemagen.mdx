@@ -140,6 +140,9 @@ over the file. Paths in the file are relative to the file.
 In MySQL and MariaDB, a schema in `schemas` is a database. `includes` and `excludes` are
 regular expressions over table names. Forced types are [below](#forced-types).
 
+A setting left empty (`image = ""`) is refused: remove the line to get the default. Empty is never
+read as the default, because `excludes = ""` would be a pattern that matches every table.
+
 An unknown key is an error, so a typo does not silently do nothing. `url` must point at an empty
 database. Keep it out of a committed file if it has a password; pass it with `--url`. schemagen
 never prints it.
@@ -674,7 +677,10 @@ uses none of it at run time.
   `AUDIT_ENTRIES`. When a schema holds tables and is not listed, a note says so.
 
 Not generated: database extensions (`CREATE EXTENSION citext` comes before `create_all`), and a
-foreign key to a table that is not generated (a note says so).
+foreign key to a table that is not generated (a note says so). On MySQL and MariaDB, a foreign key
+from a table in a listed schema to a table in the connection's own database is left out too, with
+a note: the module writes the own database's tables without its name, so it has no way to name the
+target, and a key written without it would point into the listed database instead.
 
 ## The framework's own tables
 

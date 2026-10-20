@@ -473,10 +473,22 @@ class _Writer:
             targets = [e.target_fullname for e in constraint.elements]
             referred = targets[0].rsplit(".", 1)[0]
             if referred not in generated:
-                self.notes.append(
-                    f"{relation.key}: foreign key {constraint.name or constraint.column_keys} "
-                    f"refers to {referred}, which is not generated; left out"
-                )
+                key = constraint.name or constraint.column_keys
+                bare = referred.rsplit(".", 1)[-1]
+                if "." in referred and bare in generated:
+                    # MySQL and MariaDB name the connection's own database; PostgreSQL does not.
+                    # Unqualified, the key would mean the listed database's table; qualified,
+                    # the module would carry the database's name. Neither is right.
+                    self.notes.append(
+                        f"{relation.key}: foreign key {key} refers to {referred}, a table in the "
+                        f"connection's own database, which this module writes without that "
+                        f"database's name; a key across databases cannot, so it is left out"
+                    )
+                else:
+                    self.notes.append(
+                        f"{relation.key}: foreign key {key} refers to {referred}, which is not "
+                        f"generated; left out"
+                    )
                 return None
             options = "".join(
                 f", {option}={lit(value)}"

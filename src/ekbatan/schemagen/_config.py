@@ -285,6 +285,12 @@ def config_from_table(table: Mapping[str, Any], *, base: Path, source: str) -> S
             # A url can carry a password, so a wrong one is described, never shown.
             got = f"a {type(value).__name__}" if key == "url" else repr(value)
             raise ValidationError(f"{where}: {key} must be a string, got {got}")
+        if value is not None and not value.strip():
+            # Empty is never "the default": `excludes = ""` is a pattern that matches every
+            # table, and the others would quietly fall back. Say so instead.
+            raise ValidationError(
+                f"{where}: {key} is empty; remove the line to use the default, or give it a value"
+            )
         return value
 
     def flag(key: str, default: bool) -> bool:

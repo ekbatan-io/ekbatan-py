@@ -781,7 +781,7 @@ def test_a_foreign_key_from_a_listed_schema_into_the_own_schema(
     kept, and `create_all` builds it. MySQL and MariaDB report the own database by name; the
     key is left out with a note, because unqualified it would mean the *listed* database's
     `parents`, and qualified it would write the database's name into the module. Pinned as it
-    is: an open question in DECISIONS-TO-REVIEW, schemagen tests (EKB-0355-)."""
+    is, with a note that says why (EKB-0417); DECISIONS-TO-REVIEW, schemagen tests (EKB-0355-)."""
     if dialect == "sqlite":
         pytest.skip("SQLite has no schemas")
     url = fresh(backend, "fkown")
@@ -817,9 +817,11 @@ def test_a_foreign_key_from_a_listed_schema_into_the_own_schema(
     else:
         assert 'sqlalchemy.ForeignKeyConstraint(["parent_id"]' not in written
         assert (
-            f"{other}.entries: foreign key fk_entries_parent refers to {own}.parents, "
-            "which is not generated; left out"
+            f"{other}.entries: foreign key fk_entries_parent refers to {own}.parents, a table "
+            "in the connection's own database, which this module writes without that "
+            "database's name; a key across databases cannot, so it is left out"
         ) in said
+        assert not [n for n in said if "which is not generated" in n], said
     module = load(out)
     before = (
         [f"CREATE SCHEMA {other}"]

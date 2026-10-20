@@ -45,7 +45,6 @@ from ekbatan.schemagen import (
     load_config,
     render,
 )
-from ekbatan.schemagen._config import DEFAULT_IMAGE
 from ekbatan.schemagen._types import emit_type, resolve, type_names
 
 PASSWORD = "S3cret-hardening-Pw-4417"
@@ -336,13 +335,16 @@ def test_paths_are_relative_to_the_file_and_absolute_ones_are_kept(tmp_path: Pat
     assert config.out == tmp_path / ".." / "gen" / "schema.py"
 
 
-def test_an_empty_image_or_includes_falls_back_to_the_default(tmp_path: Path) -> None:
-    """As written today: an empty string is no setting, not "match nothing". Pinned so that a
-    change is a decision (see DECISIONS-TO-REVIEW, schemagen tests)."""
-    config = load_config(_file(tmp_path, 'image = ""\nincludes = ""'))
+@pytest.mark.parametrize("key", ["image", "includes", "excludes", "url", "migrations", "out"])
+def test_an_empty_setting_is_refused_rather_than_read_as_the_default(
+    tmp_path: Path, key: str
+) -> None:
+    """An empty string used to mean "no setting" - and `excludes = ""` is a pattern that matches
+    every table. Refused, with how to get the default (decided EKB-0417)."""
+    with pytest.raises(ValidationError) as refused:
+        load_config(_file(tmp_path, f'{key} = ""'))
 
-    assert config is not None
-    assert (config.image, config.includes) == (DEFAULT_IMAGE, ".*")
+    assert f"{key} is empty; remove the line to use the default" in str(refused.value)
 
 
 def test_a_target_is_what_the_columns_become_as_written() -> None:
