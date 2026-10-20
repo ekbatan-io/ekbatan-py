@@ -33,7 +33,8 @@ class ForcedType:
     - ``converter``: your own converter, by dotted path - ``myapp.converters.MoneyConverter``
       or ``myapp.converters:MoneyConverter``, with arguments if it takes any. Any object with
       ``from_db`` and ``to_db``. The column keeps its own database type and the converter is
-      wrapped around it: ``converted(NUMERIC(precision=19, scale=4), MoneyConverter())``.
+      wrapped around it: ``converted(sqlalchemy.NUMERIC(precision=19, scale=4),
+      MoneyConverter())``.
       jOOQ's ``userType`` + ``converter``.
     - ``sqlalchemy_type``: a ready-made SQLAlchemy type, by dotted path -
       ``pgvector.sqlalchemy.Vector(3)``. A ``TypeEngine``, a ``TypeDecorator``, or a function

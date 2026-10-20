@@ -114,7 +114,8 @@ def test_the_record_is_named_as_jooq_names_it(table: str, record: str) -> None:
 
 def test_each_table_has_its_record_beside_it_and_exported() -> None:
     text_ = _render(Column("balance", NUMERIC(19, 4), nullable=False))
-    assert text_.index("WALLETS = Table(") < text_.index("class WalletsRecord(TypedDict):")
+    table_at = text_.index("WALLETS = sqlalchemy.Table(")
+    assert table_at < text_.index("class WalletsRecord(TypedDict):")
     module = _run(text_)
     assert module.__all__ == ["WALLETS", "WalletsRecord", "metadata"]
     assert typing.is_typeddict(module.WalletsRecord)

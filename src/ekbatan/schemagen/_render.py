@@ -36,14 +36,19 @@ from ._config import ForcedType, SchemagenConfig
 from ._records import Field, Unknowable, converter_user_type, python_type, record_name
 from ._records import render as render_record
 from ._reflect import FRAMEWORK_TABLES, Reflected, Relation
-from ._types import Emitted, emit_type, lit, resolve, sqlalchemy_names, type_names
+from ._types import MODULES, Emitted, emit_type, lit, modules_used, resolve, type_names
 
 log = logging.getLogger("io.ekbatan.schemagen")
 
 #: The shape of the module this schemagen writes. Raised whenever that shape changes - typed
-#: records arrived with 2 - so a module written by an older schemagen fails on import instead of
-#: quietly lacking what the code beside it expects. A module from before the number has none.
-SCHEMA_FORMAT = 2
+#: records arrived with 2, every SQLAlchemy name written through ``import sqlalchemy`` with 3 -
+#: so a module written by an older schemagen fails on import instead of quietly lacking what the
+#: code beside it expects. A module from before the number has none.
+SCHEMA_FORMAT = 3
+
+#: The module's own constants, in capitals as a table's are: a table that would take one of
+#: these names is exported with ``_`` after it, as a keyword is.
+_OWN_CONSTANTS = frozenset({"MIGRATIONS_FINGERPRINT", "SCHEMA_FORMAT"})
 
 #: The column helpers' DDL, per database: a forced timestamp column whose own type is not this
 #: is said to differ, because ``create_all`` from the module builds this instead.
@@ -60,7 +65,8 @@ def constant(name: str) -> str:
     upper = re.sub(r"\W", "_", name.upper())
     if upper[:1].isdigit():
         upper = f"T_{upper}"
-    return f"{upper}_" if keyword.iskeyword(upper.lower()) else upper
+    taken = keyword.iskeyword(upper.lower()) or upper in _OWN_CONSTANTS
+    return f"{upper}_" if taken else upper
 
 
 def q(value: str) -> str:
@@ -73,7 +79,9 @@ class _Writer:
     reflected: Reflected
     config: SchemagenConfig
     dialect: Dialect | None
-    sqlalchemy: set[str] = field(default_factory=lambda: {"Column", "MetaData", "Table"})
+    #: The modules the module writes SQLAlchemy's names through: ``sqlalchemy``, and each
+    #: dialect module a type needs.
+    modules: set[str] = field(default_factory=lambda: {"sqlalchemy"})
     helpers: set[str] = field(default_factory=set)
     aliases: dict[tuple[str, str], str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
@@ -180,7 +188,7 @@ class _Writer:
 
     def taken_names(self, *, exclude: tuple[str, str]) -> set[str]:
         return (
-            self.sqlalchemy
+            self.modules
             | self.helpers
             | set(self.aliases.values())
             | {a for k, a in self.type_aliases.items() if k != exclude}
@@ -210,7 +218,7 @@ class _Writer:
             emitted = resolve(forced)
             self._timestamp_notes(where, forced, raw)
         elif is_json:
-            emitted = Emitted("JSON(none_as_null=True)")
+            emitted = Emitted("sqlalchemy.JSON(none_as_null=True)")
         else:
             emitted = emit_type(column.type, self.reflected.dialect_name)
             if emitted is None and raw:
@@ -226,7 +234,7 @@ class _Writer:
                     f"{where} is {type(column.type).__name__}, a type with no known spelling: "
                     "written as NullType(), which create_all cannot build"
                 )
-                emitted = Emitted("NullType()")
+                emitted = Emitted("sqlalchemy.types.NullType()")
             elif (
                 isinstance(column.type, sqltypes.DateTime)
                 and column.type.timezone
@@ -267,8 +275,8 @@ class _Writer:
     def use(self, emitted: Emitted) -> str:
         """Record what a piece of source needs imported, and hand it back.
 
-        A user type whose name is taken - by SQLAlchemy, a helper, another user type - is
-        imported under an alias, ``myapp_types_JSON``, and its source says so.
+        A user type whose name is taken - by SQLAlchemy, a helper, a table, a record, another
+        user type - is imported under an alias, ``myapp_types_JSON``, and its source says so.
         """
         source = emitted.source
         for module, name in emitted.imports:
@@ -277,27 +285,30 @@ class _Writer:
                 continue
             alias = self.aliases.get((module, name))
             if alias is None:
-                clash = name in _reserved() or any(n == name for _, n in self.aliases)
+                clash = (
+                    name in _reserved()
+                    or name in self.constants
+                    or name in self.record_names
+                    or any(n == name for _, n in self.aliases)
+                )
                 alias = f"{module.replace('.', '_')}_{name}" if clash else name
                 self.aliases[(module, name)] = alias
             if alias != name and source.startswith(name):
                 source = alias + source[len(name) :]
-        self.sqlalchemy |= sqlalchemy_names(source) - set(self.aliases.values())
+        self.modules |= modules_used(source) - set(self.aliases.values())
         return source
 
     def column(self, relation: Relation, column: Column[Any], single_pk: bool) -> str:
         positional = [q(column.name), self.column_type(relation, column)]
         keywords: list[str] = []
         if column.computed is not None:
-            self.sqlalchemy.add("Computed")
             persisted = column.computed.persisted
             positional.append(
-                f"Computed({q(str(column.computed.sqltext))}"
+                f"sqlalchemy.Computed({q(str(column.computed.sqltext))}"
                 + (f", persisted={persisted!r}" if persisted is not None else "")
                 + ")"
             )
         if column.identity is not None:
-            self.sqlalchemy.add("Identity")
             identity = column.identity
             args = []
             if identity.always:
@@ -308,7 +319,7 @@ class _Writer:
                 args.append(f"increment={identity.increment}")
             if identity.cycle:
                 args.append("cycle=True")
-            positional.append(f"Identity({', '.join(args)})")
+            positional.append(f"sqlalchemy.Identity({', '.join(args)})")
 
         if single_pk and column.primary_key:
             keywords.append("primary_key=True")
@@ -344,7 +355,7 @@ class _Writer:
             keywords.append(default)
         if column.comment:
             keywords.append(f"comment={q(column.comment)}")
-        return f"Column({', '.join(positional + keywords)})"
+        return f"sqlalchemy.Column({', '.join(positional + keywords)})"
 
     def server_default(
         self, relation: Relation, column: Column[Any], single_pk: bool
@@ -370,17 +381,15 @@ class _Writer:
                 return none
             sequence = re.match(r"nextval\('([^']+)'", sql)
             if sequence is not None:
-                self.sqlalchemy |= {"Sequence", "text"}
                 # `audit.t_seq_seq` for a table in another schema: the sequence lives there too,
                 # and the default names it there, so create_all must create it there.
                 where, _, name = sequence.group(1).rpartition(".")
                 schema = f", schema={q(where.strip(chr(34)))}" if where else ""
                 return (
-                    f"Sequence({q(name.strip(chr(34)))}{schema})",
-                    f"server_default=text({q(sql)})",
+                    f"sqlalchemy.Sequence({q(name.strip(chr(34)))}{schema})",
+                    f"server_default=sqlalchemy.text({q(sql)})",
                 )
-        self.sqlalchemy.add("text")
-        return None, f"server_default=text({q(sql)})"
+        return None, f"server_default=sqlalchemy.text({q(sql)})"
 
     # -- tables ----------------------------------------------------------------------------
 
@@ -390,21 +399,20 @@ class _Writer:
         pk_columns = [c.name for c in pk.columns] if pk is not None else []
         single_pk = len(pk_columns) == 1 and not self._custom_pk_name(relation)
 
-        lines = [f"{self.name_of(relation)} = Table(", f"    {q(table.name)},"]
+        lines = [f"{self.name_of(relation)} = sqlalchemy.Table(", f"    {q(table.name)},"]
         lines.append("    view_metadata," if relation.is_view else "    metadata,")
         for column in table.columns:
             lines.append(f"    {self.column(relation, column, single_pk)},")
         if pk_columns and not single_pk:
-            self.sqlalchemy.add("PrimaryKeyConstraint")
             name = f", name={q(str(pk.name))}" if self._custom_pk_name(relation) else ""
-            lines.append(f"    PrimaryKeyConstraint({', '.join(q(c) for c in pk_columns)}{name}),")
+            keys = ", ".join(q(c) for c in pk_columns)
+            lines.append(f"    sqlalchemy.PrimaryKeyConstraint({keys}{name}),")
         for constraint in sorted(table.constraints, key=_by_name):
             line = self.constraint(relation, constraint, generated)
             if line is not None:
                 lines.append(f"    {line},")
         for check in self.reflected.column_checks.get((relation.schema, table.name), []):
-            self.sqlalchemy.add("CheckConstraint")
-            lines.append(f"    CheckConstraint({q(check)}),")
+            lines.append(f"    sqlalchemy.CheckConstraint({q(check)}),")
         for index in sorted(table.indexes, key=_by_name):
             lines.append(f"    {self.index(index, inline=True)},")
         if table.comment:
@@ -457,11 +465,10 @@ class _Writer:
     def constraint(self, relation: Relation, constraint: Any, generated: set[str]) -> str | None:
         named = f", name={q(constraint.name)}" if isinstance(constraint.name, str) else ""
         if isinstance(constraint, UniqueConstraint) and constraint.columns:
-            self.sqlalchemy.add("UniqueConstraint")
-            return f"UniqueConstraint({', '.join(q(c.name) for c in constraint.columns)}{named})"
+            keys = ", ".join(q(c.name) for c in constraint.columns)
+            return f"sqlalchemy.UniqueConstraint({keys}{named})"
         if isinstance(constraint, CheckConstraint):
-            self.sqlalchemy.add("CheckConstraint")
-            return f"CheckConstraint({q(str(constraint.sqltext))}{named})"
+            return f"sqlalchemy.CheckConstraint({q(str(constraint.sqltext))}{named})"
         if isinstance(constraint, ForeignKeyConstraint):
             targets = [e.target_fullname for e in constraint.elements]
             referred = targets[0].rsplit(".", 1)[0]
@@ -471,7 +478,6 @@ class _Writer:
                     f"refers to {referred}, which is not generated; left out"
                 )
                 return None
-            self.sqlalchemy.add("ForeignKeyConstraint")
             options = "".join(
                 f", {option}={lit(value)}"
                 for option in ("ondelete", "onupdate", "deferrable", "initially")
@@ -479,29 +485,26 @@ class _Writer:
             )
             local = ", ".join(q(c) for c in constraint.column_keys)
             remote = ", ".join(q(t) for t in targets)
-            return f"ForeignKeyConstraint([{local}], [{remote}]{named}{options})"
+            return f"sqlalchemy.ForeignKeyConstraint([{local}], [{remote}]{named}{options})"
         return None
 
     def index(self, index: Index, *, inline: bool, table: str | None = None) -> str:
-        self.sqlalchemy.add("Index")
         parts = [q(str(index.name))]
         for expression in index.expressions:
             if isinstance(expression, Column):
                 parts.append(q(expression.name) if inline else f"{table}.c[{q(expression.name)}]")
             else:
-                self.sqlalchemy.add("text")
-                parts.append(f"text({q(str(expression))})")
+                parts.append(f"sqlalchemy.text({q(str(expression))})")
         if index.unique:
             parts.append("unique=True")
         for option, value in sorted(index.dialect_kwargs.items()):
             if value in (None, [], {}, ()):
                 continue
             if option.endswith("_where"):
-                self.sqlalchemy.add("text")
-                parts.append(f"{option}=text({q(str(value))})")
+                parts.append(f"{option}=sqlalchemy.text({q(str(value))})")
             else:
                 parts.append(f"{option}={lit(value)}")
-        return f"Index({', '.join(parts)})"
+        return f"sqlalchemy.Index({', '.join(parts)})"
 
     def name_of(self, relation: Relation) -> str:
         base = (
@@ -567,11 +570,14 @@ class _Writer:
 
 
 def _reserved() -> set[str]:
-    """Names a generated module already has: SQLAlchemy's, the helpers', its own."""
-    from ._types import HELPERS, _namespace
+    """Names a user type is not imported under: SQLAlchemy's - which the module writes through
+    ``sqlalchemy.``, but a reader would take a bare ``JSON`` for it - the modules, the helpers',
+    and the module's own."""
+    from ._types import HELPERS, sqlalchemy_exports
 
     return (
-        set(_namespace())
+        set(sqlalchemy_exports())
+        | set(MODULES)
         | set(HELPERS)
         | set(FRAMEWORK_TABLES.values())
         | {
@@ -658,14 +664,13 @@ def _module_text(
     migrations_fingerprint: str,
     module: str | None,
 ) -> str:
-    dialects = sorted(writer.sqlalchemy & {"mysql", "postgresql", "sqlite"})
-    plain = sorted(writer.sqlalchemy - {"mysql", "postgresql", "sqlite", "NullType"})
+    dialects = sorted(writer.modules - {"sqlalchemy"})
 
-    imports = [f"from sqlalchemy import {', '.join(plain)}"]
+    # Every SQLAlchemy name is written through its module: a table constant is the table's name
+    # in capitals, and would replace a bare `TEXT` imported for a table named `text`.
+    imports = ["import sqlalchemy"]
     if dialects:
         imports.append(f"from sqlalchemy.dialects import {', '.join(dialects)}")
-    if "NullType" in writer.sqlalchemy:
-        imports.append("from sqlalchemy.types import NullType")
     if writer.helpers:
         imports.append(f"from ekbatan.schema import {', '.join(sorted(writer.helpers))}")
     for (source, name), alias in sorted(writer.aliases.items()):
@@ -685,7 +690,7 @@ def _module_text(
         view_part = (
             "#: The views. Queried like tables; kept out of `metadata`, so that `create_all` does\n"
             "#: not create a table by a view's name. Views come from the migrations.\n"
-            f"view_metadata = MetaData()\n\n{joined(views)}"
+            f"view_metadata = sqlalchemy.MetaData()\n\n{joined(views)}"
         )
     text = f'''"""The tables, generated from the schema the migrations produce.
 
@@ -712,7 +717,7 @@ MIGRATIONS_FINGERPRINT = "{migrations_fingerprint}"
 #: The shape of this file, as the schemagen that wrote it numbers it.
 SCHEMA_FORMAT = {SCHEMA_FORMAT}
 
-metadata = MetaData()
+metadata = sqlalchemy.MetaData()
 
 {joined(body)}{view_part}__all__ = [{", ".join(q(e) for e in exported)}]
 

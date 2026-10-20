@@ -295,26 +295,29 @@ def test_each_forced_type_key_picks_exactly_the_columns_it_says(
 
     written = generate(source, out, url=url, config=SchemagenConfig(forced_types=rules))
 
-    unforced = "VARCHAR(length=20)"
+    unforced = "sqlalchemy.VARCHAR(length=20)"
     expected = {
-        "by_column": "String(101)",
-        "by_table": "String(102)",
-        "by_schema": "String(103)",
+        "by_column": "sqlalchemy.String(101)",
+        "by_table": "sqlalchemy.String(102)",
+        "by_schema": "sqlalchemy.String(103)",
         "by_case": unforced,
-        "ex_in": "String(105)",
+        "ex_in": "sqlalchemy.String(105)",
         "ex_out": unforced,
-        "ty_in": "String(106)",
-        "ty_out": "TEXT()",
-        "nl_null": "String(107)",
-        "nl_notnull": "String(108)",
-        "both_text": "String(109)",
+        "ty_in": "sqlalchemy.String(106)",
+        "ty_out": "sqlalchemy.TEXT()",
+        "nl_null": "sqlalchemy.String(107)",
+        "nl_notnull": "sqlalchemy.String(108)",
+        "both_text": "sqlalchemy.String(109)",
         "both_varchar": unforced,
-        "first_wins": "String(110)",
-        "stamp_text": "Text()",
+        "first_wins": "sqlalchemy.String(110)",
+        "stamp_text": "sqlalchemy.Text()",
         "stamp_default": "timestamp_column()",
-        "conv_then_name": "converted(String(114), TagConverter())",
-        "name_then_conv": "String(114)",
-        **{f"sp_{i}": f"String({200 + i})" for i in range(len(SPELLED[_family(dialect)]))},
+        "conv_then_name": "converted(sqlalchemy.String(114), TagConverter())",
+        "name_then_conv": "sqlalchemy.String(114)",
+        **{
+            f"sp_{i}": f"sqlalchemy.String({200 + i})"
+            for i in range(len(SPELLED[_family(dialect)]))
+        },
     }
     sources = column_sources(written)
     assert {c: sources[("GRID", c)] for c in expected} == {
@@ -356,9 +359,9 @@ def test_a_listed_schema_s_columns_are_named_schema_table_column(
     )
 
     sources = column_sources(written)
-    assert sources[(f"{other.upper()}_ENTRIES", "note")] == "Text()"
-    assert sources[("ENTRIES", "note")] == normal("VARCHAR(length=20)")
-    assert written.count(f"{other.upper()}_ENTRIES = Table(") == 1, "read once"
+    assert sources[(f"{other.upper()}_ENTRIES", "note")] == "sqlalchemy.Text()"
+    assert sources[("ENTRIES", "note")] == normal("sqlalchemy.VARCHAR(length=20)")
+    assert written.count(f"{other.upper()}_ENTRIES = sqlalchemy.Table(") == 1, "read once"
     assert f'schema="{own}"' not in written, "the own schema stays unqualified"
 
 
@@ -462,13 +465,13 @@ def test_every_kind_of_target_is_written_imported_built_and_used(
         source, out, url=url, config=SchemagenConfig(forced_types=rules, default_forced_types=False)
     )
 
-    plain = "VARCHAR(length=20)"
+    plain = "sqlalchemy.VARCHAR(length=20)"
     expected = {
         "tg_uuid": "uuid_column()",
         "tg_json": "json_column()",
         "tg_at": "timestamp_column()",
-        "tg_str": "String(36)",
-        "tg_num": "Numeric(precision=19, scale=4)",
+        "tg_str": "sqlalchemy.String(36)",
+        "tg_num": "sqlalchemy.Numeric(precision=19, scale=4)",
         "tg_dialect": dialect_source,
         **{n: f"converted({plain}, {s})" for n, (_, s, _) in converters.items()},
         **{n: s for n, (_, s) in sqlalchemy_types.items()},
@@ -533,22 +536,22 @@ def test_with_ekbatan_s_forced_types_off_each_column_is_the_type_table_s(
             "doc JSONB, plain JSON, at TIMESTAMP(3), whole TIMESTAMP",
             {
                 "doc": "postgresql.JSONB(none_as_null=True)",
-                "plain": "JSON(none_as_null=True)",
+                "plain": "sqlalchemy.JSON(none_as_null=True)",
                 "at": "postgresql.TIMESTAMP(precision=3)",
-                "whole": "TIMESTAMP()",
+                "whole": "sqlalchemy.TIMESTAMP()",
             },
         ),
         "mysql": (
             "doc JSON, at DATETIME(6), whole DATETIME",
             {
-                "doc": "JSON(none_as_null=True)",
+                "doc": "sqlalchemy.JSON(none_as_null=True)",
                 "at": "mysql.DATETIME(fsp=6)",
-                "whole": "DATETIME()",
+                "whole": "sqlalchemy.DATETIME()",
             },
         ),
         "sqlite": (
             "doc JSON, at DATETIME",
-            {"doc": "JSON(none_as_null=True)", "at": "DATETIME()"},
+            {"doc": "sqlalchemy.JSON(none_as_null=True)", "at": "sqlalchemy.DATETIME()"},
         ),
     }[family]
     url = fresh(backend, "nodefaults")
@@ -621,11 +624,17 @@ def test_identity_columns_keep_their_start_step_and_cycle(
     written = generate(source, out, url=url)
 
     assert (
-        'Column("a", BIGINT(), Identity(start=10, increment=5, cycle=True), nullable=False)'
-        in written
+        'sqlalchemy.Column("a", sqlalchemy.BIGINT(), '
+        "sqlalchemy.Identity(start=10, increment=5, cycle=True), nullable=False)" in written
     )
-    assert 'Column("b", INTEGER(), Identity(always=True, start=3), nullable=False)' in written
-    assert 'Column("c", SMALLINT(), Identity(always=True), nullable=False)' in written
+    assert (
+        'sqlalchemy.Column("b", sqlalchemy.INTEGER(), '
+        "sqlalchemy.Identity(always=True, start=3), nullable=False)" in written
+    )
+    assert (
+        'sqlalchemy.Column("c", sqlalchemy.SMALLINT(), '
+        "sqlalchemy.Identity(always=True), nullable=False)" in written
+    )
     rebuilt = _rebuild(backend, load(out))
     assert _columns(rebuilt, "numbered") == _columns(url, "numbered")
 
@@ -648,7 +657,7 @@ def test_a_serial_that_is_not_the_key_brings_its_sequence(
 
     written = generate(source, out, url=url, config=SchemagenConfig(schemas=("audit",)))
 
-    assert 'Sequence("counters_seq_seq")' in written
+    assert 'sqlalchemy.Sequence("counters_seq_seq")' in written
     _clean(written)
     rebuilt = _rebuild(backend, load(out), "CREATE SCHEMA audit")
     assert _columns(rebuilt, "counters") == _columns(url, "counters")
@@ -793,15 +802,20 @@ def test_a_foreign_key_from_a_listed_schema_into_the_own_schema(
     with notes() as said:
         written = generate(source, out, url=url, config=SchemagenConfig(schemas=(other,)))
 
-    into_other = f'ForeignKeyConstraint(["entry_id"], ["{other}.entries.id"], name="fk_kids_entry")'
+    into_other = (
+        f'sqlalchemy.ForeignKeyConstraint(["entry_id"], ["{other}.entries.id"], '
+        'name="fk_kids_entry")'
+    )
     assert into_other in written, "a key into a listed schema is kept, qualified"
     assert f"{own}." not in written, "the own schema's name is never written into the module"
-    into_own = 'ForeignKeyConstraint(["parent_id"], ["parents.id"], name="fk_entries_parent")'
+    into_own = (
+        'sqlalchemy.ForeignKeyConstraint(["parent_id"], ["parents.id"], name="fk_entries_parent")'
+    )
     if dialect == "postgres":
         assert into_own in written
         assert not [n for n in said if "foreign key" in n], said
     else:
-        assert 'ForeignKeyConstraint(["parent_id"]' not in written
+        assert 'sqlalchemy.ForeignKeyConstraint(["parent_id"]' not in written
         assert (
             f"{other}.entries: foreign key fk_entries_parent refers to {own}.parents, "
             "which is not generated; left out"
@@ -842,15 +856,15 @@ def test_index_options_are_kept(tmp_path: Path, backend: Backend, dialect: str) 
             "CREATE INDEX ix_idx_incl ON idx (code) INCLUDE (note);\n"
         )
         lines = [
-            'Index("ix_idx_hash", "code", postgresql_using="hash")',
-            'Index("ix_idx_incl", "code", postgresql_include=[\'note\'])',
+            'sqlalchemy.Index("ix_idx_hash", "code", postgresql_using="hash")',
+            'sqlalchemy.Index("ix_idx_incl", "code", postgresql_include=[\'note\'])',
         ]
     else:
         sql = (
             "CREATE TABLE idx (id INTEGER PRIMARY KEY, code VARCHAR(10), note VARCHAR(200));\n"
             "CREATE INDEX ix_idx_prefix ON idx (note(10));\n"
         )
-        lines = [f'Index("ix_idx_prefix", "note", {dialect}_length={{\'note\': 10}})']
+        lines = [f'sqlalchemy.Index("ix_idx_prefix", "note", {dialect}_length={{\'note\': 10}})']
     url = fresh(backend, "idxopt")
     out = tmp_path / "app" / "schema.py"
 
@@ -891,11 +905,11 @@ def test_mariadb_s_column_checks_are_kept_and_its_json_check_is_not_a_check(
 
     written = generate(source, out, url=fresh(backend, "mchk"))
 
-    assert 'CheckConstraint("`qty` >= 0")' in written
-    assert 'CheckConstraint("json_valid(`doc`)")' in written
-    assert 'Column("data", json_column())' in written
-    assert 'Column("doc", TEXT())' in written
-    assert 'Column("note", TEXT())' in written
+    assert 'sqlalchemy.CheckConstraint("`qty` >= 0")' in written
+    assert 'sqlalchemy.CheckConstraint("json_valid(`doc`)")' in written
+    assert 'sqlalchemy.Column("data", json_column())' in written
+    assert 'sqlalchemy.Column("doc", sqlalchemy.TEXT())' in written
+    assert 'sqlalchemy.Column("note", sqlalchemy.TEXT())' in written
     rebuilt = _rebuild(backend, load(out))
     db = engine(rebuilt)
     try:
@@ -969,7 +983,8 @@ def test_a_framework_table_s_own_indexes_are_kept_and_an_expression_one_is_said(
         written = generate(source, out, url=fresh(backend, "fwidx"))
 
     assert (
-        'Index("ix_events_action", EVENTS.c["action_name"], EVENTS.c["event_date"])' in written
+        'sqlalchemy.Index("ix_events_action", EVENTS.c["action_name"], EVENTS.c["event_date"])'
+        in written
     ), written
     if expression:
         assert "events: index ix_events_lower is on an expression; left out" in said

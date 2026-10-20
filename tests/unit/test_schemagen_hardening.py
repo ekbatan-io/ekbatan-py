@@ -563,11 +563,11 @@ class _NotAType(UserDefinedType[Any]):
 @pytest.mark.parametrize(
     ("reflected", "source"),
     [
-        (LargeBinary(), "LargeBinary()"),
-        (Uuid(), "Uuid()"),
-        (String(10), "VARCHAR(length=10)"),
-        (Unicode(10), "VARCHAR(length=10)"),
-        (Interval(), "Interval()"),
+        (LargeBinary(), "sqlalchemy.LargeBinary()"),
+        (Uuid(), "sqlalchemy.Uuid()"),
+        (String(10), "sqlalchemy.VARCHAR(length=10)"),
+        (Unicode(10), "sqlalchemy.VARCHAR(length=10)"),
+        (Interval(), "sqlalchemy.Interval()"),
         (_Unbuildable(), None),
         (_NotAType(), None),
         (postgresql.ARRAY(NullType()), None),
@@ -695,7 +695,7 @@ def test_a_default_that_is_not_one_is_not_written(default: Any) -> None:
     no text to write."""
     written = _render(_one("t", Column("note", TEXT(), server_default=default)))
 
-    assert 'Column("note", TEXT())' in written
+    assert 'Column("note", sqlalchemy.TEXT())' in written
 
 
 def test_a_sequence_default_in_another_spelling_is_kept_as_written() -> None:
@@ -706,7 +706,7 @@ def test_a_sequence_default_in_another_spelling_is_kept_as_written() -> None:
     )
 
     assert "Sequence(" not in written
-    assert "server_default=text(\"nextval(('s'::text)::regclass)\")" in written
+    assert "server_default=sqlalchemy.text(\"nextval(('s'::text)::regclass)\")" in written
 
 
 def test_a_sequence_in_another_schema_is_declared_there() -> None:
@@ -717,33 +717,35 @@ def test_a_sequence_in_another_schema_is_declared_there() -> None:
         )
     )
 
-    assert 'Sequence("t_n_seq", schema="audit")' in written
+    assert 'sqlalchemy.Sequence("t_n_seq", schema="audit")' in written
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="open: a table whose name is an import's shadows it - DECISIONS-TO-REVIEW, "
-    "schemagen tests (EKB-0355-)",
-)
 @pytest.mark.parametrize(
     ("first", "column"),
     [("date", DATE()), ("text", TEXT()), ("varchar", VARCHAR(5))],
 )
 def test_a_table_named_like_a_type_does_not_break_a_later_table(first: str, column: Any) -> None:
-    """`DATE = Table("date", ...)` replaces `from sqlalchemy import DATE`; the next table that
-    writes `DATE()` then calls a Table."""
-    _run(_render(_one(first), _one("zz_later", Column("c", column))))
+    """`DATE = Table("date", ...)` once replaced `from sqlalchemy import DATE`, and the next
+    table that wrote `DATE()` called a Table. The module now writes `sqlalchemy.DATE()`. Every
+    name schemagen can emit is in `test_schemagen_table_names.py`."""
+    namespace = _run(_render(_one(first), _one("zz_later", Column("c", column))))
+
+    assert type(namespace["ZZ_LATER"].c.c.type) is type(column)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="open: a table named migrations_fingerprint overwrites the fingerprint - "
-    "DECISIONS-TO-REVIEW, schemagen tests (EKB-0355-)",
-)
-def test_a_table_named_migrations_fingerprint_does_not_replace_the_fingerprint() -> None:
-    namespace = _run(_render(_one("migrations_fingerprint")))
+@pytest.mark.parametrize("table", ["migrations_fingerprint", "schema_format"])
+def test_a_table_named_like_the_module_s_own_constant_is_exported_with_an_underscore(
+    table: str,
+) -> None:
+    """`MIGRATIONS_FINGERPRINT = Table(...)` would replace the fingerprint, and the stale check
+    would always fire; so such a table is exported as `MIGRATIONS_FINGERPRINT_`, as a keyword
+    is (`class` -> `CLASS_`)."""
+    namespace = _run(_render(_one(table)))
 
     assert namespace["MIGRATIONS_FINGERPRINT"] == "x"
+    assert namespace["SCHEMA_FORMAT"] == schemagen.SCHEMA_FORMAT
+    assert namespace[f"{table.upper()}_"].name == table
+    assert f"{table.upper()}_" in namespace["__all__"]
 
 
 # -- the throwaway database: which one an image names (ledger F-4, lines 276-306) -------------

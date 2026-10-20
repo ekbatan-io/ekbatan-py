@@ -28,7 +28,7 @@ not worth a test - says why).
 | # | probe | result |
 | --- | --- | --- |
 | P1 | `render` of a column comment holding `\r` (and a real PG `COMMENT ... IS E'a\r\nb'`) | **bug**: the module is a `SyntaxError` - `lit` escapes `\n` but not `\r` or other control characters |
-| P2 | tables named `text`, `date`, `migrations_fingerprint` | **open**: `TEXT = Table(...)` shadows `from sqlalchemy import TEXT`; a later table's `TEXT()` raises `TypeError: 'Table' object is not callable`. `MIGRATIONS_FINGERPRINT = Table(...)` overwrites the fingerprint |
+| P2 | tables named `text`, `date`, `migrations_fingerprint` | **fixed in `EKB-0416`** (was open): `TEXT = Table(...)` shadowed `from sqlalchemy import TEXT`; a later table's `TEXT()` raised `TypeError: 'Table' object is not callable`. `MIGRATIONS_FINGERPRINT = Table(...)` overwrote the fingerprint. Now every SQLAlchemy name is written `sqlalchemy.X`, and such a table is `MIGRATIONS_FINGERPRINT_` |
 | P3 | the same SQLite schema with five unnamed constraints, generated in 8 processes | stable: 8 identical files. The order of unnamed constraints follows no rule but does not vary run to run; not acted on |
 | P4 | PG `id INTEGER, CONSTRAINT pk_t PRIMARY KEY (id)` | **bug**: written as `PrimaryKeyConstraint("id", name="pk_t")` with no `autoincrement=False`, so `create_all` builds `id SERIAL` (default `nextval(...)`) |
 | P5 | `_start` with `localhost:5000/mysql:8.4`, `mysql@sha256:...`, `registry:443/team/mariadb:11.4` | **bug**: a PostgreSQL container is started for each - the family is read before the registry's port and the digest are taken off |

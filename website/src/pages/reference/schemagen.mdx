@@ -39,15 +39,20 @@ CREATE TABLE orders (
 schemagen writes:
 
 ```python
-ORDERS = Table(
+ORDERS = sqlalchemy.Table(
     "orders",
     metadata,
-    Column("id", uuid_column(), primary_key=True),
-    Column("amount", NUMERIC(precision=19, scale=4), nullable=False),
-    Column("note", TEXT()),
-    Column("created_date", timestamp_column(), nullable=False),
+    sqlalchemy.Column("id", uuid_column(), primary_key=True),
+    sqlalchemy.Column("amount", sqlalchemy.NUMERIC(precision=19, scale=4), nullable=False),
+    sqlalchemy.Column("note", sqlalchemy.TEXT()),
+    sqlalchemy.Column("created_date", timestamp_column(), nullable=False),
 )
 ```
+
+Every SQLAlchemy name is written through `import sqlalchemy`: `sqlalchemy.TEXT()`, not `TEXT()`.
+The reason is the table names. Each table is exported under its name in capitals, so a table
+named `text` is `TEXT`, and it would replace a `TEXT` imported from `sqlalchemy`. Dialect types
+are written through their module the same way: `postgresql.JSONB()`.
 
 and, beside it, the table's record:
 
@@ -339,7 +344,7 @@ Some column types have no SQLAlchemy class: PostgreSQL's `xml` and `point`, Mari
 pgvector's `vector(3)`. schemagen writes them as the database spells them:
 
 ```python
-Column("doc", sql_type("xml"))
+sqlalchemy.Column("doc", sql_type("xml"))
 ```
 
 `metadata.create_all` builds the same column, and the value is what the database driver gives,
@@ -415,19 +420,19 @@ CREATE TABLE legacy_accounts (id CHAR(36) NOT NULL PRIMARY KEY, owner_id CHAR(36
 `schema.py` comes out as:
 
 ```python
-LEGACY_ACCOUNTS = Table(
+LEGACY_ACCOUNTS = sqlalchemy.Table(
     "legacy_accounts",
     metadata,
-    Column("id", String(36), primary_key=True),
-    Column("owner_id", String(36), nullable=False),
+    sqlalchemy.Column("id", sqlalchemy.String(36), primary_key=True),
+    sqlalchemy.Column("owner_id", sqlalchemy.String(36), nullable=False),
 )
 
-WALLETS = Table(
+WALLETS = sqlalchemy.Table(
     "wallets",
     metadata,
-    Column("id", uuid_column(), primary_key=True),
-    Column("owner_id", uuid_column(), nullable=False),
-    Column("note", CHAR(length=36)),
+    sqlalchemy.Column("id", uuid_column(), primary_key=True),
+    sqlalchemy.Column("owner_id", uuid_column(), nullable=False),
+    sqlalchemy.Column("note", sqlalchemy.CHAR(length=36)),
 )
 ```
 
@@ -516,7 +521,7 @@ include-expression = ".*\\.amount"
 The column keeps its own type, and the converter is wrapped around it:
 
 ```python
-Column("amount", converted(NUMERIC(precision=19, scale=4), MoneyConverter()), nullable=False)
+sqlalchemy.Column("amount", converted(sqlalchemy.NUMERIC(precision=19, scale=4), MoneyConverter()), nullable=False)
 ```
 
 Now the column takes and gives `Money`, in inserts, reads and comparisons alike - on a sync
@@ -619,7 +624,7 @@ include-types = "VECTOR.*"
 schemagen writes:
 
 ```python
-Column("embedding", converted(sql_type("vector(3)"), VectorConverter()), nullable=False)
+sqlalchemy.Column("embedding", converted(sql_type("vector(3)"), VectorConverter()), nullable=False)
 ```
 
 Nearest first, with pgvector's `<->` distance operator:
@@ -724,11 +729,12 @@ fingerprint of the migrations it came from, and checks it on import. A stale mod
 `ValidationError` saying to regenerate, instead of failing later on a missing column.
 
 It also carries `SCHEMA_FORMAT`, the shape of module this schemagen writes. When a new ekbatan
-writes a different shape - the typed records, for one - a module written by the older schemagen
-refuses to import, even though its migrations have not changed:
+writes a different shape - the typed records, or every SQLAlchemy name written through
+`import sqlalchemy` - a module written by the older schemagen refuses to import, even though its
+migrations have not changed:
 
 ```
-schema.py was written by an older schemagen (format 1; this ekbatan writes 2). Regenerate it ...
+schema.py was written by an older schemagen (format 2; this ekbatan writes 3). Regenerate it ...
 ```
 
 A build that only regenerates when the migrations change, like the examples' `Makefile`, keeps

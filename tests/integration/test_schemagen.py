@@ -141,8 +141,8 @@ def generated(app_migrations: Path, tmp_path: Path, backend: Backend) -> Path:
 def test_it_generates_the_application_tables(generated: Path) -> None:
     text_ = generated.read_text()
 
-    assert "WIDGETS = Table(" in text_
-    assert 'Column("name", VARCHAR(length=80), nullable=False)' in text_
+    assert "WIDGETS = sqlalchemy.Table(" in text_
+    assert 'sqlalchemy.Column("name", sqlalchemy.VARCHAR(length=80), nullable=False)' in text_
 
 
 def test_the_framework_s_own_tables_are_built_not_reflected(generated: Path) -> None:
@@ -165,10 +165,10 @@ def test_a_unique_key_survives(generated: Path, dialect: str) -> None:
     constraint apart from its unique index, so there it is an index."""
     text_ = generated.read_text()
     if _family(dialect) == "mysql":
-        assert 'Index("uq_widgets_name", "name", unique=True)' in text_
+        assert 'sqlalchemy.Index("uq_widgets_name", "name", unique=True)' in text_
     else:
-        assert 'UniqueConstraint("name", name="uq_widgets_name")' in text_ or (
-            'UniqueConstraint("name")' in text_
+        assert 'sqlalchemy.UniqueConstraint("name", name="uq_widgets_name")' in text_ or (
+            'sqlalchemy.UniqueConstraint("name")' in text_
         )
 
 
@@ -176,9 +176,11 @@ def test_nullable_and_the_ekbatan_types_survive(generated: Path, dialect: str) -
     text_ = generated.read_text()
 
     if dialect != "sqlite":  # a CHAR(32) on SQLite is only a uuid if you force it
-        assert 'Column("id", uuid_column(), primary_key=True)' in text_
-    assert 'Column("tags", json_column())' in text_, "nullable columns carry no nullable= flag"
-    assert 'Column("created_date", timestamp_column(), nullable=False)' in text_
+        assert 'sqlalchemy.Column("id", uuid_column(), primary_key=True)' in text_
+    assert 'sqlalchemy.Column("tags", json_column())' in text_, (
+        "nullable columns carry no nullable= flag"
+    )
+    assert 'sqlalchemy.Column("created_date", timestamp_column(), nullable=False)' in text_
 
 
 def test_what_it_writes_imports_and_gives_real_tables(generated: Path) -> None:
@@ -228,11 +230,11 @@ def test_a_char_36_id_is_text_until_the_project_says_it_holds_a_uuid(
         config=SchemagenConfig(forced_types=(UUID_IDS,)),
     )
 
-    assert 'Column("id", CHAR(length=36), primary_key=True)' in plain
-    assert 'Column("owner_id", uuid_column()' not in plain
-    assert 'Column("id", uuid_column(), primary_key=True)' in forced
-    assert 'Column("owner_id", uuid_column(), nullable=False)' in forced
-    assert 'Column("note", uuid_column()' not in forced, "not an id-like name"
+    assert 'sqlalchemy.Column("id", sqlalchemy.CHAR(length=36), primary_key=True)' in plain
+    assert 'sqlalchemy.Column("owner_id", uuid_column()' not in plain
+    assert 'sqlalchemy.Column("id", uuid_column(), primary_key=True)' in forced
+    assert 'sqlalchemy.Column("owner_id", uuid_column(), nullable=False)' in forced
+    assert 'sqlalchemy.Column("note", uuid_column()' not in forced, "not an id-like name"
 
 
 def test_one_table_left_out_of_the_uuid_rule_takes_a_rule_of_its_own(
@@ -269,13 +271,15 @@ def test_one_table_left_out_of_the_uuid_rule_takes_a_rule_of_its_own(
         url=fresh(backend),
         config=SchemagenConfig(forced_types=rules),
     )
-    legacy, wallets = text_.split("LEGACY_ACCOUNTS = Table(")[1].split("WALLETS = Table(")
+    legacy, wallets = text_.split("LEGACY_ACCOUNTS = sqlalchemy.Table(")[1].split(
+        "WALLETS = sqlalchemy.Table("
+    )
 
-    assert 'Column("id", String(36), primary_key=True)' in legacy
-    assert 'Column("owner_id", String(36), nullable=False)' in legacy
-    assert 'Column("id", uuid_column(), primary_key=True)' in wallets
-    assert 'Column("owner_id", uuid_column(), nullable=False)' in wallets
-    assert 'Column("note", CHAR(length=36))' in wallets
+    assert 'sqlalchemy.Column("id", sqlalchemy.String(36), primary_key=True)' in legacy
+    assert 'sqlalchemy.Column("owner_id", sqlalchemy.String(36), nullable=False)' in legacy
+    assert 'sqlalchemy.Column("id", uuid_column(), primary_key=True)' in wallets
+    assert 'sqlalchemy.Column("owner_id", uuid_column(), nullable=False)' in wallets
+    assert 'sqlalchemy.Column("note", sqlalchemy.CHAR(length=36))' in wallets
 
 
 def test_a_naive_reflection_would_have_got_that_wrong() -> None:
@@ -645,9 +649,9 @@ def test_a_column_is_forced_to_a_sqlalchemy_type_by_its_name(
 
     assert sources[("LEDGER", "amount")] == "Money(2)"
     assert sources[("LEDGER", "rate")] == normal(
-        "DECIMAL(precision=19, scale=4)"
+        "sqlalchemy.DECIMAL(precision=19, scale=4)"
         if _family(dialect) == "mysql"
-        else "NUMERIC(precision=19, scale=4)"
+        else "sqlalchemy.NUMERIC(precision=19, scale=4)"
     ), "only the column the expression names"
     db = engine(url)
     try:
@@ -781,7 +785,9 @@ def test_the_user_s_forced_type_wins_over_ekbatan_s_and_the_first_one_wins(
         ForcedType(name="Text", include_expression="created_date"),
     )
 
-    assert sources[("LEDGER", "created_date")] == "DateTime()", "not timestamp_column(), not Text()"
+    assert sources[("LEDGER", "created_date")] == "sqlalchemy.DateTime()", (
+        "not timestamp_column(), not Text()"
+    )
 
 
 def test_ekbatan_s_forced_types_can_be_turned_off(
@@ -791,10 +797,10 @@ def test_ekbatan_s_forced_types_can_be_turned_off(
     _, _, sources = _ledger(tmp_path, backend, dialect, default_forced_types=False)
 
     expected = {
-        "postgres": ("UUID()", "TIMESTAMP()"),
-        "mysql": ("CHAR(length=36)", "mysql.DATETIME(fsp=6)"),
-        "mariadb": ("CHAR(length=36)", "mysql.DATETIME(fsp=6)"),
-        "sqlite": ("CHAR(length=32)", "DATETIME()"),
+        "postgres": ("sqlalchemy.UUID()", "sqlalchemy.TIMESTAMP()"),
+        "mysql": ("sqlalchemy.CHAR(length=36)", "mysql.DATETIME(fsp=6)"),
+        "mariadb": ("sqlalchemy.CHAR(length=36)", "mysql.DATETIME(fsp=6)"),
+        "sqlite": ("sqlalchemy.CHAR(length=32)", "sqlalchemy.DATETIME()"),
     }[dialect]
     assert (sources[("LEDGER", "id")], sources[("LEDGER", "created_date")]) == tuple(
         normal(e) for e in expected
@@ -907,7 +913,9 @@ def test_the_command_reads_tool_ekbatan_schemagen_from_pyproject(
 
     assert done.returncode == 0, done.stderr
     written = (project / "src" / "app" / "schema.py").read_text()
-    assert 'Column("state", Text(), nullable=False)' in written, "the file's forced type"
+    assert 'sqlalchemy.Column("state", sqlalchemy.Text(), nullable=False)' in written, (
+        "the file's forced type"
+    )
     assert "LEDGER" not in written, "the file's excludes"
     assert (
         'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "migrations", SCHEMA_FORMAT)'
@@ -935,7 +943,7 @@ def test_a_flag_wins_over_the_file(tmp_path: Path, backend: Backend, dialect: st
 
     assert done.returncode == 0, done.stderr
     written = (project / "other.py").read_text()
-    assert "LEDGER = Table(" in written and "WIDGETS" not in written
+    assert "LEDGER = sqlalchemy.Table(" in written and "WIDGETS" not in written
     assert "timestamp_column" not in written
 
 
@@ -1150,6 +1158,6 @@ def test_render_needs_no_database() -> None:
         [table], framework=["events"], migrations_fingerprint="abc123", module="migrations"
     )
 
-    assert "THINGS = Table(" in text_
+    assert "THINGS = sqlalchemy.Table(" in text_
     assert "EVENTS = outbox_table(metadata)" in text_
     assert 'MIGRATIONS_FINGERPRINT = "abc123"' in text_

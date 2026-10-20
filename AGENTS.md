@@ -358,11 +358,18 @@ PostgreSQL `UUID`), which every Java example's build forces too. Four rules hold
   To leave a column or a whole table out of it, `exclude-expression` on the rule (plus a rule
   of its own for that table); the schemagen page shows both, proven on MySQL and MariaDB.
 - **Every other type is written faithfully** (`schemagen/_types.py`): a generic SQLAlchemy type
-  where one says the same, the dialect's own type imported from its dialect module where not,
+  where one says the same, the dialect's own type through its dialect module where not,
   and nothing reflection merely decorates (MariaDB's `BIGINT(20)` display width). A type
   SQLAlchemy has no class for (PostgreSQL `xml`, MariaDB `INET6`, pgvector's `vector(3)`) is
   `sql_type("<as the database spells it>")`, never `NullType()`. Keys, indexes, checks and
   defaults come too, so `create_all` builds what the migrations built.
+- **Every SQLAlchemy name is written through `import sqlalchemy`** - `sqlalchemy.Table`,
+  `sqlalchemy.TEXT()`, `sqlalchemy.text(...)`, `postgresql.JSONB()` - never imported bare. A
+  table's constant is its name in capitals, so a table named `text` would replace a bare `TEXT`.
+  A table that would take the module's own `MIGRATIONS_FINGERPRINT` or `SCHEMA_FORMAT` gets a
+  `_`, as a keyword does. `tests/unit/test_schemagen_table_names.py` and its integration twin
+  name a table after every name schemagen can write (read off its source) and check nothing
+  else changes.
 - **A converter keeps the column's type.** It is written `converted(<impl>, Conv())`, where
   `<impl>` is what the column would be without it (the next matching non-converter forced type,
   else the type table). `ekbatan.schema.Converted` passes `None` through, and keys SQLAlchemy's

@@ -243,8 +243,8 @@ def converted[DbT, UserT](
     passed through and never reaches it. Comparisons convert too: ``column == Money("9.99")``
     and ``column.op("<->")(value)`` send ``to_db(value)``.
 
-        Column("amount", converted(NUMERIC(precision=19, scale=4), MoneyConverter()))
-        Column("embedding", converted(sql_type("vector(3)"), VectorConverter()))
+        sqlalchemy.Column("amount", converted(sqlalchemy.NUMERIC(19, 4), MoneyConverter()))
+        sqlalchemy.Column("embedding", converted(sql_type("vector(3)"), VectorConverter()))
     """
     return Converted(impl, converter)
 

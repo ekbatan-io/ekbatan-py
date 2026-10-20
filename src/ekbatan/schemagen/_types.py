@@ -2,12 +2,16 @@
 
 Two rules, in order:
 
-1. **A generic SQLAlchemy type where it is faithful** - ``INTEGER()``, ``VARCHAR(length=36)``,
-   ``NUMERIC(precision=19, scale=4)``, ``BOOLEAN()``, ``TEXT()``, ``DATE()``. These are importable
-   from ``sqlalchemy`` and build the same column on the database the schema was read from.
+1. **A generic SQLAlchemy type where it is faithful** - ``sqlalchemy.INTEGER()``,
+   ``sqlalchemy.VARCHAR(length=36)``, ``sqlalchemy.NUMERIC(precision=19, scale=4)``,
+   ``sqlalchemy.TEXT()``. They build the same column on the database the schema was read from.
 2. **The dialect's own type where no generic one says the same** - ``mysql.TINYINT(unsigned=True)``,
    ``mysql.LONGTEXT()``, ``postgresql.INET()``, ``postgresql.INTERVAL(fields='day to second')`` -
-   imported from its dialect module, never from ``sqlalchemy``, which does not have it.
+   written through its dialect module, which ``sqlalchemy`` itself does not have.
+
+Every SQLAlchemy name is written through its module - ``sqlalchemy.TEXT()``, never a bare
+``TEXT()`` - because the module also defines a constant per table, in capitals: a table named
+``text`` is ``TEXT``, and a bare ``TEXT`` imported from ``sqlalchemy`` would be replaced by it.
 
 What reflection reports but nobody declared is dropped: MariaDB's display widths
 (``BIGINT(20)``), the ``precision=53`` PostgreSQL puts on every double. What a column holds is
@@ -49,8 +53,8 @@ DIALECT_MODULES = ("mysql", "postgresql", "sqlite")
 class Emitted:
     """A column type as source, and the imports that source needs beyond SQLAlchemy's own.
 
-    Names from ``sqlalchemy`` and the dialect modules are found in the source itself when the
-    module is written; ``imports`` carries only the rest - a framework helper, your own type.
+    The modules - ``sqlalchemy`` and the dialect modules - are found in the source itself when
+    the module is written; ``imports`` carries only the rest - a framework helper, your own type.
     """
 
     source: str
@@ -58,7 +62,7 @@ class Emitted:
 
 
 def _sa(name: str, args: str = "") -> Emitted:
-    return Emitted(f"{name}({args})")
+    return Emitted(f"sqlalchemy.{name}({args})")
 
 
 def _of(dialect: str, name: str, args: str = "") -> Emitted:
@@ -260,6 +264,7 @@ def _as_reflected(t: TypeEngine[Any]) -> Emitted | None:
     if module.startswith("sqlalchemy.dialects."):
         rendered = f"{module.split('.')[2]}.{rendered}"
     try:
+        rendered = qualify(rendered)
         built = evaluate(rendered)
     except Exception:
         return None
@@ -268,17 +273,59 @@ def _as_reflected(t: TypeEngine[Any]) -> Emitted | None:
     return Emitted(rendered)
 
 
+#: The modules a generated schema imports SQLAlchemy through, by the name it uses for each.
+MODULES = ("sqlalchemy", *DIALECT_MODULES)
+
+
 @cache
 def _namespace() -> Mapping[str, Any]:
+    """The names a generated module's types are written with: the modules, and nothing else."""
     import sqlalchemy
     from sqlalchemy.dialects import mysql, postgresql, sqlite
 
-    names: dict[str, Any] = {k: v for k, v in vars(sqlalchemy).items() if not k.startswith("_")}
-    names.update({"mysql": mysql, "postgresql": postgresql, "sqlite": sqlite})
-    from sqlalchemy.types import NullType
+    return {"sqlalchemy": sqlalchemy, "mysql": mysql, "postgresql": postgresql, "sqlite": sqlite}
 
-    names["NullType"] = NullType
-    return names
+
+@cache
+def sqlalchemy_exports() -> frozenset[str]:
+    """Every public name of ``sqlalchemy`` and ``sqlalchemy.types``: the ones a bare name in
+    a reflected type's ``repr`` or a forced type may be."""
+    import sqlalchemy
+    from sqlalchemy import types
+
+    return frozenset(n for n in (*vars(sqlalchemy), *vars(types)) if not n.startswith("_"))
+
+
+def qualify(source: str) -> str:
+    """Source with every bare SQLAlchemy name written through its module: ``TEXT()`` becomes
+    ``sqlalchemy.TEXT()``, ``NullType()`` ``sqlalchemy.types.NullType()``, and
+    ``postgresql.DOMAIN('d', INTEGER())`` ``postgresql.DOMAIN('d', sqlalchemy.INTEGER())``.
+    What is already written through a module is left as it is."""
+    import sqlalchemy
+    from sqlalchemy import types
+
+    tree = ast.parse(source, mode="eval")
+    lines = source.splitlines(keepends=True)
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+    spots: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Name) or node.id in MODULES:
+            continue
+        if hasattr(sqlalchemy, node.id) and not node.id.startswith("_"):
+            prefix = "sqlalchemy."
+        elif hasattr(types, node.id) and not node.id.startswith("_"):
+            prefix = "sqlalchemy.types."
+        else:
+            continue
+        # col_offset counts UTF-8 bytes, and a literal before the name may not be ASCII.
+        line = lines[node.lineno - 1]
+        column = len(line.encode()[: node.col_offset].decode())
+        spots.append((starts[node.lineno - 1] + column, prefix))
+    for offset, prefix in sorted(spots, reverse=True):
+        source = source[:offset] + prefix + source[offset:]
+    return source
 
 
 def evaluate(source: str) -> Any:
@@ -290,11 +337,11 @@ def evaluate(source: str) -> Any:
     return eval(source, {"__builtins__": {}}, names)
 
 
-def sqlalchemy_names(source: str) -> set[str]:
-    """The names a piece of source uses that come from ``sqlalchemy`` or a dialect module."""
+def modules_used(source: str) -> set[str]:
+    """The modules a piece of source writes names through: ``sqlalchemy``, ``postgresql``..."""
     found = set()
     for node in ast.walk(ast.parse(source, mode="eval")):
-        if isinstance(node, ast.Name) and node.id in _namespace():
+        if isinstance(node, ast.Name) and node.id in MODULES:
             found.add(node.id)
     return found
 
@@ -403,7 +450,7 @@ def _resolve_name(name: str) -> Emitted:
         )
     if not _IDENTIFIER.fullmatch(type_name):
         raise ValidationError(f"{what} {name!r} is not a type name")
-    source = f"{head}({args or ''})"
+    source = qualify(f"{head}({args or ''})")
     try:
         built = evaluate(source)
     except Exception as error:

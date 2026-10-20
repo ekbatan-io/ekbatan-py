@@ -200,7 +200,7 @@ def test_a_converter_picked_by_column_name(
     )
     numeric = _numeric(dialect)
     assert sources[("LEDGER", "amount")] == normal(
-        f"converted({numeric}(precision=19, scale=4), MoneyConverter())"
+        f"converted(sqlalchemy.{numeric}(precision=19, scale=4), MoneyConverter())"
     )
     assert sources[("LEDGER", "rate")] == sources[("LEDGER", "amount")]
     assert sources[("LEDGER", "created_date")] == "timestamp_column()", "only the named columns"
@@ -261,7 +261,7 @@ def test_a_converter_picked_by_sql_type(
                 include_types=r"BINARY\(16\)",
                 include_expression=".*_id",
             ),
-            "converted(BINARY(length=16), UuidBytes())",
+            "converted(sqlalchemy.BINARY(length=16), UuidBytes())",
             lambda types: uuid.uuid4(),
             True,
         ),
@@ -279,7 +279,7 @@ def test_a_converter_picked_by_sql_type(
                 include_types=r"CHAR\(32\)",
                 include_expression=".*_id",
             ),
-            "converted(CHAR(length=32), UuidHex())",
+            "converted(sqlalchemy.CHAR(length=32), UuidHex())",
             lambda types: uuid.uuid4(),
             True,
         ),

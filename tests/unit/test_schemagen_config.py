@@ -281,10 +281,10 @@ def test_a_type_is_offered_in_every_spelling() -> None:
     [
         ("uuid_column", "uuid_column()"),
         ("json_column()", "json_column()"),
-        ("Text", "Text()"),
-        ("String(36)", "String(36)"),
-        ("Numeric(19, 4)", "Numeric(19, 4)"),
-        ("Numeric(precision=19, scale=4)", "Numeric(precision=19, scale=4)"),
+        ("Text", "sqlalchemy.Text()"),
+        ("String(36)", "sqlalchemy.String(36)"),
+        ("Numeric(19, 4)", "sqlalchemy.Numeric(19, 4)"),
+        ("Numeric(precision=19, scale=4)", "sqlalchemy.Numeric(precision=19, scale=4)"),
         ("postgresql.INET", "postgresql.INET()"),
         ("mysql.TINYINT(unsigned=True)", "mysql.TINYINT(unsigned=True)"),
     ],
@@ -466,16 +466,16 @@ def test_a_wrong_converter_is_refused_naming_itself(
 @pytest.mark.parametrize(
     ("reflected", "source"),
     [
-        (mysql.BIGINT(display_width=20), "BIGINT()"),
-        (mysql.TINYINT(display_width=1), "BOOLEAN()"),
+        (mysql.BIGINT(display_width=20), "sqlalchemy.BIGINT()"),
+        (mysql.TINYINT(display_width=1), "sqlalchemy.BOOLEAN()"),
         (mysql.TINYINT(display_width=1, unsigned=True), "mysql.TINYINT(unsigned=True)"),
         (mysql.INTEGER(display_width=10, unsigned=True), "mysql.INTEGER(unsigned=True)"),
-        (mysql.DOUBLE(asdecimal=True), "DOUBLE()"),
-        (mysql.ENUM("NEW", "DONE"), 'Enum("NEW", "DONE")'),
-        (postgresql.ENUM("a", "b", name="mood"), 'Enum("a", "b", name="mood")'),
-        (postgresql.ARRAY(postgresql.TIMESTAMP()), "postgresql.ARRAY(TIMESTAMP())"),
-        (postgresql.BYTEA(), "LargeBinary()"),
-        (postgresql.DOUBLE_PRECISION(precision=53), "DOUBLE_PRECISION()"),
+        (mysql.DOUBLE(asdecimal=True), "sqlalchemy.DOUBLE()"),
+        (mysql.ENUM("NEW", "DONE"), 'sqlalchemy.Enum("NEW", "DONE")'),
+        (postgresql.ENUM("a", "b", name="mood"), 'sqlalchemy.Enum("a", "b", name="mood")'),
+        (postgresql.ARRAY(postgresql.TIMESTAMP()), "postgresql.ARRAY(sqlalchemy.TIMESTAMP())"),
+        (postgresql.BYTEA(), "sqlalchemy.LargeBinary()"),
+        (postgresql.DOUBLE_PRECISION(precision=53), "sqlalchemy.DOUBLE_PRECISION()"),
         (
             mysql.LONGTEXT(charset="utf8mb4", collation="utf8mb4_bin"),
             'mysql.LONGTEXT(charset="utf8mb4", collation="utf8mb4_bin")',
@@ -509,9 +509,11 @@ def test_render_needs_no_database_and_imports_what_it_used() -> None:
     body = text.replace("check_fingerprint(__file__", "check_fingerprint('x'")
     exec(compile(body, "schema.py", "exec"), namespace)
     assert "from sqlalchemy.dialects import mysql" in text
-    assert 'Column("id", CHAR(length=36), primary_key=True)' in text
-    assert 'Column("flag", BOOLEAN(), nullable=False)' in text
-    assert 'Column("at", timestamp_column())' in text
+    assert "import sqlalchemy\n" in text
+    assert "from sqlalchemy import" not in text
+    assert 'sqlalchemy.Column("id", sqlalchemy.CHAR(length=36), primary_key=True)' in text
+    assert 'sqlalchemy.Column("flag", sqlalchemy.BOOLEAN(), nullable=False)' in text
+    assert 'sqlalchemy.Column("at", timestamp_column())' in text
     assert "EVENTS = outbox_table(metadata)" in text
 
 
@@ -534,8 +536,8 @@ def test_a_char_36_id_stays_text_unless_a_forced_type_says_it_is_a_uuid() -> Non
         plain = render(
             [table], framework=[], migrations_fingerprint="x", module=None, dialect=dialect
         )
-        assert 'Column("id", CHAR(length=36), primary_key=True)' in plain, dialect
-        assert 'Column("ext_id", VARCHAR(length=36))' in plain, dialect
+        assert 'Column("id", sqlalchemy.CHAR(length=36), primary_key=True)' in plain, dialect
+        assert 'Column("ext_id", sqlalchemy.VARCHAR(length=36))' in plain, dialect
 
     forced = render(
         [table],
@@ -546,7 +548,9 @@ def test_a_char_36_id_stays_text_unless_a_forced_type_says_it_is_a_uuid() -> Non
         config=uuid_ids,
     )
     assert 'Column("id", uuid_column(), primary_key=True)' in forced
-    assert 'Column("ext_id", VARCHAR(length=36))' in forced, "the rule names CHAR(36) only"
+    assert 'Column("ext_id", sqlalchemy.VARCHAR(length=36))' in forced, (
+        "the rule names CHAR(36) only"
+    )
 
 
 def test_a_sqlalchemy_type_named_like_sqlalchemy_s_own_is_aliased(
@@ -573,7 +577,9 @@ def test_a_sqlalchemy_type_named_like_sqlalchemy_s_own_is_aliased(
 
     assert "from unit_user_types.clash import JSON as unit_user_types_clash_JSON" in text
     assert 'Column("a", unit_user_types_clash_JSON())' in text
-    assert 'Column("b", JSON(none_as_null=True))' in text, "SQLAlchemy's JSON is still SQLAlchemy's"
+    assert 'Column("b", sqlalchemy.JSON(none_as_null=True))' in text, (
+        "SQLAlchemy's JSON is still SQLAlchemy's"
+    )
 
 
 def _rendered(*forced: ForcedType, dialect: str = "postgresql", **columns: object) -> str:
@@ -602,8 +608,13 @@ def test_a_converter_keeps_the_column_s_own_type(user_types: Path) -> None:
         rate=postgresql.NUMERIC(19, 4),
     )
 
-    assert 'Column("amount", converted(NUMERIC(precision=19, scale=4), MoneyConverter(4)))' in text
-    assert 'Column("rate", NUMERIC(precision=19, scale=4))' in text, "only the named column"
+    assert (
+        'Column("amount", converted(sqlalchemy.NUMERIC(precision=19, scale=4), MoneyConverter(4)))'
+        in text
+    )
+    assert 'Column("rate", sqlalchemy.NUMERIC(precision=19, scale=4))' in text, (
+        "only the named column"
+    )
     assert "from ekbatan.schema import converted" in text
     assert "from unit_user_types.converters import MoneyConverter" in text
     namespace: dict[str, object] = {"__file__": "schema.py"}
@@ -625,7 +636,28 @@ def test_a_converter_wraps_what_the_column_would_otherwise_be(user_types: Path) 
     )
 
     assert 'Column("at", converted(timestamp_column(), SHARED))' in text
-    assert 'Column("body", converted(Text(), money()))' in text
+    assert 'Column("body", converted(sqlalchemy.Text(), money()))' in text
+
+
+def test_a_converter_named_like_a_table_s_constant_is_aliased(user_types: Path) -> None:
+    """`from unit_user_types.clash import T` and then `T = Table("t", ...)`: the table would
+    replace the converter before the column that calls it is built."""
+    (user_types / "clash.py").write_text(
+        "class T:\n"
+        "    def from_db(self, value) -> str:\n"
+        "        return value\n"
+        "    def to_db(self, value):\n"
+        "        return value\n"
+    )
+    text = _rendered(
+        ForcedType(converter="unit_user_types.clash.T", include_expression="doc"),
+        doc=VARCHAR(10),
+    )
+
+    assert "from unit_user_types.clash import T as unit_user_types_clash_T" in text
+    namespace: dict[str, object] = {"__file__": "schema.py"}
+    exec(compile(text, "schema.py", "exec"), namespace)
+    assert type(namespace["T"].c.doc.type._converter).__name__ == "T"  # type: ignore[attr-defined]
 
 
 def test_a_converter_named_like_a_sqlalchemy_type_is_aliased(
@@ -645,7 +677,8 @@ def test_a_converter_named_like_a_sqlalchemy_type_is_aliased(
 
     assert "from unit_user_types.clash import JSON as unit_user_types_clash_JSON" in text
     assert (
-        'Column("doc", converted(JSON(none_as_null=True), unit_user_types_clash_JSON()))' in text
+        'Column("doc", converted(sqlalchemy.JSON(none_as_null=True), unit_user_types_clash_JSON()))'
+        in text
     ), "SQLAlchemy's JSON inside, the user's outside"
 
 
@@ -659,5 +692,5 @@ def test_a_type_with_no_spelling_is_noted_only_when_rendering_by_hand(
     with caplog.at_level("WARNING", logger="io.ekbatan.schemagen"):
         text = _rendered(odd=NullType())
 
-    assert 'Column("odd", NullType())' in text
+    assert 'Column("odd", sqlalchemy.types.NullType())' in text
     assert "t.odd is NullType, a type with no known spelling" in caplog.text

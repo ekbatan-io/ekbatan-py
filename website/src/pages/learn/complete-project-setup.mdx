@@ -1544,7 +1544,7 @@ poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 The two columns come out wrapped:
 
 ```python
-Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False),
+sqlalchemy.Column("currency", converted(sqlalchemy.CHAR(length=3), CurrencyConverter()), nullable=False),
 ```
 
 From then on the repository writes a `Currency` and reads one back. More on picking columns and

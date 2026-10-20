@@ -185,10 +185,10 @@ def test_no_default_forced_types_wins_over_the_file(
     schema = project / "src" / "app" / "schema.py"
 
     _main(project, monkeypatch, capsys)
-    assert 'Column("at", timestamp_column())' in schema.read_text()
+    assert 'sqlalchemy.Column("at", timestamp_column())' in schema.read_text()
     _main(project, monkeypatch, capsys, "--no-default-forced-types")
 
-    assert 'Column("at", TIMESTAMP())' in schema.read_text()
+    assert 'sqlalchemy.Column("at", sqlalchemy.TIMESTAMP())' in schema.read_text()
 
 
 def test_a_schema_flag_replaces_the_file_s_list(
@@ -226,7 +226,10 @@ def test_the_file_s_forced_types_are_used_written_as_module_colon_class(
     try:
         assert _main(project, monkeypatch, capsys)[0] == 0
         written = (project / "src" / "app" / "schema.py").read_text()
-        assert 'Column("amount", converted(NUMERIC(precision=10, scale=2), Cents(2)))' in written
+        assert (
+            'sqlalchemy.Column("amount", '
+            "converted(sqlalchemy.NUMERIC(precision=10, scale=2), Cents(2)))" in written
+        )
         assert "from cli_conv import Cents" in written
     finally:
         sys.modules.pop("cli_conv", None)
@@ -443,15 +446,21 @@ def test_the_command_refuses_with_one_line_and_no_traceback(
 CONTAINER_CASES = {
     "postgres": (
         "CREATE TABLE things (id UUID PRIMARY KEY, doc JSONB, at TIMESTAMP);\n",
-        ['Column("id", uuid_column(), primary_key=True)', 'Column("doc", json_column())'],
+        [
+            'sqlalchemy.Column("id", uuid_column(), primary_key=True)',
+            'sqlalchemy.Column("doc", json_column())',
+        ],
     ),
     "mysql": (
         "CREATE TABLE things (id INTEGER PRIMARY KEY, doc JSON, at DATETIME(6));\n",
-        ['Column("doc", json_column())', 'Column("at", timestamp_column())'],
+        ['sqlalchemy.Column("doc", json_column())', 'sqlalchemy.Column("at", timestamp_column())'],
     ),
     "mariadb": (
         "CREATE TABLE things (id INTEGER PRIMARY KEY, doc JSON, address INET6, at DATETIME(6));\n",
-        ['Column("doc", json_column())', 'Column("address", sql_type("inet6"))'],
+        [
+            'sqlalchemy.Column("doc", json_column())',
+            'sqlalchemy.Column("address", sql_type("inet6"))',
+        ],
     ),
 }
 
