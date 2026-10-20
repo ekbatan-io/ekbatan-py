@@ -55,7 +55,7 @@ blocks the event loop, and every request with it.
 | testing | `ActionSpec`, `run_action` | `AsyncActionSpec`, `async_run_action` |
 | shutdown | `registry.close()` | `await registry.aclose()` |
 
-`to_row` and `from_row` stay plain `def` in both: mapping waits on nothing.
+`to_record` and `from_record` stay plain `def` in both: mapping waits on nothing.
 
 A deposit, both ways:
 

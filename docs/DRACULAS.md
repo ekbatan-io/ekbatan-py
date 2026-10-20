@@ -33,6 +33,7 @@ whatever is decided about the rest.
 | 9 | A repository takes a `clock=` it never uses; ~~the `Transaction` docstring names `registry.transaction()`, which does not exist~~ | read | A |
 |   | → docstring **fixed** (`EKB-0258`): it names `registry.manager(shard).transaction()` and `registry.default.transaction()`, both run to check. The unused `clock=` stays, by the user's decision (2026-10-17) | | |
 | 11 | ~~The framework converted time by itself - "a very big bad dracula": `timestamp_column()`, the by-name repository mapping, models, outbox and notification rows, CDC rows, event JSON and the dispatcher all moved times to UTC and stamped `+00:00` (`EKB-0294`)~~ **fixed** (`EKB-0384`-): every time is written and read exactly as given; `SystemClock().now()` is UTC with no zone attached; UTC is the user's job, strongly recommended. Guarded by `tests/unit/test_time_as_is.py`. See `docs/TIME-AS-IS-LEDGER.md` | run (all four databases, both modes) | A |
+| 12 | ~~Row mapping was an untyped dict - "a big dracula": `to_row` returned and `from_row` took `dict[str, Any]` / `Row[Any] \| Mapping[str, Any]`, so a column left out, misspelt or mistyped in a repository passed mypy, where Java's `toRecord` / `fromRecord` are typed by the generated `WalletsRecord`~~ **fixed** (`EKB-0408`-): schemagen writes a `TypedDict` `<Table>Record` beside each table (a converter's column typed as its user type); `to_record(model) -> WalletsRecord` / `from_record(record: WalletsRecord)`; repositories are `ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]`. Proven by `tests/unit/test_typed_records_mypy.py` and against the drivers in `test_schemagen_types`. See `docs/TYPED-RECORDS-LEDGER.md` | run (mypy; all four databases, both modes) | A |
 | 10 | Cron on clock-change days, every style: a time inside the hour skipped in spring runs at 03:00 here and not at all in Java; a daily time inside the hour repeated in autumn runs twice here and once in Java. Found while building the bug 2 fix. **Left as is** - the user's decision, 2026-10-16 | run (Amsterdam, New York) | D |
 
 ## Part 2: the Draculas
@@ -109,7 +110,7 @@ whatever is decided about the rest.
 | 46 | Built-in reads see the open transaction's uncommitted rows | choice | yes | M | A7 |
 | 47 | A repository's key type is the typed id, not the raw UUID | choice | yes | M | A6 |
 | 48 | Read methods are named differently (`find`, `find_where`, `all`), return `None` not `Optional` | choice + convention | partly | M | A8 |
-| 49 | Tables are SQLAlchemy written by hand; `to_row` returns a dict | choice | partly | M | A9 |
+| 49 | Tables are SQLAlchemy written by hand; ~~`to_row` returns a dict~~ the mapping is typed by a generated `TypedDict` record since `EKB-0408` (bug 12) | choice | partly | M | A9 |
 | 50 | Connections come from `with` blocks, are public, and "all shards" gives pairs | forced + convention | partly | M | A10 |
 | 51 | `fetch_one` means "exactly one", not jOOQ's "at most one" | choice | yes | M | A11 |
 | 52 | ~~`version` defaults to 1~~ **fixed** (`EKB-0292`): required, as Java's; a builder never given one refuses with "version cannot be null" | choice | yes | M | A12 |

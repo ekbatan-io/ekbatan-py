@@ -943,7 +943,10 @@ poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 
 It starts a throwaway container, runs **your** migrations into it, reflects the result and writes
 a module of SQLAlchemy `Table` definitions for your repositories to query - the same module in
-both modes. You rarely run this by hand; the Makefile does, when a migration changes.
+both modes. Beside each table it writes the table's record, `WalletsRecord` beside `WALLETS`: a
+`TypedDict` with a key per column, typed as the column reads - the `currency` column as the
+`Currency` its converter gives. The repository's `to_record` and `from_record` are typed by it.
+You rarely run this by hand; the Makefile does, when a migration changes.
 
 The flags can live in `pyproject.toml` instead, under `[tool.ekbatan.schemagen]` (`migrations`,
 `out`, `image`), and the command then runs bare - which is how the example projects do it, and
@@ -953,9 +956,11 @@ where forced types, includes and excludes go. See [schemagen](/reference/schemag
 
 <div data-db="sqlite">
 
-Written by hand, so the whole service reads in one place - the same file in both modes. The
-framework's own tables are built by its helpers rather than transcribed: their shape is a
-contract a CDC connector or another service binds to.
+Written by hand, so the whole service reads in one place - the same file in both modes. Each
+table has its record beside it, `WalletsRecord` beside `WALLETS`, written as schemagen would
+write it: the repository's `to_record` and `from_record` are typed by it. The framework's own
+tables are built by its helpers rather than transcribed: their shape is a contract a CDC
+connector or another service binds to.
 
 <CodeBlock filename="src/wallet/schema.py" language="python" shadow="yellow" code={sqlite_schema_py} />
 
@@ -1599,8 +1604,9 @@ layer, invisible to the event stream.
 
 <div data-mode="sync">
 
-`get`, `find_where`, `add`, `update`, counting and existence are inherited, and `to_row` and
-`from_row` say how a row and a dataclass map onto each other. What you add are the questions
+`get`, `find_where`, `add`, `update`, counting and existence are inherited, and `to_record` and
+`from_record` say how a row and a dataclass map onto each other, typed by the table's record
+(`WalletsRecord`, beside `WALLETS` in `schema.py`). What you add are the questions
 your business asks.
 
 </div>
@@ -1609,7 +1615,7 @@ your business asks.
 
 The repositories extend `AsyncModelRepository` and `AsyncEntityRepository`: `get`,
 `find_where`, `add`, `update`, counting and existence are inherited, and every one is awaited, as
-is every query you add. `to_row` and `from_row` say how a row and a dataclass map onto each
+is every query you add. `to_record` and `from_record` say how a row and a dataclass map onto each
 other, as in sync, and stay plain `def` - mapping waits on nothing.
 A read with no shard named asks every shard at the same time.
 

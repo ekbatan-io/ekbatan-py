@@ -2,7 +2,8 @@
 
 schemagen writes `schema.py` for you, from your migrations. It starts a throwaway database, runs
 your migrations into it, reads the tables back, and writes one Python module with a SQLAlchemy
-`Table` for each. **The module comes from the real database, so it cannot drift from it.**
+`Table` for each, and beside each `Table` a typed record of its row. **The module comes from the
+real database, so it cannot drift from it.**
 
 ```
 uv add --dev "ekbatan[codegen]"
@@ -46,9 +47,68 @@ ORDERS = Table(
 )
 ```
 
-Import `ORDERS` and query it like any SQLAlchemy table. Every column has a type, and every type
+and, beside it, the table's record:
+
+```python
+class OrdersRecord(TypedDict):
+    id: UUID
+    amount: Decimal
+    note: str | None
+    created_date: datetime
+```
+
+Import `ORDERS` and query it like any SQLAlchemy table; type a repository's mapping with
+`OrdersRecord` ([below](#the-record-beside-each-table)). Every column has a type, and every type
 is listed in [the default mapping](#the-default-mapping) below. To get your own class back from
 a column, such as a `Money` instead of a `Decimal`, [write a converter](#write-your-own-converter).
+
+## The record beside each table
+
+Beside every table, schemagen writes the table's **record**: a `TypedDict` named after the
+table - `orders` gives `OrdersRecord`, `event_notifications` gives `EventNotificationsRecord` -
+with one key per column, each typed as the column reads. A repository's `to_record` returns it
+and its `from_record` takes it ([repositories](repositories.md)), so mypy checks every mapping
+against the table: a column left out, misspelt, added or given the wrong type is a type error.
+To SQLAlchemy a record is a plain `dict`; it costs nothing at run time.
+
+Each key's type is read from the type object the module builds for that column:
+
+| the column | its type in the record |
+| --- | --- |
+| a plain SQL type | what SQLAlchemy reads it as: `int`, `str`, `Decimal` for `NUMERIC`, `float` for `DOUBLE`, `bool`, `bytes`, `date`, `time`, `timedelta` |
+| `uuid_column()` | `UUID` |
+| `timestamp_column()` | `datetime` - the value as written, no zone added |
+| a JSON column, `json_column()` | `JsonValue`, from `ekbatan.schema`: an object, an array, text, a number, a boolean or `None` |
+| an enum | a `Literal` of its values: `Literal["NEW", "DONE"]` |
+| an array, a MySQL `SET` | `list[...]` of its item, `set[str]` |
+| PostgreSQL `INET`, `CIDR`, ranges | `IPv4Address \| IPv6Address`, `IPv4Network \| IPv6Network`, `Range[int]` and the like |
+| a column with your **converter** | your converter's own type - `Money`, not `Decimal` |
+| a `sqlalchemy-type` | what its `process_result_value` is annotated to return, or what its `impl` reads as |
+| a type nothing says anything about (`sql_type("xml")`, PostgreSQL `BIT`, which two drivers read differently) | `Any`, and the run prints a note saying so - give it a converter to type it |
+
+A nullable column is `X | None`. A column the database fills itself - a server default, an
+identity, a generated column, an auto-increment - is `NotRequired[...]`: an insert may leave it
+out, and must leave out a generated one.
+
+**A converter's type is read off the converter.** First the return annotation of its `from_db`
+(`def from_db(self, value: Decimal) -> Money`), so a converter needs no base class; else the
+second argument of its `Converter[Decimal, Money]` base. A converter that says neither stops the
+run with an error naming it - schemagen does not guess, and does not fall back to `Any`:
+
+```
+error: the forced converter 'myapp.converters.MoneyConverter': schemagen cannot tell what type it
+gives, so it cannot type the column in the record - from_db() has no return annotation, and the
+class does not extend Converter[DbT, UserT]. Annotate it: `def from_db(self, value: str) -> Currency:`
+```
+
+The module imports what the records name - `from myapp.money import Money`, `from uuid import
+UUID` - and a name that is already taken in the module (a SQLAlchemy type, a helper, a table, a
+record, another class of the same name) is imported under an alias: `myapp_types_UUID`. A column
+named like a type its record uses (a `date` column of type `date`) makes that record the call
+form, `OrdersRecord = TypedDict("OrdersRecord", {...})`, which means the same. Two tables whose
+records would share a name stop the run, as two tables sharing a constant do.
+
+A schema written by hand, without schemagen, writes its records by hand in the same style.
 
 ## Settings
 
@@ -466,7 +526,8 @@ Use both to take only the columns that match both.
 
 `Converter[Decimal, Money]` is there for type hints: your editor and mypy then check that
 `from_db` takes a `Decimal` and returns a `Money`. Any class with `from_db` and `to_db` works
-without it.
+without it - as long as `from_db` says what it returns, because that is the type the table's
+record gives the column. With neither the annotation nor the base, schemagen stops and says so.
 
 A converter that takes arguments is written with them: `converter =
 "myapp.converters.MoneyConverter(4)"`. A converter object made once in your module works too:
@@ -552,7 +613,9 @@ include-types = "VECTOR.*"
 It is a convenience, not a need. The library's type may add helpers, such as
 `embedding.l2_distance(...)`, but a converter gives you the same values without the extra
 package, as the example above shows. Write it as a dotted path, with arguments if it takes any.
-It may be a type, a function returning a type, or a type object made once in a module.
+It may be a type, a function returning a type, or a type object made once in a module. In the
+table's record the column is what the type's `process_result_value` is annotated to return, or
+what its `impl` reads as when it converts nothing; a type that says neither is `Any`, with a note.
 
 ## What else is generated
 
@@ -575,7 +638,9 @@ foreign key to a table that is not generated (a note says so).
 `events`, `event_notifications` and `scheduled_tasks` are written as `outbox_table(metadata)`,
 `notifications_table(metadata)` and `scheduled_tasks_table(metadata)`, with their indexes from the
 migrations. They are not read column by column, because other services read these tables and
-their shape is fixed. If your migrations differ from the helper, a note says how.
+their shape is fixed. If your migrations differ from the helper, a note says how. Each gets its
+record like any table - `EventsRecord`, `EventNotificationsRecord`, `ScheduledTasksRecord` - typed
+from the helper's columns.
 `excludes = "scheduled_tasks"` leaves one out.
 
 ## UTC

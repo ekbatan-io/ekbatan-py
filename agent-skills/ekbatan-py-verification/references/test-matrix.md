@@ -32,7 +32,7 @@ make lint                             # ruff, mypy --strict, and the docs link c
 | pure logic, a plan, a builder | `tests/unit` |
 | any SQL | **`make test-all`.** Not optional |
 | timestamps | `make test-all`, and note CI also runs PostgreSQL under a non-UTC process |
-| `schemagen` | `pytest tests/unit/test_schemagen_config.py tests/unit/test_schema_converters.py`, `pytest tests/integration/test_schemagen*.py --dialects=all` (every type on every database; converters; the pgvector test pulls `pgvector/pgvector:pg17` and runs on PostgreSQL only), then `make examples` |
+| `schemagen` | `pytest tests/unit/test_schemagen_config.py tests/unit/test_schema_converters.py tests/unit/test_schemagen_records.py tests/unit/test_typed_records_mypy.py`, `pytest tests/integration/test_schemagen*.py --dialects=all` (every type on every database; converters; the pgvector test pulls `pgvector/pgvector:pg17` and runs on PostgreSQL only), then `make examples` |
 | an example | `make examples` |
 | the docs | `make lint` - it checks every relative link |
 | the website | `cd website && npm run build && npm run check` |

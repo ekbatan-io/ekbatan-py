@@ -27,7 +27,8 @@ src/ekbatan/
   migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
   schemagen/         table definitions from a migrated database: _config (pyproject, forced
                      types: name, converter, sqlalchemy-type), _types (the type table; an
-                     unknown type is sql_type("...")), _reflect, _render
+                     unknown type is sql_type("...")), _reflect, _render, _records (the
+                     typed `<Table>Record` beside each table)
   codegen.py         typed builders, generated per model
   streaming.py       ActionEvent - the consumer-side view of an outbox row
   accounting.py      statement counting, so cost claims are checkable
@@ -46,7 +47,10 @@ website/             Astro. The only part that does not run through uv
 - Only a `Model` emits events. An `Entity` does not.
 - Every persistable carries a `version`, and every update checks it.
 - Reads filter soft-deleted rows once, in the framework.
-- Mapping is by field name. There is no `from_row` or `to_row` unless a name differs.
+- Every repository writes `to_record` / `from_record`, typed by the table's record - a `TypedDict`
+  schemagen writes beside the table (`WalletsRecord` beside `WALLETS`); repositories are
+  `ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]`. `columns_by_field_name` /
+  `model_by_field_name` are the by-name mapping, chosen in a line, never a default.
 - The ambient transaction is a `ContextVar`, so it is per-thread and per-task.
 - Opening a transaction inside another one opens a **second** transaction on a second
   connection, as Java's does (`EKB-0301`). Repository calls inside a block join it; nested blocks

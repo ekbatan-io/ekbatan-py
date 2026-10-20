@@ -328,14 +328,17 @@ public abstract class AbstractRepository<...> implements Repository<PERSISTABLE>
 
 ```python
 class Repository[M: Persistable[Any, Any]](Protocol): ...
-class AbstractRepository[M: Persistable[Any, Any], K](Repository[M], ABC): ...
+class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](Repository[M], ABC): ...
 ```
 
 `Repository` is the promise: what the registry, the executor and the change persister ask of a
 repository, and all they ask. They depend on it and on nothing else, so anything that keeps it
 can be registered - as anything implementing Java's interface can. `AbstractRepository` keeps it
-against a table, and is abstract for Java's reason: `to_row` and `from_row` are the repository's
-to write. An application extends `ModelRepository` or `EntityRepository`, as in Java.
+against a table, and is abstract for Java's reason: `to_record` and `from_record` are the
+repository's to write. An application extends `ModelRepository` or `EntityRepository`, as in Java.
+The type parameters follow Java's order - model, record, id - less the table, which here is a
+`Table` value rather than a generated type: `AbstractRepository<Wallet, WalletsRecord, Wallets,
+UUID>` there, `ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]` here.
 
 The reason this port had for merging the two - that its `Repository` "works as it stands",
 mapping by field name - stopped being true in `EKB-0217`, when the mapping became something
@@ -351,7 +354,7 @@ Mechanism, not behaviour:
   nearest a language without a compile step comes. The message names what is missing and shows
   the two lines to write.
 - **`Repository[Wallet, WalletId]`, the old two-argument base, says what moved**, rather than
-  Python's bare "too many arguments".
+  Python's bare "too many arguments" - naming the three-argument classes that implement it.
 
 ## Row mapping is written, as Java's is - but the bridge is not
 
@@ -364,9 +367,12 @@ public abstract PERSISTABLE fromRecord(RECORD record);
 public abstract RECORD toRecord(PERSISTABLE domainObject);
 ```
 
-`Repository.to_row` and `from_row` now refuse instead, there being no compile step here. Every
-repository in this repository writes both - the seven examples, the suite's fixtures, and the
-handful of tests that build one inline.
+`to_record` and `from_record` (`to_row` / `from_row` until `EKB-0409`) refuse instead, there
+being no compile step here. Every repository in this repository writes both - the examples, the
+suite's fixtures, and the handful of tests that build one inline. And since `EKB-0409` both are
+typed by the table's record, as Java's are by `WalletsRecord`: `to_record(wallet) ->
+WalletsRecord`, `from_record(record: WalletsRecord) -> Wallet`, so a column left out, misspelt or
+mistyped is a mypy error where Java's is a compile error.
 
 **Why it changed.** The mapping used to default to field name, and the entry here called that
 "this port's largest ergonomic decision". It was also the one place left where something
@@ -378,7 +384,7 @@ always is the hardest kind of wrong to find.
 time - the two methods are one line each:
 
 ```python
-def to_row(self, wallet: Wallet) -> dict[str, Any]:
+def to_record(self, wallet: Wallet) -> WalletsRecord:
     return self.columns_by_field_name(wallet)
 ```
 
@@ -566,7 +572,7 @@ through `db()`.
 
 ## A custom query ends with the mapping, as jOOQ's does
 
-> **parity** - both ports end a custom query with the mapping, in the same chain: jOOQ's `fetch(this::fromRecord)`, here `rows(statement).fetch(self.from_row)`. jOOQ has the verb built in; SQLAlchemy has none, so `Db` adds one. Leaving it out would be the divergence - the query in one place and the mapping in a loop afterwards. Relabelled in `EKB-0227`; it was filed as chosen.
+> **parity** - both ports end a custom query with the mapping, in the same chain: jOOQ's `fetch(this::fromRecord)`, here `rows(statement).fetch(self.from_record)`. jOOQ has the verb built in; SQLAlchemy has none, so `Db` adds one. Leaving it out would be the divergence - the query in one place and the mapping in a loop afterwards. Relabelled in `EKB-0227`; it was filed as chosen.
 
 The accessors above mean exactly what Java's mean. What they *hand back* differs: a `Db`, which
 is a `sqlalchemy.Connection` with one method added.
@@ -584,14 +590,17 @@ SQLAlchemy has no verb for it. A bare connection leaves the mapping to the calle
 
 ```python
 rows = conn.execute(statement).all()
-return [self.from_row(row) for row in rows]
+return [self.from_record(row._mapping) for row in rows]
 ```
 
 So `Db` supplies the missing one, and the order matches the Java:
 
 ```python
-return conn.rows(statement).fetch(self.from_row)
+return conn.rows(statement).fetch(self.from_record)
 ```
+
+Each terminal hands the mapper the row read by column name, the record `from_record` takes - as
+jOOQ hands `fromRecord` the `WalletsRecord` it fetched.
 
 `conn.rows(statement)` returns a `FetchResult`, whose terminals each take the mapper:
 `fetch`, `fetch_first`, `fetch_one`, `fetch_one_or_none`, `each`, plus `yield_per`,
@@ -1157,8 +1166,14 @@ explains them without Java; the mapping, setting by setting, is here:
 
 Where the output differs:
 
-- **SQLAlchemy `Table` objects, not record classes.** One module, `schema.py`; a table in another
-  schema is exported as `SCHEMA_TABLE` rather than in a package of its own.
+- **A SQLAlchemy `Table` and a `TypedDict` record, not a table class and a record class.** jOOQ
+  generates `Wallets` (the table) and `WalletsRecord` (its row). Here `WALLETS` is a `Table` and,
+  since `EKB-0408`, `WalletsRecord` is generated beside it, under jOOQ's name: a `TypedDict` with
+  a key per column, typed as the column reads (a converter's column as its user type, as jOOQ's
+  `userType`). It is a plain `dict` at run time - no getters, no `store()`, no attachment to a
+  connection - and a type checker's contract, which is what the mapping needs. One module,
+  `schema.py`; a table in another schema is exported as `SCHEMA_TABLE` / `SchemaTableRecord`
+  rather than in a package of its own.
 - **The framework's tables are built from `ekbatan.schema`, not reflected.** Java reflects them
   on PostgreSQL and leaves them out on MySQL and MariaDB.
 - **MariaDB `JSON` is `json_column()`.** It is `LONGTEXT` with a check there; Java's `(?i:JSON)`

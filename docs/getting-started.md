@@ -154,34 +154,36 @@ recommendation everywhere - in your code and on the database - see
 **Sync**
 
 ```python
-class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
-    def to_row(self, wallet: Wallet) -> dict[str, Any]:
+    def to_record(self, wallet: Wallet) -> WalletsRecord:
         return self.columns_by_field_name(wallet)
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
-        return self.model_by_field_name(row)
+    def from_record(self, record: WalletsRecord) -> Wallet:
+        return self.model_by_field_name(record)
 ```
 
 **Async**
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
-    def to_row(self, wallet: Wallet) -> dict[str, Any]:       # plain def: mapping waits on nothing
+    def to_record(self, wallet: Wallet) -> WalletsRecord:       # plain def: mapping waits on nothing
         return self.columns_by_field_name(wallet)
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
-        return self.model_by_field_name(row)
+    def from_record(self, record: WalletsRecord) -> Wallet:
+        return self.model_by_field_name(record)
 ```
 
 That is the whole repository - `get`, `find_where`, `add`, `update`, counting and existence are
-inherited. The mapping between a row and the model is yours to write, and when the names line up
-it is the two methods above: every field to the column of the same name. A repository without
+inherited. `WalletsRecord` is the table's record, which schemagen writes into `schema.py` beside
+`WALLETS`: a `TypedDict` with a key per column, typed as the column reads, so mypy checks the
+mapping against the table. The mapping between a record and the model is yours to write, and
+when the names line up it is the two methods above: every field to the column of the same name. A repository without
 them is refused when it is created, so a renamed column can never quietly stop matching. Where a
 name or a shape differs, write the mapping out instead.
 

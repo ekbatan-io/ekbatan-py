@@ -14,7 +14,7 @@ passes its own tests; every snippet here is from it. The full reference is
 | | changes | stays |
 | --- | --- | --- |
 | model, events, converters, migrations, `schema.py` | | the same files |
-| repositories | the async bases; your own queries become `async def` | `to_row` / `from_row`, plain `def` |
+| repositories | the async bases; your own queries become `async def` | `to_record` / `from_record`, plain `def` |
 | actions on the request path | `AsyncAction`, `async def perform`, awaited reads | what they stage |
 | the executor | `AsyncActionExecutor`, awaited | its namespace, retries, cross-shard rule |
 | endpoints | `async def`, awaiting | the DTOs, the error mapping |
@@ -35,12 +35,12 @@ uv add "ekbatan[mariadb,mariadb-async,migrations]"          # MariaDB: aiomysql 
 ## 2. The repositories
 
 The base class changes and your own queries become `async def`. The mapping stays as it is,
-inside the repository: `to_row` and `from_row` are plain `def`, as mapping waits on nothing.
+inside the repository: `to_record` and `from_record` are plain `def`, as mapping waits on nothing.
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
-    def to_row(self, wallet: Wallet) -> dict[str, Any]: ...
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet: ...
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+    def to_record(self, wallet: Wallet) -> WalletsRecord: ...
+    def from_record(self, record: WalletsRecord) -> Wallet: ...
 
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         return await self.find_where(WALLETS.c.owner_id == owner_id)

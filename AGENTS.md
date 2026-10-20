@@ -33,7 +33,9 @@ framework never takes row locks. Every update carries `WHERE version = ?`; if an
 got there first the update matches zero rows and `StaleRecordError` unwinds the whole thing.
 
 The repository layer sits on **SQLAlchemy Core**. No ORM, no session cache, no lazy loading.
-Mapping is by field name, so a repository usually declares nothing about columns at all.
+Each repository writes its mapping - `to_record` / `from_record`, Java's `toRecord` /
+`fromRecord` - typed by the table's **record**, a `TypedDict` schemagen writes beside the table
+(`WalletsRecord` beside `WALLETS`), so mypy checks every mapping against the table.
 
 ## This is a port
 
@@ -74,7 +76,8 @@ src/ekbatan/
   clock.py           Clock, SystemClock, VirtualClock
   migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
   _yoyo.py           the yoyo backends: one connection, the session lock, the replica check
-  schemagen/         table definitions generated from a migrated database: config, type table
+  schemagen/         table definitions generated from a migrated database: config, type table,
+                     and the typed record beside each table
   codegen.py         typed builders, generated per model
   streaming.py       ActionEvent - the consumer-side view of an outbox row
   accounting.py      statement counting, so the performance claims are checkable
@@ -108,6 +111,17 @@ A reader moving between the two ports should recognise what they are looking at.
 | Python | `snake_case` functions and fields, `PascalCase` classes |
 | SQL | `snake_case` |
 | Commits | one `EKB-XXXX` subject line, no body |
+
+### The mapping is typed by the table's record
+
+Every repository is generic in its model, its table's record and its id, in Java's order:
+`ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]` (and `EntityRepository`, the
+`Abstract` base and the `ekbatan.aio` twins alike). `to_record(model) -> WalletsRecord` and
+`from_record(record: WalletsRecord) -> Wallet` are the repository's to write. The framework hands
+`from_record` the row read by column name - the row's mapping - on every read path, sync and
+async, sharded or not; `FetchResult`'s terminals hand a mapper the same. No `dict[str, Any]`
+mapping in examples or docs: a generated schema has its records, a hand-written one writes them
+beside its tables. (`to_row` / `from_row` until `EKB-0409`; renamed outright, no aliases.)
 
 ### Immutability
 
@@ -208,7 +222,7 @@ There are two APIs: the sync one and `ekbatan.aio`. The rules for keeping them o
   silently lacks - move it into the core.
 - **Same public surface.** A public method added to a sync class needs its async twin;
   `tests/unit/test_async_engine.py` compares the two surfaces and fails otherwise. Names carry
-  the `Async` prefix; `to_row` / `from_row` stay plain `def` on both.
+  the `Async` prefix; `to_record` / `from_record` stay plain `def` on both.
 - **What stays sync, on threads:** event fan-out and dispatch, distributed jobs, migrations,
   `schemagen`. An async service builds a sync registry beside its async one, from the same layout
   file, for those.
@@ -319,7 +333,7 @@ Two generators, mirroring two different Java mechanisms:
 | Java | here |
 | --- | --- |
 | annotation processor → `WalletBuilder` | `python -m ekbatan.codegen <module> --out builders.py` |
-| jOOQ + container + Flyway → record classes | `python -m ekbatan.schemagen`, settings in `[tool.ekbatan.schemagen]` |
+| jOOQ + container + Flyway → `WALLETS` + `WalletsRecord` | `python -m ekbatan.schemagen` → `WALLETS` (`Table`) + `WalletsRecord` (`TypedDict`), settings in `[tool.ekbatan.schemagen]` |
 
 `schemagen` starts a throwaway container, runs **your** migrations into it and reflects the
 result. Its settings are jOOQ's, in `[tool.ekbatan.schemagen]` of `pyproject.toml` (a flag wins):
@@ -353,6 +367,15 @@ PostgreSQL `UUID`), which every Java example's build forces too. Four rules hold
 - **Every type is proven on a real database** - `tests/integration/test_schemagen_types.py`
   generates, imports, `create_all`s and round-trips each one on all four databases. A new type
   rule gets a case there.
+- **Every table gets a typed record**, `<Table>Record` (jOOQ's name: `wallets` ->
+  `WalletsRecord`), a `TypedDict` beside the `Table` (`schemagen/_records.py`). Each key is typed
+  from the type object the module builds: a converter's column is the converter's user type -
+  its `from_db` return annotation, else its `Converter[DbT, UserT]` base; **neither is an error,
+  never a silent `Any`**. `Any` only where nothing can say (`sql_type`, a driver-dependent type),
+  with a note. Nullable is `| None`; a column the database fills is `NotRequired`. The types are
+  proven against what the sync and async drivers really return (`test_schemagen_types`), and
+  `tests/unit/test_typed_records_mypy.py` proves mypy catches a missing, misspelt, extra or
+  mistyped column. A hand-written schema writes its records by hand.
 
 Generated schemas are **gitignored**, as Java's `build/generated-jooq` is, and each generated
 module fingerprints its migrations and checks that on import - because nothing in Python runs

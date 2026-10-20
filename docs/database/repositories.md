@@ -7,7 +7,7 @@ asks.
 **Sync**
 
 ```python
-class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)
@@ -19,7 +19,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 **Async**
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Wallet, WALLETS, registry,
                          sharding=EmbeddedBitsShardingStrategy(), clock=clock)
@@ -35,47 +35,126 @@ Four classes, in layers:
 | class | what it is |
 | --- | --- |
 | `Repository[M]` | the promise: what the framework asks of a repository, and all it asks. A `Protocol` - so anything that keeps it can be registered |
-| `AbstractRepository[M, K]` | the SQL implementation of that promise. Abstract: `to_row` and `from_row` are yours |
-| `ModelRepository[M, K]` | extend this for a model |
-| `EntityRepository[M, K]` | extend this for an entity |
+| `AbstractRepository[M, R, K]` | the SQL implementation of that promise. Abstract: `to_record` and `from_record` are yours |
+| `ModelRepository[M, R, K]` | extend this for a model |
+| `EntityRepository[M, R, K]` | extend this for an entity |
 
-An application extends `ModelRepository` or `EntityRepository` and nothing else. In async
-mode the same four live in `ekbatan.aio` with an `Async` prefix - `AsyncModelRepository`,
-`AsyncEntityRepository` - and every read and write is awaited. The rules are the same code.
+`M` is the model, `R` the table's record and `K` the id: `ModelRepository[Wallet, WalletsRecord,
+ShardedId[Wallet]]`. An application extends `ModelRepository` or `EntityRepository` and nothing
+else. In async mode the same four live in `ekbatan.aio` with an `Async` prefix -
+`AsyncModelRepository`, `AsyncEntityRepository` - and every read and write is awaited. The rules
+are the same code.
+
+## The record
+
+A row is a **record**: a `TypedDict` with one key per column, each typed as the column reads.
+[schemagen](schemagen.md) writes one beside every table it generates - `WalletsRecord` beside
+`WALLETS`:
+
+```python
+class WalletsRecord(TypedDict):
+    id: UUID
+    version: int
+    state: str
+    owner_id: UUID
+    currency: Currency      # the column is CHAR(3); its converter gives a Currency
+    balance: Decimal
+    created_date: datetime
+    updated_date: datetime
+```
+
+A nullable column is `X | None`; a column the database fills itself (a server default, an
+identity, a computed column) is `NotRequired`. To SQLAlchemy a record is a plain `dict`, so it
+costs nothing at run time. To mypy it is the table's shape, and that is the point: a mapping
+that leaves a column out, misspells one, adds one the table does not have, or gives one the
+wrong type - a `str` where the converter's column wants a `Currency` - is a type error, and so
+is reading a key the record does not have.
+
+A schema written by hand writes its records by hand, in the same style, next to its tables:
+
+```python
+WALLETS = Table(
+    "wallets",
+    metadata,
+    Column("id", uuid_column(), primary_key=True),
+    Column("version", BigInteger, nullable=False),
+    ...
+)
+
+
+class WalletsRecord(TypedDict):
+    id: UUID
+    version: int
+    ...
+```
 
 ## Write the mapping
 
-Every repository writes `to_row` and `from_row`. A repository without them **cannot be
-created** - the mistake shows at startup, not on the first request:
+Every repository writes `to_record` and `from_record`, typed by its record. A repository without
+them **cannot be created** - the mistake shows at startup, not on the first request:
 
 ```
-WalletRepository cannot be created: from_row() and to_row() have not been written, and the
+WalletRepository cannot be created: from_record() and to_record() have not been written, and the
 mapping between a row and a model is not guessed here.
 ```
 
-Where the names line up - which is most of the time, because a dataclass already knows its own
-fields - that is two lines saying so:
+Written out, the two say every column once, and mypy checks each against the record:
 
 ```python
-def to_row(self, wallet: Wallet) -> dict[str, Any]:
+def to_record(self, wallet: Wallet) -> WalletsRecord:
+    return {
+        "id": wallet.id.value,
+        "version": wallet.version,
+        "state": wallet.state.name,
+        "owner_id": wallet.owner_id,
+        "currency": wallet.currency,
+        "balance": wallet.balance,
+        "created_date": wallet.created_date,
+        "updated_date": wallet.updated_date or wallet.created_date,
+    }
+
+def from_record(self, record: WalletsRecord) -> Wallet:
+    return Wallet(
+        id=ShardedId[Wallet](record["id"]),
+        version=record["version"],
+        state=WalletState[record["state"]],
+        owner_id=record["owner_id"],
+        currency=record["currency"],
+        balance=record["balance"],
+        created_date=record["created_date"],
+        updated_date=record["updated_date"],
+    )
+```
+
+`from_record` is handed the row read by column name - a result row's mapping, or, where an insert
+or update has no `RETURNING`, the record `to_record` wrote. Every read the framework does hands
+it the same: `find`, `get`, `find_where`, `all`, a read across shards, and a query of your own
+ended with `.fetch(self.from_record)`.
+
+Where the names line up - which is most of the time, because a dataclass already knows its own
+fields - that can be two lines instead:
+
+```python
+def to_record(self, wallet: Wallet) -> WalletsRecord:
     return self.columns_by_field_name(wallet)
 
-def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
-    return self.model_by_field_name(row)
+def from_record(self, record: WalletsRecord) -> Wallet:
+    return self.model_by_field_name(record)
 ```
 
 `columns_by_field_name` turns a typed id into its value and an enum into its name; every other
 value - a `datetime` included - goes to the column exactly as the model holds it, and
 `model_by_field_name` hands a time back exactly as the driver read it. No zone is added, removed
 or moved ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)).
+The two are built from the dataclass's fields at run time, so mypy takes their record on trust;
+the mapping written out key by key is the one it checks.
 
-Where a name or a shape differs, write the mapping out instead. `to_row` and `from_row` are
-plain `def` in both modes - mapping waits on nothing.
+`to_record` and `from_record` are plain `def` in both modes - mapping waits on nothing.
 
-**This was the default until `EKB-0217`, and being the default is what made it wrong.** Rename a
-column without renaming the field and the mapping silently stopped matching - no error, no
-warning, a repository that had quietly stopped round-tripping. The two lines are the difference between a mapping somebody chose and one nobody
-can find.
+**By name was the default until `EKB-0217`, and being the default is what made it wrong.**
+Rename a column without renaming the field and the mapping silently stopped matching - no
+error, no warning, a repository that had quietly stopped round-tripping. The two lines are the
+difference between a mapping somebody chose and one nobody can find.
 
 What you still do not write is the *bridge*: you do not list every column twice.
 `columns_by_field_name` is written once in the framework rather than once per repository, because
@@ -262,7 +341,7 @@ def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         WALLETS.c.state != WalletState.DELETED.name,
     )
     with self.readonly_db() as conn:
-        return conn.rows(statement).fetch(self.from_row)
+        return conn.rows(statement).fetch(self.from_record)
 ```
 
 **Async**
@@ -274,11 +353,14 @@ async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         WALLETS.c.state != WalletState.DELETED.name,
     )
     async with self.readonly_db() as conn:
-        return (await conn.rows(statement)).fetch(self.from_row)
+        return (await conn.rows(statement)).fetch(self.from_record)
 ```
 
 `conn.rows(statement)` hands back a `FetchResult`, and each of its terminals takes the mapper -
-so the mapping is the last thing you read.
+so the mapping is the last thing you read. The mapper is handed each row **read by column
+name** - `row["currency"]` - which is what `from_record` takes. Its own parameter says which
+record it expects; the statement is not checked against it, so select the table's columns when
+you hand it `from_record`.
 
 | | |
 | --- | --- |
@@ -297,14 +379,14 @@ ignored by the first, an error to the second. Pick the one that matches your inv
 Each name says what it promises: `fetch_one` means exactly one, and a terminal that allows none
 or takes the first of several says so in its name.
 
-The mapper is any callable, not only `from_row`, so a projection is the same call with a
+The mapper is any callable, not only `from_record`, so a projection is the same call with a
 different argument:
 
 **Sync**
 
 ```python
 with self.readonly_db() as conn:
-    return conn.rows(select(WALLETS.c.currency).distinct()).fetch(lambda row: str(row.currency))
+    return conn.rows(select(WALLETS.c.currency).distinct()).fetch(lambda row: str(row["currency"]))
 ```
 
 **Async**
@@ -312,7 +394,7 @@ with self.readonly_db() as conn:
 ```python
 async with self.readonly_db() as conn:
     found = await conn.rows(select(WALLETS.c.currency).distinct())
-    return found.fetch(lambda row: str(row.currency))
+    return found.fetch(lambda row: str(row["currency"]))
 ```
 
 **A query with no rows to map still uses `execute`.** A count, a rowcount, an `EXISTS`, DDL -
@@ -341,7 +423,7 @@ Scatter-gather is a flattening comprehension over the shards:
 return [
     wallet
     for _, conn in self.readonly_dbs()
-    for wallet in conn.rows(statement).each(self.from_row)
+    for wallet in conn.rows(statement).each(self.from_record)
 ]
 ```
 
@@ -351,7 +433,7 @@ return [
 return [
     wallet
     async for _, conn in self.readonly_dbs()
-    for wallet in (await conn.rows(statement)).each(self.from_row)
+    for wallet in (await conn.rows(statement)).each(self.from_record)
 ]
 ```
 

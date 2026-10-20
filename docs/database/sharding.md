@@ -207,7 +207,7 @@ Opt a repository in by passing a `ShardingStrategy` to `super().__init__`. The b
 **Sync**
 
 ```python
-class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
@@ -217,7 +217,7 @@ class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
 **Async**
 
 ```python
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy()
@@ -260,7 +260,7 @@ def find_all_by_owner_beside(self, wallet_id: ShardedId[Wallet], owner_id: UUID)
     with self.readonly_db(key=wallet_id) as conn:          # that wallet's shard
         return conn.rows(
             select(WALLETS).where(WALLETS.c.owner_id == owner_id)
-        ).fetch(self.from_row)
+        ).fetch(self.from_record)
 ```
 
 **Async**
@@ -271,7 +271,7 @@ async def find_all_by_owner_beside(
 ) -> list[Wallet]:
     async with self.readonly_db(key=wallet_id) as conn:    # that wallet's shard
         found = await conn.rows(select(WALLETS).where(WALLETS.c.owner_id == owner_id))
-        return found.fetch(self.from_row)
+        return found.fetch(self.from_record)
 ```
 
 | accessor | connection |

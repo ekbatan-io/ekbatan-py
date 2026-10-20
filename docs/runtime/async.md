@@ -48,7 +48,7 @@ dispatch jobs are sync, and connect through the sync driver.
 Every class that waits on the database has an async twin in `ekbatan.aio`, named with the
 `Async` prefix; models, events, ids, the registries of actions and repositories, and config are
 shared; fan-out, dispatch, jobs, migrations and `schemagen` stay sync, on threads. The full list,
-side by side, is on [Sync or async?](../sync-or-async.md#what-differs). `to_row` and `from_row` stay plain
+side by side, is on [Sync or async?](../sync-or-async.md#what-differs). `to_record` and `from_record` stay plain
 `def`: mapping waits on nothing.
 
 ## A service, written async
@@ -58,9 +58,9 @@ from ekbatan.aio import AsyncAction, AsyncActionExecutor, AsyncDatabaseRegistry,
 from ekbatan.config_files import load_sharding_config
 
 
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
-    def to_row(self, wallet: Wallet) -> dict[str, Any]: ...          # plain def
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet: ...
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
+    def to_record(self, wallet: Wallet) -> WalletsRecord: ...          # plain def
+    def from_record(self, record: WalletsRecord) -> Wallet: ...
 
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
         return await self.find_where(WALLETS.c.owner_id == owner_id)

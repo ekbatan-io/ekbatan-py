@@ -88,7 +88,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     def deposit(self, amount: Decimal) -> "Wallet": ...
 
 
-class WalletRepository(ModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: DatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
@@ -114,7 +114,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     def deposit(self, amount: Decimal) -> "Wallet": ...
 
 
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     def __init__(self, registry: AsyncDatabaseRegistry) -> None:
         super().__init__(Wallet, WALLETS, registry)
 
@@ -131,7 +131,7 @@ class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
 
 Four kinds of thing, and each takes what it needs through `__init__`. The model is the same in
 both modes; in async mode the repository and the action are the `ekbatan.aio` kinds, and the
-repository's `to_row` and `from_row` stay plain `def`s. That is the only contract
+repository's `to_record` and `from_record` stay plain `def`s. That is the only contract
 the wiring below has to satisfy: **construct them in dependency order and hand each one its
 collaborators.** There is nothing else a container would have been doing for you.
 
