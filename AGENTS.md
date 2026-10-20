@@ -379,7 +379,10 @@ PostgreSQL `UUID`), which every Java example's build forces too. Four rules hold
 
 Generated schemas are **gitignored**, as Java's `build/generated-jooq` is, and each generated
 module fingerprints its migrations and checks that on import - because nothing in Python runs
-before `python -m yourapp`.
+before `python -m yourapp`. It also carries `SCHEMA_FORMAT` (`schemagen/_render.py`), and a
+module written by another format refuses to import. **Raise `SCHEMA_FORMAT` whenever the
+generated module's shape changes**, or a `schema.py` that the build does not rebuild (its rule
+depends only on the migrations) imports quietly without what the code now expects.
 
 ## Adding a feature
 

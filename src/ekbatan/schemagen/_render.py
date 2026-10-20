@@ -40,6 +40,11 @@ from ._types import Emitted, emit_type, lit, resolve, sqlalchemy_names, type_nam
 
 log = logging.getLogger("io.ekbatan.schemagen")
 
+#: The shape of the module this schemagen writes. Raised whenever that shape changes - typed
+#: records arrived with 2 - so a module written by an older schemagen fails on import instead of
+#: quietly lacking what the code beside it expects. A module from before the number has none.
+SCHEMA_FORMAT = 2
+
 #: The column helpers' DDL, per database: a forced timestamp column whose own type is not this
 #: is said to differ, because ``create_all`` from the module builds this instead.
 _TIMESTAMP_DDL = {
@@ -181,7 +186,13 @@ class _Writer:
             | {a for k, a in self.type_aliases.items() if k != exclude}
             | self.constants
             | self.record_names
-            | {"metadata", "view_metadata", "check_fingerprint", "MIGRATIONS_FINGERPRINT"}
+            | {
+                "metadata",
+                "view_metadata",
+                "check_fingerprint",
+                "MIGRATIONS_FINGERPRINT",
+                "SCHEMA_FORMAT",
+            }
         )
 
     def _plain_type(
@@ -570,6 +581,7 @@ def _reserved() -> set[str]:
             "view_metadata",
             "check_fingerprint",
             "MIGRATIONS_FINGERPRINT",
+            "SCHEMA_FORMAT",
         }
     )
 
@@ -697,6 +709,8 @@ from __future__ import annotations
 
 #: A hash of the migrations this file was generated from.
 MIGRATIONS_FINGERPRINT = "{migrations_fingerprint}"
+#: The shape of this file, as the schemagen that wrote it numbers it.
+SCHEMA_FORMAT = {SCHEMA_FORMAT}
 
 metadata = MetaData()
 
@@ -704,6 +718,6 @@ metadata = MetaData()
 
 # Nothing in Python runs before `python -m yourapp`, so this is where a stale schema is caught.
 # Hashing the migration files costs microseconds and needs no database.
-check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, {lit(module)})
+check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, {lit(module)}, SCHEMA_FORMAT)
 '''
     return text

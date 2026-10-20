@@ -685,6 +685,18 @@ Nothing in Python runs before `python -m yourapp`, so the module checks itself. 
 fingerprint of the migrations it came from, and checks it on import. A stale module raises
 `ValidationError` saying to regenerate, instead of failing later on a missing column.
 
+It also carries `SCHEMA_FORMAT`, the shape of module this schemagen writes. When a new ekbatan
+writes a different shape - the typed records, for one - a module written by the older schemagen
+refuses to import, even though its migrations have not changed:
+
+```
+schema.py was written by an older schemagen (format 1; this ekbatan writes 2). Regenerate it ...
+```
+
+A build that only regenerates when the migrations change, like the examples' `Makefile`, keeps
+the old file, so delete it and run `make schema` again. Unlike the fingerprint, this check runs in
+an installed wheel too: a module and an ekbatan that disagree are broken there as well.
+
 ## Notes
 
 What schemagen wants you to know is logged to `io.ekbatan.schemagen` as warnings, and the command

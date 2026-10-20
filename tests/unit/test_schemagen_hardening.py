@@ -932,7 +932,9 @@ def test_a_stale_module_s_error_names_both_fingerprints_and_the_command(tmp_path
     actual = schemagen.fingerprint(tmp_path / "migrations")
 
     with pytest.raises(ValidationError) as raised:
-        schemagen.check_fingerprint(str(tmp_path / "app" / "schema.py"), "0" * 16, "../migrations")
+        schemagen.check_fingerprint(
+            str(tmp_path / "app" / "schema.py"), "0" * 16, "../migrations", schemagen.SCHEMA_FORMAT
+        )
 
     message = str(raised.value)
     assert f"schema.py was generated from migrations fingerprinted {'0' * 16}" in message
@@ -999,4 +1001,41 @@ def test_the_built_in_forced_types_are_the_four_the_docs_list() -> None:
     ]
     assert all(
         f.include_expression is None and f.nullability == "ALL" for f in DEFAULT_FORCED_TYPES
+    )
+
+
+def test_a_module_from_before_the_format_number_fails_on_import_and_says_to_regenerate(
+    tmp_path: Path,
+) -> None:
+    """A schema.py written before typed records calls the check with three arguments. Its
+    migrations are unchanged, so a build that only regenerates on a migration change keeps it -
+    it must not import quietly without the records the repositories now name."""
+    with pytest.raises(ValidationError) as raised:
+        schemagen.check_fingerprint(str(tmp_path / "schema.py"), "0" * 16, "migrations")
+
+    message = str(raised.value)
+    assert "schema.py was written by an older schemagen (format 1" in message
+    assert f"this ekbatan writes {schemagen.SCHEMA_FORMAT}" in message
+    assert "make schema" in message
+
+
+def test_a_module_of_another_format_fails_even_when_its_migrations_are_not_shipped(
+    tmp_path: Path,
+) -> None:
+    """The migrations half is quiet in an installed wheel; the shape half is not, because a
+    module and an ekbatan that disagree are broken there too."""
+    with pytest.raises(ValidationError, match="older schemagen"):
+        schemagen.check_fingerprint(
+            str(tmp_path / "schema.py"), "0" * 16, None, schemagen.SCHEMA_FORMAT - 1
+        )
+
+
+def test_a_rendered_module_carries_the_current_format_and_passes_it_to_the_check() -> None:
+    from ekbatan.schemagen._render import SCHEMA_FORMAT
+
+    text = schemagen.render([], framework=[], migrations_fingerprint="x", module="migrations")
+
+    assert f"SCHEMA_FORMAT = {SCHEMA_FORMAT}\n" in text
+    assert (
+        'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "migrations", SCHEMA_FORMAT)' in text
     )

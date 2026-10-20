@@ -77,13 +77,14 @@ from ._config import (
     load_config,
 )
 from ._reflect import BOOKKEEPING, FRAMEWORK_TABLES, Reflected, Relation, reflect
-from ._render import render_module
+from ._render import SCHEMA_FORMAT, render_module
 from ._types import resolve
 
 __all__ = [
     "BOOKKEEPING",
     "DEFAULT_FORCED_TYPES",
     "FRAMEWORK_TABLES",
+    "SCHEMA_FORMAT",
     "ForcedType",
     "SchemagenConfig",
     "check_fingerprint",
@@ -162,12 +163,23 @@ def _dialect(name: str | None) -> Any:
     return make_url(f"{name}://").get_dialect()()
 
 
-def check_fingerprint(generated: str, expected: str, migrations: str | None) -> None:
-    """Refuse to import a module generated from different migrations than the ones on disk.
+def check_fingerprint(
+    generated: str, expected: str, migrations: str | None, schema_format: int | None = None
+) -> None:
+    """Refuse to import a module generated from different migrations than the ones on disk, or
+    by a schemagen that writes a different shape than this one.
 
-    Quiet when the migrations cannot be found - a wheel ships the generated module and not the
-    migrations, and an installed application must not fail to import because of that.
+    The migrations half is quiet when they cannot be found - a wheel ships the generated module
+    and not the migrations, and an installed application must not fail to import because of
+    that. The shape half is not: a module and an ekbatan that disagree fail either way.
     """
+    if schema_format != SCHEMA_FORMAT:
+        raise ValidationError(
+            f"{Path(generated).name} was written by an older schemagen (format "
+            f"{schema_format or 1}; this ekbatan writes {SCHEMA_FORMAT}). Regenerate it - "
+            f"`make schema`, or `python -m ekbatan.schemagen` - and delete it first if your build "
+            f"only regenerates when the migrations change."
+        )
     if migrations is None:
         return
     directory = (Path(generated).parent / migrations).resolve()

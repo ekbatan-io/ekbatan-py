@@ -31,6 +31,7 @@ from sqlalchemy.schema import CreateTable
 from backends import Backend
 from ekbatan.errors import ValidationError
 from ekbatan.schemagen import (
+    SCHEMA_FORMAT,
     ForcedType,
     SchemagenConfig,
     check_fingerprint,
@@ -678,7 +679,10 @@ def test_an_imported_type_leaves_the_stale_module_guard_working(
     _ledger(tmp_path, backend, dialect, forced)
     written = (tmp_path / "app" / "schema.py").read_text()
     assert f"from {user_types} import " in written, "the module imports the user's own"
-    assert 'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "../migrations")' in written
+    assert (
+        'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "../migrations", SCHEMA_FORMAT)'
+        in written
+    )
     (tmp_path / "migrations" / "V0099__more.sql").write_text(
         "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);"
     )
@@ -905,7 +909,10 @@ def test_the_command_reads_tool_ekbatan_schemagen_from_pyproject(
     written = (project / "src" / "app" / "schema.py").read_text()
     assert 'Column("state", Text(), nullable=False)' in written, "the file's forced type"
     assert "LEDGER" not in written, "the file's excludes"
-    assert 'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "migrations")' in written
+    assert (
+        'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "migrations", SCHEMA_FORMAT)'
+        in written
+    )
 
 
 def test_a_flag_wins_over_the_file(tmp_path: Path, backend: Backend, dialect: str) -> None:
@@ -1111,11 +1118,11 @@ def test_the_fingerprint_ignores_line_endings(tmp_path: Path) -> None:
 
 def test_the_check_is_quiet_when_the_migrations_are_not_shipped(tmp_path: Path) -> None:
     """A wheel carries the generated module and not the migration files."""
-    check_fingerprint(str(tmp_path / "schema.py"), "whatever", "migrations")
+    check_fingerprint(str(tmp_path / "schema.py"), "whatever", "migrations", SCHEMA_FORMAT)
 
 
 def test_the_check_is_skipped_rather_than_recording_a_nonsense_path(tmp_path: Path) -> None:
-    check_fingerprint(str(tmp_path / "schema.py"), "whatever", None)
+    check_fingerprint(str(tmp_path / "schema.py"), "whatever", None, SCHEMA_FORMAT)
 
 
 def test_a_missing_migration_directory_says_so(tmp_path: Path) -> None:
