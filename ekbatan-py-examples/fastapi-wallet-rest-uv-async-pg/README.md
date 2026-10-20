@@ -84,8 +84,8 @@ Built with **uv**. The same project with [pip and setuptools](../fastapi-wallet-
 | the jobs | sync: db-scheduler, and fan-out, dispatch and `PayStipendJob`, on its threads; the stipend's work is a coroutine, run on the handler loop with `loop.run(...)` (`jobs.py`) |
 | migrations, `schemagen` | sync, through psycopg |
 
-`to_row` and `from_row` stay plain functions - mapping waits on nothing - written in each
-repository, as in the sync twin.
+`to_record` and `from_record` stay plain functions - mapping waits on nothing - written in
+each repository, as in the sync twin.
 
 ## One config file, two drivers
 
@@ -144,6 +144,20 @@ and schemagen writes these two lines into `schema.py`:
 ```python
 Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
 Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
+```
+
+and, in the records beside the tables, the converters' own types - so a repository's
+`to_record` that hands the table a plain string where a `Currency` belongs is a mypy error:
+
+```python
+class AlertsRecord(TypedDict):
+    ...
+    recipient: EmailAddress
+
+
+class WalletsRecord(TypedDict):
+    ...
+    currency: Currency
 ```
 
 - **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A

@@ -5,11 +5,21 @@ generated - `python -m ekbatan.schemagen` starts a container, runs the migration
 reflects the result - so the Python and the database cannot drift.
 `fastapi_wallet_rest_pg` is the example that does it that way.
 
+Each table has its record beside it - `WALLETS` and `WalletsRecord` - written by hand here as
+schemagen writes it: a `TypedDict` with a key per column, typed as the column reads, `| None`
+where the column may be NULL. It is what a repository's `to_record` returns and `from_record`
+takes, so mypy checks the mapping against the table. To SQLAlchemy it is a plain `dict`.
+
 The framework's own tables are built rather than transcribed: their shape is a contract that a
 Debezium connector or another service binds to, so there is one definition to be right about.
 """
 
 from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from typing import TypedDict
+from uuid import UUID
 
 from sqlalchemy import CHAR, BigInteger, Column, MetaData, Numeric, String, Table, Text
 
@@ -36,6 +46,20 @@ WALLETS = Table(
     Column("updated_date", timestamp_column(), nullable=False),
 )
 
+
+class WalletsRecord(TypedDict):
+    """A row of `wallets`: what `to_record` writes and `from_record` reads."""
+
+    id: UUID
+    version: int
+    state: str
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+    created_date: datetime
+    updated_date: datetime
+
+
 ALERTS = Table(
     "alerts",
     metadata,
@@ -47,9 +71,30 @@ ALERTS = Table(
     Column("message", Text, nullable=False),
 )
 
+
+class AlertsRecord(TypedDict):
+    """A row of `alerts`."""
+
+    id: UUID
+    version: int
+    state: str
+    wallet_id: UUID
+    recipient: str
+    message: str
+
+
 #: The outbox, the local handler's queue, and the scheduler's table.
 EVENTS = outbox_table(metadata)
 EVENT_NOTIFICATIONS = notifications_table(metadata)
 SCHEDULED_TASKS = scheduled_tasks_table(metadata)
 
-__all__ = ["ALERTS", "EVENTS", "EVENT_NOTIFICATIONS", "SCHEDULED_TASKS", "WALLETS", "metadata"]
+__all__ = [
+    "ALERTS",
+    "EVENTS",
+    "EVENT_NOTIFICATIONS",
+    "SCHEDULED_TASKS",
+    "WALLETS",
+    "AlertsRecord",
+    "WalletsRecord",
+    "metadata",
+]

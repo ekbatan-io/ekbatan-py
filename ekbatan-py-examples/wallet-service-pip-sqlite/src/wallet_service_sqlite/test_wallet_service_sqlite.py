@@ -322,7 +322,8 @@ def test_alerts_are_found_by_the_wallet_they_are_about(service):
 
 
 def test_the_repository_writes_its_row_mapping(service):
-    """Every repository implements `to_row` and `from_row`, as of `EKB-0217`.
+    """Every repository implements `to_record` and `from_record`, as of `EKB-0217`, typed by
+    the table's record.
 
     This test used to assert the opposite - that neither was written, because the mapping was
     by field name unless you said otherwise. That default was the one piece of magic left in
@@ -331,8 +332,10 @@ def test_the_repository_writes_its_row_mapping(service):
     """
     from .repository import WalletRepository
 
-    assert "from_row" in vars(WalletRepository), "the mapping is written, not inherited"
-    assert "to_row" in vars(WalletRepository)
+    assert "from_record" in vars(WalletRepository), "the mapping is written, not inherited"
+    assert "to_record" in vars(WalletRepository)
+    hints = WalletRepository.from_record.__annotations__
+    assert hints["record"] == "WalletsRecord", "it takes the table's record"
 
     wallet = a_wallet(service, "3.00")
     assert service.wallets.get(wallet.id).balance == Decimal("3.0000")

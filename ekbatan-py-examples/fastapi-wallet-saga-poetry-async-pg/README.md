@@ -153,6 +153,20 @@ Column("step", converted(VARCHAR(length=24), StepNameConverter()), nullable=Fals
 Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
 ```
 
+and, in the records beside the tables, the converters' own types - so a repository's
+`to_record` that hands the table a plain string where a `Currency` belongs is a mypy error:
+
+```python
+class TransferStepsRecord(TypedDict):
+    ...
+    step: StepName
+
+
+class WalletsRecord(TypedDict):
+    ...
+    currency: Currency
+```
+
 - **Picked by type.** Every `CHAR(3)` column is a currency code. A wallet's `currency` is a
   `Currency`, which takes only three capital letters; the destination check in step two compares
   its code with the one the transfer's event carries.

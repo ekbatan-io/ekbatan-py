@@ -2,17 +2,15 @@
 
 **All async.** The requests and the handlers both run on `ekbatan.aio`, so every repository here
 is an async one: every read and write is awaited. The handlers' wallets and steps go through the
-same classes, built over the handlers' own registry. `to_row` and `from_row` stay plain
+same classes, built over the handlers' own registry. `to_record` and `from_record` stay plain
 functions - mapping waits on nothing.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, select
+from sqlalchemy import select
 
 from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
 from ekbatan.clock import Clock
@@ -21,10 +19,10 @@ from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
 from .model import StepName, TransferStep, Wallet, WalletState
-from .schema import TRANSFER_STEPS, WALLETS
+from .schema import TRANSFER_STEPS, WALLETS, TransferStepsRecord, WalletsRecord
 
 
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     """Wallets, awaited, routed by the shard packed into each id."""
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
@@ -32,8 +30,8 @@ class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
         )
 
-    def to_row(self, wallet: Wallet) -> dict[str, Any]:
-        """Every column, named - the counterpart to Java's `toRecord`.
+    def to_record(self, wallet: Wallet) -> WalletsRecord:
+        """Every column, named - the counterpart to Java's `toRecord`, typed by the table's record.
 
         Two of the eight are conversions rather than copies, and each is a decision about how
         the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
@@ -57,26 +55,27 @@ class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
             "updated_date": wallet.updated_date or wallet.created_date,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+    def from_record(self, record: WalletsRecord) -> Wallet:
         """And back - the counterpart to Java's `fromRecord`.
 
-        A plain mapping rather than a row is how an insert without `RETURNING` rebuilds what it
-        just wrote, on a dialect that has none.
+        The framework hands it the row read by column name - or, where an insert has no
+        `RETURNING`, the record `to_record` just wrote.
         """
-        values = row._mapping if isinstance(row, Row) else row
         return Wallet(
-            id=ShardedId[Wallet](values["id"]),
-            version=values["version"],
-            state=WalletState[values["state"]],
-            owner_id=values["owner_id"],
-            currency=values["currency"],
-            balance=values["balance"],
-            created_date=values["created_date"],
-            updated_date=values["updated_date"],
+            id=ShardedId[Wallet](record["id"]),
+            version=record["version"],
+            state=WalletState[record["state"]],
+            owner_id=record["owner_id"],
+            currency=record["currency"],
+            balance=record["balance"],
+            created_date=record["created_date"],
+            updated_date=record["updated_date"],
         )
 
 
-class TransferStepRepository(AsyncEntityRepository[TransferStep, Id[TransferStep]]):
+class TransferStepRepository(
+    AsyncEntityRepository[TransferStep, TransferStepsRecord, Id[TransferStep]]
+):
     """The idempotency markers.
 
     Nothing in the saga reads these - the unique constraint does the work, and a read would
@@ -84,7 +83,7 @@ class TransferStepRepository(AsyncEntityRepository[TransferStep, Id[TransferStep
     a transfer, and so the tests can show that a replay wrote nothing.
     """
 
-    def to_row(self, step: TransferStep) -> dict[str, Any]:
+    def to_record(self, step: TransferStep) -> TransferStepsRecord:
         """Five columns. `step` goes in as the `StepName` it is: the column's converter in
         `schema.py` writes its name, and reads a `StepName` back. `state` is still written by
         hand, because the framework reads that column as text."""
@@ -96,14 +95,13 @@ class TransferStepRepository(AsyncEntityRepository[TransferStep, Id[TransferStep
             "step": step.step,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> TransferStep:
-        values = row._mapping if isinstance(row, Row) else row
+    def from_record(self, record: TransferStepsRecord) -> TransferStep:
         return TransferStep(
-            id=Id[TransferStep](values["id"]),
-            version=values["version"],
-            state=GenericState[values["state"]],
-            transfer_id=values["transfer_id"],
-            step=values["step"],
+            id=Id[TransferStep](record["id"]),
+            version=record["version"],
+            state=GenericState[record["state"]],
+            transfer_id=record["transfer_id"],
+            step=record["step"],
         )
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
@@ -117,9 +115,9 @@ class TransferStepRepository(AsyncEntityRepository[TransferStep, Id[TransferStep
         it has committed, which is exactly the lie the 202 exists to avoid telling.
 
         `conn.rows(...)` rather than `conn.execute(...)`, because these rows become objects.
-        The mapper is a lambda rather than `from_row`: this takes one column, not a whole row
+        The mapper is a lambda rather than `from_record`: this takes one column, not a whole row
         into a `TransferStep` - and the column's converter has already made it a `StepName`.
         """
         statement = select(TRANSFER_STEPS.c.step).where(TRANSFER_STEPS.c.transfer_id == transfer_id)
         async with self.db() as conn:
-            return (await conn.rows(statement)).fetch(lambda row: row.step)
+            return (await conn.rows(statement)).fetch(lambda row: row["step"])

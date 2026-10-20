@@ -105,6 +105,20 @@ Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=Fals
 Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
 ```
 
+and, in the records beside the tables, the converters' own types - so a repository's
+`to_record` that hands the table a plain string where a `Currency` belongs is a mypy error:
+
+```python
+class AlertsRecord(TypedDict):
+    ...
+    recipient: EmailAddress
+
+
+class WalletsRecord(TypedDict):
+    ...
+    currency: Currency
+```
+
 - **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A
   wallet's `currency` is a `Currency`, which takes only three capital letters: `"eur"` is
   refused.

@@ -6,18 +6,17 @@ no method below mentions a shard unless it is deliberately asking about one.
 
 **All async.** Every read and write is awaited. A read that names no shard asks every shard
 **at the same time** - `find_where`, `all`, `count` - so it costs about one shard's round trip
-rather than one per shard. `to_row` and `from_row` stay plain functions - mapping waits on nothing.
+rather than one per shard. `to_record` and `from_record` stay plain functions - mapping waits on
+nothing.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, func, select
+from sqlalchemy import func, select
 
 from ekbatan import ShardIdentifier
 from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
@@ -27,10 +26,10 @@ from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
 from .model import Alert, Wallet, WalletState
-from .schema import ALERTS, WALLETS
+from .schema import ALERTS, WALLETS, AlertsRecord, WalletsRecord
 
 
-class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
     """Wallets, awaited, routed by the shard packed into each id."""
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
@@ -38,8 +37,8 @@ class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
             Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
         )
 
-    def to_row(self, wallet: Wallet) -> dict[str, Any]:
-        """Every column, named - the counterpart to Java's `toRecord`.
+    def to_record(self, wallet: Wallet) -> WalletsRecord:
+        """Every column, named - the counterpart to Java's `toRecord`, typed by the table's record.
 
         Two of the eight are conversions rather than copies, and each is a decision about how
         the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
@@ -63,22 +62,21 @@ class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
             "updated_date": wallet.updated_date or wallet.created_date,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Wallet:
+    def from_record(self, record: WalletsRecord) -> Wallet:
         """And back - the counterpart to Java's `fromRecord`.
 
-        A plain mapping rather than a row is how an insert without `RETURNING` rebuilds what it
-        just wrote, on a dialect that has none.
+        The framework hands it the row read by column name - or, where an insert has no
+        `RETURNING`, the record `to_record` just wrote.
         """
-        values = row._mapping if isinstance(row, Row) else row
         return Wallet(
-            id=ShardedId[Wallet](values["id"]),
-            version=values["version"],
-            state=WalletState[values["state"]],
-            owner_id=values["owner_id"],
-            currency=values["currency"],
-            balance=values["balance"],
-            created_date=values["created_date"],
-            updated_date=values["updated_date"],
+            id=ShardedId[Wallet](record["id"]),
+            version=record["version"],
+            state=WalletState[record["state"]],
+            owner_id=record["owner_id"],
+            currency=record["currency"],
+            balance=record["balance"],
+            created_date=record["created_date"],
+            updated_date=record["updated_date"],
         )
 
     async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
@@ -118,14 +116,14 @@ class WalletRepository(AsyncModelRepository[Wallet, ShardedId[Wallet]]):
         return {shard: task.result() for shard, task in asked.items()}
 
 
-class AlertRepository(AsyncEntityRepository[Alert, Id[Alert]]):
+class AlertRepository(AsyncEntityRepository[Alert, AlertsRecord, Id[Alert]]):
     """Alerts. Their ids carry no shard, so they are all on the default shard, and are looked up
     by wallet."""
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
         super().__init__(Alert, ALERTS, registry, clock=clock)
 
-    def to_row(self, alert: Alert) -> dict[str, Any]:
+    def to_record(self, alert: Alert) -> AlertsRecord:
         """`recipient` is an `EmailAddress` both ways; its converter in `schema.py` does the
         text."""
         return {
@@ -137,15 +135,14 @@ class AlertRepository(AsyncEntityRepository[Alert, Id[Alert]]):
             "message": alert.message,
         }
 
-    def from_row(self, row: Row[Any] | Mapping[str, Any]) -> Alert:
-        values = row._mapping if isinstance(row, Row) else row
+    def from_record(self, record: AlertsRecord) -> Alert:
         return Alert(
-            id=Id[Alert](values["id"]),
-            version=values["version"],
-            state=GenericState[values["state"]],
-            wallet_id=ShardedId[Wallet](values["wallet_id"]),
-            recipient=values["recipient"],
-            message=values["message"],
+            id=Id[Alert](record["id"]),
+            version=record["version"],
+            state=GenericState[record["state"]],
+            wallet_id=ShardedId[Wallet](record["wallet_id"]),
+            recipient=record["recipient"],
+            message=record["message"],
         )
 
     async def find_for_wallet(self, wallet_id: ShardedId[Wallet]) -> list[Alert]:

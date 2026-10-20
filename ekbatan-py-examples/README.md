@@ -126,6 +126,10 @@ they were features:
   which is what Java's `withIncludeExpression` does.
 - **It normalises dialect quirks.** MariaDB reflects a bigint as `BIGINT(display_width=20)`;
   emitted verbatim that module does not even import.
+- **It writes a typed record beside each table** - `WalletsRecord` beside `WALLETS`, a
+  `TypedDict` with a key per column, typed as the column reads (a converter's column as the
+  converter's own class). Each repository's `to_record` returns it and `from_record` takes it,
+  so mypy checks every mapping against the table - the SQLite examples write theirs by hand.
 
 Each generating example also has **two forced types of its own**, so a reader sees a converter
 end to end: plain text in the table, a small class of the app's own in Python. One rule picks
