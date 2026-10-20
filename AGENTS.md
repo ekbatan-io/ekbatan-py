@@ -173,7 +173,12 @@ stored" is its section on the rule.
 Java binds it to a `ScopedValue`. A `ContextVar` is per-thread *and* per-async-task, so the same
 mechanism works under a threaded server and an asyncio one. Work handed to a pool from inside a
 unit of work does **not** inherit it - which is correct, and is pinned by
-`tests/integration/test_concurrency.py`.
+`tests/integration/test_concurrency.py`. But `asyncio.to_thread` copies the context into its
+thread, so **a sync transaction records the thread that opened it, and any other thread that
+finds it gets `TransactionThreadError`** (`tests/integration/test_transaction_threads.py`). Never
+share one sync connection between threads, and never quietly swap in another connection: the
+work was meant to be inside the transaction. Async tasks started inside an async transaction do
+share it - they take turns on one thread's connection.
 
 ### Two modes: sync and async are both first-class
 

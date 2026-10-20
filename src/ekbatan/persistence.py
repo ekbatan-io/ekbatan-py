@@ -7,12 +7,15 @@ session, connection or context threaded through its arguments.
 The ambient transaction lives in a :class:`~contextvars.ContextVar`, which is per-thread and
 per-async-task at once. Work handed to a pool from inside a transaction does not inherit it,
 which is the correct answer: another thread is another connection, and quietly sharing one
-would corrupt both.
+would corrupt both. A thread that *does* inherit it - ``asyncio.to_thread`` copies the caller's
+context - is refused with :class:`~ekbatan.errors.TransactionThreadError`: a sync transaction
+belongs to the thread that opened it.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar, Token
@@ -26,7 +29,7 @@ from ._logtext import java_list, java_shard, java_shard_pair
 from ._tracing import Span, span
 from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from .config import _unknown_shard_policy as _policy
-from .errors import ValidationError
+from .errors import TransactionThreadError, ValidationError
 from .fetching import Db, FetchResult
 from .sharding import ShardIdentifier
 
@@ -68,6 +71,34 @@ def _open() -> Mapping[object, Any]:
 def _join(manager: object, conn: Any) -> Token[Mapping[object, Any] | None]:
     """Make ``conn`` the ambient transaction of ``manager`` until the token is reset."""
     return _ambient.set({**_open(), manager: conn})
+
+
+@dataclass(frozen=True, slots=True)
+class _Owned:
+    """A sync transaction's connection, and the thread that opened it.
+
+    The context it lives in is copied into a new thread by ``asyncio.to_thread``, so being
+    found is not enough: only the opening thread may use it. Async transactions need none of
+    this - their tasks share one thread and take turns on the connection.
+    """
+
+    conn: Db
+    thread: int
+
+
+def _owned_here(manager: TransactionManager) -> Db | None:
+    """``manager``'s open transaction, if this thread opened it; refused if another did."""
+    entry: _Owned | None = _open().get(manager)
+    if entry is None:
+        return None
+    if entry.thread != threading.get_ident():
+        raise TransactionThreadError(
+            f"the transaction on shard {manager.label} was opened by another thread, and a "
+            f"connection serves one thread at a time. Do this work in the thread that opened "
+            f"the transaction, or outside it. asyncio.to_thread, and helpers built on it, carry "
+            f"the open transaction into the new thread."
+        )
+    return entry.conn
 
 
 def _transaction_span(shard: ShardIdentifier) -> AbstractContextManager[Span]:
@@ -188,7 +219,7 @@ class TransactionManager:
         finds this transaction and joins it, without being handed anything.
         """
         with _transaction_span(self.shard), Db(self.primary) as conn:
-            token = _join(self, conn)
+            token = _join(self, _Owned(conn, threading.get_ident()))
             # Begin, commit and roll back by hand rather than through `with conn.begin()`. The
             # context manager rolls back for us, but it has nowhere to say that the rollback
             # *itself* failed - and SQLAlchemy then returns that connection to the pool and
@@ -229,8 +260,7 @@ class TransactionManager:
         transaction is kept is this module's business, so asking is a method rather than a
         reach into it from outside.
         """
-        current: Db | None = _open().get(self)
-        return current
+        return _owned_here(self)
 
     @contextmanager
     def connection(self, *, readonly: bool = False) -> Iterator[Db]:
@@ -254,7 +284,7 @@ class TransactionManager:
         A read taken inside a transaction ignores it and joins the transaction - it has to see
         the writes that transaction has already made, and a replica by definition has not.
         """
-        existing = _open().get(self)
+        existing = _owned_here(self)
         if existing is not None:
             yield existing
             return

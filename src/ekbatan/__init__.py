@@ -69,6 +69,7 @@ from .errors import (
     EntityNotFoundError,
     LockAcquisitionError,
     StaleRecordError,
+    TransactionThreadError,
     UnsupportedError,
     ValidationError,
 )
@@ -226,6 +227,7 @@ __all__ = [
     "SystemClock",
     "Transaction",
     "TransactionManager",
+    "TransactionThreadError",
     "TypedValue",
     "UnsupportedError",
     "ValidationError",

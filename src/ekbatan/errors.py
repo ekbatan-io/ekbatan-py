@@ -16,6 +16,7 @@ __all__ = [
     "EntityNotFoundError",
     "LockAcquisitionError",
     "StaleRecordError",
+    "TransactionThreadError",
     "UnsupportedError",
     "ValidationError",
 ]
@@ -100,3 +101,14 @@ class ConnectivityError(EkbatanError):
 
 class UnsupportedError(EkbatanError):
     """The operation is not available on this dialect."""
+
+
+class TransactionThreadError(EkbatanError, RuntimeError):
+    """A thread reached for a sync transaction that another thread opened.
+
+    A connection serves one thread at a time. Python's ``asyncio.to_thread`` - and any helper
+    built on it - copies the caller's context into the new thread, transaction included, so
+    that thread would otherwise use the very connection the opening thread is using. Refused,
+    rather than shared or quietly replaced by a connection of its own: work done there was
+    meant to be inside the transaction, and outside it a rollback would leave it behind.
+    """

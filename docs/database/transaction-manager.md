@@ -175,10 +175,23 @@ Two consequences follow, and both are the point rather than side effects:
   (`ThreadPoolExecutor.submit`) from inside a transaction does not inherit it, which is correct:
   another thread is another connection, and quietly sharing one would corrupt both. See
   [Concurrency](../runtime/concurrency.md).
-- **It does propagate to a task, and to `asyncio.to_thread`.** Both copy the caller's context,
-  so work started that way inside the transaction sees it open and uses its connection. In an
-  async transaction, statements from tasks then take turns on that one connection. Keep such
-  work inside the `with` block, and do not hand a sync transaction to `to_thread`.
+- **An async transaction is shared with the tasks started inside it.** A task copies the
+  caller's context, so `gather` or a `TaskGroup` inside `async with tm.transaction()` sees the
+  transaction, and their statements take turns on its one connection - all of it inside the
+  transaction. Keep such tasks inside the block: one still running after it ends finds the
+  connection closed.
+- **A sync transaction belongs to the thread that opened it.** `asyncio.to_thread`, and helpers
+  built on it, copy the caller's context into a new thread, transaction included. That thread
+  is refused with `TransactionThreadError` the moment it reaches for the transaction, rather
+  than sharing the connection - one connection serves one thread at a time - or quietly using
+  one of its own, which would leave its work behind on a rollback:
+
+  ```python
+  with tm.transaction():
+      asyncio.run(asyncio.to_thread(wallets.update, wallet))   # TransactionThreadError
+  ```
+
+  Do that work in the thread that opened the transaction, or outside it.
 
 What does *not* join is a read you route yourself. `db()` and `readonly_db()` open their own
 connections deliberately — see [Repositories](../database/repositories.md#picking-the-right-one).
