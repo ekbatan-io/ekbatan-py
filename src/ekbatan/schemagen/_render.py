@@ -33,6 +33,8 @@ from sqlalchemy.sql.elements import TextClause
 
 from ..errors import ValidationError
 from ._config import ForcedType, SchemagenConfig
+from ._records import Field, Unknowable, converter_user_type, python_type, record_name
+from ._records import render as render_record
 from ._reflect import FRAMEWORK_TABLES, Reflected, Relation
 from ._types import Emitted, emit_type, lit, resolve, sqlalchemy_names, type_names
 
@@ -70,6 +72,16 @@ class _Writer:
     helpers: set[str] = field(default_factory=set)
     aliases: dict[tuple[str, str], str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    #: Each relation's record: its name and its keys, by the relation's key.
+    records: dict[str, tuple[str, list[Field]]] = field(default_factory=dict)
+    #: The record names, known before any table is written so a user type cannot take one.
+    record_names: set[str] = field(default_factory=set)
+    #: The names the module exports its tables under.
+    constants: set[str] = field(default_factory=set)
+    #: What the records' types import: (module, name) -> the name in the module.
+    type_aliases: dict[tuple[str, str], str] = field(default_factory=dict)
+    #: Each column's Python type, by (relation key, column name), set as its type is written.
+    py_types: dict[tuple[str, str], object] = field(default_factory=dict)
 
     # -- columns ---------------------------------------------------------------------------
 
@@ -98,15 +110,79 @@ class _Writer:
         ]
         forced = matching[0] if matching else None
         where = f"{relation.key}.{column.name}"
+        record_key = (relation.key, column.name)
         if forced is None or forced.converter is None:
-            return self._plain_type(where, column, forced, raw, is_json)
+            source = self._plain_type(where, column, forced, raw, is_json)
+            self.py_types[record_key] = self.python_type_of(where, self.built(source))
+            return source
         # A converter keeps the column's own type and wraps itself around it: the type the
         # column would have without this forced type - the next one that matches and is not a
         # converter, else the type table's.
         inner = next((c for c in matching if c.converter is None), None)
         impl = self._plain_type(where, column, inner, raw, is_json)
         self.helpers.add("converted")
-        return f"converted({impl}, {self.use(resolve(forced))})"
+        converter = self.use(resolve(forced))
+        # The record holds what the converter gives, read off the converter the module builds.
+        self.py_types[record_key] = converter_user_type(self.built(converter), forced.converter)
+        return f"converted({impl}, {converter})"
+
+    def built(self, source: str) -> Any:
+        """What a piece of the module's source builds, with the names the module imports."""
+        import importlib
+
+        from .. import schema as framework_schema
+        from ._types import _namespace
+
+        names = dict(_namespace())
+        names.update(
+            {
+                n: getattr(framework_schema, n)
+                for n in ("uuid_column", "json_column", "timestamp_column", "converted", "sql_type")
+            }
+        )
+        for (module, attribute), alias in self.aliases.items():
+            names[alias] = getattr(importlib.import_module(module), attribute)
+        return eval(source, {"__builtins__": {}}, names)
+
+    def python_type_of(self, where: str, column_type: Any) -> object:
+        """The column's Python type for its record; ``Any``, with a note, where nothing says."""
+        try:
+            return python_type(column_type)
+        except Unknowable as why:
+            self.notes.append(
+                f"{where}: {why}, so its record types it Any. A converter gives it a type of "
+                "your own"
+            )
+            return Any
+
+    def type_name(self, module: str, attribute: str) -> str:
+        """The name a record's type is written under, importing it - aliased when the name is
+        already the module's: a SQLAlchemy type, a helper, a table, a record, a user type."""
+        key = (module, attribute)
+        if key in self.aliases:
+            return self.aliases[key]
+        if module == "ekbatan.schema" and (
+            attribute in self.helpers or attribute not in self.taken_names(exclude=key)
+        ):
+            self.helpers.add(attribute)
+            return attribute
+        alias = self.type_aliases.get(key)
+        if alias is None:
+            clash = attribute in self.taken_names(exclude=key)
+            alias = f"{module.replace('.', '_')}_{attribute}" if clash else attribute
+            self.type_aliases[key] = alias
+        return alias
+
+    def taken_names(self, *, exclude: tuple[str, str]) -> set[str]:
+        return (
+            self.sqlalchemy
+            | self.helpers
+            | set(self.aliases.values())
+            | {a for k, a in self.type_aliases.items() if k != exclude}
+            | self.constants
+            | self.record_names
+            | {"metadata", "view_metadata", "check_fingerprint", "MIGRATIONS_FINGERPRINT"}
+        )
 
     def _plain_type(
         self,
@@ -325,7 +401,41 @@ class _Writer:
         if relation.schema is not None:
             lines.append(f"    schema={q(relation.schema)},")
         lines.append(")")
+        self.records[relation.key] = (
+            self.record_of(relation),
+            [
+                Field(
+                    c.name,
+                    self.py_types[(relation.key, c.name)],
+                    nullable=bool(c.nullable),
+                    optional=self._filled_by_database(c),
+                )
+                for c in table.columns
+            ],
+        )
         return ["\n".join(lines)]
+
+    def record_of(self, relation: Relation) -> str:
+        base = (
+            relation.table.name
+            if relation.schema is None
+            else f"{relation.schema}_{relation.table.name}"
+        )
+        return record_name(base)
+
+    @staticmethod
+    def _filled_by_database(column: Column[Any]) -> bool:
+        """Whether an insert may leave the column out: the database fills it."""
+        if column.computed is not None or column.identity is not None:
+            return True
+        if column.autoincrement is True:
+            return True
+        if column.server_default is None:
+            return False
+        arg = getattr(column.server_default, "arg", None)
+        sql = arg.text if isinstance(arg, TextClause) else arg
+        # MariaDB reports a default of NULL for every nullable column; it is no default.
+        return not (isinstance(sql, str) and sql.strip().upper() == "NULL")
 
     def _custom_pk_name(self, relation: Relation) -> bool:
         pk = relation.table.primary_key
@@ -404,6 +514,18 @@ class _Writer:
         from .. import schema as framework_schema
 
         built = getattr(framework_schema, helper)(MetaData())
+        self.records[relation.key] = (
+            self.record_of(relation),
+            [
+                Field(
+                    c.name,
+                    self.python_type_of(f"{relation.key}.{c.name}", c.type),
+                    nullable=bool(c.nullable),
+                    optional=self._filled_by_database(c),
+                )
+                for c in built.columns
+            ],
+        )
         expected = {c.name for c in built.columns}
         found = {c.name for c in relation.table.columns}
         if found and expected != found:
@@ -479,17 +601,39 @@ def render_module(
             )
         names[name] = relation
 
-    generated = {r.key for r in reflected.tables} | {r.key for r in reflected.framework}
-    body: list[str] = []
-    for relation in reflected.tables:
-        body += writer.table(relation, generated)
-    for relation in reflected.framework:
-        body.append("\n".join(writer.framework(relation)))
-    views: list[str] = []
-    for relation in reflected.views:
-        views += writer.table(relation, generated)
+    # Each table's record, `WalletsRecord` - named before any table is written, so that a user
+    # type or converter that happens to share the name is imported under an alias instead.
+    records: dict[str, Relation] = {}
+    for relation in relations:
+        record = writer.record_of(relation)
+        if record in records:
+            raise ValidationError(
+                f"{relation.key} and {records[record].key} would both have the record "
+                f"{record}; exclude one with `excludes`"
+            )
+        records[record] = relation
+    writer.record_names = set(records)
+    writer.constants = set(names)
 
-    exported = sorted(names) + ["metadata"] + (["view_metadata"] if views else [])
+    generated = {r.key for r in reflected.tables} | {r.key for r in reflected.framework}
+    tables: list[tuple[Relation, str]] = []
+    for relation in reflected.tables:
+        tables += [(relation, t) for t in writer.table(relation, generated)]
+    for relation in reflected.framework:
+        tables.append((relation, "\n".join(writer.framework(relation))))
+    view_tables: list[tuple[Relation, str]] = []
+    for relation in reflected.views:
+        view_tables += [(relation, t) for t in writer.table(relation, generated)]
+
+    # The records last, once every name the tables import is known.
+    def with_record(relation: Relation, text: str) -> str:
+        record, fields = writer.records[relation.key]
+        return f"{text}\n\n\n{render_record(record, relation.key, fields, writer.type_name)}"
+
+    body = [with_record(r, t) for r, t in tables]
+    views = [with_record(r, t) for r, t in view_tables]
+
+    exported = [*sorted(names), *sorted(records), "metadata"] + (["view_metadata"] if views else [])
     text = _module_text(writer, body, views, exported, migrations_fingerprint, module)
     return text, reflected.notes + writer.notes
 
@@ -514,10 +658,15 @@ def _module_text(
         imports.append(f"from ekbatan.schema import {', '.join(sorted(writer.helpers))}")
     for (source, name), alias in sorted(writer.aliases.items()):
         imports.append(f"from {source} import {name}" + (f" as {alias}" if alias != name else ""))
+    by_module: dict[str, list[str]] = {}
+    for (source, name), alias in sorted(writer.type_aliases.items()):
+        by_module.setdefault(source, []).append(name + (f" as {alias}" if alias != name else ""))
+    for source, names in sorted(by_module.items()):
+        imports.append(f"from {source} import {', '.join(names)}")
     imports.append("from ekbatan.schemagen import check_fingerprint")
 
     def joined(blocks: Iterable[str]) -> str:
-        return "".join(f"{b}\n\n" for b in blocks)
+        return "".join(f"{b}\n\n\n" for b in blocks)
 
     view_part = ""
     if views:
@@ -531,6 +680,11 @@ def _module_text(
 Generated by `python -m ekbatan.schemagen`. **Do not edit.** Change a migration and regenerate;
 the fingerprint below makes a stale copy of this file fail loudly rather than disagree quietly
 with the database it claims to describe.
+
+Each table has its record beside it, `WALLETS` and `WalletsRecord`: a `TypedDict` with a key
+per column, typed as the column reads - a converter's column as the converter's own type. It
+is what a repository's `to_record` returns and `from_record` takes, and to SQLAlchemy it is a
+plain `dict`.
 
 The framework's own tables are built from `ekbatan.schema` rather than reflected, because their
 shape is a contract a CDC connector and other ports bind to - there is one definition to be

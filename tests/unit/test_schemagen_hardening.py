@@ -453,7 +453,7 @@ def user_types(tmp_path: Path) -> Iterator[str]:
         "class MoneyConverter:\n"
         "    def __init__(self, places=2):\n"
         "        self.places = places\n"
-        "    def from_db(self, value):\n"
+        "    def from_db(self, value) -> object:\n"
         "        return value\n"
         "    def to_db(self, value):\n"
         "        return value\n"

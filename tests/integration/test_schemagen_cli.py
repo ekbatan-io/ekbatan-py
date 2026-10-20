@@ -25,6 +25,7 @@ import pytest
 
 import ekbatan.schemagen as schemagen
 from backends import IMAGES, docker_is_available
+from ekbatan.schemagen._records import record_name
 from schemagen_support import load, migrations
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -82,7 +83,16 @@ def test_the_file_alone_is_enough(
     assert (code, err) == (0, "")
     assert out == f"wrote {Path('src/app/schema.py')}\n"
     module = load(project / "src" / "app" / "schema.py")
-    assert module.__all__ == ["LEDGER", "WIDGETS", "WIDGET_NAMES", "metadata", "view_metadata"]
+    assert module.__all__ == [
+        "LEDGER",
+        "WIDGETS",
+        "WIDGET_NAMES",
+        "LedgerRecord",
+        "WidgetNamesRecord",
+        "WidgetsRecord",
+        "metadata",
+        "view_metadata",
+    ]
 
 
 def test_migrations_and_out_flags_win_over_the_file(
@@ -97,7 +107,7 @@ def test_migrations_and_out_flags_win_over_the_file(
     )
 
     assert (code, printed) == (0, f"wrote {out}\n")
-    assert load(out).__all__ == ["GADGETS", "metadata"]
+    assert load(out).__all__ == ["GADGETS", "GadgetsRecord", "metadata"]
     assert not (project / "src" / "app" / "schema.py").exists()
 
 
@@ -160,7 +170,12 @@ def test_table_flags_win_over_the_file(
 
     assert _main(project, monkeypatch, capsys, *flags)[0] == 0
 
-    assert load(project / "src" / "app" / "schema.py").__all__ == exported
+    # The tables the flags chose, each with its record.
+    exported_now = load(project / "src" / "app" / "schema.py").__all__
+    assert [n for n in exported_now if not n.endswith("Record")] == exported
+    assert [n for n in exported_now if n.endswith("Record")] == sorted(
+        record_name(n.lower()) for n in exported if n.isupper()
+    )
 
 
 def test_no_default_forced_types_wins_over_the_file(
@@ -201,7 +216,7 @@ def test_the_file_s_forced_types_are_used_written_as_module_colon_class(
         "class Cents:\n"
         "    def __init__(self, places):\n"
         "        self.places = places\n"
-        "    def from_db(self, value):\n"
+        "    def from_db(self, value) -> object:\n"
         "        return value\n"
         "    def to_db(self, value):\n"
         "        return value\n"
@@ -502,5 +517,5 @@ def test_the_command_starts_migrates_and_removes_a_throwaway_database(
     written = out.read_text()
     for line in expected:
         assert line in written, written
-    assert load(out).__all__ == ["THINGS", "metadata"]
+    assert load(out).__all__ == ["THINGS", "ThingsRecord", "metadata"]
     assert _containers(session) == [], "the throwaway container is removed"

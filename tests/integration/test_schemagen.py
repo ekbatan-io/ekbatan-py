@@ -593,7 +593,7 @@ def inet6():
 class MoneyConverter:
     """A plain converter: no SQLAlchemy in it."""
 
-    def from_db(self, value):
+    def from_db(self, value: Decimal) -> Decimal:
         return value.quantize(Decimal("0.01"))
 
     def to_db(self, value):
@@ -851,7 +851,15 @@ def test_includes_and_excludes_choose_the_tables(
     )
 
     module = load(out)
-    assert sorted(module.__all__) == ["EVENTS", "LEDGER_ARCHIVE", "WIDGETS", "metadata"]
+    assert module.__all__ == [
+        "EVENTS",
+        "LEDGER_ARCHIVE",
+        "WIDGETS",
+        "EventsRecord",
+        "LedgerArchiveRecord",
+        "WidgetsRecord",
+        "metadata",
+    ]
 
 
 # -- the configuration file and the command line -------------------------------------------------

@@ -334,7 +334,7 @@ def user_types(tmp_path: Path) -> Iterator[Path]:
         "class MoneyConverter:\n"
         "    def __init__(self, places: int = 2):\n"
         "        self.places = places\n"
-        "    def from_db(self, value):\n"
+        "    def from_db(self, value) -> Decimal:\n"
         "        return value\n"
         "    def to_db(self, value):\n"
         "        return value\n\n"
@@ -633,7 +633,7 @@ def test_a_converter_named_like_a_sqlalchemy_type_is_aliased(
 ) -> None:
     (user_types / "clash.py").write_text(
         "class JSON:\n"
-        "    def from_db(self, value):\n"
+        "    def from_db(self, value) -> str:\n"
         "        return value\n"
         "    def to_db(self, value):\n"
         "        return value\n"

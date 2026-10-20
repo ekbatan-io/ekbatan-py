@@ -116,7 +116,7 @@ class TagConverter:
     def __init__(self, places=0):
         self.places = places
 
-    def from_db(self, value):
+    def from_db(self, value: str) -> Tag:
         return Tag(value, self.places)
 
     def to_db(self, value):
@@ -322,7 +322,7 @@ def test_each_forced_type_key_picks_exactly_the_columns_it_says(
     }
     _clean(written)
     module = load(out)
-    assert module.__all__ == ["GRID", "metadata"]
+    assert module.__all__ == ["GRID", "GridRecord", "metadata"]
     _rebuild(backend, module)
 
 
@@ -697,7 +697,7 @@ def test_a_table_named_with_a_leading_digit_is_exported_and_built(
     generate(source, out, url=fresh(backend, "digit"))
 
     module = load(out)
-    assert module.__all__ == ["T_2024_SALES", "metadata"]
+    assert module.__all__ == ["T_2024_SALES", "T2024SalesRecord", "metadata"]
     assert module.T_2024_SALES.name == "2024_sales"
     _rebuild(backend, module)
 
@@ -1058,7 +1058,7 @@ def test_a_stale_module_is_current_again_once_regenerated(
     written = generate(source, out, url=fresh(backend, "stale_b"))
 
     assert f'MIGRATIONS_FINGERPRINT = "{fingerprint(source)}"' in written
-    assert load(out).__all__ == ["A", "B", "metadata"]
+    assert load(out).__all__ == ["A", "B", "ARecord", "BRecord", "metadata"]
 
 
 def test_the_module_imports_in_a_fresh_interpreter(

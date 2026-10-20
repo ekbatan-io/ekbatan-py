@@ -28,7 +28,9 @@ Two rules that outlive any one dialect:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Protocol
 
 from sqlalchemy import (
@@ -49,6 +51,7 @@ from sqlalchemy.types import TypeDecorator, TypeEngine, UserDefinedType
 
 __all__ = [
     "Converter",
+    "JsonValue",
     "converted",
     "json_column",
     "notifications_table",
@@ -58,6 +61,18 @@ __all__ = [
     "timestamp_column",
     "uuid_column",
 ]
+
+
+#: What a JSON column reads back: an object, an array, text, a number, a boolean or ``None``.
+#:
+#: The type a generated record gives every ``json_column()`` (and every other JSON column). A
+#: number with a fraction reads as a ``Decimal`` on an engine this framework built - its JSON is
+#: read that way so nothing is lost - and as a ``float`` on one it did not, so both are here.
+#: Objects and arrays are ``Mapping`` and ``Sequence`` rather than ``dict`` and ``list`` so that a
+#: ``dict[str, Decimal]`` of your own can be written into one without a cast.
+type JsonValue = (
+    Mapping[str, JsonValue] | Sequence[JsonValue] | str | int | float | Decimal | bool | None
+)
 
 
 class _Timestamp(TypeDecorator[datetime]):

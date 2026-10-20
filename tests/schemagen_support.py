@@ -8,6 +8,7 @@ wrote. Nothing here imitates a step.
 from __future__ import annotations
 
 import ast
+import builtins
 import importlib.util
 import itertools
 import logging
@@ -87,12 +88,15 @@ def unused_and_undefined(text: str) -> tuple[set[str], set[str]]:
     defines - both empty for a module that imports exactly what it needs."""
     tree = ast.parse(text)
     imported: set[str] = set()
-    defined: set[str] = {"__file__"}
+    # The builtins a record's types name - `int`, `str`, `bytes` - are there without an import.
+    defined: set[str] = {"__file__", *dir(builtins)}
     for node in tree.body:
         if isinstance(node, ast.ImportFrom) and node.module != "__future__":
             imported |= {a.asname or a.name for a in node.names}
         elif isinstance(node, ast.Assign):
             defined |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        elif isinstance(node, ast.ClassDef):
+            defined.add(node.name)
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
     return imported - used, used - imported - defined
 

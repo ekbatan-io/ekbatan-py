@@ -9,16 +9,23 @@ For each database, one migration declares a column of every type below. Then, fo
 4. each case checks the type it was written as, that ``create_all`` built the column the
    migration built (or the documented one, where a forced helper builds its own), and that a
    value goes in and comes back - through the migrated database and the rebuilt one, and as a
-   ``WHERE`` that finds it.
+   ``WHERE`` that finds it;
+5. the table's record, ``TTypesRecord``, names each column with the type its value really comes
+   back as - read through the framework's own sync engine and its async one, so through every
+   driver either mode uses - and mypy accepts the whole module.
 
     uv run pytest tests/integration/test_schemagen_types.py --dialects=all
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
+import sys
+import types
+import typing
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -31,6 +38,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.dialects.postgresql import Range
 
 from backends import Backend
+from ekbatan.config import DataSourceConfig, split_login
 from ekbatan.schemagen import generate
 from schemagen_support import (
     column_sources,
@@ -412,7 +420,7 @@ def test_a_value_goes_in_and_comes_back(matrix: Matrix, case: Case, where: str) 
 
 
 def test_the_whole_module_imports_and_names_its_table(matrix: Matrix, dialect: str) -> None:
-    assert matrix.module.__all__ == ["T_TYPES", "metadata"]
+    assert matrix.module.__all__ == ["T_TYPES", "TTypesRecord", "metadata"]
     names = {c.name for c in CASES_BY_DIALECT[dialect]}
     assert set(matrix.module.T_TYPES.c.keys()) == {"pk", *names}
 
@@ -476,3 +484,105 @@ def test_what_is_outside_the_recommendation_is_said(matrix: Matrix, dialect: str
     for start in expected:
         assert any(n.startswith(start) for n in matrix.notes), (start, matrix.notes)
     assert all("always-utc" in n for n in matrix.notes if "TIMESTAMP" in n or "DATETIME" in n)
+
+
+# -- the record ---------------------------------------------------------------------------------
+
+
+def _holds(value: Any, hint: Any) -> bool:
+    """Whether a value read back is what the record's hint says - a runtime reading of the
+    hint, as far as each kind of hint goes."""
+    if hint is Any:
+        return True
+    if isinstance(hint, typing.TypeAliasType):
+        return _holds(value, hint.__value__)
+    origin, args = typing.get_origin(hint), typing.get_args(hint)
+    if origin is typing.Union or origin is types.UnionType:
+        return any(_holds(value, a) for a in args)
+    if hint is None or hint is types.NoneType:
+        return value is None
+    if origin is typing.Literal:
+        return value in args
+    if origin in (list, set, Sequence):
+        if not isinstance(value, origin) or isinstance(value, (str, bytes)):
+            return False
+        return all(_holds(v, args[0]) for v in value) if args else True
+    if origin in (dict, Mapping):
+        return isinstance(value, origin) and all(
+            _holds(k, args[0]) and _holds(v, args[1]) for k, v in value.items()
+        )
+    if origin is not None:  # Range[int], MultiRange[datetime]
+        if not isinstance(value, origin):
+            return False
+        bounds = [b for b in (getattr(value, "lower", None), getattr(value, "upper", None))]
+        return all(b is None or _holds(b, args[0]) for b in bounds)
+    return isinstance(value, hint)
+
+
+def _config(url: str) -> DataSourceConfig:
+    plain, username, password = split_login(url)
+    return DataSourceConfig(url=plain, username=username, password=password)
+
+
+def _read_back(url: str, table: Any, pk: int, row: dict[str, Any]) -> tuple[Any, Any]:
+    """Write the row through the framework's sync engine, and read it back through that and
+    through its async one."""
+    from ekbatan.aio.persistence import async_engine_for
+    from ekbatan.persistence import engine_for
+
+    config = _config(url)
+    sync = engine_for(config)
+    try:
+        with sync.begin() as connection:
+            connection.execute(insert(table).values({"pk": pk, **row}))
+            through_sync = connection.execute(select(table).where(table.c.pk == pk)).one()
+    finally:
+        sync.dispose()
+
+    async def read() -> Any:
+        engine = async_engine_for(config)
+        try:
+            async with engine.connect() as connection:
+                found = await connection.execute(select(table).where(table.c.pk == pk))
+                return found.one()
+        finally:
+            await engine.dispose()
+
+    return through_sync._mapping, asyncio.run(read())._mapping
+
+
+def test_the_record_names_every_column_with_the_type_it_reads_as(
+    matrix: Matrix, dialect: str
+) -> None:
+    """Every case's value, read back through the sync driver and the async one, is what
+    ``TTypesRecord`` says that column holds - the record is not a guess."""
+    # A TypedDict resolves its hints in its module as `sys.modules` has it; `load` took it out.
+    sys.modules[matrix.module.__name__] = matrix.module
+    try:
+        hints = typing.get_type_hints(matrix.module.TTypesRecord)
+    finally:
+        sys.modules.pop(matrix.module.__name__, None)
+    cases = CASES_BY_DIALECT[dialect]
+    assert set(hints) == {"pk", *(c.name for c in cases)}
+    row = {c.name: c.value for c in cases}
+    sync, async_ = _read_back(matrix.migrated, matrix.module.T_TYPES, 9_000_001, row)
+    wrong = {
+        (mode, c.name): (type(read[c.name]).__name__, hints[c.name])
+        for mode, read in (("sync", sync), ("async", async_))
+        for c in cases
+        if not _holds(read[c.name], hints[c.name])
+    }
+    assert wrong == {}, "read back as something the record does not say"
+    # And a column left NULL is allowed to be: every case column is nullable here.
+    assert all(_holds(None, hints[c.name]) for c in cases)
+
+
+def test_mypy_accepts_the_generated_module(matrix: Matrix) -> None:
+    """The module, records and all, type-checks under ``--strict``."""
+    from mypy import api
+
+    module = Path(matrix.module.__file__ or "")
+    stdout, stderr, status = api.run(
+        ["--strict", "--no-incremental", "--follow-imports=silent", str(module)]
+    )
+    assert status == 0, stdout + stderr
