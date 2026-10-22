@@ -886,11 +886,11 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
             # A sequence in another schema, drawn on by a default here (finding the schema's
             # own sequences is that schema's read).
             elsewhere = str(where) != (schema or current)
-            key = (None if str(where) == current else str(where), str(name))
-            if elsewhere and key in result.sequences:
+            drawn = (None if str(where) == current else str(where), str(name))
+            if elsewhere and drawn in result.sequences:
                 continue
             found_spec = SequenceSpec(
-                key[0],
+                drawn[0],
                 str(name),
                 None if data_type is None else str(data_type),
                 int(start),
@@ -902,7 +902,7 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
                 owned,
             )
             if elsewhere:
-                result.drawn_sequences[key] = found_spec
+                result.drawn_sequences[drawn] = found_spec
             else:
                 result.sequences[(schema, str(name))] = found_spec
 
