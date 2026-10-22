@@ -175,6 +175,14 @@ class Reflected:
     relation_kinds: dict[tuple[str | None, str], RelationKind] = field(default_factory=dict)
     #: Every sequence, by (schema, name).
     sequences: dict[tuple[str | None, str], SequenceSpec] = field(default_factory=dict)
+    #: A PostgreSQL column whose default draws on a sequence: the sequence's (schema, name) -
+    #: the schema ``None`` for the connection's own - and the default as the server prints it.
+    #: Reflection's own text qualifies an unqualified sequence with the *table's* schema, which
+    #: is wrong for a table in another schema drawing on one in the connection's own.
+    default_sequences: dict[ColumnKey, tuple[str | None, str, str]] = field(default_factory=dict)
+    #: The sequences such a default draws on in a schema not read, by (schema, name): declared
+    #: on the column with their options, as they are not module constants.
+    drawn_sequences: dict[tuple[str | None, str], SequenceSpec] = field(default_factory=dict)
     #: Indexes reflection skips (SQLite's on expressions), by (schema, table).
     extra_indexes: dict[tuple[str | None, str], list[IndexSpec]] = field(default_factory=dict)
     #: What the database holds that no module can say, by kind - "function", "trigger" - each
@@ -642,6 +650,8 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
         def rows(sql: str) -> list[Any]:
             return list(connection.execute(text(sql), params).all())
 
+        current = str(connection.execute(text("SELECT current_schema()")).scalar_one())
+
         for table, name, deferred in rows(
             f"SELECT c.relname, con.conname, con.condeferred {joined}"
             "AND con.contype IN ('p', 'u') AND con.condeferrable"
@@ -727,8 +737,8 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
             )
 
         for row in rows(
-            "SELECT s.sequencename, s.data_type::text, s.start_value, s.increment_by, "
-            "s.min_value, s.max_value, s.cycle, s.cache_size, "
+            "SELECT s.schemaname, s.sequencename, s.data_type::text, s.start_value, "
+            "s.increment_by, s.min_value, s.max_value, s.cycle, s.cache_size, "
             "(SELECT d.deptype::text || chr(1) || c2.relname || chr(1) || a.attname "
             " FROM pg_depend d "
             " JOIN pg_class c2 ON c2.oid = d.refobjid "
@@ -737,17 +747,26 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
             " AND d.deptype IN ('a', 'i') LIMIT 1) "
             "FROM pg_sequences s JOIN pg_namespace n ON n.nspname = s.schemaname "
             "JOIN pg_class sc ON sc.relname = s.sequencename AND sc.relnamespace = n.oid "
-            f"WHERE s.schemaname = {own}"
+            f"WHERE s.schemaname = {own} OR EXISTS (SELECT 1 FROM pg_attrdef ad "
+            "JOIN pg_class c ON c.oid = ad.adrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "JOIN pg_depend d ON d.classid = 'pg_attrdef'::regclass AND d.objid = ad.oid "
+            f"WHERE d.refobjid = sc.oid AND n.nspname = {own})"
         ):
-            name, data_type, start, increment, minimum, maximum, cycle, cache, owner = row
+            where, name, data_type, start, increment, minimum, maximum, cycle, cache, owner = row
             owned = None
             if owner is not None:
                 kind, table, column = str(owner).split(chr(1))
                 if kind == "i":
                     continue  # an identity column's: Identity(...) says it
                 owned = (table, column)
-            result.sequences[(schema, str(name))] = SequenceSpec(
-                schema,
+            # A sequence in another schema, drawn on by a default here (finding the schema's
+            # own sequences is that schema's read).
+            elsewhere = str(where) != (schema or current)
+            key = (None if str(where) == current else str(where), str(name))
+            if elsewhere and key in result.sequences:
+                continue
+            found_spec = SequenceSpec(
+                key[0],
                 str(name),
                 None if data_type is None else str(data_type),
                 int(start),
@@ -757,6 +776,31 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
                 bool(cycle),
                 int(cache),
                 owned,
+            )
+            if elsewhere:
+                result.drawn_sequences[key] = found_spec
+            else:
+                result.sequences[(schema, str(name))] = found_spec
+
+        for table, column, default, sequence_schema, sequence in rows(
+            "SELECT c.relname, a.attname, pg_get_expr(ad.adbin, ad.adrelid), "
+            "CASE WHEN sn.nspname = current_schema() THEN NULL ELSE sn.nspname END, s.relname "
+            "FROM pg_attrdef ad JOIN pg_class c ON c.oid = ad.adrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "JOIN pg_attribute a ON a.attrelid = ad.adrelid AND a.attnum = ad.adnum "
+            "JOIN pg_depend d ON d.classid = 'pg_attrdef'::regclass AND d.objid = ad.oid "
+            "AND d.refclassid = 'pg_class'::regclass "
+            "JOIN pg_class s ON s.oid = d.refobjid AND s.relkind = 'S' "
+            "JOIN pg_namespace sn ON sn.oid = s.relnamespace "
+            f"WHERE n.nspname = {own} ORDER BY s.relname"
+        ):
+            result.default_sequences.setdefault(
+                (schema, str(table), str(column)),
+                (
+                    None if sequence_schema is None else str(sequence_schema),
+                    str(sequence),
+                    str(default),
+                ),
             )
 
         extension_owned = (

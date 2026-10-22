@@ -105,6 +105,11 @@ class _Writer:
     type_aliases: dict[tuple[str, str], str] = field(default_factory=dict)
     #: Each column's Python type, by (relation key, column name), set as its type is written.
     py_types: dict[tuple[str, str], object] = field(default_factory=dict)
+    #: The keys of the tables the module builds.
+    generated: set[str] = field(default_factory=set)
+    #: (table, table it must come after) that no foreign key says: a default drawing on a
+    #: sequence another table's SERIAL owns.
+    after: list[tuple[Relation, str]] = field(default_factory=list)
 
     # -- columns ---------------------------------------------------------------------------
 
@@ -468,6 +473,11 @@ class _Writer:
             return none
         if sql.strip().upper() == "NULL":
             return none  # MariaDB reports this for every nullable column; it is no default
+        drawn = self.reflected.default_sequences.get(
+            (relation.schema, relation.table.name, column.name)
+        )
+        if drawn is not None:
+            return self._sequence_default(relation, column, single_pk, *drawn)
         if sql.startswith("nextval("):
             # A serial. As the key, SQLAlchemy makes it SERIAL again on its own; elsewhere the
             # sequence is declared, so create_all creates it before the table.
@@ -491,6 +501,51 @@ class _Writer:
                     f"server_default=sqlalchemy.text({q(sql)})",
                 )
         return None, f"server_default=sqlalchemy.text({q(sql)})"
+
+    def _sequence_default(
+        self,
+        relation: Relation,
+        column: Column[Any],
+        single_pk: bool,
+        schema: str | None,
+        name: str,
+        sql: str,
+    ) -> tuple[str | None, str | None]:
+        """A PostgreSQL default drawing on a sequence, as the catalog says it.
+
+        Only a ``SERIAL`` key - its sequence owned by this very column - is left for SQLAlchemy
+        to make SERIAL again. Any other sequence is the default's own: a sequence of its own is
+        a module constant already and the default names it; one owned by another column, or in
+        a schema not read, is declared on the column, in its real schema, so create_all
+        creates it. The default is written as the server prints it.
+        """
+        spec = self.reflected.sequences.get((schema, name))
+        default = f"server_default=sqlalchemy.text({q(sql)})"
+        if spec is None:
+            drawn = self.reflected.drawn_sequences.get((schema, name))
+            if drawn is not None:
+                options = "".join(f", {o}" for o in self.sequence_args(drawn))
+                where = f", schema={q(schema)}" if schema is not None else ""
+                return f"sqlalchemy.Sequence({q(name)}{where}{options})", default
+        owned_here = (
+            spec is not None
+            and spec.owner == (relation.table.name, column.name)
+            and schema == relation.schema
+        )
+        if owned_here and single_pk and column.primary_key:
+            return None, None
+        if spec is not None and spec.owner is None:
+            return None, default
+        if spec is not None and spec.owner is not None and not owned_here:
+            owner = spec.owner[0] if schema is None else f"{schema}.{spec.owner[0]}"
+            if owner in self.generated:
+                # Another table's SERIAL makes it: that table is built first, and the default
+                # names what it made.
+                self.after.append((relation, owner))
+                return None, default
+        where = f", schema={q(schema)}" if schema is not None else ""
+        options = "".join(f", {o}" for o in self.sequence_args(spec)) if spec else ""
+        return f"sqlalchemy.Sequence({q(name)}{where}{options})", default
 
     def _at_six_digits(self, relation: Relation, column: Column[Any], default: str) -> str:
         """A MySQL default of the current time, at the column's own precision, made the
@@ -1217,6 +1272,7 @@ def render_module(
         exported_sequences.append(constant_name)
 
     generated = {r.key for r in reflected.tables} | {r.key for r in reflected.framework}
+    writer.generated = generated
     tables: list[tuple[Relation, str]] = []
     for relation in reflected.tables:
         tables += [(relation, t) for t in writer.table(relation, generated)]
@@ -1245,6 +1301,12 @@ def render_module(
                     "cannot build it without"
                 )
                 continue
+            dependencies.append(
+                f"{writer.name_of(relation)}.add_is_dependent_on({writer.name_of(found)})"
+            )
+    for relation, owner in writer.after:
+        found = next((r for r in reflected.tables if r.key == owner), None)
+        if found is not None and found is not relation:
             dependencies.append(
                 f"{writer.name_of(relation)}.add_is_dependent_on({writer.name_of(found)})"
             )

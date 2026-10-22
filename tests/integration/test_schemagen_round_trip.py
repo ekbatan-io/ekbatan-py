@@ -468,6 +468,35 @@ MARIADB += (_MY_COLUMNS,)
 MYSQL += (_MY_OTHER,)
 MARIADB += (_MY_OTHER,)
 
+POSTGRES += (
+    # C4, O11: a sequence used as a default - the key's too - whoever owns it, wherever it is.
+    Trip(
+        "sequence_defaults",
+        """
+        CREATE SCHEMA rt_seq_other;
+        CREATE SCHEMA rt_seq_far;
+        CREATE SEQUENCE shared_seq START WITH 500;
+        CREATE SEQUENCE rt_seq_far.far_seq START WITH 900;
+        CREATE TABLE uses_shared (id BIGINT PRIMARY KEY DEFAULT nextval('shared_seq'), v TEXT);
+        CREATE TABLE rt_seq_other.cross_shared (
+          id BIGINT PRIMARY KEY DEFAULT nextval('public.shared_seq'),
+          n BIGINT DEFAULT nextval('shared_seq')
+        );
+        CREATE TABLE owner_t (id SERIAL PRIMARY KEY);
+        CREATE TABLE borrows (id INT PRIMARY KEY DEFAULT nextval('owner_t_id_seq'));
+        CREATE TABLE far (id BIGINT PRIMARY KEY DEFAULT nextval('rt_seq_far.far_seq'));
+        """,
+        schemas=("rt_seq_other",),
+        before=("CREATE SCHEMA rt_seq_far",),
+        writes=(
+            "SHARED_SEQ = sqlalchemy.Sequence(",
+            'sqlalchemy.Sequence("far_seq", schema="rt_seq_far", start=900)',
+            "BORROWS.add_is_dependent_on(OWNER_T)",
+        ),
+        never=('"shared_seq", schema="rt_seq_other"',),
+    ),
+)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,
