@@ -280,9 +280,13 @@ def converter_user_type(converter: object, path: str) -> object:
                 "is the type imported only under TYPE_CHECKING?"
             )
         found = hints.get("return")
-        if found is not None and (found is Any or _concrete(found)):
+        if found is not None and _concrete(found):
             return found
-        if found is not None:
+        if found is Any:
+            # Says nothing: the generic base may say more, and if it does not, Any it is -
+            # which the caller notes.
+            problem = ""
+        elif found is not None:
             problem = f"from_db() is annotated to return {found!r}, which names no real type"
     for klass in type(converter).__mro__:
         for base in getattr(klass, "__orig_bases__", ()):
@@ -290,6 +294,8 @@ def converter_user_type(converter: object, path: str) -> object:
                 args = typing.get_args(base)
                 if len(args) == 2 and _concrete(args[1]):
                     return args[1]
+    if not problem:
+        return Any
     raise ValidationError(
         f"the forced converter {path!r}: schemagen cannot tell what type it gives, so it cannot "
         f"type the column in the record - {problem}, and the class does not extend "

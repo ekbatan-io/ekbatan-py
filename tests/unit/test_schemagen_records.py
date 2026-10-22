@@ -355,7 +355,7 @@ def user_types(tmp_path: Path) -> Iterator[Path]:
     (package / "converters.py").write_text(
         "from __future__ import annotations\n\n"
         "from decimal import Decimal\n"
-        "from typing import TYPE_CHECKING, TypeVar\n\n"
+        "from typing import TYPE_CHECKING, Any, TypeVar\n\n"
         "from ekbatan.schema import Converter\n\n"
         "from .model import UUID, Currency, Money, WalletsRecord\n\n"
         "if TYPE_CHECKING:\n"
@@ -408,6 +408,16 @@ def user_types(tmp_path: Path) -> Iterator[Path]:
         "        return Currency(value) if value else None\n"
         "    def to_db(self, value: Currency) -> str:\n"
         "        return value.code\n\n"
+        "class AnyWithBase(Converter[str, Currency]):\n"
+        "    def from_db(self, value: str) -> Any:\n"
+        "        return Currency(value)\n"
+        "    def to_db(self, value: Any) -> str:\n"
+        "        return value.code\n\n"
+        "class AnyOnly:\n"
+        "    def from_db(self, value: str) -> Any:\n"
+        "        return value\n"
+        "    def to_db(self, value: Any) -> str:\n"
+        "        return value\n\n"
         "class WalletsRecordConverter:\n"
         "    def from_db(self, value: str) -> str:\n"
         "        return value\n"
@@ -468,6 +478,25 @@ def test_an_annotation_naming_a_type_checking_import_falls_back_to_the_base(
     assert "    amount: Money" in _record(text_, "WalletsRecord")
     with pytest.raises(ValidationError, match="TYPE_CHECKING"):
         _converted("Hidden", Column("amount", NUMERIC(19, 4), nullable=False))
+
+
+def test_a_converter_annotated_any_falls_back_to_its_base(user_types: Path) -> None:
+    text_ = _converted("AnyWithBase", Column("currency", VARCHAR(3), nullable=False))
+    assert "    currency: Currency" in _record(text_, "WalletsRecord")
+
+
+def test_a_converter_that_says_only_any_is_any_and_said(
+    user_types: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="io.ekbatan.schemagen"):
+        text_ = _converted("AnyOnly", Column("currency", VARCHAR(3), nullable=False))
+    assert "    currency: Any" in _record(text_, "WalletsRecord")
+    assert any(
+        "wallets.currency" in r.message
+        and "record_user_types.converters.AnyOnly" in r.message
+        and "Any" in r.message
+        for r in caplog.records
+    ), [r.message for r in caplog.records]
 
 
 def test_a_converter_s_none_and_the_column_s_null_are_said_once(user_types: Path) -> None:

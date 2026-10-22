@@ -207,6 +207,11 @@ class _Writer:
         converter = self.use(resolve(forced))
         # The record holds what the converter gives, read off the converter the module builds.
         self.py_types[record_key] = converter_user_type(self.built(converter), forced.converter)
+        if self.py_types[record_key] is Any:
+            self.notes.append(
+                f"{where}: the converter {forced.converter} says its from_db() returns Any, and "
+                "has no Converter[DbT, UserT] base saying more, so its record types it Any"
+            )
         return f"converted({impl}, {converter})"
 
     def built(self, source: str) -> Any:
