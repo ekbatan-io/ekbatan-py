@@ -318,6 +318,21 @@ class _Writer:
                 emitted = emit_type(column.type, self.reflected.dialect_name)
             emitted = self._backslashed(where, column, raw, relation, emitted)
             if (
+                self.reflected.dialect_name == "postgresql"
+                and type(column.type) is sqltypes.String
+                and raw in ('"char"', "name")
+            ):
+                # PostgreSQL's one-byte "char" and its `name`: reflection reads them as a plain
+                # String, which create_all builds VARCHAR. Written as PostgreSQL spells them.
+                emitted = None
+                if raw == '"char"' and relation is not None:
+                    self.notes.append(
+                        f'{where} is "char": it reads as str on psycopg and as bytes on '
+                        "asyncpg, so its record types it Any. A converter gives it a type of "
+                        "your own"
+                    )
+                    self.spelled_hints[(relation.key, column.name)] = Any
+            if (
                 self.reflected.dialect_name == "sqlite"
                 and raw is not None
                 and not _sqlite_named(raw)

@@ -142,7 +142,7 @@ def _dialect_type(t: TypeEngine[Any]) -> object | None:
 #: (``test_schemagen_types``). The others (``point`` reads as text on psycopg and as asyncpg's
 #: ``Point``) stay ``Any``.
 _SPELLED: dict[str, dict[str, type]] = {
-    "postgresql": {"xml": str, "tsquery": str, "jsonpath": str},
+    "postgresql": {"xml": str, "tsquery": str, "jsonpath": str, "name": str},
     "mysql": dict.fromkeys(
         (
             "geometry",

@@ -165,6 +165,10 @@ POSTGRES = (
         [[1, 2], [3, 4]],
         where=False,
     ),
+    # The review (EKB-0458): PostgreSQL's one-byte "char" and its `name` reflect as a plain
+    # String and were rebuilt VARCHAR; "char" reads as str on psycopg and as bytes on asyncpg.
+    Case("pg_char", '"char"', 'sql_type("\\"char\\"")', "x", where=False),
+    Case("pg_name", "NAME", 'sql_type("name")', "a_name"),
     # A domain, whole: create_all builds it with its check (EKB-0429).
     Case(
         "domain",

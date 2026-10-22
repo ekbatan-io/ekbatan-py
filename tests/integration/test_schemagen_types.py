@@ -226,6 +226,9 @@ def test_what_is_outside_the_recommendation_is_said(matrix: Matrix, dialect: str
     }[dialect]
     for start in expected:
         assert any(n.startswith(start) for n in matrix.notes), (start, matrix.notes)
+    if dialect == "postgres":
+        said = 't_types.c_pg_char is "char": it reads as str on psycopg and as bytes on asyncpg'
+        assert any(n.startswith(said) for n in matrix.notes), matrix.notes
     assert all("always-utc" in n for n in matrix.notes if "TIMESTAMP" in n or "DATETIME" in n)
 
 
