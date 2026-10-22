@@ -197,6 +197,10 @@ class Reflected:
     #: The sequences such a default draws on in a schema not read, by (schema, name): declared
     #: on the column with their options, as they are not module constants.
     drawn_sequences: dict[tuple[str | None, str], SequenceSpec] = field(default_factory=dict)
+    #: Statements ``create_all`` runs right after creating a table, by (schema, table): what a
+    #: PostgreSQL table says that ``Table`` cannot (its storage parameters, replica identity,
+    #: a column's storage), each written with ``%(fullname)s`` for the table.
+    after_create: dict[tuple[str | None, str], list[str]] = field(default_factory=dict)
     #: MySQL's and MariaDB's ``SHOW CREATE TABLE``, read for what reflection misses, by
     #: (schema, table).
     mysql_tables: dict[tuple[str | None, str], MysqlTable] = field(default_factory=dict)
@@ -823,6 +827,7 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
         extension_owned = (
             "NOT EXISTS (SELECT 1 FROM pg_depend e WHERE e.objid = {oid} AND e.deptype = 'e')"
         )
+        _postgres_table_parts(rows, schema, own, joined, extension_owned, result)
         for name, kind in rows(
             "SELECT p.proname, p.prokind FROM pg_proc p "
             "JOIN pg_namespace n ON n.oid = p.pronamespace "
@@ -848,6 +853,117 @@ def _postgres(engine: Engine, schema: str | None, result: Reflected) -> None:
         if schema is None:
             for (name,) in rows("SELECT extname FROM pg_extension WHERE extname <> 'plpgsql'"):
                 result.unwritten.setdefault("extension", []).append(str(name))
+
+
+def _pg_name(name: str) -> str:
+    """A name as PostgreSQL needs it written: bare when it is plain lower case, else quoted."""
+    if re.fullmatch(r"[a-z_][a-z0-9_$]*", name):
+        return name
+    return '"' + name.replace('"', '""') + '"'
+
+
+_STORAGE = {"p": "PLAIN", "e": "EXTERNAL", "m": "MAIN", "x": "EXTENDED"}
+_COMPRESSION = {"p": "pglz", "l": "lz4"}
+
+
+def _postgres_table_parts(
+    rows: Any, schema: str | None, own: str, joined: str, extension_owned: str, result: Reflected
+) -> None:
+    """What a PostgreSQL table says beyond what ``Table`` declares. Written where a statement
+    after ``CREATE TABLE`` says it - storage parameters, replica identity, a column's storage,
+    compression and statistics target; else said in a note - row level security, policies,
+    rules, extended statistics, index comments, NOT VALID constraints, collations, tablespaces,
+    publications."""
+
+    def key(table: Any) -> str:
+        return str(table) if schema is None else f"{schema}.{table}"
+
+    def after(table: Any, sql: str) -> None:
+        result.after_create.setdefault((schema, str(table)), []).append(sql)
+
+    tables = (
+        "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        f"WHERE n.nspname = {own} AND c.relkind IN ('r', 'p') "
+    )
+    for table, options in rows(
+        f"SELECT c.relname, c.reloptions {tables}AND c.relkind = 'r' AND c.reloptions IS NOT NULL"
+    ):
+        after(table, f"ALTER TABLE %(fullname)s SET ({', '.join(options)})")
+    for table, identity, index in rows(
+        "SELECT c.relname, c.relreplident, (SELECT i.relname FROM pg_index x "
+        " JOIN pg_class i ON i.oid = x.indexrelid WHERE x.indrelid = c.oid AND x.indisreplident) "
+        f"{tables}AND c.relreplident <> 'd'"
+    ):
+        said = {"f": "FULL", "n": "NOTHING"}.get(str(identity))
+        if said is None and index is not None:
+            said = f"USING INDEX {_pg_name(str(index))}"
+        if said is not None:
+            after(table, f"ALTER TABLE %(fullname)s REPLICA IDENTITY {said}")
+    for table, column, storage, type_storage, compression, target, options in rows(
+        "SELECT c.relname, a.attname, a.attstorage, t.typstorage, a.attcompression::text, "
+        "COALESCE(a.attstattarget::int, -1), a.attoptions "
+        "FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_type t ON t.oid = a.atttypid "
+        f"WHERE n.nspname = {own} AND c.relkind IN ('r', 'p') AND a.attnum > 0 "
+        "AND NOT a.attisdropped AND (a.attstorage <> t.typstorage "
+        "OR a.attcompression::text <> '' OR COALESCE(a.attstattarget::int, -1) >= 0 "
+        "OR a.attoptions IS NOT NULL)"
+    ):
+        alter = f"ALTER TABLE %(fullname)s ALTER COLUMN {_pg_name(str(column))}"
+        if storage != type_storage and str(storage) in _STORAGE:
+            after(table, f"{alter} SET STORAGE {_STORAGE[str(storage)]}")
+        if str(compression) in _COMPRESSION:
+            after(table, f"{alter} SET COMPRESSION {_COMPRESSION[str(compression)]}")
+        if int(target) >= 0:
+            after(table, f"{alter} SET STATISTICS {int(target)}")
+        if options:
+            after(table, f"{alter} SET ({', '.join(options)})")
+
+    def note(kind: str, name: str) -> None:
+        result.unwritten.setdefault(kind, []).append(name)
+
+    for table, forced in rows(
+        f"SELECT c.relname, c.relforcerowsecurity {tables}"
+        "AND (c.relrowsecurity OR c.relforcerowsecurity)"
+    ):
+        note("table with row level security", key(table) + (" (forced)" if forced else ""))
+    for name, table in rows(
+        "SELECT p.polname, c.relname FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid "
+        f"JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = {own}"
+    ):
+        note("policy", f"{name} (on {key(table)})")
+    for name, table in rows(f"SELECT rulename, tablename FROM pg_rules WHERE schemaname = {own}"):
+        note("rule", f"{name} (on {key(table)})")
+    for (name,) in rows(
+        "SELECT s.stxname FROM pg_statistic_ext s "
+        f"JOIN pg_namespace n ON n.oid = s.stxnamespace WHERE n.nspname = {own}"
+    ):
+        note("extended statistics", str(name))
+    for index, table in rows(
+        "SELECT i.relname, c.relname FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid "
+        "JOIN pg_class c ON c.oid = x.indrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+        f"WHERE n.nspname = {own} AND obj_description(i.oid, 'pg_class') IS NOT NULL"
+    ):
+        note("index comment", f"{index} (on {key(table)})")
+    for table, name, kind in rows(
+        f"SELECT c.relname, con.conname, con.contype {joined}AND NOT con.convalidated"
+    ):
+        what = "check" if kind == "c" else "foreign key"
+        result.notes.append(
+            f"{key(table)}: {what} {name} is NOT VALID - the rows before it were never checked "
+            f"against it. SQLAlchemy cannot say so: create_all builds it as a plain {what}"
+        )
+    for (name,) in rows(
+        "SELECT co.collname FROM pg_collation co "
+        f"JOIN pg_namespace n ON n.oid = co.collnamespace WHERE n.nspname = {own} AND "
+        + extension_owned.format(oid="co.oid")
+    ):
+        note("collation", str(name))
+    for (table,) in rows(f"SELECT c.relname {tables}AND c.reltablespace <> 0"):
+        note("table in a tablespace of its own", key(table))
+    if schema is None:
+        for (name,) in rows("SELECT pubname FROM pg_publication"):
+            note("publication", str(name))
 
 
 def _exclusion(name: str, definition: str, deferrable: bool, deferred: bool) -> Exclusion | None:

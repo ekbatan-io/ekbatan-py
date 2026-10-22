@@ -533,6 +533,53 @@ _MY_UNREAD_OPTIONS = Trip(
 MYSQL += (_MY_UNREAD_OPTIONS,)
 MARIADB += (_MY_UNREAD_OPTIONS,)
 
+POSTGRES += (
+    # What SQLAlchemy cannot declare on PostgreSQL is said in a note, each by name.
+    Trip(
+        "unwritten_table_parts",
+        """
+        CREATE COLLATION my_coll FROM "C";
+        CREATE TABLE t (id INT PRIMARY KEY, a INT, b INT, name TEXT COLLATE my_coll);
+        ALTER TABLE t ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE t FORCE ROW LEVEL SECURITY;
+        CREATE POLICY t_pol ON t USING (a > 0);
+        CREATE RULE t_rule AS ON DELETE TO t DO INSTEAD NOTHING;
+        CREATE STATISTICS t_stats ON a, b FROM t;
+        CREATE INDEX t_a ON t (a);
+        COMMENT ON INDEX t_a IS 'why';
+        ALTER TABLE t ADD CONSTRAINT t_b_ck CHECK (b > 0) NOT VALID;
+        CREATE TABLE opts (id INT PRIMARY KEY, v TEXT) WITH (fillfactor = 70);
+        CREATE UNIQUE INDEX opts_v ON opts (v);
+        ALTER TABLE opts ALTER COLUMN v SET NOT NULL;
+        ALTER TABLE opts REPLICA IDENTITY USING INDEX opts_v;
+        ALTER TABLE opts ALTER COLUMN v SET STORAGE EXTERNAL;
+        ALTER TABLE opts ALTER COLUMN v SET STATISTICS 500;
+        ALTER TABLE opts ALTER COLUMN id SET (n_distinct = 100);
+        CREATE TABLE full_ident (id INT PRIMARY KEY);
+        ALTER TABLE full_ident REPLICA IDENTITY FULL;
+        CREATE PUBLICATION rt_pub FOR TABLE opts;
+        """,
+        before=('CREATE COLLATION my_coll FROM "C"',),
+        differs=("('public', 't', 'r'", "t_pol", "t_rule", "t_stats", "'t_a'", "t_b_ck"),
+        notes=(
+            "tables with row level security schemagen does not write: t (forced)",
+            "policies schemagen does not write: t_pol (on t)",
+            "rules schemagen does not write: t_rule (on t)",
+            "extended statistics schemagen does not write: t_stats",
+            "index comments schemagen does not write: t_a (on t)",
+            "t: check t_b_ck is NOT VALID",
+            "collations schemagen does not write: my_coll",
+            "publications schemagen does not write: rt_pub",
+        ),
+        writes=(
+            '"ALTER TABLE %(fullname)s SET (fillfactor=70)"',
+            '"ALTER TABLE %(fullname)s REPLICA IDENTITY USING INDEX opts_v"',
+            '"ALTER TABLE %(fullname)s REPLICA IDENTITY FULL"',
+            '"ALTER TABLE %(fullname)s ALTER COLUMN v SET STORAGE EXTERNAL"',
+        ),
+    ),
+)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,

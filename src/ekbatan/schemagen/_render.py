@@ -624,6 +624,13 @@ class _Writer:
             lines.append(f"    schema={q(relation.schema)},")
         lines.append(")")
         lines += self.partitions(relation)
+        for sql in self.reflected.after_create.get((relation.schema, table.name), []):
+            # What `Table` cannot say, said by the statement that says it, after the table.
+            escaped = q(sql.replace("%", "%%").replace("%%(fullname)s", "%(fullname)s"))
+            lines.append(
+                f'sqlalchemy.event.listen({self.name_of(relation)}, "after_create", '
+                f"sqlalchemy.DDL({escaped}))"
+            )
         self.records[relation.key] = (
             self.record_of(relation),
             [
@@ -1229,10 +1236,32 @@ _UNWRITTEN = {
         "create the type - make it first (CREATE TYPE ...), or run the migrations"
     ),
     "extension": "create_all does not create one - run CREATE EXTENSION before it",
+    "collation": (
+        "a column using one is written COLLATE it, and create_all fails until it exists - "
+        "create it first (CREATE COLLATION ...), or run the migrations"
+    ),
+    "table with row level security": (
+        "create_all builds them without it: a test that needs it runs the migrations"
+    ),
+    "policy": "create_all builds the table without it - a test that needs one runs the migrations",
+    "rule": "create_all builds the table without it - a test that needs one runs the migrations",
+    "extended statistics": "create_all does not create them; they only guide the planner",
+    "index comment": "create_all builds the index without it",
+    "table in a tablespace of its own": "create_all builds it in the default tablespace",
+    "publication": "create_all does not create one: replication is set up apart from the schema",
+}
+
+#: The plural of a kind where adding "s" is wrong.
+_PLURALS = {
+    "table with row level security": "tables with row level security",
+    "extended statistics": "extended statistics",
+    "table in a tablespace of its own": "tables in a tablespace of their own",
 }
 
 
 def _plural(kind: str) -> str:
+    if kind in _PLURALS:
+        return _PLURALS[kind]
     return kind[:-1] + "ies" if kind.endswith("y") else kind + ("es" if kind.endswith("x") else "s")
 
 

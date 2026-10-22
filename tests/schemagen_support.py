@@ -327,7 +327,7 @@ def _describe_postgres(connection: Any, schemas: tuple[str, ...]) -> list[str]:
         "pg_get_expr(c.relpartbound, c.oid), obj_description(c.oid, 'pg_class'), "
         "(SELECT string_agg(p.relname, ',' ORDER BY p.relname) FROM pg_inherits i "
         " JOIN pg_class p ON p.oid = i.inhparent WHERE i.inhrelid = c.oid), "
-        "c.relrowsecurity, c.relforcerowsecurity, c.reloptions "
+        "c.relrowsecurity, c.relforcerowsecurity, c.reloptions, c.relreplident "
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
         "WHERE n.nspname IN :s AND c.relkind IN ('r', 'p', 'f')"
     ):
@@ -335,7 +335,8 @@ def _describe_postgres(connection: Any, schemas: tuple[str, ...]) -> list[str]:
     for row in rows(
         "SELECT n.nspname, c.relname, a.attnum, a.attname, format_type(a.atttypid, a.atttypmod), "
         "a.attnotnull, pg_get_expr(d.adbin, d.adrelid), a.attidentity, a.attgenerated, "
-        "co.collname, a.attndims, col_description(c.oid, a.attnum) "
+        "co.collname, a.attndims, col_description(c.oid, a.attnum), a.attstorage, "
+        "a.attcompression::text, COALESCE(a.attstattarget::int, -1), a.attoptions "
         "FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
         "JOIN pg_namespace n ON n.oid = c.relnamespace "
         "LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum "
