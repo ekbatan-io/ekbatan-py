@@ -110,14 +110,14 @@ moved - not in models, repositories, the outbox, notifications, event JSON or
 ```python
 from ekbatan import SystemClock
 
-now = SystemClock().now()          # datetime(2026, 10, 19, 8, 30, 0, 123456) - UTC, no zone
+now = SystemClock().instant()          # datetime(2026, 10, 19, 8, 30, 0, 123456) - UTC, no zone
 wallet = wallets.add(Wallet.open(..., created_date=now))
 wallets.get(wallet.id).created_date == now   # True: the same value, to the microsecond
 ```
 
 The default clock gives the current **UTC time with no zone attached**. That is exactly what a
 zone-less column holds, so what is written reads back equal, and compares with the next
-`clock.now()` - the framework does that comparison itself for event retries, due times and
+`clock.instant()` - the framework does that comparison itself for event retries, due times and
 expiry.
 
 A value *with* a zone is passed on as it is, and then the driver decides. Measured with
@@ -135,13 +135,73 @@ So keep to naive UTC, as the default clock gives. If you do use aware values - y
 with what the database returns, and Python refuses to compare a naive `datetime` with an aware
 one.
 
+### Time kinds
+
+Python has one `datetime` class for three different kinds of time. `ekbatan.time` names them, so
+a type checker keeps them apart and the JSON says which one a reader gets:
+
+| meaning | Python label | Java | PostgreSQL column | JSON |
+| --- | --- | --- | --- | --- |
+| a moment | `Instant` - no zone attached, UTC digits | `Instant` | `TIMESTAMP` | `"2026-03-01T09:30:00.120Z"` |
+| a wall date and time | `LocalDateTime` - no zone attached | `LocalDateTime` | `TIMESTAMP` | `"2026-03-01T09:30:00.12"` |
+| a moment with its offset | `OffsetDateTime` - zone attached | `OffsetDateTime` | `TIMESTAMPTZ` | `"2026-03-01T13:00:00.12+03:30"` |
+| a time of day | `time` | `LocalTime` | `TIME` | `"09:30:00"` |
+| a date | `date` | `LocalDate` | `DATE` | `"2026-03-01"` |
+
+On MySQL and MariaDB both `Instant` and `LocalDateTime` are `DATETIME(6)`; neither database has a
+column that keeps an offset. `Instant` and `LocalDateTime` are the same zone-less column - only
+the label differs.
+
+```python
+from dataclasses import dataclass
+from datetime import datetime
+
+from ekbatan import ModelEvent
+from ekbatan.time import Instant, LocalDateTime
+
+
+@dataclass(frozen=True, kw_only=True)
+class ShiftPlannedEvent(ModelEvent["Shift"]):
+    planned_at: Instant        # when it was planned: a moment
+    opens_at: LocalDateTime    # "09:00 on 1 March", wherever the shop is
+
+
+event = ShiftPlannedEvent(
+    model_id=str(shift.id),
+    planned_at=self.instant(),                         # the clock gives an Instant
+    opens_at=LocalDateTime(datetime(2026, 3, 1, 9, 0)),
+)
+```
+
+- **The labels cost nothing.** They are `typing.NewType`s: a value is a plain `datetime`, and
+  `Instant(x)` hands back `x` - it converts nothing and checks nothing. Arithmetic keeps the
+  label: `self.instant() + timedelta(days=1)` is still an `Instant`.
+- **mypy keeps them apart.** An `Instant` passed where a `LocalDateTime` is expected is an error,
+  and so is a plain `datetime` where an `Instant` is - write `Instant(value)` once, where the
+  value comes in, and say what it is.
+- **Where they come from.** `clock.instant()` (and `self.instant()` in an action) gives an
+  `Instant`. A model's `created_date` and `updated_date` are `Instant`s, and so is every time the
+  framework writes - the outbox, notifications, retries, jobs. A generated record says which kind
+  each column is ([schemagen](/reference/schemagen/#time-columns)).
+- **In JSON, the label decides.** An event's or a params dataclass's `datetime` field is written
+  as the kind it is declared - an `Instant` with `Z`, a `LocalDateTime` with no zone, an
+  `OffsetDateTime` with its offset - and read back as the same kind. Nothing is converted: an
+  `Instant`'s digits are already UTC's and are written as they are. A field declared plain
+  `datetime`, or a value of the wrong sort for its kind (a zone attached in an `Instant` field),
+  is refused when the action runs, and nothing is saved:
+
+  ```text
+  event ShiftPlannedEvent field planned_at is a plain datetime; declare it Instant,
+  LocalDateTime or OffsetDateTime (ekbatan.time)
+  ```
+
 ### The recommendation
 
 **Strongly recommended.** Not enforced - nothing refuses another zone - and leaving it is where
 time bugs come from. Three parts:
 
-1. **In your code, UTC.** Take the time from the framework's clock - `self.now()` in an action,
-   `clock.now()` elsewhere - which is UTC with no zone attached. Not `datetime.now()`, which is
+1. **In your code, UTC.** Take the time from the framework's clock - `self.instant()` in an action,
+   `clock.instant()` elsewhere - which is UTC with no zone attached. Not `datetime.now()`, which is
    local time. Convert to a person's local time only where it is shown to them.
 2. **In the columns, no zone.** `TIMESTAMP` (`WITHOUT TIME ZONE`) on PostgreSQL, `DATETIME(6)` on
    MySQL and MariaDB, holding UTC. `timestamp_column()` builds this - a column type and nothing

@@ -139,7 +139,7 @@ fixes `model_name` once per class, so no call site passes it. Those two fill the
 is refused when the event is made.
 
 **There is no deserialisation boilerplate.** The payload is rebuilt from the dataclass's own
-annotations - a `Decimal` from its number, a `datetime` from its ISO form, an enum from its name.
+annotations - a `Decimal` from its number, an `Instant` from its ISO form, an enum from its name.
 Nothing to write, and nothing to forget. See [The outbox](outbox.md) for the row the event
 lands in.
 
@@ -157,9 +157,10 @@ What the decoder does with each field, driven by its annotation:
 |---|---|---|
 | `Decimal` | a JSON **number**: `10.50`, `1E+3` | the same `Decimal`, scale kept |
 | `float` | a number: `0.1`, `1.0E20` | `float` |
-| `datetime` with UTC | ISO-8601 text ending in `Z`: `"2025-01-01T00:00:00.120Z"` | aware, UTC |
-| `datetime` with another offset | ISO-8601 text with the offset: `"...T02:00:00+02:00"` | aware, that offset |
-| `datetime` with no zone | ISO-8601 text, no offset: `"2025-01-01T10:00:00"` | no zone, as written |
+| `Instant` (`ekbatan.time`) - no zone attached, UTC digits | ISO-8601 text ending in `Z`: `"2025-01-01T00:00:00.120Z"` | no zone attached, the same digits |
+| `LocalDateTime` - no zone attached | ISO-8601 text, no offset: `"2025-01-01T10:00:00"` | no zone attached, as written |
+| `OffsetDateTime` - zone attached | ISO-8601 text with the offset: `"...T02:00:00+02:00"` | zone attached, that offset |
+| plain `datetime` | **refused** - declare it one of the three | |
 | `date`, `time`, `timedelta` | ISO-8601 text: `"2025-01-01"`, `"10:00:00"`, `"PT1.5S"` | the same type |
 | `bytes` | base64: `"AQL/"` | `bytes` |
 | `UUID` | its text | `UUID` |
@@ -169,6 +170,12 @@ What the decoder does with each field, driven by its annotation:
 | a nested frozen dataclass | an object, keys as below | recursively, the same way |
 | `list` / `tuple` / `set` / `frozenset` / `dict` of any of the above | array / object | element by element |
 | `T \| None` | | the non-`None` arm, when there is exactly one |
+
+A `datetime` field says which kind of time it holds: `Instant`, `LocalDateTime` or
+`OffsetDateTime`, from `ekbatan.time` ([time kinds](../database/multi-database.md#time-kinds)). Python has one class for the three,
+and only the declaration tells a reader which it gets. A field declared plain `datetime`, or a
+value of the wrong sort for its kind - a zone attached in an `Instant` field - is refused when
+the event is written, inside `executor.execute`: the action fails and nothing is saved.
 
 **Anything else is refused** with a `ValidationError` naming its class, before anything is
 written: a plain class or an `attrs` class, for example (a `NamedTuple` is a tuple, so it is an
@@ -205,17 +212,17 @@ Streaming-only consumers do not go through any of this: they read the JSON off t
 
 `created_date` is **required**: `build()` refuses a model without it. A model records
 something that happened, and when it happened is part of the record rather than a column the
-framework backfills afterwards. Pass `self.clock.now()` from the action, so a test with a fixed
+framework backfills afterwards. Pass `self.clock.instant()` from the action, so a test with a fixed
 clock gets a fixed date:
 
 ```python
-Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.now())
+Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.instant())
 ```
 
 `updated_date` falls back to `created_date` — a row that has never changed was last updated when
 it was created. Both are kept exactly as given - no zone added, removed or moved - and stored
-that way ([What you give is what is stored](../database/multi-database.md#what-you-give-is-what-is-stored)). From
-`clock.now()` they are UTC with no zone attached, so `wallet.created_date` compares with the
+that way ([What you give is what is stored](../database/multi-database.md#what-you-give-is-what-is-stored)). Both are typed `Instant` ([time kinds](../database/multi-database.md#time-kinds)): from `clock.instant()` they are UTC
+with no zone attached, so `wallet.created_date` compares with the
 clock and equals the value read back from any database.
 
 **Nothing moves `updated_date` but you.** Neither the plan nor the repository touches it on a

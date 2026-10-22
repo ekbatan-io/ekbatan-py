@@ -49,7 +49,7 @@ with tm.transaction() as tx:
 
     if orphans:
         tx.execute(update(WALLETS).where(WALLETS.c.id.in_(orphans)).values(currency="EUR"))
-        tx.execute(insert(AUDIT_LOG).values(at=clock.now(), note="currency backfill",
+        tx.execute(insert(AUDIT_LOG).values(at=clock.instant(), note="currency backfill",
                                             affected=len(orphans)))
 ```
 
@@ -64,11 +64,11 @@ async with tm.transaction() as tx:
 
     if orphans:
         await tx.execute(update(WALLETS).where(WALLETS.c.id.in_(orphans)).values(currency="EUR"))
-        await tx.execute(insert(AUDIT_LOG).values(at=clock.now(), note="currency backfill",
+        await tx.execute(insert(AUDIT_LOG).values(at=clock.instant(), note="currency backfill",
                                                   affected=len(orphans)))
 ```
 
-`clock.now()` is written exactly as it is - UTC with no zone attached, which is what the
+`clock.instant()` is written exactly as it is - UTC with no zone attached, which is what the
 zone-less `at` column holds. Nothing converts it on the way in or out
 ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)).
 

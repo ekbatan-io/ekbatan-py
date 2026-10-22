@@ -71,9 +71,12 @@ Nothing extra is needed for that round trip.
   and `new_balance`.
 - **Decimals are JSON numbers** (`10.50`, `1E+3`), and are read back as `Decimal` with their
   scale. MySQL's `JSON` column keeps a fraction as a double.
-- **Dates and times are ISO-8601 text**, each as given: an aware UTC `datetime` as
-  `"2025-01-01T00:00:00.120Z"`, a naive one with no offset; `bytes` as base64. See
-  [Models and entities](/learn/models-and-entities/#modelevent) for the full table.
+- **Dates and times are ISO-8601 text**, each as its field is declared (`ekbatan.time`): an
+  `Instant` as `"2025-01-01T00:00:00.120Z"`, a `LocalDateTime` with no offset, an
+  `OffsetDateTime` with its own; a field declared plain `datetime` is refused when the action
+  runs, and nothing is saved. `bytes` as base64. See
+  [Models and entities](/learn/models-and-entities/#modelevent) for the full table, and
+  [time kinds](/reference/multi-database/#time-kinds).
 
 A Java service built on Ekbatan reads and writes this same JSON - see
 [Running beside a Java service](/reference/beside-java/#event-payloads).

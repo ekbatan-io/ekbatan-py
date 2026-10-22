@@ -59,8 +59,8 @@ class WalletsRecord(TypedDict):
     owner_id: UUID
     currency: Currency      # the column is CHAR(3); its converter gives a Currency
     balance: Decimal
-    created_date: datetime
-    updated_date: datetime
+    created_date: Instant
+    updated_date: Instant
 ```
 
 A nullable column is `X | None`; a column the database fills itself (a server default, an

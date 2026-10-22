@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ekbatan._json import decode, dumps, loads
+from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
 
 HERE = Path(__file__).parent
 EPOCH = datetime(1970, 1, 1)
@@ -30,12 +31,14 @@ def value(kind: str, raw: str) -> tuple[Any, type]:
     if kind in ("instant", "ldt", "odt"):
         sec, micros = int(parts[0]), int(parts[1])
         naive = EPOCH + timedelta(seconds=sec, microseconds=micros)
+        # Since EKB-0420 a datetime is written as the kind it is declared (ekbatan.time): an
+        # Instant is UTC's digits with no zone attached, as the default clock gives.
         if kind == "ldt":
-            return naive, datetime
-        aware = naive.replace(tzinfo=UTC)
+            return naive, LocalDateTime
         if kind == "instant":
-            return aware, datetime
-        return aware.astimezone(timezone(timedelta(seconds=int(parts[2])))), datetime
+            return naive, Instant
+        aware = naive.replace(tzinfo=UTC)
+        return aware.astimezone(timezone(timedelta(seconds=int(parts[2])))), OffsetDateTime
     if kind in ("lt", "ot"):
         nod = int(parts[0]) // 1000
         sec, micro = divmod(nod, 1_000_000)
@@ -65,7 +68,7 @@ for line in TEXT.splitlines():
     kind, raw, java = line.split("\t")
     v, hint = value(kind, raw)
     total[kind] += 1
-    mine = dumps(v)
+    mine = dumps(v, hint)
     if mine == java:
         same[kind] += 1
     elif shown[kind] < 3:
@@ -93,9 +96,9 @@ for line in TEXT.splitlines():
 for kind in total:
     print(f"PROBE formats.{kind}.write: {same[kind]}/{total[kind]} same as Java")
     if kind == "odt":
-        # An aware datetime at offset zero is an Instant here (Python has one type for both):
-        # Java's OffsetDateTime at Z trims the fraction (.4Z), its Instant groups it (.400Z).
+        # Before EKB-0420 an aware datetime at offset zero was written as an Instant (.400Z
+        # where Java's OffsetDateTime gives .4Z). Declared OffsetDateTime, it is Java's text.
         zero = sum(1 for ln in TEXT.splitlines()
                    if ln.startswith("odt\t") and ln.split("\t")[1].endswith(",0"))
-        print(f"PROBE formats.odt.offsetZero: {zero} of them at offset zero, written as an Instant")
+        print(f"PROBE formats.odt.offsetZero: {zero} of them at offset zero, declared OffsetDateTime")
     print(f"PROBE formats.{kind}.read: {read[kind]}/{total[kind]} read back exactly")

@@ -119,9 +119,10 @@ What the decoder does with each field, driven by its annotation:
 |---|---|---|
 | `Decimal` | a JSON **number**: `10.50`, `1E+3` | the same `Decimal`, scale kept |
 | `float` | a number: `0.1`, `1.0E20` | `float` |
-| `datetime` with UTC | ISO-8601 text ending in `Z`: `"2025-01-01T00:00:00.120Z"` | aware, UTC |
-| `datetime` with another offset | ISO-8601 text with the offset: `"...T02:00:00+02:00"` | aware, that offset |
-| `datetime` with no zone | ISO-8601 text, no offset: `"2025-01-01T10:00:00"` | no zone, as written |
+| `Instant` (`ekbatan.time`) - no zone attached, UTC digits | ISO-8601 text ending in `Z`: `"2025-01-01T00:00:00.120Z"` | no zone attached, the same digits |
+| `LocalDateTime` - no zone attached | ISO-8601 text, no offset: `"2025-01-01T10:00:00"` | no zone attached, as written |
+| `OffsetDateTime` - zone attached | ISO-8601 text with the offset: `"...T02:00:00+02:00"` | zone attached, that offset |
+| plain `datetime` | **refused** - declare it one of the three | |
 | `date`, `time`, `timedelta` | ISO-8601 text: `"2025-01-01"`, `"10:00:00"`, `"PT1.5S"` | the same type |
 | `bytes` | base64: `"AQL/"` | `bytes` |
 | `UUID` | its text | `UUID` |
@@ -131,6 +132,12 @@ What the decoder does with each field, driven by its annotation:
 | a nested frozen dataclass | an object, keys as below | recursively, the same way |
 | `list` / `tuple` / `set` / `frozenset` / `dict` of any of the above | array / object | element by element |
 | `T \| None` | | the non-`None` arm, when there is exactly one |
+
+A `datetime` field says which kind of time it holds: `Instant`, `LocalDateTime` or
+`OffsetDateTime`, from `ekbatan.time` ([time kinds](/reference/multi-database/#time-kinds)). Python has one class for the three,
+and only the declaration tells a reader which it gets. A field declared plain `datetime`, or a
+value of the wrong sort for its kind - a zone attached in an `Instant` field - is refused when
+the event is written, inside `executor.execute`: the action fails and nothing is saved.
 
 **Anything else is refused** with a `ValidationError` naming its class, before anything is
 written: a plain class or an `attrs` class, for example (a `NamedTuple` is a tuple, so it is an

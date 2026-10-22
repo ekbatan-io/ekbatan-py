@@ -40,16 +40,21 @@ the Java while porting go in an openspec change, not a code change.
 - **The framework never converts time** (hard rule, AGENTS.md "Time: the framework never
   converts it"): every time is written and read exactly as given; no `astimezone`/`tzinfo`
   normalisation anywhere in `src/` (`tests/unit/test_time_as_is.py` guards it). The default
-  `SystemClock().now()` is UTC with no zone attached. Changing this needs the user's OK.
+  `SystemClock().instant()` is UTC with no zone attached. Changing this needs the user's OK.
 - `timestamp_column()`, never a zoned type. `DATETIME(6)`, never bare `DATETIME`. It is only a
   column type: zone-less, microseconds.
 - **UTC everywhere is the strong recommendation** - the user's job, not the framework's - in
-  code, docs and examples alike: time from the clock (`clock.now()`, `self.now()`), never
+  code, docs and examples alike: time from the clock (`clock.instant()`, `self.instant()`), never
   `datetime.now()` (local time); `TIMESTAMP`,
   never `TIMESTAMPTZ`; the database in UTC or each session put on it via `data_source_properties`.
   Say so wherever timestamps come up. Guide: `docs/database/multi-database.md#always-utc`.
 - Params and payload JSON is the text Java's default Jackson 3 mapper writes, byte for byte
   (camelCase keys, decimals as numbers); `ekbatan._json` and `parity-probes/G-domain-model/` hold it.
+- **Time kinds** (`ekbatan.time`, AGENTS.md "Time kinds"): `Instant`, `LocalDateTime`,
+  `OffsetDateTime` are `NewType` labels over `datetime`. `clock.instant()` is the one clock
+  reading (no `now()`); models' dates and framework-written times are `Instant`; event and params
+  JSON is written by the declared label and a plain `datetime` field is refused; schemagen types
+  zone-less timestamps `Instant`, a forced `LocalDateTime` as such, `TIMESTAMPTZ` `OffsetDateTime`.
 - Nothing in `src/` may import a web framework. `tests/test_structure.py` enforces it.
 - The ambient transaction is a `ContextVar`. Work handed to a pool does not inherit it, and that
   is correct.

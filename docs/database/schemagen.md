@@ -59,7 +59,7 @@ class OrdersRecord(TypedDict):
     id: UUID
     amount: Decimal
     note: str | None
-    created_date: datetime
+    created_date: Instant
 ```
 
 Import `ORDERS` and query it like any SQLAlchemy table; type a repository's mapping with
@@ -82,7 +82,8 @@ Each key's type is read from the type object the module builds for that column:
 | --- | --- |
 | a plain SQL type | what SQLAlchemy reads it as: `int`, `str`, `Decimal` for `NUMERIC`, `float` for `DOUBLE`, `bool`, `bytes`, `date`, `time`, `timedelta` |
 | `uuid_column()` | `UUID` |
-| `timestamp_column()` | `datetime` - the value as written, no zone added |
+| `timestamp_column()` | `Instant` - the value as written, no zone added; `LocalDateTime` where a forced type says so ([time columns](#time-columns)) |
+| `TIMESTAMPTZ` | `OffsetDateTime` |
 | a JSON column, `json_column()` | `JsonValue`, from `ekbatan.schema`: an object, an array, text, a number, a boolean or `None` |
 | an enum | a `Literal` of its values: `Literal["NEW", "DONE"]` |
 | an array, a MySQL `SET` | `list[...]` of its item, `set[str]` |
@@ -170,8 +171,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `UUID` | `uuid_column()` | `uuid.UUID` |
 | `JSONB` | `json_column()` | `dict`, `list` |
 | `JSON` | `JSON(none_as_null=True)` | `dict`, `list` |
-| `TIMESTAMP`, `TIMESTAMP(p)` | `timestamp_column()` | `datetime`, as stored |
-| `TIMESTAMPTZ` | `TIMESTAMP(timezone=True)` | `datetime` |
+| `TIMESTAMP`, `TIMESTAMP(p)` | `timestamp_column()` | `Instant`, as stored |
+| `TIMESTAMPTZ` | `TIMESTAMP(timezone=True)` | `OffsetDateTime` |
 | `DATE` | `DATE()` | `date` |
 | `TIME`, `TIMETZ` | `TIME()`, `TIME(timezone=True)` | `time` |
 | `TIME(p)` | `postgresql.TIME(precision=p)` | `time` |
@@ -187,8 +188,9 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 
 - A JSON column reads whatever the JSON holds: a `dict`, a `list`, a number or a string.
 - `timestamp_column()` reads the `datetime` exactly as stored - no zone added
-  ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)). A `TIMESTAMPTZ` reads a
-  `datetime` with a zone, as the driver returns it, and a note suggests plain `TIMESTAMP`.
+  ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)); its
+  record says `Instant`. A `TIMESTAMPTZ` reads a `datetime` with a zone, as the driver returns
+  it - an `OffsetDateTime` - and a note suggests plain `TIMESTAMP` ([time columns](#time-columns)).
 - `INET` and `CIDR` values come from Python's `ipaddress` module. `Range` is
   `sqlalchemy.dialects.postgresql.Range`.
 - The `MACADDR` row also covers `MACADDR8`, `VARBIT(n)` and `TSVECTOR`.
@@ -216,7 +218,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `BLOB` | `BLOB()` | `bytes` |
 | `TINYBLOB`, `LONGBLOB`, ... | `mysql.TINYBLOB()`, ... | `bytes` |
 | `JSON` | `json_column()` | `dict`, `list` |
-| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime`, as stored |
+| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `Instant`, as stored |
 | `DATE` | `DATE()` | `date` |
 | `TIME` | `TIME()` | `time` |
 | `TIME(p)` | `mysql.TIME(fsp=p)` | `time` |
@@ -255,7 +257,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `BLOB` | `BLOB()` | `bytes` |
 | `TINYBLOB`, `LONGBLOB`, ... | `mysql.TINYBLOB()`, ... | `bytes` |
 | `JSON` | `json_column()` | `dict`, `list` |
-| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime`, as stored |
+| `DATETIME(6)`, `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `Instant`, as stored |
 | `DATE` | `DATE()` | `date` |
 | `TIME` | `TIME()` | `time` |
 | `TIME(p)` | `mysql.TIME(fsp=p)` | `time` |
@@ -286,7 +288,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `TEXT` | `TEXT()` | `str` |
 | `BLOB` | `BLOB()` | `bytes` |
 | `JSON` | `json_column()` | `dict`, `list` |
-| `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `datetime`, as stored |
+| `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `Instant`, as stored |
 | `DATE` | `DATE()` | `date` |
 | `TIME` | `TIME()` | `time` |
 
@@ -323,12 +325,13 @@ instead, so that the value is the same on every database:
 
 | columns | become | on |
 | --- | --- | --- |
-| `TIMESTAMP`, `DATETIME` (any precision, no zone) | `timestamp_column()` | all |
+| `TIMESTAMP`, `DATETIME` (any precision, no zone) | `Instant`: `timestamp_column()`, its record saying `Instant` | all |
+| `TIMESTAMPTZ` | `OffsetDateTime`: its own type kept, its record saying `OffsetDateTime` | PostgreSQL |
 | `JSONB` | `json_column()` | PostgreSQL |
 | `JSON` | `json_column()` | MySQL, MariaDB, SQLite |
 | `UUID` | `uuid_column()` | PostgreSQL |
 
-Turn all four off with `default-forced-types = false`.
+Turn all five off with `default-forced-types = false`.
 
 ### A uuid stored as text
 
@@ -425,9 +428,10 @@ include-types = "MEDIUMTEXT|LONGTEXT"
 
 **What the columns become** - exactly one of:
 
-- `name`: one of Ekbatan's helpers (`uuid_column`, `json_column`, `timestamp_column`), or a
-  SQLAlchemy type written as in Python: `Text`, `String(36)`, `Numeric(19, 4)`,
-  `postgresql.INET`, `mysql.TINYINT(unsigned=True)`.
+- `name`: a time kind (`Instant`, `LocalDateTime`, `OffsetDateTime` - see
+  [time columns](#time-columns)), one of Ekbatan's helpers (`uuid_column`, `json_column`,
+  `timestamp_column`), or a SQLAlchemy type written as in Python: `Text`, `String(36)`,
+  `Numeric(19, 4)`, `postgresql.INET`, `mysql.TINYINT(unsigned=True)`.
 - `converter`: your own class with `from_db` and `to_db`. The column keeps its type, and your
   class turns its values into yours. See [Write your own converter](#write-your-own-converter).
 - `sqlalchemy-type`: a ready-made SQLAlchemy type from a library. See
@@ -654,6 +658,45 @@ record like any table - `EventsRecord`, `EventNotificationsRecord`, `ScheduledTa
 from the helper's columns.
 `excludes = "scheduled_tasks"` leaves one out.
 
+## Time columns
+
+Each time column's record says which kind of time it holds ([time kinds](multi-database.md#time-kinds),
+from `ekbatan.time`), so mypy keeps a moment and a wall-clock time apart:
+
+| the column | `schema.py` | its type in the record |
+| --- | --- | --- |
+| PostgreSQL `TIMESTAMP`, MySQL and MariaDB `DATETIME` and `TIMESTAMP`, SQLite `DATETIME` | `timestamp_column()` | `Instant` - a moment, UTC digits with no zone attached |
+| any of those, forced to `LocalDateTime` | `timestamp_column()` | `LocalDateTime` - a wall date and time |
+| PostgreSQL `TIMESTAMPTZ` | `sqlalchemy.TIMESTAMP(timezone=True)`, its precision kept | `OffsetDateTime` - a zone attached |
+| `TIME` | `sqlalchemy.TIME()` | `time` |
+| `DATE` | `sqlalchemy.DATE()` | `date` |
+
+A zone-less timestamp is an `Instant` unless you say otherwise. A column that holds a wall-clock
+time - "remind me at 09:00", whatever the zone - is forced to `LocalDateTime` by a rule of your
+own, which is tried before the built-in one. The column stays the same zone-less timestamp; only
+the record's label changes:
+
+```toml
+[[tool.ekbatan.schemagen.forced-types]]
+name = "LocalDateTime"
+include-types = "TIMESTAMP|DATETIME"
+include-expression = "reminders\\.at"
+```
+
+```python
+class RemindersRecord(TypedDict):
+    id: UUID
+    at: LocalDateTime
+    created_date: Instant
+```
+
+**A `TIMESTAMPTZ` keeps the moment, not the offset.** PostgreSQL turns what you write into UTC
+and gives it back at the session's offset, so a value written at `+03:30` reads back as the same
+moment at another offset: the session's zone through psycopg, UTC through asyncpg. Compare such
+values as moments; do not read the offset back as the writer's. MySQL and MariaDB have no zoned
+column at all - nothing there keeps an offset - so on them every timestamp is an `Instant` or a
+`LocalDateTime`.
+
 ## UTC
 
 Ekbatan strongly recommends UTC everywhere and columns without a zone - see
@@ -662,8 +705,9 @@ not:
 
 - `TIMESTAMP` (PostgreSQL) and `DATETIME(6)` (MySQL, MariaDB) become `timestamp_column()`:
   a zone-less column with microseconds, holding and returning exactly what was written - the
-  framework converts no time;
-- a `TIMESTAMPTZ` keeps its zone, with a note;
+  framework converts no time - and their records say `Instant`;
+- a `TIMESTAMPTZ` keeps its zone, its record says `OffsetDateTime`, and a note says what it
+  gives back ([time columns](#time-columns));
 - MySQL's `TIMESTAMP` type, a bare `DATETIME`, a `TIMESTAMP(3)`: they become
   `timestamp_column()` too, with a note saying how the column differs from `DATETIME(6)`.
 
@@ -697,12 +741,12 @@ fingerprint of the migrations it came from, and checks it on import. A stale mod
 `ValidationError` saying to regenerate, instead of failing later on a missing column.
 
 It also carries `SCHEMA_FORMAT`, the shape of module this schemagen writes. When a new ekbatan
-writes a different shape - the typed records, or every SQLAlchemy name written through
-`import sqlalchemy` - a module written by the older schemagen refuses to import, even though its
+writes a different shape - the typed records, every SQLAlchemy name written through
+`import sqlalchemy`, the records' time kinds - a module written by the older schemagen refuses to import, even though its
 migrations have not changed:
 
 ```
-schema.py was written by an older schemagen (format 2; this ekbatan writes 3). Regenerate it ...
+schema.py was written by an older schemagen (format 3; this ekbatan writes 4). Regenerate it ...
 ```
 
 A build that only regenerates when the migrations change, like the examples' `Makefile`, keeps

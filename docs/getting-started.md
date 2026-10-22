@@ -143,7 +143,8 @@ Frozen, so a deposit returns a new wallet rather than mutating one. `with_event`
 outbox API from a domain author's point of view.
 
 **Time is UTC, and stored as given.** A model's dates come from the framework's clock
-(`self.now()` in an action) - UTC with no zone attached - and are stored in zone-less columns
+(`self.instant()` in an action) - an `Instant`, UTC with no zone attached
+([time kinds](database/multi-database.md#time-kinds)) - and are stored in zone-less columns
 exactly as they are: the framework never converts a time
 ([What you give is what is stored](database/multi-database.md#what-you-give-is-what-is-stored)). UTC is the strong
 recommendation everywhere - in your code and on the database - see

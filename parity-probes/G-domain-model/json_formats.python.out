@@ -6,8 +6,8 @@ PROBE formats.instant.write: 3000/3000 same as Java
 PROBE formats.instant.read: 3000/3000 read back exactly
 PROBE formats.ldt.write: 3000/3000 same as Java
 PROBE formats.ldt.read: 3000/3000 read back exactly
-PROBE formats.odt.write: 2984/3000 same as Java
-PROBE formats.odt.offsetZero: 65 of them at offset zero, written as an Instant
+PROBE formats.odt.write: 3000/3000 same as Java
+PROBE formats.odt.offsetZero: 65 of them at offset zero, declared OffsetDateTime
 PROBE formats.odt.read: 3000/3000 read back exactly
 PROBE formats.lt.write: 3000/3000 same as Java
 PROBE formats.lt.read: 3000/3000 read back exactly

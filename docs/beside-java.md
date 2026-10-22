@@ -129,17 +129,21 @@ and the other way round.
 | --- | --- | --- |
 | `Decimal` | `BigDecimal` | a JSON number: `10.50`, `1E+3` |
 | `float` | `double` | a number: `0.1`, `1.0E20` |
-| aware UTC `datetime` | `Instant` | `"2025-01-01T00:00:00.120Z"` |
-| `datetime` with another offset | `OffsetDateTime` | `"2025-01-01T02:00:00+02:00"` |
-| `datetime` with no zone | `LocalDateTime` | `"2025-01-01T10:00:00"` |
-
-A `datetime` is written as it is, so a time straight from the default clock - no zone attached -
-is a `LocalDateTime` to Java. Where the Java event declares an `Instant`, give the event an aware
-UTC value: `clock.now().replace(tzinfo=UTC)`, in your own code.
+| `Instant` (`ekbatan.time`) | `Instant` | `"2025-01-01T00:00:00.120Z"` |
+| `OffsetDateTime` | `OffsetDateTime` | `"2025-01-01T02:00:00+02:00"` |
+| `LocalDateTime` | `LocalDateTime` | `"2025-01-01T10:00:00"` |
 | `date`, `time`, `timedelta` | `LocalDate`, `LocalTime`, `Duration` | `"2025-01-01"`, `"10:00:00"`, `"PT1.5S"` |
 | `bytes` | `byte[]` | base64: `"AQL/"` |
 | an `Enum` | an enum | the member's name |
 | `Id`, `ShardedId` | `Id`, `ShardedId` | `{"id": "...", "value": "..."}` |
+
+**A time field says which Java type it is.** Python has one `datetime` class for Java's three,
+so the field's declared label decides: declare it `Instant`, `LocalDateTime` or `OffsetDateTime`
+from `ekbatan.time`, as the Java event declares it. A time from the clock is an `Instant` - UTC
+digits with no zone attached - and is written with Java's `Z`, the text Jackson writes for an
+`Instant`; nothing else is needed. A field declared plain `datetime` is refused when the action
+runs, and nothing is saved, rather than written in a form the Java side may refuse. Java's text
+reads back the same way: `"...Z"` into an `Instant` field gives the UTC digits, no zone attached.
 
 One database bends numbers for both sides alike: MySQL's `JSON` column keeps a number with a
 fraction as a double, so `50.00` comes back `50.0` whichever service wrote it.

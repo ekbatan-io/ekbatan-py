@@ -139,16 +139,17 @@ row the other wrote.
 
 ## The JSON of params and payloads is Java's, byte for byte
 
-> **parity** - since `EKB-0290` the outbox's `action_params` and `payload` are the text Ekbatan's default Jackson 3 mapper writes for the same object. Three corners Python cannot reach are listed below and in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#json-domain-model-and-timestamps-ekb-0290-ekb-0295).
+> **parity** - since `EKB-0290` the outbox's `action_params` and `payload` are the text Ekbatan's default Jackson 3 mapper writes for the same object. Two corners Python cannot reach are listed below and in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#json-domain-model-and-timestamps-ekb-0290-ekb-0295).
 
 A dataclass field `new_balance` is written `newBalance`, in declaration order (a Java record, or
 an event with Ekbatan's usual `@JsonCreator`); decimals are JSON numbers in `BigDecimal.toString()`
-form; floats in `Double.toString()` form; an aware UTC `datetime` is an `Instant`, another offset
-an `OffsetDateTime`, a naive one a `LocalDateTime`; `date`, `time`, `timedelta` are `LocalDate`,
+form; floats in `Double.toString()` form; a `datetime` is written as the kind its field declares
+(`ekbatan.time`: `Instant`, `LocalDateTime`, `OffsetDateTime` - see [time
+kinds](#time-kinds-are-labels-on-one-datetime-a-json-time-field-must-declare-one)); `date`, `time`, `timedelta` are `LocalDate`,
 `LocalTime`, `Duration`; bytes are base64; `Id` and `ShardedId` are `{"id": ..., "value": ...}`
 and any other `TypedValue` `{"value": ...}`, which is what Jackson makes of Java's getters. Checked
 against Jackson over 50,000 values (`parity-probes/G-domain-model/JsonFormatsParityProbeTest.java`
-and `json_formats_probe.py`): every one the same, except the first corner below.
+and `json_formats_probe.py`): every one the same.
 
 Reading parses every JSON number as a `Decimal`, so Python loses nothing - including from Java's
 rows, where Java's own reader loses digits (it reads numbers through a `double`; noted for the
@@ -156,9 +157,6 @@ Java side in DECISIONS-TO-REVIEW). Each field is rebuilt as its declared type.
 
 What Python cannot match:
 
-- **An `OffsetDateTime` at offset zero.** Python has one aware `datetime`; at UTC it is written
-  as an `Instant`, whose fraction comes in groups of three (`.400Z`) where Java's
-  `OffsetDateTime` cuts it (`.4Z`). Both read back as the same instant.
 - **A Java class with no `@JsonCreator`** has its keys sorted by Jackson 3. A dataclass always
   has a constructor, so its keys follow declaration order, as a record's or a creator's do.
 - **A missing key for a Java primitive** (`long`, `double`, `boolean`) is refused by Jackson 3;
@@ -422,7 +420,7 @@ not belong in application code. That is a fair argument for a **default**; it wa
 argument for dropping the **validation**, and it left one class with two standards for
 "required" - `id`, `state` and `version` refused at construction while the two timestamps were
 silently optional. Java gets both: a required field, and a factory that supplies it from the
-clock. Pass `self.clock.now()`, which is what `clock.instant()` is doing on the other side.
+clock. Pass `self.clock.instant()`, which is what `clock.instant()` is doing on the other side.
 
 `Entity` has no timestamps in either port. A row that needs to know when it last changed almost
 certainly has changes worth telling the rest of the system about, which makes it a `Model`.
@@ -433,7 +431,7 @@ and `nextVersion()` carries whatever the row held forward - and this port briefl
 from the clock on every staged update. It no longer does:
 
 ```python
-self.copy().updated_date(self.clock.now()).balance(new).build()
+self.copy().updated_date(self.clock.instant()).balance(new).build()
 ```
 
 on the changes where it means something. The version still moves inside the write, under
@@ -456,7 +454,7 @@ back into an `Instant` on the way out.
 This port converts nothing (`EKB-0384`). A `datetime` goes to the driver as the model, row or
 clock held it and comes back as the driver returns it: no zone added, removed or moved, in
 models, repositories, `timestamp_column()`, the outbox, notifications, event JSON or CDC rows.
-`SystemClock().now()` gives the current UTC time with no zone attached - the same value Java's
+`SystemClock().instant()` gives the current UTC time with no zone attached - the same value Java's
 converter writes - so the two ports still agree on what is in the column. What differs is what
 Python code holds: a naive `datetime`, not an aware one. It used to be aware UTC (`EKB-0294`);
 that conversion is gone.
@@ -465,6 +463,25 @@ The cost is the one the user chose to carry: an application that hands in an awa
 what its driver does with it (psycopg moves it to the session's zone, asyncpg refuses it,
 PyMySQL, aiomysql and SQLite drop the offset), and a clock that gives aware values must be
 matched by zoned columns, because the framework compares the two.
+
+## Time kinds are labels on one `datetime`; a JSON time field must declare one
+
+> **forced** - Python has one `datetime` class for Java's `Instant`, `LocalDateTime` and `OffsetDateTime`. The user's design (2026-10-22, `EKB-0419`-). [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md), "time kinds (EKB-0419-)".
+
+Java's types say which kind of time a field holds, and Jackson writes each its own way. Here
+`ekbatan.time` gives the three Java names as `typing.NewType` labels over `datetime`: a type
+checker keeps them apart, and at run time a value is still a plain `datetime`. `Instant` is held
+as UTC digits with no zone attached - what the default clock gives and the zone-less column
+holds - where Java's is a point on the timeline; the JSON is the same (`"...Z"`).
+
+Two consequences Java does not have. `Clock.instant()` is the clock's only method - Java's own
+`Clock` also has a zone, `millis()` and the rest; this port's `now()` was renamed, no alias. And
+**a JSON time field declared plain `datetime` is refused** when the action runs: in Java an
+event field cannot be "some kind of time", here it can, and writing it would make the reader
+guess. A schemagen record types each time column by kind too - `Instant` for zone-less columns,
+`OffsetDateTime` for `TIMESTAMPTZ`, `LocalDateTime` where a forced type says - where jOOQ's
+generated record holds whatever the project's forced types make it.
+
 ## The per-invocation plan lives in a `ContextVar`
 
 > **forced** - CPython has no `ScopedValue`. A `ContextVar` is the direct analogue.

@@ -1,6 +1,6 @@
 # Example matrix
 
-Eleven examples, each built three ways - with uv, pip and Poetry - so 33 projects:
+Fourteen examples, each built three ways - with uv, pip and Poetry - so 42 projects:
 `<stack>-<domain>-<style>-<build>[-variant]-<db>`, Java's own naming. Only the REST example is
 replicated per database, the same shape the Java port uses.
 
@@ -17,8 +17,12 @@ replicated per database, the same shape the Java port uses.
 | `fastapi-wallet-rest-{build}-async-mysql` | MySQL | the same, on aiomysql | yes |
 | `fastapi-wallet-rest-{build}-async-mariadb` | MariaDB | the same, on aiomysql | yes |
 | `wallet-service-{build}-async-sqlite` | SQLite | the SQLite one on `ekbatan.aio` (aiosqlite) | no |
+| `fastapi-wallet-rest-{build}-async-sharded-pg` | PostgreSQL x2 | the sharded one on `ekbatan.aio`; reads that name no shard ask both at once | yes |
+| `fastapi-wallet-saga-{build}-async-pg` | PostgreSQL | the saga, its later steps run by `async def` handlers on the handler loop | yes |
+| `job-worker-{build}-async-pg` | PostgreSQL | the job worker, its jobs' work run on a worker loop (`HandlerLoop`), awaited | yes |
 
-The async twins leave out the stipend job: jobs always run on threads through the sync API.
+The async REST and SQLite twins leave out the stipend job: jobs always run on threads through
+the sync API, and the job worker's async twin shows the one way a job's work can be async.
 
 The uv project is the source; `scripts/sync-examples.py` writes the other two from it.
 
@@ -58,8 +62,8 @@ class of the app's own:
 
 | example | by type (`include-types`) | by name (`include-expression`) |
 | --- | --- | --- |
-| REST (pg, mysql, mariadb, sharded-pg), job worker | `CHAR\(3\)` -> `Currency` | `alerts\.recipient` -> `EmailAddress` |
-| saga | `CHAR\(3\)` -> `Currency` | `transfer_steps\.step` -> `StepName` |
+| REST (pg, mysql, mariadb, sharded-pg, and their async twins), job worker (both) | `CHAR\(3\)` -> `Currency` | `alerts\.recipient` -> `EmailAddress` |
+| saga (both) | `CHAR\(3\)` -> `Currency` | `transfer_steps\.step` -> `StepName` |
 
 The rules live in `scripts/sync-examples.py` (`Forced`, `WALLET_FORCED`, `SAGA_FORCED`), which
 writes every `pyproject.toml` - an edit to a project's own file is overwritten. Action parameters

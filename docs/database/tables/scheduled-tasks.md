@@ -138,6 +138,9 @@ registry = (
 )
 ```
 
+This is the scheduler's own clock, from db-scheduler, and its one method keeps db-scheduler's
+name, `now()` - unlike Ekbatan's `Clock`, whose reading is `instant()`.
+
 Without it the scheduler compares its naive clock with the zoned times PostgreSQL hands back,
 and Python refuses. Measured with a one-second job on a `timestamptz` table: the job still ran,
 but every restart logged `TypeError: can't compare offset-naive and offset-aware datetimes`

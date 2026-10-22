@@ -74,6 +74,7 @@ src/ekbatan/
   schema.py          the framework's own tables, and the column helpers
   errors.py          the exception hierarchy
   clock.py           Clock, SystemClock, VirtualClock
+  time.py            Instant, LocalDateTime, OffsetDateTime - the time-kind labels
   migrations.py      SQL migrations on yoyo: files, checks, history, one call per layout
   _yoyo.py           the yoyo backends: one connection, the session lock, the replica check
   schemagen/         table definitions generated from a migrated database: config, type table,
@@ -136,9 +137,12 @@ change in an application reads the same way.
 into or out of a model, row, event, notification or JSON. A value goes to the driver as the
 model or the clock held it and comes back as the driver returns it.
 
-- The default clock, `SystemClock().now()`, gives the current **UTC time with no zone attached**
-  (`datetime.now(UTC).replace(tzinfo=None)`, in `clock.py`'s `_utc_now()` - the one allowed read
-  of the wall clock). `VirtualClock` keeps any instant it is given as given.
+- A clock has **one reading, `clock.instant()`** (`self.instant()` in an action), Java's
+  `clock.instant()`. `now()` is gone - renamed outright, no alias; db-scheduler's own clock keeps
+  db-scheduler's `now()`. The default clock, `SystemClock().instant()`, gives the current **UTC
+  time with no zone attached** (`datetime.now(UTC).replace(tzinfo=None)`, in `clock.py`'s
+  `_utc_now()` - the one allowed read of the wall clock). `VirtualClock` keeps any instant it is
+  given as given.
 - `timestamp_column()` is only a column definition: zone-less, microsecond precision
   (`DATETIME(6)` on MySQL and MariaDB, whose bare `DATETIME` drops the fraction). It converts
   nothing.
@@ -155,10 +159,47 @@ model or the clock held it and comes back as the driver returns it.
   compares what the clock gives with what the database returns (due times, retries, expiry),
   so a naive column and an aware clock raise `TypeError` there.
 
+### Time kinds: `ekbatan.time`
+
+Python has one `datetime` for Java's three, so three `typing.NewType` labels say which a value
+is - no run-time cost, a value stays a plain `datetime`, and `Instant(x)` is `x`:
+
+| label | holds | Java | column | JSON |
+| --- | --- | --- | --- | --- |
+| `Instant` | a moment: UTC digits, no zone attached | `Instant` | zone-less `TIMESTAMP` / `DATETIME(6)` | `"...00.120Z"` |
+| `LocalDateTime` | a wall date and time, no zone attached | `LocalDateTime` | the same zone-less column | `"...00.12"` |
+| `OffsetDateTime` | a moment with its offset, zone attached | `OffsetDateTime` | PostgreSQL `TIMESTAMPTZ` | `"...00.12+03:30"` |
+
+`time` and `date` stay Python's own. No other labels.
+
+- `clock.instant()` is an `Instant`; so are a model's `created_date` / `updated_date` and every
+  time the framework writes (outbox, notifications, dispatch and retry, executor, jobs). mypy
+  keeps the kinds apart (`tests/unit/test_time_kinds_mypy.py`): an `Instant` where a
+  `LocalDateTime` is expected, a plain `datetime` where an `Instant` is, are errors; arithmetic
+  keeps the label.
+- **Persistence stays as is**: no conversion, no run-time check in columns; `timestamp_column()`
+  stays a column definition. `Instant` and `LocalDateTime` columns are the same SQL type.
+- **JSON (event payloads and action params) is written by the declared label** (`_json.py`,
+  field hints read with `typing.get_type_hints`, cached, through nested dataclasses, lists,
+  tuples, dicts, `X | None`, `TypedValue[X]`, `TypedDict`): `Instant` with `Z` exactly as Jackson
+  writes an `Instant`, `LocalDateTime` with no zone, `OffsetDateTime` with its offset. A plain
+  `datetime` field, a `datetime` nothing declares (`dict[str, Any]`), or a value of the wrong sort
+  (aware in an `Instant`, naive in an `OffsetDateTime`) is refused - inside `executor.execute`,
+  so the action fails and nothing is saved. `payload()` is a plain dict, so the outbox writes an
+  event through `canonical_event(event)`, which matches keys back to the class's fields. Reading
+  back: `"...Z"` into an `Instant` gives naive UTC digits (other text is refused - no conversion);
+  a round trip is equal.
+- **schemagen** types each record's time columns by kind: zone-less PostgreSQL `TIMESTAMP`,
+  MySQL/MariaDB `DATETIME` and `TIMESTAMP`, SQLite `DATETIME` -> `Instant` (built-in forced type
+  `name = "Instant"`); a column the project forces to `name = "LocalDateTime"` (its rules are
+  tried first) -> `LocalDateTime`, same column; PostgreSQL `TIMESTAMPTZ` -> `OffsetDateTime`
+  (built-in, its own type and precision kept; PostgreSQL keeps the moment, not the offset).
+  Column comments are never read as a hint - the user rejected that.
+
 **UTC everywhere is the strong recommendation** - now plainly the user's job, so code, docs and
 examples follow it and say so:
 
-- in Python, time comes from the clock (`clock.now()`, `self.now()` in an action) - UTC, no zone;
+- in Python, time comes from the clock (`clock.instant()`, `self.instant()` in an action) - UTC, no zone;
   never `datetime.now()` (local time);
 - columns are zone-less: `TIMESTAMP` on PostgreSQL, `DATETIME(6)` on MySQL and MariaDB; never
   `TIMESTAMPTZ`, never bare `DATETIME`;
@@ -346,8 +387,9 @@ schemas, includes, excludes, and **forced types** - by column name (`include-exp
 type (`include-types`), to a framework helper or a SQLAlchemy type (`name`), to the user's own
 **converter** by dotted path (`converter`: any class with `from_db`/`to_db`, jOOQ's
 `userType` + `converter`), or to a library's ready-made SQLAlchemy type (`sqlalchemy-type`, a
-convenience only). The user's are tried first, then Ekbatan's built-in four (timestamps, JSON,
-PostgreSQL `UUID`), which every Java example's build forces too. Four rules hold it together:
+convenience only). The user's are tried first, then Ekbatan's built-in five (zone-less
+timestamps to `Instant`, PostgreSQL `TIMESTAMPTZ` to `OffsetDateTime`, JSON twice, PostgreSQL
+`UUID`), which every Java example's build forces too. Four rules hold it together:
 
 - **Forcing is what makes the schema right.** A `UUID` reflected from PostgreSQL renders as
   `CHAR(32)` on MySQL - hex with the hyphens stripped, which no Java service can join against.

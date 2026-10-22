@@ -69,9 +69,13 @@ all three REST databases' uv projects; those are not generated from one another.
   module must not import `schema.py` - schemagen imports it before `schema.py` exists.
 
 - **UTC everywhere**, the framework's strong recommendation: an example takes time from the clock
-  (`self.now()`, `clock.now()`), never `datetime.now()`; its migrations use `TIMESTAMP` (PostgreSQL)
+  (`self.instant()`, `clock.instant()`), never `datetime.now()`; its migrations use `TIMESTAMP` (PostgreSQL)
   or `DATETIME(6)` (MySQL, MariaDB), never `TIMESTAMPTZ`; its database runs in UTC. See
   `docs/database/multi-database.md#always-utc`.
+- **Time kinds**: an event's time field is declared `Instant` (or `LocalDateTime` /
+  `OffsetDateTime`) from `ekbatan.time` - a plain `datetime` field is refused when the action
+  runs. Each example's `WalletOpenedEvent` carries `opened_at: Instant`, and a test checks the
+  outbox JSON writes it with `Z`.
 
 ## Workflow
 
