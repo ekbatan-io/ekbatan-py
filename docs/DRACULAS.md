@@ -138,7 +138,7 @@ whatever is decided about the rest.
 |---|---|---|---|---|---|
 | 68 | `execute(Action, params, principal="x")`: principal last, a plain string | convention + choice | partly | M | B |
 | 69 | An action can rename itself in the outbox by overriding `name` | choice | yes | M | B |
-| 70 | `event_type` is a string on an event and a class on a handler; overriding the event's breaks fan-out silently | choice | yes | M | B |
+| 70 | ~~`event_type` is a string on an event and a class on a handler; overriding the event's breaks fan-out silently~~ **fixed** (`EKB-0495`): an event's `event_type` is final, its class name, as in Java - mypy flags an override and the event class is refused when it is defined | choice | yes | M | B |
 | 71 | A handler is any object with `name`, `event_type`, `handle`, as class attributes | convention | partly | L | B |
 | 72 | Retry delay is float seconds; `RetryConfig()` with no arguments means "one retry after 100 ms" | choice | yes | L | B |
 | 73 | A missing handler is not counted as a failed attempt | choice | yes | L | B |

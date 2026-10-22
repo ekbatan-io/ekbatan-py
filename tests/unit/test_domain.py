@@ -882,3 +882,41 @@ def test_a_models_timestamps_are_kept_exactly_as_given():
     naive = datetime(2026, 1, 1, 10, 0, 0, 123456)
     plain = wallet.copy().updated_date(naive).build()
     assert plain.updated_date is naive and plain.updated_date.tzinfo is None
+
+
+def test_an_event_that_overrides_its_type_is_refused_when_it_is_defined():
+    """Handlers subscribe under the class name; an event stored under another name was never
+    delivered to them, and nothing said so. As in Java, the type is the class name, and only
+    that."""
+    from dataclasses import dataclass
+
+    import pytest
+
+    from ekbatan import ModelEvent
+
+    with pytest.raises(TypeError, match="overrides event_type: an event's type is its class name"):
+
+        @dataclass(frozen=True, kw_only=True)
+        class RenamedEvent(ModelEvent[object]):
+            @property
+            def event_type(self) -> str:
+                return "wallet.renamed"
+
+
+def test_overriding_event_type_is_a_type_error_to_mypy(tmp_path):
+    """The editor and mypy say so before anything runs."""
+    from mypy import api
+
+    source = tmp_path / "renamed.py"
+    source.write_text(
+        "from dataclasses import dataclass\n"
+        "from ekbatan import ModelEvent\n\n"
+        "@dataclass(frozen=True, kw_only=True)\n"
+        "class RenamedEvent(ModelEvent[object]):\n"
+        "    @property\n"
+        "    def event_type(self) -> str:\n"
+        "        return 'wallet.renamed'\n"
+    )
+    out, _, status = api.run(["--strict", "--no-incremental", str(source)])
+    assert status == 1, out
+    assert 'Cannot override final attribute "event_type"' in out, out

@@ -187,6 +187,9 @@ An action that emits no events still writes **one row**, with `model_id`, `model
 
 A consumer skips them with `event_type IS NULL`. The Debezium transforms already do.
 
+Otherwise `event_type` is the event's class name - the name handlers subscribe to. An event
+class cannot override it: mypy flags an override, and the class is refused when it is defined.
+
 ## What happens after commit
 
 The outbox is **just a table**. Anything that can read it can consume it.

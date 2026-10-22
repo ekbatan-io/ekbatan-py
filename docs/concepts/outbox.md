@@ -96,7 +96,7 @@ handlers:
 | `action_params` | the parameters the action was called with |
 | `started_date`, `completion_date` | the action's span |
 | `model_id`, `model_type` | which aggregate this event is about |
-| `event_type`, `payload` | the event's name and its JSON |
+| `event_type`, `payload` | the event's name - its class name, which an event class cannot override - and its JSON |
 | `event_date` | when it happened; the ordering key |
 | `delivered` | the in-process dispatch flag |
 

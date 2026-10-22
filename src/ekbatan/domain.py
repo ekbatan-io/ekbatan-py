@@ -30,7 +30,7 @@ import typing
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, final
 
 from .errors import EkbatanError, ValidationError
 from .time import Instant
@@ -94,6 +94,14 @@ class ModelEvent[M = Any]:
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+        # The type an event is stored and routed under is its class name, as in Java, where
+        # nothing can override it. An override here was stored under one name while handlers
+        # subscribed under the class name, so fan-out never matched and no handler ran.
+        if "event_type" in cls.__dict__:
+            raise TypeError(
+                f"{cls.__qualname__} overrides event_type: an event's type is its class name, "
+                f"which handlers subscribe to. To change it, rename the class."
+            )
         named = _declared_model_name(cls)
         if named is not None:
             cls.__model_name__ = named
@@ -140,9 +148,11 @@ class ModelEvent[M = Any]:
             },
         }
 
+    @final
     @property
     def event_type(self) -> str:
-        """The name a consumer routes and deserialises on."""
+        """The name a consumer routes and deserialises on: the class name. Final - an event
+        class that overrides it is refused when it is defined."""
         return type(self).__name__
 
 
