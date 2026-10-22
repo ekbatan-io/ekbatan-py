@@ -34,7 +34,10 @@ SERVERS = ("postgres", "mysql", "mariadb")
 
 def slow_migrations(directory: Path, dialect: str, seconds: float) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "V1__runs.sql").write_text("CREATE TABLE runs (n INTEGER);")
+    # IF NOT EXISTS: on MySQL and MariaDB a CREATE TABLE commits the moment it runs, so a process
+    # killed after it and before its history row leaves the table behind, and the next run
+    # applies V1 again. Written re-runnable, as such a migration should be there.
+    (directory / "V1__runs.sql").write_text("CREATE TABLE IF NOT EXISTS runs (n INTEGER);")
     (directory / "V2__slow.sql").write_text(
         f"{sleep_sql(dialect, seconds)}\nINSERT INTO runs VALUES (1);"
     )
