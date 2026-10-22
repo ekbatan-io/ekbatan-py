@@ -200,3 +200,46 @@ def test_the_records_type_check_and_hold_the_kinds_apart(
     errors = [line for line in stdout.splitlines() if ": error:" in line]
     assert all("wrong.py" in line for line in errors), stdout
     assert any("wrong.py:10" in line and "return-value" in line for line in errors), stdout
+
+
+# -- a time kind the column cannot hold is refused (the time review, T4) -----------------------
+
+#: Per database: a zone-less timestamp, and columns that hold no timestamp at all.
+_ZONE_LESS = {"postgres": "TIMESTAMP", "mysql": "DATETIME(6)", "sqlite": "DATETIME"}
+_ZONE_LESS["mariadb"] = _ZONE_LESS["mysql"]
+_NOT_TIME = ("VARCHAR(20)", "INTEGER", "TEXT", "DATE")
+
+
+def _refused(backend: Backend, tmp_path: Path, sql_type: str, kind: str) -> str:
+    from ekbatan.errors import ValidationError
+
+    config = SchemagenConfig(forced_types=(ForcedType(name=kind, include_expression=r"things\.c"),))
+    source = migrations(
+        tmp_path / "migrations", f"CREATE TABLE things (id INTEGER PRIMARY KEY, c {sql_type});"
+    )
+    with pytest.raises(ValidationError) as refused:
+        generate(source, tmp_path / "schema.py", url=fresh(backend, "kind"), config=config)
+    assert not (tmp_path / "schema.py").exists(), "no module is written"
+    return str(refused.value)
+
+
+def test_offset_date_time_on_a_zone_less_column_is_refused(
+    backend: Backend, dialect: str, tmp_path: Path
+) -> None:
+    """It used to build the column `TIMESTAMP WITH TIME ZONE` and type the record
+    `OffsetDateTime`, while the real column reads back naive and keeps no offset."""
+    message = _refused(backend, tmp_path, _ZONE_LESS[dialect], "OffsetDateTime")
+    assert "things.c" in message and "OffsetDateTime" in message
+    assert "has no zone" in message and "Instant" in message and "LocalDateTime" in message
+
+
+@pytest.mark.parametrize("kind", ["Instant", "LocalDateTime", "OffsetDateTime"])
+@pytest.mark.parametrize("sql_type", _NOT_TIME)
+def test_a_time_kind_on_a_column_that_holds_no_timestamp_is_refused(
+    backend: Backend, tmp_path: Path, sql_type: str, kind: str
+) -> None:
+    """It used to become `timestamp_column()`, with a note about "fewer than 6 digits"."""
+    message = _refused(backend, tmp_path, sql_type, kind)
+    assert "things.c" in message and kind in message
+    assert "not a timestamp" in message
+    assert "fewer than 6 digits" not in message

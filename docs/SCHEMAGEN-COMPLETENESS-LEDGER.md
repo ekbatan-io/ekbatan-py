@@ -230,3 +230,10 @@ All 14 findings fixed, plus four more the widened round trip found (R0, R15, R16
 SQLite 2), 31 after (PostgreSQL 9, MySQL 9, MariaDB 9, SQLite 4), with views compared in every
 one. Type matrix: `pg_char`, `pg_name`, `enum_backslash`, `set_blank` added. `SCHEMA_FORMAT` is
 6 (MySQL/MariaDB partitioning, after-create statements, sequence defaults).
+
+### Handed over by the other stream
+
+| # | finding | what was done | red before, green after | commit |
+| --- | --- | --- | --- | --- |
+| R17 | (time review T4) forcing `OffsetDateTime` on a zone-less column (PG `TIMESTAMP`, MySQL/MariaDB `DATETIME`, SQLite `DATETIME`) silently built it zoned and typed the record `OffsetDateTime`; forcing `Instant`/`LocalDateTime` on a column holding no timestamp (`VARCHAR`, `INTEGER`, `TEXT`, `DATE`) made it `timestamp_column()` with a "fewer than 6 digits" note | both refused, with a message naming the forced type, the column and what to do. Ekbatan's own time-kind rules now apply to timestamp columns only (SQLAlchemy's `Interval` compiles to `DATETIME` on SQLite and was taken by the `Instant` default) | `test_offset_date_time_on_a_zone_less_column_is_refused`, `test_a_time_kind_on_a_column_that_holds_no_timestamp_is_refused` on all four databases (13 red on SQLite before); unit twins in `test_schemagen_records.py` | EKB-0467 |
+| R18 | flaky `test_schemagen_table_names.py` `abstractrange-sqlite`: "dictionary changed size during iteration" | cause, reproduced: `hints()` evaluated a record's hints with the cached baseline namespace as globals; a warning raised meanwhile - an unclosed SQLite connection's ResourceWarning when the garbage collector runs then - is registered in that frame's globals as `__warningregistry__`, growing the dict the test was iterating. `hints()` now evaluates in a copy; the loops iterate snapshots | `test_reading_a_record_s_hints_leaves_the_module_s_namespace_as_it_was` (a hint whose evaluation warns: red, `__warningregistry__` added; green after) | EKB-0466 |

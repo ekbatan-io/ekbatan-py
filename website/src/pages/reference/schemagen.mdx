@@ -491,6 +491,10 @@ include-types = "MEDIUMTEXT|LONGTEXT"
   [time columns](#time-columns)), one of Ekbatan's helpers (`uuid_column`, `json_column`,
   `timestamp_column`), or a SQLAlchemy type written as in Python: `Text`, `String(36)`,
   `Numeric(19, 4)`, `postgresql.INET`, `mysql.TINYINT(unsigned=True)`.
+  A time kind only labels a timestamp column: one that picks a column holding no timestamp
+  (`VARCHAR`, `INTEGER`, `DATE`...) is refused, and so is `OffsetDateTime` on a zone-less
+  timestamp, which reads back with no offset and keeps none - use `Instant` or
+  `LocalDateTime` there.
 - `converter`: your own class with `from_db` and `to_db`. The column keeps its type, and your
   class turns its values into yours. See [Write your own converter](#write-your-own-converter).
 - `sqlalchemy-type`: a ready-made SQLAlchemy type from a library. See

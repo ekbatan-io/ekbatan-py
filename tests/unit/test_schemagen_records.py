@@ -284,13 +284,26 @@ def test_a_column_forced_to_local_date_time_says_so() -> None:
     assert '"opens_at", timestamp_column()' in text_
 
 
-def test_a_zone_less_column_forced_to_offset_date_time_becomes_zoned() -> None:
-    text_ = _render(
-        Column("at", TIMESTAMP(), nullable=False),
-        forced=(ForcedType(name="OffsetDateTime", include_expression="at"),),
-    )
-    assert _hints(text_, "WalletsRecord")["at"] is OffsetDateTime
-    assert '"at", sqlalchemy.DateTime(timezone=True)' in text_
+def test_a_zone_less_column_forced_to_offset_date_time_is_refused() -> None:
+    """It used to be built zoned, with a record saying OffsetDateTime - of a column that reads
+    back naive and keeps no offset (the time review, T4)."""
+    with pytest.raises(ValidationError, match=r"wallets\.at, which is TIMESTAMP and has no zone"):
+        _render(
+            Column("at", TIMESTAMP(), nullable=False),
+            forced=(ForcedType(name="OffsetDateTime", include_expression="at"),),
+        )
+
+
+@pytest.mark.parametrize("kind", ["Instant", "LocalDateTime", "OffsetDateTime"])
+@pytest.mark.parametrize("column_type", [VARCHAR(20), INTEGER(), TEXT(), DATE()])
+def test_a_time_kind_on_a_column_that_holds_no_timestamp_is_refused(
+    kind: str, column_type: Any
+) -> None:
+    with pytest.raises(ValidationError, match="not a timestamp"):
+        _render(
+            Column("c", column_type, nullable=False),
+            forced=(ForcedType(name=kind, include_expression="c"),),
+        )
 
 
 def test_a_time_kind_takes_no_arguments() -> None:

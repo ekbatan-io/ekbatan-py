@@ -151,10 +151,20 @@ class _Writer:
             names.append(f"{relation.schema_name}.{table}.{column.name}")
         types = type_names(column.type, raw, self.dialect, extra)
 
+        from ._config import DEFAULT_FORCED_TYPES
+        from ._types import TIME_KINDS
+
+        timestamp = isinstance(column.type, sqltypes.DateTime)
         matching = [
             candidate
             for candidate in self.config.all_forced_types
-            if candidate.matches(
+            # Ekbatan's own time kinds label timestamps only: a type that merely spells like
+            # one (SQLAlchemy's Interval compiles to DATETIME on SQLite) is not theirs. A rule
+            # of the project's own that picks such a column is refused instead (_time_kind_fits).
+            if not (
+                candidate in DEFAULT_FORCED_TYPES and candidate.name in TIME_KINDS and not timestamp
+            )
+            and candidate.matches(
                 dialect=self.reflected.dialect_name,
                 names=names,
                 types=types,
@@ -291,6 +301,8 @@ class _Writer:
         table's, or - for a type SQLAlchemy cannot read - the database's own spelling."""
         emitted: Emitted | None
         zoned = isinstance(column.type, sqltypes.DateTime) and bool(column.type.timezone)
+        if forced is not None:
+            self._time_kind_fits(where, forced, column, raw, zoned)
         if forced is not None and forced.name == "OffsetDateTime" and zoned:
             # Already a zoned timestamp: written as the type table writes it, so a TIMESTAMPTZ(3)
             # keeps its precision. Only the record's kind comes from the forced type.
@@ -412,6 +424,37 @@ class _Writer:
             Literal[tuple(held)] if isinstance(column.type, sqltypes.Enum) else set[str]
         )
         return Emitted(f"sql_type({lit(raw)})", frozenset({("ekbatan.schema", "sql_type")}))
+
+    def _time_kind_fits(
+        self, where: str, forced: ForcedType, column: Column[Any], raw: str | None, zoned: bool
+    ) -> None:
+        """Refuse a time kind on a column that cannot hold it - never silently.
+
+        A time kind labels what a timestamp column holds; it does not make a column one. On a
+        column that holds no timestamp, the module would build a `timestamp_column()` the
+        migrations never made. `OffsetDateTime` on a zone-less timestamp would build a zoned
+        column and promise an offset the real column reads back without and never keeps.
+        """
+        from ._types import TIME_KINDS
+
+        kind = forced.name
+        if kind not in TIME_KINDS:
+            return
+        spelled = (raw or str(column.type)).upper()
+        if not isinstance(column.type, sqltypes.DateTime):
+            raise ValidationError(
+                f"the forced type {forced._what()} picks {where}, which is {spelled}, not a "
+                f"timestamp: a time kind ({', '.join(TIME_KINDS)}) says what a timestamp "
+                "column holds and cannot make another column one. Narrow its "
+                "include-expression or include-types to timestamp columns"
+            )
+        if kind == "OffsetDateTime" and not zoned:
+            raise ValidationError(
+                f"the forced type {forced._what()} picks {where}, which is {spelled} and has "
+                "no zone: it reads back without an offset and keeps none, so it is not an "
+                "OffsetDateTime. Force it to Instant (it holds UTC) or LocalDateTime (it holds "
+                "a wall-clock time), or make the column zoned (TIMESTAMPTZ)"
+            )
 
     def _offset_note(self, where: str) -> None:
         """Say what a zoned timestamp gives back: the moment, with an offset not its own."""

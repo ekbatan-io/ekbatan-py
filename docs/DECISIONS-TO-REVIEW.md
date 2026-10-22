@@ -1119,6 +1119,9 @@ before and passes after. Row by row: [SCHEMAGEN-COMPLETENESS-LEDGER.md](SCHEMAGE
 | SQLite generated columns and a column-level foreign key's name and actions are read from the table's text and `PRAGMA foreign_key_list` (the generated columns beyond the review: `create_all` failed on two in a row) | SQLAlchemy's SQLite reflection reads them with patterns that miss or overrun | - |
 | The round trip's view comparison normalises MariaDB integer display widths (`bigint(12)` vs `bigint(20)`) | a display width is not data; MariaDB gives a computed view column a width of its own | compare widths and note them |
 
+| A time kind on a column it cannot label is **refused** (an error, not a note): `OffsetDateTime` on a zone-less timestamp, any time kind on a non-timestamp column (handed over: time review T4) | a note would still write a module whose column or record is wrong; the user's rule is never silent, and the fix is one line in the rule | a note, and write the column as its own type |
+| Ekbatan's built-in time-kind rules skip a column that is not a timestamp even when its type spells like one | SQLAlchemy's `Interval` compiles to `DATETIME` on SQLite, so the `Instant` default took it; refusing a built-in rule would break generation for nothing the user wrote | - |
+
 Left as it is, noticed on the way:
 
 - A MySQL view's key column reads as `NotRequired[int]` in its record (reflection marks it
