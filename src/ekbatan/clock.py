@@ -5,6 +5,9 @@ Every timestamp the framework writes comes from a clock it was handed, never fro
 scenarios freeze it (``given.now``), and a framework that calls the wall clock from six places
 cannot be frozen from one.
 
+A clock has one method, :meth:`Clock.instant`, as Java's ``clock.instant()``: the current moment
+as an :data:`~ekbatan.time.Instant` - UTC digits with no zone attached.
+
 **What a clock gives is what is stored.** The framework never changes a time's zone or value on
 its way to or from the database. :class:`SystemClock` gives the current UTC time with no zone
 attached; a clock of your own may give anything, and that is what gets written and compared.
@@ -17,17 +20,18 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol, runtime_checkable
 
 from .errors import EkbatanError
+from .time import Instant
 
 __all__ = ["Clock", "SystemClock", "VirtualClock"]
 
 
 @runtime_checkable
 class Clock(Protocol):
-    def now(self) -> datetime:
-        """The current time.
+    def instant(self) -> Instant:
+        """The current moment: UTC digits with no zone attached, as :class:`SystemClock` gives.
 
         Whatever this returns is what the framework stores and compares, as it is: nothing is
-        shifted or given a zone. :class:`SystemClock` returns UTC with no zone attached.
+        shifted or given a zone.
         """
         ...
 
@@ -37,12 +41,12 @@ class SystemClock:
 
     The current UTC time with no zone attached - ``2026-10-19 08:30:00.123456``, not
     ``...+00:00``. That is the value a zone-less ``TIMESTAMP`` column holds, so what is written
-    reads back equal and compares with the next ``now()``.
+    reads back equal and compares with the next ``instant()``.
     """
 
     __slots__ = ()
 
-    def now(self) -> datetime:
+    def instant(self) -> Instant:
         return _utc_now()
 
     def __repr__(self) -> str:
@@ -66,8 +70,8 @@ class VirtualClock:
 
     Not only for tests. The conformance scenarios freeze it too, through ``given.now``.
 
-    An instant handed to it is kept exactly as given, zone or no zone. In real time it reads
-    what :class:`SystemClock` reads: UTC, no zone attached.
+    An instant handed to it is kept exactly as given - give it naive UTC, as the default clock
+    reads. In real time it reads what :class:`SystemClock` reads: UTC, no zone attached.
 
     Every mode change and every read takes a lock. Java uses an ``AtomicReference`` and has a
     test that eight threads advancing a thousand times each lose nothing; a bare ``+=`` here
@@ -76,15 +80,15 @@ class VirtualClock:
 
     __slots__ = ("_frozen", "_lock", "_real_anchor", "_virtual_anchor")
 
-    def __init__(self, now: datetime | None = None) -> None:
+    def __init__(self, instant: datetime | None = None) -> None:
         self._lock = threading.Lock()
-        self._frozen: datetime | None = now
+        self._frozen: datetime | None = instant
         self._virtual_anchor: datetime | None = None
-        self._real_anchor: datetime | None = None
+        self._real_anchor: Instant | None = None
 
-    def now(self) -> datetime:
+    def instant(self) -> Instant:
         with self._lock:
-            return self._reading()
+            return Instant(self._reading())
 
     def pause(self) -> None:
         """Freeze wherever the clock is now, whichever mode it was in."""
@@ -129,7 +133,8 @@ class VirtualClock:
         if self._frozen is not None:
             return self._frozen
         if self._virtual_anchor is not None and self._real_anchor is not None:
-            return self._virtual_anchor + (_utc_now() - self._real_anchor)
+            elapsed: timedelta = _utc_now() - self._real_anchor
+            return self._virtual_anchor + elapsed
         return _utc_now()
 
     def __repr__(self) -> str:
@@ -141,6 +146,6 @@ class VirtualClock:
             return "VirtualClock(real time)"
 
 
-def _utc_now() -> datetime:
+def _utc_now() -> Instant:
     """The current UTC time, no zone attached. The one place the framework reads the wall clock."""
-    return datetime.now(UTC).replace(tzinfo=None)
+    return Instant(datetime.now(UTC).replace(tzinfo=None))

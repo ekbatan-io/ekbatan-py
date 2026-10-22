@@ -29,11 +29,11 @@ import importlib
 import typing
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Self
 
 from .errors import EkbatanError, ValidationError
+from .time import Instant
 
 __all__ = [
     "DELETED",
@@ -299,10 +299,10 @@ class ModelBuilder[T, ID = Any, S = Any](EntityBuilder[T, ID, S]):
 
     __slots__ = ()
 
-    def created_date(self, value: datetime | None) -> Self:
+    def created_date(self, value: Instant | None) -> Self:
         return self.set(created_date=value)
 
-    def updated_date(self, value: datetime | None) -> Self:
+    def updated_date(self, value: Instant | None) -> Self:
         return self.set(updated_date=value)
 
     def events(self, value: Iterable[ModelEvent]) -> Self:
@@ -635,7 +635,7 @@ class Model[
     ``created_date`` is **required**, as Java's ``createdDate`` is: its constructor says
     ``Validate.notNull(builder.createdDate)`` and ``build()`` throws without it. A model is
     a record of something that happened, and when it happened is part of the record rather
-    than a column the framework backfills. Pass ``self.clock.now()`` from the action, which
+    than a column the framework backfills. Pass ``self.clock.instant()`` from the action, which
     is what Java's ``clock.instant()`` is doing.
 
     ``updated_date`` falls back to ``created_date``, again as Java's does - a row that has
@@ -654,8 +654,8 @@ class Model[
         "updated_date",
     )
 
-    created_date: datetime
-    updated_date: datetime | None = None
+    created_date: Instant
+    updated_date: Instant | None = None
     events: tuple[ModelEvent, ...] = field(default=(), compare=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -675,7 +675,7 @@ class Model[
             object.__setattr__(self, "events", tuple(self.events))
 
         # `created_date` is required, and `super().__post_init__()` has already refused a null
-        # one - its annotation is `datetime`, not `datetime | None`.
+        # one - its annotation is `Instant`, not `Instant | None`.
         # Both are kept exactly as given: no zone is added, removed or moved.
         if self.updated_date is None:
             object.__setattr__(self, "updated_date", self.created_date)

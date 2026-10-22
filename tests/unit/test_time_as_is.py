@@ -23,7 +23,7 @@ CONVERSIONS = re.compile(
 #: (file, the line's text) that may match, and why.
 ALLOWED = {
     # The clock's one read of the wall clock: the current UTC time, no zone attached.
-    ("clock.py", "return datetime.now(UTC).replace(tzinfo=None)"),
+    ("clock.py", "return Instant(datetime.now(UTC).replace(tzinfo=None))"),
     # The migration history's own text stamp - written by the migrator about itself, not a
     # time an application handed in.
     ("migrations.py", '"installed_on": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),'),

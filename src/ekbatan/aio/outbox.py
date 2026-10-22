@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection, Sequence
-from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy import Table, func, insert, select
@@ -19,6 +18,7 @@ from ..action.outbox import EventEntity, _require_outbox_columns, _SingleTableJs
 from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..sharding import ShardIdentifier
+from ..time import Instant
 from .persistence import AsyncDatabaseRegistry
 
 __all__ = [
@@ -76,8 +76,8 @@ class AsyncEventPersister(Protocol):
         self,
         namespace: str,
         action_name: str,
-        started_date: datetime,
-        completion_date: datetime,
+        started_date: Instant,
+        completion_date: Instant,
         action_params: Any,
         model_events: Sequence[ModelEvent],
         shard: ShardIdentifier,
@@ -99,8 +99,8 @@ class AsyncSingleTableJsonEventPersister(_SingleTableJson):
         self,
         namespace: str,
         action_name: str,
-        started_date: datetime,
-        completion_date: datetime,
+        started_date: Instant,
+        completion_date: Instant,
         action_params: Any,
         model_events: Sequence[ModelEvent],
         shard: ShardIdentifier,

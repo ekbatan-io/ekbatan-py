@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Protocol, runtime_checkable
 
 from .errors import ValidationError
+from .time import Instant
 
 #: The epoch, no zone attached.
 _EPOCH = datetime(1970, 1, 1)
@@ -102,7 +103,7 @@ def sharded_uuid(shard: ShardIdentifier, *, at_ms: int | None = None) -> uuid.UU
     return uuid.UUID(int=(msb << 64) | lsb)
 
 
-def uuid_instant(value: uuid.UUID) -> datetime | None:
+def uuid_instant(value: uuid.UUID) -> Instant | None:
     """When a version 7 id was minted, read out of the id itself.
 
     Version 7 puts a millisecond timestamp in the high bits, which is what makes these ids sort
@@ -115,7 +116,7 @@ def uuid_instant(value: uuid.UUID) -> datetime | None:
     """
     if value.version != 7:
         return None
-    return _EPOCH + timedelta(milliseconds=value.int >> 80)
+    return Instant(_EPOCH + timedelta(milliseconds=value.int >> 80))
 
 
 def read_shard(value: uuid.UUID) -> ShardIdentifier | None:

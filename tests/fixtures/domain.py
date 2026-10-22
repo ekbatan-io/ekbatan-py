@@ -16,12 +16,13 @@ from uuid import UUID
 from ekbatan.domain import Entity, GenericState, Model, ModelEvent
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
+from ekbatan.time import Instant
 
 from .builders import NotificationBuilder, WalletBuilder
 
 #: A fixed instant for a model built outside a unit of work. A test asserting on a
 #: timestamp against a moving clock passes on the machine it was written on.
-NOW = datetime(2026, 1, 1, 12, 0)
+NOW = Instant(datetime(2026, 1, 1, 12, 0))
 
 
 class WalletState(Enum):
@@ -79,7 +80,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         owner_id: UUID,
         currency: str,
         balance: Decimal,
-        created_date: datetime,
+        created_date: Instant,
     ) -> Wallet:
         return (
             cls.builder()

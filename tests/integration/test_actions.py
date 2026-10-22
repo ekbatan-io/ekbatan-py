@@ -50,7 +50,7 @@ def a_wallet(executor):
 
 class ReadsTheClockAction(Action[None, datetime]):
     def perform(self, principal: str | None, params: None) -> datetime:
-        return self.now()
+        return self.instant()
 
 
 def test_an_action_reads_the_clock_it_was_built_with(executor, clock):
@@ -75,7 +75,7 @@ class OpensWithANoteAction(Action[NoteParams, Wallet]):
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1"),
-                created_date=self.clock.now(),
+                created_date=self.clock.instant(),
             )
         )
 
@@ -537,7 +537,7 @@ def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("10.00"),
-                    created_date=self.clock.now(),
+                    created_date=self.clock.instant(),
                 )
             )
             return self.plan.update(fresh.deposit(Decimal("5.00")))

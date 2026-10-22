@@ -17,13 +17,13 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import datetime
 from typing import Any
 
 from ..domain import Model, ModelEvent, Persistable
 from ..errors import ValidationError
 from ..persistence import Transaction
 from ..repository import AnyRepository, RepositoryRegistry
+from ..time import Instant
 from .outbox import EventPersister
 from .plan import PersistableChanges
 
@@ -94,8 +94,8 @@ class ChangePersister(_ChangePersisterCore):
         namespace: str,
         action_name: str,
         params: Any,
-        started: datetime,
-        completed: datetime,
+        started: Instant,
+        completed: Instant,
         action_id: uuid.UUID,
     ) -> None:
         """Write the rows, then the events, inside ``tx``.

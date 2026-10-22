@@ -20,12 +20,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Protocol, Self, runtime_checkable
 
 from .._builder import FieldBuilder
 from ..domain import ModelEvent
 from ..errors import ValidationError
+from ..time import Instant
 
 __all__ = [
     "AnyEventHandler",
@@ -57,9 +57,9 @@ class EventEnvelope[E: ModelEvent]:
     #: money-deposited event.
     action_params: dict[str, Any]
 
-    started_date: datetime
-    completion_date: datetime
-    event_date: datetime
+    started_date: Instant
+    completion_date: Instant
+    event_date: Instant
     model_id: str | None
     model_type: str | None
 
@@ -255,13 +255,13 @@ class EventEnvelopeBuilder[E: ModelEvent](FieldBuilder[EventEnvelope[E]]):
     def action_params(self, action_params: dict[str, Any]) -> Self:
         return self._set("action_params", action_params)
 
-    def started_date(self, started_date: datetime) -> Self:
+    def started_date(self, started_date: Instant) -> Self:
         return self._set("started_date", started_date)
 
-    def completion_date(self, completion_date: datetime) -> Self:
+    def completion_date(self, completion_date: Instant) -> Self:
         return self._set("completion_date", completion_date)
 
-    def event_date(self, event_date: datetime) -> Self:
+    def event_date(self, event_date: Instant) -> Self:
         return self._set("event_date", event_date)
 
     def model_id(self, model_id: str | None) -> Self:

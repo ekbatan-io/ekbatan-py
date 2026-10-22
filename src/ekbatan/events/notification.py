@@ -5,12 +5,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from enum import Enum
 from typing import Any, Self
 
 from .._builder import FieldBuilder
 from ..errors import ValidationError
+from ..time import Instant
 
 __all__ = [
     "EventNotification",
@@ -73,21 +74,21 @@ class EventNotification:
     handler_name: str
     state: EventNotificationState
     attempts: int
-    next_retry_at: datetime
-    created_date: datetime
-    updated_date: datetime
+    next_retry_at: Instant
+    created_date: Instant
+    updated_date: Instant
     # the event and its action's context, copied at fan-out time
     namespace: str
     action_id: uuid.UUID
     action_name: str
     action_params: Mapping[str, Any]
-    started_date: datetime
-    completion_date: datetime
+    started_date: Instant
+    completion_date: Instant
     model_id: str | None = None
     model_type: str | None = None
     event_type: str
     payload: Mapping[str, Any] | None = None
-    event_date: datetime
+    event_date: Instant
 
     def __post_init__(self) -> None:
         for name in (
@@ -174,13 +175,13 @@ class EventNotificationBuilder(FieldBuilder[EventNotification]):
     def attempts(self, attempts: int) -> Self:
         return self._set("attempts", attempts)
 
-    def next_retry_at(self, next_retry_at: datetime) -> Self:
+    def next_retry_at(self, next_retry_at: Instant) -> Self:
         return self._set("next_retry_at", next_retry_at)
 
-    def created_date(self, created_date: datetime) -> Self:
+    def created_date(self, created_date: Instant) -> Self:
         return self._set("created_date", created_date)
 
-    def updated_date(self, updated_date: datetime) -> Self:
+    def updated_date(self, updated_date: Instant) -> Self:
         return self._set("updated_date", updated_date)
 
     def namespace(self, namespace: str) -> Self:
@@ -195,10 +196,10 @@ class EventNotificationBuilder(FieldBuilder[EventNotification]):
     def action_params(self, action_params: Mapping[str, Any]) -> Self:
         return self._set("action_params", action_params)
 
-    def started_date(self, started_date: datetime) -> Self:
+    def started_date(self, started_date: Instant) -> Self:
         return self._set("started_date", started_date)
 
-    def completion_date(self, completion_date: datetime) -> Self:
+    def completion_date(self, completion_date: Instant) -> Self:
         return self._set("completion_date", completion_date)
 
     def model_id(self, model_id: str | None) -> Self:
@@ -213,7 +214,7 @@ class EventNotificationBuilder(FieldBuilder[EventNotification]):
     def payload(self, payload: Mapping[str, Any] | None) -> Self:
         return self._set("payload", payload)
 
-    def event_date(self, event_date: datetime) -> Self:
+    def event_date(self, event_date: Instant) -> Self:
         return self._set("event_date", event_date)
 
 

@@ -31,7 +31,7 @@ from fixtures.schema import EVENTS, WALLETS
 #: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
 MODES = ("sync", "async")
 
-#: Naive UTC with microseconds - what `SystemClock().now()` gives.
+#: Naive UTC with microseconds - what `SystemClock().instant()` gives.
 PRECISE = datetime(2026, 1, 1, 10, 0, 0, 123456)
 #: An aware value that is not UTC.
 TEHRAN = datetime(2026, 1, 1, 13, 30, 0, 654321, tzinfo=timezone(timedelta(hours=3, minutes=30)))

@@ -7,7 +7,6 @@ migration lands, so the Python and the schema cannot drift.
 
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
 from typing import TypedDict
 from uuid import UUID
@@ -33,6 +32,7 @@ from ekbatan.schema import (
     timestamp_column,
     uuid_column,
 )
+from ekbatan.time import Instant
 
 metadata = MetaData()
 
@@ -71,8 +71,8 @@ class WalletsRecord(TypedDict):
     owner_id: UUID
     currency: str
     balance: Decimal
-    created_date: datetime
-    updated_date: datetime
+    created_date: Instant
+    updated_date: Instant
     aliases: JsonValue | None
     reward_points: int | None
 

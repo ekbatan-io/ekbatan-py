@@ -872,9 +872,9 @@ def test_a_models_timestamps_are_kept_exactly_as_given():
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
-    assert wallet.created_date is clock.now()
+    assert wallet.created_date is clock.instant()
     assert wallet.updated_date is wallet.created_date, "falls back to created_date"
     tehran = NOW.replace(tzinfo=timezone(timedelta(hours=3, minutes=30)))
     moved = wallet.copy().updated_date(tehran).build()

@@ -326,7 +326,7 @@ def _open_wallet(currency, clock):
                     owner_id=uuid4(),
                     currency=params.currency,
                     balance=Decimal("1.00"),
-                    created_date=self.clock.now(),
+                    created_date=self.clock.instant(),
                 )
             )
 

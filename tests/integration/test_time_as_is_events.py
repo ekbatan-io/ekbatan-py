@@ -1,6 +1,6 @@
 """Fan-out, dispatch and retry write the clock's own value - nothing converts it.
 
-The clock is frozen, so every `now()` is one object; each check captures what reached SQLAlchemy
+The clock is frozen, so every `instant()` is one object; each check captures what reached SQLAlchemy
 and the driver and asks for that very object. The handlers run sync and async.
 """
 
@@ -25,7 +25,7 @@ from fixtures.schema import EVENT_NOTIFICATIONS
 
 HANDLER_KINDS = ("sync", "async")
 
-#: Naive UTC with microseconds - what `SystemClock().now()` gives.
+#: Naive UTC with microseconds - what `SystemClock().instant()` gives.
 PRECISE = datetime(2026, 1, 1, 10, 0, 0, 123456)
 
 

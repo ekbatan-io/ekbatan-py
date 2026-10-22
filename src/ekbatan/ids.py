@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import uuid as _uuid
 from dataclasses import dataclass
-from datetime import datetime
 from functools import total_ordering
 from typing import Any, Self
 
@@ -41,6 +40,7 @@ from .sharding import (
     sharded_uuid,
     uuid_instant,
 )
+from .time import Instant
 
 __all__ = ["Id", "ShardedId", "TypedValue", "unwrap"]
 
@@ -161,7 +161,7 @@ class Id[M](TypedValue[_uuid.UUID]):
         return read_shard(self.value)
 
     @property
-    def minted_at(self) -> datetime | None:
+    def minted_at(self) -> Instant | None:
         """When a version 7 id was created, read out of the id itself."""
         return uuid_instant(self.value)
 
@@ -219,7 +219,7 @@ class ShardedId[M](TypedValue[_uuid.UUID]):
         return found
 
     @property
-    def minted_at(self) -> datetime | None:
+    def minted_at(self) -> Instant | None:
         """When it was created, read out of the id itself."""
         return uuid_instant(self.value)
 

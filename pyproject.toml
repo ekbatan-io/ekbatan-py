@@ -176,6 +176,15 @@ src = ["src", "tests", "ekbatan-py-examples"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.flake8-bugbear]
+# The time kinds are `typing.NewType` labels: `Instant(x)` returns `x`, so a dataclass default
+# built with one is the immutable datetime it was given.
+extend-immutable-calls = [
+  "ekbatan.time.Instant",
+  "ekbatan.time.LocalDateTime",
+  "ekbatan.time.OffsetDateTime",
+]
+
 [tool.ruff.lint.per-file-ignores]
 # Written by `python -m ekbatan.codegen`, whose first line names the module it read: a long
 # package name makes it longer than a line. Generated, and checked by scripts/check-builders.py.

@@ -114,12 +114,12 @@ def test_the_action_sees_the_clock_it_was_given(clock):
 
     class ReadsTheClockAction(Action[None, datetime]):
         def perform(self, principal: str | None, params: None) -> datetime:
-            return self.now()
+            return self.instant()
 
-    assert run_action(ReadsTheClockAction(clock), None).result == clock.now()
+    assert run_action(ReadsTheClockAction(clock), None).result == clock.instant()
 
     clock.advance(timedelta(hours=2))
-    assert run_action(ReadsTheClockAction(clock), None).result == clock.now()
+    assert run_action(ReadsTheClockAction(clock), None).result == clock.instant()
 
 
 def test_the_action_sees_the_principal_it_was_given(clock):
@@ -205,7 +205,7 @@ class CreatesBothAction(Action[None, Wallet]):
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1.00"),
-                created_date=self.clock.now(),
+                created_date=self.clock.instant(),
             )
         )
         self.plan.add(

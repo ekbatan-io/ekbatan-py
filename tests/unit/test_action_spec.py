@@ -113,7 +113,7 @@ class CreateAction(Action[CreateParams, TestModel]):
             .id(model_id)
             .state(TestState.ACTIVE)
             .name(params.name)
-            .created_date(self.clock.now())
+            .created_date(self.clock.instant())
             .with_initial_version()
             .with_event(TestCreatedEvent(model_id=str(model_id), name=params.name))
             .build()
@@ -128,7 +128,7 @@ class CreateBothAction(Action[CreateBothParams, TestModel]):
             .id(product_id)
             .state(TestState.ACTIVE)
             .sku(params.sku)
-            .created_date(self.clock.now())
+            .created_date(self.clock.instant())
             .with_initial_version()
             .with_event(TestProductCreatedEvent(model_id=str(product_id), sku=params.sku))
             .build()
@@ -139,7 +139,7 @@ class CreateBothAction(Action[CreateBothParams, TestModel]):
             .id(model_id)
             .state(TestState.ACTIVE)
             .name(params.name)
-            .created_date(self.clock.now())
+            .created_date(self.clock.instant())
             .with_initial_version()
             .with_event(TestCreatedEvent(model_id=str(model_id), name=params.name))
             .build()
@@ -193,7 +193,7 @@ def clock() -> VirtualClock:
 
 @pytest.fixture
 def existing(clock: VirtualClock) -> TestModel:
-    return a_model("test", clock.now())
+    return a_model("test", clock.instant())
 
 
 # -- assert_added -------------------------------------------------------------------------------
@@ -248,7 +248,7 @@ def test_assert_added_fails_when_count_mismatch(clock):
 
 
 def test_assert_updated_single_with_verifier(clock):
-    existing = a_model("to-delete", clock.now())
+    existing = a_model("to-delete", clock.instant())
 
     (
         ActionSpec.of(DeleteAction(clock, existing))
@@ -360,7 +360,7 @@ def test_assert_no_updates_fails_when_updates_exist(clock, existing):
 
 
 def test_assert_no_events_passes_when_no_events(clock):
-    existing = a_model("old-name", clock.now())
+    existing = a_model("old-name", clock.instant())
 
     (
         ActionSpec.of(RenameAction(clock, existing))

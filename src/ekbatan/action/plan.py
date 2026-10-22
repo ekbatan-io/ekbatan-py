@@ -82,7 +82,7 @@ class ActionPlan:
         # reads forward instead of reasoning about what the database will do later.
         #
         # `updated_date` is untouched, as Java leaves it untouched. Set it yourself, on the
-        # changes where it means something: `self.copy().updated_date(self.clock.now())`.
+        # changes where it means something: `self.copy().updated_date(self.clock.instant())`.
         changes.updates[model.id] = model
         return model.next_version()
 

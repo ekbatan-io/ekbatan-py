@@ -17,7 +17,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
-from datetime import datetime
 
 from sqlalchemy import Connection, Table, select, update
 
@@ -26,6 +25,7 @@ from ..errors import ValidationError
 from ..fetching import Db
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
 from ..sharding import ShardIdentifier
+from ..time import Instant
 from .notification import NOTIFICATION_COLUMNS, EventNotification, EventNotificationState
 
 __all__ = ["EventEntityRepository", "EventNotificationRepository"]
@@ -137,9 +137,7 @@ class EventNotificationRepository(_ShardRepository):
         with self._tx_db_else_db(shard) as conn:
             insert_ignoring_duplicates(conn, self._table, [n.to_row() for n in notifications])
 
-    def find_due(
-        self, shard: ShardIdentifier, limit: int, now: datetime
-    ) -> list[EventNotification]:
+    def find_due(self, shard: ShardIdentifier, limit: int, now: Instant) -> list[EventNotification]:
         """Pending or failed notifications whose retry time has come, soonest first.
 
         Read from the primary, outside any open transaction, as Java's is. Never the replica: a
@@ -162,15 +160,15 @@ class EventNotificationRepository(_ShardRepository):
             return [EventNotification.from_row(r) for r in rows]
 
     def mark_succeeded_all(
-        self, ids: Collection[uuid.UUID], now: datetime, shard: ShardIdentifier
+        self, ids: Collection[uuid.UUID], now: Instant, shard: ShardIdentifier
     ) -> None:
         self._mark(ids, shard, state=EventNotificationState.SUCCEEDED, attempt=True, now=now)
 
     def mark_failed_bucket(
         self,
         ids: Collection[uuid.UUID],
-        next_retry_at: datetime,
-        now: datetime,
+        next_retry_at: Instant,
+        now: Instant,
         shard: ShardIdentifier,
     ) -> None:
         self._mark(
@@ -183,13 +181,13 @@ class EventNotificationRepository(_ShardRepository):
         )
 
     def mark_expired_all_preflight(
-        self, ids: Collection[uuid.UUID], now: datetime, shard: ShardIdentifier
+        self, ids: Collection[uuid.UUID], now: Instant, shard: ShardIdentifier
     ) -> None:
         """Expired before the handler was called, so the attempt count stays as it was."""
         self._mark(ids, shard, state=EventNotificationState.EXPIRED, attempt=False, now=now)
 
     def mark_expired_all_post_failure(
-        self, ids: Collection[uuid.UUID], now: datetime, shard: ShardIdentifier
+        self, ids: Collection[uuid.UUID], now: Instant, shard: ShardIdentifier
     ) -> None:
         """Expired after a failed call, which counts as an attempt."""
         self._mark(ids, shard, state=EventNotificationState.EXPIRED, attempt=True, now=now)
@@ -197,8 +195,8 @@ class EventNotificationRepository(_ShardRepository):
     def defer_pending_bucket(
         self,
         ids: Collection[uuid.UUID],
-        next_retry_at: datetime,
-        now: datetime,
+        next_retry_at: Instant,
+        now: Instant,
         shard: ShardIdentifier,
     ) -> None:
         """Leave pending, not attempted, until ``next_retry_at``.
@@ -222,8 +220,8 @@ class EventNotificationRepository(_ShardRepository):
         *,
         state: EventNotificationState,
         attempt: bool,
-        now: datetime,
-        next_retry_at: datetime | None = None,
+        now: Instant,
+        next_retry_at: Instant | None = None,
     ) -> None:
         if not ids:
             return

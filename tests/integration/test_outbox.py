@@ -298,7 +298,7 @@ def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, cloc
         "an event becomes true when its transaction commits, not when the object was built"
     )
     assert row["started_date"].tzinfo is None, "read back as the clock gave it: no zone"
-    assert row["started_date"] <= clock.now(), "and so comparable with the clock"
+    assert row["started_date"] <= clock.instant(), "and so comparable with the clock"
 
 
 def test_decimals_are_json_numbers_and_keep_their_scale_except_on_mysql(

@@ -36,7 +36,7 @@ def test_staging_the_same_row_twice_in_one_batch_is_refused(clock):
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
     with pytest.raises(ValidationError, match="already staged"):
         plan.add_all([wallet, wallet])
@@ -52,7 +52,7 @@ def test_a_plan_reports_what_it_is_holding(clock):
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
     plan.add(wallet)
 
@@ -108,9 +108,9 @@ def test_staging_hands_back_the_row_you_passed(clock):
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
-    assert fresh.created_date == clock.now()
+    assert fresh.created_date == clock.instant()
     assert fresh.updated_date == fresh.created_date, "unset, so it falls back to created_date"
 
     staged = plan.add(fresh)
@@ -124,7 +124,7 @@ def test_staging_hands_back_the_row_you_passed(clock):
             owner_id=uuid4(),
             currency="EUR",
             balance=Decimal("1"),
-            created_date=clock.now(),
+            created_date=clock.instant(),
         )
     )
     assert changed.version == 2, "Java's `update_returns_next_version`"

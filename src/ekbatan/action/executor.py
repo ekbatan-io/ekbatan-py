@@ -516,7 +516,7 @@ class ActionExecutor(_ExecutorCore):
         with self._started(name, principal) as execution:
             started_at = time.monotonic()
             while True:
-                started = self.clock.now()
+                started = self.clock.instant()
                 # A fresh plan per attempt. If it survived a failed one, the retry would commit
                 # the first attempt's staged changes on top of its own - two deposits for one
                 # call.
@@ -575,7 +575,7 @@ class ActionExecutor(_ExecutorCore):
                 action_name=action_name,
                 params=params,
                 started=started,
-                completed=self.clock.now(),
+                completed=self.clock.instant(),
                 action_id=action_id,
             )
 

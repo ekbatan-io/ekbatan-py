@@ -77,7 +77,7 @@ class AsyncCreateAction(AsyncAction[CreateParams, TestModel]):
             .id(model_id)
             .state(TestState.ACTIVE)
             .name(f"{params.name} by {principal}")
-            .created_date(self.clock.now())
+            .created_date(self.clock.instant())
             .with_initial_version()
             .with_event(TestCreatedEvent(model_id=str(model_id), name=params.name))
             .build()

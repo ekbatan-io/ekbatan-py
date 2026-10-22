@@ -1249,10 +1249,13 @@ _VERBATIM = (str, int, float, bool, bytes, uuid.UUID, Decimal, date, datetime, t
 
 
 def _bare(hint: Any) -> Any:
-    """`datetime | None` is a union, and the interesting half is the half that is not None."""
+    """`Instant | None` is a union, and the interesting half is the half that is not None. A
+    `NewType` label - `Instant` - stands for the class under it, `datetime`."""
     if typing.get_origin(hint) in (typing.Union, types.UnionType):
         rest = [a for a in typing.get_args(hint) if a is not type(None)]
-        return rest[0] if len(rest) == 1 else None
+        hint = rest[0] if len(rest) == 1 else None
+    while getattr(hint, "__supertype__", None) is not None:
+        hint = hint.__supertype__
     return hint
 
 

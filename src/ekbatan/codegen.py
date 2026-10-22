@@ -218,6 +218,10 @@ def _annotation(hint: Any, imports: dict[str, set[str]]) -> str:
         if hint.__module__ not in _BUILTIN:
             _need(imports, hint.__module__, hint.__qualname__.split(".")[0])
         return hint.__qualname__
+    if isinstance(hint, typing.NewType):
+        # A label such as ekbatan.time.Instant: imported and written by its own name.
+        _need(imports, hint.__module__, hint.__name__)
+        return hint.__name__
     return "Any"
 
 

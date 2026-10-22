@@ -186,7 +186,7 @@ class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
                     owner_id=uuid4(),
                     currency="EUR",
                     balance=Decimal("1.00"),
-                    created_date=self.clock.now(),
+                    created_date=self.clock.instant(),
                 )
             ),
             self.plan.add(
@@ -195,7 +195,7 @@ class CreateOnBothShardsAction(Action[None, tuple[Wallet, Wallet]]):
                     owner_id=uuid4(),
                     currency="MXN",
                     balance=Decimal("2.00"),
-                    created_date=self.clock.now(),
+                    created_date=self.clock.instant(),
                 )
             ),
         )
@@ -470,7 +470,7 @@ class CreateOnGlobalThenFailOnMexicoAction(Action[StaleOnMexico, None]):
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1.00"),
-                created_date=self.clock.now(),
+                created_date=self.clock.instant(),
             )
         )
         stale = self.wallets.get(params.wallet_id)
@@ -496,7 +496,7 @@ class AsyncCreateOnGlobalThenFailOnMexicoAction(AsyncAction[StaleOnMexico, None]
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1.00"),
-                created_date=self.clock.now(),
+                created_date=self.clock.instant(),
             )
         )
         stale = await self.wallets.get(params.wallet_id)

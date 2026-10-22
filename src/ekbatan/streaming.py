@@ -31,6 +31,7 @@ from typing import Any, Self
 
 from ._builder import FieldBuilder
 from ._json import loads
+from .time import Instant
 
 #: The epoch, no zone attached.
 _EPOCH = datetime(1970, 1, 1)
@@ -58,9 +59,9 @@ class ActionEvent:
     #: What the action was invoked with, as JSON. Present on every row, sentinel included.
     action_params: Mapping[str, Any]
     #: When `perform` began.
-    started_date: datetime
+    started_date: Instant
     #: When the persist phase committed.
-    completion_date: datetime
+    completion_date: Instant
     #: The affected model's id, as a string. ``None`` on a sentinel row.
     model_id: str | None = None
     #: The affected model's bare class name. ``None`` on a sentinel row.
@@ -70,7 +71,7 @@ class ActionEvent:
     #: The event body. ``None`` on a sentinel row.
     payload: Mapping[str, Any] | None = None
     #: When the event was produced. Equal to `completion_date` for rows this framework writes.
-    event_date: datetime
+    event_date: Instant
     #: Whether the in-process fan-out has already turned this row into notifications. A CDC
     #: consumer has no use for it; it is here because it is a column and the row is the contract.
     delivered: bool = False
@@ -175,10 +176,10 @@ class ActionEventBuilder(FieldBuilder[ActionEvent]):
     def action_params(self, action_params: Mapping[str, Any]) -> Self:
         return self._set("action_params", action_params)
 
-    def started_date(self, started_date: datetime) -> Self:
+    def started_date(self, started_date: Instant) -> Self:
         return self._set("started_date", started_date)
 
-    def completion_date(self, completion_date: datetime) -> Self:
+    def completion_date(self, completion_date: Instant) -> Self:
         return self._set("completion_date", completion_date)
 
     def model_id(self, model_id: str | None) -> Self:
@@ -193,7 +194,7 @@ class ActionEventBuilder(FieldBuilder[ActionEvent]):
     def payload(self, payload: Mapping[str, Any] | None) -> Self:
         return self._set("payload", payload)
 
-    def event_date(self, event_date: datetime) -> Self:
+    def event_date(self, event_date: Instant) -> Self:
         return self._set("event_date", event_date)
 
     def delivered(self, delivered: bool) -> Self:

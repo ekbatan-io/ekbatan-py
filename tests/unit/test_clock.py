@@ -2,7 +2,7 @@
 
 Java's `VirtualClockTest`, case for case. `getZone`/`withZone` have no counterpart - they are
 what `java.time.Clock` requires of an implementation, and the protocol here asks only for
-`now()`.
+`instant()`, Java's `clock.instant()`.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def test_a_clock_with_no_instant_reads_the_wall_clock():
     clock = VirtualClock()
 
     before = datetime.now(UTC).replace(tzinfo=None)
-    reading = clock.now()
+    reading = clock.instant()
     after = datetime.now(UTC).replace(tzinfo=None)
 
     assert before <= reading <= after
@@ -41,19 +41,19 @@ def test_a_clock_built_with_an_instant_starts_frozen_there():
     """
     clock = VirtualClock(TARGET)
 
-    assert clock.now() == TARGET
+    assert clock.instant() == TARGET
     time.sleep(0.01)
-    assert clock.now() == TARGET
+    assert clock.instant() == TARGET
 
 
 def test_pause_freezes_wherever_the_clock_is():
     clock = VirtualClock()
     clock.pause()
 
-    first = clock.now()
+    first = clock.instant()
     time.sleep(0.01)
 
-    assert clock.now() == first
+    assert clock.instant() == first
 
 
 def test_pause_at_freezes_at_a_named_instant():
@@ -61,8 +61,8 @@ def test_pause_at_freezes_at_a_named_instant():
 
     clock.pause_at(TARGET)
 
-    assert clock.now() == TARGET
-    assert clock.now() == TARGET, "and stays there on a second reading"
+    assert clock.instant() == TARGET
+    assert clock.instant() == TARGET, "and stays there on a second reading"
 
 
 def test_advance_moves_a_frozen_clock_forward():
@@ -71,7 +71,7 @@ def test_advance_moves_a_frozen_clock_forward():
 
     clock.advance(timedelta(minutes=5))
 
-    assert clock.now() == datetime(2025, 6, 15, 12, 5, tzinfo=UTC)
+    assert clock.instant() == datetime(2025, 6, 15, 12, 5, tzinfo=UTC)
 
 
 def test_advance_is_refused_on_a_clock_that_is_not_paused():
@@ -90,7 +90,7 @@ def test_resume_from_runs_at_wall_clock_rate_from_somewhere_else():
 
     clock.resume_from(LONG_AGO)
     time.sleep(0.05)
-    reading = clock.now()
+    reading = clock.instant()
 
     assert reading > LONG_AGO
     assert (reading - LONG_AGO) >= timedelta(milliseconds=50)
@@ -102,7 +102,7 @@ def test_resume_returns_to_the_wall_clock():
     clock.resume()
 
     before = datetime.now(UTC).replace(tzinfo=None)
-    reading = clock.now()
+    reading = clock.instant()
     after = datetime.now(UTC).replace(tzinfo=None)
     assert before <= reading <= after
 
@@ -115,10 +115,10 @@ def test_pausing_an_offset_clock_freezes_it_at_the_offset():
     time.sleep(0.05)
 
     clock.pause()
-    frozen = clock.now()
+    frozen = clock.instant()
     time.sleep(0.01)
 
-    assert clock.now() == frozen
+    assert clock.instant() == frozen
     assert frozen > LONG_AGO
 
 
@@ -151,12 +151,12 @@ def test_concurrent_advances_do_not_lose_any():
     for t in threads:
         t.join()
 
-    assert clock.now() == TARGET + timedelta(milliseconds=workers * each)
+    assert clock.instant() == TARGET + timedelta(milliseconds=workers * each)
 
 
 def test_the_system_clock_is_utc_with_no_zone_attached():
     """The default clock gives the current UTC time, naive - what a zone-less column holds."""
-    reading = SystemClock().now()
+    reading = SystemClock().instant()
     utc_now = datetime.now(UTC).replace(tzinfo=None)
 
     assert reading.tzinfo is None
@@ -171,13 +171,36 @@ def test_a_virtual_clock_keeps_the_instant_it_is_given_as_it_is():
     tehran = datetime(2026, 1, 1, 13, 30, tzinfo=ZoneInfo("Asia/Tehran"))
     naive = datetime(2026, 1, 1, 10, 0, 0, 123456)
 
-    assert VirtualClock(tehran).now() is tehran
-    assert VirtualClock(naive).now() is naive
+    assert VirtualClock(tehran).instant() is tehran
+    assert VirtualClock(naive).instant() is naive
     paused = VirtualClock()
     paused.pause_at(tehran)
-    assert paused.now() is tehran
-    assert paused.now().utcoffset() == timedelta(hours=3, minutes=30)
+    assert paused.instant() is tehran
+    assert paused.instant().utcoffset() == timedelta(hours=3, minutes=30)
 
 
 def test_a_virtual_clock_in_real_time_reads_as_the_system_clock_does():
-    assert VirtualClock().now().tzinfo is None
+    assert VirtualClock().instant().tzinfo is None
+
+
+def test_now_is_gone_and_instant_is_the_one_reading():
+    """Renamed outright, no alias: `Clock.now()` became `Clock.instant()`, as Java's
+    `clock.instant()`, and an action's `self.now()` became `self.instant()`. A `now()` coming
+    back would be a second name for one reading."""
+    from ekbatan import Action, Clock
+    from ekbatan.aio import AsyncAction
+
+    for kind in (Clock, SystemClock, VirtualClock, Action, AsyncAction):
+        assert not hasattr(kind, "now"), kind
+        assert callable(getattr(kind, "instant", None)), kind
+    assert not hasattr(SystemClock(), "now")
+    assert isinstance(SystemClock(), Clock)
+
+
+def test_the_system_clock_gives_an_instant_naive_and_utc():
+    """`instant()` is naive and within a second of UTC now - the value a zone-less column
+    holds and an `Instant` field writes with `Z`."""
+    reading = SystemClock().instant()
+    assert type(reading) is datetime, "a label, not a class: the value is a plain datetime"
+    assert reading.tzinfo is None
+    assert abs(reading - datetime.now(UTC).replace(tzinfo=None)) < timedelta(seconds=1)

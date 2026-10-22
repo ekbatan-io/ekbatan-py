@@ -70,6 +70,32 @@ def test_the_setters_carry_the_field_s_real_type():
     assert "def currency(self, value: str) -> Self:" in source
 
 
+def test_a_time_kind_field_gets_a_setter_of_that_kind(tmp_path: Path, monkeypatch):
+    """A model field labelled ``LocalDateTime`` is set as one - not ``Any``, and not a plain
+    ``datetime`` a type checker would let an ``Instant`` into."""
+    package = tmp_path / "kinds_app"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "model.py").write_text(
+        "from __future__ import annotations\n"
+        "from dataclasses import dataclass\n"
+        "from enum import Enum\n"
+        "from ekbatan import Model, ShardedId\n"
+        "from ekbatan.time import LocalDateTime, OffsetDateTime\n\n"
+        "class ShiftState(Enum):\n"
+        "    PLANNED = 'PLANNED'\n\n"
+        "@dataclass(frozen=True, kw_only=True)\n"
+        "class Shift(Model[ShardedId['Shift'], ShiftState]):\n"
+        "    opens_at: LocalDateTime\n"
+        "    told_at: OffsetDateTime | None = None\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    source = generate(["kinds_app.model"])
+    assert "def opens_at(self, value: LocalDateTime) -> Self:" in source
+    assert "def told_at(self, value: OffsetDateTime | None) -> Self:" in source
+    assert re.search(r"from ekbatan\.time import LocalDateTime, OffsetDateTime", source), source
+
+
 def test_the_base_is_parameterised_so_id_and_state_are_typed_without_being_declared():
     source = generate([MODULE])
     assert '["Wallet", "ShardedId[Wallet]", "WalletState"]' in source, (

@@ -64,7 +64,9 @@ def test_an_inserted_row_reads_back_exactly(wallets, clock):
         "repository does not supply one, as Java's does not"
     )
     assert found.created_date.tzinfo is None, "read back as written: no zone added"
-    assert found.created_date - clock.now() == NOW - clock.now(), "comparable with the clock"
+    assert found.created_date - clock.instant() == NOW - clock.instant(), (
+        "comparable with the clock"
+    )
 
 
 def test_a_row_read_back_carries_no_events(wallets):
@@ -228,14 +230,14 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
         owner_id=uuid4(),
         currency="EUR",
         balance=Decimal("1.00"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
     there = Wallet.open(
         id=ShardedId[Wallet].generate(mexico),
         owner_id=uuid4(),
         currency="MXN",
         balance=Decimal("2.00"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
     # One call per shard: a batch spanning two databases would need a transaction that spans
     # them, and there isn't one.
@@ -439,7 +441,7 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
         # `add()` would route it back to the default shard, which is the thing being tested.
         row = wallets.to_record(a_wallet("99.00"))
         # Zone-less, as the column holds it: asyncpg refuses an aware value for a TIMESTAMP.
-        row["created_date"] = row["updated_date"] = clock.now()
+        row["created_date"] = row["updated_date"] = clock.instant()
         with managers[other].connection() as conn:
             conn.execute(WALLETS.insert(), row)
 
@@ -578,7 +580,7 @@ def test_converted_values_survive_a_batch(wallets, clock):
                 owner_id=uuid4(),
                 currency=c,
                 balance=Decimal(b),
-                created_date=clock.now(),
+                created_date=clock.instant(),
             )
             for c, b in [("EUR", "1.25"), ("USD", "2.50"), ("MXN", "3.75")]
         ]
@@ -603,7 +605,7 @@ def test_an_update_leaves_updated_date_alone(wallets, clock):
                 owner_id=uuid4(),
                 currency="EUR",
                 balance=Decimal("1"),
-                created_date=clock.now(),
+                created_date=clock.instant(),
             )
             for _ in range(2)
         ]
@@ -621,7 +623,7 @@ def test_an_update_leaves_updated_date_alone(wallets, clock):
     assert one.version == 2, "the version still moves - that is the optimistic lock"
 
     # Setting it is the caller's, and it survives the write untouched.
-    at = clock.now()
+    at = clock.instant()
     marked = wallets.update(wallets.get(a.id).copy().updated_date(at).build())
     assert wallets.get(a.id).updated_date == at
     assert marked.updated_date == at

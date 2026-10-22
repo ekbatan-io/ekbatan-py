@@ -109,7 +109,7 @@ class EventFanout:
             if not events:
                 return 0
 
-            now = self._clock.now()
+            now = self._clock.instant()
             notifications = [
                 EventNotification.builder()
                 .id(uuid.uuid4())

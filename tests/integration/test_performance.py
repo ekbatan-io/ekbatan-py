@@ -163,7 +163,7 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
         owner_id=uuid4(),
         currency="MXN",
         balance=Decimal("1.00"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
     repo.add(wallet)
 

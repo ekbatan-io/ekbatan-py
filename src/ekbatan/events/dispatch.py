@@ -20,7 +20,7 @@ import time
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import Table
@@ -32,6 +32,7 @@ from ..clock import Clock, SystemClock
 from ..domain import ModelEvent
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
+from ..time import Instant
 from ._across import Concurrently
 from .handler import AnyEventHandler, EventEnvelope, EventHandlerRegistry
 from .loop import HandlerLoop
@@ -196,7 +197,7 @@ class EventDispatch:
 
     def _drain_shard(self, shard: ShardIdentifier) -> int:
         repository = self._notification_repository
-        due = repository.find_due(shard, self._batch, self._clock.now())
+        due = repository.find_due(shard, self._batch, self._clock.instant())
         if not due:
             return 0
 
@@ -219,7 +220,7 @@ class EventDispatch:
         #
         # One `now` for the whole batch, again as Java's `postInvokeNow` is. Resolved per row it
         # would differ by microseconds and no two rows could ever share a statement.
-        now = self._clock.now()
+        now = self._clock.instant()
         outcomes = [self._retry_or_expire(outcome, now) for outcome in outcomes]
         self._log_discarded(outcomes)
         buckets: dict[tuple[str, timedelta | None], list[Any]] = defaultdict(list)
@@ -240,7 +241,7 @@ class EventDispatch:
         return len(outcomes)
 
     def _deliver(self, row: EventNotification) -> _Outcome:
-        now = self._clock.now()
+        now = self._clock.instant()
         attempts = row.attempts + 1
 
         if self._expired(row.event_date, now):
@@ -307,12 +308,12 @@ class EventDispatch:
         )
         HANDLED.add(1, {"outcome": "succeeded", "handler": row.handler_name})
         DELIVERY_LAG.record(
-            (self._clock.now() - row.event_date).total_seconds(),
+            (self._clock.instant() - row.event_date).total_seconds(),
             {"handler": row.handler_name},
         )
         return _Outcome(row.id, SUCCEEDED)
 
-    def _retry_or_expire(self, outcome: _Outcome, now: datetime) -> _Outcome:
+    def _retry_or_expire(self, outcome: _Outcome, now: Instant) -> _Outcome:
         """A failure is retried unless its next retry would land past the retention deadline,
         in which case it expires now - Java's rule, against the batch's one clock reading.
 
@@ -351,7 +352,7 @@ class EventDispatch:
                 discarded[0].attempts,
             )
 
-    def _expired(self, event_date: datetime, now: datetime) -> bool:
+    def _expired(self, event_date: Instant, now: Instant) -> bool:
         return event_date + self._retention <= now
 
     def _envelope(

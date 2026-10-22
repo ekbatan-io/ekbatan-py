@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Any
 
 from ..action.persister import LOG, _ChangePersisterCore
 from ..action.plan import PersistableChanges
 from ..repository import RepositoryRegistry
+from ..time import Instant
 from .outbox import AsyncEventPersister
 from .persistence import AsyncTransaction
 
@@ -39,8 +39,8 @@ class AsyncChangePersister(_ChangePersisterCore):
         namespace: str,
         action_name: str,
         params: Any,
-        started: datetime,
-        completed: datetime,
+        started: Instant,
+        completed: Instant,
         action_id: uuid.UUID,
     ) -> None:
         """Write the rows, then the events, inside ``tx``."""
