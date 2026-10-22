@@ -127,8 +127,8 @@ they were features:
 - **It normalises dialect quirks.** MariaDB reflects a bigint as `BIGINT(display_width=20)`;
   emitted verbatim that module does not even import.
 - **It writes a typed record beside each table** - `WalletsRecord` beside `WALLETS`, a
-  `TypedDict` with a key per column, typed as the column reads (a converter's column as the
-  converter's own class). Each repository's `to_record` returns it and `from_record` takes it,
+  `dict` with a key per column, typed as the column reads (a converter's column as the
+  converter's own class), read as `record["currency"]` or `record.column_currency()`. Each repository's `to_record` returns it and `from_record` takes it,
   so mypy checks every mapping against the table - the SQLite examples write theirs by hand.
 
 Each generating example also has **two forced types of its own**, so a reader sees a converter

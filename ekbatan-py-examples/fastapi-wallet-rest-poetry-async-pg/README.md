@@ -152,14 +152,16 @@ and, in the records beside the tables, the converters' own types - so a reposito
 `to_record` that hands the table a plain string where a `Currency` belongs is a mypy error:
 
 ```python
-class AlertsRecord(TypedDict):
+class AlertsRecord(dict[str, Any]):
     ...
-    recipient: EmailAddress
+
+    def column_recipient(self) -> EmailAddress: ...
 
 
-class WalletsRecord(TypedDict):
+class WalletsRecord(dict[str, Any]):
     ...
-    currency: Currency
+
+    def column_currency(self) -> Currency: ...
 ```
 
 - **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A

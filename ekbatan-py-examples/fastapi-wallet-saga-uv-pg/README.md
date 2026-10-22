@@ -129,14 +129,16 @@ and, in the records beside the tables, the converters' own types - so a reposito
 `to_record` that hands the table a plain string where a `Currency` belongs is a mypy error:
 
 ```python
-class TransferStepsRecord(TypedDict):
+class TransferStepsRecord(dict[str, Any]):
     ...
-    step: StepName
+
+    def column_step(self) -> StepName: ...
 
 
-class WalletsRecord(TypedDict):
+class WalletsRecord(dict[str, Any]):
     ...
-    currency: Currency
+
+    def column_currency(self) -> Currency: ...
 ```
 
 - **Picked by type.** Every `CHAR(3)` column is a currency code. A wallet's `currency` is a
