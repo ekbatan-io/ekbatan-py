@@ -181,3 +181,20 @@ Differences left on purpose, each with a note and in the docs:
   columns, unenforced checks, index comments, invisible/ignored indexes, system versioning,
   `AUTO_INCREMENT` outside the key; PostgreSQL functions, procedures, triggers, composite types,
   extensions; MySQL/MariaDB routines, triggers, events; SQLite triggers.
+
+## Review fixes (EKB-0450-)
+
+2026-10-22, unattended, in the worktree `ekbatan-py-sgfix` (branch `schemagen-review-fixes`). An
+independent review ran probes against the work above and found 14 things wrong, each proven by a
+run. Each is fixed here with a regression test that failed on the code before the fix and passes
+after it. Judgement calls: [DECISIONS-TO-REVIEW.md](DECISIONS-TO-REVIEW.md), "schemagen review
+fixes (EKB-0436-)".
+
+The round trip itself was widened first: views are now compared (their columns in A against the
+tables `view_metadata.create_all` builds in a third database), and MySQL/MariaDB other schemas -
+databases of the same server, which A and B would share - are described with A, then dropped
+and made again before B is built.
+
+| # | finding | what was done | red before, green after | commit |
+| --- | --- | --- | --- | --- |
+| R0 | (found by the widened round trip) MySQL/MariaDB view columns lost NOT NULL and a collation other than the database's - reflection reads a view by `DESCRIBE`; a view's record said `X \| None` of a NOT NULL column | read from `information_schema.COLUMNS` | `mysql-tables_and_notes`, `{mysql,mariadb}-columns_enums_keys_views`, `{mysql,mariadb}-other_schema` | EKB-0450 |

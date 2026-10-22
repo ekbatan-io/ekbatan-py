@@ -5,7 +5,8 @@ module; the module is imported; ``metadata.create_all`` builds a second fresh da
 then A and B describe themselves from their own catalogs (``schemagen_support.describe_database``)
 and the two descriptions must be the same, line for line. A line that differs is something the
 module lost or wrote wrong - unless the case names it as a difference schemagen means to make,
-and then a note must say so at generation time.
+and then a note must say so at generation time. Views are compared too: their columns in A,
+against the tables ``view_metadata.create_all`` builds from the module in a third database C.
 
     uv run pytest tests/integration/test_schemagen_round_trip.py --dialects=all
 
@@ -23,7 +24,15 @@ from sqlalchemy import text
 
 from backends import Backend
 from ekbatan.schemagen import SchemagenConfig, generate
-from schemagen_support import describe_database, engine, fresh, load, migrations, notes
+from schemagen_support import (
+    describe_database,
+    describe_views,
+    engine,
+    fresh,
+    load,
+    migrations,
+    notes,
+)
 
 
 @dataclass(frozen=True)
@@ -145,8 +154,6 @@ POSTGRES = (
         CREATE TABLE "Mixed Case" ("Some Col" INT PRIMARY KEY, "select" INT, "with-dash" TEXT);
         """,
         schemas=("audit",),
-        # Views are the migrations'; create_all builds tables only.
-        differs=("'v_names'", "'mv_names'"),
         notes=("measurements is partitioned",),
         writes=(
             'postgresql_partition_by="RANGE (logdate)"',
@@ -255,7 +262,7 @@ MYSQL = (
         CREATE VIEW v AS SELECT id FROM t;
         """,
         # Noted, not written: SQLAlchemy has no way to declare these.
-        differs=("`inv`", "t_unenforced", "t_commented", "t_hidden", "view None.v"),
+        differs=("`inv`", "t_unenforced", "t_commented", "t_hidden"),
         notes=(
             "functions schemagen does not write: add_one",
             "procedures schemagen does not write: do_nothing",
@@ -378,6 +385,89 @@ SQLITE = (
     ),
 )
 
+# -- added after the independent review (EKB-0450-) -----------------------------------------
+
+POSTGRES += (
+    # C12, C13, T12, K2, K5, K7, O1, O3: generated columns, comments, enums shared, in another
+    # schema and in arrays, a self-referencing key and a key to a unique column, views on views.
+    Trip(
+        "columns_enums_keys_views",
+        """
+        CREATE SCHEMA rt_enum;
+        CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy');
+        CREATE TYPE rt_enum.level AS ENUM ('low', 'high');
+        CREATE TABLE people (
+          id INT PRIMARY KEY, m mood NOT NULL, ms mood[], lv rt_enum.level,
+          qty INT, doubled INT GENERATED ALWAYS AS (qty * 2) STORED, code TEXT UNIQUE,
+          name TEXT COLLATE "C",
+          boss INT REFERENCES people (id) ON DELETE SET NULL,
+          CONSTRAINT people_qty_ck CHECK (qty >= 0)
+        );
+        COMMENT ON TABLE people IS 'the people';
+        COMMENT ON COLUMN people.qty IS 'how many';
+        CREATE TABLE pets (id INT PRIMARY KEY, owner_code TEXT REFERENCES people (code), m mood);
+        CREATE TABLE rt_enum.ratings (id INT PRIMARY KEY, lv rt_enum.level, m mood,
+          person INT REFERENCES public.people (id));
+        CREATE VIEW v_people AS SELECT id, m, qty, name FROM people;
+        CREATE VIEW v_v AS SELECT id, qty * 3 AS tripled, name FROM v_people;
+        CREATE VIEW rt_enum.v_ratings AS SELECT id, lv FROM rt_enum.ratings;
+        """,
+        schemas=("rt_enum",),
+    ),
+)
+
+#: C8, C12, C13, T18, K2, K5, K7, O3 on MySQL and MariaDB: AUTO_INCREMENT, generated columns,
+#: comments, ENUM and SET, collation, checks, a self-referencing key and a key to a unique
+#: column, views on views.
+_MY_COLUMNS = Trip(
+    "columns_enums_keys_views",
+    """
+    CREATE TABLE people (
+      id INT AUTO_INCREMENT PRIMARY KEY, m ENUM('sad', 'ok', 'happy') NOT NULL,
+      tags SET('a', 'b', 'c'), qty INT COMMENT 'how many',
+      doubled INT GENERATED ALWAYS AS (qty * 2) STORED, virt INT AS (qty + 1) VIRTUAL,
+      code VARCHAR(20) UNIQUE, name VARCHAR(50) COLLATE utf8mb4_bin, boss INT,
+      CONSTRAINT people_boss_fk FOREIGN KEY (boss) REFERENCES people (id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT people_qty_ck CHECK (qty >= 0)
+    ) COMMENT 'the people';
+    CREATE TABLE pets (
+      id INT PRIMARY KEY, owner_code VARCHAR(20),
+      CONSTRAINT pets_owner_fk FOREIGN KEY (owner_code) REFERENCES people (code)
+    );
+    CREATE VIEW v_people AS SELECT id, m, qty, name FROM people;
+    CREATE VIEW v_v AS SELECT id, qty * 3 AS tripled, name FROM v_people;
+    """,
+    # A view's NOT NULL column is not `| None` in its record.
+    writes=('    m: Literal["sad", "ok", "happy"]\n    qty: int | None\n    name: str | None\n',),
+)
+
+#: O1 on MySQL and MariaDB: another database, read as a schema, with keys within it and into it.
+_MY_OTHER = Trip(
+    "other_schema",
+    """
+    CREATE DATABASE rt_my_other;
+    CREATE TABLE parent (id INT PRIMARY KEY);
+    CREATE TABLE rt_my_other.o_parent (id INT PRIMARY KEY, name VARCHAR(10) NOT NULL);
+    CREATE TABLE rt_my_other.o_child (
+      id INT PRIMARY KEY, op INT,
+      CONSTRAINT oc_other FOREIGN KEY (op) REFERENCES rt_my_other.o_parent (id)
+    );
+    CREATE TABLE child (
+      id INT PRIMARY KEY, op INT,
+      CONSTRAINT c_other FOREIGN KEY (op) REFERENCES rt_my_other.o_parent (id)
+    );
+    CREATE VIEW rt_my_other.v_o AS SELECT id, name FROM rt_my_other.o_parent;
+    """,
+    schemas=("rt_my_other",),
+)
+
+MYSQL += (_MY_COLUMNS,)
+MARIADB += (_MY_COLUMNS,)
+
+MYSQL += (_MY_OTHER,)
+MARIADB += (_MY_OTHER,)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,
@@ -391,8 +481,16 @@ def _case(dialect: str, case_id: str) -> Trip:
 
 
 def round_trip(backend: Backend, tmp_path: Path, case: Trip) -> tuple[str, list[str], Any]:
-    """Migrate A, generate, import, `create_all` into B; assert the two describe the same."""
+    """Migrate A, generate, import, `create_all` into B; assert the two describe the same. And
+    `view_metadata.create_all` into C: each view's columns in A are its table's in C.
+
+    On MySQL and MariaDB another schema is another database on the same server, which A and B
+    would share: it is described with A, then dropped and made again empty before B is built.
+    """
+    mysql = backend.dialect in ("mysql", "mariadb")
     a = fresh(backend, "rt_a")
+    if mysql:
+        _recreate(a, case.schemas, create=False)
     out = tmp_path / "schema.py"
     with notes() as said:
         generate(
@@ -403,26 +501,51 @@ def round_trip(backend: Backend, tmp_path: Path, case: Trip) -> tuple[str, list[
         )
     written = out.read_text()
     module = load(out)
-    b = fresh(backend, "rt_b")
-    db = engine(b)
-    try:
-        with db.begin() as connection:
-            for schema in case.schemas:
-                connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-            for sql in case.before:
-                connection.exec_driver_sql(sql)
-        module.metadata.create_all(db)
-    finally:
-        db.dispose()
+    migrated = describe_database(a, case.schemas)
+    views = describe_views(a, case.schemas)
+
+    def build(target: Any) -> str:
+        url = fresh(backend, "rt_b")
+        if mysql:
+            _recreate(url, case.schemas)
+        db = engine(url)
+        try:
+            with db.begin() as connection:
+                if not mysql:
+                    for schema in case.schemas:
+                        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+                for sql in case.before:
+                    connection.exec_driver_sql(sql)
+            target.create_all(db)
+        finally:
+            db.dispose()
+        return url
+
+    b = build(module.metadata)
+    rebuilt = describe_database(b, case.schemas)
 
     def kept(lines: list[str]) -> list[str]:
         return [line for line in lines if not any(d in line for d in case.differs)]
 
-    migrated = kept(describe_database(a, case.schemas))
-    rebuilt = kept(describe_database(b, case.schemas))
-    assert migrated == rebuilt, "\n".join(
-        difflib.unified_diff(migrated, rebuilt, "migrated", "create_all", lineterm="", n=0)
+    assert kept(migrated) == kept(rebuilt), "\n".join(
+        difflib.unified_diff(
+            kept(migrated), kept(rebuilt), "migrated", "create_all", lineterm="", n=0
+        )
     )
+    if views:
+        view_metadata = module.view_metadata
+        c = build(view_metadata)
+        tables = [(t.schema, t.name) for t in view_metadata.tables.values()]
+        assert kept(views) == kept(describe_views(c, case.schemas, tables)), "\n".join(
+            difflib.unified_diff(
+                kept(views),
+                kept(describe_views(c, case.schemas, tables)),
+                "views",
+                "view_metadata",
+                lineterm="",
+                n=0,
+            )
+        )
     for piece in case.writes:
         assert piece in written, f"{piece!r} not in the module:\n{written}"
     for piece in case.never:
@@ -430,6 +553,21 @@ def round_trip(backend: Backend, tmp_path: Path, case: Trip) -> tuple[str, list[
     for piece in case.notes:
         assert any(piece in n for n in said), f"no note says {piece!r}: {said}"
     return written, said, module
+
+
+def _recreate(url: str, schemas: tuple[str, ...], *, create: bool = True) -> None:
+    """MySQL's other schemas - databases of the server - dropped, and made again empty."""
+    db = engine(url)
+    try:
+        with db.begin() as connection:
+            # A's own tables may hold keys into it.
+            connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 0")
+            for schema in schemas:
+                connection.exec_driver_sql(f"DROP DATABASE IF EXISTS `{schema}`")
+                if create:
+                    connection.exec_driver_sql(f"CREATE DATABASE `{schema}`")
+    finally:
+        db.dispose()
 
 
 def test_round_trip(backend: Backend, dialect: str, case_id: str, tmp_path: Path) -> None:

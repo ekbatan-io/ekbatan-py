@@ -239,6 +239,7 @@ def reflect(engine: Engine, config: SchemagenConfig) -> Reflected:
         _index_elements(engine, schema, result)
         if engine.dialect.name in ("mysql", "mariadb"):
             _mysql(engine, schema, result)
+            _mysql_view_columns(engine, schema, result)
         elif engine.dialect.name == "sqlite":
             _sqlite_triggers(engine, result)
 
@@ -904,6 +905,54 @@ def _mysql(engine: Engine, schema: str | None, result: Reflected) -> None:
             f"SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = {own}"
         ):
             note("event", str(name))
+
+
+def _mysql_view_columns(engine: Engine, schema: str | None, result: Reflected) -> None:
+    """A view's columns as the server says them. Reflection reads a MySQL view through
+    ``DESCRIBE``, and loses its columns' NOT NULL and a collation other than the database's -
+    so a view's record said ``int | None`` of a key, and its table was built at the wrong
+    collation."""
+    from sqlalchemy import types as sqltypes
+
+    views = [r for r in result.views if r.schema == schema]
+    if not views:
+        return
+    own = "COALESCE(:schema, DATABASE())"
+    with engine.connect() as connection:
+        default = connection.execute(
+            text(
+                "SELECT DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA "
+                f"WHERE SCHEMA_NAME = {own}"
+            ),
+            {"schema": schema},
+        ).scalar()
+        found = {
+            (str(table), str(column)): (str(nullable), collation)
+            for table, column, nullable, collation in connection.execute(
+                text(
+                    "SELECT TABLE_NAME, COLUMN_NAME, IS_NULLABLE, COLLATION_NAME "
+                    f"FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = {own}"
+                ),
+                {"schema": schema},
+            ).all()
+        }
+    for relation in views:
+        for column in relation.table.columns:
+            said = found.get((relation.table.name, column.name))
+            if said is None:
+                continue
+            nullable, collation = said
+            if nullable == "NO":
+                column.nullable = False
+            if (
+                collation is not None
+                and collation != default
+                and isinstance(column.type, sqltypes.String)
+                and not isinstance(column.type, sqltypes.Enum)
+                and not column.type.collation
+            ):
+                column.type = column.type.copy()
+                column.type.collation = str(collation)
 
 
 def _sqlite_triggers(engine: Engine, result: Reflected) -> None:
