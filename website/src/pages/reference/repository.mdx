@@ -110,16 +110,16 @@ Written out, the two say every column once, and mypy checks each against the rec
 
 ```python
 def to_record(self, wallet: Wallet) -> WalletsRecord:
-    return {
-        "id": wallet.id.value,
-        "version": wallet.version,
-        "state": wallet.state.name,
-        "owner_id": wallet.owner_id,
-        "currency": wallet.currency,
-        "balance": wallet.balance,
-        "created_date": wallet.created_date,
-        "updated_date": wallet.updated_date or wallet.created_date,
-    }
+    return WalletsRecord(
+        id=wallet.id.value,
+        version=wallet.version,
+        state=wallet.state.name,
+        owner_id=wallet.owner_id,
+        currency=wallet.currency,
+        balance=wallet.balance,
+        created_date=wallet.created_date,
+        updated_date=wallet.updated_date or wallet.created_date,
+    )
 
 def from_record(self, record: WalletsRecord) -> Wallet:
     return Wallet(
@@ -133,6 +133,12 @@ def from_record(self, record: WalletsRecord) -> Wallet:
         updated_date=record["updated_date"],
     )
 ```
+
+`to_record` builds the record with the record class's keyword form, `WalletsRecord(id=..., ...)`.
+A column whose name is not a valid Python identifier, or is a keyword - `order date`, `class`, a
+name starting `__` - cannot be a keyword argument, so such a record is built as a dict literal
+instead: `{"order date": ..., "class": ...}`. Both forms produce the same plain `dict`, and mypy
+checks both the same way.
 
 `from_record` is handed the row read by column name - a result row's mapping, or, where an insert
 or update has no `RETURNING`, the record `to_record` wrote. Every read the framework does hands
@@ -155,7 +161,7 @@ value - a `datetime` included - goes to the column exactly as the model holds it
 `model_by_field_name` hands a time back exactly as the driver read it. No zone is added, removed
 or moved ([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)).
 The two are built from the dataclass's fields at run time, so mypy takes their record on trust;
-the mapping written out key by key is the one it checks.
+the mapping written out column by column is the one it checks.
 
 `to_record` and `from_record` are plain `def` in both modes - mapping waits on nothing.
 

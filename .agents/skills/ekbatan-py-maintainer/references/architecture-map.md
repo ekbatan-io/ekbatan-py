@@ -51,6 +51,10 @@ website/             Astro. The only part that does not run through uv
   schemagen writes beside the table (`WalletsRecord` beside `WALLETS`); repositories are
   `ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]`. `columns_by_field_name` /
   `model_by_field_name` are the by-name mapping, chosen in a line, never a default.
+- `to_record` builds the record by keyword - `WalletsRecord(id=..., version=..., ...)` - not as
+  a dict literal. A column whose name is not a valid Python identifier or is a keyword (`order
+  date`, `class`, a name starting `__`) cannot be a keyword argument, so that record is a dict
+  literal; both give the same plain dict, and mypy checks both.
 - The ambient transaction is a `ContextVar`, so it is per-thread and per-task.
 - Opening a transaction inside another one opens a **second** transaction on a second
   connection, as Java's does (`EKB-0301`). Repository calls inside a block join it; nested blocks

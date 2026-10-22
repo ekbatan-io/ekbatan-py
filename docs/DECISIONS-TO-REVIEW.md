@@ -1076,3 +1076,17 @@ thread guard, the docs and the examples, each proven by a run. Ledger:
 | The two stale parity probes **run again** (`now()` -> `instant()`, `to_storage` reported as removed); their recorded `.out` files are kept as history and the re-runs written beside them (`*.rerun-2026-10-22.out`) | a probe that cannot run proves nothing; overwriting the recorded run would lose what was compared then |
 | `beside-java.md`: the "What to set" schema step, "The shared tables", "Migrations", the SQL keyed-lock sharing and "The config file" are gone; the `events` table comparison stays, reframed as what the Java Debezium transforms need from the Python service's own table; ids stay, reframed as read from events | the user's rule (2026-10-20): Java and Python never share a database; broker and Redis facts stay. **Worth a look:** the config-file key parity (kebab/camel, ISO durations) is now said only on the config-files page's own terms, not as a Java fact |
 | T4 (schemagen forcing `OffsetDateTime` on a zone-less column, or `Instant`/`LocalDateTime` on a non-time column) was **not touched** - handed to the schemagen stream | that stream owns `src/ekbatan/schemagen/` |
+
+## records built by keyword (EKB-0447)
+
+2026-10-22. **Decided by the user:** every `to_record` builds its record by calling the record
+class with keyword arguments - `return WalletsRecord(id=wallet.id.value, ...)` - instead of a dict
+literal. All 14 examples (uv, and the pip and Poetry copies written from them), the suite's
+fixtures and inline test repositories, the docs and website pages, `AGENTS.md`, the maintainer
+skill and the `to_record` docstring in `src/ekbatan/repository.py`.
+
+| decision | why |
+| --- | --- |
+| A record whose column name is not a valid Python identifier or is a keyword (`order date`, `class`, a name starting `__`) is built as a dict literal; the docs say so where `to_record` is taught | such a name cannot be a keyword argument. Both forms produce the same plain `dict`, and `mypy --strict` reports a missing key, an unknown or misspelt key and a wrong type for the call form as for the literal (proven by `tests/unit/test_typed_records_mypy.py`, now written in the call form, with the same error codes) |
+| `from_record` still reads `record["key"]`; the event outbox's `to_row` / `from_row` are untouched | not repository mappings |
+| The schemagen-owned files (its docs page, website page, ledger, tests and the generator's own text) were **not changed** - another stream owns them; the places still showing a dict-literal `to_record` are listed for after the merge | avoid conflicting edits |

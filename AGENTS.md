@@ -124,6 +124,10 @@ Every repository is generic in its model, its table's record and its id, in Java
 async, sharded or not; `FetchResult`'s terminals hand a mapper the same. No `dict[str, Any]`
 mapping in examples or docs: a generated schema has its records, a hand-written one writes them
 beside its tables. (`to_row` / `from_row` until `EKB-0409`; renamed outright, no aliases.)
+`to_record` builds its record by keyword, `return WalletsRecord(id=..., version=..., ...)`, not
+as a dict literal (`EKB-0447`). A column whose name is not a valid Python identifier or is a
+keyword (`order date`, `class`, a name starting `__`) cannot be a keyword argument, so that record
+is built as a dict literal; both produce the same plain dict, and mypy checks both.
 
 ### Immutability
 

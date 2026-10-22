@@ -100,15 +100,15 @@ class PurseRepository(AbstractRepository[Purse, PursesRecord, Id[Purse]]):
     """
 
     def to_record(self, purse: Purse) -> PursesRecord:
-        return {
-            "id": purse.id.value,
-            "version": purse.version,
-            "state": purse.state.name,
-            "currency": purse.currency,
-            "balance": purse.balance,
-            "created_date": purse.created_date,
-            "updated_date": purse.updated_date or purse.created_date,
-        }
+        return PursesRecord(
+            id=purse.id.value,
+            version=purse.version,
+            state=purse.state.name,
+            currency=purse.currency,
+            balance=purse.balance,
+            created_date=purse.created_date,
+            updated_date=purse.updated_date or purse.created_date,
+        )
 
     def from_record(self, values: PursesRecord) -> Purse:
         return Purse(

@@ -186,18 +186,18 @@ def test_dbs_visits_every_shard(sharded_registry, sharded_wallets):
 def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
     class WalletRepository(AbstractRepository[Wallet, WalletsRecord, UUID]):
         def to_record(self, wallet: Wallet) -> WalletsRecord:
-            return {
-                "id": wallet.id.value,
-                "version": wallet.version,
-                "state": wallet.state.name,
-                "owner_id": wallet.owner_id,
-                "currency": wallet.currency,
-                "balance": wallet.balance,
-                "aliases": wallet.aliases,
-                "reward_points": wallet.reward_points,
-                "created_date": wallet.created_date,
-                "updated_date": wallet.updated_date or wallet.created_date,
-            }
+            return WalletsRecord(
+                id=wallet.id.value,
+                version=wallet.version,
+                state=wallet.state.name,
+                owner_id=wallet.owner_id,
+                currency=wallet.currency,
+                balance=wallet.balance,
+                aliases=wallet.aliases,
+                reward_points=wallet.reward_points,
+                created_date=wallet.created_date,
+                updated_date=wallet.updated_date or wallet.created_date,
+            )
 
         def from_record(self, values: WalletsRecord) -> Wallet:
             return Wallet(

@@ -296,7 +296,12 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         error, as it is a compile error in Java::
 
             def to_record(self, wallet: Wallet) -> WalletsRecord:
-                return {"id": wallet.id.value, "version": wallet.version, ...}
+                return WalletsRecord(id=wallet.id.value, version=wallet.version, ...)
+
+        Build it with the record class's keyword form. A column whose name is not a valid
+        Python identifier, or is a keyword (``order date``, ``class``, a name starting
+        ``__``), cannot be a keyword argument, so such a record is built as a dict literal -
+        both forms produce the same ``dict``, and mypy checks both.
 
         Where the names line up, say so in a line rather than inheriting it in silence:
         ``return self.columns_by_field_name(wallet)``.

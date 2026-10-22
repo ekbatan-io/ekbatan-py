@@ -86,16 +86,16 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
         super().__init__(Wallet, WALLETS, registry)
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
-        return {
-            "id": wallet.id.value,
-            "version": wallet.version,
-            "state": wallet.state.name,
-            "owner_id": wallet.owner_id,
-            "currency": wallet.currency,
-            "balance": wallet.balance,
-            "created_date": wallet.created_date,
-            "updated_date": wallet.updated_date or wallet.created_date,
-        }
+        return WalletsRecord(
+            id=wallet.id.value,
+            version=wallet.version,
+            state=wallet.state.name,
+            owner_id=wallet.owner_id,
+            currency=wallet.currency,
+            balance=wallet.balance,
+            created_date=wallet.created_date,
+            updated_date=wallet.updated_date or wallet.created_date,
+        )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
         return Wallet(
@@ -124,29 +124,29 @@ def unused(record: AlertsRecord) -> None:
 
 #: (name, the line of RIGHT to change, what it becomes, the mypy error code expected there)
 WRONG = [
-    ("missing_column", '            "balance": wallet.balance,\n', "", "typeddict-item"),
+    ("missing_column", "            balance=wallet.balance,\n", "", "typeddict-item"),
     (
         "misspelt_column",
-        '            "balance": wallet.balance,\n',
-        '            "balanse": wallet.balance,\n',
+        "            balance=wallet.balance,\n",
+        "            balanse=wallet.balance,\n",
         "typeddict-unknown-key",
     ),
     (
         "extra_column",
-        '            "balance": wallet.balance,\n',
-        '            "balance": wallet.balance,\n            "colour": "red",\n',
+        "            balance=wallet.balance,\n",
+        '            balance=wallet.balance,\n            colour="red",\n',
         "typeddict-unknown-key",
     ),
     (
         "wrong_type",
-        '            "balance": wallet.balance,\n',
-        '            "balance": str(wallet.balance),\n',
+        "            balance=wallet.balance,\n",
+        "            balance=str(wallet.balance),\n",
         "typeddict-item",
     ),
     (
         "converter_type",
-        '            "currency": wallet.currency,\n',
-        '            "currency": wallet.currency.code,\n',
+        "            currency=wallet.currency,\n",
+        "            currency=wallet.currency.code,\n",
         "typeddict-item",
     ),
     (
@@ -278,10 +278,10 @@ def test_each_mistake_is_a_type_error_on_its_line(
     checked: dict[str, list[tuple[int, str]]], name: str, old: str, new: str, code: str
 ) -> None:
     source = textwrap.dedent(RIGHT.replace(old, new))
-    # The line the change is on - or, for a key the record lacks or lost, the dict it is in:
-    # mypy reports a TypedDict literal's keys where the literal starts.
+    # The line the change is on - or, for a key the record lacks or lost, the call it is in:
+    # mypy reports a TypedDict call's keys where the call starts.
     keys = code == "typeddict-unknown-key" or not new.strip()
-    where = "return {" if keys else new.strip().splitlines()[0]
+    where = "return WalletsRecord(" if keys else new.strip().splitlines()[0]
     line = next(i for i, text in enumerate(source.splitlines(), 1) if where in text)
     assert checked[name], f"mypy accepted {name}:\n{checked['_stdout'][0][1]}"
     assert (line, code) in checked[name], (checked[name], checked["_stdout"][0][1])

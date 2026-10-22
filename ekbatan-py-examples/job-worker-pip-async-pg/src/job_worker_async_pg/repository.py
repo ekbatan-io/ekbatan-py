@@ -52,19 +52,19 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
         turns it into text, and turns the text back into a `Currency` on every read.
         """
-        return {
-            "id": wallet.id.value,
-            "version": wallet.version,
-            "state": wallet.state.name,
-            "owner_id": wallet.owner_id,
-            "currency": wallet.currency,
-            "balance": wallet.balance,
-            "created_date": wallet.created_date,
+        return WalletsRecord(
+            id=wallet.id.value,
+            version=wallet.version,
+            state=wallet.state.name,
+            owner_id=wallet.owner_id,
+            currency=wallet.currency,
+            balance=wallet.balance,
+            created_date=wallet.created_date,
             # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
             # constructed model - the declared type keeps the `| None` because a builder may
             # leave it unset. The column is NOT NULL.
-            "updated_date": wallet.updated_date or wallet.created_date,
-        }
+            updated_date=wallet.updated_date or wallet.created_date,
+        )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
         """And back - the counterpart to Java's `fromRecord`.
@@ -97,14 +97,14 @@ class AlertRepository(AsyncEntityRepository[Alert, AlertsRecord, Id[Alert]]):
     def to_record(self, alert: Alert) -> AlertsRecord:
         """Six columns, and no timestamps - an entity carries none. `recipient` is an
         `EmailAddress` both ways; its converter in `schema.py` does the text."""
-        return {
-            "id": alert.id.value,
-            "version": alert.version,
-            "state": alert.state.name,
-            "wallet_id": alert.wallet_id.value,
-            "recipient": alert.recipient,
-            "message": alert.message,
-        }
+        return AlertsRecord(
+            id=alert.id.value,
+            version=alert.version,
+            state=alert.state.name,
+            wallet_id=alert.wallet_id.value,
+            recipient=alert.recipient,
+            message=alert.message,
+        )
 
     def from_record(self, record: AlertsRecord) -> Alert:
         return Alert(

@@ -36,18 +36,18 @@ class WalletRepository(AbstractRepository[Wallet, WalletsRecord, ShardedId[Walle
     """What a user writes when the built-in finders run out."""
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
-        return {
-            "id": wallet.id.value,
-            "version": wallet.version,
-            "state": wallet.state.name,
-            "owner_id": wallet.owner_id,
-            "currency": wallet.currency,
-            "balance": wallet.balance,
-            "aliases": wallet.aliases,
-            "reward_points": wallet.reward_points,
-            "created_date": wallet.created_date,
-            "updated_date": wallet.updated_date or wallet.created_date,
-        }
+        return WalletsRecord(
+            id=wallet.id.value,
+            version=wallet.version,
+            state=wallet.state.name,
+            owner_id=wallet.owner_id,
+            currency=wallet.currency,
+            balance=wallet.balance,
+            aliases=wallet.aliases,
+            reward_points=wallet.reward_points,
+            created_date=wallet.created_date,
+            updated_date=wallet.updated_date or wallet.created_date,
+        )
 
     def from_record(self, values: WalletsRecord) -> Wallet:
         # Read by column name: the framework hands a row's mapping, never the row itself.

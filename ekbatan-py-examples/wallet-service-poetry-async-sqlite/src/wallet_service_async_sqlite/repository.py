@@ -49,19 +49,19 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         than its value. The timestamps go in exactly as they are - the clock gives UTC with no
         zone attached, and that is what the column holds.
         """
-        return {
-            "id": wallet.id.value,
-            "version": wallet.version,
-            "state": wallet.state.name,
-            "owner_id": wallet.owner_id,
-            "currency": wallet.currency,
-            "balance": wallet.balance,
-            "created_date": wallet.created_date,
+        return WalletsRecord(
+            id=wallet.id.value,
+            version=wallet.version,
+            state=wallet.state.name,
+            owner_id=wallet.owner_id,
+            currency=wallet.currency,
+            balance=wallet.balance,
+            created_date=wallet.created_date,
             # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
             # constructed model - the declared type keeps the `| None` because a builder may
             # leave it unset. The column is NOT NULL.
-            "updated_date": wallet.updated_date or wallet.created_date,
-        }
+            updated_date=wallet.updated_date or wallet.created_date,
+        )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
         """And back.
@@ -159,14 +159,14 @@ class AlertRepository(AsyncEntityRepository[Alert, AlertsRecord, Id[Alert]]):
 
     def to_record(self, alert: Alert) -> AlertsRecord:
         """Six columns, and no timestamps - an entity carries none."""
-        return {
-            "id": alert.id.value,
-            "version": alert.version,
-            "state": alert.state.name,
-            "wallet_id": alert.wallet_id.value,
-            "recipient": alert.recipient,
-            "message": alert.message,
-        }
+        return AlertsRecord(
+            id=alert.id.value,
+            version=alert.version,
+            state=alert.state.name,
+            wallet_id=alert.wallet_id.value,
+            recipient=alert.recipient,
+            message=alert.message,
+        )
 
     def from_record(self, record: AlertsRecord) -> Alert:
         return Alert(

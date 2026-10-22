@@ -28,26 +28,26 @@ class _WalletRows:
     """The wallet mapping, shared by the three repository kinds the suite builds."""
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
-        return {
-            "id": wallet.id.value,
-            "version": wallet.version,
-            "state": wallet.state.name,
-            "owner_id": wallet.owner_id,
-            "currency": wallet.currency,
-            "balance": wallet.balance,
+        return WalletsRecord(
+            id=wallet.id.value,
+            version=wallet.version,
+            state=wallet.state.name,
+            owner_id=wallet.owner_id,
+            currency=wallet.currency,
+            balance=wallet.balance,
             # A list, and it only survives the round trip because the column is JSON. A write
             # path binding from the runtime class rather than the declared type would discard
             # it, which is exactly what this fixture exists to catch.
-            "aliases": wallet.aliases,
+            aliases=wallet.aliases,
             # Nullable on purpose, and nothing may default it: a batch in which every row
             # leaves it null is what exposes an untyped NULL bind.
-            "reward_points": wallet.reward_points,
-            "created_date": wallet.created_date,
+            reward_points=wallet.reward_points,
+            created_date=wallet.created_date,
             # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
             # constructed model - the declared type keeps the `| None` because a builder may
             # leave it unset.
-            "updated_date": wallet.updated_date or wallet.created_date,
-        }
+            updated_date=wallet.updated_date or wallet.created_date,
+        )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
         return Wallet(
@@ -68,15 +68,15 @@ class _NotificationRows:
     """An entity: no timestamps, because it is state rather than history."""
 
     def to_record(self, note: Notification) -> NotificationsRecord:
-        return {
-            "id": note.id.value,
-            "version": note.version,
-            "state": note.state.name,
-            "wallet_id": note.wallet_id.value,
-            "kind": note.kind,
-            "recipient": note.recipient,
-            "message": note.message,
-        }
+        return NotificationsRecord(
+            id=note.id.value,
+            version=note.version,
+            state=note.state.name,
+            wallet_id=note.wallet_id.value,
+            kind=note.kind,
+            recipient=note.recipient,
+            message=note.message,
+        )
 
     def from_record(self, record: NotificationsRecord) -> Notification:
         return Notification(

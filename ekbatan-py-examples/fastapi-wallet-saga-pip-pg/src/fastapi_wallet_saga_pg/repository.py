@@ -33,19 +33,19 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
         `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
         turns it into text, and turns the text back into a `Currency` on every read.
         """
-        return {
-            "id": wallet.id.value,
-            "version": wallet.version,
-            "state": wallet.state.name,
-            "owner_id": wallet.owner_id,
-            "currency": wallet.currency,
-            "balance": wallet.balance,
-            "created_date": wallet.created_date,
+        return WalletsRecord(
+            id=wallet.id.value,
+            version=wallet.version,
+            state=wallet.state.name,
+            owner_id=wallet.owner_id,
+            currency=wallet.currency,
+            balance=wallet.balance,
+            created_date=wallet.created_date,
             # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
             # constructed model - the declared type keeps the `| None` because a builder may
             # leave it unset. The column is NOT NULL.
-            "updated_date": wallet.updated_date or wallet.created_date,
-        }
+            updated_date=wallet.updated_date or wallet.created_date,
+        )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
         """And back - the counterpart to Java's `fromRecord`.
@@ -77,13 +77,13 @@ class TransferStepRepository(EntityRepository[TransferStep, TransferStepsRecord,
         """Five columns. `step` goes in as the `StepName` it is: the column's converter in
         `schema.py` writes its name, and reads a `StepName` back. `state` is still written by
         hand, because the framework reads that column as text."""
-        return {
-            "id": step.id.value,
-            "version": step.version,
-            "state": step.state.name,
-            "transfer_id": step.transfer_id,
-            "step": step.step,
-        }
+        return TransferStepsRecord(
+            id=step.id.value,
+            version=step.version,
+            state=step.state.name,
+            transfer_id=step.transfer_id,
+            step=step.step,
+        )
 
     def from_record(self, record: TransferStepsRecord) -> TransferStep:
         return TransferStep(
