@@ -55,28 +55,87 @@ are the same code.
 
 ## The record
 
-A row is a **record**: a `TypedDict` with one key per column, each typed as the column reads.
+A row is a **record**: a `dict` with one key per column, each typed as the column reads.
 [schemagen](/reference/schemagen/) writes one beside every table it generates - `WalletsRecord` beside
-`WALLETS`:
+`WALLETS`. A column is read two ways, and both are checked:
 
 ```python
-class WalletsRecord(TypedDict):
-    id: UUID
-    version: int
-    state: str
-    owner_id: UUID
-    currency: Currency      # the column is CHAR(3); its converter gives a Currency
-    balance: Decimal
-    created_date: Instant
-    updated_date: Instant
+record["owner_id"]          # the dict way - the main one
+record.column_owner_id()    # the same value, by method
 ```
 
-A nullable column is `X | None`; a column the database fills itself (a server default, an
-identity, a computed column) is `NotRequired`. To SQLAlchemy a record is a plain `dict`, so it
-costs nothing at run time. To mypy it is the table's shape, and that is the point: a mapping
-that leaves a column out, misspells one, adds one the table does not have, or gives one the
-wrong type - a `str` where the converter's column wants a `Currency` - is a type error, and so
-is reading a key the record does not have.
+Shortened, the class looks like this:
+
+```python
+class WalletsRecord(dict[str, Any]):
+    __slots__ = ()
+
+    def __init__(
+        self,
+        *,
+        id: UUID,
+        version: int,
+        currency: Currency,  # and a keyword for every other column
+    ) -> None:
+        super().__init__(id=id, version=version, currency=currency)
+
+    if TYPE_CHECKING:  # for mypy only: costs nothing when the code runs
+        @overload  # type: ignore[override]
+        def __getitem__(self, key: Literal["id"]) -> UUID: ...
+        @overload
+        def __getitem__(self, key: Literal["currency"]) -> Currency: ...
+        ...
+        def __getitem__(self, key: str) -> Any: ...
+
+    def column_id(self) -> UUID:
+        return self["id"]
+
+    def column_currency(self) -> Currency:  # the column is CHAR(3); its converter gives a Currency
+        return self["currency"]
+    ...
+```
+
+At run time a record is a `dict` and nothing more: `__slots__ = ()`, so no per-record
+`__dict__`, and `record["x"]` is `dict`'s own lookup. To mypy it is the table's shape, and that
+is the point: building one with a column left out, misspelt, added or of the wrong type - a
+`str` where the converter's column wants a `Currency` - is a type error; so is reading a key
+the table does not have (`record["balanse"]`), a method it does not have
+(`record.column_balanse()`), or using a value as the wrong type.
+
+A nullable column is `X | None`.
+
+**Every column has a method, always `column_` and its name.** The prefix means no column name
+can clash with a `dict` method (`keys`, `items`, `get`), be a keyword or start with a digit. A
+character a Python name cannot hold becomes `_`: `order date` is `column_order_date()`, `2fa`
+is `column_2fa()`. The key stays the column's real name: `record["order date"]`.
+
+**The keyword is the column's name where that is a valid one**, and otherwise as close as
+Python allows - the key is still the column's own:
+
+| column | keyword | method |
+| --- | --- | --- |
+| `wallet_id` | `wallet_id=` | `column_wallet_id()` |
+| `class` | `class_=` (a keyword gets `_` after it) | `column_class()` |
+| `order date` | `order_date=` (a character no name holds becomes `_`) | `column_order_date()` |
+| `2fa` | `_2fa=` (a leading digit gets `_` before it) | `column_2fa()` |
+| `__meta` | `_meta=` (a class would mangle two leading `_`) | `column___meta()` |
+| `self` | `self_=` (`__init__` needs `self`) | `column_self()` |
+
+If two columns would get the same keyword or method - `order date` and `order_date` - the one
+whose name needed no change keeps it and the other gets `_2` (then `_3`...), the same on every
+run; schemagen says so when it writes the module.
+
+**A column the database fills itself** - a server default, an identity, an auto-increment, a
+computed column - is a keyword that defaults to `UNSET` (`from ekbatan.schema import UNSET`).
+Left at that, the key is not in the record at all, so the INSERT leaves the column out and the
+database fills it; an update leaves the row's value as it is. On a record read from the
+database the key is there, so `record["created"]` and `record.column_created()` are typed as
+the column reads, not as "maybe missing".
+
+**What mypy cannot do with a record.** `{**record}`, `dict(record)` and
+`other.update(record)` are refused by mypy (it cannot pick an overload for a plain `str` key).
+Write `dict(record.items())`, or type the value as `Mapping[str, Any]` first. At run time all
+three work.
 
 A schema written by hand writes its records by hand, in the same style, next to its tables:
 
@@ -90,9 +149,20 @@ WALLETS = Table(
 )
 
 
-class WalletsRecord(TypedDict):
-    id: UUID
-    version: int
+class WalletsRecord(dict[str, Any]):
+    __slots__ = ()
+
+    def __init__(self, *, id: UUID, version: int) -> None:  # every column, by keyword
+        super().__init__(id=id, version=version)
+
+    if TYPE_CHECKING:
+        @overload  # type: ignore[override]
+        def __getitem__(self, key: Literal["id"]) -> UUID: ...
+        ...
+        def __getitem__(self, key: str) -> Any: ...
+
+    def column_id(self) -> UUID:
+        return self["id"]
     ...
 ```
 
@@ -134,16 +204,34 @@ def from_record(self, record: WalletsRecord) -> Wallet:
     )
 ```
 
-`to_record` builds the record with the record class's keyword form, `WalletsRecord(id=..., ...)`.
-A column whose name is not a valid Python identifier, or is a keyword - `order date`, `class`, a
-name starting `__` - cannot be a keyword argument, so such a record is built as a dict literal
-instead: `{"order date": ..., "class": ...}`. Both forms produce the same plain `dict`, and mypy
-checks both the same way.
+`to_record` builds the record by keyword, `WalletsRecord(id=..., ...)` - a column whose name is
+no Python name by the keyword in the table above, `class_=`, `order_date=`. The record it
+returns is the very `dict` the INSERT is given: no copy is made on the way.
 
-`from_record` is handed the row read by column name - a result row's mapping, or, where an insert
-or update has no `RETURNING`, the record `to_record` wrote. Every read the framework does hands
-it the same: `find`, `get`, `find_where`, `all`, a read across shards, and a query of your own
-ended with `.fetch(self.from_record)`.
+`from_record` is handed the table's record - a `WalletsRecord`, built from the result row, or,
+where an insert or update has no `RETURNING` (MySQL), the record `to_record` wrote. Every read
+the framework does hands it the same: `find`, `get`, `find_many`, `find_where`,
+`find_one_where`, `all`, the rows `add` and `update` read back, a read across shards, and a
+query of your own ended with `.fetch(self.from_record)`. Read each column by key, as above, or
+by its method - the two are the same value:
+
+```python
+def from_record(self, record: WalletsRecord) -> Wallet:
+    return Wallet(
+        id=ShardedId[Wallet](record.column_id()),
+        version=record.column_version(),
+        state=WalletState[record.column_state()],
+        owner_id=record.column_owner_id(),
+        currency=record.column_currency(),
+        balance=record.column_balance(),
+        created_date=record.column_created_date(),
+        updated_date=record.column_updated_date(),
+    )
+```
+
+The record is built from the row once, for about what reading the row's own mapping costs:
+`dict.__new__` and `dict.update` - the keyword `__init__` is skipped, since the row's names are
+already the keys.
 
 **What a write sends is the record, key for key.** `add` and `update` - one row or a batch, every
 database - write every column the record `to_record` returns, under the record's own keys, and
@@ -417,9 +505,16 @@ async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
 
 `conn.rows(statement)` hands back a `FetchResult`, and each of its terminals takes the mapper -
 so the mapping is the last thing you read. The mapper is handed each row **read by column
-name** - `row["currency"]` - which is what `from_record` takes. Its own parameter says which
-record it expects; the statement is not checked against it, so select the table's columns when
-you hand it `from_record`.
+name**:
+
+- a mapper whose first parameter is a record class - `from_record(self, record: WalletsRecord)`,
+  or a function of your own typed the same way - gets that class, built from the row, so
+  `record.column_currency()` works as `record["currency"]` does. A repository's own method gets
+  the repository's record even when its annotation cannot be read;
+- anything else - a lambda, say - gets the row's mapping, `row["currency"]`.
+
+The statement is not checked against the record, so select the table's columns when you hand
+it `from_record`.
 
 | | |
 | --- | --- |

@@ -1183,14 +1183,16 @@ explains them without Java; the mapping, setting by setting, is here:
 
 Where the output differs:
 
-- **A SQLAlchemy `Table` and a `TypedDict` record, not a table class and a record class.** jOOQ
+- **A SQLAlchemy `Table` and a `dict` record, not a table class and a jOOQ record.** jOOQ
   generates `Wallets` (the table) and `WalletsRecord` (its row). Here `WALLETS` is a `Table` and,
-  since `EKB-0408`, `WalletsRecord` is generated beside it, under jOOQ's name: a `TypedDict` with
-  a key per column, typed as the column reads (a converter's column as its user type, as jOOQ's
-  `userType`). It is a plain `dict` at run time - no getters, no `store()`, no attachment to a
-  connection - and a type checker's contract, which is what the mapping needs. One module,
-  `schema.py`; a table in another schema is exported as `SCHEMA_TABLE` / `SchemaTableRecord`
-  rather than in a package of its own.
+  since `EKB-0408`, `WalletsRecord` is generated beside it, under jOOQ's name: since `EKB-0485`
+  a subclass of `dict` with a key per column, typed as the column reads (a converter's column
+  as its user type, as jOOQ's `userType`). A column is read as `record["wallet_id"]` or by its
+  getter, `record.column_wallet_id()` - jOOQ's is `getWalletId()`; the prefix here is `column_`
+  so that no column name can clash with a `dict` method. No setters, no `store()`, no
+  attachment to a connection: it is the `dict` an insert is given, and a type checker's
+  contract. One module, `schema.py`; a table in another schema is exported as `SCHEMA_TABLE` /
+  `SchemaTableRecord` rather than in a package of its own.
 - **The framework's tables are built from `ekbatan.schema`, not reflected.** Java reflects them
   on PostgreSQL and leaves them out on MySQL and MariaDB.
 - **MariaDB `JSON` is `json_column()`.** It is `LONGTEXT` with a check there; Java's `(?i:JSON)`

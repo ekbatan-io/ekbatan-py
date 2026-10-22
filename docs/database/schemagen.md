@@ -55,11 +55,26 @@ are written through their module the same way: `postgresql.JSONB()`.
 and, beside it, the table's record:
 
 ```python
-class OrdersRecord(TypedDict):
-    id: UUID
-    amount: Decimal
-    note: str | None
-    created_date: Instant
+class OrdersRecord(dict[str, Any]):
+    __slots__ = ()
+
+    def __init__(self, *, id: UUID, amount: Decimal, note: str | None, created_date: Instant) -> None:
+        super().__init__(id=id, amount=amount, note=note, created_date=created_date)
+
+    if TYPE_CHECKING:  # for mypy only
+        @overload  # type: ignore[override]
+        def __getitem__(self, key: Literal["id"]) -> UUID: ...
+        @overload
+        def __getitem__(self, key: Literal["amount"]) -> Decimal: ...
+        ...
+        def __getitem__(self, key: str) -> Any: ...
+
+    def column_id(self) -> UUID:
+        return self["id"]
+
+    def column_amount(self) -> Decimal:
+        return self["amount"]
+    ...
 ```
 
 Import `ORDERS` and query it like any SQLAlchemy table; type a repository's mapping with
@@ -69,12 +84,16 @@ a column, such as a `Money` instead of a `Decimal`, [write a converter](#write-y
 
 ## The record beside each table
 
-Beside every table, schemagen writes the table's **record**: a `TypedDict` named after the
+Beside every table, schemagen writes the table's **record**: a `dict` class named after the
 table - `orders` gives `OrdersRecord`, `event_notifications` gives `EventNotificationsRecord` -
-with one key per column, each typed as the column reads. A repository's `to_record` returns it
-and its `from_record` takes it ([repositories](repositories.md)), so mypy checks every mapping
-against the table: a column left out, misspelt, added or given the wrong type is a type error.
-To SQLAlchemy a record is a plain `dict`; it costs nothing at run time.
+with one key per column, each typed as the column reads. It is built by keyword,
+`OrdersRecord(id=..., amount=..., ...)`, and a column is read as `record["amount"]` or
+`record.column_amount()`. A repository's `to_record` returns it and its `from_record` takes it
+([repositories](repositories.md)), so mypy checks every mapping against the table: a column
+left out, misspelt, added or given the wrong type is a type error, and so is reading a key or a
+method the table does not have. To SQLAlchemy a record is the `dict` an insert is given; the
+`__getitem__` overloads that type each key sit under `TYPE_CHECKING`, so they cost nothing when
+the code runs.
 
 Each key's type is read from the type object the module builds for that column:
 
@@ -93,8 +112,19 @@ Each key's type is read from the type object the module builds for that column:
 | a type nothing says anything about (`sql_type("xml")`, PostgreSQL `BIT`, which two drivers read differently) | `Any`, and the run prints a note saying so - give it a converter to type it |
 
 A nullable column is `X | None`. A column the database fills itself - a server default, an
-identity, a generated column, an auto-increment - is `NotRequired[...]`: an insert may leave it
-out, and must leave out a generated one.
+identity, a generated column, an auto-increment - is a keyword that defaults to `UNSET`
+(`created: Instant | Unset = UNSET`): left at that, the key is not in the record, so an insert
+leaves the column out, as it must for a generated one. Read from the database, the key is there,
+so `record["created"]` is an `Instant`.
+
+**Every column gets a method named `column_` and its name**, with each character a Python name
+cannot hold made `_`: `order date` gives `column_order_date()`. The prefix keeps any name safe -
+no clash with a `dict` method, a keyword or a leading digit. **Every column is a keyword of
+`__init__`**: its own name where that is a valid one, else `class_` for `class`, `order_date` for
+`order date`, `_2fa` for `2fa`, `_meta` for `__meta`, `self_` for `self`. The key is always the
+column's real name. Two columns that would share a keyword or a method - `order date` and
+`order_date` - are told apart by `_2`, `_3`..., given to the one whose name had to change, and
+the run says so. The [repositories page](repositories.md#the-record) has the full table.
 
 **A converter's type is read off the converter.** First the return annotation of its `from_db`
 (`def from_db(self, value: Decimal) -> Money`), so a converter needs no base class; else the
@@ -110,9 +140,9 @@ class does not extend Converter[DbT, UserT]. Annotate it: `def from_db(self, val
 The module imports what the records name - `from myapp.money import Money`, `from uuid import
 UUID` - and a name that is already taken in the module (a SQLAlchemy type, a helper, a table, a
 record, another class of the same name) is imported under an alias: `myapp_types_UUID`. A column
-named like a type its record uses (a `date` column of type `date`) makes that record the call
-form, `OrdersRecord = TypedDict("OrdersRecord", {...})`, which means the same. Two tables whose
-records would share a name stop the run, as two tables sharing a constant do.
+named like a type its record uses (a `date` column of type `date`) is fine: the keyword
+`date: date` still means the type. Two tables whose records would share a name stop the run, as
+two tables sharing a constant do.
 
 A schema written by hand, without schemagen, writes its records by hand in the same style.
 
@@ -780,10 +810,10 @@ include-expression = "reminders\\.at"
 ```
 
 ```python
-class RemindersRecord(TypedDict):
-    id: UUID
-    at: LocalDateTime
-    created_date: Instant
+class RemindersRecord(dict[str, Any]):
+    ...
+    def __init__(self, *, id: UUID, at: LocalDateTime, created_date: Instant) -> None: ...
+    def column_at(self) -> LocalDateTime: ...
 ```
 
 **A `TIMESTAMPTZ` keeps the moment, not the offset.** PostgreSQL turns what you write into UTC

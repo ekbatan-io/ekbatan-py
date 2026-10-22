@@ -34,8 +34,9 @@ got there first the update matches zero rows and `StaleRecordError` unwinds the 
 
 The repository layer sits on **SQLAlchemy Core**. No ORM, no session cache, no lazy loading.
 Each repository writes its mapping - `to_record` / `from_record`, Java's `toRecord` /
-`fromRecord` - typed by the table's **record**, a `TypedDict` schemagen writes beside the table
-(`WalletsRecord` beside `WALLETS`), so mypy checks every mapping against the table.
+`fromRecord` - typed by the table's **record**, a `dict` subclass schemagen writes beside the
+table (`WalletsRecord` beside `WALLETS`), read as `record["wallet_id"]` or
+`record.column_wallet_id()`, so mypy checks every mapping against the table.
 
 ## This is a port
 
@@ -119,15 +120,34 @@ A reader moving between the two ports should recognise what they are looking at.
 Every repository is generic in its model, its table's record and its id, in Java's order:
 `ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]` (and `EntityRepository`, the
 `Abstract` base and the `ekbatan.aio` twins alike). `to_record(model) -> WalletsRecord` and
-`from_record(record: WalletsRecord) -> Wallet` are the repository's to write. The framework hands
-`from_record` the row read by column name - the row's mapping - on every read path, sync and
-async, sharded or not; `FetchResult`'s terminals hand a mapper the same. No `dict[str, Any]`
+`from_record(record: WalletsRecord) -> Wallet` are the repository's to write. No `dict[str, Any]`
 mapping in examples or docs: a generated schema has its records, a hand-written one writes them
-beside its tables. (`to_row` / `from_row` until `EKB-0409`; renamed outright, no aliases.)
-`to_record` builds its record by keyword, `return WalletsRecord(id=..., version=..., ...)`, not
-as a dict literal (`EKB-0447`). A column whose name is not a valid Python identifier or is a
-keyword (`order date`, `class`, a name starting `__`) cannot be a keyword argument, so that record
-is built as a dict literal; both produce the same plain dict, and mypy checks both.
+beside its tables in the same style. (`to_row` / `from_row` until `EKB-0409`; renamed outright,
+no aliases.)
+
+A record (since `EKB-0485`, the user's design) is a subclass of `dict[str, Any]` with
+`__slots__ = ()`, a keyword-only `__init__`, `__getitem__` overloads per column under
+`TYPE_CHECKING` (mypy only - one `type: ignore[override]` on the first), and a
+`column_<name>()` method per column. `record["x"]` is the main, documented way to read a
+column; `record.column_x()` the alternative; examples use `record["x"]`. Rules:
+
+- **The record is the dict.** `to_record` builds it by keyword, `WalletsRecord(id=..., ...)`
+  (`EKB-0447`); the INSERT is given that very object, and an UPDATE reads its values from it -
+  `EKB-0480`'s rules hold: a write sends exactly the record's keys, a batch whose records differ
+  is refused.
+- **Reading builds one record per row**, the record class the repository is generic in, read
+  off its bases once (`_record_type_of`; `dict` where it names none): `dict.__new__` +
+  `dict.update(zip(keys, row))`, skipping `__init__` (`fetching.records` / `record_of`). Every
+  read path, sync and async, sharded or not, goes through `_read_all` / `_read_back`; a MySQL
+  read-back hands `from_record` the record `to_record` wrote (`_as_record`). A
+  `FetchResult` mapper gets the record class its first parameter names (or a repository
+  method's own record); any other mapper - a lambda - the row's mapping.
+- **Names.** Every column's method is `column_` + its name with non-`[A-Za-z0-9_]` made `_`.
+  Its keyword is its name, else sanitized: `class_`, `order_date`, `_2fa`, `_meta` (for
+  `__meta`), `self_`/`super_`; collisions get `_2`, `_3` on the one that changed, with a note.
+- **A column the database fills** is a keyword defaulting to `ekbatan.schema.UNSET` (type
+  `Unset`); left so, the key is absent and the INSERT omits it. Read back it is typed as the
+  column reads.
 
 ### Immutability
 
@@ -394,7 +414,7 @@ Two generators, mirroring two different Java mechanisms:
 | Java | here |
 | --- | --- |
 | annotation processor → `WalletBuilder` | `python -m ekbatan.codegen <module> --out builders.py` |
-| jOOQ + container + Flyway → `WALLETS` + `WalletsRecord` | `python -m ekbatan.schemagen` → `WALLETS` (`Table`) + `WalletsRecord` (`TypedDict`), settings in `[tool.ekbatan.schemagen]` |
+| jOOQ + container + Flyway → `WALLETS` + `WalletsRecord` | `python -m ekbatan.schemagen` → `WALLETS` (`Table`) + `WalletsRecord` (a `dict` subclass with `column_` methods), settings in `[tool.ekbatan.schemagen]` |
 
 `schemagen` starts a throwaway container, runs **your** migrations into it and reflects the
 result. Its settings are jOOQ's, in `[tool.ekbatan.schemagen]` of `pyproject.toml` (a flag wins):
@@ -455,14 +475,17 @@ timestamps to `Instant`, PostgreSQL `TIMESTAMPTZ` to `OffsetDateTime`, JSON twic
   on that database. A new feature gets a case there; the matrix is
   `docs/SCHEMAGEN-COMPLETENESS-LEDGER.md`.
 - **Every table gets a typed record**, `<Table>Record` (jOOQ's name: `wallets` ->
-  `WalletsRecord`), a `TypedDict` beside the `Table` (`schemagen/_records.py`). Each key is typed
+  `WalletsRecord`), a `dict` subclass beside the `Table` (`schemagen/_records.py`; the shape is
+  above, under "The mapping is typed by the table's record"). Each key is typed
   from the type object the module builds: a converter's column is the converter's user type -
   its `from_db` return annotation, else its `Converter[DbT, UserT]` base (an annotation of `Any`
   falls through to the base); **neither is an error, never a silent `Any`**. `Any` only where nothing can say (`sql_type`, a driver-dependent type),
-  with a note. Nullable is `| None`; a column the database fills is `NotRequired`. The types are
-  proven against what the sync and async drivers really return (`test_schemagen_types`), and
-  `tests/unit/test_typed_records_mypy.py` proves mypy catches a missing, misspelt, extra or
-  mistyped column. A hand-written schema writes its records by hand.
+  with a note. Nullable is `| None`; a column the database fills is a keyword defaulting to
+  `UNSET`. The types are proven against what the sync and async drivers really return
+  (`test_schemagen_types`; `tests/records.py` reads a record's keys and types back by running
+  its `__init__`), and `tests/unit/test_typed_records_mypy.py` proves mypy catches a missing,
+  misspelt, extra or mistyped column, an unknown key or `column_` method, and a value used as
+  the wrong type. A hand-written schema writes its records by hand.
 
 Generated schemas are **gitignored**, as Java's `build/generated-jooq` is, and each generated
 module fingerprints its migrations and checks that on import - because nothing in Python runs

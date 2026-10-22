@@ -182,8 +182,8 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
 
 That is the whole repository - `get`, `find_where`, `add`, `update`, counting and existence are
 inherited. `WalletsRecord` is the table's record, which schemagen writes into `schema.py` beside
-`WALLETS`: a `TypedDict` with a key per column, typed as the column reads, so mypy checks the
-mapping against the table. The mapping between a record and the model is yours to write, and
+`WALLETS`: a `dict` with a key per column, typed as the column reads - `record["owner_id"]`, or
+`record.column_owner_id()` - so mypy checks the mapping against the table. The mapping between a record and the model is yours to write, and
 when the names line up it is the two methods above: every field to the column of the same name. A repository without
 them is refused when it is created, so a renamed column can never quietly stop matching. Where a
 name or a shape differs, write the mapping out instead.

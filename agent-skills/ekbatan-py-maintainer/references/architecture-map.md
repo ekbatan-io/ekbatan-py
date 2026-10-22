@@ -47,14 +47,17 @@ website/             Astro. The only part that does not run through uv
 - Only a `Model` emits events. An `Entity` does not.
 - Every persistable carries a `version`, and every update checks it.
 - Reads filter soft-deleted rows once, in the framework.
-- Every repository writes `to_record` / `from_record`, typed by the table's record - a `TypedDict`
-  schemagen writes beside the table (`WalletsRecord` beside `WALLETS`); repositories are
-  `ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]`. `columns_by_field_name` /
-  `model_by_field_name` are the by-name mapping, chosen in a line, never a default.
-- `to_record` builds the record by keyword - `WalletsRecord(id=..., version=..., ...)` - not as
-  a dict literal. A column whose name is not a valid Python identifier or is a keyword (`order
-  date`, `class`, a name starting `__`) cannot be a keyword argument, so that record is a dict
-  literal; both give the same plain dict, and mypy checks both.
+- Every repository writes `to_record` / `from_record`, typed by the table's record - a `dict`
+  subclass schemagen writes beside the table (`WalletsRecord` beside `WALLETS`), with a
+  keyword `__init__`, `__getitem__` overloads for mypy only, and a `column_<name>()` method per
+  column (`EKB-0485`); repositories are `ModelRepository[Wallet, WalletsRecord,
+  ShardedId[Wallet]]`. `columns_by_field_name` / `model_by_field_name` are the by-name
+  mapping, chosen in a line, never a default.
+- `to_record` builds the record by keyword - `WalletsRecord(id=..., version=..., ...)`; a column
+  whose name is no Python name has a sanitized keyword (`class_=`, `order_date=`, `_2fa=`), and
+  one the database fills defaults to `UNSET` (left out of the record and the INSERT). The INSERT
+  is given that very dict. `from_record` reads `record["x"]` (the documented way) or
+  `record.column_x()`; the framework hands it the record class on every read path.
 - The ambient transaction is a `ContextVar`, so it is per-thread and per-task.
 - Opening a transaction inside another one opens a **second** transaction on a second
   connection, as Java's does (`EKB-0301`). Repository calls inside a block join it; nested blocks

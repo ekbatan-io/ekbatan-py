@@ -112,7 +112,7 @@ whatever is decided about the rest.
 | 46 | Built-in reads see the open transaction's uncommitted rows | choice | yes | M | A7 |
 | 47 | A repository's key type is the typed id, not the raw UUID | choice | yes | M | A6 |
 | 48 | Read methods are named differently (`find`, `find_where`, `all`), return `None` not `Optional` | choice + convention | partly | M | A8 |
-| 49 | Tables are SQLAlchemy written by hand; ~~`to_row` returns a dict~~ the mapping is typed by a generated `TypedDict` record since `EKB-0408` (bug 12) | choice | partly | M | A9 |
+| 49 | Tables are SQLAlchemy written by hand; ~~`to_row` returns a dict~~ the mapping is typed by a generated record since `EKB-0408` (bug 12) - a `dict` class with `column_` getters since `EKB-0485` | choice | partly | M | A9 |
 | 50 | Connections come from `with` blocks, are public, and "all shards" gives pairs | forced + convention | partly | M | A10 |
 | 51 | `fetch_one` means "exactly one", not jOOQ's "at most one" | choice | yes | M | A11 |
 | 52 | ~~`version` defaults to 1~~ **fixed** (`EKB-0292`): required, as Java's; a builder never given one refuses with "version cannot be null" | choice | yes | M | A12 |
