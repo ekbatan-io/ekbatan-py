@@ -523,6 +523,20 @@ Every type below is proven on a real database by `tests/integration/test_schemag
 | `schemagen.py` became the package `schemagen/`; `generate`, `render`, `fingerprint`, `check_fingerprint` keep their names, `ForcedType`, `SchemagenConfig`, `load_config`, `DEFAULT_FORCED_TYPES` are new | a type table, configuration and rendering in one module was 1,000 lines | - |
 | tests: `CASES_BY_DIALECT` + `case_id` in `conftest.py`, dropping pairs a database lacks and keeping each database's tests together | a joint parameter restarted the session container per case (measured); interleaving did the same | - |
 
+## An update writes the record (`EKB-0480`)
+
+An update wrote only the columns named like a model field; a column mapped from a field of
+another name kept its old value with no error. It now writes every key of the record
+`to_record` returns, as an insert does and as Java's update does. The judgement calls:
+
+| decision | why | the other way |
+| --- | --- | --- |
+| a batch whose records carry different keys is refused (`ValidationError`, nothing sent) - for `add_all` too, not only `update_all` | one statement writes one set of columns; an INSERT batch is compiled from the first row's keys, and a later row's extra key was dropped with no error (measured on the old code) | write each distinct key set as its own statement |
+| an update record without the id or `version` key is refused | the update finds its row by id and moves the version on; without `version` in the record the lock would not move | let it through and leave the version where it was |
+| a record key the table has no column for is refused with `ValidationError`, naming the key and the table's columns | before, an insert raised SQLAlchemy's `CompileError` and an update ignored the key | keep SQLAlchemy's error |
+| the columns are written in the table's order, not the record's | the same key set always builds the same statement text, so the per-size statement cache keeps working | the record's order |
+| statements are cached per column set as well as per size; the single-row and column-set caches are capped at 32, as the batch cache was | a repository whose records leave a column out sometimes would otherwise rebuild, or grow the cache without bound | no cap |
+
 ## Ported an invariant Java already had - lower risk
 
 Each of these exists in the Java, was missing here, and is now present with a test that fails

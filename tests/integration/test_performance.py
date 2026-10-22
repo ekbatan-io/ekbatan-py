@@ -213,17 +213,20 @@ def test_a_column_that_needs_no_conversion_is_not_inspected_per_row(wallets):
 
 def test_a_batch_statement_is_composed_once_per_size(wallets):
     stored = wallets.add_all(some_wallets(6))
+    stamped = [w.next_version() for w in stored]
 
-    first = wallets._union_update(len(stored))
-    wallets._union_stmts[len(stored)] = first
-    again = wallets._union_stmts.get(len(stored))
+    first, binds = wallets._update_statement("mysql", stamped, returning=False)
+    again, _ = wallets._update_statement("mysql", stamped, returning=False)
 
     assert again is first, (
         "a 500-row UNION ALL costs about 25ms to build, against 5ms for the VALUES form, so it "
         "is composed once per batch size and then only re-bound"
     )
-    binds = wallets._union_binds(stored)
-    assert len(binds) == len(stored) * (len(wallets._columns) + 1)
+    columns = wallets.to_record(stored[0]).keys()
+    assert binds is not None
+    assert len(binds) == len(stored) * (len(columns) + 1), (
+        "every column the record carries, and the version each row was read at"
+    )
 
 
 # --------------------------------------------------- reading the written rows back, or not

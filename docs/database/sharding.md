@@ -224,7 +224,8 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
 ```
 
 That one keyword is the entire difference from an unsharded repository. There is no second line
-to change, because the mapping is by field name and the id type already carries the shard.
+to change, because `to_record` / `from_record` are the same and the id type already carries
+the shard.
 
 What it changes about the inherited reads and writes:
 

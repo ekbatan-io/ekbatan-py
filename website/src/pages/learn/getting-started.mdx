@@ -254,7 +254,8 @@ The whole framework grows from the same small model:
 
 - **Two modes**: the sync API and `ekbatan.aio` share every rule, so the guarantees below hold in
   both.
-- **Repositories** map immutable dataclasses to rows, by field name.
+- **Repositories** map immutable dataclasses to rows through the `to_record` / `from_record`
+  you write.
 - **Models** emit events; **entities** do not.
 - **Actions** stage new and changed objects; they never write.
 - **The executor** commits staged state and its events together, in one transaction.

@@ -137,6 +137,16 @@ or update has no `RETURNING`, the record `to_record` wrote. Every read the frame
 it the same: `find`, `get`, `find_where`, `all`, a read across shards, and a query of your own
 ended with `.fetch(self.from_record)`.
 
+**What a write sends is the record, key for key.** `add` and `update` - one row or a batch, every
+database - write every column the record `to_record` returns, under the record's own keys, and
+nothing else. A field named `nick` that `to_record` puts under `nickname` is written to `nickname`
+by an update exactly as by an insert. A column the record leaves out - one the database fills -
+is not written, and on an update keeps whatever the row held. One statement writes one set of
+columns, so every record in one `add_all` or `update_all` has to carry the same keys; a batch
+whose records differ is refused before anything is sent. Until `EKB-0480` an update wrote only
+the columns named like a model field, so a column mapped from a field of another name kept its
+old value with no error.
+
 Where the names line up - which is most of the time, because a dataclass already knows its own
 fields - that can be two lines instead:
 

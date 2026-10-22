@@ -235,8 +235,9 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         self.registry = registry
         self.sharding = sharding or NoShardingStrategy()
         self.clock = clock or SystemClock()
-        self._single_stmt: dict[bool, Any] = {}
-        self._union_stmts: dict[tuple[int, bool], Any] = {}
+        self._single_stmts: dict[tuple[tuple[str, ...], bool], Any] = {}
+        self._union_stmts: dict[tuple[int, bool, tuple[str, ...]], Any] = {}
+        self._column_sets: dict[frozenset[str], tuple[str, ...]] = {}
 
         pk = list(table.primary_key.columns)
         if len(pk) != 1:
@@ -248,8 +249,13 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
 
         self._fields = {f.name: f for f in dataclasses.fields(model_type)}
         self._types = _concrete_types(model_type)
-        self._columns = {n: table.c[n] for n in self._fields if n in table.c}
-        missing = [n for n in ("id", "version") if n not in self._columns]
+        # The fields that have a column of the same name. Only the by-name mapping
+        # (`columns_by_field_name` / `model_by_field_name`) reads this. What a write sends is
+        # the record `to_record` returns, key for key - never this. Until `EKB-0480` an update
+        # wrote only these columns, so a column mapped from a field of another name was
+        # inserted by `add` and silently never updated.
+        self._same_name_columns = {n: table.c[n] for n in self._fields if n in table.c}
+        missing = [n for n in ("id", "version") if n not in table.c]
         if missing:
             raise ValidationError(f"{table.name} has no column(s) named {missing}")
         if self.state_column is None:
@@ -262,7 +268,7 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
                 f"lifecycle state and it has to be stored. Pass state_column= if the column "
                 f"is named something else."
             )
-        _must_hold(self._columns["version"], int, "an integer", "the optimistic lock counts on it")
+        _must_hold(table.c["version"], int, "an integer", "the optimistic lock counts on it")
         _must_hold(self.state_column, str, "text", "reads compare it against 'DELETED'")
         if issubclass(model_type, Model):
             # A model carries timestamps, so its table has to have somewhere to put them.
@@ -281,8 +287,12 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         # is decided once here rather than re-derived per field per row. Reading ten thousand
         # rows otherwise runs ninety thousand isinstance chains and as many typing.get_origin
         # calls, for an answer that never changes.
-        self._to_col = {name: _writer_for(self._types.get(name)) for name in self._columns}
-        self._from_col = {name: _reader_for(self._types.get(name)) for name in self._columns}
+        self._to_col = {
+            name: _writer_for(self._types.get(name)) for name in self._same_name_columns
+        }
+        self._from_col = {
+            name: _reader_for(self._types.get(name)) for name in self._same_name_columns
+        }
 
     # ---------------------------------------------------------------- mapping
 
@@ -518,9 +528,65 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         """
         return model.next_version()
 
-    def _single_update(self, *, returning: bool = False) -> Any:
-        """``UPDATE … SET … WHERE id = ? AND version = ?``, built once and reused."""
-        if self._single_stmt.get(returning) is None:
+    def _written_columns(
+        self, records: Sequence[Mapping[str, Any]], *, updating: bool
+    ) -> tuple[str, ...]:
+        """The columns a write sends: every key the records carry, in the table's order.
+
+        Taken from the records ``to_record`` returned - never from the model's field names - so a
+        column mapped from a field of another name is written like any other, by an update
+        exactly as by an insert. Java's update is built from ``toRecord(model)`` the same way. A
+        column the table has and the record leaves out (one the database fills) is not written.
+
+        One statement writes one set of columns, so every record in a batch has to carry the
+        same keys. A batch that does not is refused: binding the first record's keys and
+        dropping the rest is how a value goes missing without a word.
+        """
+        first = records[0]
+        for i, record in enumerate(records):
+            if record.keys() != first.keys():
+                missing = sorted(set(first) - set(record))
+                extra = sorted(set(record) - set(first))
+                differs = " and ".join(
+                    part
+                    for part in (
+                        f"lacks {missing}" if missing else "",
+                        f"has {extra} besides" if extra else "",
+                    )
+                    if part
+                )
+                raise ValidationError(
+                    f"to_record returned different columns for rows of one "
+                    f"{self.model_type.__name__} batch: row {i} {differs} what row 0 has. One "
+                    f"statement writes one set of columns, so to_record has to return the same "
+                    f"keys for every row of a batch; nothing was written."
+                )
+        keys = frozenset(first)
+        columns = self._column_sets.get(keys)
+        if columns is None:
+            unknown = sorted(keys - set(self.table.c.keys()))
+            if unknown:
+                raise ValidationError(
+                    f"to_record returned {unknown}, which {self.table.name} has no column for; "
+                    f"it has {sorted(self.table.c.keys())}"
+                )
+            columns = tuple(c.key for c in self.table.c if c.key in keys)
+            if len(self._column_sets) < 32:
+                self._column_sets[keys] = columns
+        if updating:
+            absent = [n for n in (self.id_column.name, "version") if n not in keys]
+            if absent:
+                raise ValidationError(
+                    f"to_record returned no {absent} for a {self.model_type.__name__} being "
+                    f"updated; an update finds its row by id and moves the version on, so the "
+                    f"record has to carry both."
+                )
+        return columns
+
+    def _single_update(self, columns: tuple[str, ...], *, returning: bool = False) -> Any:
+        """``UPDATE … SET … WHERE id = ? AND version = ?``, built once per column set and reused."""
+        stmt = self._single_stmts.get((columns, returning))
+        if stmt is None:
             stmt = (
                 update(self.table)
                 .where(
@@ -530,13 +596,16 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
                 .values(
                     {
                         name: bindparam(f"_v_{name}")
-                        for name in self._columns
+                        for name in columns
                         if name != self.id_column.name
                     }
                 )
             )
-            self._single_stmt[returning] = stmt.returning(self.table) if returning else stmt
-        return self._single_stmt[returning]
+            if returning:
+                stmt = stmt.returning(self.table)
+            if len(self._single_stmts) < 32:
+                self._single_stmts[(columns, returning)] = stmt
+        return stmt
 
     def _read_back(self, row: Row[Any]) -> M:
         """A result row, as a model: :meth:`from_record` is handed the row's mapping, read by
@@ -544,33 +613,36 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         dicts."""
         return self.from_record(cast(R, row._mapping))
 
-    def _bind(self, model: M) -> dict[str, Any]:
-        row = self.to_record(model)
+    def _bind(
+        self, model: M, record: Mapping[str, Any], columns: tuple[str, ...]
+    ) -> dict[str, Any]:
         return {
-            "_id": row[self.id_column.name],
+            "_id": record[self.id_column.name],
             "_prior": model.version - 1,
-            **{f"_v_{k}": v for k, v in row.items() if k != self.id_column.name},
+            **{f"_v_{name}": record[name] for name in columns if name != self.id_column.name},
         }
 
-    def _derived_types(self) -> dict[str, Any]:
+    def _derived_types(self, columns: tuple[str, ...]) -> dict[str, Any]:
         return {_PRIOR: self.table.c.version.type} | {
-            name: col.type for name, col in self._columns.items()
+            name: self.table.c[name].type for name in columns
         }
 
-    def _assignments(self, source: Any) -> dict[str, Any]:
-        return {name: source.c[name] for name in self._columns if name != self.id_column.name}
+    def _assignments(self, source: Any, columns: tuple[str, ...]) -> dict[str, Any]:
+        return {name: source.c[name] for name in columns if name != self.id_column.name}
 
-    def _joined(self, source: Any) -> Any:
+    def _joined(self, source: Any, columns: tuple[str, ...]) -> Any:
         return (
             update(self.table)
-            .values(self._assignments(source))
+            .values(self._assignments(source, columns))
             .where(
                 self.id_column == source.c[self.id_column.name],
                 self.table.c.version == source.c[_PRIOR],
             )
         )
 
-    def _values_update(self, models: Sequence[M]) -> Any:
+    def _values_update(
+        self, models: Sequence[M], records: Sequence[Mapping[str, Any]], columns: tuple[str, ...]
+    ) -> Any:
         """Postgres: ``UPDATE … FROM (VALUES …) AS v (cols)``.
 
         A ``None`` is cast rather than passed through. SQLAlchemy renders a bare Python ``None``
@@ -584,23 +656,23 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         had one nullable text column and no other: an uncast NULL infers as text, so the one
         case anybody had written happened to be the one case that works.
         """
-        types = self._derived_types()
+        types = self._derived_types(columns)
         rows = [
             tuple(
                 sql_cast(null(), types[name]) if value is None else value
                 for name, value in zip(types, raw, strict=True)
             )
             for raw in (
-                (m.version - 1, *(self.to_record(m)[name] for name in self._columns))
-                for m in models
+                (m.version - 1, *(record[name] for name in columns))
+                for m, record in zip(models, records, strict=True)
             )
         ]
         source = values(*[column(name, types[name]) for name in types], name="v").data(rows)
-        return self._joined(source)
+        return self._joined(source, columns)
 
-    def _union_update(self, size: int) -> Any:
+    def _union_update(self, size: int, columns: tuple[str, ...]) -> Any:
         """Everyone else: ``UPDATE … JOIN (SELECT … UNION ALL SELECT …) v``, bound by name."""
-        types = self._derived_types()
+        types = self._derived_types(columns)
         source = union_all(
             *[
                 select(
@@ -612,15 +684,16 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
                 for i in range(size)
             ]
         ).subquery("v")
-        return self._joined(source)
+        return self._joined(source, columns)
 
-    def _union_binds(self, models: Sequence[M]) -> dict[str, Any]:
+    def _union_binds(
+        self, models: Sequence[M], records: Sequence[Mapping[str, Any]], columns: tuple[str, ...]
+    ) -> dict[str, Any]:
         binds: dict[str, Any] = {}
-        for i, model in enumerate(models):
-            row = self.to_record(model)
+        for i, (model, record) in enumerate(zip(models, records, strict=True)):
             binds[f"b{i}_{_PRIOR}"] = model.version - 1
-            for name in self._columns:
-                binds[f"b{i}_{name}"] = row[name]
+            for name in columns:
+                binds[f"b{i}_{name}"] = record[name]
         return binds
 
     # ------------------------------------------- what a read or a write is, before it runs
@@ -714,8 +787,17 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         return found
 
     def _insert_rows(self, models: Sequence[M]) -> tuple[ShardIdentifier, list[R]]:
-        """The shard a batch goes to, and its rows."""
-        return self.shard_of_all(models), [self.to_record(m) for m in models]
+        """The shard a batch goes to, and its rows.
+
+        The rows are checked as an update's are: one INSERT for the batch is compiled from the
+        first row's keys, so a later row carrying a key the first lacks would have it dropped
+        without a word.
+        """
+        shard = self.shard_of_all(models)
+        rows = [self.to_record(m) for m in models]
+        if rows:
+            self._written_columns(rows, updating=False)
+        return shard, rows
 
     def _insert_returning(self) -> Any:
         """An insert that reads its rows back. Run it with ``execution_options=_ONE_STATEMENT``."""
@@ -734,10 +816,15 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         UPDATE joined against a derived table of the new values - see :meth:`_values_update`
         and :meth:`_union_update` for why there are two shapes.
         """
+        records = [self.to_record(m) for m in stamped]
+        columns = self._written_columns(records, updating=True)
         if len(stamped) == 1:
-            return self._single_update(returning=returning), self._bind(stamped[0])
+            return (
+                self._single_update(columns, returning=returning),
+                self._bind(stamped[0], records[0], columns),
+            )
         if dialect == "postgresql":
-            stmt = self._values_update(stamped)
+            stmt = self._values_update(stamped, records, columns)
             return (stmt.returning(self.table) if returning else stmt), None
 
         # Building a 500-row UNION ALL costs about 25ms, against 5ms for the VALUES form, so
@@ -745,14 +832,14 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         # same shapes repeatedly pays that cost once; the cache is capped so a caller passing
         # a different length every time cannot grow it without bound.
         size = len(stamped)
-        stmt = self._union_stmts.get((size, returning))
+        stmt = self._union_stmts.get((size, returning, columns))
         if stmt is None:
-            stmt = self._union_update(size)
+            stmt = self._union_update(size, columns)
             if returning:
                 stmt = stmt.returning(self.table)
             if len(self._union_stmts) < 32:
-                self._union_stmts[(size, returning)] = stmt
-        return stmt, self._union_binds(stamped)
+                self._union_stmts[(size, returning, columns)] = stmt
+        return stmt, self._union_binds(stamped, records, columns)
 
     def _checked(self, result: Any, stamped: Sequence[M], *, returning: bool) -> list[Row[Any]]:
         """The rows an UPDATE returned, once the optimistic lock has been checked against it.
