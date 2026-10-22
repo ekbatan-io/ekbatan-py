@@ -178,6 +178,21 @@ class _Writer:
                 from ..time import LocalDateTime
 
                 self.py_types[record_key] = LocalDateTime
+            from sqlalchemy.dialects import postgresql
+
+            if (
+                forced is None
+                and isinstance(column.type, sqltypes.ARRAY)
+                and isinstance(column.type.item_type, postgresql.DOMAIN)
+            ):
+                self.notes.append(
+                    f"{where} is an array of the domain {column.type.item_type.name}: asyncpg "
+                    "reads it as a list, but psycopg does not know a domain's array type and "
+                    "hands back its text, which SQLAlchemy then splits into characters - so its "
+                    "record types it Any. Read it cast to the base type's array "
+                    "(sqlalchemy.cast(column, postgresql.ARRAY(...))) for a list on both"
+                )
+                self.py_types[record_key] = Any
             return source
         # A converter keeps the column's own type and wraps itself around it: the type the
         # column would have without this forced type - the next one that matches and is not a
@@ -283,6 +298,18 @@ class _Writer:
             emitted = None
             if isinstance(column.type, postgresql.DOMAIN) and relation is not None:
                 emitted = self.domain(where, column.type, relation)
+            elif (
+                isinstance(column.type, sqltypes.ARRAY)
+                and isinstance(column.type.item_type, postgresql.DOMAIN)
+                and relation is not None
+            ):
+                # An array of a domain: the domain whole, as a column of it is - else its
+                # check is lost and create_all builds a domain that allows anything.
+                item = self.domain(where, column.type.item_type, relation)
+                if item is not None:
+                    dimensions = column.type.dimensions
+                    more = f", dimensions={dimensions}" if dimensions else ""
+                    emitted = Emitted(f"postgresql.ARRAY({item.source}{more})", item.imports)
             if emitted is None:
                 emitted = emit_type(column.type, self.reflected.dialect_name)
             if (

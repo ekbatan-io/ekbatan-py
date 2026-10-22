@@ -626,6 +626,18 @@ SQLITE += (
     ),
 )
 
+POSTGRES += (
+    # T13 in an array: the domain keeps its check.
+    Trip(
+        "domain_array",
+        """
+        CREATE DOMAIN posint AS INT CHECK (VALUE > 0);
+        CREATE TABLE t (id INT PRIMARY KEY, dd posint[]);
+        """,
+        writes=("postgresql.ARRAY(postgresql.DOMAIN(",),
+    ),
+)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,

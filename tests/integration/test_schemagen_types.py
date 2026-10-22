@@ -334,3 +334,46 @@ def test_mypy_accepts_the_generated_module(matrix: Matrix) -> None:
         ["--strict", "--no-incremental", "--follow-imports=silent", str(module)]
     )
     assert status == 0, stdout + stderr
+
+
+def test_an_array_of_a_domain_is_written_whole_and_its_record_says_what_both_drivers_agree_on(
+    backend: Backend, dialect: str, tmp_path: Path
+) -> None:
+    """psycopg does not know a domain's array type: it hands back the text, ``{5,6}``, which
+    SQLAlchemy's ARRAY splits into characters. asyncpg reads ``[5, 6]``. No one type says both,
+    so the record says ``Any`` and a note says why - and how to read it as a list on both."""
+    if dialect != "postgres":
+        pytest.skip("domains are PostgreSQL's")
+    from sqlalchemy import cast
+    from sqlalchemy.dialects import postgresql
+
+    out = tmp_path / "schema.py"
+    url = fresh(backend, "domain_array")
+    sql = (
+        "CREATE DOMAIN posint AS INTEGER CHECK (VALUE > 0);\n"
+        "CREATE TABLE t_arr (pk INTEGER PRIMARY KEY, dd posint[]);\n"
+    )
+    with notes() as said:
+        text = generate(migrations(tmp_path / "migrations", sql), out, url=url)
+    module = load(out)
+    assert (
+        'postgresql.ARRAY(postgresql.DOMAIN("posint", sqlalchemy.INTEGER(), '
+        'constraint_name="posint_check", check=sqlalchemy.text("((VALUE > 0))")))'
+    ) in text
+    assert "    dd: Any\n" in text
+    assert any("t_arr.dd is an array of the domain posint" in n for n in said), said
+
+    sync, async_ = _read_back(url, module.T_ARR, 1, {"dd": [5, 6]})
+    assert async_["dd"] == [5, 6]
+    assert sync["dd"] == list("{5,6}"), "psycopg learned the type: the record can say list[int]"
+    # The note's way out: cast to the base type's array, and psycopg reads a list too.
+    db = engine(url)
+    try:
+        with db.connect() as connection:
+            column = module.T_ARR.c.dd
+            read = connection.execute(
+                select(cast(column, postgresql.ARRAY(column.type.item_type.data_type)))
+            ).scalar_one()
+    finally:
+        db.dispose()
+    assert read == [5, 6]
