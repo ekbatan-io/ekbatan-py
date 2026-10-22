@@ -36,8 +36,8 @@ from .schema import EVENTS
 def main() -> None:
     with tempfile.TemporaryDirectory() as directory:
         # `ekbatan.yaml` reads the database url from WALLET_DATABASE_URL.
-        url = f"sqlite:///{Path(directory) / 'wallet.db'}"
-        asyncio.run(serve(build({**os.environ, "WALLET_DATABASE_URL": url})))
+        os.environ["WALLET_DATABASE_URL"] = f"sqlite:///{Path(directory) / 'wallet.db'}"
+        asyncio.run(serve(build()))
 
 
 async def serve(service: WalletService) -> None:

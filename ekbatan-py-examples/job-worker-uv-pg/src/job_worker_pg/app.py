@@ -26,7 +26,6 @@ Java's `JobRegistry` can therefore turn its own on without asking.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,18 +88,19 @@ class Worker:
 
 
 def build(
-    environ: Mapping[str, str] | None = None,
     *,
     config_file: Path = CONFIG_FILE,
     clock: Clock | None = None,
     workers: int = 4,
 ) -> Worker:
-    """Wire the worker on `config_file`; `environ` fills its `${...}` placeholders, `os.environ`
-    when left out. `workers` has no key in Java, whose job bodies run on virtual threads."""
+    """Wire the worker on `config_file`. `workers` has no key in Java, whose job bodies run on
+    virtual threads."""
     running = clock or SystemClock()
     # Java's layout: one group, one member, and the scheduler's pool declared on the member as
     # `jobsConfig` beside the primary - more connections than workers, see the module docstring.
-    ekbatan = load_ekbatan_config(config_file, environ=environ)
+    # `ekbatan.yaml`'s `${...}` placeholders - the url and the login - are read from the
+    # process environment as the file is loaded, each by its name.
+    ekbatan = load_ekbatan_config(config_file)
     layout = ekbatan.sharding
     migrate(layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)

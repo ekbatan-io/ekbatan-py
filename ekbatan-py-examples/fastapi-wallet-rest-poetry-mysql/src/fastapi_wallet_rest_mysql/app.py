@@ -27,8 +27,7 @@ and turns the event handling job on.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import Engine
@@ -74,8 +73,6 @@ class Settings:
     """
 
     config_file: Path = Path(os.environ.get("WALLET_CONFIG_FILE", CONFIG_FILE))
-    #: Where the file's `${...}` placeholders are looked up - the url and the login.
-    environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
     #: Threads running job bodies. Each worker is a real OS thread, so the number is chosen
     #: rather than unbounded - size it for how many jobs can be due at once.
     job_workers: int = int(os.environ.get("WALLET_JOB_WORKERS", "3"))
@@ -116,7 +113,9 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
     config = settings or Settings()
     running = clock or SystemClock()
 
-    ekbatan = load_ekbatan_config(config.config_file, environ=config.environ)
+    # `ekbatan.yaml`'s `${...}` placeholders - the url and the login - are read from the
+    # process environment as the file is loaded, each by its name.
+    ekbatan = load_ekbatan_config(config.config_file)
     layout = ekbatan.sharding
 
     if config.run_migrations:

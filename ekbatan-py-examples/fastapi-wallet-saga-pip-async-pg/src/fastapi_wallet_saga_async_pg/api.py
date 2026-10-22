@@ -16,7 +16,7 @@ event loop itself. Nothing here blocks the loop.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Annotated
@@ -97,12 +97,12 @@ def service_of(request: Request) -> SagaService:
 Service = Annotated[SagaService, Depends(service_of)]
 
 
-def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
-    """The app on `ekbatan.yaml`; `environ` fills its placeholders, `os.environ` when left out."""
+def create_app() -> FastAPI:
+    """The app on `ekbatan.yaml`; its placeholders are read from the process environment."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build(environ)
+        service = build()
         service.start()
         app.state.service = service
         try:

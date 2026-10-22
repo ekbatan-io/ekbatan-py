@@ -122,7 +122,7 @@ three pools as `primaryConfig`, `jobsConfig` and `lockConfig`, driver settings u
 `dataSourceProperties` - `time_zone = '+00:00'` in `init_command` on every pool puts each session on UTC, whatever
 the server's default (the test proves it against a server set to Tehran) - the namespace, and `local-event-handler.handling.enabled`. The url and
 login are `${NAME:default}` placeholders, so the file runs as it is against a local server and
-the test fills them from its container.
+the test sets them in the environment from its container.
 
 ## Its test
 
@@ -130,6 +130,6 @@ the test fills them from its container.
 make
 ```
 
-Eighteen cases against a real MariaDB in Testcontainers, including one that asserts this project is
+Twenty cases against a real MariaDB in Testcontainers, including one that asserts this project is
 actually running on MariaDB - three projects differing only by url makes a wrong one invisible,
 and every other test would still pass.

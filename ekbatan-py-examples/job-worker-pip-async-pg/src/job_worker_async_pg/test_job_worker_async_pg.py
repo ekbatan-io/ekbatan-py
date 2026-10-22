@@ -62,14 +62,17 @@ from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
 EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
-def environ_for(url: str) -> dict[str, str]:
-    """What fills `ekbatan.yaml`'s placeholders: the container's url, its login kept apart."""
+#: The database's real password: a marker, so a test can prove nothing shows it.
+SECRET = "Mk-7f3a-SECRET"
+
+
+def point_at(patch: pytest.MonkeyPatch, url: str) -> None:
+    """Fill `ekbatan.yaml`'s placeholders as a deployment does, in the environment: the
+    container's url, its login kept apart. `patch` puts the old values back afterwards."""
     plain, username, password = split_login(url)
-    return {
-        "WORKER_DATABASE_URL": plain,
-        "WORKER_DATABASE_USERNAME": username or "",
-        "WORKER_DATABASE_PASSWORD": password or "",
-    }
+    patch.setenv("WORKER_DATABASE_URL", plain)
+    patch.setenv("WORKER_DATABASE_USERNAME", username or "")
+    patch.setenv("WORKER_DATABASE_PASSWORD", password or "")
 
 
 class Harness:
@@ -81,10 +84,11 @@ class Harness:
     loop over an async registry, the tables and the scheduler over a sync one.
     """
 
-    def __init__(self, url: str) -> None:
+    def __init__(self) -> None:
         running = SystemClock()
-        # The same `ekbatan.yaml` the worker reads, its placeholders filled from the container.
-        ekbatan = load_ekbatan_config(CONFIG_FILE, environ=environ_for(url))
+        # The same `ekbatan.yaml` the worker reads, its placeholders filled from the environment
+        # the test points at the container.
+        ekbatan = load_ekbatan_config(CONFIG_FILE)
         # Sync, on psycopg: the tables, the scheduler, fan-out and dispatch.
         self.registry = DatabaseRegistry.from_config(ekbatan.sharding)
         migrate_registry(self.registry, metadata)
@@ -188,13 +192,14 @@ def database() -> Iterator[str]:
     # PostgreSQL, because the directory says so. Java's counterpart is `-pg` too, and the
     # reason is the same: running once per slot across a cluster is the thing this shows, and
     # a cluster does not share a SQLite file.
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with PostgresContainer("postgres:17-alpine", driver="psycopg", password=SECRET) as container:
         yield container.get_connection_url()
 
 
 @pytest.fixture
-def worker(database: str) -> Iterator[Harness]:
-    built = Harness(database)
+def worker(database: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Harness]:
+    point_at(monkeypatch, database)
+    built = Harness()
     # One container for the module, so every test starts from an empty database rather than
     # from whatever the last one left. `scheduled_tasks` goes too: each test builds its own
     # registry and `start()` writes the rows again, and a row left behind from the previous
@@ -360,7 +365,9 @@ def test_the_migration_files_pass_the_checks_a_deploy_runs():
     assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]
 
 
-def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(database: str, tmp_path: Path) -> None:
+def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(
+    database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """`app.build()` itself, unstarted: everything Java's job worker keeps in `application.yml`
     comes from `ekbatan.yaml` - the namespace, the scheduler's pool, the polling interval, the
     handling job switched on, and a driver setting reaching the server.
@@ -381,7 +388,8 @@ def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(database: str, tmp_path
     assert "pollingInterval: PT10S" in shipped, "the interval Java's job worker ships with"
     config_file = tmp_path / "ekbatan.yaml"
     config_file.write_text(shipped.replace("pollingInterval: PT10S", "pollingInterval: PT7S"))
-    worker = build(environ_for(f"{head}/worker_build"), config_file=config_file)
+    point_at(monkeypatch, f"{head}/worker_build")
+    worker = build(config_file=config_file)
     try:
         assert worker.executor.namespace == "example.job_worker_async_pg"
         assert worker.jobs_engine.pool.size() == 8
@@ -439,3 +447,44 @@ def test_what_the_work_raises_reaches_the_job(worker: Harness) -> None:
     worker.stipend.pay = broken  # type: ignore[method-assign]
     with pytest.raises(RuntimeError, match="went away"):
         worker.stipend.execute(None)  # type: ignore[arg-type]
+
+
+def test_no_service_object_shows_the_password(
+    database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The database's real password is a marker, set in the environment as a deployment sets
+    it. Nothing the service builds shows it in its repr or str."""
+    admin = create_engine(database, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as conn:
+            conn.execute(text("DROP DATABASE IF EXISTS worker_secret"))
+            conn.execute(text("CREATE DATABASE worker_secret"))
+    finally:
+        admin.dispose()
+    head, _, _ = database.rpartition("/")
+    point_at(monkeypatch, f"{head}/worker_secret")
+    assert SECRET in database, "the control: the container's own url carries it"
+
+    worker = build()
+    try:
+
+        async def one() -> Any:
+            async with worker.registry.default.primary.connect() as conn:
+                return (await conn.execute(text("SELECT 1"))).scalar()
+
+        assert worker.loop.run(one()) == 1, "it really logged in"
+        with worker.events_registry.default.primary.connect() as conn:
+            assert conn.execute(text("SELECT 1")).scalar() == 1
+        pools: list[object] = [
+            worker.registry.default.primary,
+            worker.events_registry.default.primary,
+            worker.jobs_engine,
+        ]
+        pools += [getattr(pool, "pool", None) for pool in pools]
+        shown = [worker, worker.registry, worker.executor, worker.jobs, *pools]
+        shown += [getattr(worker, name) for name in worker.__dataclass_fields__]
+        for thing in shown:
+            assert SECRET not in repr(thing), type(thing)
+            assert SECRET not in str(thing), type(thing)
+    finally:
+        worker.close()

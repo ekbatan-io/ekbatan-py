@@ -210,8 +210,6 @@ Ekbatan's, stays in a small `Settings`:
 @dataclass(frozen=True, slots=True)
 class Settings:
     config_file: Path = Path(os.environ.get("WALLET_CONFIG_FILE", CONFIG_FILE))
-    #: Where the file's `${...}` placeholders are looked up.
-    environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
     job_workers: int = int(os.environ.get("WALLET_JOB_WORKERS", "3"))
     run_migrations: bool = os.environ.get("WALLET_MIGRATE", "1") != "0"
 ```
@@ -222,9 +220,16 @@ decision, not a default to forget. See [Concurrency](runtime/concurrency.md).
 ## 2. The layout: which databases, and which is the default
 
 ```python
-ekbatan = load_ekbatan_config(config.config_file, environ=config.environ)
+# `ekbatan.yaml`'s `${...}` placeholders - the url and the login - are read from the
+# process environment as the file is loaded, each by its name.
+ekbatan = load_ekbatan_config(config.config_file)
 layout = ekbatan.sharding
 ```
+
+`Settings` holds no copy of the environment: the login is read once, by name, while the file is
+loaded, so no `repr` of the settings or the service can show a password. A test points the
+service at its own database by setting those variables - with pytest's `monkeypatch.setenv`,
+which puts them back afterwards.
 
 Groups of shards, each shard a member with named connection settings. The same
 `ShardingConfig` can be built in code instead, with `ShardingConfig.builder()`; the file is what

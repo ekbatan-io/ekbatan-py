@@ -106,8 +106,8 @@ Service = Annotated[WalletService, Depends(service_of)]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """The app, and the service it runs on. A factory, so a test can build one against a
-    throwaway database without touching the environment."""
+    """The app, and the service it runs on. A factory, so a test can build one with settings
+    of its own, against a throwaway database."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

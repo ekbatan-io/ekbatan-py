@@ -52,7 +52,8 @@ is where a process-scoped thing is born and buried, and the `try/finally` is wha
 when the server shuts down rather than leaking them.
 
 A **factory** rather than a module-level `app = FastAPI()`, so a test can build one against a
-throwaway database without touching the environment. Every example's test does exactly that.
+throwaway database with settings of its own - the url and login set with `monkeypatch.setenv`
+for that test only. Every example's test does exactly that.
 
 ## The dependency, and the trap in it
 

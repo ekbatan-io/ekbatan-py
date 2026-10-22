@@ -38,31 +38,34 @@ from .model import Currency, EmailAddress, Wallet
 from .schema import EVENTS
 
 OWNER = "11111111-1111-1111-1111-111111111111"
+#: The containers' password: a marker no object of the service may show.
+SECRET = "Mk-7f3a-SECRET"
 
 
 @pytest.fixture(scope="module")
 def database() -> Iterator[str]:
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with PostgresContainer("postgres:17-alpine", driver="psycopg", password=SECRET) as container:
         # A `postgresql+psycopg://` url, as `ekbatan.yaml` holds one: the sync pools use it as
         # it is, the async registry connects to the same database through asyncpg.
         yield container.get_connection_url()
 
 
-def environ_for(database: str) -> dict[str, str]:
-    """The placeholders `ekbatan.yaml` reads, filled from the container: its url and login."""
+def use_database(monkeypatch: pytest.MonkeyPatch, database: str) -> None:
+    """The placeholders `ekbatan.yaml` reads, set in the environment from the container: its url
+    and login. `monkeypatch` puts each variable back when the test is done."""
     url, username, password = split_login(database)
-    return {
-        "WALLET_DATABASE_URL": url,
-        "WALLET_DATABASE_USERNAME": username or "",
-        "WALLET_DATABASE_PASSWORD": password or "",
-    }
+    monkeypatch.setenv("WALLET_DATABASE_URL", url)
+    monkeypatch.setenv("WALLET_DATABASE_USERNAME", username or "")
+    monkeypatch.setenv("WALLET_DATABASE_PASSWORD", password or "")
 
 
 @pytest.fixture
-def client(database: str) -> Iterator[TestClient]:
+def client(database: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     from .api import create_app
 
-    app = create_app(Settings(environ=environ_for(database), job_workers=3))
+    use_database(monkeypatch, database)
+
+    app = create_app(Settings(job_workers=3))
     # `with` runs the lifespan: the migrations, the pools and the scheduler.
     with TestClient(app) as running:
         yield running
@@ -374,7 +377,9 @@ def test_the_stipend_job_pays_every_open_wallet(client: TestClient) -> None:
     assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "1.00"
 
 
-def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) -> None:
+def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(
+    database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The third part of the UTC rule: each session is put on UTC by `ekbatan.yaml`
     (`options: -c TimeZone=UTC` on every pool), not by the server's default. The database's own
     default is moved to Tehran first: a plain connection then reports Tehran - the control - and
@@ -414,7 +419,8 @@ def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) ->
             control = connection.execute(text("SELECT current_setting('TimeZone')")).scalar()
         assert control == "Asia/Tehran", "the control: off UTC without the setting"
 
-        service = build(Settings(environ=environ_for(database)))
+        use_database(monkeypatch, database)
+        service = build(Settings())
         assert asyncio.run(every_pool(service)) == ["UTC"] * 4
     finally:
         with admin.connect() as connection:
@@ -447,6 +453,51 @@ def test_a_request_that_waits_out_the_pool_is_a_503(client: TestClient) -> None:
     assert refused.status_code == 503, refused.text
     assert refused.headers["Retry-After"] == "1"
     assert client.get(f"/wallets/{uuid4()}").status_code == 404, "served again once one is free"
+
+
+def test_no_service_object_shows_the_password(
+    database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The container's password is the marker `SECRET`. The service is built from the
+    environment and really connects with it - and not one object it holds shows it: not the
+    settings, the service, its registries, its executors, nor any engine or pool."""
+    from .app import build
+
+    use_database(monkeypatch, database)
+    settings = Settings()
+    service = build(settings)
+
+    async def connect() -> Any:
+        try:
+            async with service.registry.default.connection() as connection:
+                return (await connection.execute(text("SELECT 1"))).scalar()
+        finally:
+            await service.aclose()
+
+    assert asyncio.run(connect()) == 1, "connected with it"
+    engines = [
+        service.registry.default.primary,
+        service.lock_engine,
+        service.handler_registry.default.primary,
+        service.events_registry.default.primary,
+        service.jobs_engine,
+    ]
+    shown = [
+        settings,
+        service,
+        service.registry,
+        service.executor,
+        service.handler_registry,
+        service.handler_executor,
+        service.events_registry,
+        service.locks,
+        service.jobs,
+        *engines,
+        *(engine.pool for engine in engines),
+    ]
+    for thing in shown:
+        assert SECRET not in repr(thing), type(thing).__name__
+        assert SECRET not in str(thing), type(thing).__name__
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:

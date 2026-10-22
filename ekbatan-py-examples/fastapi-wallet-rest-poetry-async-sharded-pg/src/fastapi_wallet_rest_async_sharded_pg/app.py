@@ -30,7 +30,6 @@ dispatch reading and writing every shard's `events` and `event_notifications`.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -124,16 +123,17 @@ class ShardedWallets:
 
 
 def build(
-    environ: Mapping[str, str] | None = None,
     *,
     config_file: Path = CONFIG_FILE,
     clock: Clock | None = None,
 ) -> ShardedWallets:
-    """Wire the layout `config_file` describes - two databases here, two hundred later.
-    `environ` fills its `${...}` placeholders, `os.environ` when left out. Nothing here awaits:
-    building a pool opens no connection."""
+    """Wire the layout `config_file` describes - two databases here, two hundred later. Its
+    `${...}` placeholders are read from the process environment. Nothing here awaits: building
+    a pool opens no connection."""
     running = clock or SystemClock()
-    ekbatan = load_ekbatan_config(config_file, environ=environ)
+    # `ekbatan.yaml`'s `${...}` placeholders - the urls and the login - are read from the
+    # process environment as the file is loaded, each by its name.
+    ekbatan = load_ekbatan_config(config_file)
     layout = ekbatan.sharding
 
     # Every shard, one at a time, fail-fast - and refused outright if a revision that was

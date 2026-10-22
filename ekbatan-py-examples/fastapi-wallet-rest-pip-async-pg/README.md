@@ -220,7 +220,7 @@ name a unit of work, hand it parameters, shape the reply.
 make
 ```
 
-Nineteen cases against a real PostgreSQL in Testcontainers, through FastAPI's `TestClient`. A test that
+Twenty cases against a real PostgreSQL in Testcontainers, through FastAPI's `TestClient`. A test that
 reaches past HTTP into the service awaits on the loop the app runs on, through `client.portal`.
 Two of them say what this example is for: the requests, the lock and the handler really run on
 asyncpg and the jobs on psycopg, and every pool and setting comes from `ekbatan.yaml`, the UTC session

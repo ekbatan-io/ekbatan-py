@@ -13,6 +13,7 @@ would prove nothing further and cost a second container.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from collections.abc import Iterator
 from decimal import Decimal
@@ -40,13 +41,16 @@ from .actions import (
 from .app import MIGRATIONS, ShardedWallets, build
 from .model import Currency, EmailAddress, Wallet
 
+#: The database's password: a marker, so a test can look for it where it must not be.
+SECRET = "Mk-7f3a-SECRET"
+
 
 @pytest.fixture(scope="module")
-def environ() -> Iterator[dict[str, str]]:
+def variables() -> Iterator[dict[str, str]]:
     """What fills `ekbatan.yaml`'s placeholders: one url per shard, and the login."""
     from testcontainers.community.postgres import PostgresContainer
 
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with PostgresContainer("postgres:17-alpine", driver="psycopg", password=SECRET) as container:
         base = container.get_connection_url()
         admin = create_engine(base, isolation_level="AUTOCOMMIT")
         try:
@@ -67,9 +71,17 @@ def environ() -> Iterator[dict[str, str]]:
         }
 
 
+def use(monkeypatch: pytest.MonkeyPatch, variables: dict[str, str]) -> None:
+    """Put the variables in the process environment, as a deployment does; `monkeypatch`
+    restores what was there when the test ends."""
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+
+
 @pytest.fixture
-def service(environ: dict[str, str]) -> Iterator[ShardedWallets]:
-    built = build(environ)
+def service(variables: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> Iterator[ShardedWallets]:
+    use(monkeypatch, variables)
+    built = build()
     try:
         for shard in built.registry.shards:
             with built.registry.manager(shard).connection() as conn:
@@ -247,12 +259,13 @@ def test_a_per_shard_total_is_a_question_about_databases(service: ShardedWallets
 
 
 @pytest.fixture
-def client(environ: dict[str, str]) -> Iterator[TestClient]:
+def client(variables: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     from fastapi.testclient import TestClient
 
     from .api import create_app
 
-    with TestClient(create_app(environ)) as running:
+    use(monkeypatch, variables)
+    with TestClient(create_app()) as running:
         for shard in running.app.state.service.registry.shards:
             with running.app.state.service.registry.manager(shard).connection() as conn:
                 for table in ("wallets", "events", "event_notifications", "alerts"):
@@ -452,3 +465,23 @@ def test_the_migration_files_pass_the_checks_a_deploy_runs():
         "V0001__schema.sql",
         "V0002__event_handler_and_alerts.sql",
     ]
+
+
+def test_no_service_object_shows_the_password(service: ShardedWallets) -> None:
+    """The database's real password is a marker, set in the environment as a deployment sets it.
+    Nothing the service builds shows it in its repr or str."""
+    with service.registry.default.connection() as conn:
+        assert conn.execute(text("SELECT 1")).scalar() == 1, "it really logged in with it"
+
+    shown = [service]
+    for field in dataclasses.fields(service):
+        value = getattr(service, field.name)
+        shown += list(value) if isinstance(value, tuple) else [value]
+    for registry in [o for o in shown if hasattr(o, "manager") and hasattr(o, "shards")]:
+        for shard in registry.shards:
+            manager = registry.manager(shard)
+            shown += [manager, manager.primary, manager.replica]
+    shown += [o.pool for o in shown if hasattr(o, "pool")]
+    for thing in shown:
+        assert SECRET not in repr(thing), type(thing).__name__
+        assert SECRET not in str(thing), type(thing).__name__

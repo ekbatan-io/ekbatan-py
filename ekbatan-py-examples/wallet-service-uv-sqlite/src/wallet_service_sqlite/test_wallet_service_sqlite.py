@@ -33,12 +33,16 @@ from .app import WalletService, build
 from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, WALLETS
 
 
+def point_at(patch: pytest.MonkeyPatch, database: Path) -> None:
+    """Fill `ekbatan.yaml`'s placeholder as a deployment does, in the environment: the url of a
+    file in the test's own directory. `patch` puts the old value back afterwards."""
+    patch.setenv("WALLET_DATABASE_URL", f"sqlite:///{database}")
+
+
 @pytest.fixture
-def service(tmp_path: Path) -> Iterator[WalletService]:
-    built = build(
-        {"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'wallet.db'}"},
-        clock=VirtualClock(SystemClock().instant()),
-    )
+def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[WalletService]:
+    point_at(monkeypatch, tmp_path / "wallet.db")
+    built = build(clock=VirtualClock(SystemClock().instant()))
     # Started before any wallet exists, as a service is: the jobs poll from here on, and
     # `start()` returns once the stipend's run at startup - on an empty database - is over.
     built.start()
@@ -228,11 +232,12 @@ def test_a_rejected_deposit_leaves_nothing_behind(service):
     assert len(outbox(service)) == before
 
 
-def test_the_script_runs(tmp_path, capsys):
+def test_the_script_runs(tmp_path, capsys, monkeypatch):
     """The README promises the module runs as a script. This is that promise."""
     from .__main__ import run
 
-    built = build({"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'script.db'}"})
+    point_at(monkeypatch, tmp_path / "script.db")
+    built = build()
     try:
         run(built)
     finally:
@@ -390,3 +395,30 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service) -> None:
         "a switched-off handling job is registered but never scheduled"
     )
     assert service.registry.default.primary.url.database.endswith("wallet.db")
+
+
+#: A marker for a password. SQLite has no login, so nothing reads it: it is here to show nothing
+#: holds the environment it sits in.
+SECRET = "Mk-7f3a-SECRET"
+
+
+def test_no_service_object_shows_the_password(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A password is a marker, set in the environment as a deployment sets one. SQLite reads no
+    login, so this proves the other half: nothing the service builds holds the environment, so
+    nothing shows it in its repr or str."""
+    point_at(monkeypatch, tmp_path / "secret.db")
+    monkeypatch.setenv("WALLET_DATABASE_PASSWORD", SECRET)
+    monkeypatch.setenv("SOME_OTHER_PASSWORD", SECRET)
+
+    built = build()
+    try:
+        with built.registry.default.connection(readonly=True) as conn:
+            assert conn.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 0
+        engine = built.registry.default.primary
+        shown = [built, built.registry, built.executor, built.jobs, engine, engine.pool]
+        shown += [getattr(built, name) for name in built.__dataclass_fields__]
+        for thing in shown:
+            assert SECRET not in repr(thing), type(thing)
+            assert SECRET not in str(thing), type(thing)
+    finally:
+        built.close()

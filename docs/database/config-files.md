@@ -199,6 +199,10 @@ Each format uses its own style:
 | YAML, TOML, JSON | `${DB_PASSWORD}` | `${DB_PORT:5432}`; `${DB_PASSWORD:}` for an empty one |
 | INI | `%(ENV_DB_PASSWORD)s` - Supervisor's convention | none - INI's syntax has no default |
 
+- **Each variable is read by its name, as its placeholder is filled in.** The loader never holds
+  the whole environment, so nothing it raises or keeps can show another variable's value - a
+  password among them. `load_ekbatan_config(path, environ=...)` takes a mapping of your own
+  instead, asked the same way.
 - **A variable that is not set, with no default, stops the load**, naming the variable. Nothing
   quietly becomes the empty string.
 - **A variable that is set but empty is used as given**: an empty password is a valid one.

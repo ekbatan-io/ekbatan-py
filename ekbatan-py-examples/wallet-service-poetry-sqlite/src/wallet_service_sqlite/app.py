@@ -8,7 +8,6 @@ database, the namespace and the handling switch are in `ekbatan.yaml`.
 from __future__ import annotations
 
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,15 +78,15 @@ class WalletService:
 
 
 def build(
-    environ: Mapping[str, str] | None = None,
     *,
     config_file: Path = CONFIG_FILE,
     clock: Clock | None = None,
 ) -> WalletService:
-    """Wire the service on `config_file`; `environ` fills its `${...}` placeholders, `os.environ`
-    when left out."""
+    """Wire the service on `config_file`."""
     running = clock or SystemClock()
-    ekbatan = load_ekbatan_config(config_file, environ=environ)
+    # `ekbatan.yaml`'s `${...}` placeholders - the url - are read from the process environment
+    # as the file is loaded, each by its name.
+    ekbatan = load_ekbatan_config(config_file)
     registry = DatabaseRegistry.from_config(ekbatan.sharding)
 
     # Development only. A real deployment migrates from files - `ekbatan.migrations.migrate` -

@@ -8,6 +8,7 @@ paths, and that a replayed delivery is a no-op.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from collections.abc import Iterator
 from decimal import Decimal
@@ -35,6 +36,9 @@ from .app import MIGRATIONS, SagaService, build
 from .model import Currency, StepName, Wallet
 from .schema import EVENT_NOTIFICATIONS, EVENTS, TRANSFER_STEPS
 
+#: The database's password: a marker, so a test can look for it where it must not be.
+SECRET = "Mk-7f3a-SECRET"
+
 
 @pytest.fixture(scope="module")
 def database() -> Iterator[str]:
@@ -43,18 +47,17 @@ def database() -> Iterator[str]:
     # PostgreSQL, because the directory says so. Java's counterpart is `-pg` too, and the
     # reason is the same: a saga is about steps that commit independently, and a database that
     # serialises every writer makes that harder to see rather than easier.
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with PostgresContainer("postgres:17-alpine", driver="psycopg", password=SECRET) as container:
         yield container.get_connection_url()
 
 
-def environ_for(database: str) -> dict[str, str]:
-    """What fills `ekbatan.yaml`'s placeholders: the container's url, its login kept apart."""
+def use(patch: pytest.MonkeyPatch, database: str) -> None:
+    """Fill `ekbatan.yaml`'s placeholders the way a deployment does, in the process environment:
+    the container's url, its login kept apart. `patch` restores what was there afterwards."""
     url, username, password = split_login(database)
-    return {
-        "WALLET_DATABASE_URL": url,
-        "WALLET_DATABASE_USERNAME": username or "",
-        "WALLET_DATABASE_PASSWORD": password or "",
-    }
+    patch.setenv("WALLET_DATABASE_URL", url)
+    patch.setenv("WALLET_DATABASE_USERNAME", username or "")
+    patch.setenv("WALLET_DATABASE_PASSWORD", password or "")
 
 
 @pytest.fixture(scope="module")
@@ -67,7 +70,9 @@ def service(database: str) -> Iterator[SagaService]:
     # order falls back to a random uuid. Each saga step is a separate unit of work at a
     # different instant, which is exactly what makes the trail readable; freezing time would
     # be testing an order neither port promises.
-    built = build(environ_for(database), clock=SystemClock())
+    with pytest.MonkeyPatch.context() as patch:
+        use(patch, database)
+        built = build(clock=SystemClock())
     built.start()
     try:
         yield built
@@ -357,12 +362,13 @@ def _action_ids(service: SagaService) -> set[UUID]:
 
 
 @pytest.fixture
-def client(database: str):
+def client(database: str, monkeypatch: pytest.MonkeyPatch):
     from fastapi.testclient import TestClient
 
     from .api import create_app
 
-    with TestClient(create_app(environ_for(database))) as running:
+    use(monkeypatch, database)
+    with TestClient(create_app()) as running:
         with running.app.state.service.registry.default.connection() as conn:
             for table in ("event_notifications", "events", "transfer_steps", "wallets"):
                 conn.execute(text(f"TRUNCATE TABLE {table}"))
@@ -466,3 +472,23 @@ def test_the_migration_files_pass_the_checks_a_deploy_runs():
     """No database needed, so CI catches it: two files with one version, a file whose name would
     be skipped without a word, a rollback file. Each is refused here rather than at startup."""
     assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]
+
+
+def test_no_service_object_shows_the_password(service: SagaService) -> None:
+    """The database's real password is a marker, set in the environment as a deployment sets it.
+    Nothing the service builds shows it in its repr or str."""
+    with service.registry.default.connection() as conn:
+        assert conn.execute(text("SELECT 1")).scalar() == 1, "it really logged in with it"
+
+    shown = [service]
+    for field in dataclasses.fields(service):
+        value = getattr(service, field.name)
+        shown += list(value) if isinstance(value, tuple) else [value]
+    for registry in [o for o in shown if hasattr(o, "manager") and hasattr(o, "shards")]:
+        for shard in registry.shards:
+            manager = registry.manager(shard)
+            shown += [manager, manager.primary, manager.replica]
+    shown += [o.pool for o in shown if hasattr(o, "pool")]
+    for thing in shown:
+        assert SECRET not in repr(thing), type(thing).__name__
+        assert SECRET not in str(thing), type(thing).__name__

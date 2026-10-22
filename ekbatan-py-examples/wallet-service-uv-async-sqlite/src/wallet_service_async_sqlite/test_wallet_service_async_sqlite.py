@@ -42,14 +42,17 @@ from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, WALLETS
 Scenario = Callable[[WalletService], Awaitable[None]]
 
 
+def point_at(patch: pytest.MonkeyPatch, database: Path) -> None:
+    """Fill `ekbatan.yaml`'s placeholder as a deployment does, in the environment: the url of a
+    file in the test's own directory. `patch` puts the old value back afterwards."""
+    patch.setenv("WALLET_DATABASE_URL", f"sqlite:///{database}")
+
+
 def drive(tmp_path: Path, scenario: Scenario) -> None:
     """Build the service, start its jobs, run `scenario` on a fresh loop, close it all."""
 
     async def main() -> None:
-        service = build(
-            {"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'wallet.db'}"},
-            clock=VirtualClock(SystemClock().instant()),
-        )
+        service = build(clock=VirtualClock(SystemClock().instant()))
         # Started before any wallet exists, as a service is: the jobs poll from here on, and
         # `start()` returns once the stipend's run at startup - on an empty database - is over.
         await service.start()
@@ -58,7 +61,9 @@ def drive(tmp_path: Path, scenario: Scenario) -> None:
         finally:
             await service.aclose()
 
-    asyncio.run(main())
+    with pytest.MonkeyPatch.context() as patch:
+        point_at(patch, tmp_path / "wallet.db")
+        asyncio.run(main())
 
 
 async def settled(service: WalletService, within: float = 15.0) -> None:
@@ -261,11 +266,14 @@ def test_a_rejected_deposit_leaves_nothing_behind(tmp_path: Path) -> None:
     drive(tmp_path, scenario)
 
 
-def test_the_script_runs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_the_script_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The README promises the module runs as a script. This is that promise."""
     from .__main__ import serve
 
-    asyncio.run(serve(build({"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'script.db'}"})))
+    point_at(monkeypatch, tmp_path / "script.db")
+    asyncio.run(serve(build()))
 
     printed = capsys.readouterr().out
     assert "open a wallet" in printed
@@ -434,3 +442,37 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(tmp_path: Path) -> Non
         assert service.events_registry.default.primary.url.drivername == "sqlite"
 
     drive(tmp_path, scenario)
+
+
+#: A marker for a password. SQLite has no login, so nothing reads it: it is here to show nothing
+#: holds the environment it sits in.
+SECRET = "Mk-7f3a-SECRET"
+
+
+def test_no_service_object_shows_the_password(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A password is a marker, set in the environment as a deployment sets one. SQLite reads no
+    login, so this proves the other half: nothing the service builds holds the environment, so
+    nothing shows it in its repr or str."""
+    point_at(monkeypatch, tmp_path / "secret.db")
+    monkeypatch.setenv("WALLET_DATABASE_PASSWORD", SECRET)
+    monkeypatch.setenv("SOME_OTHER_PASSWORD", SECRET)
+
+    async def main() -> None:
+        built = build()
+        try:
+            async with built.registry.default.connection(readonly=True) as conn:
+                found = await conn.execute(select(func.count()).select_from(WALLETS))
+                assert found.scalar_one() == 0
+            engine = built.registry.default.primary
+            shown: list[object] = [built, built.registry, built.executor, built.jobs, engine]
+            shown += [engine.sync_engine.pool, built.events_registry.default.primary]
+            shown += [getattr(built, name) for name in built.__dataclass_fields__]
+            for thing in shown:
+                assert SECRET not in repr(thing), type(thing)
+                assert SECRET not in str(thing), type(thing)
+        finally:
+            await built.aclose()
+
+    asyncio.run(main())

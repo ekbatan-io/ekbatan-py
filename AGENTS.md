@@ -131,6 +131,16 @@ Models and entities are `@dataclass(frozen=True, kw_only=True)`. `copy()` return
 `evolve()` is the framework's own shorthand and domain code should prefer `copy()` so every
 change in an application reads the same way.
 
+### Secrets never print
+
+No password in any `repr`, log line, error message or result. Redact at the source - the config
+classes' `repr`, the config loader's messages - and prove it with a real password: a test runs
+against a database whose real password is a marker (`Mk-7f3a-SECRET` in the examples) and
+asserts the marker shows nowhere. The config loader reads each environment variable by name as it
+fills a placeholder and never holds the whole environment (`tests/unit/test_config_files.py`
+checks the frames of a failed load). An example's `Settings` holds no copy of `os.environ`
+(decided by the user, 2026-10-22); its tests set the variables with `monkeypatch.setenv`.
+
 ### Time: the framework never converts it
 
 **Hard rule.** The persistence layer writes and reads exactly the time it is given. No code in

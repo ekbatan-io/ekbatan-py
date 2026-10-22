@@ -37,6 +37,8 @@ from .model import Currency, EmailAddress, Wallet
 from .schema import EVENTS
 
 OWNER = "11111111-1111-1111-1111-111111111111"
+#: The containers' password: a marker no object of the service may show.
+SECRET = "Mk-7f3a-SECRET"
 
 
 @pytest.fixture(scope="module")
@@ -44,27 +46,30 @@ def database() -> Iterator[str]:
     # `dialect=` is the *driver* only - testcontainers prefixes `mysql+` itself and, since 4.15,
     # refuses a value that already carries the prefix. `username="root"` because the default
     # `test` user has rights on the `test` schema alone, and the migration creates tables.
-    with MySqlContainer("mysql:8.4", dialect="pymysql", username="root") as container:
+    with MySqlContainer(
+        "mysql:8.4", dialect="pymysql", username="root", password=SECRET
+    ) as container:
         yield container.get_connection_url()
 
 
-def environ_for(database: str) -> dict[str, str]:
-    """The placeholders `ekbatan.yaml` reads, filled from the container: its url and login."""
+def use_database(monkeypatch: pytest.MonkeyPatch, database: str) -> None:
+    """The placeholders `ekbatan.yaml` reads, set in the environment from the container: its url
+    and login. `monkeypatch` puts each variable back when the test is done."""
     url, username, password = split_login(database)
-    return {
-        "WALLET_DATABASE_URL": url,
-        "WALLET_DATABASE_USERNAME": username or "",
-        "WALLET_DATABASE_PASSWORD": password or "",
-    }
+    monkeypatch.setenv("WALLET_DATABASE_URL", url)
+    monkeypatch.setenv("WALLET_DATABASE_USERNAME", username or "")
+    monkeypatch.setenv("WALLET_DATABASE_PASSWORD", password or "")
 
 
 @pytest.fixture
-def client(database: str) -> Iterator[TestClient]:
+def client(database: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     from .api import create_app
 
+    use_database(monkeypatch, database)
+
     # The container's url carries its login; `ekbatan.yaml` keeps it apart, as a deployment does,
-    # and reads all three from the placeholders filled here.
-    app = create_app(Settings(environ=environ_for(database), job_workers=3))
+    # and reads all three from the environment set here.
+    app = create_app(Settings(job_workers=3))
     # `with TestClient(...)` is what runs the lifespan - and therefore the migrations, the
     # pools and the scheduler. Without the `with`, none of that happens and every test here
     # would fail against an empty database.
@@ -286,6 +291,17 @@ def test_concurrent_deposits_are_serialised_by_the_keyed_lock(client: TestClient
     assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "8.00"
 
 
+def test_many_requests_at_once_each_commit(client: TestClient) -> None:
+    """Thirty opens at once, more than the ten-connection pool: they queue for a connection on
+    the server's threads and every one commits."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=30) as pool:
+        created = list(pool.map(lambda _: open_wallet(client, "1.00"), range(30)))
+
+    assert len(set(created)) == 30
+
+
 def test_it_runs_on_the_database_this_example_is_named_for(client: TestClient) -> None:
     """The one assertion that stops this project quietly becoming a copy of another.
 
@@ -350,7 +366,9 @@ def test_the_stipend_job_pays_every_open_wallet(client: TestClient) -> None:
     assert client.get(f"/wallets/{wallet_id}").json()["balance"] == "1.00"
 
 
-def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) -> None:
+def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(
+    database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The third part of the UTC rule: each session is put on UTC by `ekbatan.yaml`
     (`time_zone = '+00:00'` in every pool's `init_command`), not by the server's default. The
     server's own default is moved to Tehran's offset first: a plain connection then reports it -
@@ -366,7 +384,8 @@ def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(database: str) ->
             control = connection.execute(text("SELECT @@session.time_zone")).scalar()
         assert control == "+03:30", "the control: off UTC without the setting"
 
-        service = build(Settings(environ=environ_for(database)))
+        use_database(monkeypatch, database)
+        service = build(Settings())
         try:
             pools = [
                 service.registry.manager(DEFAULT_SHARD).primary,
@@ -400,6 +419,38 @@ def test_a_request_that_waits_out_the_pool_is_a_503(client: TestClient) -> None:
     assert refused.status_code == 503, refused.text
     assert refused.headers["Retry-After"] == "1"
     assert client.get(f"/wallets/{uuid4()}").status_code == 404, "served again once one is free"
+
+
+def test_no_service_object_shows_the_password(
+    database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The container's password is the marker `SECRET`. The service is built from the
+    environment and really connects with it - and not one object it holds shows it: not the
+    settings, the service, its registry, its executor, nor any engine or pool."""
+    from .app import build
+
+    use_database(monkeypatch, database)
+    settings = Settings()
+    service = build(settings)
+    try:
+        with service.registry.default.connection() as connection:
+            assert connection.execute(text("SELECT 1")).scalar() == 1, "connected with it"
+        engines = [service.registry.default.primary, service.lock_engine, service.jobs_engine]
+        shown = [
+            settings,
+            service,
+            service.registry,
+            service.executor,
+            service.locks,
+            service.jobs,
+            *engines,
+            *(engine.pool for engine in engines),
+        ]
+        for thing in shown:
+            assert SECRET not in repr(thing), type(thing).__name__
+            assert SECRET not in str(thing), type(thing).__name__
+    finally:
+        service.close()
 
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs():

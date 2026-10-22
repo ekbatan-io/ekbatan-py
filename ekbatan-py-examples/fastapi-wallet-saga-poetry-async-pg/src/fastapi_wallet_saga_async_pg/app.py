@@ -25,7 +25,6 @@ belongs to the loop it is used on, so theirs is their own, and it is closed on t
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -108,15 +107,16 @@ class SagaService:
 
 
 def build(
-    environ: Mapping[str, str] | None = None,
     *,
     config_file: Path = CONFIG_FILE,
     clock: Clock | None = None,
 ) -> SagaService:
-    """Wire the service on `config_file`; `environ` fills its `${...}` placeholders, `os.environ`
-    when left out. Nothing here awaits: building a pool opens no connection."""
+    """Wire the service on `config_file`; its `${...}` placeholders are read from the process
+    environment. Nothing here awaits: building a pool opens no connection."""
     running = clock or SystemClock()
-    ekbatan = load_ekbatan_config(config_file, environ=environ)
+    # `ekbatan.yaml`'s `${...}` placeholders - the url and the login - are read from the
+    # process environment as the file is loaded, each by its name.
+    ekbatan = load_ekbatan_config(config_file)
     layout = ekbatan.sharding
     # Sync, once, before any pool is opened against a schema that might not be there yet.
     migrate(layout, MIGRATIONS)

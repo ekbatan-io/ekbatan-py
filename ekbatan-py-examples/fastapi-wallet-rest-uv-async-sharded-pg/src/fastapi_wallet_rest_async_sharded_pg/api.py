@@ -13,7 +13,7 @@ repositories are `ekbatan.aio`'s, and every database call is awaited.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from decimal import Decimal
@@ -106,13 +106,13 @@ def service_of(request: Request) -> ShardedWallets:
 Service = Annotated[ShardedWallets, Depends(service_of)]
 
 
-def create_app(environ: Mapping[str, str] | None = None) -> FastAPI:
-    """The app on the layout in `ekbatan.yaml`; `environ` fills its placeholders, `os.environ`
-    when left out."""
+def create_app() -> FastAPI:
+    """The app on the layout in `ekbatan.yaml`; its placeholders are read from the process
+    environment."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build(environ)
+        service = build()
         service.start()
         app.state.service = service
         try:
