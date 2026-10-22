@@ -195,6 +195,11 @@ wallet = await run_in_threadpool(wallets.get, wallet_id)
 wallet = await wallets.get(wallet_id)
 ```
 
+Not inside a sync transaction, though: `asyncio.to_thread` and `run_in_threadpool` copy the
+caller's context into the new thread, transaction included, and that thread is refused it with
+`TransactionThreadError` - see
+[The transaction manager](/reference/transaction-manager/#repository-writes-join-automatically).
+
 Two things make this less painful than it sounds.
 
 **A plain `def` endpoint in FastAPI is already run in a threadpool** by the framework, so the

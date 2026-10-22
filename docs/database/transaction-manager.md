@@ -180,8 +180,9 @@ Two consequences follow, and both are the point rather than side effects:
   transaction, and their statements take turns on its one connection - all of it inside the
   transaction. Keep such tasks inside the block: one still running after it ends finds the
   connection closed.
-- **A sync transaction belongs to the thread that opened it.** `asyncio.to_thread`, and helpers
-  built on it, copy the caller's context into a new thread, transaction included. That thread
+- **A sync transaction belongs to the thread that opened it.** `asyncio.to_thread`, anyio's
+  `to_thread.run_sync`, Starlette's `run_in_threadpool` - anything that copies the caller's
+  context into a new thread - carries the transaction along. That thread
   is refused with `TransactionThreadError` the moment it reaches for the transaction, rather
   than sharing the connection - one connection serves one thread at a time - or quietly using
   one of its own, which would leave its work behind on a rollback:
@@ -191,7 +192,13 @@ Two consequences follow, and both are the point rather than side effects:
       asyncio.run(asyncio.to_thread(wallets.update, wallet))   # TransactionThreadError
   ```
 
-  Do that work in the thread that opened the transaction, or outside it.
+  Do that work in the thread that opened the transaction, or outside it. `loop.run_in_executor`
+  and a pool's `submit` copy no context, so their threads simply find no transaction.
+- **A block ends in the context it began in.** Opened in one copy of the context and closed in
+  another - a FastAPI sync `yield` dependency does exactly that - the work in between ran
+  outside the transaction, and the block's end raises `TransactionContextError` saying so. Open
+  the transaction where the work runs: see
+  [Wiring with FastAPI](../wiring-fastapi.md#never-open-a-transaction-in-a-dependency).
 
 What does *not* join is a read you route yourself. `db()` and `readonly_db()` open their own
 connections deliberately — see [Repositories](../database/repositories.md#picking-the-right-one).

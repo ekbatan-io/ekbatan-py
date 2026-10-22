@@ -75,6 +75,35 @@ a dependency and reads it as an unfilled *query parameter* instead.
 
 The symptom is a 422 on every endpoint, naming a field nobody declared. It cost an afternoon.
 
+### Never open a transaction in a dependency
+
+A sync `yield` dependency looks like the place to open one transaction per request:
+
+```python
+def in_transaction(service: Service) -> Iterator[None]:     # wrong
+    with service.registry.default.transaction():
+        yield
+```
+
+It does not cover the endpoint. FastAPI runs a sync dependency and a sync endpoint in separate
+copies of the request's context, each on its threadpool, so the endpoint finds no transaction:
+each of its statements commits on its own, and a failure rolls nothing back. When the
+dependency's block ends, in yet another context, the framework raises `TransactionContextError`
+saying so - Python's own error would only say a token "was created in a different Context".
+
+Open the transaction where the work runs. Usually that is the action: `executor.execute(...)`
+opens and commits its own. Work outside an action opens it in the endpoint:
+
+```python
+@app.post("/wallets/{wallet_id}/notes", status_code=204)
+def add_note(wallet_id: str, body: NoteRequest, service: Service) -> None:
+    with service.registry.default.transaction():
+        ...   # every write here is in this one transaction
+```
+
+The same holds with `ekbatan.aio`: open it in the endpoint or the action, not in a dependency.
+See [The transaction manager](database/transaction-manager.md#repository-writes-join-automatically).
+
 ## With the sync API, a plain `def` endpoint is the right endpoint
 
 **Sync**
