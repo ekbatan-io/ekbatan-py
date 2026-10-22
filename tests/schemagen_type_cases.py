@@ -9,6 +9,7 @@ the name of what it is written with.
 from __future__ import annotations
 
 import re
+import struct
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,6 +24,8 @@ WHEN = datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=UTC)
 #: What a zone-less column holds: the value as given - here UTC, as SystemClock gives it.
 NAIVE = WHEN.replace(tzinfo=None)
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
+#: POINT(1 2) as MySQL stores and returns it: a 4-byte SRID, then the WKB.
+POINT = bytes(4) + b"\x01\x01\x00\x00\x00" + struct.pack("<dd", 1.0, 2.0)
 ID = uuid.UUID("0190a8a1-1c2b-7c3d-8e4f-5a6b7c8d9e0f")
 
 
@@ -151,6 +154,25 @@ POSTGRES = (
     # An array of a type SQLAlchemy cannot read: the whole array as PostgreSQL spells it. The
     # driver reads it back as a list of the items' text.
     Case("xml_array", "XML[]", 'sql_type("xml[]")', "{<a/>}", expected=["<a/>"], where=False),
+    # Spelled types both drivers read as text: the record says str (EKB-0428).
+    Case("tsquery", "TSQUERY", 'sql_type("tsquery")', "'a' & 'b'", where=False),
+    Case("jsonpath", "JSONPATH", 'sql_type("jsonpath")', "$.a", expected='$."a"', where=False),
+    # Declared with two dimensions, read back as a list of lists (EKB-0429).
+    Case(
+        "integer_array_2d",
+        "INTEGER[][]",
+        "postgresql.ARRAY(sqlalchemy.INTEGER(), dimensions=2)",
+        [[1, 2], [3, 4]],
+        where=False,
+    ),
+    # A domain, whole: create_all builds it with its check (EKB-0429).
+    Case(
+        "domain",
+        "positive_int",
+        'postgresql.DOMAIN("positive_int", sqlalchemy.INTEGER(), '
+        'constraint_name="positive_int_check", check=sqlalchemy.text("((VALUE > 0))"))',
+        5,
+    ),
 )
 
 MYSQL = (
@@ -260,6 +282,8 @@ MYSQL = (
     Case("year", "YEAR", "mysql.YEAR()", 2026),
     Case("enum", "ENUM('NEW', 'DONE')", 'sqlalchemy.Enum("NEW", "DONE")', "DONE"),
     Case("set", "SET('a', 'b')", 'mysql.SET("a", "b")', {"a", "b"}, where=False),
+    # Spatial, read as MySQL's own bytes (SRID, then WKB) by both drivers (EKB-0428).
+    Case("point", "POINT", 'sql_type("point")', POINT, where=False),
 )
 
 MARIADB = (
@@ -268,6 +292,7 @@ MARIADB = (
     Case("uuid", "UUID", "sqlalchemy.UUID()", ID),
     # A type SQLAlchemy has no class for: written as MariaDB spells it, read back as text.
     Case("inet6", "INET6", 'sql_type("inet6")', "2001:db8::1"),
+    Case("inet4", "INET4", 'sql_type("inet4")', "10.0.0.1"),
 )
 
 SQLITE = (
@@ -319,5 +344,6 @@ CASES_BY_DIALECT: dict[str, tuple[Case, ...]] = {
 PREAMBLE = {
     "postgres": (
         "CREATE EXTENSION IF NOT EXISTS citext;\nCREATE TYPE mood AS ENUM ('happy', 'sad');\n"
+        "CREATE DOMAIN positive_int AS INTEGER CHECK (VALUE > 0);\n"
     ),
 }
