@@ -1124,3 +1124,16 @@ def test_a_rendered_module_carries_the_current_format_and_passes_it_to_the_check
 def test_an_empty_schema_name_in_the_file_is_refused_naming_the_file(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match=r"in .*pyproject.toml: schemas holds an empty name"):
         load_config(_file(tmp_path, 'schemas = ["audit", ""]'))
+
+
+def test_a_module_from_a_newer_schemagen_says_newer_and_to_upgrade(tmp_path: Path) -> None:
+    """A module written by a newer ekbatan than the one installed is not "older": regenerating
+    with this one would lose what the newer one wrote - upgrading ekbatan is the other fix."""
+    with pytest.raises(ValidationError) as raised:
+        schemagen.check_fingerprint(
+            str(tmp_path / "schema.py"), "0" * 16, None, schemagen.SCHEMA_FORMAT + 1
+        )
+    message = str(raised.value)
+    assert f"written by a newer schemagen (format {schemagen.SCHEMA_FORMAT + 1}" in message
+    assert "older" not in message
+    assert "upgrade ekbatan" in message

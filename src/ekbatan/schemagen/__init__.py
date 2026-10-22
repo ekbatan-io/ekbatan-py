@@ -173,6 +173,13 @@ def check_fingerprint(
     and not the migrations, and an installed application must not fail to import because of
     that. The shape half is not: a module and an ekbatan that disagree fail either way.
     """
+    if schema_format is not None and schema_format > SCHEMA_FORMAT:
+        raise ValidationError(
+            f"{Path(generated).name} was written by a newer schemagen (format "
+            f"{schema_format}; this ekbatan writes {SCHEMA_FORMAT}). The installed ekbatan "
+            "predates the one that generated it: upgrade ekbatan, or regenerate it with this "
+            "one (`make clean && make`) and lose what the newer one wrote."
+        )
     if schema_format != SCHEMA_FORMAT:
         raise ValidationError(
             f"{Path(generated).name} was written by an older schemagen (format "

@@ -843,8 +843,12 @@ writes a different shape - the typed records, every SQLAlchemy name written thro
 migrations have not changed:
 
 ```
-schema.py was written by an older schemagen (format 4; this ekbatan writes 5). Regenerate it ...
+schema.py was written by an older schemagen (format 5; this ekbatan writes 6). Regenerate it ...
 ```
+
+A module written by a *newer* ekbatan than the one installed says so - "written by a newer
+schemagen" - and says to upgrade ekbatan, as regenerating with the older one would lose what
+the newer one wrote.
 
 A build that only regenerates when the migrations change, like the examples' `Makefile`, keeps
 the old file, so run `make clean && make` (or delete it and run `python -m ekbatan.schemagen`). Unlike the fingerprint, this check runs in
