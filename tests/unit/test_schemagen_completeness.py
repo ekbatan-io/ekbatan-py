@@ -16,7 +16,7 @@ from ekbatan.schemagen._reflect import index_parts, split_top_level, sqlite_tabl
 
 
 @pytest.mark.parametrize(
-    ("sql", "elements", "tail"),
+    ("statement", "elements", "tail"),
     [
         ("CREATE INDEX i ON t (a)", ["a"], ""),
         (
@@ -44,9 +44,9 @@ from ekbatan.schemagen._reflect import index_parts, split_top_level, sqlite_tabl
     ],
 )
 def test_an_index_s_elements_are_read_as_the_database_wrote_them(
-    sql: str, elements: list[str], tail: str
+    statement: str, elements: list[str], tail: str
 ) -> None:
-    assert index_parts(sql) == (elements, tail)
+    assert index_parts(statement) == (elements, tail)
 
 
 def test_text_that_is_no_index_reads_as_nothing() -> None:
@@ -85,7 +85,7 @@ def test_sqlite_column_collations_are_read_and_a_default_saying_collate_is_not()
 
 
 @pytest.mark.parametrize(
-    ("sql", "alias", "options"),
+    ("statement", "alias", "options"),
     [
         ("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)", "id", ("AUTOINCREMENT",)),
         ("CREATE TABLE t (id integer primary key, v TEXT)", "id", ()),
@@ -106,12 +106,12 @@ def test_sqlite_column_collations_are_read_and_a_default_saying_collate_is_not()
     ],
 )
 def test_sqlite_rowid_alias_and_table_options(
-    sql: str, alias: str | None, options: tuple[str, ...]
+    statement: str, alias: str | None, options: tuple[str, ...]
 ) -> None:
-    parts = sqlite_table_parts(sql)
+    parts = sqlite_table_parts(statement)
     assert parts.rowid_alias == alias
     expected = options
-    if "AUTOINCREMENT)" in sql:
+    if "AUTOINCREMENT)" in statement:
         expected = ("AUTOINCREMENT",)
     assert parts.options == expected
 
@@ -120,7 +120,7 @@ def test_sqlite_rowid_alias_and_table_options(
 
 
 @pytest.mark.parametrize(
-    ("database", "spelled", "expected"),
+    ("kind", "spelled", "expected"),
     [
         ("postgresql", "xml", str),
         ("postgresql", "tsquery", str),
@@ -149,8 +149,8 @@ def test_sqlite_rowid_alias_and_table_options(
     ],
 )
 def test_a_spelled_type_reads_as_what_every_driver_gives(
-    database: str, spelled: str, expected: object
+    kind: str, spelled: str, expected: object
 ) -> None:
     from ekbatan.schemagen._records import spelled_type
 
-    assert spelled_type(database, spelled) == expected
+    assert spelled_type(kind, spelled) == expected
