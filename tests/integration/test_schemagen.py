@@ -432,17 +432,18 @@ def _shape(url: str) -> dict[str, Any]:
                 from ekbatan.schemagen._reflect import sqlite_table_parts
 
                 with db.connect() as connection:
-                    shape[f"{table}.pragma_fks"] = [
+                    # Sorted: SQLite numbers a table's keys in an order of its own.
+                    shape[f"{table}.pragma_fks"] = sorted(
                         tuple(row)[2:]
                         for row in connection.exec_driver_sql(f"PRAGMA foreign_key_list({table})")
-                    ]
+                    )
                     sql = connection.exec_driver_sql(
                         "SELECT sql FROM sqlite_master WHERE name = ?", (table,)
                     ).scalar_one()
-                shape[f"{table}.deferrable"] = [
+                shape[f"{table}.deferrable"] = sorted(
                     (k.columns, k.deferrable, k.initially_deferred)
                     for k in sqlite_table_parts(str(sql)).foreign_keys
-                ]
+                )
         shape["views"] = sorted(found.get_view_names())
         shape["tables"] = sorted(found.get_table_names())
         return shape

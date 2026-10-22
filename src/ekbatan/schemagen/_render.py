@@ -201,8 +201,9 @@ class _Writer:
             ):
                 self.notes.append(
                     f"{where} is an array of the domain {column.type.item_type.name}: asyncpg "
-                    "reads it as a list, but psycopg does not know a domain's array type and "
-                    "hands back its text, which SQLAlchemy then splits into characters - so its "
+                    "reads it as a list, but psycopg (sync and async) does not know a domain's "
+                    "array type and hands back its text, which SQLAlchemy then splits into "
+                    "characters - so its "
                     "record types it Any. Read it cast to the base type's array "
                     "(sqlalchemy.cast(column, postgresql.ARRAY(...))) for a list on both"
                 )

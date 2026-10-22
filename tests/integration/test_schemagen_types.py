@@ -367,7 +367,13 @@ def test_an_array_of_a_domain_is_written_whole_and_its_record_says_what_both_dri
     assert any("t_arr.dd is an array of the domain posint" in n for n in said), said
 
     sync, async_ = _read_back(url, module.T_ARR, 1, {"dd": [5, 6]})
-    assert async_["dd"] == [5, 6]
+    from ekbatan.aio.persistence import async_engine_for
+
+    async_engine = async_engine_for(_config(url))
+    driver = async_engine.dialect.driver
+    asyncio.run(async_engine.dispose())
+    # asyncpg reads a list; psycopg's async mode, like its sync one, the text in characters.
+    assert async_["dd"] == ([5, 6] if driver == "asyncpg" else list("{5,6}")), driver
     assert sync["dd"] == list("{5,6}"), "psycopg learned the type: the record can say list[int]"
     # The note's way out: cast to the base type's array, and psycopg reads a list too.
     db = engine(url)
