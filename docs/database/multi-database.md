@@ -192,6 +192,25 @@ event = ShiftPlannedEvent(
   event ShiftPlannedEvent field planned_at is a plain datetime; declare it Instant,
   LocalDateTime or OffsetDateTime (ekbatan.time)
   ```
+- **Your own JSON columns keep what you give them.** A `datetime` inside a `dict` written to a
+  `json_column()` of your own is written as it is - no zone for a naive one, its offset (`Z` at
+  zero) for an aware one - and never refused. The refusal above is for event payloads and action
+  params, whose reader goes by the declared kind. A field declared `Instant`, `LocalDateTime` or
+  `OffsetDateTime` is written as its kind there too.
+- **A union of two kinds is refused.** `Instant | LocalDateTime` fits any `datetime`, so it says
+  nothing about which one a value is: the message is `declared as more than one kind (Instant |
+  LocalDateTime); pick one`. `Instant | None` is fine.
+- **Ruff.** Ruff's `RUF009` flags `Instant(...)` in a dataclass default as a call. The labels hand
+  back the value they are given, so tell it they are immutable, in `pyproject.toml`:
+
+  ```toml
+  [tool.ruff.lint.flake8-bugbear]
+  extend-immutable-calls = [
+    "ekbatan.time.Instant",
+    "ekbatan.time.LocalDateTime",
+    "ekbatan.time.OffsetDateTime",
+  ]
+  ```
 
 ### The recommendation
 
