@@ -995,10 +995,11 @@ def test_importing_the_main_module_does_not_run_the_command() -> None:
 # -- the defaults, as documented ------------------------------------------------------------
 
 
-def test_the_built_in_forced_types_are_the_four_the_docs_list() -> None:
+def test_the_built_in_forced_types_are_the_five_the_docs_list() -> None:
     """docs/database/schemagen.md, "Ekbatan's built-in forced types": the table there is this."""
     assert [(f.target, f.include_types, f.dialects) for f in DEFAULT_FORCED_TYPES] == [
-        ("timestamp_column", "TIMESTAMP|DATETIME", ()),
+        ("Instant", "TIMESTAMP|DATETIME", ()),
+        ("OffsetDateTime", "TIMESTAMPTZ", ("postgresql",)),
         ("json_column", "JSONB", ("postgresql",)),
         ("json_column", "JSON", ("mysql", "mariadb", "sqlite")),
         ("uuid_column", "UUID", ("postgresql",)),

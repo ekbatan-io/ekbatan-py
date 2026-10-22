@@ -19,7 +19,8 @@ import types
 import typing
 import uuid
 from collections.abc import Iterator
-from datetime import date, datetime
+from datetime import date
+from datetime import time as time_of_day
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, NotRequired
@@ -50,6 +51,7 @@ from ekbatan.errors import ValidationError
 from ekbatan.schema import JsonValue, sql_type
 from ekbatan.schemagen import ForcedType, SchemagenConfig, render
 from ekbatan.schemagen._records import record_name
+from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
 
 
 def _render(
@@ -211,8 +213,8 @@ def test_a_column_the_database_fills_may_be_left_out() -> None:
 
 
 def test_the_built_in_forced_types_give_what_their_helpers_read() -> None:
-    """A uuid reads as a ``UUID``; a timestamp as the ``datetime`` written, no zone added; JSON
-    as a JSON value."""
+    """A uuid reads as a ``UUID``; a zone-less timestamp as an ``Instant`` (the ``datetime``
+    written, no zone added); JSON as a JSON value."""
     text_ = _render(
         Column("owner_id", UUID(), nullable=False),
         Column("created_date", TIMESTAMP(), nullable=False),
@@ -221,9 +223,82 @@ def test_the_built_in_forced_types_give_what_their_helpers_read() -> None:
     assert "uuid_column()" in text_ and "timestamp_column()" in text_
     hints = _hints(text_, "WalletsRecord")
     assert hints["owner_id"] is uuid.UUID
-    assert hints["created_date"] is datetime
+    assert hints["created_date"] is Instant
+    assert "from ekbatan.time import Instant" in text_
     assert hints["payload"] == JsonValue | None
     assert "from ekbatan.schema import JsonValue" in text_ or "JsonValue," in text_
+
+
+# -- time kinds ---------------------------------------------------------------------------------
+
+
+def test_each_time_column_gets_its_kind() -> None:
+    """Zone-less is an Instant, zoned an OffsetDateTime, TIME and DATE Python's own - on
+    PostgreSQL, where TIMESTAMPTZ keeps its own type (and precision) and only the record's kind
+    comes from the built-in forced type."""
+    from sqlalchemy import TIME
+
+    text_ = _render(
+        Column("at", TIMESTAMP(), nullable=False),
+        Column("zoned", postgresql.TIMESTAMP(timezone=True, precision=3), nullable=False),
+        Column("opens", TIME(), nullable=False),
+        Column("day", DATE(), nullable=False),
+    )
+    hints = _hints(text_, "WalletsRecord")
+    assert hints["at"] is Instant
+    assert hints["zoned"] is OffsetDateTime
+    assert hints["opens"] is time_of_day
+    assert hints["day"] is date
+    assert '"at", timestamp_column()' in text_
+    assert '"zoned", postgresql.TIMESTAMP(timezone=True, precision=3)' in text_
+    assert "from ekbatan.time import Instant, OffsetDateTime" in text_
+
+
+def test_mysql_datetime_and_timestamp_are_instants() -> None:
+    text_ = _render(
+        Column("at", mysql.DATETIME(fsp=6), nullable=False),
+        Column("stamped", mysql.TIMESTAMP(), nullable=False),
+        dialect="mysql",
+    )
+    hints = _hints(text_, "WalletsRecord")
+    assert hints["at"] is Instant and hints["stamped"] is Instant
+
+
+def test_a_column_forced_to_local_date_time_says_so() -> None:
+    """The opt-out: a wall-clock column is forced by name, tried before the built-in Instant.
+    The column is the same zone-less timestamp; only its record's kind differs."""
+    text_ = _render(
+        Column("at", TIMESTAMP(), nullable=False),
+        Column("opens_at", TIMESTAMP(), nullable=False),
+        forced=(
+            ForcedType(
+                name="LocalDateTime",
+                include_types="TIMESTAMP|DATETIME",
+                include_expression=r"wallets\.opens_at",
+            ),
+        ),
+    )
+    hints = _hints(text_, "WalletsRecord")
+    assert hints["at"] is Instant
+    assert hints["opens_at"] is LocalDateTime
+    assert '"opens_at", timestamp_column()' in text_
+
+
+def test_a_zone_less_column_forced_to_offset_date_time_becomes_zoned() -> None:
+    text_ = _render(
+        Column("at", TIMESTAMP(), nullable=False),
+        forced=(ForcedType(name="OffsetDateTime", include_expression="at"),),
+    )
+    assert _hints(text_, "WalletsRecord")["at"] is OffsetDateTime
+    assert '"at", sqlalchemy.DateTime(timezone=True)' in text_
+
+
+def test_a_time_kind_takes_no_arguments() -> None:
+    with pytest.raises(ValidationError, match="a time kind takes no arguments"):
+        _render(
+            Column("at", TIMESTAMP(), nullable=False),
+            forced=(ForcedType(name="Instant(3)", include_expression="at"),),
+        )
 
 
 def test_a_forced_sqlalchemy_type_by_name() -> None:
@@ -238,7 +313,7 @@ def test_the_framework_tables_have_records_too() -> None:
     text_ = _render(framework=("events", "event_notifications", "scheduled_tasks"))
     events = _hints(text_, "EventsRecord")
     assert events["id"] is uuid.UUID
-    assert events["event_date"] is datetime
+    assert events["event_date"] is Instant
     assert events["payload"] == JsonValue | None
     assert events["delivered"] is bool
     assert _hints(text_, "ScheduledTasksRecord")["task_data"] == bytes | None

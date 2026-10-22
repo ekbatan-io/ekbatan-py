@@ -61,6 +61,18 @@ class Emitted:
     imports: frozenset[tuple[str, str]] = field(default_factory=frozenset)
 
 
+#: The time kinds a forced type may name (:mod:`ekbatan.time`), and the column each builds. The
+#: kind is what the column's record says; ``Instant`` and ``LocalDateTime`` are the same
+#: zone-less column, ``OffsetDateTime`` a zoned one.
+TIME_KINDS = {
+    "Instant": Emitted("timestamp_column()", frozenset({("ekbatan.schema", "timestamp_column")})),
+    "LocalDateTime": Emitted(
+        "timestamp_column()", frozenset({("ekbatan.schema", "timestamp_column")})
+    ),
+    "OffsetDateTime": Emitted("sqlalchemy.DateTime(timezone=True)"),
+}
+
+
 def _sa(name: str, args: str = "") -> Emitted:
     return Emitted(f"sqlalchemy.{name}({args})")
 
@@ -438,6 +450,10 @@ def _split_call(text: str, what: str) -> tuple[str, str | None]:
 def _resolve_name(name: str) -> Emitted:
     what = "the forced type name"
     head, args = _split_call(name, what)
+    if head in TIME_KINDS:
+        if args:
+            raise ValidationError(f"{what} {name!r}: a time kind takes no arguments")
+        return TIME_KINDS[head]
     if head in HELPERS:
         if args:
             raise ValidationError(f"{what} {name!r}: {head}() takes no arguments")
@@ -455,7 +471,8 @@ def _resolve_name(name: str) -> Emitted:
         built = evaluate(source)
     except Exception as error:
         raise ValidationError(
-            f"{what} {name!r} is not a SQLAlchemy type or one of {sorted(HELPERS)}: "
+            f"{what} {name!r} is not a SQLAlchemy type, a time kind {sorted(TIME_KINDS)} or one "
+            f"of {sorted(HELPERS)}: "
             f"{type(error).__name__}: {error}"
         ) from None
     if not isinstance(built, TypeEngine):

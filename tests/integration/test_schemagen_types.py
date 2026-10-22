@@ -36,6 +36,7 @@ from sqlalchemy import insert, select
 from backends import Backend
 from ekbatan.config import DataSourceConfig, split_login
 from ekbatan.schemagen import generate
+from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
 from schemagen_support import (
     column_sources,
     engine,
@@ -236,6 +237,11 @@ def _holds(value: Any, hint: Any) -> bool:
     hint, as far as each kind of hint goes."""
     if hint is Any:
         return True
+    if hint in (Instant, LocalDateTime):
+        # A label, not a class: a datetime with no zone attached.
+        return isinstance(value, datetime) and value.tzinfo is None
+    if hint is OffsetDateTime:
+        return isinstance(value, datetime) and value.utcoffset() is not None
     if isinstance(hint, typing.TypeAliasType):
         return _holds(value, hint.__value__)
     origin, args = typing.get_origin(hint), typing.get_args(hint)

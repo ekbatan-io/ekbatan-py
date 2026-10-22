@@ -12,6 +12,8 @@ The type of a column is read from the very type object the generated module buil
 - a **TypeDecorator** gives what its ``process_result_value`` is annotated to return, or, when
   it converts nothing on the way out, what its ``impl`` reads as; any other type is
   SQLAlchemy's ``python_type`` for it;
+- a timestamp is a time kind (:mod:`ekbatan.time`): zone-less is ``Instant``, or
+  ``LocalDateTime`` where a forced type names it; zoned is ``OffsetDateTime``;
 - JSON is :data:`ekbatan.schema.JsonValue`, an enum the ``Literal`` of its values, an array a
   ``list`` of its item, a MySQL ``SET`` a ``set[str]``;
 - a type nothing can say anything about (``sql_type("xml")``, a library type with no
@@ -187,6 +189,12 @@ def python_type(column_type: TypeEngine[Any]) -> object:
         return converter_user_type(t._converter, repr(t._converter))
     if isinstance(t, sqltypes.TypeDecorator):
         return _decorated(t)
+    if isinstance(t, sqltypes.DateTime):
+        # The kind of time, not the class: a zone-less column holds a moment as UTC digits (an
+        # Instant, unless a forced type says LocalDateTime), a zoned one a moment with an offset.
+        from ..time import Instant, OffsetDateTime
+
+        return OffsetDateTime if t.timezone else Instant
     known = _dialect_type(t)
     if known is not None:
         return known

@@ -27,9 +27,11 @@ class ForcedType:
 
     What they become - exactly one of:
 
-    - ``name``: one of the framework's helpers (``uuid_column``, ``json_column``,
-      ``timestamp_column``) or a SQLAlchemy type, written as in Python - ``Text``,
-      ``String(36)``, ``Numeric(19, 4)``, ``postgresql.INET``. jOOQ's ``withName``.
+    - ``name``: a time kind (``Instant``, ``LocalDateTime``, ``OffsetDateTime`` - the label the
+      column's record gets, see :mod:`ekbatan.time`), one of the framework's helpers
+      (``uuid_column``, ``json_column``, ``timestamp_column``) or a SQLAlchemy type, written as
+      in Python - ``Text``, ``String(36)``, ``Numeric(19, 4)``, ``postgresql.INET``. jOOQ's
+      ``withName``.
     - ``converter``: your own converter, by dotted path - ``myapp.converters.MoneyConverter``
       or ``myapp.converters:MoneyConverter``, with arguments if it takes any. Any object with
       ``from_db`` and ``to_db``. The column keeps its own database type and the converter is
@@ -145,9 +147,12 @@ def _any(pattern: str, candidates: Sequence[str], flags: int = 0) -> bool:
 #: What Ekbatan forces when you force nothing - the forced types every Java example's build
 #: script carries, with the converters' work done by the framework's column helpers.
 #:
-#: - every zone-less timestamp to ``timestamp_column()`` - Java's ``Instant`` +
-#:   ``InstantConverter`` on ``TIMESTAMP`` (PG) and ``(?i:DATETIME|TIMESTAMP)`` (MySQL, MariaDB).
-#:   ``TIMESTAMPTZ`` does not match, as it does not in Java: it keeps its zone.
+#: - every zone-less timestamp to ``Instant`` - a ``timestamp_column()`` whose record says
+#:   :data:`ekbatan.time.Instant` - Java's ``Instant`` + ``InstantConverter`` on ``TIMESTAMP``
+#:   (PG) and ``(?i:DATETIME|TIMESTAMP)`` (MySQL, MariaDB). A wall-clock column is forced to
+#:   ``LocalDateTime`` by a rule of the project's own, which is tried first.
+#: - PostgreSQL's ``TIMESTAMPTZ`` to ``OffsetDateTime``, as jOOQ generates it: the column keeps
+#:   its own type and precision, and its record says :data:`ekbatan.time.OffsetDateTime`.
 #: - JSON to ``json_column()`` - Java's ``ObjectNode`` on ``JSONB`` (PG) and ``JSON`` (MySQL,
 #:   MariaDB). A plain PostgreSQL ``JSON`` is not forced, as in Java.
 #: - a PostgreSQL ``UUID`` to ``uuid_column()``, so the same schema renders ``CHAR(36)`` - not
@@ -157,7 +162,8 @@ def _any(pattern: str, candidates: Sequence[str], flags: int = 0) -> bool:
 #: ``CHAR(36)`` holds a uuid, so it stays text unless a project says so with its own forced
 #: type - as each Java MySQL build adds ``UuidStringConverter`` itself.
 DEFAULT_FORCED_TYPES: tuple[ForcedType, ...] = (
-    ForcedType(name="timestamp_column", include_types="TIMESTAMP|DATETIME"),
+    ForcedType(name="Instant", include_types="TIMESTAMP|DATETIME"),
+    ForcedType(name="OffsetDateTime", include_types="TIMESTAMPTZ", dialects=("postgresql",)),
     ForcedType(name="json_column", include_types="JSONB", dialects=("postgresql",)),
     ForcedType(name="json_column", include_types="JSON", dialects=("mysql", "mariadb", "sqlite")),
     ForcedType(name="uuid_column", include_types="UUID", dialects=("postgresql",)),

@@ -41,10 +41,12 @@ from ._types import MODULES, Emitted, emit_type, lit, modules_used, resolve, typ
 log = logging.getLogger("io.ekbatan.schemagen")
 
 #: The shape of the module this schemagen writes. Raised whenever that shape changes - typed
-#: records arrived with 2, every SQLAlchemy name written through ``import sqlalchemy`` with 3 -
-#: so a module written by an older schemagen fails on import instead of quietly lacking what the
-#: code beside it expects. A module from before the number has none.
-SCHEMA_FORMAT = 3
+#: records arrived with 2, every SQLAlchemy name written through ``import sqlalchemy`` with 3,
+#: the records' timestamps typed by time kind (``Instant``, ``LocalDateTime``,
+#: ``OffsetDateTime``) with 4 - so a module written by an older schemagen fails on import
+#: instead of quietly lacking what the code beside it expects. A module from before the number
+#: has none.
+SCHEMA_FORMAT = 4
 
 #: The module's own constants, in capitals as a table's are: a table that would take one of
 #: these names is exported with ``_`` after it, as a keyword is.
@@ -127,6 +129,11 @@ class _Writer:
         if forced is None or forced.converter is None:
             source = self._plain_type(where, column, forced, raw, is_json)
             self.py_types[record_key] = self.python_type_of(where, self.built(source))
+            if forced is not None and forced.name == "LocalDateTime":
+                # The same zone-less column as an Instant's; only what the record says differs.
+                from ..time import LocalDateTime
+
+                self.py_types[record_key] = LocalDateTime
             return source
         # A converter keeps the column's own type and wraps itself around it: the type the
         # column would have without this forced type - the next one that matches and is not a
@@ -214,7 +221,13 @@ class _Writer:
         """The column's type with no converter: a forced name or SQLAlchemy type, or the type
         table's, or - for a type SQLAlchemy cannot read - the database's own spelling."""
         emitted: Emitted | None
-        if forced is not None:
+        zoned = isinstance(column.type, sqltypes.DateTime) and bool(column.type.timezone)
+        if forced is not None and forced.name == "OffsetDateTime" and zoned:
+            # Already a zoned timestamp: written as the type table writes it, so a TIMESTAMPTZ(3)
+            # keeps its precision. Only the record's kind comes from the forced type.
+            emitted = emit_type(column.type, self.reflected.dialect_name) or resolve(forced)
+            self._offset_note(where)
+        elif forced is not None:
             emitted = resolve(forced)
             self._timestamp_notes(where, forced, raw)
         elif is_json:
@@ -235,21 +248,24 @@ class _Writer:
                     "written as NullType(), which create_all cannot build"
                 )
                 emitted = Emitted("sqlalchemy.types.NullType()")
-            elif (
-                isinstance(column.type, sqltypes.DateTime)
-                and column.type.timezone
-                and self.reflected.dialect_name == "postgresql"
-            ):
-                self.notes.append(
-                    f"{where} is TIMESTAMPTZ: generated as a zoned timestamp, as Java generates "
-                    "OffsetDateTime. Ekbatan recommends zone-less TIMESTAMP holding UTC - see "
-                    "docs/database/multi-database.md#always-utc"
-                )
+            elif zoned:
+                self._offset_note(where)
         return self.use(emitted)
+
+    def _offset_note(self, where: str) -> None:
+        """Say what a zoned timestamp gives back: the moment, with an offset not its own."""
+        if self.reflected.dialect_name != "postgresql":
+            return
+        self.notes.append(
+            f"{where} is TIMESTAMPTZ: its record says OffsetDateTime, as Java generates "
+            "OffsetDateTime. PostgreSQL keeps only the moment, so the offset read back is the "
+            "session's (psycopg) or UTC (asyncpg), not the one written. Ekbatan recommends "
+            "zone-less TIMESTAMP holding UTC - see docs/database/multi-database.md#always-utc"
+        )
 
     def _timestamp_notes(self, where: str, forced: ForcedType, raw: str | None) -> None:
         """Say where a column forced to ``timestamp_column()`` is not the column it builds."""
-        if forced.name != "timestamp_column" or raw is None:
+        if forced.name not in ("timestamp_column", "Instant", "LocalDateTime") or raw is None:
             return
         spelled = raw.lower()
         dialect = self.reflected.dialect_name
@@ -261,6 +277,8 @@ class _Writer:
                 "the server converts it by the session's time zone and it ends in 2038; "
                 "Ekbatan recommends DATETIME(6)"
             )
+        elif "with time zone" in spelled:
+            why = "it is zoned, and the column the forced type builds has no zone"
         elif dialect in ("mysql", "mariadb"):
             why = "it keeps fewer than 6 digits of a second, and cuts the rest; use DATETIME(6)"
         elif dialect == "postgresql":
