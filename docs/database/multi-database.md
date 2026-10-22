@@ -138,13 +138,13 @@ one.
 Python has one `datetime` class for three different kinds of time. `ekbatan.time` names them, so
 a type checker keeps them apart and the JSON says which one a reader gets:
 
-| meaning | Python label | Java | PostgreSQL column | JSON |
-| --- | --- | --- | --- | --- |
-| a moment | `Instant` - no zone attached, UTC digits | `Instant` | `TIMESTAMP` | `"2026-03-01T09:30:00.120Z"` |
-| a wall date and time | `LocalDateTime` - no zone attached | `LocalDateTime` | `TIMESTAMP` | `"2026-03-01T09:30:00.12"` |
-| a moment with its offset | `OffsetDateTime` - zone attached | `OffsetDateTime` | `TIMESTAMPTZ` | `"2026-03-01T13:00:00.12+03:30"` |
-| a time of day | `time` | `LocalTime` | `TIME` | `"09:30:00"` |
-| a date | `date` | `LocalDate` | `DATE` | `"2026-03-01"` |
+| meaning | Python label | PostgreSQL column | JSON |
+| --- | --- | --- | --- |
+| a moment | `Instant` - no zone attached, UTC digits | `TIMESTAMP` | `"2026-03-01T09:30:00.120Z"` |
+| a wall date and time | `LocalDateTime` - no zone attached | `TIMESTAMP` | `"2026-03-01T09:30:00.12"` |
+| a moment with its offset | `OffsetDateTime` - zone attached | `TIMESTAMPTZ` | `"2026-03-01T13:00:00.12+03:30"` |
+| a time of day | `time` | `TIME` | `"09:30:00"` |
+| a date | `date` | `DATE` | `"2026-03-01"` |
 
 On MySQL and MariaDB both `Instant` and `LocalDateTime` are `DATETIME(6)`; neither database has a
 column that keeps an offset. `Instant` and `LocalDateTime` are the same zone-less column - only
