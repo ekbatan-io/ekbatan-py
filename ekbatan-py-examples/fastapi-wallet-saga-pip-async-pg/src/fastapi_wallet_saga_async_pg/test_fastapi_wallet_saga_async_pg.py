@@ -363,7 +363,14 @@ def test_the_currency_is_a_currency_in_python_and_text_in_the_database(
                 EVENTS.c.event_type == "TransferInitiatedEvent",
             )
         ).scalar_one()
+        opened = conn.execute(
+            select(EVENTS.c.payload).where(
+                EVENTS.c.model_id == str(source.id.value),
+                EVENTS.c.event_type == "WalletOpenedEvent",
+            )
+        ).scalar_one()
     assert stored == "EUR"
+    assert opened["openedAt"].endswith("Z"), "the event's Instant: UTC digits with Java's Z"
     assert initiated["currency"] == "EUR"
 
 

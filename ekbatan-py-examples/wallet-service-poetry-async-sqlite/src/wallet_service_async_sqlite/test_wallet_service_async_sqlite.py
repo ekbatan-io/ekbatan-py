@@ -48,7 +48,7 @@ def drive(tmp_path: Path, scenario: Scenario) -> None:
     async def main() -> None:
         service = build(
             {"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'wallet.db'}"},
-            clock=VirtualClock(SystemClock().now()),
+            clock=VirtualClock(SystemClock().instant()),
         )
         # Started before any wallet exists, as a service is: the jobs poll from here on, and
         # `start()` returns once the stipend's run at startup - on an empty database - is over.
@@ -127,6 +127,10 @@ def test_a_deposit_writes_the_balance_and_its_event_together(tmp_path: Path) -> 
             "amount": Decimal("25.50"),
             "newBalance": Decimal("125.5000"),
         }
+        opened = [r for r in await outbox(service) if r.event_type == "WalletOpenedEvent"]
+        assert opened[0].payload["openedAt"].endswith("Z"), (
+            "the event's Instant: UTC digits with Java's Z"
+        )
 
     drive(tmp_path, scenario)
 
@@ -225,7 +229,7 @@ def test_the_stipend_job_pays_every_open_wallet(tmp_path: Path) -> None:
             await pay()
 
         job.pay = recorded  # type: ignore[method-assign]
-        a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+        a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
         stipend_only = (
             job_registry()
             .engine(service.events_registry.default.primary)

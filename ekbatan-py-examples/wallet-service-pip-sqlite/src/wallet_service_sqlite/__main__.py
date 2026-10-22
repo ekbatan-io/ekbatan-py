@@ -81,7 +81,7 @@ def run(service: WalletService) -> None:
     # The stipend ran once at startup, before this wallet existed, and is next due in a day.
     # Rather than wait a day, a scheduler of its own whose clock says a day has passed picks
     # the same row from `scheduled_tasks` and runs it once.
-    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+    a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
         .engine(service.registry.default.primary)

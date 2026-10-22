@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from uuid import UUID
@@ -17,6 +16,7 @@ from uuid import UUID
 from ekbatan import Entity, GenericState, Model, ModelEvent, ShardedId
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id
+from ekbatan.time import Instant
 
 from .builders import WalletBuilder
 
@@ -73,6 +73,9 @@ class WalletOpenedEvent(ModelEvent["Wallet"]):
     owner_id: UUID
     currency: str
     opening_balance: Decimal
+    #: When the wallet was opened: a moment, so an Instant - written `...Z` in the JSON, as
+    #: Java writes an Instant.
+    opened_at: Instant
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -115,7 +118,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         currency: Currency,
         balance: Decimal,
         id: ShardedId[Wallet] | None = None,
-        created_date: datetime,
+        created_date: Instant,
     ) -> Wallet:
         wallet_id = id or ShardedId[Wallet].random()
         return (
@@ -135,6 +138,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
                     # same text the column holds.
                     currency=currency.code,
                     opening_balance=balance,
+                    opened_at=created_date,
                 )
             )
             .build()

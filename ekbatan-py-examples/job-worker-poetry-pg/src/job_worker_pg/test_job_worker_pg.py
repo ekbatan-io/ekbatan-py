@@ -294,7 +294,11 @@ def test_the_currency_is_a_currency_in_python_and_text_in_the_database(worker: H
     assert worker.wallets.get(wallet.id).currency == Currency("EUR")
     with worker.registry.default.connection(readonly=True) as conn:
         stored = conn.execute(text("SELECT currency FROM wallets")).scalar_one()
+        opened_at = conn.execute(
+            text("SELECT payload->>'openedAt' FROM events WHERE event_type = 'WalletOpenedEvent'")
+        ).scalar_one()
     assert stored == "EUR"
+    assert opened_at.endswith("Z"), "the event's Instant: UTC digits with Java's Z"
 
     with pytest.raises(ValidationError, match="three capital letters"):
         worker.executor.execute(

@@ -37,7 +37,7 @@ from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, WALLETS
 def service(tmp_path: Path) -> Iterator[WalletService]:
     built = build(
         {"WALLET_DATABASE_URL": f"sqlite:///{tmp_path / 'wallet.db'}"},
-        clock=VirtualClock(SystemClock().now()),
+        clock=VirtualClock(SystemClock().instant()),
     )
     # Started before any wallet exists, as a service is: the jobs poll from here on, and
     # `start()` returns once the stipend's run at startup - on an empty database - is over.
@@ -107,6 +107,10 @@ def test_a_deposit_writes_the_balance_and_its_event_together(service):
         "newBalance": Decimal("125.5000"),
     }
     assert str(deposited[0].payload["amount"]) == "25.50"
+    opened = [r for r in outbox(service) if r.event_type == "WalletOpenedEvent"]
+    assert opened[0].payload["openedAt"].endswith("Z"), (
+        "the event's Instant: UTC digits with Java's Z"
+    )
 
 
 def test_the_handler_reacts_and_reads_what_the_event_does_not_carry(service):
@@ -173,7 +177,7 @@ def test_the_stipend_job_pays_every_open_wallet(service):
     from .jobs import PayStipendJob
 
     wallet = a_wallet(service, "0.00")
-    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+    a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
         .engine(service.registry.default.primary)

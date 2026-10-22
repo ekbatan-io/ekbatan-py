@@ -208,9 +208,15 @@ def test_each_shard_keeps_its_own_outbox(service: ShardedWallets, run: Run) -> N
                 ).scalar_one()
         return found
 
+    async def opened_at() -> str:
+        async with service.registry.manager(MEXICO).connection(readonly=True) as conn:
+            found = await conn.execute(text("SELECT payload->>'openedAt' FROM events"))
+            return str(found.scalar_one())
+
     counted = run(counts)
     assert counted[MEXICO] == 1
     assert counted[GLOBAL] == 0
+    assert run(opened_at).endswith("Z"), "the event's Instant: UTC digits with Java's Z"
 
 
 def test_two_wallets_on_one_shard_move_together(service: ShardedWallets, run: Run) -> None:

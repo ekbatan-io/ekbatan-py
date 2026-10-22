@@ -14,6 +14,7 @@ reaches past HTTP into the service awaits on that same loop, through `client.por
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
 import time
 from collections.abc import Awaitable, Callable, Iterator
@@ -188,6 +189,9 @@ def test_the_currency_is_a_currency_in_python_and_text_in_the_database(
     )
     assert stored == "EUR", "the column holds the plain code"
     assert opened["currency"] == "EUR", "and so does the event"
+    # The event's time is an Instant: the wallet's created_date, UTC digits, with Java's `Z`.
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{3}|\.\d{6})?Z", opened["openedAt"])
+    assert opened["openedAt"].startswith(wallet.created_date.isoformat(timespec="seconds"))
     assert client.get(f"/wallets/{wallet_id}").json()["currency"] == "EUR"
 
 
@@ -363,7 +367,7 @@ def test_the_stipend_job_pays_every_open_wallet(client: TestClient) -> None:
         await pay()
 
     job.pay = recorded  # type: ignore[method-assign]
-    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+    a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry().engine(running.jobs_engine).with_jobs([job]).build_manual(a_day_later)
     )

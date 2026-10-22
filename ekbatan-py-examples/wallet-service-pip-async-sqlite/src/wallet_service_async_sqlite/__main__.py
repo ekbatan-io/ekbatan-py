@@ -87,7 +87,7 @@ async def run(service: WalletService) -> None:
     # Rather than wait a day, a scheduler of its own whose clock says a day has passed picks
     # the same row from `scheduled_tasks` and runs it once - on a thread, as db-scheduler does,
     # its work awaited on the handler loop.
-    a_day_later = SettableClock(SystemClock().now() + timedelta(days=1, seconds=1))
+    a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
         .engine(service.events_registry.default.primary)
