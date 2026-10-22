@@ -67,7 +67,7 @@ class ScheduleAction(Action[ScheduleParams, Wallet]):
             wallet.evolve(
                 emit=WalletScheduledEvent(
                     model_id=str(wallet.id),
-                    planned_at=self.instant(),
+                    planned_at=self.clock.instant(),
                     opens_at=LocalDateTime(WALL),
                     told_at=OffsetDateTime(WALL.replace(tzinfo=TEHRAN)),
                 )
@@ -95,7 +95,9 @@ class PlainTimeEventAction(Action[ScheduleParams, Wallet]):
         wallet = _wallet(self.clock)
         return self.plan.add(
             wallet.evolve(
-                emit=WalletStampedPlainEvent(model_id=str(wallet.id), stamped_at=self.instant())
+                emit=WalletStampedPlainEvent(
+                    model_id=str(wallet.id), stamped_at=self.clock.instant()
+                )
             )
         )
 

@@ -137,7 +137,7 @@ change in an application reads the same way.
 into or out of a model, row, event, notification or JSON. A value goes to the driver as the
 model or the clock held it and comes back as the driver returns it.
 
-- A clock has **one reading, `clock.instant()`** (`self.instant()` in an action), Java's
+- A clock has **one reading, `clock.instant()`** (`self.clock.instant()` in an action), Java's
   `clock.instant()`. `now()` is gone - renamed outright, no alias; db-scheduler's own clock keeps
   db-scheduler's `now()`. The default clock, `SystemClock().instant()`, gives the current **UTC
   time with no zone attached** (`datetime.now(UTC).replace(tzinfo=None)`, in `clock.py`'s
@@ -199,7 +199,7 @@ is - no run-time cost, a value stays a plain `datetime`, and `Instant(x)` is `x`
 **UTC everywhere is the strong recommendation** - now plainly the user's job, so code, docs and
 examples follow it and say so:
 
-- in Python, time comes from the clock (`clock.instant()`, `self.instant()` in an action) - UTC, no zone;
+- in Python, time comes from the clock (`clock.instant()`, `self.clock.instant()` in an action) - UTC, no zone;
   never `datetime.now()` (local time);
 - columns are zone-less: `TIMESTAMP` on PostgreSQL, `DATETIME(6)` on MySQL and MariaDB; never
   `TIMESTAMPTZ`, never bare `DATETIME`;

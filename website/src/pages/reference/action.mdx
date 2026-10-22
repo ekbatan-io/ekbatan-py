@@ -164,8 +164,8 @@ time-derived inside `perform()`; an action calling `datetime.now()` directly is 
 be tested at a fixed instant, and whose timestamps disagree with the row it is writing.
 
 A clock has one reading, `clock.instant()`: the current moment as an `Instant` - UTC digits
-with no zone attached ([time kinds](/reference/multi-database/#time-kinds)). `self.instant()` is
-the shorthand inside an action.
+with no zone attached ([time kinds](/reference/multi-database/#time-kinds)). Inside an action
+it is `self.clock.instant()`.
 
 Pass **the executor's clock**. Nothing checks it: an action built with another clock
 is accepted, reads that clock in `perform()`, and its rows are still stamped from the executor's.

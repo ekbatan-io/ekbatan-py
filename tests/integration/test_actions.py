@@ -50,7 +50,7 @@ def a_wallet(executor):
 
 class ReadsTheClockAction(Action[None, datetime]):
     def perform(self, principal: str | None, params: None) -> datetime:
-        return self.instant()
+        return self.clock.instant()
 
 
 def test_an_action_reads_the_clock_it_was_built_with(executor, clock):

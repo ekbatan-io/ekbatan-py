@@ -185,14 +185,17 @@ def test_a_virtual_clock_in_real_time_reads_as_the_system_clock_does():
 
 def test_now_is_gone_and_instant_is_the_one_reading():
     """Renamed outright, no alias: `Clock.now()` became `Clock.instant()`, as Java's
-    `clock.instant()`, and an action's `self.now()` became `self.instant()`. A `now()` coming
-    back would be a second name for one reading."""
+    `clock.instant()`. An action reads its clock as Java's does, `self.clock.instant()`: it has
+    neither `now()` nor an `instant()` shorthand - either would be a second name for one reading."""
     from ekbatan import Action, Clock
     from ekbatan.aio import AsyncAction
 
-    for kind in (Clock, SystemClock, VirtualClock, Action, AsyncAction):
+    for kind in (Clock, SystemClock, VirtualClock):
         assert not hasattr(kind, "now"), kind
         assert callable(getattr(kind, "instant", None)), kind
+    for action in (Action, AsyncAction):
+        assert not hasattr(action, "now"), action
+        assert not hasattr(action, "instant"), action
     assert not hasattr(SystemClock(), "now")
     assert isinstance(SystemClock(), Clock)
 

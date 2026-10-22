@@ -145,7 +145,7 @@ stages onto the same plan without mentioning it. The other two can be passed, so
 - **Pass the executor's clock to the action.** Nothing checks it: the action reads
   its own clock in `perform()` and the rows are stamped from the executor's, so a test that
   freezes one and not the other asserts on two different instants.
-  A clock has one reading, `clock.instant()` - `self.instant()` in an action: the current
+  A clock has one reading, `clock.instant()` - `self.clock.instant()` in an action: the current
   moment as an `Instant`, UTC digits with no zone attached
   ([time kinds](../database/multi-database.md#time-kinds)).
 

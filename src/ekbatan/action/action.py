@@ -31,7 +31,6 @@ from typing import Any
 
 from ..clock import Clock
 from ..errors import EkbatanError, ValidationError
-from ..time import Instant
 from .plan import ActionPlan
 
 __all__ = ["Action", "current_plan"]
@@ -88,10 +87,6 @@ class _ActionCore[P, R]:
     @property
     def plan(self) -> ActionPlan:
         return current_plan()
-
-    def instant(self) -> Instant:
-        """Shorthand for ``self.clock.instant()``: the current moment, UTC digits, no zone."""
-        return self.clock.instant()
 
     def __repr__(self) -> str:
         return f"{self.name}()"

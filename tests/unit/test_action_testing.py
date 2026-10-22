@@ -114,7 +114,7 @@ def test_the_action_sees_the_clock_it_was_given(clock):
 
     class ReadsTheClockAction(Action[None, datetime]):
         def perform(self, principal: str | None, params: None) -> datetime:
-            return self.instant()
+            return self.clock.instant()
 
     assert run_action(ReadsTheClockAction(clock), None).result == clock.instant()
 

@@ -44,7 +44,7 @@ the Java while porting go in an openspec change, not a code change.
 - `timestamp_column()`, never a zoned type. `DATETIME(6)`, never bare `DATETIME`. It is only a
   column type: zone-less, microseconds.
 - **UTC everywhere is the strong recommendation** - the user's job, not the framework's - in
-  code, docs and examples alike: time from the clock (`clock.instant()`, `self.instant()`), never
+  code, docs and examples alike: time from the clock (`clock.instant()`, `self.clock.instant()`), never
   `datetime.now()` (local time); `TIMESTAMP`,
   never `TIMESTAMPTZ`; the database in UTC or each session put on it via `data_source_properties`.
   Say so wherever timestamps come up. Guide: `docs/database/multi-database.md#always-utc`.

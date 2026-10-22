@@ -166,18 +166,18 @@ class ShiftPlannedEvent(ModelEvent["Shift"]):
 
 event = ShiftPlannedEvent(
     model_id=str(shift.id),
-    planned_at=self.instant(),                         # the clock gives an Instant
+    planned_at=self.clock.instant(),                         # the clock gives an Instant
     opens_at=LocalDateTime(datetime(2026, 3, 1, 9, 0)),
 )
 ```
 
 - **The labels cost nothing.** They are `typing.NewType`s: a value is a plain `datetime`, and
   `Instant(x)` hands back `x` - it converts nothing and checks nothing. Arithmetic keeps the
-  label: `self.instant() + timedelta(days=1)` is still an `Instant`.
+  label: `self.clock.instant() + timedelta(days=1)` is still an `Instant`.
 - **mypy keeps them apart.** An `Instant` passed where a `LocalDateTime` is expected is an error,
   and so is a plain `datetime` where an `Instant` is - write `Instant(value)` once, where the
   value comes in, and say what it is.
-- **Where they come from.** `clock.instant()` (and `self.instant()` in an action) gives an
+- **Where they come from.** `clock.instant()` (and `self.clock.instant()` in an action) gives an
   `Instant`. A model's `created_date` and `updated_date` are `Instant`s, and so is every time the
   framework writes - the outbox, notifications, retries, jobs. A generated record says which kind
   each column is ([schemagen](schemagen.md#time-columns)).
@@ -198,7 +198,7 @@ event = ShiftPlannedEvent(
 **Strongly recommended.** Not enforced - nothing refuses another zone - and leaving it is where
 time bugs come from. Three parts:
 
-1. **In your code, UTC.** Take the time from the framework's clock - `self.instant()` in an action,
+1. **In your code, UTC.** Take the time from the framework's clock - `self.clock.instant()` in an action,
    `clock.instant()` elsewhere - which is UTC with no zone attached. Not `datetime.now()`, which is
    local time. Convert to a person's local time only where it is shown to them.
 2. **In the columns, no zone.** `TIMESTAMP` (`WITHOUT TIME ZONE`) on PostgreSQL, `DATETIME(6)` on
