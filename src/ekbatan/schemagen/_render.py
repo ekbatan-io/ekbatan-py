@@ -51,9 +51,9 @@ log = logging.getLogger("io.ekbatan.schemagen")
 #: records arrived with 2, every SQLAlchemy name written through ``import sqlalchemy`` with 3,
 #: the records' timestamps typed by time kind (``Instant``, ``LocalDateTime``,
 #: ``OffsetDateTime``) with 4, sequences as constants, partitions created after their parent
-#: and each table's own options (ENGINE, ``postgresql_partition_by``...) with 5 - so a module written by an older schemagen fails on import
-#: instead of quietly lacking what the code beside it expects. A module from before the number
-#: has none.
+#: and each table's own options (ENGINE, ``postgresql_partition_by``...) with 5 - so a module
+#: written by an older schemagen fails on import instead of quietly lacking what the code beside
+#: it expects. A module from before the number has none.
 SCHEMA_FORMAT = 5
 
 #: The module's own constants, in capitals as a table's are: a table that would take one of
