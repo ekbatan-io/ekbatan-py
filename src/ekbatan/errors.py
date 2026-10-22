@@ -16,6 +16,7 @@ __all__ = [
     "EntityNotFoundError",
     "LockAcquisitionError",
     "StaleRecordError",
+    "TransactionContextError",
     "TransactionThreadError",
     "UnsupportedError",
     "ValidationError",
@@ -106,9 +107,22 @@ class UnsupportedError(EkbatanError):
 class TransactionThreadError(EkbatanError, RuntimeError):
     """A thread reached for a sync transaction that another thread opened.
 
-    A connection serves one thread at a time. Python's ``asyncio.to_thread`` - and any helper
-    built on it - copies the caller's context into the new thread, transaction included, so
-    that thread would otherwise use the very connection the opening thread is using. Refused,
-    rather than shared or quietly replaced by a connection of its own: work done there was
-    meant to be inside the transaction, and outside it a rollback would leave it behind.
+    A connection serves one thread at a time. Python's ``asyncio.to_thread``, anyio's
+    ``to_thread.run_sync``, Starlette's ``run_in_threadpool`` - anything that copies the
+    caller's context into the new thread - carries the transaction along, so that thread would
+    otherwise use the very connection the opening thread is using. Refused, rather than shared
+    or quietly replaced by a connection of its own: work done there was meant to be inside the
+    transaction, and outside it a rollback would leave it behind.
+    """
+
+
+class TransactionContextError(EkbatanError, RuntimeError):
+    """A transaction's block ended in another context than the one it was opened in.
+
+    The open transaction lives in a ``ContextVar``. Code that opens it in one context and runs
+    the work in another - a FastAPI sync ``yield`` dependency, whose body and endpoint FastAPI
+    runs in separate copies of the context - leaves the work outside it: each statement there
+    committed on its own, and a rollback could not undo it. Python notices only when the block
+    ends, and this says why. Open the transaction where the work runs: in the endpoint, the
+    action or the executor, never in a dependency.
     """

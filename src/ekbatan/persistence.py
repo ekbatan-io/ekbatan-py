@@ -7,9 +7,11 @@ session, connection or context threaded through its arguments.
 The ambient transaction lives in a :class:`~contextvars.ContextVar`, which is per-thread and
 per-async-task at once. Work handed to a pool from inside a transaction does not inherit it,
 which is the correct answer: another thread is another connection, and quietly sharing one
-would corrupt both. A thread that *does* inherit it - ``asyncio.to_thread`` copies the caller's
-context - is refused with :class:`~ekbatan.errors.TransactionThreadError`: a sync transaction
-belongs to the thread that opened it.
+would corrupt both. A thread that *does* inherit it - ``asyncio.to_thread``, anyio's and
+Starlette's thread helpers copy the caller's context - is refused with
+:class:`~ekbatan.errors.TransactionThreadError`: a sync transaction belongs to the thread that
+opened it. A block that ends in another context than it began in - a FastAPI sync ``yield``
+dependency - raises :class:`~ekbatan.errors.TransactionContextError`.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from ._logtext import java_list, java_shard, java_shard_pair
 from ._tracing import Span, span
 from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from .config import _unknown_shard_policy as _policy
-from .errors import TransactionThreadError, ValidationError
+from .errors import TransactionContextError, TransactionThreadError, ValidationError
 from .fetching import Db, FetchResult
 from .sharding import ShardIdentifier
 
@@ -73,6 +75,24 @@ def _join(manager: object, conn: Any) -> Token[Mapping[object, Any] | None]:
     return _ambient.set({**_open(), manager: conn})
 
 
+def _leave(token: Token[Mapping[object, Any] | None], label: str) -> None:
+    """End what :func:`_join` began. A token reset in another context than it was made in -
+    the block opened in one copy of the context and closed in another - is the sign that
+    whatever ran in between never saw the transaction; Python's own ``ValueError`` says only
+    that the token "was created in a different Context", so this says what happened."""
+    try:
+        _ambient.reset(token)
+    except ValueError as error:
+        raise TransactionContextError(
+            f"the transaction on shard {label} was closed in another context than the one "
+            f"that opened it, so the work in between ran outside it: each statement there "
+            f"committed on its own. A FastAPI sync `yield` dependency does this - FastAPI "
+            f"runs the dependency and the endpoint in separate contexts. Open the transaction "
+            f"where the work runs - in the endpoint, the action or the executor - never in a "
+            f"dependency."
+        ) from error
+
+
 @dataclass(frozen=True, slots=True)
 class _Owned:
     """A sync transaction's connection, and the thread that opened it.
@@ -95,8 +115,9 @@ def _owned_here(manager: TransactionManager) -> Db | None:
         raise TransactionThreadError(
             f"the transaction on shard {manager.label} was opened by another thread, and a "
             f"connection serves one thread at a time. Do this work in the thread that opened "
-            f"the transaction, or outside it. asyncio.to_thread, and helpers built on it, carry "
-            f"the open transaction into the new thread."
+            f"the transaction, or outside it. asyncio.to_thread, anyio/Starlette's "
+            f"run_in_threadpool, or anything else that copies the context carries the open "
+            f"transaction into the new thread."
         )
     return entry.conn
 
@@ -251,7 +272,7 @@ class TransactionManager:
                 _log_rolled_back(self.shard, error)
                 raise
             finally:
-                _ambient.reset(token)
+                _leave(token, self.label)
 
     def current(self) -> Db | None:
         """The transaction this manager has open right now, or ``None``.

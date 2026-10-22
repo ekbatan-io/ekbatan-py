@@ -31,9 +31,9 @@ from ..config import DataSourceConfig, ShardMemberConfig
 from ..errors import ValidationError
 from ..fetching import FetchResult
 from ..persistence import (
-    _ambient,
     _engine_kwargs,
     _join,
+    _leave,
     _log_committed,
     _log_evicting,
     _log_rolled_back,
@@ -174,7 +174,7 @@ class AsyncTransactionManager:
                     _log_rolled_back(self.shard, error)
                     raise
                 finally:
-                    _ambient.reset(token)
+                    _leave(token, self.label)
 
     def current(self) -> AsyncDb | None:
         """The transaction this manager has open in this task right now, or ``None``."""
