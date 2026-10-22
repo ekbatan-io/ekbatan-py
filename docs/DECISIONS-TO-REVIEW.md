@@ -1142,3 +1142,44 @@ Left as it is, noticed on the way:
 - `tests/schemagen_support.describe_database` reads SQLite's DEFERRABLE and foreign key names
   with schemagen's own text reader (`sqlite_table_parts`), so for those two the round trip is
   backed by `writes` checks on the module's text, which do not depend on it.
+
+## records as typed dicts with column_ methods (EKB-0485-)
+
+2026-10-22, unattended, from [RECORDS-DICT-LEDGER.md](RECORDS-DICT-LEDGER.md). **Decided by the
+user:** every `<Table>Record` is a subclass of `dict[str, Any]` with `__slots__ = ()`, a
+keyword-only `__init__`, `__getitem__` overloads under `TYPE_CHECKING`, and a
+`column_<name>()` method per column - `record["wallet_id"]` and `record.column_wallet_id()` both
+work, both checked by mypy. Attribute properties on SQLAlchemy rows were rejected first (too
+slow). `SCHEMA_FORMAT` is 7.
+
+**The ones worth a glance first:**
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **A read builds each record with `dict.__new__(Record)` + `dict.update(zip(keys, row))`**, skipping the keyword `__init__` (`ekbatan.fetching.records` / `record_of`) | measured on 10k rows x 10 columns, construction only: `row._mapping` 2.9 ms, a hidden subclass of the record with `dict.__init__` 5.4 ms, `__new__` + `update` 6.0 ms, plain `dict(zip)` 4.5 ms, per-row `row._fields` 11.9 ms (so the keys are read once per result). The hidden subclass was 10% faster but makes `type(record)` not the record class and breaks pickling by name; end to end (`find_where`, 10k rows) the difference is lost in the noise | the hidden subclass |
+| **The record class is read off the repository's generic bases** (`ModelRepository[Wallet, WalletsRecord, ...]`, through any generic class of the user's own in between), once, at construction; where it names no record class (a `TypedDict`, a `Mapping`, a type variable) every read hands `from_record` a plain `dict` | no new constructor argument; the generics already say it, and the test harness' async twins keep `__orig_bases__` | a `record_type=` constructor argument |
+| **What a `rows(...)` mapper gets**: a mapper whose first parameter is annotated with a record class gets that class; a repository's own method (`self.from_record`, `self.model_by_field_name`) gets the repository's record even when its annotation cannot be read; anything else - a lambda - still gets the row's mapping (`RowMapping`). The annotation is read once per function (weakly cached), and a decorated mapper is read through `__wrapped__` (`inspect.unwrap`) | a projection lambda over arbitrary columns has no record to be; a typed mapper and `from_record` must get the class, or `record.column_x()` fails at run time while mypy is happy | always a plain dict for every mapper; or always the mapping and document that `column_x()` does not work in `fetch` |
+| **A column the database fills: the keyword is `X \| Unset = UNSET`; `record["x"]` and `column_x()` are typed `X`** (as the column reads, `\| None` if nullable) - not "maybe missing" | read from the database the key is always there, which is where records are read; a record built without it raises `KeyError` on read, as a `NotRequired` key did. mypy does not catch reading it from a just-built record | type the getter `X \| Unset`, forcing a check on every read of every defaulted column |
+| **Keywords are sanitized ASCII**: every character outside `[A-Za-z0-9_]` becomes `_` (so `größe` is `gr__e=`), a leading digit gets `_` before it, a leading `__` becomes `_` (a class body would mangle it), a keyword or `self` / `super` / `__class__` (what `__init__` itself uses), or `UNSET` when the record uses the marker, gets `_` after it | Python NFKC-normalises non-ASCII identifiers, so two different column names could become one keyword silently | allow any `str.isidentifier()` name |
+| **Collisions**: the column whose name needed no change keeps the keyword / method; the others get `_2`, `_3`... in column order, skipping names taken; the run prints a note | deterministic and independent of column order for the natural name | number in column order only |
+| `{**record}`, `dict(record)` and `x.update(record)` are **mypy errors** (it cannot pick a `__getitem__` overload for a plain `str`); documented: `dict(record.items())`, or type it `Mapping[str, Any]` first. Fine at run time | the price of the overloads; adding a catch-all `str` overload would make `record["idd"]` pass | a last `__getitem__(str) -> Any` overload |
+| No `__setitem__` / `get` overloads: `record["x"] = wrong` and `record.get("idd")` are not caught | records are built by keyword; kept the generated class small | overload them too |
+| **An UPDATE cannot be handed the record object itself**: SQLAlchemy reserves a column's name for the SET clause's own bind, so the UPDATE binds `_v_<column>` names. The values are read from the very object `to_record` returned - no copy - and a test proves it with a record that notes each read | SQLAlchemy Core's rule | `text()` statements |
+| On MySQL (no `RETURNING`) `from_record` gets the record `to_record` wrote; if `to_record` returned something that is not an instance of the record class (a plain dict, legacy code) it is copied into one first (`_as_record`) | "from_record always gets the record class" holds on every path | hand it on as it is |
+| `columns_by_field_name` now builds the record class, not a plain dict | the by-name mapping's record should have the methods too | - |
+| The examples keep `record["x"]` in `from_record`; the repositories docs show both forms; the new integration test's `from_record` mixes them | the user's ask: `record["x"]` is the main, documented style | `column_x()` in some example |
+| The generated record's docstring line is longer than 100 characters | the generated module is gitignored and not formatted, as the column lines already are | wrap it |
+| A one-column table's record has a single, non-overloaded `__getitem__` (`@overload` needs two); its `type: ignore[override]` sits on that line. A record with more columns has one ignore, on its first `@overload` (where mypy reports it) | `--strict` warns of an unused ignore, so the placement is proven by the clean mypy run | - |
+| `tests/records.py` reads a record's keys, keywords, types and filled columns by **running its `__init__`** with a marker per keyword; `schemagen_support.hints` uses it | a record no longer has `__annotations__` per key; re-deriving the naming rule in the test would test the rule against itself | parse the generated source |
+| The async test harness' blocking method wrapper (`tests/modes.py`, `_Blocking`) gained `__wrapped__` | `fetch(self.from_record)` in a test's own async repository passes that wrapper; real user code passes the bound method | - |
+| `ekbatan.fetching.record_class` / `records` / `record_of` are module-level helpers, not in `__all__` | shared by the repository and `FetchResult`; not API | private names |
+
+Measured, before (414c085) against after, 10k rows of the suite's wallets: inserts unchanged
+(PostgreSQL ~260 ms, SQLite ~2.9 s); `find_where` about 3% slower on PostgreSQL (89-90 ms ->
+92-96 ms), within noise on SQLite (91-93 -> 92-97 ms). Table in the ledger.
+
+Left as it is, noticed on the way:
+
+- The framework's own tables (`EventsRecord`, `EventNotificationsRecord`, `ScheduledTasksRecord`)
+  are records like any table now; nothing in the framework reads them.
+- `docs-parity.py` reports "4 owed" (Java-side, not fatal) before and after.
