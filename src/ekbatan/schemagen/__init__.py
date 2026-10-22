@@ -349,11 +349,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--config",
-        type=Path,
+        type=_path,
         help="the TOML file with [tool.ekbatan.schemagen]; default ./pyproject.toml, if it has one",
     )
-    parser.add_argument("--migrations", type=Path, help="the migrations directory")
-    parser.add_argument("--out", type=Path, help="the module to write")
+    parser.add_argument("--migrations", type=_path, help="the migrations directory")
+    parser.add_argument("--out", type=_path, help="the module to write")
     parser.add_argument(
         "--url", help="an existing database to migrate and reflect; without it, a throwaway one"
     )
@@ -397,6 +397,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     print(f"wrote {args.out or settings.out}")
     return 0
+
+
+def _path(value: str) -> Path:
+    """A path flag's value, refused when empty: ``Path("")`` is ``.``, the working directory."""
+    if not value.strip():
+        raise argparse.ArgumentTypeError("is empty; leave the flag out, or give it a path")
+    return Path(value)
 
 
 def _show_notes() -> None:

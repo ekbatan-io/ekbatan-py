@@ -69,6 +69,23 @@ class ForcedType:
     dialects: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        for label in (
+            "name",
+            "converter",
+            "sqlalchemy_type",
+            "include_expression",
+            "include_types",
+            "exclude_expression",
+            "exclude_types",
+        ):
+            value = getattr(self, label)
+            if isinstance(value, str) and not value.strip():
+                # `include-expression = ""` matches no column at all, silently; an empty target
+                # is no target. Leave the key out instead.
+                raise ValidationError(
+                    f"a forced type has an empty {label.replace('_', '-')}; leave the key out, "
+                    "or give it a value"
+                )
         given = [t for t in (self.name, self.converter, self.sqlalchemy_type) if t is not None]
         if len(given) != 1:
             raise ValidationError(
@@ -198,6 +215,19 @@ class SchemagenConfig:
     default_forced_types: bool = True
 
     def __post_init__(self) -> None:
+        # Empty is never "the default", however it is given - the file, a flag, a caller: it
+        # used to be read as no setting at all, or as a pattern matching nothing (`--include=`).
+        for label in ("includes", "excludes", "image", "url"):
+            value = getattr(self, label)
+            if isinstance(value, str) and not value.strip():
+                raise ValidationError(
+                    f"{label} is empty; leave it out to use the default, or give it a value"
+                )
+        if any(not isinstance(s, str) or not s.strip() for s in self.schemas):
+            raise ValidationError(
+                "schemas is empty or holds an empty name; leave it out to read the "
+                "connection's own schema only, or name each schema"
+            )
         for label in ("includes", "excludes"):
             pattern = getattr(self, label)
             if pattern is None:
@@ -292,8 +322,9 @@ def config_from_table(table: Mapping[str, Any], *, base: Path, source: str) -> S
             got = f"a {type(value).__name__}" if key == "url" else repr(value)
             raise ValidationError(f"{where}: {key} must be a string, got {got}")
         if value is not None and not value.strip():
-            # Empty is never "the default": `excludes = ""` is a pattern that matches every
-            # table, and the others would quietly fall back. Say so instead.
+            # Empty is never "the default": it used to be read as no setting at all -
+            # `includes = ""` included every table, `excludes = ""` excluded none, `image = ""`
+            # started the default image - which is not what anybody writing it means.
             raise ValidationError(
                 f"{where}: {key} is empty; remove the line to use the default, or give it a value"
             )
@@ -322,6 +353,10 @@ def config_from_table(table: Mapping[str, Any], *, base: Path, source: str) -> S
         _forced_type(entry, f"{where}, forced-types[{i}]") for i, entry in enumerate(forced)
     )
 
+    if any(not s.strip() for s in schemas):
+        raise ValidationError(
+            f"{where}: schemas holds an empty name; remove it, or name the schema"
+        )
     return SchemagenConfig(
         migrations=path("migrations"),
         out=path("out"),

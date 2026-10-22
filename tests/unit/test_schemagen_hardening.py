@@ -339,12 +339,87 @@ def test_paths_are_relative_to_the_file_and_absolute_ones_are_kept(tmp_path: Pat
 def test_an_empty_setting_is_refused_rather_than_read_as_the_default(
     tmp_path: Path, key: str
 ) -> None:
-    """An empty string used to mean "no setting" - and `excludes = ""` is a pattern that matches
-    every table. Refused, with how to get the default (decided EKB-0417)."""
+    """An empty string used to be read as no setting at all - `includes = ""` included every
+    table and `excludes = ""` excluded none - which is not what anybody writing it means.
+    Refused, with how to get the default (decided EKB-0417)."""
     with pytest.raises(ValidationError) as refused:
         load_config(_file(tmp_path, f'{key} = ""'))
 
     assert f"{key} is empty; remove the line to use the default" in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"includes": ""},
+        {"excludes": " "},
+        {"image": ""},
+        {"url": ""},
+        {"schemas": ("",)},
+        {"schemas": ("audit", " ")},
+    ],
+    ids=["includes", "excludes", "image", "url", "schemas", "one schema of two"],
+)
+def test_an_empty_setting_is_refused_however_it_is_given(overrides: dict[str, Any]) -> None:
+    """Not only from the file: a caller's config, and a flag through `with_overrides` (the
+    review found `--include=` read as a pattern matching nothing, `--image=` a traceback)."""
+    with pytest.raises(ValidationError, match="is empty"):
+        SchemagenConfig(**overrides)
+    with pytest.raises(ValidationError, match="is empty"):
+        SchemagenConfig().with_overrides(**overrides)
+
+
+@pytest.mark.parametrize("flag", ["--include=", "--exclude=", "--image=", "--schema=", "--url="])
+def test_an_empty_flag_is_refused(
+    flag: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ekbatan.schemagen import main
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    code = main(
+        [
+            "--config",
+            str(_file(tmp_path, "")),
+            "--migrations",
+            str(migrations),
+            "--out",
+            str(tmp_path / "schema.py"),
+            flag,
+        ]
+    )
+    assert code == 1
+    assert "is empty" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("flag", ["--migrations=", "--out=", "--config="])
+def test_an_empty_path_flag_is_refused(flag: str) -> None:
+    """`Path("")` is `.`, the working directory: refused before it can be read as one."""
+    from ekbatan.schemagen import main
+
+    with pytest.raises(SystemExit) as stopped:
+        main([flag])
+    assert stopped.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "name",
+        "converter",
+        "sqlalchemy_type",
+        "include_expression",
+        "include_types",
+        "exclude_expression",
+        "exclude_types",
+    ],
+)
+def test_a_forced_type_with_an_empty_key_is_refused(key: str) -> None:
+    """`include-expression = ""` matched no column at all, silently."""
+    given: dict[str, Any] = {"name": "Text", "include_types": "X"}
+    given[key] = ""
+    with pytest.raises(ValidationError, match=f"empty {key.replace('_', '-')}"):
+        ForcedType(**given)
 
 
 def test_a_target_is_what_the_columns_become_as_written() -> None:
@@ -1044,3 +1119,8 @@ def test_a_rendered_module_carries_the_current_format_and_passes_it_to_the_check
     assert (
         'check_fingerprint(__file__, MIGRATIONS_FINGERPRINT, "migrations", SCHEMA_FORMAT)' in text
     )
+
+
+def test_an_empty_schema_name_in_the_file_is_refused_naming_the_file(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match=r"in .*pyproject.toml: schemas holds an empty name"):
+        load_config(_file(tmp_path, 'schemas = ["audit", ""]'))
