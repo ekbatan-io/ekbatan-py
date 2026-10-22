@@ -553,3 +553,11 @@ def test_a_column_named_like_its_own_type_makes_the_call_form() -> None:
 def test_a_column_named_like_a_builtin_it_uses_makes_the_call_form() -> None:
     text_ = _render(Column("str", VARCHAR(5), nullable=False))
     assert _hints(text_, "WalletsRecord")["str"] is str
+
+
+def test_a_column_named_with_two_leading_underscores_makes_the_call_form() -> None:
+    """In a class body ``__meta`` is name-mangled to ``_WalletsRecord__meta``: the record would
+    have a key no row has."""
+    text_ = _render(Column("__meta", VARCHAR(5), nullable=False))
+    assert 'WalletsRecord = TypedDict(\n    "WalletsRecord",' in text_
+    assert set(_hints(text_, "WalletsRecord")) == {"id", "__meta"}

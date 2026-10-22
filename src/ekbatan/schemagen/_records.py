@@ -395,9 +395,10 @@ class Field:
 def render(name: str, table: str, fields: list[Field], name_for: Namer) -> str:
     """The ``TypedDict`` for one table.
 
-    Written as a class where it can be. A column whose name is not an identifier, or is the
+    Written as a class where it can be. A column whose name is not an identifier, is the
     name of a type the record uses (a ``date`` column of type ``date``, which in a class body
-    would name the field rather than the type), makes it the call form instead.
+    would name the field rather than the type), or starts with two underscores (which a class
+    body mangles), makes it the call form instead.
     """
     typed_dict = name_for("typing", "TypedDict")
     lines: list[tuple[str, str]] = []
@@ -418,7 +419,11 @@ def render(name: str, table: str, fields: list[Field], name_for: Namer) -> str:
     from ._types import lit
 
     doc = f"A row of `{table}`: what a repository's `to_record` writes and `from_record` reads."
-    if all(n.isidentifier() and not keyword.iskeyword(n) and n not in used for n, _ in lines):
+    # A name with two leading underscores is mangled in a class body (`_WalletsRecord__meta`).
+    if all(
+        n.isidentifier() and not keyword.iskeyword(n) and n not in used and not n.startswith("__")
+        for n, _ in lines
+    ):
         body = "\n".join(f"    {n}: {h}" for n, h in lines) if lines else "    pass"
         return f'class {name}({typed_dict}):\n    """{doc}"""\n\n{body}'
     entries = "".join(f"\n        {lit(n)}: {h}," for n, h in lines)
