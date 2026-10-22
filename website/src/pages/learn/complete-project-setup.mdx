@@ -945,7 +945,7 @@ It starts a throwaway container, runs **your** migrations into it, reflects the 
 a module of SQLAlchemy `Table` definitions for your repositories to query - the same module in
 both modes. Beside each table it writes the table's record, `WalletsRecord` beside `WALLETS`: a
 `dict` with a key per column, typed as the column reads - the `currency` column as the
-`Currency` its converter gives - read as `record["currency"]` or `record.column_currency()`. The repository's `to_record` and `from_record` are typed by it.
+`Currency` its converter gives - read as `record.column_currency()` (preferred) or `record["currency"]`. The repository's `to_record` and `from_record` are typed by it.
 You rarely run this by hand; the Makefile does, when a migration changes.
 
 The flags can live in `pyproject.toml` instead, under `[tool.ekbatan.schemagen]` (`migrations`,

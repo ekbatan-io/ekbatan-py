@@ -52,8 +52,8 @@ A row is a **record**: a `dict` with one key per column, each typed as the colum
 `WALLETS`. A column is read two ways, and both are checked:
 
 ```python
-record["owner_id"]          # the dict way - the main one
-record.column_owner_id()    # the same value, by method
+record.column_owner_id()    # by method - the preferred way
+record["owner_id"]          # the dict way - also fine, the same value, checked the same
 ```
 
 Shortened, the class looks like this:
@@ -121,7 +121,7 @@ run; schemagen says so when it writes the module.
 computed column - is a keyword that defaults to `UNSET` (`from ekbatan.schema import UNSET`).
 Left at that, the key is not in the record at all, so the INSERT leaves the column out and the
 database fills it; an update leaves the row's value as it is. On a record read from the
-database the key is there, so `record["created"]` and `record.column_created()` are typed as
+database the key is there, so `record.column_created()` and `record["created"]` are typed as
 the column reads, not as "maybe missing".
 
 **What mypy cannot do with a record.** `{**record}`, `dict(record)` and
@@ -185,14 +185,14 @@ def to_record(self, wallet: Wallet) -> WalletsRecord:
 
 def from_record(self, record: WalletsRecord) -> Wallet:
     return Wallet(
-        id=ShardedId[Wallet](record["id"]),
-        version=record["version"],
-        state=WalletState[record["state"]],
-        owner_id=record["owner_id"],
-        currency=record["currency"],
-        balance=record["balance"],
-        created_date=record["created_date"],
-        updated_date=record["updated_date"],
+        id=ShardedId[Wallet](record.column_id()),
+        version=record.column_version(),
+        state=WalletState[record.column_state()],
+        owner_id=record.column_owner_id(),
+        currency=record.column_currency(),
+        balance=record.column_balance(),
+        created_date=record.column_created_date(),
+        updated_date=record.column_updated_date(),
     )
 ```
 
@@ -204,22 +204,9 @@ returns is the very `dict` the INSERT is given: no copy is made on the way.
 where an insert or update has no `RETURNING` (MySQL), the record `to_record` wrote. Every read
 the framework does hands it the same: `find`, `get`, `find_many`, `find_where`,
 `find_one_where`, `all`, the rows `add` and `update` read back, a read across shards, and a
-query of your own ended with `.fetch(self.from_record)`. Read each column by key, as above, or
-by its method - the two are the same value:
-
-```python
-def from_record(self, record: WalletsRecord) -> Wallet:
-    return Wallet(
-        id=ShardedId[Wallet](record.column_id()),
-        version=record.column_version(),
-        state=WalletState[record.column_state()],
-        owner_id=record.column_owner_id(),
-        currency=record.column_currency(),
-        balance=record.column_balance(),
-        created_date=record.column_created_date(),
-        updated_date=record.column_updated_date(),
-    )
-```
+query of your own ended with `.fetch(self.from_record)`. Read each column by its method, as
+above - the preferred way. `record["owner_id"]` is fine too: the record is a `dict`, the value
+is the same, and mypy checks the key just as it checks the method.
 
 The record is built from the row once, for about what reading the row's own mapping costs:
 `dict.__new__` and `dict.update` - the keyword `__init__` is skipped, since the row's names are
@@ -466,8 +453,8 @@ name**:
 
 - a mapper whose first parameter is a record class - `from_record(self, record: WalletsRecord)`,
   or a function of your own typed the same way - gets that class, built from the row, so
-  `record.column_currency()` works as `record["currency"]` does. A repository's own method gets
-  the repository's record even when its annotation cannot be read;
+  `record.column_currency()` works (the preferred way), as does `record["currency"]`. A
+  repository's own method gets the repository's record even when its annotation cannot be read;
 - anything else - a lambda, say - gets the row's mapping, `row["currency"]`.
 
 The statement is not checked against the record, so select the table's columns when you hand

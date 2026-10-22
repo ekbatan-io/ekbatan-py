@@ -35,8 +35,8 @@ got there first the update matches zero rows and `StaleRecordError` unwinds the 
 The repository layer sits on **SQLAlchemy Core**. No ORM, no session cache, no lazy loading.
 Each repository writes its mapping - `to_record` / `from_record`, Java's `toRecord` /
 `fromRecord` - typed by the table's **record**, a `dict` subclass schemagen writes beside the
-table (`WalletsRecord` beside `WALLETS`), read as `record["wallet_id"]` or
-`record.column_wallet_id()`, so mypy checks every mapping against the table.
+table (`WalletsRecord` beside `WALLETS`), read as `record.column_wallet_id()` (preferred) or
+`record["wallet_id"]`, so mypy checks every mapping against the table.
 
 ## This is a port
 
@@ -128,8 +128,9 @@ no aliases.)
 A record (since `EKB-0485`, the user's design) is a subclass of `dict[str, Any]` with
 `__slots__ = ()`, a keyword-only `__init__`, `__getitem__` overloads per column under
 `TYPE_CHECKING` (mypy only - one `type: ignore[override]` on the first), and a
-`column_<name>()` method per column. `record["x"]` is the main, documented way to read a
-column; `record.column_x()` the alternative; examples use `record["x"]`. Rules:
+`column_<name>()` method per column. `record.column_x()` is the preferred way to read a
+column, and what every example, doc and `from_record` shows; `record["x"]` is also fine (the
+record is a `dict`) and equally type-checked - say "preferred", never "avoid". Rules:
 
 - **The record is the dict.** `to_record` builds it by keyword, `WalletsRecord(id=..., ...)`
   (`EKB-0447`); the INSERT is given that very object, and an UPDATE reads its values from it -

@@ -87,8 +87,8 @@ a column, such as a `Money` instead of a `Decimal`, [write a converter](#write-y
 Beside every table, schemagen writes the table's **record**: a `dict` class named after the
 table - `orders` gives `OrdersRecord`, `event_notifications` gives `EventNotificationsRecord` -
 with one key per column, each typed as the column reads. It is built by keyword,
-`OrdersRecord(id=..., amount=..., ...)`, and a column is read as `record["amount"]` or
-`record.column_amount()`. A repository's `to_record` returns it and its `from_record` takes it
+`OrdersRecord(id=..., amount=..., ...)`, and a column is read as `record.column_amount()` - the
+preferred way - or as `record["amount"]`, checked the same. A repository's `to_record` returns it and its `from_record` takes it
 ([repositories](repositories.md)), so mypy checks every mapping against the table: a column
 left out, misspelt, added or given the wrong type is a type error, and so is reading a key or a
 method the table does not have. To SQLAlchemy a record is the `dict` an insert is given; the
@@ -115,7 +115,7 @@ A nullable column is `X | None`. A column the database fills itself - a server d
 identity, a generated column, an auto-increment - is a keyword that defaults to `UNSET`
 (`created: Instant | Unset = UNSET`): left at that, the key is not in the record, so an insert
 leaves the column out, as it must for a generated one. Read from the database, the key is there,
-so `record["created"]` is an `Instant`.
+so `record.column_created()` is an `Instant`.
 
 **Every column gets a method named `column_` and its name**, with each character a Python name
 cannot hold made `_`: `order date` gives `column_order_date()`. The prefix keeps any name safe -

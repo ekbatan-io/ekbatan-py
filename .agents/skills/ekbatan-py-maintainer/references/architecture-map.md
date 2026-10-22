@@ -56,8 +56,8 @@ website/             Astro. The only part that does not run through uv
 - `to_record` builds the record by keyword - `WalletsRecord(id=..., version=..., ...)`; a column
   whose name is no Python name has a sanitized keyword (`class_=`, `order_date=`, `_2fa=`), and
   one the database fills defaults to `UNSET` (left out of the record and the INSERT). The INSERT
-  is given that very dict. `from_record` reads `record["x"]` (the documented way) or
-  `record.column_x()`; the framework hands it the record class on every read path.
+  is given that very dict. `from_record` reads `record.column_x()` (the preferred way;
+  `record["x"]` is fine too, equally type-checked); the framework hands it the record class on every read path.
 - The ambient transaction is a `ContextVar`, so it is per-thread and per-task.
 - Opening a transaction inside another one opens a **second** transaction on a second
   connection, as Java's does (`EKB-0301`). Repository calls inside a block join it; nested blocks

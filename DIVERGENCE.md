@@ -1187,8 +1187,8 @@ Where the output differs:
   generates `Wallets` (the table) and `WalletsRecord` (its row). Here `WALLETS` is a `Table` and,
   since `EKB-0408`, `WalletsRecord` is generated beside it, under jOOQ's name: since `EKB-0485`
   a subclass of `dict` with a key per column, typed as the column reads (a converter's column
-  as its user type, as jOOQ's `userType`). A column is read as `record["wallet_id"]` or by its
-  getter, `record.column_wallet_id()` - jOOQ's is `getWalletId()`; the prefix here is `column_`
+  as its user type, as jOOQ's `userType`). A column is read by its getter,
+  `record.column_wallet_id()` (preferred), or as `record["wallet_id"]` - jOOQ's is `getWalletId()`; the prefix here is `column_`
   so that no column name can clash with a `dict` method. No setters, no `store()`, no
   attachment to a connection: it is the `dict` an insert is given, and a type checker's
   contract. One module, `schema.py`; a table in another schema is exported as `SCHEMA_TABLE` /
