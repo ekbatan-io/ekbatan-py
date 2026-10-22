@@ -463,7 +463,8 @@ def _describe_sqlite(connection: Any) -> list[str]:
         for key in getattr(parts, "foreign_keys", ()):
             out.append(
                 f"{table}: fk {key.columns} deferrable={key.deferrable} "
-                f"initially_deferred={key.initially_deferred}"
+                f"initially_deferred={key.initially_deferred} "
+                f"name={getattr(key, 'name', None)}"
             )
         columns = {c["name"]: c for c in inspector.get_columns(table)}
         keyed = {

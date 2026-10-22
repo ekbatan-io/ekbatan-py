@@ -604,6 +604,9 @@ SQLITE += (
             'sqlalchemy.ForeignKeyConstraint(["q"], ["inl.id"], onupdate="SET NULL", '
             'deferrable=True, initially="DEFERRED")',
             'sqlalchemy.ForeignKeyConstraint(["p"], ["cc.id"], ondelete="CASCADE")',
+            # A column's own CONSTRAINT name, which SQLAlchemy's reflection does not read.
+            'sqlalchemy.ForeignKeyConstraint(["code"], ["uq.code"], name="to_uq_fk", '
+            'ondelete="RESTRICT")',
         ),
     ),
 )

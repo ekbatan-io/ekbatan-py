@@ -612,6 +612,8 @@ class SqliteForeignKey:
     #: ``ON UPDATE`` and ``ON DELETE`` from ``PRAGMA foreign_key_list`` - ``None`` for NO ACTION.
     onupdate: str | None = None
     ondelete: str | None = None
+    #: Its ``CONSTRAINT`` name, which reflection reads only for a table-level key.
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -746,7 +748,11 @@ def _sqlite_foreign_key(words: list[str], upper: list[str]) -> SqliteForeignKey 
         word == "INITIALLY" and clause[i + 1 : i + 2] == ["DEFERRED"]
         for i, word in enumerate(clause)
     )
-    return SqliteForeignKey(columns, deferrable, deferrable and deferred)
+    named = upper[:at]
+    name = None
+    if "CONSTRAINT" in named and named.index("CONSTRAINT") + 1 < at:
+        name = unquote(words[named.index("CONSTRAINT") + 1])
+    return SqliteForeignKey(columns, deferrable, deferrable and deferred, name=name)
 
 
 # -- PostgreSQL's catalog -------------------------------------------------------------------------

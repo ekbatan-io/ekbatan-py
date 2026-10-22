@@ -921,7 +921,17 @@ class _Writer:
         return ", deferrable=True" + (', initially="DEFERRED"' if found[1] else "")
 
     def constraint(self, relation: Relation, constraint: Any, generated: set[str]) -> str | None:
-        named = f", name={q(constraint.name)}" if isinstance(constraint.name, str) else ""
+        name = constraint.name
+        sqlite_table = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
+        if (
+            isinstance(constraint, ForeignKeyConstraint)
+            and not isinstance(name, str)
+            and sqlite_table is not None
+        ):
+            # A column's own `CONSTRAINT name REFERENCES ...`: named in the text only.
+            columns = tuple(constraint.column_keys)
+            name = next((k.name for k in sqlite_table.foreign_keys if k.columns == columns), None)
+        named = f", name={q(name)}" if isinstance(name, str) else ""
         if isinstance(constraint, UniqueConstraint) and constraint.columns:
             keys = ", ".join(q(c.name) for c in constraint.columns)
             options = "".join(
@@ -958,7 +968,6 @@ class _Writer:
                 option: getattr(constraint, option)
                 for option in ("ondelete", "onupdate", "deferrable", "initially", "match")
             }
-            sqlite_table = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
             if sqlite_table is not None:
                 # SQLite's reflection misses a column's own REFERENCES actions and a DEFERRABLE
                 # on a line of its own: the actions are PRAGMA foreign_key_list's, DEFERRABLE

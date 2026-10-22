@@ -223,7 +223,7 @@ def test_sqlite_foreign_keys_are_read_with_deferrable_wherever_it_is_written() -
     ).foreign_keys
     assert found == (
         SqliteForeignKey(("p",), False, False),
-        SqliteForeignKey(("q",), True, True),
+        SqliteForeignKey(("q",), True, True, name="q_fk"),
         SqliteForeignKey(("r",), False, False),
         SqliteForeignKey(("a", "b"), True, False),
     )

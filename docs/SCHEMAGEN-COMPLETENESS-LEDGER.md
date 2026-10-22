@@ -150,13 +150,21 @@ without it, no note; **wrong** = built differently, no note.
 
 ## Results
 
-Each row is proven by `tests/integration/test_schemagen_round_trip.py` - a round trip per
-database: the migrated and the rebuilt database describe themselves the same, line for line,
-except for the differences a case names, each of which a note announces at generation time - by
-the type matrix (`tests/integration/test_schemagen_types.py`: new cases `tsquery`, `jsonpath`,
-`integer_array_2d`, `domain`, `inet4`, `point`, each written, rebuilt and read back through the
-sync and async drivers), and by `tests/unit/test_schemagen_completeness.py` (the readers of the
-database's own text, and the spelled-type records).
+(Corrected by the review, EKB-0463: this said each row was proven by the round trip. Not so -
+the round trip then had no case for generated columns, comments, enums, self-referencing keys,
+keys to a unique column, views on views, MySQL/MariaDB other schemas or SQLite foreign keys, and
+compared no view at all. Those cases were added in EKB-0450-0457; see "Review fixes" below.)
+
+The rows are proven three ways. The column types (T rows) by the type matrix
+(`tests/integration/test_schemagen_types.py`: each type written, rebuilt and read back through
+the sync and async drivers, on the database it belongs to). The rest by
+`tests/integration/test_schemagen_round_trip.py` - a round trip per database: the migrated and
+the rebuilt database describe themselves the same, line for line, and each view's columns match
+the tables `view_metadata.create_all` builds, except for the differences a case names, each of
+which a note announces at generation time. The comment above each case names the rows it
+proves; a row is claimed for a database only where a case runs it there, and the docs table in
+`docs/database/schemagen.md` says "yes" only there. The readers of the database's own text are
+unit-tested in `tests/unit/test_schemagen_completeness.py`.
 
 **Able to fail**, run: with the new tests and the source as it was before each fix, the round
 trips fail - `index_elements` on all four databases before EKB-0428; `keys_and_sequences`,
@@ -212,3 +220,4 @@ and made again before B is built.
 | R11 | (finding 11, LOW) the empty-setting refusal (EKB-0417) covered only TOML text keys: `--include=`, `--image=`, `--schema=`, `schemas=[""]`, forced-type `include-expression=""` were not refused (misleading errors, tracebacks, silence); the code comment and DECISIONS said `excludes = ""` used to exclude every table - it excluded none | refused in `SchemagenConfig` and `ForcedType` themselves, so the file, a flag (through `with_overrides`) and a caller all get it; an empty path flag (`--migrations=`, which `Path` makes `.`) is refused by argparse; the comment and the DECISIONS line corrected | `test_an_empty_setting_is_refused_however_it_is_given`, `test_an_empty_flag_is_refused`, `test_an_empty_path_flag_is_refused`, `test_a_forced_type_with_an_empty_key_is_refused`, `test_an_empty_schema_name_in_the_file_is_refused_naming_the_file` (22 red before, all green after) | EKB-0460 |
 | R12 | (finding 12, LOW) `check_fingerprint` said "older schemagen" of a module written by a NEWER one (format 6 under 5) | a newer module says "written by a newer schemagen" and to upgrade ekbatan (regenerating with the older one would lose what the newer wrote); an older one says what it said | `test_a_module_from_a_newer_schemagen_says_newer_and_to_upgrade` | EKB-0461 |
 | R13 | (finding 13, LOW) a column named `__meta` got a name-mangled key in the class form (`_TRecord__meta`) | a name starting with two underscores makes the call form | `test_a_column_named_with_two_leading_underscores_makes_the_call_form` | EKB-0462 |
+| R16 | (found while fixing R4) a SQLite column's own `CONSTRAINT name REFERENCES ...` lost its name - SQLAlchemy reads a key's name only at table level | read from the table's text and written | `sqlite-foreign_keys` (`name="to_uq_fk"`) | EKB-0463 |
