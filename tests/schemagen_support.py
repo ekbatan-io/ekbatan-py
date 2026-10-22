@@ -265,7 +265,11 @@ def own_names(written: str, namespace: dict[str, Any]) -> set[str]:
     """Every name a module binds at the top level that is not a table or a record: its
     imports, `metadata`, `MIGRATIONS_FINGERPRINT`, `SCHEMA_FORMAT` - what a table must not take.
     ``namespace`` is the module's, run."""
-    tables = {k for k, v in namespace.items() if isinstance(v, Table)}
+    from sqlalchemy import Sequence
+
+    # A sequence's constant is named as a table is, and a database refuses a table by a
+    # sequence's name (they share one namespace), so it is no name a table could take.
+    tables = {k for k, v in namespace.items() if isinstance(v, (Table, Sequence))}
     records = {k for k in namespace if k.endswith("Record")}
     bound: set[str] = set()
     for node in ast.parse(written).body:
@@ -397,6 +401,8 @@ def _describe_mysql(connection: Any, name: str, schemas: tuple[str, ...]) -> lis
                 connection.execute(text(f"SHOW CREATE {what} {prefix}`{table}`")).all()[0][1]
             )
             created = re.sub(r" AUTO_INCREMENT=\d+", "", created)
+            # A default naming a sequence names its database, which differs between two.
+            created = re.sub(r"nextval\(`[^`]+`\.", "nextval(", created)
             lines = created.splitlines()
             keys = sorted(
                 line.rstrip(",")

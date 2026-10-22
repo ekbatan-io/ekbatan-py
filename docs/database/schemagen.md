@@ -746,7 +746,7 @@ writes a different shape - the typed records, every SQLAlchemy name written thro
 migrations have not changed:
 
 ```
-schema.py was written by an older schemagen (format 3; this ekbatan writes 4). Regenerate it ...
+schema.py was written by an older schemagen (format 4; this ekbatan writes 5). Regenerate it ...
 ```
 
 A build that only regenerates when the migrations change, like the examples' `Makefile`, keeps

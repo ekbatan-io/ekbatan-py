@@ -50,10 +50,11 @@ log = logging.getLogger("io.ekbatan.schemagen")
 #: The shape of the module this schemagen writes. Raised whenever that shape changes - typed
 #: records arrived with 2, every SQLAlchemy name written through ``import sqlalchemy`` with 3,
 #: the records' timestamps typed by time kind (``Instant``, ``LocalDateTime``,
-#: ``OffsetDateTime``) with 4 - so a module written by an older schemagen fails on import
+#: ``OffsetDateTime``) with 4, sequences as constants, partitions created after their parent
+#: and each table's own options (ENGINE, ``postgresql_partition_by``...) with 5 - so a module written by an older schemagen fails on import
 #: instead of quietly lacking what the code beside it expects. A module from before the number
 #: has none.
-SCHEMA_FORMAT = 4
+SCHEMA_FORMAT = 5
 
 #: The module's own constants, in capitals as a table's are: a table that would take one of
 #: these names is exported with ``_`` after it, as a keyword is.
@@ -110,6 +111,13 @@ class _Writer:
     def column_type(self, relation: Relation, column: Column[Any]) -> str:
         table = relation.table.name
         key = (relation.schema, table, column.name)
+        dimensions = self.reflected.array_dimensions.get(key)
+        if dimensions and isinstance(column.type, sqltypes.ARRAY) and not column.type.dimensions:
+            # PostgreSQL keeps how many dimensions an array was declared with; reflection does
+            # not read it, and a record of `list[int]` for an `INTEGER[][]` would be wrong.
+            from sqlalchemy.dialects import postgresql
+
+            column.type = postgresql.ARRAY(column.type.item_type, dimensions=dimensions)
         sqlite_table = self.reflected.sqlite_tables.get((relation.schema, table))
         collation = sqlite_table.collations.get(column.name) if sqlite_table else None
         if collation is not None:
@@ -147,7 +155,7 @@ class _Writer:
         where = f"{relation.key}.{column.name}"
         record_key = (relation.key, column.name)
         if forced is None or forced.converter is None:
-            source = self._plain_type(where, column, forced, raw, is_json, key)
+            source = self._plain_type(where, column, forced, raw, is_json, relation)
             built = self.built(source)
             spelled = getattr(built, "spelling", None)
             known = (
@@ -168,7 +176,7 @@ class _Writer:
         # column would have without this forced type - the next one that matches and is not a
         # converter, else the type table's.
         inner = next((c for c in matching if c.converter is None), None)
-        impl = self._plain_type(where, column, inner, raw, is_json, key)
+        impl = self._plain_type(where, column, inner, raw, is_json, relation)
         self.helpers.add("converted")
         converter = self.use(resolve(forced))
         # The record holds what the converter gives, read off the converter the module builds.
@@ -246,7 +254,7 @@ class _Writer:
         forced: ForcedType | None,
         raw: str | None,
         is_json: bool,
-        relation_key: tuple[str | None, str, str] = (None, "", ""),
+        relation: Relation | None = None,
     ) -> str:
         """The column's type with no converter: a forced name or SQLAlchemy type, or the type
         table's, or - for a type SQLAlchemy cannot read - the database's own spelling."""
@@ -263,7 +271,13 @@ class _Writer:
         elif is_json:
             emitted = Emitted("sqlalchemy.JSON(none_as_null=True)")
         else:
-            emitted = emit_type(column.type, self.reflected.dialect_name)
+            from sqlalchemy.dialects import postgresql
+
+            emitted = None
+            if isinstance(column.type, postgresql.DOMAIN) and relation is not None:
+                emitted = self.domain(where, column.type, relation)
+            if emitted is None:
+                emitted = emit_type(column.type, self.reflected.dialect_name)
             if (
                 self.reflected.dialect_name == "sqlite"
                 and raw is not None
@@ -277,7 +291,11 @@ class _Writer:
                 # A type SQLAlchemy has no class for: written as the database spells it, so
                 # create_all builds the same column - with MySQL's spatial reference system,
                 # which its spelling of the type leaves out.
-                srid = self.reflected.srids.get((relation_key[0], relation_key[1], column.name))
+                srid = (
+                    self.reflected.srids.get((relation.schema, relation.table.name, column.name))
+                    if relation is not None
+                    else None
+                )
                 spelled = raw if srid is None else f"{raw} SRID {srid}"
                 emitted = Emitted(
                     f"sql_type({lit(spelled)})", frozenset({("ekbatan.schema", "sql_type")})
@@ -371,20 +389,24 @@ class _Writer:
             )
         if column.identity is not None:
             identity = column.identity
-            args = []
-            if identity.always:
-                args.append("always=True")
-            if identity.start not in (None, 1):
-                args.append(f"start={identity.start}")
-            if identity.increment not in (None, 1):
-                args.append(f"increment={identity.increment}")
-            if identity.cycle:
-                args.append("cycle=True")
+            args = ["always=True"] if identity.always else []
+            args += sequence_options(
+                _integer_kind(column.type),
+                start=identity.start,
+                increment=identity.increment,
+                minvalue=identity.minvalue,
+                maxvalue=identity.maxvalue,
+                cycle=identity.cycle,
+                cache=identity.cache,
+            )
             positional.append(f"sqlalchemy.Identity({', '.join(args)})")
 
+        own = self.reflected.own_column.get((relation.schema, relation.table.name, column.name))
+        # A domain column: reflection gives it the domain's NOT NULL; the column's own is this.
+        nullable = (not own[0]) if own is not None else column.nullable
         if single_pk and column.primary_key:
             keywords.append("primary_key=True")
-        elif not column.nullable:
+        elif not nullable:
             keywords.append("nullable=False")
 
         integer = isinstance(column.type, sqltypes.Integer)
@@ -426,14 +448,22 @@ class _Writer:
     ) -> tuple[str | None, str | None]:
         """The column's ``Sequence``, if it has one, and its ``server_default=...``."""
         none = (None, None)
-        if (
-            column.server_default is None
-            or column.computed is not None
-            or column.identity is not None
-        ):
+        if column.computed is not None or column.identity is not None:
             return none
-        arg = getattr(column.server_default, "arg", None)
-        sql = arg.text if isinstance(arg, TextClause) else (arg if isinstance(arg, str) else None)
+        own = self.reflected.own_column.get((relation.schema, relation.table.name, column.name))
+        if own is not None:
+            # A domain column: reflection gives it the domain's default; its own is this.
+            sql: str | None = own[1]
+        elif (relation.schema, relation.table.name, column.name) in self.reflected.lost_defaults:
+            sql = self.reflected.lost_defaults[(relation.schema, relation.table.name, column.name)]
+            return None, f"server_default=sqlalchemy.text({q(sql)})"
+        elif column.server_default is None:
+            return none
+        else:
+            arg = getattr(column.server_default, "arg", None)
+            sql = (
+                arg.text if isinstance(arg, TextClause) else (arg if isinstance(arg, str) else None)
+            )
         if sql is None:
             return none
         if sql.strip().upper() == "NULL":
@@ -448,9 +478,16 @@ class _Writer:
                 # `audit.t_seq_seq` for a table in another schema: the sequence lives there too,
                 # and the default names it there, so create_all must create it there.
                 where, _, name = sequence.group(1).rpartition(".")
+                bare = name.strip(chr(34))
                 schema = f", schema={q(where.strip(chr(34)))}" if where else ""
+                spec = self.reflected.sequences.get((relation.schema, bare))
+                if spec is not None and spec.owner is None:
+                    # A sequence of its own, written once at the module's top as a constant
+                    # (`sequences()`); create_all creates it before any table.
+                    return None, f"server_default=sqlalchemy.text({q(sql)})"
+                options = "".join(f", {o}" for o in self.sequence_args(spec)) if spec else ""
                 return (
-                    f"sqlalchemy.Sequence({q(name.strip(chr(34)))}{schema})",
+                    f"sqlalchemy.Sequence({q(bare)}{schema}{options})",
                     f"server_default=sqlalchemy.text({q(sql)})",
                 )
         return None, f"server_default=sqlalchemy.text({q(sql)})"
@@ -496,13 +533,17 @@ class _Writer:
         if pk_columns and not single_pk:
             name = f", name={q(str(pk.name))}" if self._custom_pk_name(relation) else ""
             keys = ", ".join(q(c) for c in pk_columns)
-            lines.append(f"    sqlalchemy.PrimaryKeyConstraint({keys}{name}),")
+            later = self._deferrable(relation, str(pk.name))
+            lines.append(f"    sqlalchemy.PrimaryKeyConstraint({keys}{name}{later}),")
         for constraint in sorted(table.constraints, key=_by_name):
             line = self.constraint(relation, constraint, generated)
             if line is not None:
                 lines.append(f"    {line},")
-        for check in self.reflected.column_checks.get((relation.schema, table.name), []):
-            lines.append(f"    sqlalchemy.CheckConstraint({q(check)}),")
+        for exclusion in self.reflected.exclusions.get((relation.schema, table.name), []):
+            lines.append(f"    {self.exclusion(relation, exclusion)},")
+        for name, check in self.reflected.column_checks.get((relation.schema, table.name), []):
+            # MariaDB names a column's own check after the column.
+            lines.append(f"    sqlalchemy.CheckConstraint({q(check)}, name={q(name)}),")
         for index in sorted(table.indexes, key=_by_name):
             lines.append(f"    {self.index(index, inline=True, relation=relation)},")
         known = {i.name for i in table.indexes}
@@ -526,6 +567,7 @@ class _Writer:
         if relation.schema is not None:
             lines.append(f"    schema={q(relation.schema)},")
         lines.append(")")
+        lines += self.partitions(relation)
         self.records[relation.key] = (
             self.record_of(relation),
             [
@@ -542,9 +584,87 @@ class _Writer:
         )
         return ["\n".join(lines)]
 
+    def partitions(self, relation: Relation) -> list[str]:
+        """``create_all`` creating a partitioned table's partitions after it, as PostgreSQL
+        prints them - SQLAlchemy has no partition of its own to declare."""
+        children: list[tuple[str, Any]] = []
+
+        def collect(parent: str) -> None:
+            for (schema, name), kind in sorted(
+                self.reflected.relation_kinds.items(), key=lambda kv: kv[0][1]
+            ):
+                if schema == relation.schema and kind.partition_of == parent:
+                    children.append((name, kind))
+                    collect(name)
+
+        collect(relation.table.name)
+        if not children:
+            return []
+
+        def quote(name: str) -> str:
+            return '"' + name.replace('"', '""') + '"'
+
+        def qualified(name: str) -> str:
+            return (
+                quote(name)
+                if relation.schema is None
+                else f"{quote(relation.schema)}.{quote(name)}"
+            )
+
+        constant = self.name_of(relation)
+        lines = []
+        for name, kind in children:
+            parent = qualified(str(kind.partition_of))
+            ddl = f"CREATE TABLE {qualified(name)} PARTITION OF {parent} {kind.partition_bound}"
+            if kind.partition_by is not None:
+                ddl += f" PARTITION BY {kind.partition_by}"
+            # DDL() formats its text with % (`%(table)s`): a % of the SQL's own is said twice.
+            escaped = q(ddl.replace("%", "%%"))
+            lines.append(
+                f'sqlalchemy.event.listen({constant}, "after_create", sqlalchemy.DDL({escaped}))'
+            )
+        self.notes.append(
+            f"{relation.key} is partitioned ({', '.join(n for n, _ in children)}): the "
+            "partitions are not written as tables - query them through it - and create_all "
+            "creates them after it, with the indexes and keys they take from it"
+        )
+        return lines
+
     def table_options(self, relation: Relation) -> list[str]:
         """What the table says about itself beyond its columns and keys, as ``Table`` keywords."""
         options: list[str] = []
+        kind = self.reflected.relation_kinds.get((relation.schema, relation.table.name))
+        if kind is not None and not relation.is_view:
+            if kind.partition_by is not None:
+                options.append(f"postgresql_partition_by={q(kind.partition_by)}")
+            if kind.inherits:
+                parents = [q(p) for p in kind.inherits]
+                options.append(
+                    f"postgresql_inherits={parents[0]}"
+                    if len(parents) == 1
+                    else f"postgresql_inherits=({', '.join(parents)},)"
+                )
+            if kind.unlogged:
+                options.append('prefixes=["UNLOGGED"]')
+        dialect = self.reflected.dialect_name
+        if dialect in ("mysql", "mariadb") and not relation.is_view:
+            # ENGINE, DEFAULT CHARSET, COLLATE, ROW_FORMAT...: a table's character set is its
+            # columns' unless they say their own, so without it a latin1 table's text would be
+            # built utf8mb4. The comment is written as `comment=`; AUTO_INCREMENT's counter is
+            # data, not schema.
+            for option, value in sorted(relation.table.dialect_kwargs.items()):
+                name = option.removeprefix(f"{dialect}_")
+                if value is None or name in ("comment", "auto_increment"):
+                    continue
+                if (
+                    name == "checksum"
+                    and str(relation.table.dialect_kwargs.get(f"{dialect}_engine")).upper()
+                    == "ARIA"
+                ):
+                    continue  # Aria's PAGE_CHECKSUM, which reflection reads as CHECKSUM
+                if not option.startswith(f"{dialect}_"):
+                    continue
+                options.append(f"{dialect}_{name.replace(' ', '_')}={lit(str(value))}")
         found = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
         if found is not None:
             if found.autoincrement:
@@ -585,16 +705,32 @@ class _Writer:
         return not (isinstance(sql, str) and sql.strip().upper() == "NULL")
 
     def _custom_pk_name(self, relation: Relation) -> bool:
+        """Whether the key must be written apart: named other than by default, or DEFERRABLE."""
         pk = relation.table.primary_key
         if pk is None or not pk.name:
             return False
+        if self._deferrable(relation, str(pk.name)):
+            return True
         return pk.name not in (f"{relation.table.name}_pkey", "PRIMARY")
+
+    def _deferrable(self, relation: Relation, name: str) -> str:
+        """``, deferrable=True, initially="DEFERRED"`` for a DEFERRABLE key, else nothing."""
+        found = self.reflected.deferrable.get((relation.schema, relation.table.name, name))
+        if found is None:
+            return ""
+        return ", deferrable=True" + (', initially="DEFERRED"' if found[1] else "")
 
     def constraint(self, relation: Relation, constraint: Any, generated: set[str]) -> str | None:
         named = f", name={q(constraint.name)}" if isinstance(constraint.name, str) else ""
         if isinstance(constraint, UniqueConstraint) and constraint.columns:
             keys = ", ".join(q(c.name) for c in constraint.columns)
-            return f"sqlalchemy.UniqueConstraint({keys}{named})"
+            options = "".join(
+                f", {option}={lit(value)}"
+                for option, value in sorted(constraint.dialect_kwargs.items())
+                if value not in (None, False, [], {}, ())
+            )
+            later = self._deferrable(relation, str(constraint.name))
+            return f"sqlalchemy.UniqueConstraint({keys}{named}{later}{options})"
         if isinstance(constraint, CheckConstraint):
             return f"sqlalchemy.CheckConstraint({q(str(constraint.sqltext))}{named})"
         if isinstance(constraint, ForeignKeyConstraint):
@@ -620,13 +756,103 @@ class _Writer:
                 return None
             options = "".join(
                 f", {option}={lit(value)}"
-                for option in ("ondelete", "onupdate", "deferrable", "initially")
+                for option in ("ondelete", "onupdate", "deferrable", "initially", "match")
                 if (value := getattr(constraint, option)) is not None
             )
             local = ", ".join(q(c) for c in constraint.column_keys)
             remote = ", ".join(q(t) for t in targets)
             return f"sqlalchemy.ForeignKeyConstraint([{local}], [{remote}]{named}{options})"
         return None
+
+    def sequence_args(self, spec: Any) -> list[str]:
+        """A sequence's options as ``Sequence`` keywords: all but the ones PostgreSQL (or
+        MariaDB) would choose by itself."""
+        kind = spec.data_type or "bigint"
+        found = sequence_options(
+            kind,
+            start=spec.start,
+            increment=spec.increment,
+            minvalue=spec.minvalue,
+            maxvalue=spec.maxvalue,
+            cycle=spec.cycle,
+            cache=spec.cache,
+        )
+        if kind in ("smallint", "integer"):
+            found.append(f"data_type=sqlalchemy.{kind.upper()}()")
+        return found
+
+    def domain(self, where: str, domain_type: Any, relation: Relation) -> Emitted | None:
+        """A PostgreSQL domain, all of it: its base type with its length, NOT NULL, default,
+        collation and checks - so create_all on an empty database builds the same domain."""
+        name, schema = domain_type.name, getattr(domain_type, "schema", None)
+        candidates = sorted(
+            (d for (s, n), d in self.reflected.domains.items() if n == name),
+            key=lambda d: (d.schema != (schema or relation.schema_name), d.schema),
+        )
+        if not candidates:
+            return None
+        spec = candidates[0]
+        base: Any = domain_type.data_type
+        if self.dialect is not None and hasattr(self.dialect, "_reflect_type"):
+            try:
+                found = self.dialect._reflect_type(spec.base, {}, {}, f"DOMAIN {name}", None)
+            except Exception:  # a domain over another domain or an enum: reflection's own
+                found = None
+            if found is not None and not isinstance(found, sqltypes.NullType):
+                base = found
+        inner = emit_type(base, self.reflected.dialect_name)
+        if inner is None:
+            inner = Emitted(
+                f"sql_type({lit(spec.base)})", frozenset({("ekbatan.schema", "sql_type")})
+            )
+        args = [q(name), self.use(inner)]
+        if spec.collation is not None:
+            args.append(f"collation={q(spec.collation)}")
+        if spec.default is not None:
+            args.append(f"default=sqlalchemy.text({q(spec.default)})")
+        if len(spec.checks) == 1 and spec.not_null:
+            # SQLAlchemy writes `CONSTRAINT name` before `NOT NULL`, which names the NOT NULL
+            # and not the check: the check keeps its meaning and loses its name.
+            args.append(f"check=sqlalchemy.text({q(spec.checks[0][1])})")
+            self.notes.append(
+                f"{where}: domain {name} is NOT NULL with check {spec.checks[0][0]}; SQLAlchemy "
+                "cannot name a check beside NOT NULL, so create_all names it itself"
+            )
+        elif len(spec.checks) == 1:
+            args.append(f"constraint_name={q(spec.checks[0][0])}")
+            args.append(f"check=sqlalchemy.text({q(spec.checks[0][1])})")
+        elif spec.checks:
+            args.append(
+                f"check=sqlalchemy.text({q(' AND '.join(body for _, body in spec.checks))})"
+            )
+            self.notes.append(
+                f"{where}: domain {name} has {len(spec.checks)} checks "
+                f"({', '.join(n for n, _ in spec.checks)}); SQLAlchemy's DOMAIN declares one, "
+                "so they are written as one, joined by AND, without their names"
+            )
+        if spec.not_null:
+            args.append("not_null=True")
+        if schema is not None:
+            args.append(f"schema={q(schema)}")
+        return Emitted(f"postgresql.DOMAIN({', '.join(args)})")
+
+    def exclusion(self, relation: Relation, exclusion: Any) -> str:
+        """A PostgreSQL ``EXCLUDE`` constraint, as ``postgresql.ExcludeConstraint``."""
+        self.modules.add("postgresql")
+        columns = {c.name for c in relation.table.columns}
+        elements = []
+        for expression, operator in exclusion.elements:
+            name = _identifier(expression)
+            element = q(name) if name in columns else f"sqlalchemy.literal_column({q(expression)})"
+            elements.append(f"({element}, {q(operator)})")
+        options = [f"name={q(exclusion.name)}", f"using={q(exclusion.using)}"]
+        if exclusion.where is not None:
+            options.append(f"where=sqlalchemy.text({q(exclusion.where)})")
+        if exclusion.deferrable:
+            options.append("deferrable=True")
+            if exclusion.initially_deferred:
+                options.append('initially="DEFERRED"')
+        return f"postgresql.ExcludeConstraint({', '.join(elements + options)})"
 
     def index(
         self,
@@ -812,6 +1038,61 @@ _NOW = re.compile(
 )
 
 
+#: The range of each PostgreSQL integer type: what a sequence or identity of it defaults to.
+_INTEGER_RANGE = {
+    "smallint": (-32768, 32767),
+    "integer": (-2147483648, 2147483647),
+    "bigint": (-9223372036854775808, 9223372036854775807),
+}
+
+
+def _integer_kind(column_type: Any) -> str:
+    if isinstance(column_type, sqltypes.SmallInteger):
+        return "smallint"
+    if isinstance(column_type, sqltypes.BigInteger):
+        return "bigint"
+    return "integer"
+
+
+def sequence_options(
+    kind: str,
+    *,
+    start: int | None,
+    increment: int | None,
+    minvalue: int | None,
+    maxvalue: int | None,
+    cycle: bool | None,
+    cache: int | None,
+) -> list[str]:
+    """A sequence's or identity's options, as keywords - those PostgreSQL would not choose by
+    itself for a ``kind`` (``integer``...) sequence, so ``Identity()`` stays ``Identity()``."""
+    low, high = _INTEGER_RANGE.get(kind, _INTEGER_RANGE["bigint"])
+    step = increment if increment is not None else 1
+    least = 1 if step > 0 else low
+    most = high if step > 0 else -1
+    first = minvalue if step > 0 else maxvalue
+    found: list[str] = []
+    for name, value, default in (
+        ("start", start, first if first is not None else (least if step > 0 else most)),
+        ("increment", increment, 1),
+        ("minvalue", minvalue, least),
+        ("maxvalue", maxvalue, most),
+        ("cycle", cycle, False),
+        ("cache", cache, 1),
+    ):
+        if value is not None and value != default:
+            found.append(f"{name}={value!r}")
+    return found
+
+
+def _identifier(text_: str) -> str | None:
+    """The name a piece of SQL is, when it is no more than a name."""
+    found = re.fullmatch(r'"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_$]*)', text_.strip())
+    if found is None:
+        return None
+    return found.group(1).replace('""', '"') if found.group(1) is not None else found.group(2)
+
+
 def _sqlite_named(raw: str) -> bool:
     """Whether SQLAlchemy reads a SQLite type by its name, not only by its affinity."""
     from sqlalchemy.dialects.sqlite.base import ischema_names
@@ -841,6 +1122,35 @@ def _reserved() -> set[str]:
             "SCHEMA_FORMAT",
         }
     )
+
+
+#: What to say of what the database holds and no module can write, by its kind.
+_UNWRITTEN = {
+    "function": "call one with sqlalchemy.func.<name>(...); create_all does not create it",
+    "procedure": "call one with a CALL statement; create_all does not create it",
+    "aggregate": "create_all does not create it",
+    "window function": "create_all does not create it",
+    "trigger": "create_all does not create it - a test that needs one runs the migrations",
+    "event": "create_all does not create it - a test that needs one runs the migrations",
+    "composite type": (
+        "a column of one is written as the database spells its type, and create_all cannot "
+        "create the type - make it first (CREATE TYPE ...), or run the migrations"
+    ),
+    "extension": "create_all does not create one - run CREATE EXTENSION before it",
+}
+
+
+def _plural(kind: str) -> str:
+    return kind[:-1] + "ies" if kind.endswith("y") else kind + ("es" if kind.endswith("x") else "s")
+
+
+def _unwritten(reflected: Reflected) -> list[str]:
+    return [
+        f"the database has {_plural(kind)} schemagen does not write: "
+        f"{', '.join(sorted(names))}. "
+        f"{_UNWRITTEN.get(kind, 'create_all does not create them')}"
+        for kind, names in sorted(reflected.unwritten.items())
+    ]
 
 
 def _by_name(item: Any) -> str:
@@ -883,6 +1193,28 @@ def render_module(
         records[record] = relation
     writer.record_names = set(records)
     writer.constants = set(names)
+    exported_sequences: list[str] = []
+
+    sequences: list[str] = []
+    for (schema, name), spec in sorted(
+        reflected.sequences.items(), key=lambda kv: (kv[0][0] or "", kv[0][1])
+    ):
+        if spec.owner is not None:
+            continue  # a SERIAL's: written on its column
+        constant_name = constant(name if schema is None else f"{schema}_{name}")
+        if constant_name in names or constant_name in ("metadata", "view_metadata"):
+            raise ValidationError(
+                f"the sequence {name} and "
+                f"{names[constant_name].key if constant_name in names else constant_name} "
+                f"would both be exported as {constant_name}; exclude the table with `excludes`"
+            )
+        writer.constants.add(constant_name)
+        args = [q(name), *writer.sequence_args(spec)]
+        if schema is not None:
+            args.append(f"schema={q(schema)}")
+        args.append("metadata=metadata")
+        sequences.append(f"{constant_name} = sqlalchemy.Sequence({', '.join(args)})")
+        exported_sequences.append(constant_name)
 
     generated = {r.key for r in reflected.tables} | {r.key for r in reflected.framework}
     tables: list[tuple[Relation, str]] = []
@@ -900,9 +1232,32 @@ def render_module(
         return f"{text}\n\n\n{render_record(record, relation.key, fields, writer.type_name)}"
 
     body = [with_record(r, t) for r, t in tables]
+    # Inheritance is not a foreign key, so create_all would not know to make the parent first.
+    dependencies = []
+    for relation in reflected.tables:
+        kind = reflected.relation_kinds.get((relation.schema, relation.table.name))
+        for parent in kind.inherits if kind is not None else []:
+            key = parent if relation.schema is None else f"{relation.schema}.{parent}"
+            found = next((r for r in reflected.tables if r.key == key), None)
+            if found is None:
+                writer.notes.append(
+                    f"{relation.key} inherits from {parent}, which is not generated: create_all "
+                    "cannot build it without"
+                )
+                continue
+            dependencies.append(
+                f"{writer.name_of(relation)}.add_is_dependent_on({writer.name_of(found)})"
+            )
+    if dependencies:
+        body.append("\n".join(dependencies))
+    if sequences:
+        body.insert(0, "\n".join(sequences))
+    writer.notes += _unwritten(reflected)
     views = [with_record(r, t) for r, t in view_tables]
 
-    exported = [*sorted(names), *sorted(records), "metadata"] + (["view_metadata"] if views else [])
+    exported = [*sorted([*names, *exported_sequences]), *sorted(records), "metadata"] + (
+        ["view_metadata"] if views else []
+    )
     text = _module_text(writer, body, views, exported, migrations_fingerprint, module)
     return text, reflected.notes + writer.notes
 

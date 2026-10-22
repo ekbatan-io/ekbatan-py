@@ -907,8 +907,8 @@ def test_mariadb_s_column_checks_are_kept_and_its_json_check_is_not_a_check(
 
     written = generate(source, out, url=fresh(backend, "mchk"))
 
-    assert 'sqlalchemy.CheckConstraint("`qty` >= 0")' in written
-    assert 'sqlalchemy.CheckConstraint("json_valid(`doc`)")' in written
+    assert 'sqlalchemy.CheckConstraint("`qty` >= 0", name="qty")' in written
+    assert 'sqlalchemy.CheckConstraint("json_valid(`doc`)", name="doc")' in written
     assert 'sqlalchemy.Column("data", json_column())' in written
     assert 'sqlalchemy.Column("doc", sqlalchemy.TEXT())' in written
     assert 'sqlalchemy.Column("note", sqlalchemy.TEXT())' in written

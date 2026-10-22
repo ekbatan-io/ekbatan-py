@@ -142,7 +142,11 @@ def emit_type(reflected: TypeEngine[Any], dialect: str | None) -> Emitted | None
         if name == "TINYINT" and t.display_width == 1 and not unsigned and not zerofill:
             return _sa("BOOLEAN")
         if unsigned or zerofill or name in ("TINYINT", "MEDIUMINT"):
-            return _of("mysql", name, _kw(unsigned=unsigned, zerofill=zerofill))
+            # ZEROFILL pads to the display width, so with it the width is part of the value.
+            width = t.display_width if zerofill else None
+            return _of(
+                "mysql", name, _kw(display_width=width, unsigned=unsigned, zerofill=zerofill)
+            )
         return _sa(name)
 
     if isinstance(t, mysql.YEAR):
