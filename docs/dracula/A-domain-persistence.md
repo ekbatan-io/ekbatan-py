@@ -16,7 +16,7 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 
 > Superseded (`EKB-0384`): the framework no longer converts time at all. A model keeps its
 > dates exactly as given, every read hands back what the driver returns, and
-> `SystemClock().now()` is UTC with no zone attached - so the model, the column and the clock
+> `SystemClock().instant()` (`now()` until `EKB-0426`) is UTC with no zone attached - so the model, the column and the clock
 > agree, and nothing compares naive with aware. See Part 1, bug 11 in `docs/DRACULAS.md`.
 
 - **What:** Whatever `created_date` / `updated_date` you pass, the model keeps a datetime with

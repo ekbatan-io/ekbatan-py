@@ -1,0 +1,20 @@
+PROBE system.maxFractionDigits: 6
+PROBE system.subMicroNonZero: n/a (datetime holds microseconds)
+PROBE system.nearWallClock: True
+PROBE system.zoneUtc: naive UTC digits (EKB-0384)
+PROBE virtual.default.realTime: True
+PROBE virtual.default.advance: ERR EkbatanError: cannot advance: the clock is not paused. Call pause() or pause_at(...) first, or construct it with an instant.
+PROBE virtual.pauseAt.read: 2025-01-01T00:00:00.123456Z
+PROBE virtual.pauseAt.twoReadsEqual: True
+PROBE virtual.advance1500ms: 2025-01-01T00:00:01.623456Z
+PROBE virtual.advance1us: 2025-01-01T00:00:01.623457Z
+PROBE virtual.advanceNegative: OK 2024-12-31T23:59:51.623457Z
+PROBE virtual.pauseAt.offsetInput: 2025-01-01T00:00:00Z
+PROBE virtual.resumeFrom.nearAnchor: True
+PROBE virtual.resumeFrom.advance: ERR EkbatanError: cannot advance: the clock is not paused. Call pause() or pause_at(...) first, or construct it with an instant.
+PROBE virtual.pause.frozen: True
+PROBE virtual.resume.realTime: True
+PROBE virtual.constructedAtInstant.read: 2025-01-01T00:00:00.123456Z
+PROBE virtual.constructedAtInstant.advance: OK 2025-01-01T00:00:01.123456Z
+PROBE virtual.nanosInstant: n/a (datetime holds microseconds)
+PROBE toStorage.plus2: n/a (to_storage removed by EKB-0384: the framework converts no time)

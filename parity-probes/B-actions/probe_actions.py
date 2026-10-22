@@ -4,6 +4,10 @@ Two PostgreSQL containers (global 0:0, mexico 1:0), the same tables Java's postg
 module migrates (eventlog.events + wallets), and the same scenarios, printing the same PROBE keys.
 
 Run: cd ekbatan-py && uv run --no-sync python parity-probes/B-actions/probe_actions.py
+
+`python.out` is the run recorded when the probe was written. Updated for EKB-0426 (`clock.now()`
+is `clock.instant()`) and re-run 2026-10-22: `python.rerun-2026-10-22.out`, which shows the
+fixes since (Java's JSON keys, SQL NULL payloads).
 """
 
 from __future__ import annotations
@@ -126,7 +130,7 @@ def new_wallet(shard: ShardIdentifier) -> Wallet:
         owner_id=uuid.uuid4(),
         currency="EUR",
         balance=Decimal("10"),
-        created_date=clock.now(),
+        created_date=clock.instant(),
     )
 
 
