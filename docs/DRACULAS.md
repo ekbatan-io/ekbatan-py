@@ -119,7 +119,7 @@ whatever is decided about the rest.
 | 53 | Every non-optional field is checked for `None` automatically | choice | yes | M | A13 |
 | 54 | A model's own `__post_init__` must call `super().__post_init__()` | forced | no | M | A14 |
 | 55 | An event names its model with a string; forgetting it fails at the first event | forced | partly | M | A15 |
-| 56 | Two events with the same fields are equal, even about different models | convention + choice | yes | M | A16 |
+| 56 | ~~Two events with the same fields are equal, even about different models~~ **fixed** (`EKB-0496`): `model_id` and `model_name` are part of an event's equality and hash, so events about different models are never equal | convention + choice | yes | M | A16 |
 | 57 | Exceptions end in `Error`, share `EkbatanError`; `ValidationError` stands for NPE / IAE / ISE | convention | partly | M | A17, B |
 | 58 | `unknown_shard_policy` is a string, not an enum | choice | yes | M | A18, C |
 | 59 | The clock is the framework's own (`now()`); `VirtualClock` is in the main package and starts frozen | forced + choice | partly | M | A19, B |

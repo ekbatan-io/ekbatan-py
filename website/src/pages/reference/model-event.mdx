@@ -61,6 +61,10 @@ fact. They travel in the action's parameters, and a handler reads them off the e
 
 Name them in the past tense: an event describes something that already happened.
 
+An event is a value: two are equal when they are the same class, about the same model
+(`model_id`), with the same fields. The same deposit into two different wallets is two events,
+not one.
+
 ## Serialisation
 
 The payload is JSON, read back into the same class from the dataclass's own annotations.

@@ -119,6 +119,10 @@ whatever each says the balance is - and any model can go in a set or be a dict k
 fields included. It is how Python compares saved records too (Django by primary key, SQLAlchemy by
 one object per row); comparing every field is for value objects.
 
+An event is such a value object: two are equal when they are the same class, about the same model
+(`model_id`), with the same fields. The same deposit into two different wallets is two events,
+not one.
+
 `@dataclass(frozen=True)` on a model would write a whole-row `==` of its own, so the framework
 gives each model this one as it is defined. A model that writes its own `__eq__` keeps it.
 

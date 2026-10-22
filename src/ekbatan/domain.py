@@ -83,11 +83,12 @@ class ModelEvent[M = Any]:
 
     #: The model's id, as a string - Java's ``modelId``, and the ``model_id`` column a consumer
     #: correlates on. Required, and refused when blank, as ``Validate.notBlank`` refuses it.
-    model_id: str = field(compare=False)
+    #: Part of equality: two events about different models are never equal, whatever their data.
+    model_id: str
 
     #: The model class's bare name - Java's ``modelName``, and the ``model_type`` column. Never
     #: passed: it comes off the class line, as Java's comes off ``Wallet.class``.
-    model_name: str = field(init=False, compare=False)
+    model_name: str = field(init=False)
 
     #: Resolved once per event class, from the type argument.
     __model_name__: ClassVar[str | None] = None

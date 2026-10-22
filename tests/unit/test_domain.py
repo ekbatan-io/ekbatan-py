@@ -920,3 +920,23 @@ def test_overriding_event_type_is_a_type_error_to_mypy(tmp_path):
     out, _, status = api.run(["--strict", "--no-incremental", str(source)])
     assert status == 1, out
     assert 'Cannot override final attribute "event_type"' in out, out
+
+
+def test_events_about_different_models_are_never_equal():
+    """Equality left the model out, so a deposit into one wallet equalled the same deposit into
+    another: a set kept one of them, and `event in plan.events` matched the wrong wallet's."""
+    from fixtures.domain import WalletMoneyDepositedEvent
+
+    a = WalletMoneyDepositedEvent(
+        model_id="wallet-a", amount=Decimal("10"), new_balance=Decimal("110")
+    )
+    b = WalletMoneyDepositedEvent(
+        model_id="wallet-b", amount=Decimal("10"), new_balance=Decimal("110")
+    )
+    same = WalletMoneyDepositedEvent(
+        model_id="wallet-a", amount=Decimal("10"), new_balance=Decimal("110")
+    )
+
+    assert a != b
+    assert len({a, b}) == 2
+    assert a == same and hash(a) == hash(same)
