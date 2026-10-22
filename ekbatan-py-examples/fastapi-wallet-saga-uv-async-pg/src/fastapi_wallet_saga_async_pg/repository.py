@@ -62,14 +62,14 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         `RETURNING`, the record `to_record` just wrote.
         """
         return Wallet(
-            id=ShardedId[Wallet](record["id"]),
-            version=record["version"],
-            state=WalletState[record["state"]],
-            owner_id=record["owner_id"],
-            currency=record["currency"],
-            balance=record["balance"],
-            created_date=record["created_date"],
-            updated_date=record["updated_date"],
+            id=ShardedId[Wallet](record.column_id()),
+            version=record.column_version(),
+            state=WalletState[record.column_state()],
+            owner_id=record.column_owner_id(),
+            currency=record.column_currency(),
+            balance=record.column_balance(),
+            created_date=record.column_created_date(),
+            updated_date=record.column_updated_date(),
         )
 
 
@@ -97,11 +97,11 @@ class TransferStepRepository(
 
     def from_record(self, record: TransferStepsRecord) -> TransferStep:
         return TransferStep(
-            id=Id[TransferStep](record["id"]),
-            version=record["version"],
-            state=GenericState[record["state"]],
-            transfer_id=record["transfer_id"],
-            step=record["step"],
+            id=Id[TransferStep](record.column_id()),
+            version=record.column_version(),
+            state=GenericState[record.column_state()],
+            transfer_id=record.column_transfer_id(),
+            step=record.column_step(),
         )
 
     def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:

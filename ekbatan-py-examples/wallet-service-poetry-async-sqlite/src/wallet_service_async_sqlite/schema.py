@@ -8,10 +8,10 @@ reflects the result - so the Python and the database cannot drift.
 Each table has its record beside it - `WALLETS` and `WalletsRecord` - written by hand here as
 schemagen writes it: a `dict` with a key per column, built by keyword
 (`WalletsRecord(id=..., ...)`), each column typed as it reads, `| None` where it may be NULL.
-Read a column as `record["owner_id"]` or `record.column_owner_id()`; the `__getitem__`
-overloads are for mypy only. It is what a repository's `to_record` returns and `from_record`
-takes, so mypy checks the mapping against the table. To SQLAlchemy it is the `dict` an insert
-binds.
+Read a column as `record.column_owner_id()` - the preferred way - or as `record["owner_id"]`,
+equally type-checked; the `__getitem__` overloads are for mypy only. It is what a repository's
+`to_record` returns and `from_record` takes, so mypy checks the mapping against the table. To
+SQLAlchemy it is the `dict` an insert binds.
 
 The framework's own tables are built rather than transcribed: their shape is a contract that a
 Debezium connector or another service binds to, so there is one definition to be right about.

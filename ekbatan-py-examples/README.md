@@ -128,7 +128,8 @@ they were features:
   emitted verbatim that module does not even import.
 - **It writes a typed record beside each table** - `WalletsRecord` beside `WALLETS`, a
   `dict` with a key per column, typed as the column reads (a converter's column as the
-  converter's own class), read as `record["currency"]` or `record.column_currency()`. Each repository's `to_record` returns it and `from_record` takes it,
+  converter's own class), read as `record.column_currency()` (preferred) or
+  `record["currency"]`. Each repository's `to_record` returns it and `from_record` takes it,
   so mypy checks every mapping against the table - the SQLite examples write theirs by hand.
 
 Each generating example also has **two forced types of its own**, so a reader sees a converter
