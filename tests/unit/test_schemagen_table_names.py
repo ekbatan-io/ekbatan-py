@@ -217,13 +217,14 @@ def test_a_table_named_like_anything_the_module_writes_changes_nothing_else(
     exported = constant(name)
     assert isinstance(namespace[exported], Table) and namespace[exported].name == name
     assert exported in namespace["__all__"]
-    # Every other table is built exactly as it is without it.
-    for key, value in baseline.items():
+    # Every other table is built exactly as it is without it. Over a snapshot: the baseline is
+    # shared by every case, and nothing here may depend on it holding still.
+    for key, value in list(baseline.items()):
         if isinstance(value, Table):
             assert describe(namespace[key]) == describe(value), key
     # Every record still names the same types - an import the new table's constant takes,
     # `from uuid import UUID` beside a table `uuid`, comes in under another name.
-    for key, value in baseline.items():
+    for key, value in list(baseline.items()):
         if key.endswith("Record"):
             assert hints(namespace[key], namespace) == hints(value, baseline), key
     # And the module's own names still mean what they meant, but for the one the table takes.
@@ -272,3 +273,34 @@ def test_every_column_is_the_type_its_source_names(rules: str) -> None:
     }
     assert all(n in ("postgresql", "mysql", "sqlite") or n != n.upper() for n in imported)
     assert "\nimport sqlalchemy\n" in written
+
+
+def test_reading_a_record_s_hints_leaves_the_module_s_namespace_as_it_was() -> None:
+    """The flake `dictionary changed size during iteration` (`abstractrange-sqlite`, once in
+    500): a hint is evaluated with the module's namespace as its globals, and a warning raised
+    while it runs - an unclosed SQLite connection's ResourceWarning, when the garbage collector
+    happens to run then - is registered in that frame's globals as `__warningregistry__`. The
+    cached baseline namespace grew while the test iterated it. Made certain here with a hint
+    whose evaluation warns."""
+    import typing
+    import warnings
+
+    from schemagen_support import hints
+
+    def warns() -> type:
+        warnings.warn("a warning while a hint is read", ResourceWarning, stacklevel=2)
+        return int
+
+    namespace: dict[str, Any] = {"warns": warns}
+    exec(
+        "from __future__ import annotations\nfrom typing import TypedDict\n\n"
+        "class R(TypedDict):\n    a: warns()\n",
+        namespace,
+    )
+    assert isinstance(namespace["R"].__annotations__["a"], typing.ForwardRef)
+    before = dict(namespace)
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        assert hints(namespace["R"], namespace) == {"a": int}
+    assert namespace == before
+    assert typing.is_typeddict(namespace["R"])

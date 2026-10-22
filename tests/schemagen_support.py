@@ -254,9 +254,15 @@ def describe(table: Table) -> list[Any]:
 
 def hints(record: Any, namespace: dict[str, Any]) -> dict[str, Any]:
     """A record's types, read in the module's own namespace - a module run by `exec` has no
-    `sys.modules` entry for `typing.get_type_hints` to find."""
+    `sys.modules` entry for `typing.get_type_hints` to find.
+
+    Evaluated in a copy: a warning raised while a hint runs - an unclosed SQLite connection's
+    ResourceWarning, when the garbage collector happens to run then - is registered in the
+    evaluating frame's globals as `__warningregistry__`, and the caller's namespace (a cached
+    baseline a test iterates) would grow under it."""
+    scope = dict(namespace)
     return {
-        key: eval(hint.__forward_arg__, namespace) if isinstance(hint, typing.ForwardRef) else hint
+        key: eval(hint.__forward_arg__, scope) if isinstance(hint, typing.ForwardRef) else hint
         for key, hint in record.__annotations__.items()
     }
 
@@ -269,7 +275,7 @@ def own_names(written: str, namespace: dict[str, Any]) -> set[str]:
 
     # A sequence's constant is named as a table is, and a database refuses a table by a
     # sequence's name (they share one namespace), so it is no name a table could take.
-    tables = {k for k, v in namespace.items() if isinstance(v, (Table, Sequence))}
+    tables = {k for k, v in list(namespace.items()) if isinstance(v, (Table, Sequence))}
     records = {k for k in namespace if k.endswith("Record")}
     bound: set[str] = set()
     for node in ast.parse(written).body:
