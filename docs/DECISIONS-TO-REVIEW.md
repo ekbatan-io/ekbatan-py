@@ -1039,7 +1039,7 @@ feature matrix measured by round trip on all four databases:
 | MySQL `SPATIAL` index's reported prefix of 32 is ignored; MySQL `SRID n` is kept in the spelled type, `sql_type("point SRID 4326")` | - | - |
 | Synthetic keys (jOOQ `syntheticObjects`) are not supported | no reflection to read, and a hand-written `Table` beside the module covers it | a `synthetic-keys` setting |
 
-**Proposals - big new subsystems, not built:**
+**Proposals - big new subsystems, not built. Declined by the user (2026-10-22): none of the three, at least not for now** - no routines, no Python enum classes, no composite-type classes. Kept below only as the record of what was considered; do not build them without asking.
 
 1. **Routines (jOOQ's `Routines`).** jOOQ generates a class per stored function and procedure,
    typed by its parameters, so `Routines.addOne(cfg, 1)` is checked at compile time. Here:
