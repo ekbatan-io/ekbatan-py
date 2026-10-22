@@ -44,7 +44,15 @@ from typing import Any
 from .errors import ValidationError
 from .time import Instant, LocalDateTime, OffsetDateTime
 
-__all__ = ["canonical", "canonical_event", "decode", "dumps", "json_name", "loads"]
+__all__ = [
+    "canonical",
+    "canonical_event",
+    "column_dumps",
+    "decode",
+    "dumps",
+    "json_name",
+    "loads",
+]
 
 
 def json_name(name: str) -> str:
@@ -91,6 +99,23 @@ class _Undeclared:
 
     def __repr__(self) -> str:
         return "<undeclared>"
+
+
+class _SeveralKinds:
+    """A declared union naming more than one time kind (``Instant | LocalDateTime``): a
+    ``datetime`` fits each, so the declaration does not say which it is."""
+
+    __slots__ = ("kinds",)
+
+    def __init__(self, kinds: list[Any]) -> None:
+        self.kinds = kinds
+
+    def message(self, where: str) -> str:
+        names = " | ".join(getattr(k, "__name__", str(k)) for k in self.kinds)
+        return (
+            f"{where} is declared as more than one kind ({names}); pick one - "
+            "Instant, LocalDateTime or OffsetDateTime (ekbatan.time)"
+        )
 
 
 _UNDECLARED = _Undeclared()
@@ -161,9 +186,31 @@ def _resolve(hint: Any, value: Any) -> Any:
                 hint = members[0]
                 continue
             fitting = [m for m in members if _could_be(value, m)]
-            return fitting[0] if len(fitting) == 1 else _UNDECLARED
+            if len(fitting) == 1:
+                hint = fitting[0]
+                continue
+            kinds = _time_kinds(fitting)
+            return _SeveralKinds(kinds) if len(kinds) > 1 else _UNDECLARED
         break
     return hint
+
+
+def _time_kinds(members: Sequence[Any]) -> list[Any]:
+    """The distinct time kinds (or plain ``datetime``) among a union's members, in order."""
+    kinds: list[Any] = []
+    for member in members:
+        while isinstance(member, typing.TypeAliasType) or (
+            typing.get_origin(member) is typing.Annotated
+        ):
+            member = (
+                member.__value__
+                if isinstance(member, typing.TypeAliasType)
+                else typing.get_args(member)[0]
+            )
+        kind = _kind(member)
+        if kind is not _UNDECLARED and not any(kind is k for k in kinds):
+            kinds.append(kind)
+    return kinds
 
 
 def _could_be(value: Any, hint: Any) -> bool:
@@ -196,17 +243,25 @@ def _typed_value_hint(target: type) -> Any:
     return _UNDECLARED
 
 
-def canonical(value: Any, hint: Any = _UNDECLARED, *, where: str = "a value") -> Any:
+def canonical(
+    value: Any, hint: Any = _UNDECLARED, *, where: str = "a value", by_value: bool = False
+) -> Any:
     """``value`` as the JSON tree Java would write for it: dicts, lists, text, numbers.
 
     ``hint`` is its declared type, when the caller knows one; a dataclass's fields carry their
     own. A ``datetime`` is written as the kind declared for it (:mod:`ekbatan.time`), and
     refused when nothing declares one. ``where`` names the value in that refusal.
 
+    ``by_value`` is for a JSON column of the application's own (:func:`column_dumps`): there a
+    ``datetime`` nothing declares, or a field declared plain ``datetime``, is written as it is -
+    no zone for a naive one, its offset (``Z`` at zero) for an aware one - and not refused.
+    Persistence writes what it is given; the refusal is for event payloads and action params,
+    whose JSON a Java reader takes by the declared kind.
+
     Decimals stay ``Decimal`` and floats stay ``float`` here; :func:`dumps` writes them as
     numbers. Running it on its own output changes nothing.
     """
-    return _canonical(value, hint, where)
+    return _canonical(value, hint, where, by_value)
 
 
 def canonical_event(event: Any) -> Any:
@@ -235,7 +290,7 @@ def canonical_event(event: Any) -> Any:
     return tree
 
 
-def _canonical(value: Any, hint: Any, where: str) -> Any:
+def _canonical(value: Any, hint: Any, where: str, by_value: bool = False) -> Any:
     if value is None:
         return None
     if isinstance(value, Enum):
@@ -256,7 +311,7 @@ def _canonical(value: Any, hint: Any, where: str) -> Any:
     if isinstance(value, uuid.UUID):
         return str(value)
     if isinstance(value, datetime):
-        return _datetime(value, _resolve(hint, value), where)
+        return _datetime(value, _resolve(hint, value), where, by_value)
     if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, time):
@@ -274,7 +329,7 @@ def _canonical(value: Any, hint: Any, where: str) -> Any:
         return {"id": text, "value": text}
     if isinstance(value, TypedValue):
         # Java's TypedValue has one getter, getValue().
-        return {"value": _canonical(value.value, _typed_value_hint(type(value)), where)}
+        return {"value": _canonical(value.value, _typed_value_hint(type(value)), where, by_value)}
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         target = type(value)
         owner = _owner(target)
@@ -283,6 +338,7 @@ def _canonical(value: Any, hint: Any, where: str) -> Any:
                 getattr(value, name),
                 _field_hint(target, name),
                 f"{owner} {target.__name__} field {name}",
+                by_value,
             )
             for name, key in _json_fields(target)
         }
@@ -293,23 +349,27 @@ def _canonical(value: Any, hint: Any, where: str) -> Any:
         if isinstance(declared, type) and typing.is_typeddict(declared):
             keyed = typing.get_type_hints(declared)
             return {
-                _key(k): _canonical(v, keyed.get(k, _UNDECLARED), f"{where}[{k!r}]")
+                _key(k, by_value=by_value): _canonical(
+                    v, keyed.get(k, _UNDECLARED), f"{where}[{k!r}]", by_value
+                )
                 for k, v in value.items()
             }
         key_hint, item_hint = args if len(args) == 2 else (_UNDECLARED, _UNDECLARED)
         return {
-            _key(k, key_hint, where): _canonical(v, item_hint, f"{where}[{k!r}]")
+            _key(k, key_hint, where, by_value): _canonical(
+                v, item_hint, f"{where}[{k!r}]", by_value
+            )
             for k, v in value.items()
         }
     if isinstance(value, Sequence | set | frozenset):
         if origin is tuple and args and (len(args) != 2 or args[1] is not Ellipsis):
             positional = list(args) + [_UNDECLARED] * (len(value) - len(args))
             return [
-                _canonical(v, a, f"{where}[{i}]")
+                _canonical(v, a, f"{where}[{i}]", by_value)
                 for i, (v, a) in enumerate(zip(value, positional, strict=False))
             ]
         item = args[0] if args else _UNDECLARED
-        return [_canonical(v, item, f"{where}[{i}]") for i, v in enumerate(value)]
+        return [_canonical(v, item, f"{where}[{i}]", by_value) for i, v in enumerate(value)]
     # Refused rather than written as `str(value)`: for a plain object that is its repr -
     # `<Money object at 0x...>` - and the data would be gone, silently, with an address that
     # changes every run. Java's Jackson writes such an object's fields and reads them back; this
@@ -320,9 +380,11 @@ def _canonical(value: Any, hint: Any, where: str) -> Any:
     )
 
 
-def _key(key: Any, hint: Any = _UNDECLARED, where: str = "a map key") -> str:
+def _key(
+    key: Any, hint: Any = _UNDECLARED, where: str = "a map key", by_value: bool = False
+) -> str:
     """A map key as Jackson writes one: always text."""
-    rendered = _canonical(key, hint, f"{where} key {key!r}")
+    rendered = _canonical(key, hint, f"{where} key {key!r}", by_value)
     if isinstance(rendered, str):
         return rendered
     if isinstance(rendered, bool | int | Decimal | float):
@@ -354,16 +416,27 @@ def _offset(offset: timedelta) -> str:
 _DECLARE = "declare it Instant, LocalDateTime or OffsetDateTime (ekbatan.time)"
 
 
-def _datetime(value: datetime, hint: Any, where: str) -> str:
+def _datetime(value: datetime, hint: Any, where: str, by_value: bool = False) -> str:
     """A ``datetime`` as the kind it is declared: the text Java's Jackson writes for that class.
 
     Nothing is converted. An ``Instant`` is already UTC's digits, so they are written as they
     are with a ``Z``; a value of the wrong sort for its kind - aware where the kind is naive, or
     naive where it is aware - is refused rather than guessed at.
+
+    ``by_value`` (an application's own JSON column): a value with no kind declared, or a plain
+    ``datetime`` field, is written as it is - no zone if naive, its offset if aware.
     """
+    if isinstance(hint, _SeveralKinds):
+        raise ValidationError(hint.message(where))
     kind = _kind(hint)
     offset = value.utcoffset()
     digits = f"{value.date().isoformat()}T{value:%H:%M:%S}"
+    if by_value and (kind is datetime or kind is _UNDECLARED):
+        if offset is None:
+            return f"{digits}{_fraction(value.microsecond, groups=False)}"
+        if offset == timedelta(0):
+            return f"{digits}{_fraction(value.microsecond, groups=True)}Z"
+        return f"{digits}{_fraction(value.microsecond, groups=False)}{_offset(offset)}"
     if kind is Instant:
         if offset is not None:
             raise ValidationError(
@@ -549,6 +622,20 @@ def dumps(value: Any, hint: Any = _UNDECLARED) -> str:
     return "".join(out)
 
 
+def column_dumps(value: Any) -> str:
+    """The engine's JSON writer: :func:`dumps`, but a ``datetime`` with no kind declared is
+    written as it is rather than refused (``canonical(by_value=True)``).
+
+    It writes every JSON column - an application's own ``json_column()`` as well as the outbox,
+    whose params and payloads :mod:`ekbatan.action.outbox` has already turned into text by their
+    declared kinds (refusing an undeclared ``datetime`` there). Persistence writes what it is
+    given, so a ``datetime`` in a ``dict`` written to a column of the application's own is kept:
+    no zone for a naive one, its offset for an aware one."""
+    out: list[str] = []
+    _write(canonical(value, by_value=True), out)
+    return "".join(out)
+
+
 def loads(text: str | bytes | None) -> Any:
     """JSON read with every number that has a fraction or exponent as a ``Decimal``.
 
@@ -602,12 +689,25 @@ def _revive(value: Any, hint: Any) -> Any:
     if value is None or hint is None or hint is Any:
         return value
 
-    # `Decimal | None` and friends: the interesting type is the one that is not None.
-    if typing.get_origin(hint) in (typing.Union, types.UnionType):
-        candidates = [a for a in typing.get_args(hint) if a is not type(None)]
-        if len(candidates) != 1:
-            return value
-        hint = candidates[0]
+    for _ in range(16):
+        # `type When = Instant` and `Annotated[Instant, ...]` read as what they stand for.
+        if isinstance(hint, typing.TypeAliasType):
+            hint = hint.__value__
+            continue
+        if typing.get_origin(hint) is typing.Annotated:
+            hint = typing.get_args(hint)[0]
+            continue
+        # `Decimal | None` and friends: the interesting type is the one that is not None.
+        if typing.get_origin(hint) in (typing.Union, types.UnionType):
+            candidates = [a for a in typing.get_args(hint) if a is not type(None)]
+            if len(candidates) != 1:
+                kinds = _time_kinds(candidates)
+                if len(kinds) > 1:
+                    raise ValueError(_SeveralKinds(kinds).message("the field"))
+                return value
+            hint = candidates[0]
+            continue
+        break
 
     kind = _kind(hint)
     if kind is not _UNDECLARED and kind is not datetime:
@@ -680,9 +780,18 @@ def _read_datetime(value: Any, kind: Any) -> datetime:
     elif kind is Instant:
         text = str(value)
         if text[-1:] not in ("Z", "z"):
+            try:
+                offset = datetime.fromisoformat(text).utcoffset()
+            except ValueError:
+                offset = None
+            instead = (
+                "has an offset and no Z - declare the field OffsetDateTime to read it with its "
+                "offset"
+                if offset is not None
+                else "has no zone - declare the field LocalDateTime to read it as it is"
+            )
             raise ValueError(
-                "an Instant is read from UTC text ending in Z, as Java writes one; this has "
-                "no Z - declare the field LocalDateTime or OffsetDateTime to read it as it is"
+                f"an Instant is read from UTC text ending in Z, as Java writes one; this {instead}"
             )
         found = datetime.fromisoformat(text[:-1])
         if found.utcoffset() is not None:
@@ -694,9 +803,9 @@ def _read_datetime(value: Any, kind: Any) -> datetime:
     if kind is OffsetDateTime and not aware:
         raise ValueError("an OffsetDateTime is read from text with its offset; this has none")
     if kind is not OffsetDateTime and aware:
-        name = "Instant" if kind is Instant else "LocalDateTime"
+        name = "an Instant" if kind is Instant else "a LocalDateTime"
         raise ValueError(
-            f"a {name} has no zone attached; this has one - declare the field OffsetDateTime "
+            f"{name} has no zone attached; this has one - declare the field OffsetDateTime "
             "to read it with its offset"
         )
     return found

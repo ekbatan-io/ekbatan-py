@@ -495,15 +495,17 @@ def engine_for(config: DataSourceConfig) -> Engine:
 def _engine_kwargs(config: DataSourceConfig) -> dict[str, Any]:
     """Everything but the url an engine is built with - one answer for a sync engine and for
     ``ekbatan.aio``'s async one, so the two pools cannot be configured differently."""
-    from ._json import dumps, loads
+    from ._json import column_dumps, loads
 
     kwargs: dict[str, Any] = {
         "echo": config.echo,
         "future": True,
         "connect_args": dict(config.data_source_properties),
         # The JSON Java's Ekbatan writes, byte for byte (Java's field names, decimals as
-        # numbers), and read back with every number as a Decimal. See ekbatan._json.
-        "json_serializer": dumps,
+        # numbers), and read back with every number as a Decimal. See ekbatan._json. A datetime
+        # with no declared kind (one in a dict in the application's own JSON column) is written
+        # as it is given: the outbox has already refused that case for events and params.
+        "json_serializer": column_dumps,
         "json_deserializer": loads,
     }
     if config.dialect != "sqlite":

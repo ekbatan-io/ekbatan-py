@@ -308,3 +308,94 @@ def test_an_aware_utc_value_is_not_taken_for_an_instant_any_more():
     )
     with pytest.raises(ValidationError, match="declared Instant but holds an aware"):
         dumps(datetime(2026, 3, 1, 9, 30, tzinfo=UTC), Instant)
+
+
+# -- review fixes (EKB-0436-) -----------------------------------------------------------------
+
+type When = Instant
+type Wall = LocalDateTime
+
+
+@dataclass(frozen=True)
+class _Aliased:
+    at: When
+    wall: Wall
+    noted: Annotated[OffsetDateTime, "with its offset"]
+    maybe: When | None = None
+
+
+def test_a_type_alias_or_annotated_field_reads_back_as_its_kind():
+    """``type When = Instant`` and ``Annotated[OffsetDateTime, ...]`` are written by their kind
+    and read back by it - not handed back as the text they were written as."""
+    value = _Aliased(
+        at=Instant(NAIVE),
+        wall=LocalDateTime(NAIVE),
+        noted=OffsetDateTime(AWARE),
+        maybe=Instant(NAIVE),
+    )
+    text = dumps(value)
+    assert '"at":"2026-03-01T09:30:00.120Z"' in text
+    back = decode(_Aliased, loads(text))
+    assert back == value
+    assert isinstance(back.at, datetime) and back.at.tzinfo is None
+    assert isinstance(back.noted, datetime) and back.noted.utcoffset() == AWARE.utcoffset()
+
+
+@dataclass(frozen=True)
+class _EitherKind:
+    at: Instant | LocalDateTime
+
+
+def test_a_union_of_two_kinds_is_refused_as_more_than_one_kind():
+    with pytest.raises(
+        ValidationError,
+        match=r"field at is declared as more than one kind \(Instant \| LocalDateTime\); pick one",
+    ):
+        canonical(_EitherKind(Instant(NAIVE)))
+    with pytest.raises(ValidationError, match=r"more than one kind \(Instant \| LocalDateTime\)"):
+        decode(_EitherKind, {"at": "2026-03-01T09:30:00Z"})
+
+
+def test_an_instant_refusal_reads_an_instant_not_a_instant():
+    with pytest.raises(ValidationError) as raised:
+        decode(_Box, {"at": datetime(2026, 3, 1, tzinfo=UTC)})
+    assert "an Instant has no zone attached" in str(raised.value)
+    assert "a Instant" not in str(raised.value)
+
+
+def test_an_instant_given_offset_text_is_pointed_to_offset_date_time_only():
+    with pytest.raises(ValidationError) as raised:
+        decode(_Box, {"at": "2026-03-01T09:30:00+00:00"})
+    message = str(raised.value)
+    assert "declare the field OffsetDateTime" in message
+    assert "LocalDateTime" not in message
+    with pytest.raises(ValidationError) as raised:
+        decode(_Box, {"at": "2026-03-01T09:30:00"})
+    assert "declare the field LocalDateTime" in str(raised.value)
+    assert "OffsetDateTime" not in str(raised.value)
+
+
+def test_a_json_column_writes_a_datetime_it_is_given_as_it_is():
+    """The engine's writer (an application's own ``json_column()``) keeps a ``datetime`` with no
+    kind declared: no zone for a naive one, its offset - Z at zero - for an aware one. The
+    refusal is the outbox's, for event payloads and action params."""
+    from ekbatan._json import column_dumps
+
+    assert column_dumps({"at": NAIVE}) == '{"at":"2026-03-01T09:30:00.12"}'
+    assert column_dumps({"at": AWARE}) == '{"at":"2026-03-01T13:00:00.12+03:30"}'
+    assert column_dumps({"at": datetime(2026, 3, 1, 9, 30, tzinfo=UTC)}) == (
+        '{"at":"2026-03-01T09:30:00Z"}'
+    )
+    assert column_dumps([NAIVE]) == '["2026-03-01T09:30:00.12"]'
+
+    @dataclass(frozen=True)
+    class Plain:
+        at: datetime
+        when: Instant
+
+    assert column_dumps(Plain(NAIVE, Instant(NAIVE))) == (
+        '{"at":"2026-03-01T09:30:00.12","when":"2026-03-01T09:30:00.120Z"}'
+    ), "a declared kind is still written as its kind"
+    # ... and the event and params writer still refuses the same values.
+    with pytest.raises(ValidationError, match="nothing declares a kind"):
+        dumps({"at": NAIVE})
