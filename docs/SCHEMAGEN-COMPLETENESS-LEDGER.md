@@ -221,3 +221,12 @@ and made again before B is built.
 | R12 | (finding 12, LOW) `check_fingerprint` said "older schemagen" of a module written by a NEWER one (format 6 under 5) | a newer module says "written by a newer schemagen" and to upgrade ekbatan (regenerating with the older one would lose what the newer wrote); an older one says what it said | `test_a_module_from_a_newer_schemagen_says_newer_and_to_upgrade` | EKB-0461 |
 | R13 | (finding 13, LOW) a column named `__meta` got a name-mangled key in the class form (`_TRecord__meta`) | a name starting with two underscores makes the call form | `test_a_column_named_with_two_leading_underscores_makes_the_call_form` | EKB-0462 |
 | R16 | (found while fixing R4) a SQLite column's own `CONSTRAINT name REFERENCES ...` lost its name - SQLAlchemy reads a key's name only at table level | read from the table's text and written | `sqlite-foreign_keys` (`name="to_uq_fk"`) | EKB-0463 |
+| R6 | (finding 6, MEDIUM) claims overstated the tests: the ledger's "Results" and schemagen.md's "Each row below is checked on all four databases" | round-trip cases added for generated columns (all four), comments, enums (shared, in another schema, in arrays; MySQL ENUM/SET), self-referencing keys, keys to a unique column, views on views - with views now compared - MySQL/MariaDB other schemas and SQLite foreign keys; the docs table split so each "yes" is a database a case runs on, and the sentence says exactly that; "Results" above corrected | the cases of R0-R5, R7, R8; `docs-website-sync`, `links` | EKB-0450-0457, EKB-0464 |
+
+### Review fixes: results
+
+All 14 findings fixed, plus four more the widened round trip found (R0, R15, R16, and the
+`"char"`/`name` DDL in R9). Round-trip cases: 13 before (PostgreSQL 5, MySQL 3, MariaDB 3,
+SQLite 2), 31 after (PostgreSQL 9, MySQL 9, MariaDB 9, SQLite 4), with views compared in every
+one. Type matrix: `pg_char`, `pg_name`, `enum_backslash`, `set_blank` added. `SCHEMA_FORMAT` is
+6 (MySQL/MariaDB partitioning, after-create statements, sequence defaults).

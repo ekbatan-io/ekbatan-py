@@ -441,17 +441,24 @@ timestamps to `Instant`, PostgreSQL `TIMESTAMPTZ` to `OffsetDateTime`, JSON twic
   indexes), PostgreSQL domains whole, `EXCLUDE` and `DEFERRABLE` keys, partitions, inheritance,
   `UNLOGGED`, array dimensions, every sequence with its options (PostgreSQL, MariaDB), MariaDB's
   `nextval` defaults, MySQL's `SRID`, SQLite's `COLLATE`/`AUTOINCREMENT`/`STRICT`/`WITHOUT
-  ROWID`. MySQL/MariaDB table options are written. **Nothing is dropped silently**: what no
-  module can declare (routines, triggers, composite types, extensions, invisible columns,
-  unenforced checks...) gets one note per kind. `tests/integration/test_schemagen_round_trip.py`
-  proves it: migrate A, generate, `create_all` into B, compare the two catalogs line by line on
-  all four databases. A new feature gets a case there; the matrix is
+  ROWID`, foreign key actions (`PRAGMA foreign_key_list`) and generated columns, the sequence a
+  PostgreSQL default draws on (`pg_depend`, in its real schema), MySQL/MariaDB view columns'
+  NOT NULL and collation. MySQL/MariaDB table options are written - from `SHOW CREATE TABLE` too
+  where reflection does not read them - and partitioning is applied after the table
+  (`after_create` DDL), as are PostgreSQL storage parameters, replica identity and column
+  storage. **Nothing is dropped silently**: what no module can declare (routines, triggers,
+  composite types, extensions, invisible columns, unenforced checks, row level security,
+  policies, rules, collations...) gets one note per kind.
+  `tests/integration/test_schemagen_round_trip.py` proves it: migrate A, generate, `create_all`
+  into B, compare the two catalogs line by line, and each view's columns against
+  `view_metadata.create_all` in C. The docs table says "yes" only where a case there covers it
+  on that database. A new feature gets a case there; the matrix is
   `docs/SCHEMAGEN-COMPLETENESS-LEDGER.md`.
 - **Every table gets a typed record**, `<Table>Record` (jOOQ's name: `wallets` ->
   `WalletsRecord`), a `TypedDict` beside the `Table` (`schemagen/_records.py`). Each key is typed
   from the type object the module builds: a converter's column is the converter's user type -
-  its `from_db` return annotation, else its `Converter[DbT, UserT]` base; **neither is an error,
-  never a silent `Any`**. `Any` only where nothing can say (`sql_type`, a driver-dependent type),
+  its `from_db` return annotation, else its `Converter[DbT, UserT]` base (an annotation of `Any`
+  falls through to the base); **neither is an error, never a silent `Any`**. `Any` only where nothing can say (`sql_type`, a driver-dependent type),
   with a note. Nullable is `| None`; a column the database fills is `NotRequired`. The types are
   proven against what the sync and async drivers really return (`test_schemagen_types`), and
   `tests/unit/test_typed_records_mypy.py` proves mypy catches a missing, misspelt, extra or

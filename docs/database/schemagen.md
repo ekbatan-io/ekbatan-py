@@ -186,6 +186,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | an enum type | `Enum("happy", "sad", name="mood")` | `str` |
 | a domain | `postgresql.DOMAIN("positive_int", INTEGER(), ...)` | its base type's |
 | `INTEGER[][]` | `postgresql.ARRAY(INTEGER(), dimensions=2)` | `list[list[int]]` |
+| an array of a domain | `postgresql.ARRAY(postgresql.DOMAIN(...))` | any - see below |
+| `"char"`, `name` | `sql_type("\"char\"")`, `sql_type("name")` | any, `str` |
 | `xml`, `tsquery`, `jsonpath` | `sql_type("xml")`, ... | `str` |
 | `point`, `vector(3)`, ... | `sql_type("point")`, ... | what the driver gives |
 
@@ -199,6 +201,14 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 - The `MACADDR` row also covers `MACADDR8`, `VARBIT(n)` and `TSVECTOR`. A `BIT(n)` reads as
   `str` through psycopg and as a `BitString` through asyncpg, so its record says `Any`.
 - An enum type is one made with `CREATE TYPE mood AS ENUM ('happy', 'sad')`.
+- An array of a domain reads as a `list` through asyncpg, but psycopg does not know a domain's
+  array type and hands back its text, which SQLAlchemy splits into characters. So its record
+  says `Any`, and a note says so. Read it cast to the base type's array,
+  `sqlalchemy.cast(column, postgresql.ARRAY(sqlalchemy.INTEGER()))`, for a `list` on both.
+- PostgreSQL's one-byte `"char"` and its `name` are written as PostgreSQL spells them;
+  SQLAlchemy reads them as a plain string type that `create_all` would build `VARCHAR`. A
+  `"char"` reads as `str` through psycopg and as `bytes` through asyncpg, so its record says
+  `Any`.
 - The last row is any type SQLAlchemy has no class for, written as PostgreSQL spells it. Its
   value is what the driver gives, usually a `str`.
 
@@ -238,6 +248,10 @@ imported, built again by `metadata.create_all`, and a value written and read bac
   [a uuid stored as text](#a-uuid-stored-as-text).
 - A character set or a collation of its own makes the column MySQL's own `mysql.VARCHAR`, with
   both written out.
+- A `SET` with a blank member is `mysql.SET("", "a", retrieve_as_bitwise=True)`, as SQLAlchemy
+  requires. An `ENUM` or `SET` value holding a backslash is written as MySQL spells the type,
+  `sql_type("enum(...)")` - SQLAlchemy's own would put the backslash into `CREATE TABLE`
+  unescaped - and its record still lists the values. The same goes for MariaDB.
 - A type SQLAlchemy has no class for is written as MySQL spells it, `sql_type("...")`. Its value
   is what the driver gives.
 
@@ -639,32 +653,40 @@ what its `impl` reads as when it converts nothing; a type that says neither is `
 ## What else is generated
 
 Enough for `metadata.create_all` to build, in a test, the database the migrations built. Ekbatan
-uses none of it at run time. Each row below is checked on all four databases by building a second
-database with `create_all` and comparing the two, catalog line by catalog line.
+uses none of it at run time. Each "yes" below is checked on that database by a round trip in the
+test suite: the migrations build one database, `create_all` from the module builds a second, and
+the two are compared line by line from their own catalogs - each view's columns too, against the
+tables `view_metadata.create_all` builds. A "-" is something that database does not have, or
+schemagen does not write there.
 
 ### What schemagen generates
 
 | | PostgreSQL | MySQL | MariaDB | SQLite |
 | --- | --- | --- | --- | --- |
-| columns: type, `NOT NULL`, server default, comment | yes | yes | yes | yes |
+| columns: type, `NOT NULL`, server default | yes | yes | yes | yes |
+| comments on tables and columns | yes | yes | yes | - |
 | identity (with START, INCREMENT, MIN/MAX, CACHE, CYCLE), `SERIAL`, `AUTO_INCREMENT` on the key | yes | yes | yes | yes (`AUTOINCREMENT`) |
 | generated columns, stored and virtual | yes | yes | yes | yes |
 | column collation | yes | yes | yes | yes |
 | primary keys, unique constraints, checks - named, composite | yes | yes | yes | yes |
 | `DEFERRABLE` keys, `UNIQUE NULLS NOT DISTINCT`, `UNIQUE ... INCLUDE` | yes | - | - | - |
-| foreign keys: `ON DELETE`/`ON UPDATE`, `DEFERRABLE`, `MATCH FULL`, self and cross-schema | yes | yes | yes | yes |
+| foreign keys: composite, `ON DELETE`/`ON UPDATE`, self-referencing, to a unique key | yes | yes | yes | yes |
+| foreign keys: `DEFERRABLE` | yes | - | - | yes |
+| foreign keys: `MATCH FULL`; to another schema | yes | -; yes | -; yes | - |
 | `EXCLUDE` constraints | yes | - | - | - |
 | indexes: unique, partial, on expressions, `DESC`, `NULLS LAST`, `COLLATE`, op classes, `INCLUDE`, `USING gin/gist/brin/hash`, `WITH (...)` | yes | - | - | - |
 | indexes: unique, functional, `DESC`, prefix lengths, `FULLTEXT`, `SPATIAL` | - | yes | yes (no functional) | - |
 | indexes: unique, partial, on expressions, `DESC`, `COLLATE` | - | - | - | yes |
-| enums, shared and in other schemas | yes | yes | yes | - |
+| enum types: shared, in other schemas, in arrays | yes | - | - | - |
+| `ENUM` and `SET` | - | yes | yes | - |
 | domains, with their checks, `NOT NULL` and default | yes | - | - | - |
 | sequences, with every option, as module constants | yes | - | yes | - |
-| partitioned tables and their partitions | yes | - | - | - |
+| partitioned tables and their partitions | yes | yes | yes | - |
 | inheritance, `UNLOGGED` | yes | - | - | - |
-| table options: `ENGINE`, `DEFAULT CHARSET`, `COLLATE`, `ROW_FORMAT` | - | yes | yes | - |
+| table options: `ENGINE`, `DEFAULT CHARSET`, `COLLATE`, `ROW_FORMAT`, `STATS_PERSISTENT`, ... | - | yes | yes | - |
+| storage parameters (`fillfactor`...), `REPLICA IDENTITY`, a column's `STORAGE` and `STATISTICS` | yes | - | - | - |
 | `STRICT`, `WITHOUT ROWID` | - | - | - | yes |
-| views and materialized views, in `view_metadata` | yes | yes | yes | yes |
+| views, in `view_metadata` (and materialized views, on PostgreSQL) | yes | yes | yes | yes |
 | other schemas, when listed in `schemas` | yes | yes | yes | - |
 
 - **Views** go in a second `view_metadata`: query them like tables; `create_all` on `metadata`
@@ -676,7 +698,12 @@ database with `create_all` and comparing the two, catalog line by catalog line.
   next number, and `create_all` creates it before the tables.
 - **Partitions** are created by `create_all` right after their table, as PostgreSQL wrote them
   (`CREATE TABLE ... PARTITION OF ... FOR VALUES ...`); they are not tables of their own in the
-  module - query them through the partitioned table.
+  module - query them through the partitioned table. On MySQL and MariaDB, `create_all`
+  partitions the table right after creating it, with the partitioning clause as the server
+  prints it (`ALTER TABLE ... PARTITION BY RANGE (...) (PARTITION p0 ...)`).
+- **What `Table` cannot say** about a PostgreSQL table - its storage parameters, its replica
+  identity, a column's storage, compression or statistics target - is applied the same way, by
+  `ALTER TABLE ...` right after `create_all` creates the table.
 - **A domain** is written whole, `postgresql.DOMAIN("positive_int", sqlalchemy.INTEGER(), check=...)`,
   and `create_all` creates it. A domain with several checks is written with one, joined by `AND`;
   a `NOT NULL` domain's check is written without its name. A note says which.
@@ -695,7 +722,12 @@ Each of these gets a note when the database has one, naming them:
   (a column of one is written as the database spells its type; create the type first).
 - MySQL and MariaDB invisible columns, unenforced checks (`NOT ENFORCED`), index comments,
   invisible or ignored indexes, system-versioned tables, `AUTO_INCREMENT` on a column outside
-  the key: SQLAlchemy cannot declare them, so `create_all` builds the table without them.
+  the key: SQLAlchemy cannot declare them, so `create_all` builds the table without them. A
+  table option the server prints in a form schemagen cannot read is noted as it is.
+- PostgreSQL row level security and policies, rules, extended statistics, index comments, a
+  table's own tablespace and publications: `create_all` builds the tables without them; a test
+  that needs one runs the migrations. A collation of your own is noted too - a column using it
+  is written `COLLATE` it, so create the collation before `create_all`.
 - A foreign key to a table that is not generated. On MySQL and MariaDB, a foreign key from a
   table in a listed schema to a table in the connection's own database is left out too: the
   module writes the own database's tables without its name, so it has no way to name the target,
@@ -704,8 +736,9 @@ Each of these gets a note when the database has one, naming them:
 A few things are built a little differently on purpose, each with a note: a timestamp forced to
 `timestamp_column()` (see [time columns](#time-columns)) and, on MySQL, its
 `DEFAULT CURRENT_TIMESTAMP`, written `CURRENT_TIMESTAMP(6)` as MySQL requires of a
-`DATETIME(6)`; a `SERIAL` that is not the key, whose sequence is not owned by its column; and a
-MariaDB column-level check, built as a table check of the same name.
+`DATETIME(6)`; a `SERIAL` that is not the key, whose sequence is not owned by its column; a
+MariaDB column-level check, built as a table check of the same name; and a PostgreSQL
+`NOT VALID` check or foreign key, built as a plain one.
 
 ## The framework's own tables
 

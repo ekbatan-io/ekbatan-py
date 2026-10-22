@@ -1090,3 +1090,39 @@ skill and the `to_record` docstring in `src/ekbatan/repository.py`.
 | A record whose column name is not a valid Python identifier or is a keyword (`order date`, `class`, a name starting `__`) is built as a dict literal; the docs say so where `to_record` is taught | such a name cannot be a keyword argument. Both forms produce the same plain `dict`, and `mypy --strict` reports a missing key, an unknown or misspelt key and a wrong type for the call form as for the literal (proven by `tests/unit/test_typed_records_mypy.py`, now written in the call form, with the same error codes) |
 | `from_record` still reads `record["key"]`; the event outbox's `to_row` / `from_row` are untouched | not repository mappings |
 | The schemagen-owned files (its docs page, website page, ledger, tests and the generator's own text) were **not changed** - another stream owns them; the places still showing a dict-literal `to_record` are listed for after the merge | avoid conflicting edits |
+
+## schemagen review fixes (EKB-0436-)
+
+2026-10-22, unattended, in the worktree `ekbatan-py-sgfix`, branch `schemagen-review-fixes`
+(commits EKB-0450 to EKB-0464; EKB-0436-0449 belong to the other stream). An independent review
+of schemagen found 14 things, each proven by a run; all are fixed, each with a test that failed
+before and passes after. Row by row: [SCHEMAGEN-COMPLETENESS-LEDGER.md](SCHEMAGEN-COMPLETENESS-LEDGER.md),
+"Review fixes".
+
+**The ones worth a glance first:**
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **MySQL/MariaDB table options reflection does not read (`STATS_PERSISTENT=0`, `STATS_AUTO_RECALC`, MariaDB's `PAGE_CHECKSUM`) are written, not only noted** (finding 14 asked for a note) | read from `SHOW CREATE TABLE`, written as `mysql_stats_persistent="0"`; the round trip proves `create_all` rebuilds them. Only what is not `NAME=value` (a `TABLESPACE` name) is noted | a note only, as the review said |
+| **MySQL/MariaDB partitioning, every kind, is applied after the table**: `sqlalchemy.event.listen(T, "after_create", sqlalchemy.DDL("ALTER TABLE %(fullname)s PARTITION BY ..."))`, the clause as the server prints it; reflection's `mysql_partition_*` options are no longer written - HASH and KEY too, which worked before | one way for all kinds; reflection misreads a LIST partition's values (`IN (1,2)` -> `IN (12)`), and SQLAlchemy cannot write the definitions | keep `mysql_partition_by`/`mysql_partitions` for HASH and KEY, DDL for RANGE/LIST only |
+| **PostgreSQL storage parameters, replica identity, a column's STORAGE/COMPRESSION/STATISTICS/options are written** as `after_create` `ALTER TABLE` statements (beyond the review - found by widening the round trip's description) | they were lost silently; replica identity matters to CDC, which the outbox feeds | notes only |
+| **Row level security, policies, rules, extended statistics, PostgreSQL index comments, a table's tablespace, publications are noted, not written**; a `NOT VALID` check or key is built valid, with a note; a custom collation is noted with "create it before `create_all`" | the review asked for notes at least; each could also be `after_create` DDL (policies, rules, statistics, index comments) | write them as DDL after the table |
+| **`SCHEMA_FORMAT` is 6** | MySQL modules gained `after_create` partitioning; PostgreSQL modules gained `after_create` statements and catalog-true sequence defaults | stay at 5 (the shape did not change, only content) |
+| **A default drawing on a sequence another table's SERIAL owns** writes the default and `BORROWER.add_is_dependent_on(OWNER)`, not a `Sequence(...)` of its own | declaring it made create_all create the sequence first, and the owner's SERIAL then made `owner_t_id_seq1` | declare the sequence on both columns |
+| **An array of a domain**: written whole, but its record is `Any`, with a note | measured: psycopg hands back the array's text, which SQLAlchemy splits into characters (`['{','5',',','6','}']`); asyncpg reads `[5, 6]`. The note names the way out (cast to the base type's array, measured to read a list on psycopg) | a type with a `column_expression` cast in the generated module, so both drivers read a list |
+| **A MySQL/MariaDB ENUM or SET with a backslash in a value is written `sql_type("enum(...)")`**, the record still `Literal[...]` / `set[str]`, with a note | SQLAlchemy's MySQL ENUM/SET put the value into CREATE TABLE with the backslash unescaped (measured: `x\y` built as `xy`); unescaping the values alone fixed the reads and broke the DDL | keep `sqlalchemy.Enum` and accept the DDL loss; it loses SQLAlchemy's value check on write either way |
+| PostgreSQL `"char"` and `name` are written `sql_type("\"char\"")`, `sql_type("name")` (beyond the review: both were rebuilt `VARCHAR`); `"char"`'s record is `Any` (psycopg `str`, asyncpg `bytes`), `name`'s `str` | measured on both drivers | - |
+| A converter whose `from_db` says `-> Any` falls through to its `Converter[DbT, UserT]` base; with no base either, the record is `Any` with a note - not an error | the review asked for exactly this; an explicit `Any` is the user's own statement | refuse it, as a converter that says nothing is refused |
+| An empty path flag (`--migrations=`, `--out=`, `--config=`) is refused by argparse (exit 2, usage); every other empty setting by `ValidationError` (exit 1) | `Path("")` is `.`, so the emptiness is gone by the time the config sees it | read the flags as text and refuse them in `main` |
+| A module from a newer schemagen says "written by a newer schemagen" and to upgrade ekbatan | regenerating it with the older ekbatan would lose what the newer one wrote | say only "regenerate" |
+| MySQL/MariaDB view columns take NOT NULL and a collation other than the database's from `information_schema.COLUMNS` (beyond the review: found by comparing views) | reflection reads a view by `DESCRIBE`; a view's record said `X \| None` of a NOT NULL column | - |
+| SQLite generated columns and a column-level foreign key's name and actions are read from the table's text and `PRAGMA foreign_key_list` (the generated columns beyond the review: `create_all` failed on two in a row) | SQLAlchemy's SQLite reflection reads them with patterns that miss or overrun | - |
+| The round trip's view comparison normalises MariaDB integer display widths (`bigint(12)` vs `bigint(20)`) | a display width is not data; MariaDB gives a computed view column a width of its own | compare widths and note them |
+
+Left as it is, noticed on the way:
+
+- A MySQL view's key column reads as `NotRequired[int]` in its record (reflection marks it
+  auto-increment through the view). Harmless for reads; not changed.
+- `tests/schemagen_support.describe_database` reads SQLite's DEFERRABLE and foreign key names
+  with schemagen's own text reader (`sqlite_table_parts`), so for those two the round trip is
+  backed by `writes` checks on the module's text, which do not depend on it.
