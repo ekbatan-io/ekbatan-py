@@ -60,32 +60,20 @@ Shortened, the class looks like this:
 
 ```python
 class WalletsRecord(dict[str, Any]):
-    __slots__ = ()
-
-    def __init__(
-        self,
-        *,
-        id: UUID,
-        version: int,
-        currency: Currency,  # and a keyword for every other column
-    ) -> None:
-        super().__init__(id=id, version=version, currency=currency)
-
-    if TYPE_CHECKING:  # for mypy only: costs nothing when the code runs
-        @overload  # type: ignore[override]
-        def __getitem__(self, key: Literal["id"]) -> UUID: ...
-        @overload
-        def __getitem__(self, key: Literal["currency"]) -> Currency: ...
-        ...
-        def __getitem__(self, key: str) -> Any: ...
-
-    def column_id(self) -> UUID:
-        return self["id"]
-
-    def column_currency(self) -> Currency:  # the column is CHAR(3); its converter gives a Currency
-        return self["currency"]
-    ...
+    # one method per column, typed by what the column holds
+    def column_id(self) -> UUID: ...
+    def column_version(self) -> int: ...
+    def column_state(self) -> str: ...
+    def column_owner_id(self) -> UUID: ...
+    def column_currency(self) -> Currency: ...      # CHAR(3), through its converter
+    def column_balance(self) -> Decimal: ...
+    def column_created_date(self) -> Instant: ...
+    def column_updated_date(self) -> Instant: ...
 ```
+
+Each `column_x()` returns `record["x"]`. The generated class also has a constructor taking every
+column by keyword - what `to_record` calls - and tells mypy the type of each `record["x"]`;
+`schema.py` shows it in full.
 
 At run time a record is a `dict` and nothing more: `__slots__ = ()`, so no per-record
 `__dict__`, and `record["x"]` is `dict`'s own lookup. To mypy it is the table's shape, and that
