@@ -17,7 +17,10 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "ekbatan"
 #: What a conversion looks like in source.
 CONVERSIONS = re.compile(
     r"astimezone\(|tzinfo\s*=|\btz\s*=|utcfromtimestamp|utcnow|timezone\.utc|"
-    r"\bto_instant\b|\bto_storage\b|\b_as_utc\b|datetime\.now\(UTC\)"
+    r"\bto_instant\b|\bto_storage\b|\b_as_utc\b|datetime\.now\(|"
+    # A naive value's .timestamp() reads it as local time; fromtimestamp() without a tz answers
+    # in local time; subtracting the offset moves the digits; ZoneInfo names a zone to move to.
+    r"\.timestamp\(\)|fromtimestamp\(|-\s*[\w.()\[\]]*\.utcoffset\(\)|\bZoneInfo\("
 )
 
 #: (file, the line's text) that may match, and why.
@@ -52,6 +55,13 @@ def test_the_guard_sees_a_conversion():
         "datetime.fromtimestamp(x, tz=UTC)",
         "datetime.now(UTC)",
         "to_storage(v)",
+        "seconds = value.timestamp()",
+        "datetime.fromtimestamp(seconds)",
+        "utc = value - value.utcoffset()",
+        "value.replace(tzinfo=None) - self.at.utcoffset()",
+        "zone = ZoneInfo('Asia/Tehran')",
+        "stamp = datetime.now()",
+        "stamp = datetime.now(tz)",
     ):
         assert CONVERSIONS.search(line), line
 

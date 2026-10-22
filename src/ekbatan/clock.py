@@ -1,9 +1,9 @@
 """Time, injected.
 
-Every timestamp the framework writes comes from a clock it was handed, never from
-``datetime.now()`` reached for at the point of use. Tests need to freeze it, the conformance
-scenarios freeze it (``given.now``), and a framework that calls the wall clock from six places
-cannot be frozen from one.
+Every timestamp the framework writes comes from a clock it was handed, never from the wall
+clock (``datetime.now``) reached for at the point of use. Tests need to freeze it, the
+conformance scenarios freeze it (``given.now``), and a framework that calls the wall clock from
+six places cannot be frozen from one.
 
 A clock has one method, :meth:`Clock.instant`, as Java's ``clock.instant()``: the current moment
 as an :data:`~ekbatan.time.Instant` - UTC digits with no zone attached.
