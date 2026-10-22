@@ -282,6 +282,21 @@ MYSQL = (
     Case("year", "YEAR", "mysql.YEAR()", 2026),
     Case("enum", "ENUM('NEW', 'DONE')", 'sqlalchemy.Enum("NEW", "DONE")', "DONE"),
     Case("set", "SET('a', 'b')", 'mysql.SET("a", "b")', {"a", "b"}, where=False),
+    # The review (EKB-0457): a value with a backslash was written escaped twice and read back
+    # as no value of the enum; a blank SET member stopped the run.
+    Case(
+        "enum_backslash",
+        r"ENUM('plain', 'x\\y')",
+        r"""sql_type("enum('plain','x\\\\y')")""",
+        "x\\y",
+    ),
+    Case(
+        "set_blank",
+        "SET('', 'a', 'b')",
+        'mysql.SET("", "a", "b", retrieve_as_bitwise=True)',
+        {"a", "b"},
+        where=False,
+    ),
     # Spatial, read as MySQL's own bytes (SRID, then WKB) by both drivers (EKB-0428).
     Case("point", "POINT", 'sql_type("point")', POINT, where=False),
 )

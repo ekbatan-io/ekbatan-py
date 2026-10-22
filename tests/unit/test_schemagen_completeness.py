@@ -240,3 +240,15 @@ def test_sqlite_generated_columns_are_read_each_on_its_own() -> None:
         "virt": ("qty + 1", False),
         "v2": ("f(qty, ')')", False),
     }
+
+
+@pytest.mark.parametrize(
+    ("reflected", "held"),
+    [("x\\\\y", "x\\y"), ("a\\'b", "a'b"), ("tab\\there", "tab\there"), ("plain", "plain")],
+)
+def test_a_mysql_enum_value_is_read_as_the_server_holds_it(reflected: str, held: str) -> None:
+    from ekbatan.schemagen._types import _mysql_value
+
+    assert _mysql_value(reflected, "mysql") == held
+    assert _mysql_value(reflected, "mariadb") == held
+    assert _mysql_value(reflected, "postgresql") == reflected

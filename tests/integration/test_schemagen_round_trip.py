@@ -638,6 +638,39 @@ POSTGRES += (
     ),
 )
 
+#: T18: ENUM and SET values with a backslash and a quote, as the server keeps them.
+#: SQLAlchemy's MySQL ENUM and SET write a backslash unescaped in CREATE TABLE, so such a column
+#: is written as the database spells its type.
+_MY_ENUM_VALUES = Trip(
+    "enum_values",
+    r"""
+    CREATE TABLE t (id INT PRIMARY KEY, e ENUM('plain', 'x\\y', 'it''s'),
+      s SET('a', 'b\\c'));
+    """,
+    writes=(
+        r"""sql_type("enum('plain','x\\\\y','it''s')")""",
+        r"""    e: Literal["plain", "x\\y", "it's"] | None""",
+        "    s: set[str] | None",
+    ),
+    notes=("t.e: a value holds a backslash",),
+)
+
+#: T18: a SET with a blank member.
+_MY_SET_VALUES = Trip(
+    "set_values",
+    """
+    CREATE TABLE t (id INT PRIMARY KEY, s SET('', 'a', 'b'));
+    """,
+    writes=('mysql.SET("", "a", "b", retrieve_as_bitwise=True)',),
+)
+
+MYSQL += (_MY_ENUM_VALUES,)
+MARIADB += (_MY_ENUM_VALUES,)
+
+
+MYSQL += (_MY_SET_VALUES,)
+MARIADB += (_MY_SET_VALUES,)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,

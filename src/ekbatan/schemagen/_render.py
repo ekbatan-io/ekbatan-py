@@ -109,6 +109,9 @@ class _Writer:
     py_types: dict[tuple[str, str], object] = field(default_factory=dict)
     #: The keys of the tables the module builds.
     generated: set[str] = field(default_factory=set)
+    #: A record's type where the column is written as the database spells it but its values
+    #: are known all the same, by (relation key, column name).
+    spelled_hints: dict[tuple[str, str], object] = field(default_factory=dict)
     #: (table, table it must come after) that no foreign key says: a default drawing on a
     #: sequence another table's SERIAL owns.
     after: list[tuple[Relation, str]] = field(default_factory=list)
@@ -170,6 +173,7 @@ class _Writer:
                 if isinstance(spelled, str)
                 else None
             )
+            known = self.spelled_hints.get(record_key, known)
             self.py_types[record_key] = (
                 known if known is not None else self.python_type_of(where, built)
             )
@@ -312,6 +316,7 @@ class _Writer:
                     emitted = Emitted(f"postgresql.ARRAY({item.source}{more})", item.imports)
             if emitted is None:
                 emitted = emit_type(column.type, self.reflected.dialect_name)
+            emitted = self._backslashed(where, column, raw, relation, emitted)
             if (
                 self.reflected.dialect_name == "sqlite"
                 and raw is not None
@@ -345,6 +350,48 @@ class _Writer:
             elif zoned:
                 self._offset_note(where)
         return self.use(emitted)
+
+    def _backslashed(
+        self,
+        where: str,
+        column: Column[Any],
+        raw: str | None,
+        relation: Relation | None,
+        emitted: Emitted | None,
+    ) -> Emitted | None:
+        """A MySQL ENUM or SET with a backslash in a value, written as the database spells it.
+
+        SQLAlchemy's MySQL ENUM and SET put their values into CREATE TABLE with only ``'``
+        escaped, and MySQL reads a backslash there as an escape: ``x\\y`` would be built ``xy``.
+        The record still names the values; a value is a plain string either way.
+        """
+        from sqlalchemy.dialects import mysql
+
+        from ._types import _mysql_value
+
+        dialect = self.reflected.dialect_name
+        if (
+            dialect not in ("mysql", "mariadb")
+            or raw is None
+            or relation is None
+            or not isinstance(column.type, (sqltypes.Enum, mysql.SET))
+        ):
+            return emitted
+        values = column.type.enums if isinstance(column.type, sqltypes.Enum) else column.type.values
+        held = [_mysql_value(v, dialect) for v in values]
+        if not any("\\" in v for v in held):
+            return emitted
+        self.notes.append(
+            f"{where}: a value holds a backslash, which SQLAlchemy's {type(column.type).__name__} "
+            "writes unescaped in CREATE TABLE - so the column is written as the database spells "
+            f"its type, sql_type(...), and its values are plain strings"
+        )
+        from typing import Literal
+
+        self.spelled_hints[(relation.key, column.name)] = (
+            Literal[tuple(held)] if isinstance(column.type, sqltypes.Enum) else set[str]
+        )
+        return Emitted(f"sql_type({lit(raw)})", frozenset({("ekbatan.schema", "sql_type")}))
 
     def _offset_note(self, where: str) -> None:
         """Say what a zoned timestamp gives back: the moment, with an offset not its own."""

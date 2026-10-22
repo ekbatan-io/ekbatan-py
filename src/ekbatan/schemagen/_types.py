@@ -120,12 +120,15 @@ def emit_type(reflected: TypeEngine[Any], dialect: str | None) -> Emitted | None
         return Emitted(f"postgresql.ARRAY({item.source}{dims})", item.imports)
 
     if isinstance(t, sqltypes.Enum):
-        values = ", ".join(lit(v) for v in t.enums)
+        values = ", ".join(lit(_mysql_value(v, dialect)) for v in t.enums)
         extra = _kw(name=getattr(t, "name", None), schema=getattr(t, "schema", None))
         return _sa("Enum", ", ".join(x for x in (values, extra) if x))
 
     if isinstance(t, mysql.SET):
-        return _of("mysql", "SET", ", ".join(lit(v) for v in t.values))
+        # A blank member needs the bitwise reading, as SQLAlchemy refuses it otherwise.
+        bitwise = _kw(retrieve_as_bitwise=bool(t.retrieve_as_bitwise))
+        values = ", ".join(lit(_mysql_value(v, dialect)) for v in t.values)
+        return _of("mysql", "SET", ", ".join(x for x in (values, bitwise) if x))
 
     if isinstance(t, sqltypes.JSON):
         if isinstance(t, postgresql.JSONB):
@@ -233,6 +236,18 @@ def emit_type(reflected: TypeEngine[Any], dialect: str | None) -> Emitted | None
         return _sa("Uuid")
 
     return _as_reflected(t)
+
+
+#: MySQL's escapes in a string literal, as ``SHOW CREATE TABLE`` writes an ENUM's or a SET's
+#: values - which SQLAlchemy's reflection reads with only ``''`` undone.
+_MYSQL_ESCAPES = {"0": "\0", "b": "\b", "n": "\n", "r": "\r", "t": "\t", "Z": "\x1a"}
+
+
+def _mysql_value(value: str, dialect: str | None) -> str:
+    """An ENUM or SET value as the server holds it: ``x\\\\y`` as reflected is ``x\\y``."""
+    if dialect not in ("mysql", "mariadb") or "\\" not in value:
+        return value
+    return re.sub(r"\\(.)", lambda m: _MYSQL_ESCAPES.get(m.group(1), m.group(1)), value, flags=re.S)
 
 
 def _string(t: sqltypes.String) -> Emitted | None:
