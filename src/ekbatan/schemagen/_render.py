@@ -853,10 +853,24 @@ class _Writer:
                         f"generated; left out"
                     )
                 return None
-            options = "".join(
-                f", {option}={lit(value)}"
+            said = {
+                option: getattr(constraint, option)
                 for option in ("ondelete", "onupdate", "deferrable", "initially", "match")
-                if (value := getattr(constraint, option)) is not None
+            }
+            sqlite_table = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
+            if sqlite_table is not None:
+                # SQLite's reflection misses a column's own REFERENCES actions and a DEFERRABLE
+                # on a line of its own: the actions are PRAGMA foreign_key_list's, DEFERRABLE
+                # the table's text.
+                columns = tuple(constraint.column_keys)
+                text_of = next((k for k in sqlite_table.foreign_keys if k.columns == columns), None)
+                if text_of is not None:
+                    said["ondelete"] = text_of.ondelete
+                    said["onupdate"] = text_of.onupdate
+                    said["deferrable"] = True if text_of.deferrable else None
+                    said["initially"] = "DEFERRED" if text_of.initially_deferred else None
+            options = "".join(
+                f", {option}={lit(value)}" for option, value in said.items() if value is not None
             )
             local = ", ".join(q(c) for c in constraint.column_keys)
             remote = ", ".join(q(t) for t in targets)

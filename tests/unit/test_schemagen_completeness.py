@@ -208,3 +208,22 @@ def test_mariadb_partitioning_is_bare_and_quoted_options_keep_their_quotes() -> 
 def test_a_table_with_no_options_or_partitions() -> None:
     found = mysql_table_parts("CREATE TABLE `t` (\n  `id` int NOT NULL\n)")
     assert (found.partitioning, found.options, found.unread) == (None, (), "")
+
+
+def test_sqlite_foreign_keys_are_read_with_deferrable_wherever_it_is_written() -> None:
+    from ekbatan.schemagen._reflect import SqliteForeignKey
+
+    found = sqlite_table_parts(
+        "CREATE TABLE c (id INTEGER PRIMARY KEY,\n"
+        "  p INT REFERENCES cc (id) ON DELETE CASCADE,\n"
+        "  q INT NOT NULL CONSTRAINT q_fk REFERENCES c (id) DEFERRABLE INITIALLY DEFERRED,\n"
+        "  r INT REFERENCES c NOT DEFERRABLE,\n"
+        '  a INT, b INT, FOREIGN KEY ("a", b) REFERENCES cp (a, b)\n'
+        "    ON UPDATE CASCADE\n    DEFERRABLE INITIALLY IMMEDIATE)"
+    ).foreign_keys
+    assert found == (
+        SqliteForeignKey(("p",), False, False),
+        SqliteForeignKey(("q",), True, True),
+        SqliteForeignKey(("r",), False, False),
+        SqliteForeignKey(("a", "b"), True, False),
+    )

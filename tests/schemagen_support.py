@@ -459,6 +459,12 @@ def _describe_sqlite(connection: Any) -> list[str]:
         parts = sqlite_table_parts(str(sql))
         collations = sorted(parts.collations.items())
         out.append(f"{table}: options {parts.options}, collations {collations}")
+        # PRAGMA foreign_key_list has a key's actions but not whether it is DEFERRABLE.
+        for key in getattr(parts, "foreign_keys", ()):
+            out.append(
+                f"{table}: fk {key.columns} deferrable={key.deferrable} "
+                f"initially_deferred={key.initially_deferred}"
+            )
         columns = {c["name"]: c for c in inspector.get_columns(table)}
         keyed = {
             r[1] for r in connection.exec_driver_sql(f"PRAGMA table_info({quoted(table)})") if r[5]

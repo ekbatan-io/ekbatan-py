@@ -580,6 +580,34 @@ POSTGRES += (
     ),
 )
 
+SQLITE += (
+    # K7, K8: every way SQLite says a foreign key's actions and DEFERRABLE.
+    Trip(
+        "foreign_keys",
+        """
+        CREATE TABLE cp (a INT, b INT, PRIMARY KEY (a, b));
+        CREATE TABLE cc (id INTEGER PRIMARY KEY, a INT, b INT,
+          FOREIGN KEY (a, b) REFERENCES cp (a, b) ON DELETE CASCADE ON UPDATE CASCADE
+          DEFERRABLE INITIALLY DEFERRED);
+        CREATE TABLE inl (
+          id INTEGER PRIMARY KEY,
+          p INT REFERENCES cc (id) ON DELETE CASCADE,
+          q INT REFERENCES inl (id) ON UPDATE SET NULL DEFERRABLE INITIALLY DEFERRED
+        );
+        CREATE TABLE uq (id INTEGER PRIMARY KEY, code TEXT UNIQUE);
+        CREATE TABLE to_uq (id INTEGER PRIMARY KEY,
+          code TEXT CONSTRAINT to_uq_fk REFERENCES uq (code) ON DELETE RESTRICT);
+        """,
+        writes=(
+            'sqlalchemy.ForeignKeyConstraint(["a", "b"], ["cp.a", "cp.b"], ondelete="CASCADE", '
+            'onupdate="CASCADE", deferrable=True, initially="DEFERRED")',
+            'sqlalchemy.ForeignKeyConstraint(["q"], ["inl.id"], onupdate="SET NULL", '
+            'deferrable=True, initially="DEFERRED")',
+            'sqlalchemy.ForeignKeyConstraint(["p"], ["cc.id"], ondelete="CASCADE")',
+        ),
+    ),
+)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,

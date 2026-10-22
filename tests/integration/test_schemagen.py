@@ -366,6 +366,14 @@ CREATE TABLE children (
 CREATE VIEW parent_totals AS SELECT id, qty FROM parents;
 """,
 }
+#: SQLite's foreign keys spelled every way its reflection reads differently: a column's own
+#: REFERENCES with actions, and a table-level one with DEFERRABLE on a line of its own.
+SHAPE["sqlite"] = SHAPE["sqlite"].replace(
+    "    label VARCHAR(20),\n    CONSTRAINT pk_children",
+    "    label VARCHAR(20),\n    code VARCHAR(10),\n"
+    "    FOREIGN KEY (code) REFERENCES parents (code) ON UPDATE CASCADE\n"
+    "        DEFERRABLE INITIALLY DEFERRED,\n    CONSTRAINT pk_children",
+)
 
 
 def _shape(url: str) -> dict[str, Any]:
@@ -404,7 +412,9 @@ def _shape(url: str) -> dict[str, Any]:
                     tuple(f["constrained_columns"]),
                     f["referred_table"],
                     tuple(f["referred_columns"]),
-                    f.get("options", {}).get("ondelete"),
+                    # SQLite's comes from PRAGMA foreign_key_list below: SQLAlchemy reads
+                    # no action of a column's own REFERENCES.
+                    f.get("options", {}).get("ondelete") if db.dialect.name != "sqlite" else "",
                 )
                 for f in found.get_foreign_keys(table)
             )
@@ -416,6 +426,23 @@ def _shape(url: str) -> dict[str, Any]:
                 shape[f"{table}.comment"] = found.get_table_comment(table).get("text")
             except NotImplementedError:
                 shape[f"{table}.comment"] = None
+            if db.dialect.name == "sqlite":
+                # SQLAlchemy's own reading of a SQLite foreign key misses a column's
+                # REFERENCES actions, so both sides would agree on nothing: SQLite's own word.
+                from ekbatan.schemagen._reflect import sqlite_table_parts
+
+                with db.connect() as connection:
+                    shape[f"{table}.pragma_fks"] = [
+                        tuple(row)[2:]
+                        for row in connection.exec_driver_sql(f"PRAGMA foreign_key_list({table})")
+                    ]
+                    sql = connection.exec_driver_sql(
+                        "SELECT sql FROM sqlite_master WHERE name = ?", (table,)
+                    ).scalar_one()
+                shape[f"{table}.deferrable"] = [
+                    (k.columns, k.deferrable, k.initially_deferred)
+                    for k in sqlite_table_parts(str(sql)).foreign_keys
+                ]
         shape["views"] = sorted(found.get_view_names())
         shape["tables"] = sorted(found.get_table_names())
         return shape

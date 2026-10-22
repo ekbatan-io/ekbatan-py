@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from sqlalchemy import Engine, MetaData, Table, inspect, text
@@ -322,13 +322,43 @@ def _raw_types(engine: Engine, schema: str | None, result: Reflected) -> None:
             ).all()
             for table, kind, sql in found_tables:
                 if kind == "table" and sql is not None:
-                    result.sqlite_tables[(schema, str(table))] = sqlite_table_parts(str(sql))
+                    parts = sqlite_table_parts(str(sql))
+                    quoted = '"' + str(table).replace('"', '""') + '"'
+                    keys: dict[int, list[Any]] = {}
+                    for row in connection.exec_driver_sql(
+                        f"PRAGMA foreign_key_list({quoted})"
+                    ).all():
+                        keys.setdefault(int(row[0]), []).append(row)
+                    actions = {
+                        tuple(str(r[3]) for r in sorted(rows_, key=lambda r: r[1])): (
+                            rows_[0][5],
+                            rows_[0][6],
+                        )
+                        for rows_ in keys.values()
+                    }
+                    parts = replace(
+                        parts,
+                        foreign_keys=tuple(
+                            replace(
+                                fk,
+                                onupdate=_action(actions.get(fk.columns, (None, None))[0]),
+                                ondelete=_action(actions.get(fk.columns, (None, None))[1]),
+                            )
+                            for fk in parts.foreign_keys
+                        ),
+                    )
+                    result.sqlite_tables[(schema, str(table))] = parts
             for table in [str(t[0]) for t in found_tables]:
                 quoted = '"' + table.replace('"', '""') + '"'
                 for info in connection.exec_driver_sql(f"PRAGMA table_info({quoted})").all():
                     rows.append((table, info[1], info[2]))
     for table, column, spelled in rows:
         result.raw_types[(schema, str(table), str(column))] = str(spelled)
+
+
+def _action(said: object) -> str | None:
+    """A foreign key action as ``PRAGMA foreign_key_list`` says it; ``None`` for NO ACTION."""
+    return None if said is None or str(said).upper() == "NO ACTION" else str(said).upper()
 
 
 _JSON_VALID = re.compile(r"json_valid\(`?([^`)]+)`?\)", re.I)
@@ -566,6 +596,25 @@ def unquote(token: str) -> str:
 
 
 @dataclass(frozen=True)
+class SqliteForeignKey:
+    """A foreign key as SQLite's text of the table says it - what reflection misses of it.
+
+    SQLAlchemy reads a foreign key's ``ON DELETE`` and ``DEFERRABLE`` only from a table-level
+    ``FOREIGN KEY`` written on one line: a column's own ``REFERENCES ... ON DELETE CASCADE``
+    comes back with no actions, and a ``DEFERRABLE`` on a line of its own is lost. The actions
+    are ``PRAGMA foreign_key_list``'s; whether it is deferrable only the text says.
+    """
+
+    #: The table's own columns, in order.
+    columns: tuple[str, ...]
+    deferrable: bool
+    initially_deferred: bool
+    #: ``ON UPDATE`` and ``ON DELETE`` from ``PRAGMA foreign_key_list`` - ``None`` for NO ACTION.
+    onupdate: str | None = None
+    ondelete: str | None = None
+
+
+@dataclass(frozen=True)
 class SqliteTable:
     """What SQLite's reflection does not read from a table's ``CREATE TABLE`` text."""
 
@@ -576,6 +625,8 @@ class SqliteTable:
     autoincrement: bool
     strict: bool
     without_rowid: bool
+    #: Each foreign key, as the text says it.
+    foreign_keys: tuple[SqliteForeignKey, ...] = ()
 
     @property
     def options(self) -> tuple[str, ...]:
@@ -601,11 +652,16 @@ def sqlite_table_parts(sql: str) -> SqliteTable:
     autoincrement = False
     primary: list[str] = []
     declared: dict[str, str] = {}
+    foreign_keys: list[SqliteForeignKey] = []
     for definition in split_top_level(body[1:-1]):
         words = _tokens(definition)
         if not words:
             continue
         upper = [w.upper() for w in words]
+        if "REFERENCES" in upper:
+            found = _sqlite_foreign_key(words, upper)
+            if found is not None:
+                foreign_keys.append(found)
         if upper[0] in _TABLE_CONSTRAINTS:
             if "PRIMARY" in upper and "KEY" in upper:
                 group = next((w for w in words[upper.index("KEY") + 1 :] if w.startswith("(")), "")
@@ -649,7 +705,30 @@ def sqlite_table_parts(sql: str) -> SqliteTable:
     alias = None
     if len(primary) == 1 and declared.get(primary[0]) == "INTEGER" and not without_rowid:
         alias = primary[0]
-    return SqliteTable(collations, alias, autoincrement, "STRICT" in tail, without_rowid)
+    return SqliteTable(
+        collations, alias, autoincrement, "STRICT" in tail, without_rowid, tuple(foreign_keys)
+    )
+
+
+def _sqlite_foreign_key(words: list[str], upper: list[str]) -> SqliteForeignKey | None:
+    """The foreign key a column or table definition holds: its columns and DEFERRABLE."""
+    at = upper.index("REFERENCES")
+    if "FOREIGN" in upper[:at]:
+        group = next((w for w in words[upper.index("FOREIGN") : at] if w.startswith("(")), "")
+        columns = tuple(unquote(c.strip()) for c in split_top_level(group[1:-1]) if c.strip())
+    elif upper[0] not in _TABLE_CONSTRAINTS:
+        columns = (unquote(words[0]),)
+    else:
+        return None
+    clause = upper[at + 1 :]
+    deferrable = any(
+        word == "DEFERRABLE" and (i == 0 or clause[i - 1] != "NOT") for i, word in enumerate(clause)
+    )
+    deferred = any(
+        word == "INITIALLY" and clause[i + 1 : i + 2] == ["DEFERRED"]
+        for i, word in enumerate(clause)
+    )
+    return SqliteForeignKey(columns, deferrable, deferrable and deferred)
 
 
 # -- PostgreSQL's catalog -------------------------------------------------------------------------
