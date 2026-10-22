@@ -38,6 +38,7 @@ import concurrent.futures
 import contextvars
 import inspect
 import threading
+import types
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -640,11 +641,17 @@ def portaled(async_twin: Any) -> Any:
     namespace: dict[str, Any] = {
         "__new__": __new__,
         "__init_subclass__": classmethod(__init_subclass__),
-        "__class_getitem__": classmethod(lambda cls, params: cls),
+        # Subscripting keeps its arguments, so `AbstractRepository[Wallet, WalletsRecord, ...]`
+        # in a test still names its record class - the framework reads it off the bases, and
+        # `__orig_bases__` below carries it on to the async class's own type parameters.
+        "__class_getitem__": classmethod(lambda cls, params: types.GenericAlias(cls, params)),
         "__portaled_base__": base,
         "__module__": base.__module__,
         "__qualname__": base.__qualname__,
     }
+    type_params = tuple(getattr(base, "__type_params__", ()) or ())
+    if type_params:
+        namespace["__orig_bases__"] = (base[type_params],)
     for name in ("builder", "from_config", "of"):
         if isinstance(inspect.getattr_static(base, name, None), classmethod):
             namespace[name] = _portaled_classmethod(base, name)

@@ -158,13 +158,13 @@ class PersonRepository(AbstractRepository[Person, PeopleRecord, ShardedId[Person
 
     def from_record(self, record: PeopleRecord) -> Person:
         return Person(
-            id=ShardedId[Person](record["id"]),
-            version=record["version"],
-            state=PersonState[record["state"]],
-            nick=record["nickname"],
+            id=ShardedId[Person](record.column_id()),
+            version=record.column_version(),
+            state=PersonState[record.column_state()],
+            nick=record.column_nickname(),
             klass=record.get("class"),
-            created_date=record["created_date"],
-            updated_date=record["updated_date"],
+            created_date=record.column_created_date(),
+            updated_date=record.column_updated_date(),
         )
 
 

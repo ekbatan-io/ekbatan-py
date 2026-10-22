@@ -201,16 +201,16 @@ def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
 
         def from_record(self, values: WalletsRecord) -> Wallet:
             return Wallet(
-                id=ShardedId[Wallet](values["id"]),
-                version=values["version"],
-                state=WalletState[values["state"]],
-                owner_id=values["owner_id"],
-                currency=values["currency"],
-                balance=values["balance"],
-                aliases=values["aliases"] or [],
-                reward_points=values["reward_points"],
-                created_date=values["created_date"],
-                updated_date=values["updated_date"],
+                id=ShardedId[Wallet](values.column_id()),
+                version=values.column_version(),
+                state=WalletState[values.column_state()],
+                owner_id=values.column_owner_id(),
+                currency=values.column_currency(),
+                balance=values.column_balance(),
+                aliases=values.column_aliases() or [],
+                reward_points=values.column_reward_points(),
+                created_date=values.column_created_date(),
+                updated_date=values.column_updated_date(),
             )
 
         def total_balance_on(self, shard: ShardIdentifier) -> Decimal:

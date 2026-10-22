@@ -51,16 +51,16 @@ class _WalletRows:
 
     def from_record(self, record: WalletsRecord) -> Wallet:
         return Wallet(
-            id=ShardedId[Wallet](record["id"]),
-            version=record["version"],
-            state=WalletState[record["state"]],
-            owner_id=record["owner_id"],
-            currency=record["currency"],
-            balance=record["balance"],
-            aliases=record["aliases"] or [],
-            reward_points=record["reward_points"],
-            created_date=record["created_date"],
-            updated_date=record["updated_date"],
+            id=ShardedId[Wallet](record.column_id()),
+            version=record.column_version(),
+            state=WalletState[record.column_state()],
+            owner_id=record.column_owner_id(),
+            currency=record.column_currency(),
+            balance=record.column_balance(),
+            aliases=record.column_aliases() or [],
+            reward_points=record.column_reward_points(),
+            created_date=record.column_created_date(),
+            updated_date=record.column_updated_date(),
         )
 
 
@@ -80,13 +80,13 @@ class _NotificationRows:
 
     def from_record(self, record: NotificationsRecord) -> Notification:
         return Notification(
-            id=Id[Notification](record["id"]),
-            version=record["version"],
-            state=GenericState[record["state"]],
-            wallet_id=ShardedId[Wallet](record["wallet_id"]),
-            kind=record["kind"],
-            recipient=record["recipient"],
-            message=record["message"],
+            id=Id[Notification](record.column_id()),
+            version=record.column_version(),
+            state=GenericState[record.column_state()],
+            wallet_id=ShardedId[Wallet](record.column_wallet_id()),
+            kind=record.column_kind(),
+            recipient=record.column_recipient(),
+            message=record.column_message(),
         )
 
 

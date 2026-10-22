@@ -168,13 +168,13 @@ class PurseRepository(AbstractRepository[Purse, PursesRecord, Id[Purse]]):
 
     def from_record(self, values: PursesRecord) -> Purse:
         return Purse(
-            id=Id[Purse](values["id"]),
-            version=values["version"],
-            state=PurseState[values["state"]],
-            currency=values["currency"],
-            balance=values["balance"],
-            created_date=values["created_date"],
-            updated_date=values["updated_date"],
+            id=Id[Purse](values.column_id()),
+            version=values.column_version(),
+            state=PurseState[values.column_state()],
+            currency=values.column_currency(),
+            balance=values.column_balance(),
+            created_date=values.column_created_date(),
+            updated_date=values.column_updated_date(),
         )
 
 
