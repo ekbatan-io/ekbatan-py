@@ -1009,3 +1009,51 @@ The calls taken on the way:
 | `ActionEvent` (the CDC view) types its dates `Instant` | framework-written times; the value is whatever the CDC message held, as before - a label, not a check |
 | The parity probe `json_formats_probe.py` was updated to declare each value's kind and re-run: `odt.write` is now 3000/3000 (was 2984: an aware value at offset zero was taken for an `Instant`), and DIVERGENCE's "OffsetDateTime at offset zero" corner is gone | the labels fix it; Java's recorded output was not touched |
 | ~~The "Time kinds" table on the Always-UTC page has a **Java** column~~ **Removed by the main session (EKB-0425)**: the Python site explains features without Java; the Python-to-Java mapping stays on the "Running beside a Java service" page, where it is a real working-together fact | the user's rule: the Python website is independent of Java except for Java+Python collaboration |
+
+## schemagen completeness (EKB-0427-)
+
+2026-10-22, unattended. The user: "it's very very very very important, it needs to be done
+thoroughly, we don't want to limit the capabilities of the framework users". Ledger, with the
+feature matrix measured by round trip on all four databases:
+[SCHEMAGEN-COMPLETENESS-LEDGER.md](SCHEMAGEN-COMPLETENESS-LEDGER.md).
+
+**The ones worth a glance first:**
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **MySQL: a `CURRENT_TIMESTAMP` / `NOW()` default (and `ON UPDATE`) of a column forced to `timestamp_column()` is written `CURRENT_TIMESTAMP(6)`**, with a note | the column becomes `DATETIME(6)` by the EKB-0321 decision, and MySQL refuses `DATETIME(6) DEFAULT CURRENT_TIMESTAMP`: the module's `create_all` failed on the most usual MySQL timestamp there is (`TIMESTAMP DEFAULT CURRENT_TIMESTAMP`). MariaDB makes the same change itself, silently | keep every `Instant` column's own type (`DATETIME`, `TIMESTAMP`) and only label the record - reverses EKB-0321 |
+| **Python enum classes are not generated** - a PostgreSQL or MySQL enum stays `sqlalchemy.Enum("a", "b", name=...)` and its record `Literal["a", "b"]` | jOOQ generates a Java enum and sqlacodegen a Python one; binding one changes what a read returns (an enum member, not a `str`), and a record typed `Mood` refuses a plain `"happy"` under mypy - every model with an enum column would change. A `StrEnum` would keep reads comparable to strings. **Proposal below**; `Literal` already gives mypy the values | generate `class Mood(StrEnum)` per enum type, bind `Enum(Mood, values_callable=...)`, record `Mood` - opt-in by a setting |
+| **A sequence of its own (PostgreSQL, MariaDB) is a module constant**, `STANDALONE_SEQ = sqlalchemy.Sequence("standalone_seq", ..., metadata=metadata)`, with every option PostgreSQL would not choose by itself; a column defaulting to `nextval` of it keeps the text default and no longer carries a `Sequence(...)` of its own | jOOQ generates `Sequences`; before, an unused sequence was not generated and a used one lost START/INCREMENT/MIN/MAX/CACHE/CYCLE. `select(STANDALONE_SEQ.next_value())` now works. A `SERIAL`'s sequence stays on its column | - |
+| **PostgreSQL partitions are not written as tables**: the parent gets `postgresql_partition_by=...`, and each partition is created after it by `sqlalchemy.event.listen(PARENT, "after_create", sqlalchemy.DDL("CREATE TABLE ... PARTITION OF ... FOR VALUES ..."))`, with a note | before, the parent was built unpartitioned and each partition as an unrelated table. Queries go through the parent; jOOQ lists partitions as tables | export each partition as a `Table` too, in a metadata `create_all` does not build |
+| **A materialized view goes in `view_metadata`**, like a view | it was in `metadata`, so `create_all` built a *table* by its name | - |
+| **MySQL and MariaDB tables carry their options**: `mysql_engine`, `mysql_default_charset`, `mysql_collate`, `mysql_row_format`... (every one reflection reads but the comment and the AUTO_INCREMENT counter); this adds lines to every MySQL/MariaDB table, the examples' too | a `latin1` table's text columns were rebuilt `utf8mb4`, a MyISAM/Aria table InnoDB, a `utf8mb4_unicode_ci` table at the server's default collation | write only options that differ from the server's defaults - but the server's defaults are not the migration's, and a test server's may differ |
+| **Index elements are written as the database writes them** (`sqlalchemy.text("a DESC NULLS LAST")`, `text("(lower(`name`))")`, `text("name COLLATE NOCASE")`) only where a plain column name would lose something; plain columns stay names | a sort order made the module's `create_all` fail on PostgreSQL, a MySQL functional index wrote `Index("t_func")` with no column (also a failure), and collations, DESC and SQLite expression indexes were lost | - |
+| **A key column is never `X \| None` in its record** | SQLite alone reflects a key column as nullable; the module declares it a key, so NOT NULL | - |
+| **SQLite: a type name SQLAlchemy reads only by affinity (`ANY`, `UNSIGNED BIG INT`, none) is written as SQLite spells it**, `sql_type("ANY")`; its record follows SQLite's affinity rules (INTEGER -> `int`, TEXT -> `str`, REAL -> `float`, NUMERIC/BLOB/none -> `Any`) | a STRICT table refuses the `NUMERIC` it was rebuilt with; an untyped column made `create_all` fail | - |
+| **Records of spelled types the drivers agree on are typed**: PostgreSQL `xml`, `tsquery`, `jsonpath` -> `str` (arrays `list[str]`), MySQL/MariaDB spatial -> `bytes`, MariaDB `inet4`/`inet6` -> `str`; the rest (`point` on PostgreSQL: text on psycopg, `Point` on asyncpg) stay `Any` with the note | measured on psycopg, asyncpg, PyMySQL, aiomysql | - |
+| **A PostgreSQL domain is written whole** (`postgresql.DOMAIN("d", <base with length>, collation=, default=, constraint_name=, check=, not_null=)`), and a domain column gets its own NOT NULL and default, not the domain's | reflection kept the domain's name and base only, so `create_all` on an empty database built a domain with no check, and moved the domain's NOT NULL/default onto every column | - |
+| A domain with several checks is written with one, joined by AND (names lost); a NOT NULL domain's named check loses its name | SQLAlchemy's `DOMAIN` takes one check, and writes `CONSTRAINT name` before `NOT NULL`, naming the NOT NULL. A note says so each time | - |
+| **What no module can declare is said, one note per kind**: functions, procedures, triggers, composite types, extensions (PostgreSQL); routines, triggers, events, invisible columns, unenforced checks, index comments, invisible/ignored indexes, system-versioned tables (MySQL/MariaDB); triggers (SQLite) | it was silent; the user's rule is that no omission is silent. The note for a composite type and an extension says what to create before `create_all` | build them through `DDL` events - possible for some (a composite type, `ALTER TABLE ... ALTER INDEX ... INVISIBLE`), not done unattended |
+| `SCHEMA_FORMAT` is 5 | the module gained sequence constants, partition DDL, dependencies and table options | - |
+| PostgreSQL inheritance: the child keeps every column and gets `postgresql_inherits=` plus `CHILD.add_is_dependent_on(PARENT)` | create_all orders by foreign keys only; `capitals` sorts before `cities` | write only the child's own columns - the `Table` would then not have the inherited ones to query |
+| MySQL `SPATIAL` index's reported prefix of 32 is ignored; MySQL `SRID n` is kept in the spelled type, `sql_type("point SRID 4326")` | - | - |
+| Synthetic keys (jOOQ `syntheticObjects`) are not supported | no reflection to read, and a hand-written `Table` beside the module covers it | a `synthetic-keys` setting |
+
+**Proposals - big new subsystems, not built:**
+
+1. **Routines (jOOQ's `Routines`).** jOOQ generates a class per stored function and procedure,
+   typed by its parameters, so `Routines.addOne(cfg, 1)` is checked at compile time. Here:
+   read `pg_proc` / `information_schema.PARAMETERS`, map each parameter and result type through
+   the type table, and write `def add_one(x: int) -> FunctionElement[int]: return
+   sqlalchemy.func.add_one(sqlalchemy.literal(x, sqlalchemy.INTEGER()))` (a `type_=` keeps the
+   result typed), and a `CALL` helper for procedures. A few hundred lines plus overloads,
+   OUT/INOUT parameters, set-returning functions and defaults. **Recommendation: yes, later, as
+   its own task** - it is the one jOOQ feature here users of stored functions will miss; today
+   `sqlalchemy.func.add_one(...)` works untyped and the note says so.
+2. **Python enum classes for enum types** (above). **Recommendation: an opt-in setting**
+   (`enum-classes = true`) writing `StrEnum`s - reads stay `==` to strings, the records name the
+   class; off by default so no model changes under anyone.
+3. **Composite types / UDT classes.** jOOQ generates a record class per composite type. Here: a
+   `TypedDict` or dataclass per type and a `TypeDecorator` parsing psycopg's text `(Main,123)` and
+   asyncpg's `Record`. **Recommendation: no** until someone asks - rare in services, and the
+   driver formats differ; the note says how to create the type for `create_all`.
