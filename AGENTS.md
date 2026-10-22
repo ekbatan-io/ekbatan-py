@@ -421,6 +421,17 @@ timestamps to `Instant`, PostgreSQL `TIMESTAMPTZ` to `OffsetDateTime`, JSON twic
 - **Every type is proven on a real database** - `tests/integration/test_schemagen_types.py`
   generates, imports, `create_all`s and round-trips each one on all four databases. A new type
   rule gets a case there.
+- **What reflection misses is read from the catalog** (`schemagen/_reflect.py`): index elements
+  as the database writes them (sort order, `COLLATE`, MySQL functional parts, SQLite expression
+  indexes), PostgreSQL domains whole, `EXCLUDE` and `DEFERRABLE` keys, partitions, inheritance,
+  `UNLOGGED`, array dimensions, every sequence with its options (PostgreSQL, MariaDB), MariaDB's
+  `nextval` defaults, MySQL's `SRID`, SQLite's `COLLATE`/`AUTOINCREMENT`/`STRICT`/`WITHOUT
+  ROWID`. MySQL/MariaDB table options are written. **Nothing is dropped silently**: what no
+  module can declare (routines, triggers, composite types, extensions, invisible columns,
+  unenforced checks...) gets one note per kind. `tests/integration/test_schemagen_round_trip.py`
+  proves it: migrate A, generate, `create_all` into B, compare the two catalogs line by line on
+  all four databases. A new feature gets a case there; the matrix is
+  `docs/SCHEMAGEN-COMPLETENESS-LEDGER.md`.
 - **Every table gets a typed record**, `<Table>Record` (jOOQ's name: `wallets` ->
   `WalletsRecord`), a `TypedDict` beside the `Table` (`schemagen/_records.py`). Each key is typed
   from the type object the module builds: a converter's column is the converter's user type -

@@ -184,7 +184,10 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `INT4RANGE`, `TSRANGE`, ... | `postgresql.INT4RANGE()`, ... | `Range` |
 | `OID` | `postgresql.OID()` | `int` |
 | an enum type | `Enum("happy", "sad", name="mood")` | `str` |
-| `xml`, `point`, `vector(3)`, ... | `sql_type("xml")`, ... | `str` |
+| a domain | `postgresql.DOMAIN("positive_int", INTEGER(), ...)` | its base type's |
+| `INTEGER[][]` | `postgresql.ARRAY(INTEGER(), dimensions=2)` | `list[list[int]]` |
+| `xml`, `tsquery`, `jsonpath` | `sql_type("xml")`, ... | `str` |
+| `point`, `vector(3)`, ... | `sql_type("point")`, ... | what the driver gives |
 
 - A JSON column reads whatever the JSON holds: a `dict`, a `list`, a number or a string.
 - `timestamp_column()` reads the `datetime` exactly as stored - no zone added
@@ -193,7 +196,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
   it - an `OffsetDateTime` - and a note suggests plain `TIMESTAMP` ([time columns](#time-columns)).
 - `INET` and `CIDR` values come from Python's `ipaddress` module. `Range` is
   `sqlalchemy.dialects.postgresql.Range`.
-- The `MACADDR` row also covers `MACADDR8`, `VARBIT(n)` and `TSVECTOR`.
+- The `MACADDR` row also covers `MACADDR8`, `VARBIT(n)` and `TSVECTOR`. A `BIT(n)` reads as
+  `str` through psycopg and as a `BitString` through asyncpg, so its record says `Any`.
 - An enum type is one made with `CREATE TYPE mood AS ENUM ('happy', 'sad')`.
 - The last row is any type SQLAlchemy has no class for, written as PostgreSQL spells it. Its
   value is what the driver gives, usually a `str`.
@@ -225,6 +229,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `YEAR` | `mysql.YEAR()` | `int` |
 | `ENUM('NEW', 'DONE')` | `Enum("NEW", "DONE")` | `str` |
 | `SET('a', 'b')` | `mysql.SET("a", "b")` | `set` |
+| `POINT`, `GEOMETRY`, ... | `sql_type("point")`, ... | `bytes` |
 
 - `timestamp_column()` reads the `datetime` exactly as stored - no zone added
   ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)). A bare `DATETIME` and
@@ -264,7 +269,8 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `YEAR` | `mysql.YEAR()` | `int` |
 | `ENUM('NEW', 'DONE')` | `Enum("NEW", "DONE")` | `str` |
 | `SET('a', 'b')` | `mysql.SET("a", "b")` | `set` |
-| `INET6`, ... | `sql_type("inet6")`, ... | `str` |
+| `INET4`, `INET6` | `sql_type("inet6")`, ... | `str` |
+| `POINT`, `GEOMETRY`, ... | `sql_type("point")`, ... | `bytes` |
 
 - `timestamp_column()` reads the `datetime` exactly as stored - no zone added
   ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)). A bare `DATETIME` and
@@ -291,6 +297,7 @@ imported, built again by `metadata.create_all`, and a value written and read bac
 | `DATETIME`, `TIMESTAMP` | `timestamp_column()` | `Instant`, as stored |
 | `DATE` | `DATE()` | `date` |
 | `TIME` | `TIME()` | `time` |
+| any other name - `ANY`, `UNSIGNED BIG INT`, none | `sql_type("ANY")`, ... | by SQLite's affinity: `int`, `str`, `float`, or any |
 
 - `timestamp_column()` reads the `datetime` exactly as stored - no zone added
   ([What you give is what is stored](multi-database.md#what-you-give-is-what-is-stored)).
@@ -632,21 +639,73 @@ what its `impl` reads as when it converts nothing; a type that says neither is `
 ## What else is generated
 
 Enough for `metadata.create_all` to build, in a test, the database the migrations built. Ekbatan
-uses none of it at run time.
+uses none of it at run time. Each row below is checked on all four databases by building a second
+database with `create_all` and comparing the two, catalog line by catalog line.
 
-- primary keys (composite ones in key order), unique constraints, foreign keys with their
-  `ON DELETE`/`ON UPDATE`, checks, indexes (unique, partial, on expressions), server defaults,
-  identity and generated columns, comments;
-- **views**, in a second `view_metadata`: query them like tables; `create_all` on `metadata`
-  does not create a table by a view's name;
-- **other schemas**, when listed in `schemas`: written with `schema="audit"` and exported as
+### What schemagen generates
+
+| | PostgreSQL | MySQL | MariaDB | SQLite |
+| --- | --- | --- | --- | --- |
+| columns: type, `NOT NULL`, server default, comment | yes | yes | yes | yes |
+| identity (with START, INCREMENT, MIN/MAX, CACHE, CYCLE), `SERIAL`, `AUTO_INCREMENT` on the key | yes | yes | yes | yes (`AUTOINCREMENT`) |
+| generated columns, stored and virtual | yes | yes | yes | yes |
+| column collation | yes | yes | yes | yes |
+| primary keys, unique constraints, checks - named, composite | yes | yes | yes | yes |
+| `DEFERRABLE` keys, `UNIQUE NULLS NOT DISTINCT`, `UNIQUE ... INCLUDE` | yes | - | - | - |
+| foreign keys: `ON DELETE`/`ON UPDATE`, `DEFERRABLE`, `MATCH FULL`, self and cross-schema | yes | yes | yes | yes |
+| `EXCLUDE` constraints | yes | - | - | - |
+| indexes: unique, partial, on expressions, `DESC`, `NULLS LAST`, `COLLATE`, op classes, `INCLUDE`, `USING gin/gist/brin/hash`, `WITH (...)` | yes | - | - | - |
+| indexes: unique, functional, `DESC`, prefix lengths, `FULLTEXT`, `SPATIAL` | - | yes | yes (no functional) | - |
+| indexes: unique, partial, on expressions, `DESC`, `COLLATE` | - | - | - | yes |
+| enums, shared and in other schemas | yes | yes | yes | - |
+| domains, with their checks, `NOT NULL` and default | yes | - | - | - |
+| sequences, with every option, as module constants | yes | - | yes | - |
+| partitioned tables and their partitions | yes | - | - | - |
+| inheritance, `UNLOGGED` | yes | - | - | - |
+| table options: `ENGINE`, `DEFAULT CHARSET`, `COLLATE`, `ROW_FORMAT` | - | yes | yes | - |
+| `STRICT`, `WITHOUT ROWID` | - | - | - | yes |
+| views and materialized views, in `view_metadata` | yes | yes | yes | yes |
+| other schemas, when listed in `schemas` | yes | yes | yes | - |
+
+- **Views** go in a second `view_metadata`: query them like tables; `create_all` on `metadata`
+  does not create a table by a view's name. Their definitions stay in the migrations.
+- **Other schemas**, when listed in `schemas`, are written with `schema="audit"` and exported as
   `AUDIT_ENTRIES`. When a schema holds tables and is not listed, a note says so.
+- **A sequence of its own** is a constant beside the tables, `ORDER_NUMBERS = sqlalchemy.Sequence(
+  "order_numbers", start=1000, metadata=metadata)`: `select(ORDER_NUMBERS.next_value())` reads the
+  next number, and `create_all` creates it before the tables.
+- **Partitions** are created by `create_all` right after their table, as PostgreSQL wrote them
+  (`CREATE TABLE ... PARTITION OF ... FOR VALUES ...`); they are not tables of their own in the
+  module - query them through the partitioned table.
+- **A domain** is written whole, `postgresql.DOMAIN("positive_int", sqlalchemy.INTEGER(), check=...)`,
+  and `create_all` creates it. A domain with several checks is written with one, joined by `AND`;
+  a `NOT NULL` domain's check is written without its name. A note says which.
+- **An index element** that is more than a column's name - `a DESC NULLS LAST`,
+  `lower(name) COLLATE "C"`, MySQL's `(lower(name))` - is written as the database writes it,
+  `sqlalchemy.text("a DESC NULLS LAST")`.
 
-Not generated: database extensions (`CREATE EXTENSION citext` comes before `create_all`), and a
-foreign key to a table that is not generated (a note says so). On MySQL and MariaDB, a foreign key
-from a table in a listed schema to a table in the connection's own database is left out too, with
-a note: the module writes the own database's tables without its name, so it has no way to name the
-target, and a key written without it would point into the listed database instead.
+### What is not generated
+
+Each of these gets a note when the database has one, naming them:
+
+- PostgreSQL functions, procedures and triggers, MySQL and MariaDB routines, triggers and events,
+  SQLite triggers. `create_all` does not create them; call a function with
+  `sqlalchemy.func.add_one(...)`; a test that needs a trigger runs the migrations.
+- PostgreSQL extensions (`CREATE EXTENSION citext` comes before `create_all`) and composite types
+  (a column of one is written as the database spells its type; create the type first).
+- MySQL and MariaDB invisible columns, unenforced checks (`NOT ENFORCED`), index comments,
+  invisible or ignored indexes, system-versioned tables, `AUTO_INCREMENT` on a column outside
+  the key: SQLAlchemy cannot declare them, so `create_all` builds the table without them.
+- A foreign key to a table that is not generated. On MySQL and MariaDB, a foreign key from a
+  table in a listed schema to a table in the connection's own database is left out too: the
+  module writes the own database's tables without its name, so it has no way to name the target,
+  and a key written without it would point into the listed database instead.
+
+A few things are built a little differently on purpose, each with a note: a timestamp forced to
+`timestamp_column()` (see [time columns](#time-columns)) and, on MySQL, its
+`DEFAULT CURRENT_TIMESTAMP`, written `CURRENT_TIMESTAMP(6)` as MySQL requires of a
+`DATETIME(6)`; a `SERIAL` that is not the key, whose sequence is not owned by its column; and a
+MariaDB column-level check, built as a table check of the same name.
 
 ## The framework's own tables
 
@@ -757,7 +816,8 @@ an installed wheel too: a module and an ekbatan that disagree are broken there a
 
 What schemagen wants you to know is logged to `io.ekbatan.schemagen` as warnings, and the command
 prints each as `note: ...`: a zoned timestamp, a timestamp column unlike `DATETIME(6)`, a schema
-not read, a foreign key left out, a framework table that differs from its helper.
+not read, a foreign key left out, a framework table that differs from its helper, and everything
+the database has that the module does not write ([what is not generated](#what-is-not-generated)).
 
 ## Why not sqlacodegen
 
