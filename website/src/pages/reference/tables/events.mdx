@@ -125,8 +125,9 @@ table created with the native type works too - a uuid written to it reads back t
 `CAST(id AS CHAR)` gives the usual hyphenated text - so if your migration says `UUID`, nothing
 in your service changes.
 
-If a Java service shares this table, what differs between its migration and this one is on
-[Running beside a Java service](/reference/beside-java/#events).
+A Java service never shares this table - it has its own, in its own database - but the Java
+Debezium transforms read this one, so its columns line up with Java's; what differs is on
+[Running beside a Java service](/reference/beside-java/#the-events-table).
 
 ## Indexes
 

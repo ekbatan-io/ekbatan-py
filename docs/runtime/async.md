@@ -243,8 +243,8 @@ async with lease:
 
 The same backends as the sync providers, holding the same keys - `AsyncPostgresKeyedLockProvider`,
 `AsyncMySQLKeyedLockProvider`, `AsyncMariaDBKeyedLockProvider`, and `AsyncRedisKeyedLockProvider`
-on redis-py's own `redis.asyncio` in `ekbatan.aio.locks.redis` - so an async service, a sync one
-and a Java one contend for one lock. The same rules: `max_hold` bounds every hold, `try_acquire`
+on redis-py's own `redis.asyncio` in `ekbatan.aio.locks.redis` - so an async service and a sync
+one contend for one lock, and on Redis a Java one too. The same rules: `max_hold` bounds every hold, `try_acquire`
 answers contention with `None` and a broken backend with `LockAcquisitionError`, a blank key is
 refused, a lease may be released twice, the outermost hold's `max_hold` governs.
 

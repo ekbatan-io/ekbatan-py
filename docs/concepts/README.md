@@ -14,8 +14,8 @@ The pieces every user of this framework touches. Read them in this order.
   default
 
 These ideas do not depend on the language. A Python service and a Java service built on Ekbatan
-for Java can even share the same tables - see
-[Running beside a Java service](../beside-java.md).
+for Java can work together through their events and a Redis lock, each on its own database -
+see [Running beside a Java service](../beside-java.md).
 
 For wiring and operations rather than ideas, see [Getting started](../getting-started.md),
 [Wiring](../wiring.md) and [Concurrency](../runtime/concurrency.md).

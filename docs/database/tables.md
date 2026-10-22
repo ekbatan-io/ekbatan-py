@@ -67,8 +67,7 @@ tables, and `migrate()` creates them from your migration files. See
 
 On PostgreSQL a schema is a namespace inside the database. On MySQL and MariaDB "schema" and
 "database" are the same thing, so `schema="eventlog"` means a **separate database**, and the
-connecting user needs rights to it. Sharing these tables with a Java service needs the schema
-set this way - see [Running beside a Java service](../beside-java.md#what-to-set).
+connecting user needs rights to it.
 
 In a sharded application every shard gets its own copy of all three. `migrate()` applies the same
 migration files to each.

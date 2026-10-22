@@ -205,7 +205,7 @@ async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
 The same contract, rule for rule: `acquire` waits as long as it takes (awaited, or entered with
 `async with`), `try_acquire` returns `None` on contention, `max_hold` bounds every hold, the
 outermost hold's `max_hold` governs, a lease may be released twice, and both sides take the same
-keys - an async holder, a sync one and a Java one contend for one lock. A task that takes a key it
+keys - an async holder and a sync one contend for one lock, and on Redis a Java one too. A task that takes a key it
 holds re-enters; any other task waits, one it started inside the held region included. A wait
 that is cancelled or times out closes its connection rather than return it, so a lock granted in
 that instant cannot be left on a pooled connection; on Redis the release is sent for that owner
@@ -243,8 +243,10 @@ own watchdog extend the lease, so the framework's first-acquire-wins rule holds 
 
 On Redis the lock is a hash at `ekbatan-lock:<key>` with one field per holder, set to expire at
 `max_hold`. Releasing it publishes a message that wakes the next waiter at once, so nobody polls.
-A Java service built on Ekbatan stores its lock the same way, so the two can share it -
-see [Running beside a Java service](../beside-java.md#keyed-locks).
+A Java service built on Ekbatan stores its lock the same way, so the two can share it on one
+Redis - see [Running beside a Java service](../beside-java.md#keyed-locks).
+The SQL providers lock inside one database, and a Java service never shares one with this
+service, so only Redis holds a lock across the two.
 
 The three SQL providers come from `ekbatan.locks`. The Redis one is imported from
 `ekbatan.locks.redis` and needs the `redis` extra - it is deliberately *not* re-exported from the

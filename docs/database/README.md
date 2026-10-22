@@ -25,8 +25,8 @@ For the *concept* of the outbox - the atomic state-and-events story - see
 - **[schemagen](schemagen.md)** - table definitions generated from a migrated database, and the
   type forcing that makes them portable
 
-## Sharing the tables with a Java service
+## Working with a Java service
 
-A Java service built on Ekbatan for Java can share these tables, the keyed lock and the event
-stream with a Python one. What has to line up - the schema, the namespace, the shard layout - is
-on [Running beside a Java service](../beside-java.md).
+A Java service built on Ekbatan for Java never shares a database with a Python one: each owns
+its own. The two work together through their events on a broker and a Redis keyed lock; what has
+to line up is on [Running beside a Java service](../beside-java.md).

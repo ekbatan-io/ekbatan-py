@@ -2,7 +2,7 @@
 layout: ../../layouts/DocLayout.astro
 title: Running beside a Java service
 activeSection: reference
-lead: "Ekbatan also exists for Java. A Python service built with this framework and a Java service built with Ekbatan for Java can share one database, one Redis and one stream of events. Everything that has to line up for that is on this page."
+lead: "Ekbatan also exists for Java. A Python service built with this framework and a Java service built with Ekbatan for Java can work together through one stream of events and one Redis. They never share a database: each service owns its own. Everything that has to line up for working together is on this page."
 ---
 
 **If every service you run is written in Python, you can skip this page.** Nothing here changes
@@ -10,91 +10,49 @@ how the framework behaves on its own.
 
 The Java framework is [Ekbatan](https://github.com/ekbatan-io/ekbatan), documented at
 [ekbatan-io.github.io/ekbatan](https://ekbatan-io.github.io/ekbatan/). The two are built so that
-both can work on the same data:
+each can read what the other publishes:
 
 | shared | what lines up |
 | --- | --- |
-| [the framework's tables](#the-shared-tables) | `events`, `event_notifications`: same columns, same values |
-| [ids](#ids) | the same uuid text, the same shard bits, the same sort order |
+| [streaming](#streaming-the-events) | the same Debezium transforms, each reading its own service's `events` table |
+| [the `events` table](#the-events-table) | the same columns, so the transforms read either one |
 | [event payloads](#event-payloads) | the same JSON, byte for byte |
-| [keyed locks](#keyed-locks) | the same lock, on Redis and on the SQL servers |
-| [streaming](#streaming-the-events) | the same Debezium transforms, reading the same rows |
+| [ids](#ids) | the same uuid text, the same shard bits, the same sort order |
+| [keyed locks](#keyed-locks) | the same lock, on one Redis |
 | [traces and logs](#traces-and-logs) | the same span, metric and logger names |
-| [the config file](#the-config-file) | the same keys under `ekbatan` |
 
 ## What to set
 
-Three things. The first is the one people miss.
+Two things.
 
-1. **The schema.** The Java framework keeps its tables in a schema called `eventlog`. This
-   framework puts them in no schema unless told to, because a Python service usually owns its
-   database outright. To share, pass the schema to each table:
+1. **One database per service.** A Java service and a Python service never share a database -
+   not its tables, not its outbox, not its `scheduled_tasks`. Each writes its own `events`
+   table, and each table is streamed to the broker on its own; the services meet there.
+2. **The namespace.** Each service has its own, so a consumer can tell whose event it is reading.
 
-   ```python
-   EVENTS = outbox_table(metadata, schema="eventlog")
-   EVENT_NOTIFICATIONS = notifications_table(metadata, schema="eventlog")
-   ```
+## The `events` table
 
-   On PostgreSQL `eventlog` is a schema in the same database. On MySQL and MariaDB it is a
-   separate database, and the connecting user needs a grant on it - see
-   [Multi-database](/reference/multi-database/). A Debezium connector then lists
-   `eventlog.events` rather than `public.events`.
-2. **The namespace.** One service, written in two languages, uses one namespace. Different
-   services use different ones.
-3. **The shard layout.** Both sides must agree on which group and member numbers mean which
-   database, because a sharded id carries those numbers. One `ekbatan.sharding` section can
-   describe both - see [the config file](#the-config-file).
-
-And keep time in UTC on both sides, as [Multi-database](/reference/multi-database/#always-utc)
-recommends. The Java framework's `InstantConverter` (wired per project through jOOQ's forced
-types) writes an `Instant` as its UTC time in a column with no zone, and reads it back as UTC.
-The Python framework writes whatever time it is given, as it is
-([What you give is what is stored](/reference/multi-database/#what-you-give-is-what-is-stored)), and its default
-clock gives the UTC time with no zone attached - the same value Java writes. So a time written
-by one reads back as the same moment in the other, as long as the Python side keeps to naive
-UTC.
-
-## The shared tables
-
-These were compared by creating both versions of each table and diffing them, not by reading.
-
-### `events`
+The Java transforms read the Python service's own `events` table, so its columns must be the ones
+they expect. They are: both versions of the table were created and diffed, not compared by
+reading.
 
 | | the same in both? |
 | --- | --- |
 | column names, order, nullability | **yes** |
 | PostgreSQL types | **yes** |
 | MySQL types | **yes** (see below) |
-| MariaDB `id`, `action_id` | **no**: `UUID` in Java, `CHAR(36)` here (see below) |
-| schema | **no, unless you set it**: pass `schema="eventlog"` |
+| MariaDB `id`, `action_id` | **no**: `UUID` in Java, `CHAR(36)` here - the text a consumer reads is the same |
+| schema | **no**: Java's tables are in `eventlog`, this framework's in no schema unless you pass one; the connector lists whichever table it reads |
 | index names | **no**: `idx_events_action_id` in Java, `ix_events_action_id` here - only a name |
 
 **On MySQL** the Java migration adds `CHARACTER SET ascii` to the uuid columns. That makes the
 indexes smaller; the text stored is the same.
 
-**MariaDB's native `UUID` does not get in the way, and that was checked.** Against a table
-created by the Java migration, this framework writes a uuid and reads back the same value, and
-`CAST(id AS CHAR)` gives the usual hyphenated text. Either table works with either service;
-whichever service migrates first decides how the value is stored - 16 bytes, or 36.
-
 The indexes are yours either way: both frameworks declare the table's columns and leave the
 indexes to your migration - see [`events`](/reference/tables/events/#indexes).
 
-### `event_notifications`
-
-The same columns. The Java migration gives `attempts` a `DEFAULT 0`; this framework always writes
-the column, so the default is never used. It matters only if you insert rows by hand.
-
-### `scheduled_tasks`
-
-Not shared. This is [db-scheduler](https://github.com/kagkarlsson/db-scheduler)'s own table, and
-each service keeps its jobs in its own database: a Java service and a Python service do not share
-one database, so they never share this table, and nothing in it has to line up.
-
-### Migrations
-
-The migrator keeps its history in its own table, `ekbatan_schema_history`, and does not read a
-Java service's migration history. Let one service own the migrations of a shared database.
+`event_notifications` and `scheduled_tasks` stay inside each service: fan-out, dispatch and the
+jobs read their own service's rows only, so nothing in them has to line up.
 
 ## Ids
 
@@ -106,13 +64,13 @@ on MySQL as `CHAR(32)`, the hex with the hyphens taken out. A Java service writi
 that.
 
 **A sharded id carries its shard in the same bits** on both sides (the layout is on
-[Sharding](/reference/sharding/#self-describing-ids-shardedid)), so either service routes the
-other's rows without a lookup.
+[Sharding](/reference/sharding/#self-describing-ids-shardedid)), so a consumer in either language
+reads the shard out of an id in the other's event.
 
 **Ids sort the same way.** Comparing two ids in Python (`<`, `sorted`) gives the order the Java
 framework gives: each half of the uuid is read as a signed number. Version 7 ids sort by time
 either way. A random `Id[...]` whose first digit is `8` to `f` sorts before one starting `0` to
-`7` - in both languages, though not in the database, which compares them unsigned.
+`7` - in both languages, though not in a database, which compares them unsigned.
 
 ## Event payloads
 
@@ -148,8 +106,8 @@ digits with no zone attached - and is written with Java's `Z`, the text Jackson 
 runs, and nothing is saved, rather than written in a form the Java side may refuse. Java's text
 reads back the same way: `"...Z"` into an `Instant` field gives the UTC digits, no zone attached.
 
-One database bends numbers for both sides alike: MySQL's `JSON` column keeps a number with a
-fraction as a double, so `50.00` comes back `50.0` whichever service wrote it.
+One database bends numbers: MySQL's `JSON` column keeps a number with a fraction as a double, so
+`50.00` is streamed as `50.0` from a MySQL `events` table, whichever language wrote it.
 
 The full rules for writing and reading a payload are on
 [Models and entities](/learn/models-and-entities/#modelevent).
@@ -162,20 +120,15 @@ built on - stores it: a hash at `ekbatan-lock:<key>` with one field per holder, 
 Java service and a Python service on one Redis keep each other out, and a release on one side
 wakes a waiter on the other at once.
 
-**On PostgreSQL, MySQL and MariaDB**, each key is hashed to a 64-bit number, and the hash is the
-one the Java framework computes, so two services asking for one key really wait on each other. On
-MySQL and MariaDB the lock's name is that hash as bare unsigned hex (`813e4046e5b48a46` for
-`wallet:abc`); a test holds a lock and checks the server shows the name the Java framework uses.
-Both send MySQL the same wait, so its
-[rounding to whole seconds](/reference/keyed-locks/#mysql-rounds-the-wait-to-whole-seconds) is
-the same on both sides too.
+The PostgreSQL, MySQL and MariaDB providers lock inside one database. The two services never share
+one, so to hold a lock across them, use Redis.
 
 ## Streaming the events
 
 Debezium and Kafka Connect are Java programs, whatever language wrote the rows. The two
 transforms, `OutboxToAvroTransform` and `OutboxToProtobufTransform`, are JARs from the Java
-project's `ekbatan-debezium-smt` artifact. A Python service uses the same JARs, pointed at its
-`events` table, and gets the same messages on the same topics. Nothing in your own service runs
+project's `ekbatan-debezium-smt` artifact. A Python service uses the same JARs, pointed at its own
+`events` table, and gets the same messages as a Java service gets from its own. Nothing in your own service runs
 Java.
 
 The JARs are not on a package index. Take them from the Java project's build and put each in its
@@ -203,20 +156,9 @@ While a migration runs, its log lines carry `ekbatanShard` and `ekbatanTarget`, 
 Java migrator puts in its logging context. Write `%(ekbatanShard)s` in a format string where the
 Java pattern writes `%X{ekbatanShard}`.
 
-## The config file
-
-The `ekbatan` section of `ekbatan.yaml` uses the same keys as the Java framework's
-`application.yml`, so one shard layout can describe both:
-
-- keys in kebab-case or camelCase alike (`default-shard` or `defaultShard`);
-- durations as ISO-8601 text, such as `PT10S` or `PT5M`, which the Java side reads too;
-- `${DB_PASSWORD}` and `${DB_PORT:5432}` for environment variables, a syntax both sides read.
-
-The details are on [Config files](/reference/config-files/).
-
 ## See also
 
-- [Framework tables](/reference/tables/) - each shared table in full
+- [Framework tables](/reference/tables/) - each table in full
 - [Sharding](/reference/sharding/) - the id layout
 - [Keyed locks](/reference/keyed-locks/) - the providers
 - [Streaming](/reference/events/streaming/) - Debezium and the topics

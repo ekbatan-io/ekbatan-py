@@ -64,8 +64,6 @@ ekbatan:
 - Names inside `data-source-properties` are a driver's and are kept exactly as written.
 - Anything outside `ekbatan.sharding` is left alone, so the file can hold your own settings too.
   A key under it that means nothing is refused, with its path.
-- A Java service built on Ekbatan for Java reads the same keys, so one file can describe both -
-  see [Running beside a Java service](../beside-java.md#the-config-file).
 
 The same layout in TOML, JSON and INI:
 

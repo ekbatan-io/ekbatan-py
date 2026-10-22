@@ -400,4 +400,3 @@ chosen version, and migrations written in code.
 - [schemagen](schemagen.md) - which runs your migrations into a container and reflects the result
 - [Framework tables](tables.md) - what has to exist
 - [Sharding](sharding.md) - the configuration this reads
-- [Running beside a Java service](../beside-java.md#migrations) - when a Java service shares the database

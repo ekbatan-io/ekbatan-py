@@ -126,8 +126,7 @@ services:
 
 **A native `UUID` column works too, and that was checked.** Against a table declared `id UUID`,
 the framework writes a uuid and reads back an identical value, and `CAST(id AS CHAR)` gives the
-usual hyphenated text. The difference is 16 bytes against 36. A Java service's MariaDB tables use
-the native type - see [Running beside a Java service](../beside-java.md#the-shared-tables).
+usual hyphenated text. The difference is 16 bytes against 36.
 
 **`JSON` is `LONGTEXT` underneath.** MariaDB has no separate JSON storage - it is `LONGTEXT` with
 a CHECK constraint, and the driver reports it that way. That is invisible when you *declare* the

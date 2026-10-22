@@ -64,7 +64,7 @@ SQLAlchemy's own default for a dialect with no uuid type is `CHAR(32)` — the h
 hyphens stripped. This framework overrides that, and the bug it avoids is worth stating plainly:
 one writer storing `d5143465-787a-...` and another storing `d5143465787a...` cannot join on
 `model_id`, **and neither notices**, because both queries succeed and return nothing. The
-hyphenated text is also what a Java service sharing the tables writes - see
+hyphenated text is also what a Java service writes into its events - see
 [Running beside a Java service](../beside-java.md#ids).
 
 ### Why MariaDB `JSON` needs the type forced
@@ -249,8 +249,7 @@ grant itself anything.
 **This framework defaults to no schema at all**, because a Python service usually owns its
 database outright and one fewer namespace is one fewer thing to configure. Pass a schema, such as
 `schema="eventlog"`, when you want the tables kept apart - see
-[Framework tables](tables.md). A Java service sharing the database expects exactly
-that one: [Running beside a Java service](../beside-java.md#what-to-set).
+[Framework tables](tables.md).
 
 ## Partial indexes (PostgreSQL only)
 

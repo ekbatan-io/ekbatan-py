@@ -74,8 +74,7 @@ and room for any other:
 | anything else | yours - `"jobsConfig"`, `"lockConfig"`, `"analyticsConfig"`. Read back with `member.config_for(name)` and build with `engine_for(...)`; the registry builds only the two above |
 
 The two reserved names are spelled exactly as shown. A group needs a `name`; a member's `name` is
-optional and labels its spans and log lines. The same names are used by Ekbatan for Java, so one
-layout can describe a Java service too - see [Running beside a Java service](../beside-java.md#the-config-file).
+optional and labels its spans and log lines.
 
 `DataSourceConfig` is the pool:
 
@@ -304,8 +303,8 @@ The shard is packed into the `rand_b` region of a UUIDv7:
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Ekbatan for Java puts the shard in the same bits, so a Java service and this one route each other's
-rows without a lookup - see [Running beside a Java service](../beside-java.md#ids).
+Ekbatan for Java puts the shard in the same bits, so a Java service reads the shard out of an id
+in this one's events - see [Running beside a Java service](../beside-java.md#ids).
 
 Minting and reading:
 

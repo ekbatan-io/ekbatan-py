@@ -60,8 +60,8 @@ shard are bonded for the row's life. Choosing it is your call - typically a smal
 mapping tenant, region or regulatory class to a shard, inside the create action.
 
 The layout is fixed - the same bits, in the same places - so every service reading the id agrees
-about where the row lives, including a
-[Java service sharing the database](../beside-java.md#ids).
+about where the row lives, including a Java service reading the id in an event
+([Running beside a Java service](../beside-java.md#ids)).
 
 > Use it when each row's shard is decidable from what you know at creation time and you will
 > never move rows between shards. That covers most cases.

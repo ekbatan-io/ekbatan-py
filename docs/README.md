@@ -28,8 +28,8 @@ Linked from the top-level [README](../README.md). Each section has its own index
 - **[Native asyncio](runtime/async.md)** - `ekbatan.aio`, its drivers, its pool, and what stays
   sync
 - **[Observability](runtime/observability.md)** - spans, attributes, metrics, what to alert on
-- **[Running beside a Java service](beside-java.md)** - sharing tables, locks, events and ids
-  with a Java service
+- **[Running beside a Java service](beside-java.md)** - working with a Java service through
+  events on a broker and a Redis lock: what lines up
 - **[Releasing](../RELEASE.md)** - how a release is cut
 
 **About the port**

@@ -81,7 +81,8 @@ call — typically the create action maps something you already know (tenant, re
 class) onto a shard.
 
 The layout is fixed - the same bits, in the same places - so every service reading the id agrees
-about where the row lives, including a [Java service sharing the database](/reference/beside-java/#ids).
+about where the row lives, including a Java service reading the id in an event
+([Running beside a Java service](/reference/beside-java/#ids)).
 
 > Use it when each row's shard is decidable from what you know at creation and you will never
 > move rows between shards. That covers most cases.

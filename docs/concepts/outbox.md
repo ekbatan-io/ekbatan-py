@@ -85,8 +85,9 @@ your table has another name or schema.
 ## The table's columns
 
 The columns are fixed, because everything that reads the outbox binds to them - a Debezium
-connector, the in-process handlers, or
-[a Java service sharing the table](../beside-java.md#the-shared-tables):
+connector and the Java transforms it runs (see
+[Running beside a Java service](../beside-java.md#the-events-table)), and the in-process
+handlers:
 
 | | |
 | --- | --- |

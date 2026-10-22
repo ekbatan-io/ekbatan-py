@@ -41,8 +41,9 @@ Each repository writes its mapping - `to_record` / `from_record`, Java's `toReco
 
 `ekbatan-py` is a port of [`ekbatan`](https://github.com/ekbatan-io/ekbatan), a Java framework.
 The two are expected to interoperate: a Java service and a Python service can read each other's
-outbox rows and contend for the same keyed lock. They do not share one database, so never one
-`scheduled_tasks` table. Several things that look like arbitrary choices are cross-language
+events through a broker (Debezium, Kafka) and contend for the same Redis keyed lock. They never
+share one database - not its tables, not its outbox, not `scheduled_tasks` - so the SQL keyed locks
+never cross between them. Several things that look like arbitrary choices are cross-language
 contracts, and the code says so where that is true.
 
 Four documents carry that relationship, and **an agent working here should read the relevant one
