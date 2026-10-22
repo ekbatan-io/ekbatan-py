@@ -122,6 +122,20 @@ class IndexSpec:
     where: str | None
 
 
+@dataclass(frozen=True)
+class MysqlTable:
+    """What MySQL's and MariaDB's text of a table says that reflection does not read."""
+
+    #: The whole partitioning clause, ``PARTITION BY RANGE (...) (PARTITION p0 ...)``, as the
+    #: server prints it; ``None`` for a table that is not partitioned. Reflection reads it in
+    #: pieces, and misreads a ``LIST`` partition's values (``IN (1,2)`` comes back ``IN (12)``).
+    partitioning: str | None
+    #: The table options - ``STATS_PERSISTENT=0`` - as ``(NAME, value)``, the value as printed.
+    options: tuple[tuple[str, str], ...]
+    #: What of the options line could not be read as ``NAME=value``.
+    unread: str
+
+
 @dataclass
 class Relation:
     """One table or view to generate."""
@@ -183,6 +197,9 @@ class Reflected:
     #: The sequences such a default draws on in a schema not read, by (schema, name): declared
     #: on the column with their options, as they are not module constants.
     drawn_sequences: dict[tuple[str | None, str], SequenceSpec] = field(default_factory=dict)
+    #: MySQL's and MariaDB's ``SHOW CREATE TABLE``, read for what reflection misses, by
+    #: (schema, table).
+    mysql_tables: dict[tuple[str | None, str], MysqlTable] = field(default_factory=dict)
     #: Indexes reflection skips (SQLite's on expressions), by (schema, table).
     extra_indexes: dict[tuple[str | None, str], list[IndexSpec]] = field(default_factory=dict)
     #: What the database holds that no module can say, by kind - "function", "trigger" - each
@@ -935,6 +952,17 @@ def _mysql(engine: Engine, schema: str | None, result: Reflected) -> None:
                 int(cache),
                 None,
             )
+        quote = engine.dialect.identifier_preparer.quote
+        for (table,) in rows(
+            "SELECT TABLE_NAME FROM information_schema.TABLES "
+            f"WHERE TABLE_SCHEMA = {own} AND TABLE_TYPE = 'BASE TABLE'"
+        ):
+            where = "" if schema is None else f"{quote(schema)}."
+            created = connection.execute(
+                text(f"SHOW CREATE TABLE {where}{quote(str(table))}")
+            ).one()[1]
+            result.mysql_tables[(schema, str(table))] = mysql_table_parts(str(created))
+
         for name, kind in rows(
             "SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES "
             f"WHERE ROUTINE_SCHEMA = {own}"
@@ -949,6 +977,34 @@ def _mysql(engine: Engine, schema: str | None, result: Reflected) -> None:
             f"SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = {own}"
         ):
             note("event", str(name))
+
+
+_VERSIONED = re.compile(r"/\*!\d+\s*(.*?)\s*\*/", re.S)
+_OPTION = re.compile(r"([A-Z][A-Z_]*(?: [A-Z][A-Z_]*)?)\s*=\s*('(?:[^'\\]|''|\\.)*'|[^\s']+)")
+
+
+def mysql_table_parts(created: str) -> MysqlTable:
+    """``SHOW CREATE TABLE`` read for its options line and its partitioning.
+
+    The columns and keys are indented; the line that closes them starts with ``)`` and holds
+    the options; the partitioning, if any, follows it - in a versioned comment on MySQL
+    (``/*!50100 PARTITION BY ... */``), bare on MariaDB.
+    """
+    lines = created.splitlines()
+    at = next((i for i, line in enumerate(lines) if i and line.startswith(")")), len(lines))
+    options_line = lines[at][1:] if at < len(lines) else ""
+    rest = "\n".join(lines[at + 1 :]).strip()
+    partitioning = None
+    found = re.match(r"/\*!\d+\s*(.*?)\s*\*/\s*$", rest, re.S)
+    if found is not None:
+        rest = found.group(1)
+    if rest.upper().startswith("PARTITION BY"):
+        partitioning = rest
+    # An option the server prints in a versioned comment is an option all the same.
+    options_line = _VERSIONED.sub(lambda m: m.group(1), options_line)
+    options = tuple((m.group(1), m.group(2)) for m in _OPTION.finditer(options_line))
+    unread = _OPTION.sub("", options_line).strip()
+    return MysqlTable(partitioning, options, unread)
 
 
 def _mysql_view_columns(engine: Engine, schema: str | None, result: Reflected) -> None:

@@ -497,6 +497,42 @@ POSTGRES += (
     ),
 )
 
+#: MySQL and MariaDB partitioning, every kind.
+_MY_PARTITIONS = Trip(
+    "partitions",
+    """
+    CREATE TABLE p_range (id INT, d DATE, PRIMARY KEY (id, d)) PARTITION BY RANGE (YEAR(d))
+      (PARTITION p0 VALUES LESS THAN (2020), PARTITION p1 VALUES LESS THAN MAXVALUE);
+    CREATE TABLE p_list (id INT PRIMARY KEY) PARTITION BY LIST (id)
+      (PARTITION a VALUES IN (1, 2), PARTITION b VALUES IN (3));
+    CREATE TABLE p_hash (id INT PRIMARY KEY) PARTITION BY HASH (id) PARTITIONS 4;
+    CREATE TABLE p_key (id INT PRIMARY KEY) PARTITION BY KEY (id) PARTITIONS 3;
+    CREATE TABLE p_sub (id INT, d DATE, PRIMARY KEY (id, d)) PARTITION BY RANGE (YEAR(d))
+      SUBPARTITION BY HASH (id) SUBPARTITIONS 2
+      (PARTITION p0 VALUES LESS THAN (2020), PARTITION p1 VALUES LESS THAN MAXVALUE);
+    CREATE TABLE p_cols (id INT, c VARCHAR(5), PRIMARY KEY (id, c))
+      PARTITION BY RANGE COLUMNS (c)
+      (PARTITION a VALUES LESS THAN ('m'), PARTITION b VALUES LESS THAN (MAXVALUE));
+    """,
+    notes=("p_range is partitioned",),
+)
+
+MYSQL += (_MY_PARTITIONS,)
+MARIADB += (_MY_PARTITIONS,)
+
+#: O8: table options SQLAlchemy's reflection does not read, read from the table's own text.
+_MY_UNREAD_OPTIONS = Trip(
+    "unread_table_options",
+    """
+    CREATE TABLE st (id INT PRIMARY KEY) STATS_PERSISTENT=0 STATS_AUTO_RECALC=1
+      STATS_SAMPLE_PAGES=20;
+    """,
+    writes=('_stats_persistent="0"', '_stats_auto_recalc="1"', '_stats_sample_pages="20"'),
+)
+
+MYSQL += (_MY_UNREAD_OPTIONS,)
+MARIADB += (_MY_UNREAD_OPTIONS,)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,

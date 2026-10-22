@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from ekbatan.schemagen._reflect import index_parts, split_top_level, sqlite_table_parts, unquote
+from ekbatan.schemagen._reflect import (
+    index_parts,
+    mysql_table_parts,
+    split_top_level,
+    sqlite_table_parts,
+    unquote,
+)
 
 # -- index text -------------------------------------------------------------------------------
 
@@ -154,3 +160,51 @@ def test_a_spelled_type_reads_as_what_every_driver_gives(
     from ekbatan.schemagen._records import spelled_type
 
     assert spelled_type(kind, spelled) == expected
+
+
+# -- MySQL's and MariaDB's text of a table ----------------------------------------------------
+
+
+def test_mysql_partitioning_is_read_whole_from_its_versioned_comment() -> None:
+    created = (
+        "CREATE TABLE `r` (\n  `id` int NOT NULL,\n  `d` date NOT NULL,\n"
+        "  PRIMARY KEY (`id`,`d`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 "
+        "COLLATE=utf8mb4_0900_ai_ci STATS_PERSISTENT=0\n"
+        "/*!50100 PARTITION BY LIST (`id`)\n"
+        "(PARTITION a VALUES IN (1,2) ENGINE = InnoDB,\n"
+        " PARTITION b VALUES IN (3) ENGINE = InnoDB) */"
+    )
+    found = mysql_table_parts(created)
+    assert found.partitioning == (
+        "PARTITION BY LIST (`id`)\n(PARTITION a VALUES IN (1,2) ENGINE = InnoDB,\n"
+        " PARTITION b VALUES IN (3) ENGINE = InnoDB)"
+    )
+    assert found.options == (
+        ("ENGINE", "InnoDB"),
+        ("DEFAULT CHARSET", "utf8mb4"),
+        ("COLLATE", "utf8mb4_0900_ai_ci"),
+        ("STATS_PERSISTENT", "0"),
+    )
+    assert found.unread == ""
+
+
+def test_mariadb_partitioning_is_bare_and_quoted_options_keep_their_quotes() -> None:
+    created = (
+        "CREATE TABLE `r` (\n  `id` int(11) NOT NULL\n) ENGINE=InnoDB "
+        "COMMENT='it''s, = here' /*!80016 ENCRYPTION='N' */ TABLESPACE `ts`\n"
+        " PARTITION BY HASH (`id`)\nPARTITIONS 4"
+    )
+    found = mysql_table_parts(created)
+    assert found.partitioning == "PARTITION BY HASH (`id`)\nPARTITIONS 4"
+    assert found.options == (
+        ("ENGINE", "InnoDB"),
+        ("COMMENT", "'it''s, = here'"),
+        ("ENCRYPTION", "'N'"),
+    )
+    # What is not NAME=value is not guessed at: the run notes it.
+    assert found.unread == "TABLESPACE `ts`"
+
+
+def test_a_table_with_no_options_or_partitions() -> None:
+    found = mysql_table_parts("CREATE TABLE `t` (\n  `id` int NOT NULL\n)")
+    assert (found.partitioning, found.options, found.unread) == (None, (), "")

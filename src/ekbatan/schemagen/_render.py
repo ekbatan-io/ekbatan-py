@@ -51,10 +51,11 @@ log = logging.getLogger("io.ekbatan.schemagen")
 #: records arrived with 2, every SQLAlchemy name written through ``import sqlalchemy`` with 3,
 #: the records' timestamps typed by time kind (``Instant``, ``LocalDateTime``,
 #: ``OffsetDateTime``) with 4, sequences as constants, partitions created after their parent
-#: and each table's own options (ENGINE, ``postgresql_partition_by``...) with 5 - so a module
-#: written by an older schemagen fails on import instead of quietly lacking what the code beside
-#: it expects. A module from before the number has none.
-SCHEMA_FORMAT = 5
+#: and each table's own options (ENGINE, ``postgresql_partition_by``...) with 5, MySQL's and
+#: MariaDB's partitioning applied after the table is created and sequence defaults written as the
+#: catalog says them with 6 - so a module written by an older schemagen fails on import instead
+#: of quietly lacking what the code beside it expects. A module from before the number has none.
+SCHEMA_FORMAT = 6
 
 #: The module's own constants, in capitals as a table's are: a table that would take one of
 #: these names is exported with ``_`` after it, as a keyword is.
@@ -642,6 +643,25 @@ class _Writer:
     def partitions(self, relation: Relation) -> list[str]:
         """``create_all`` creating a partitioned table's partitions after it, as PostgreSQL
         prints them - SQLAlchemy has no partition of its own to declare."""
+        mysql_table = self.reflected.mysql_tables.get((relation.schema, relation.table.name))
+        if (
+            mysql_table is not None
+            and mysql_table.partitioning is not None
+            and not relation.is_view
+        ):
+            # MySQL and MariaDB partition a table by `ALTER TABLE ... PARTITION BY ...` as well
+            # as by its CREATE: the clause as the server prints it, applied right after.
+            clause = mysql_table.partitioning
+            escaped = q(f"ALTER TABLE %(fullname)s {clause.replace('%', '%%')}")
+            self.notes.append(
+                f"{relation.key} is partitioned: SQLAlchemy cannot declare its partitions, so "
+                "create_all partitions it right after creating it (ALTER TABLE ... "
+                f"{clause.split(chr(10))[0]} ...)"
+            )
+            return [
+                f'sqlalchemy.event.listen({self.name_of(relation)}, "after_create", '
+                f"sqlalchemy.DDL({escaped}))"
+            ]
         children: list[tuple[str, Any]] = []
 
         def collect(parent: str) -> None:
@@ -706,10 +726,13 @@ class _Writer:
             # ENGINE, DEFAULT CHARSET, COLLATE, ROW_FORMAT...: a table's character set is its
             # columns' unless they say their own, so without it a latin1 table's text would be
             # built utf8mb4. The comment is written as `comment=`; AUTO_INCREMENT's counter is
-            # data, not schema.
+            # data, not schema. Partitioning is applied after the table is created (see
+            # `partitions`): reflection reads it in pieces, and SQLAlchemy writes them wrong.
+            read: set[str] = set()
             for option, value in sorted(relation.table.dialect_kwargs.items()):
                 name = option.removeprefix(f"{dialect}_")
-                if value is None or name in ("comment", "auto_increment"):
+                read.add(name.replace(" ", "_").lower())
+                if value is None or name in ("comment", "auto_increment") or "partition" in name:
                     continue
                 if (
                     name == "checksum"
@@ -720,6 +743,20 @@ class _Writer:
                 if not option.startswith(f"{dialect}_"):
                     continue
                 options.append(f"{dialect}_{name.replace(' ', '_')}={lit(str(value))}")
+            text_of = self.reflected.mysql_tables.get((relation.schema, relation.table.name))
+            if text_of is not None:
+                # What the table's text says that reflection does not read - STATS_PERSISTENT,
+                # STATS_AUTO_RECALC, PAGE_CHECKSUM... - written as the server prints it.
+                for option, value in text_of.options:
+                    name = option.replace(" ", "_").lower()
+                    if name in read or name in ("comment", "auto_increment"):
+                        continue
+                    options.append(f"{dialect}_{name}={lit(value)}")
+                if text_of.unread:
+                    self.notes.append(
+                        f"{relation.key}: table options schemagen cannot read, not written - "
+                        f"create_all builds the table without them: {text_of.unread}"
+                    )
         found = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
         if found is not None:
             if found.autoincrement:
