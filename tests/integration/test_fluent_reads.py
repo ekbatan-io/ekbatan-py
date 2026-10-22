@@ -2,18 +2,18 @@
 
 `tests/unit/test_fetching.py` pins what `FetchResult` does to rows. This pins the part that
 only a repository can show: that every accessor really does hand back a `Db`, that the mapper
-a repository passes is its own `from_record`, handed each row as its mapping, and that the
+a repository passes is its own `from_record`, handed each row as the table's record - a
+`WalletsRecord`, not the row's mapping - and that the
 scatter form reads across shards the way Java's `readonlyDbs().stream().flatMap(...)` does.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Row, func, select
+from sqlalchemy import func, select
 
 from ekbatan.domain import DELETED
 from ekbatan.fetching import Db
@@ -50,8 +50,9 @@ class WalletRepository(AbstractRepository[Wallet, WalletsRecord, ShardedId[Walle
         )
 
     def from_record(self, values: WalletsRecord) -> Wallet:
-        # Read by column name: the framework hands a row's mapping, never the row itself.
-        assert isinstance(values, Mapping) and not isinstance(values, Row), type(values)
+        # The table's record, built from the row - never the row, never its mapping - on every
+        # path that reads: the repository's own finders and `rows(...)`'s terminals alike.
+        assert type(values) is WalletsRecord, type(values)
         return Wallet(
             id=ShardedId[Wallet](values["id"]),
             version=values["version"],

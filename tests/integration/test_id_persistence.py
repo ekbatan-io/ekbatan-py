@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import TypedDict
+from typing import TYPE_CHECKING, Any, Literal, overload
 from uuid import UUID
 
 import pytest
@@ -52,14 +52,70 @@ PURSES = Table(
 )
 
 
-class PursesRecord(TypedDict):
-    id: UUID
-    version: int
-    state: str
-    currency: str
-    balance: Decimal
-    created_date: datetime
-    updated_date: datetime
+class PursesRecord(dict[str, Any]):
+    """A row of `purses`."""
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        *,
+        id: UUID,
+        version: int,
+        state: str,
+        currency: str,
+        balance: Decimal,
+        created_date: datetime,
+        updated_date: datetime,
+    ) -> None:
+        super().__init__(
+            id=id,
+            version=version,
+            state=state,
+            currency=currency,
+            balance=balance,
+            created_date=created_date,
+            updated_date=updated_date,
+        )
+
+    if TYPE_CHECKING:
+
+        @overload  # type: ignore[override]
+        def __getitem__(self, key: Literal["id"]) -> UUID: ...
+        @overload
+        def __getitem__(self, key: Literal["version"]) -> int: ...
+        @overload
+        def __getitem__(self, key: Literal["state"]) -> str: ...
+        @overload
+        def __getitem__(self, key: Literal["currency"]) -> str: ...
+        @overload
+        def __getitem__(self, key: Literal["balance"]) -> Decimal: ...
+        @overload
+        def __getitem__(self, key: Literal["created_date"]) -> datetime: ...
+        @overload
+        def __getitem__(self, key: Literal["updated_date"]) -> datetime: ...
+        def __getitem__(self, key: str) -> Any: ...
+
+    def column_id(self) -> UUID:
+        return self["id"]
+
+    def column_version(self) -> int:
+        return self["version"]
+
+    def column_state(self) -> str:
+        return self["state"]
+
+    def column_currency(self) -> str:
+        return self["currency"]
+
+    def column_balance(self) -> Decimal:
+        return self["balance"]
+
+    def column_created_date(self) -> datetime:
+        return self["created_date"]
+
+    def column_updated_date(self) -> datetime:
+        return self["updated_date"]
 
 
 NOW = datetime(2026, 1, 1, 12, 0)

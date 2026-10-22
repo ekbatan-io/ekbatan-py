@@ -1,9 +1,18 @@
-"""The record types: one ``TypedDict`` per table, a key per column, typed as the column reads.
+"""The record types: one class per table, a ``dict`` with a key per column, typed as the column
+reads.
 
 jOOQ generates a ``WalletsRecord`` beside the ``WALLETS`` table, and a repository's
-``toRecord`` / ``fromRecord`` are typed by it. Here the same name is a ``TypedDict``: to
-SQLAlchemy it is a plain ``dict``, so it costs nothing at run time, and to a type checker it says
-which columns a table has and what each holds.
+``toRecord`` / ``fromRecord`` are typed by it. Here the same name is a subclass of
+``dict[str, Any]`` with ``__slots__ = ()``: to SQLAlchemy it is the very ``dict`` an insert
+binds, and to a type checker it says which columns a table has and what each holds. A column is
+read either way, ``record["wallet_id"]`` or ``record.column_wallet_id()``:
+
+- ``__init__`` takes every column as a keyword, so ``WalletsRecord(id=..., ...)`` is checked
+  key by key and type by type;
+- ``__getitem__`` is overloaded on each column's name for mypy only (under ``TYPE_CHECKING``), so
+  ``record["balance"]`` is a ``Decimal`` and ``record["balanse"]`` an error, at no run-time cost;
+- ``column_<name>()`` reads one column, typed. Every column gets one, always with the prefix, so
+  no name can clash with a ``dict`` method, be a keyword or start with a digit.
 
 The type of a column is read from the very type object the generated module builds for it:
 
@@ -20,13 +29,13 @@ The type of a column is read from the very type object the generated module buil
   ``python_type``) is ``Any``, and the run says so.
 
 A nullable column is ``X | None``. A column the database fills itself - a server default, an
-identity, a computed column, an auto-increment - is ``NotRequired``: an insert may leave it out,
-and for a computed column must.
+identity, a computed column, an auto-increment - is a keyword defaulting to
+:data:`ekbatan.schema.UNSET`: left at that, the key is not in the record and an insert leaves the
+column out (for a computed column, must).
 """
 
 from __future__ import annotations
 
-import ast
 import importlib
 import keyword
 import re
@@ -42,7 +51,17 @@ from sqlalchemy.types import TypeEngine
 
 from ..errors import ValidationError
 
-__all__ = ["Field", "Unknowable", "converter_user_type", "python_type", "record_name", "render"]
+__all__ = [
+    "Field",
+    "Unknowable",
+    "converter_user_type",
+    "method_names",
+    "parameter_name",
+    "parameter_names",
+    "python_type",
+    "record_name",
+    "render",
+]
 
 
 class Unknowable(Exception):
@@ -392,39 +411,186 @@ class Field:
     optional: bool
 
 
-def render(name: str, table: str, fields: list[Field], name_for: Namer) -> str:
-    """The ``TypedDict`` for one table.
+#: Names a keyword parameter of ``__init__`` may not take: its own ``self``, the ``super`` it
+#: calls and the cell ``super()`` reads. A column of one of these names gets a ``_`` after it.
+_INIT_RESERVED = frozenset({"self", "super", "__class__"})
 
-    Written as a class where it can be. A column whose name is not an identifier, is the
-    name of a type the record uses (a ``date`` column of type ``date``, which in a class body
-    would name the field rather than the type), or starts with two underscores (which a class
-    body mangles), makes it the call form instead.
+
+def _plain(name: str) -> str:
+    """The name with every character a Python name cannot hold made ``_``. ASCII only: Python
+    would read ``ﬁle`` and ``file`` as the same name (it NFKC-normalises them), so a non-ASCII
+    letter is a ``_`` too."""
+    return re.sub(r"[^0-9A-Za-z_]", "_", name)
+
+
+def _settle(
+    columns: list[str], wanted: list[str], natural: list[bool]
+) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """Each column's name, made unique: a column whose name needed no change keeps it, the
+    others take theirs in column order, and one that would repeat a name already taken gets
+    ``_2``, ``_3``... after it. Hands back the names and, for each that moved, (column, the name
+    it wanted, the name it got)."""
+    names: list[str | None] = [None] * len(columns)
+    taken: set[str] = set()
+    moved: list[tuple[str, str, str]] = []
+    for i in sorted(range(len(columns)), key=lambda i: (not natural[i], i)):
+        name = wanted[i]
+        number = 2
+        while name in taken:
+            name = f"{wanted[i]}_{number}"
+            number += 1
+        if name != wanted[i]:
+            moved.append((columns[i], wanted[i], name))
+        taken.add(name)
+        names[i] = name
+    return [n for n in names if n is not None], moved
+
+
+def method_names(columns: list[str]) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """The method each column is read by: ``column_`` and its name, a character no Python name
+    may hold made ``_`` - ``order date`` is ``column_order_date``. The prefix is what makes every
+    name safe: it cannot clash with a ``dict`` method, be a keyword or start with a digit."""
+    wanted = [f"column_{_plain(c)}" for c in columns]
+    return _settle(
+        columns, wanted, [w == f"column_{c}" for w, c in zip(wanted, columns, strict=True)]
+    )
+
+
+def parameter_name(column: str, reserved: frozenset[str] = _INIT_RESERVED) -> str:
+    """The keyword a column is passed to the record's ``__init__`` under, before collisions:
+    the column's name where it is a valid one; else each character a name cannot hold made
+    ``_`` (``order date`` -> ``order_date``), a ``_`` before a leading digit (``2fa`` ->
+    ``_2fa``), one leading ``_`` where a class body would mangle two (``__meta`` -> ``_meta``),
+    and a ``_`` after a keyword or a name ``__init__`` needs (``class`` -> ``class_``)."""
+    name = _plain(column) or "_"
+    if name[0].isdigit():
+        name = f"_{name}"
+    if name.startswith("__") and not name.endswith("__"):
+        name = "_" + name.lstrip("_")
+    if keyword.iskeyword(name) or name in reserved:
+        name = f"{name}_"
+    return name
+
+
+def parameter_names(
+    columns: list[str], reserved: frozenset[str] = _INIT_RESERVED
+) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """Every column's keyword, unique - see :func:`parameter_name`."""
+    wanted = [parameter_name(c, reserved) for c in columns]
+    return _settle(columns, wanted, [w == c for w, c in zip(wanted, columns, strict=True)])
+
+
+def render(
+    name: str,
+    table: str,
+    fields: list[Field],
+    name_for: Namer,
+    notes: list[str] | None = None,
+) -> str:
+    """The record class for one table: a ``dict`` with a key per column.
+
+    At run time it is a ``dict`` and nothing more - ``__slots__ = ()``, a keyword ``__init__``
+    that fills it, and one ``column_<name>()`` method per column that reads its key. To mypy it
+    is more: ``__getitem__`` is overloaded on each column's name (under ``TYPE_CHECKING``, so it
+    costs nothing when the code runs), so ``record["balance"]`` is a ``Decimal``, and a key the
+    table lacks is an error, as is a method it lacks or a keyword ``__init__`` does not take.
+
+    A column the database fills itself is a keyword defaulting to ``UNSET``; left at that, the key
+    is not in the record, and an insert leaves the column out.
     """
-    typed_dict = name_for("typing", "TypedDict")
-    lines: list[tuple[str, str]] = []
+    any_ = name_for("typing", "Any")
+    columns = [f.name for f in fields]
+    filled = any(f.optional for f in fields)
+    unset = name_for("ekbatan.schema", "UNSET") if filled else "UNSET"
+    params, moved_params = parameter_names(
+        columns, _INIT_RESERVED | {unset} if filled else _INIT_RESERVED
+    )
+    methods, moved_methods = method_names(columns)
+    for column, wanted, got in moved_methods:
+        if notes is not None:
+            notes.append(
+                f"{table}.{column}: another column is read by {wanted}() too, so this one is "
+                f"read by {got}()"
+            )
+    for column, wanted, got in moved_params:
+        if notes is not None:
+            notes.append(
+                f"{table}.{column}: another column is passed as {wanted}= too, so this one is "
+                f"passed as {got}="
+            )
+
+    hints: list[str] = []
     for f in fields:
         hint = hint_source(f.hint, name_for)
-        if f.nullable and hint not in ("None", "Any") and not hint.endswith("| None"):
+        if f.nullable and hint not in ("None", any_) and not hint.endswith("| None"):
             hint = f"{hint} | None"
-        if f.optional:
-            hint = f"{name_for('typing', 'NotRequired')}[{hint}]"
-        lines.append((f.name, hint))
-    used = {
-        node.id
-        for _, hint in lines
-        for node in ast.walk(ast.parse(hint, mode="eval"))
-        if isinstance(node, ast.Name)
-    }
+        hints.append(hint)
 
     from ._types import lit
 
-    doc = f"A row of `{table}`: what a repository's `to_record` writes and `from_record` reads."
-    # A name with two leading underscores is mangled in a class body (`_WalletsRecord__meta`).
-    if all(
-        n.isidentifier() and not keyword.iskeyword(n) and n not in used and not n.startswith("__")
-        for n, _ in lines
-    ):
-        body = "\n".join(f"    {n}: {h}" for n, h in lines) if lines else "    pass"
-        return f'class {name}({typed_dict}):\n    """{doc}"""\n\n{body}'
-    entries = "".join(f"\n        {lit(n)}: {h}," for n, h in lines)
-    return f"#: {doc}\n{name} = {typed_dict}(\n    {lit(name)},\n    {{{entries}\n    }},\n)"
+    doc = (
+        f"A row of `{table}`: what a repository's `to_record` writes and `from_record` reads. "
+        f'Read a column as `record["name"]` or `record.column_name()`.'
+    )
+    out = [f"class {name}(dict[str, {any_}]):", f'    """{doc}"""', "", "    __slots__ = ()", ""]
+
+    # __init__: every column a keyword, in the table's order.
+    if fields:
+        out += ["    def __init__(", "        self,", "        *,"]
+        for f, param, hint in zip(fields, params, hints, strict=True):
+            if f.optional:
+                unset_type = name_for("ekbatan.schema", "Unset")
+                # None last, as people write it: `Instant | Unset | None`.
+                filled_hint = (
+                    f"{hint.removesuffix(' | None')} | {unset_type} | None"
+                    if hint.endswith(" | None")
+                    else f"{hint} | {unset_type}"
+                )
+                out.append(f"        {param}: {filled_hint} = {unset},")
+            else:
+                out.append(f"        {param}: {hint},")
+        out.append("    ) -> None:")
+        required = [(f.name, p) for f, p in zip(fields, params, strict=True) if not f.optional]
+        if all(column == param for column, param in required):
+            out.append("        super().__init__(")
+            out += [f"            {column}={param}," for column, param in required]
+            out.append("        )")
+        else:
+            out.append("        super().__init__(")
+            out.append("            {")
+            out += [f"                {lit(column)}: {param}," for column, param in required]
+            out.append("            }")
+            out.append("        )")
+        for f, param in zip(fields, params, strict=True):
+            if f.optional:
+                out.append(f"        if {param} is not {unset}:")
+                out.append(f"            self[{lit(f.name)}] = {param}")
+        out.append("")
+
+        # __getitem__, for mypy only: one overload per column.
+        checking = name_for("typing", "TYPE_CHECKING")
+        literal = name_for("typing", "Literal")
+        out += [f"    if {checking}:", ""]
+        if len(fields) == 1:
+            out.append(
+                f"        def __getitem__(self, key: {literal}[{lit(fields[0].name)}]) -> "
+                f"{hints[0]}: ...  # type: ignore[override]"
+            )
+        else:
+            overload = name_for("typing", "overload")
+            for i, (f, hint) in enumerate(zip(fields, hints, strict=True)):
+                # Narrower than dict's own `__getitem__(str)`, which is the point - and mypy
+                # says so once, on the first overload.
+                ignore = "  # type: ignore[override]" if i == 0 else ""
+                out.append(f"        @{overload}{ignore}")
+                out.append(
+                    f"        def __getitem__(self, key: {literal}[{lit(f.name)}]) -> {hint}: ..."
+                )
+            out.append(f"        def __getitem__(self, key: str) -> {any_}: ...")
+        out.append("")
+
+        for f, method, hint in zip(fields, methods, hints, strict=True):
+            out += [f"    def {method}(self) -> {hint}:", f"        return self[{lit(f.name)}]", ""]
+    else:
+        out += ["    def __init__(self) -> None:", "        super().__init__()", ""]
+    return "\n".join(out).rstrip("\n")

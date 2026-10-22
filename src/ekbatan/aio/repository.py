@@ -271,7 +271,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
         async def read(shard: ShardIdentifier) -> list[M]:
             async with self._reader(shard=shard) as conn:
                 found = await conn.execute(self._among(conn, by_shard[shard]))
-                return [self._read_back(r) for r in found]
+                return self._read_all(found)
 
         if not by_shard:
             return []
@@ -281,7 +281,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> list[M]:
         """Live rows matching, on the shard named or on every shard."""
-        return [self._read_back(r) for r in await self._read(self._where(*criteria), shard)]
+        return self._read_all(await self._read(self._where(*criteria), shard))
 
     async def find_one_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
@@ -356,9 +356,9 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
                 written = await conn.execute(
                     self._insert_returning(), rows, execution_options=_ONE_STATEMENT
                 )
-                return [self._read_back(r) for r in written]
+                return self._read_all(written)
             await conn.execute(insert(self.table), rows)
-        return [self.from_record(r) for r in rows]
+        return [self.from_record(self._as_record(r)) for r in rows]
 
     async def add_all_no_result(self, models: Sequence[M]) -> None:
         """Insert without reading anything back."""

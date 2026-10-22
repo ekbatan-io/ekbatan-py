@@ -6,9 +6,10 @@ SQLAlchemy type, a library type, a converter read off its ``from_db`` annotation
 its ``Converter[DbT, UserT]`` base, one that says neither - and so do the names: a record's own,
 an import that clashes with one, a column named like a type.
 
-Every rendered module is also executed and its records' hints read back with
-``typing.get_type_hints``, so a record that reads well but means something else fails here.
-The proof that a type checker enforces them is ``test_typed_records_mypy``.
+Every rendered module is also executed and its records' types read back from what the record
+does - ``tests/records.py`` passes each keyword a marker and sees which key it lands under - so a
+record that reads well but means something else fails here. The proof that a type checker
+enforces them is ``test_typed_records_mypy``.
 """
 
 from __future__ import annotations
@@ -16,14 +17,13 @@ from __future__ import annotations
 import logging
 import sys
 import types
-import typing
 import uuid
 from collections.abc import Iterator
 from datetime import date
 from datetime import time as time_of_day
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal, NotRequired
+from typing import Any, Literal
 
 import pytest
 from sqlalchemy import (
@@ -52,6 +52,8 @@ from ekbatan.schema import JsonValue, sql_type
 from ekbatan.schemagen import ForcedType, SchemagenConfig, render
 from ekbatan.schemagen._records import record_name
 from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
+from records import filled, keywords
+from records import hints as record_hints
 
 
 def _render(
@@ -86,7 +88,8 @@ def _run(text_: str) -> types.ModuleType:
 
 
 def _hints(text_: str, record: str) -> dict[str, Any]:
-    return typing.get_type_hints(getattr(_run(text_), record), include_extras=True)
+    module = _run(text_)
+    return record_hints(getattr(module, record), vars(module))
 
 
 def _record(text_: str, record: str) -> str:
@@ -117,10 +120,10 @@ def test_the_record_is_named_as_jooq_names_it(table: str, record: str) -> None:
 def test_each_table_has_its_record_beside_it_and_exported() -> None:
     text_ = _render(Column("balance", NUMERIC(19, 4), nullable=False))
     table_at = text_.index("WALLETS = sqlalchemy.Table(")
-    assert table_at < text_.index("class WalletsRecord(TypedDict):")
+    assert table_at < text_.index("class WalletsRecord(dict[str, Any]):")
     module = _run(text_)
     assert module.__all__ == ["WALLETS", "WalletsRecord", "metadata"]
-    assert typing.is_typeddict(module.WalletsRecord)
+    assert issubclass(module.WalletsRecord, dict)
 
 
 # -- plain types ------------------------------------------------------------------------------
@@ -142,21 +145,24 @@ def test_plain_types_are_what_the_column_reads_as() -> None:
         Column("ip", postgresql.INET(), nullable=False),
         Column("seats", postgresql.INT4RANGE(), nullable=False),
     )
-    assert _record(text_, "WalletsRecord").splitlines()[3:] == [
-        "    id: int",
-        "    version: int",
-        "    state: str",
-        "    balance: Decimal",
-        "    rate: float",
-        "    active: bool",
-        "    born: date",
-        "    blob: bytes",
-        "    note: str",
-        "    tags: list[str]",
-        '    mood: Literal["happy", "sad"]',
-        "    span: timedelta",
-        "    ip: IPv4Address | IPv6Address",
-        "    seats: Range[int]",
+    record = _record(text_, "WalletsRecord")
+    assert record[
+        record.index("        *,\n") + 11 : record.index("    ) -> None:")
+    ].splitlines() == [
+        "        id: int,",
+        "        version: int,",
+        "        state: str,",
+        "        balance: Decimal,",
+        "        rate: float,",
+        "        active: bool,",
+        "        born: date,",
+        "        blob: bytes,",
+        "        note: str,",
+        "        tags: list[str],",
+        '        mood: Literal["happy", "sad"],',
+        "        span: timedelta,",
+        "        ip: IPv4Address | IPv6Address,",
+        "        seats: Range[int],",
     ]
     hints = _hints(text_, "WalletsRecord")
     assert hints["balance"] is Decimal and hints["born"] is date
@@ -189,24 +195,30 @@ def test_a_nullable_column_may_be_none() -> None:
     record = _record(text_, "WalletsRecord")
     assert "    note: str | None" in record
     assert "    points: int | None" in record
-    assert "    state: str\n" in record + "\n"
+    assert "        state: str,\n" in record
     assert _hints(text_, "WalletsRecord")["note"] == str | None
 
 
 def test_a_column_the_database_fills_may_be_left_out() -> None:
     """A server default, an identity, a computed column: an insert may leave each out - and
-    must leave out a computed one - so the key is not required."""
+    must leave out a computed one - so its keyword defaults to UNSET, and left at that the key
+    is not in the record at all."""
     text_ = _render(
         Column("created", TIMESTAMP(), server_default=text("now()"), nullable=False),
         Column("seq", BIGINT(), Identity(), nullable=False),
         Column("doubled", INTEGER(), Computed("id * 2")),
         Column("plain", INTEGER(), nullable=False),
     )
-    hints = _hints(text_, "WalletsRecord")
-    assert typing.get_origin(hints["created"]) is NotRequired
-    assert typing.get_origin(hints["seq"]) is NotRequired
-    assert typing.get_origin(hints["doubled"]) is NotRequired
-    assert typing.get_origin(hints["plain"]) is not NotRequired
+    module = _run(text_)
+    record = module.WalletsRecord
+    assert filled(record) == {"created", "seq", "doubled"}
+    assert record_hints(record, vars(module))["created"] is Instant, "read, it is there"
+    assert "        created: Instant | Unset = UNSET,\n" in text_
+    assert "        doubled: int | Unset | None = UNSET,\n" in text_
+    left_out = record(id=1, plain=2)
+    assert left_out == {"id": 1, "plain": 2} and "created" not in left_out
+    assert record(id=1, plain=2, seq=7)["seq"] == 7
+    assert record(id=1, plain=2, doubled=None) == {"id": 1, "plain": 2, "doubled": None}
 
 
 # -- forced types -----------------------------------------------------------------------------
@@ -338,7 +350,7 @@ def test_a_type_nothing_can_say_anything_about_is_any_and_said(
 ) -> None:
     with caplog.at_level(logging.WARNING, logger="io.ekbatan.schemagen"):
         text_ = _render(Column("doc", sql_type("xml"), nullable=False))
-    assert "    doc: Any" in _record(text_, "WalletsRecord")
+    assert "        doc: Any," in _record(text_, "WalletsRecord")
     assert any("wallets.doc" in r.message and "Any" in r.message for r in caplog.records)
 
 
@@ -459,14 +471,14 @@ def _converted(converter: str, column: Column[Any], **kwargs: Any) -> str:
 
 def test_a_converter_s_type_is_read_off_its_from_db_annotation(user_types: Path) -> None:
     text_ = _converted("Annotated", Column("amount", NUMERIC(19, 4), nullable=False))
-    assert "    amount: Money" in _record(text_, "WalletsRecord")
+    assert "        amount: Money," in _record(text_, "WalletsRecord")
     assert "from record_user_types.model import Money" in text_
     assert _hints(text_, "WalletsRecord")["amount"].__module__ == "record_user_types.model"
 
 
 def test_without_an_annotation_the_converter_base_says_it(user_types: Path) -> None:
     text_ = _converted("BaseOnly", Column("currency", VARCHAR(3), nullable=False))
-    assert "    currency: Currency" in _record(text_, "WalletsRecord")
+    assert "        currency: Currency," in _record(text_, "WalletsRecord")
 
 
 def test_a_converter_that_says_neither_is_refused_naming_it(user_types: Path) -> None:
@@ -488,14 +500,14 @@ def test_an_annotation_naming_a_type_checking_import_falls_back_to_the_base(
     user_types: Path,
 ) -> None:
     text_ = _converted("HiddenWithBase", Column("amount", NUMERIC(19, 4), nullable=False))
-    assert "    amount: Money" in _record(text_, "WalletsRecord")
+    assert "        amount: Money," in _record(text_, "WalletsRecord")
     with pytest.raises(ValidationError, match="TYPE_CHECKING"):
         _converted("Hidden", Column("amount", NUMERIC(19, 4), nullable=False))
 
 
 def test_a_converter_annotated_any_falls_back_to_its_base(user_types: Path) -> None:
     text_ = _converted("AnyWithBase", Column("currency", VARCHAR(3), nullable=False))
-    assert "    currency: Currency" in _record(text_, "WalletsRecord")
+    assert "        currency: Currency," in _record(text_, "WalletsRecord")
 
 
 def test_a_converter_that_says_only_any_is_any_and_said(
@@ -503,7 +515,7 @@ def test_a_converter_that_says_only_any_is_any_and_said(
 ) -> None:
     with caplog.at_level(logging.WARNING, logger="io.ekbatan.schemagen"):
         text_ = _converted("AnyOnly", Column("currency", VARCHAR(3), nullable=False))
-    assert "    currency: Any" in _record(text_, "WalletsRecord")
+    assert "        currency: Any," in _record(text_, "WalletsRecord")
     assert any(
         "wallets.currency" in r.message
         and "record_user_types.converters.AnyOnly" in r.message
@@ -514,7 +526,7 @@ def test_a_converter_that_says_only_any_is_any_and_said(
 
 def test_a_converter_s_none_and_the_column_s_null_are_said_once(user_types: Path) -> None:
     text_ = _converted("Nullable", Column("currency", VARCHAR(3)))
-    assert "    currency: Currency | None\n" in _record(text_, "WalletsRecord") + "\n"
+    assert "        currency: Currency | None,\n" in _record(text_, "WalletsRecord")
 
 
 # -- clashes ----------------------------------------------------------------------------------
@@ -536,15 +548,15 @@ def test_a_user_type_named_like_another_import_is_aliased(user_types: Path) -> N
 def test_a_user_type_named_like_a_record_is_aliased(user_types: Path) -> None:
     text_ = _converted("NamedLikeARecord", Column("doc", VARCHAR(10), nullable=False))
     module = _run(text_)
-    assert typing.is_typeddict(module.WalletsRecord), "the record keeps its name"
+    assert issubclass(module.WalletsRecord, dict), "the record keeps its name"
     assert "import WalletsRecord as record_user_types_model_WalletsRecord" in text_
-    hints = typing.get_type_hints(module.WalletsRecord)
+    hints = record_hints(module.WalletsRecord, vars(module))
     assert hints["doc"].__module__ == "record_user_types.model"
 
 
 def test_a_converter_named_like_a_record_is_aliased(user_types: Path) -> None:
     text_ = _converted("WalletsRecordConverter", Column("doc", VARCHAR(10), nullable=False))
-    assert typing.is_typeddict(_run(text_).WalletsRecord)
+    assert issubclass(_run(text_).WalletsRecord, dict)
 
 
 def test_two_tables_that_would_share_a_record_are_refused() -> None:
@@ -552,25 +564,140 @@ def test_two_tables_that_would_share_a_record_are_refused() -> None:
         _render(name="foo_bar", extra=(Table("foo__bar", MetaData(), Column("id", INTEGER())),))
 
 
-def test_a_column_named_like_its_own_type_makes_the_call_form() -> None:
-    """``date: date`` in a class body names the field, not the type - so the record is written
-    as a call, and still means a ``date``."""
+# -- names: the keywords and the methods --------------------------------------------------------
+
+
+def test_a_column_named_like_its_own_type_still_means_the_type() -> None:
+    """``date: date`` is a keyword whose annotation is read where the class is, not inside the
+    signature, so it still means the type - and the method is ``column_date``."""
     text_ = _render(
-        Column("date", DATE(), nullable=False), Column("class", VARCHAR(5), nullable=False)
+        Column("date", DATE(), nullable=False), Column("str", VARCHAR(5), nullable=False)
     )
-    assert 'WalletsRecord = TypedDict(\n    "WalletsRecord",' in text_
-    hints = _hints(text_, "WalletsRecord")
-    assert hints["date"] is date and hints["class"] is str
+    module = _run(text_)
+    hints = record_hints(module.WalletsRecord, vars(module))
+    assert hints["date"] is date and hints["str"] is str
+    record = module.WalletsRecord(id=1, date=date(2026, 1, 2), str="x")
+    assert record.column_date() == date(2026, 1, 2) and record.column_str() == "x"
 
 
-def test_a_column_named_like_a_builtin_it_uses_makes_the_call_form() -> None:
-    text_ = _render(Column("str", VARCHAR(5), nullable=False))
-    assert _hints(text_, "WalletsRecord")["str"] is str
+@pytest.mark.parametrize(
+    ("column", "keyword", "method"),
+    [
+        ("class", "class_", "column_class"),
+        ("keys", "keys", "column_keys"),
+        ("items", "items", "column_items"),
+        ("get", "get", "column_get"),
+        ("order date", "order_date", "column_order_date"),
+        ("2fa", "_2fa", "column_2fa"),
+        ("__meta", "_meta", "column___meta"),
+        ("self", "self_", "column_self"),
+        ("super", "super_", "column_super"),
+        ("e-mail", "e_mail", "column_e_mail"),
+        ("größe", "gr__e", "column_gr__e"),
+        ("Mixed Case", "Mixed_Case", "column_Mixed_Case"),
+    ],
+)
+def test_every_column_gets_a_keyword_and_a_column_method(
+    column: str, keyword: str, method: str
+) -> None:
+    """The method is always ``column_`` and the name, a character no Python name holds made
+    ``_`` - so it can never be a ``dict`` method, a keyword or start with a digit. The keyword is
+    the name where it is one; else the same characters made ``_``, a ``_`` before a digit, one
+    ``_`` where a class body would mangle two, and a ``_`` after a keyword or a name ``__init__``
+    needs. The key is always the column's real name."""
+    text_ = _render(Column(column, VARCHAR(5), nullable=False))
+    module = _run(text_)
+    record_type = module.WalletsRecord
+    assert keywords(record_type) == {"id": "id", column: keyword}
+    record = record_type(id=1, **{keyword: "v"})
+    assert record == {"id": 1, column: "v"}
+    assert getattr(record, method)() == "v"
+    assert record[column] == "v"
+    assert f"self[{column!r}]".replace("'", '"') in text_ or column == "größe"
+    # The dict's own methods are untouched by a column called after one.
+    assert list(record.keys()) == ["id", column]
+    assert dict(record.items()) == {"id": 1, column: "v"}
 
 
-def test_a_column_named_with_two_leading_underscores_makes_the_call_form() -> None:
-    """In a class body ``__meta`` is name-mangled to ``_WalletsRecord__meta``: the record would
-    have a key no row has."""
-    text_ = _render(Column("__meta", VARCHAR(5), nullable=False))
-    assert 'WalletsRecord = TypedDict(\n    "WalletsRecord",' in text_
-    assert set(_hints(text_, "WalletsRecord")) == {"id", "__meta"}
+def test_two_columns_that_make_one_name_get_a_number_and_a_note(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``order_date`` and ``order date`` both make ``column_order_date`` and ``order_date``. The
+    column whose name needed no change keeps it, whatever the order; the other gets ``_2`` -
+    the same every run - and the run says so."""
+    with caplog.at_level(logging.WARNING, logger="io.ekbatan.schemagen"):
+        text_ = _render(
+            Column("order date", VARCHAR(5), nullable=False),
+            Column("order_date", VARCHAR(5), nullable=False),
+            Column("order-date", VARCHAR(5), nullable=False),
+        )
+    module = _run(text_)
+    assert keywords(module.WalletsRecord) == {
+        "id": "id",
+        "order date": "order_date_2",
+        "order_date": "order_date",
+        "order-date": "order_date_3",
+    }
+    record = module.WalletsRecord(id=1, order_date_2="a", order_date="b", order_date_3="c")
+    assert record.column_order_date_2() == "a"
+    assert record.column_order_date() == "b"
+    assert record.column_order_date_3() == "c"
+    messages = [r.message for r in caplog.records]
+    assert any("wallets.order date" in m and "column_order_date_2()" in m for m in messages)
+    assert any("wallets.order-date" in m and "order_date_3=" in m for m in messages)
+    assert (
+        _render(
+            Column("order date", VARCHAR(5), nullable=False),
+            Column("order_date", VARCHAR(5), nullable=False),
+            Column("order-date", VARCHAR(5), nullable=False),
+        )
+        == text_
+    ), "the same every run"
+
+
+def test_a_column_named_like_the_unset_marker_is_a_keyword_of_its_own() -> None:
+    """``UNSET`` is the default the filled columns' keywords use, so a column of that name -
+    when a filled column needs the marker - is passed as ``UNSET_``."""
+    text_ = _render(
+        Column("UNSET", VARCHAR(5), nullable=False),
+        Column("created", TIMESTAMP(), server_default=text("now()"), nullable=False),
+    )
+    module = _run(text_)
+    assert keywords(module.WalletsRecord) == {"id": "id", "UNSET": "UNSET_", "created": "created"}
+    assert module.WalletsRecord(id=1, UNSET_="x") == {"id": 1, "UNSET": "x"}
+
+
+def test_the_keywords_are_keyword_only_and_each_one_is_required() -> None:
+    text_ = _render(Column("note", TEXT()))
+    record_type = _run(text_).WalletsRecord
+    with pytest.raises(TypeError, match="positional"):
+        record_type(1, None)
+    with pytest.raises(TypeError, match="note"):
+        record_type(id=1)
+    assert record_type(id=1, note=None) == {"id": 1, "note": None}
+
+
+def test_a_record_is_a_dict_with_no_room_for_anything_else() -> None:
+    """``__slots__ = ()``: no ``__dict__`` per record, so a record costs what its ``dict``
+    costs, and an attribute set by mistake fails rather than vanishing from every write."""
+    record = _run(_render(Column("note", TEXT()))).WalletsRecord(id=1, note="n")
+    assert type(record).__mro__[1] is dict
+    assert not hasattr(record, "__dict__")
+    with pytest.raises(AttributeError):
+        record.note = "x"  # type: ignore[attr-defined]
+
+
+def test_the_overloads_are_for_the_type_checker_only() -> None:
+    """At run time ``record[key]`` is ``dict``'s own: the overloads sit under
+    ``TYPE_CHECKING``, which is false when the module runs."""
+    module = _run(_render(Column("note", TEXT())))
+    assert module.WalletsRecord.__getitem__ is dict.__getitem__
+    assert "    if TYPE_CHECKING:\n" in _record(_render(Column("note", TEXT())), "WalletsRecord")
+
+
+def test_a_table_of_one_column_is_written_without_overloads() -> None:
+    """``@overload`` needs two; one column is one plain signature."""
+    text_ = _render()
+    assert "@overload" not in _record(text_, "WalletsRecord")
+    assert '        def __getitem__(self, key: Literal["id"]) -> int: ...' in text_
+    assert _run(text_).WalletsRecord(id=3).column_id() == 3

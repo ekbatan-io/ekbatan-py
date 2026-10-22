@@ -199,6 +199,11 @@ def test_the_names_cover_what_the_writer_and_the_type_table_write() -> None:
         "postgresql",
         "check_fingerprint",
         "outbox_table",
+        "type_checking",
+        "overload",
+        "literal",
+        "any",
+        "unset",
     ):
         assert expected in names, expected
 
@@ -282,7 +287,6 @@ def test_reading_a_record_s_hints_leaves_the_module_s_namespace_as_it_was() -> N
     happens to run then - is registered in that frame's globals as `__warningregistry__`. The
     cached baseline namespace grew while the test iterated it. Made certain here with a hint
     whose evaluation warns."""
-    import typing
     import warnings
 
     from schemagen_support import hints
@@ -293,14 +297,16 @@ def test_reading_a_record_s_hints_leaves_the_module_s_namespace_as_it_was() -> N
 
     namespace: dict[str, Any] = {"warns": warns}
     exec(
-        "from __future__ import annotations\nfrom typing import TypedDict\n\n"
-        "class R(TypedDict):\n    a: warns()\n",
+        "from __future__ import annotations\nfrom typing import Any\n\n"
+        "class R(dict[str, Any]):\n"
+        "    def __init__(self, *, a: warns()) -> None:\n"
+        "        super().__init__(a=a)\n",
         namespace,
     )
-    assert isinstance(namespace["R"].__annotations__["a"], typing.ForwardRef)
+    assert isinstance(namespace["R"].__init__.__annotations__["a"], str)
     before = dict(namespace)
     with warnings.catch_warnings():
         warnings.simplefilter("always")
         assert hints(namespace["R"], namespace) == {"a": int}
     assert namespace == before
-    assert typing.is_typeddict(namespace["R"])
+    assert issubclass(namespace["R"], dict)

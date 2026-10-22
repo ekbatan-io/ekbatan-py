@@ -20,7 +20,6 @@ For each database, one migration declares a column of every type below. Then, fo
 from __future__ import annotations
 
 import asyncio
-import sys
 import types
 import typing
 from collections.abc import Mapping, Sequence
@@ -37,6 +36,7 @@ from backends import Backend
 from ekbatan.config import DataSourceConfig, split_login
 from ekbatan.schemagen import generate
 from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
+from records import hints as record_hints
 from schemagen_support import (
     column_sources,
     engine,
@@ -307,12 +307,7 @@ def test_the_record_names_every_column_with_the_type_it_reads_as(
 ) -> None:
     """Every case's value, read back through the sync driver and the async one, is what
     ``TTypesRecord`` says that column holds - the record is not a guess."""
-    # A TypedDict resolves its hints in its module as `sys.modules` has it; `load` took it out.
-    sys.modules[matrix.module.__name__] = matrix.module
-    try:
-        hints = typing.get_type_hints(matrix.module.TTypesRecord)
-    finally:
-        sys.modules.pop(matrix.module.__name__, None)
+    hints = record_hints(matrix.module.TTypesRecord, vars(matrix.module))
     cases = CASES_BY_DIALECT[dialect]
     assert set(hints) == {"pk", *(c.name for c in cases)}
     row = {c.name: c.value for c in cases}
@@ -363,7 +358,7 @@ def test_an_array_of_a_domain_is_written_whole_and_its_record_says_what_both_dri
         'postgresql.ARRAY(postgresql.DOMAIN("posint", sqlalchemy.INTEGER(), '
         'constraint_name="posint_check", check=sqlalchemy.text("((VALUE > 0))")))'
     ) in text
-    assert "    dd: Any\n" in text
+    assert "        dd: Any,\n" in text
     assert any("t_arr.dd is an array of the domain posint" in n for n in said), said
 
     sync, async_ = _read_back(url, module.T_ARR, 1, {"dd": [5, 6]})

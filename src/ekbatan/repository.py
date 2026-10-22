@@ -3,8 +3,9 @@
 A repository is bound to one model and one table. It routes by shard, enforces the optimistic
 lock, hides soft-deleted rows from every read path, and maps between rows and models through the
 ``to_record`` / ``from_record`` every repository writes, as every Java one writes ``toRecord`` /
-``fromRecord``. A row is a *record*: a ``TypedDict`` with a key per column - ``WalletsRecord``,
-which ``schemagen`` writes beside ``WALLETS`` - so the mapping is checked by a type checker.
+``fromRecord``. A row is a *record*: a ``dict`` with a key per column - ``WalletsRecord``,
+which ``schemagen`` writes beside ``WALLETS`` - read as ``record["wallet_id"]`` or
+``record.column_wallet_id()``, so the mapping is checked by a type checker.
 
 The names are Java's. :class:`Repository` is the promise - what the framework asks of a
 repository, and all it asks. :class:`AbstractRepository` keeps that promise against a table, and
@@ -60,7 +61,7 @@ from .errors import (
     UnsupportedError,
     ValidationError,
 )
-from .fetching import Db
+from .fetching import Db, record_class, record_of, records
 from .ids import TypedValue
 from .persistence import DatabaseRegistry, _ShardRegistry
 from .sharding import NoShardingStrategy, ShardIdentifier, ShardingStrategy
@@ -233,6 +234,10 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         self.model_type = model_type
         self.table = table
         self.registry = registry
+        #: The class every row is read into before ``from_record`` sees it - the record the
+        #: repository is generic in (``WalletsRecord``), or a plain ``dict`` where that names
+        #: no record class (a ``TypedDict``, a ``Mapping``).
+        self._record_type: type[dict[str, Any]] = _record_type_of(type(self))
         self.sharding = sharding or NoShardingStrategy()
         self.clock = clock or SystemClock()
         self._single_stmts: dict[tuple[tuple[str, ...], bool], Any] = {}
@@ -301,17 +306,18 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         """The model as its table's record. **Write this.**
 
         Java's `AbstractRepository` declares `toRecord` abstract and every repository there
-        implements it. The record is the table's ``TypedDict`` - ``WalletsRecord``, generated
+        implements it. The record is the table's record class - ``WalletsRecord``, generated
         beside ``WALLETS`` - so a column left out, misspelt or given the wrong type is a type
         error, as it is a compile error in Java::
 
             def to_record(self, wallet: Wallet) -> WalletsRecord:
                 return WalletsRecord(id=wallet.id.value, version=wallet.version, ...)
 
-        Build it with the record class's keyword form. A column whose name is not a valid
-        Python identifier, or is a keyword (``order date``, ``class``, a name starting
-        ``__``), cannot be a keyword argument, so such a record is built as a dict literal -
-        both forms produce the same ``dict``, and mypy checks both.
+        Build it by keyword. A column whose name is no Python name is passed under one:
+        ``class`` as ``class_=``, ``order date`` as ``order_date=``, ``2fa`` as ``_2fa=``; the
+        key is still the column's own. A column the database fills defaults to ``UNSET``, and
+        left so it is not in the record, so the INSERT leaves it out. The record returned is the
+        very ``dict`` the INSERT is given - no copy.
 
         Where the names line up, say so in a line rather than inheriting it in silence:
         ``return self.columns_by_field_name(wallet)``.
@@ -322,12 +328,14 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
     def from_record(self, record: R) -> M:
         """A record as a model. **Write this**, alongside :meth:`to_record`.
 
-        The counterpart to Java's abstract `fromRecord`. The framework hands it a row read by
-        column name - a result row's mapping, or, where an insert or update has no
-        ``RETURNING``, the record :meth:`to_record` wrote::
+        The counterpart to Java's abstract `fromRecord`. The framework hands it the table's
+        record - a ``WalletsRecord`` built from the result row, or, where an insert or update
+        has no ``RETURNING``, the record :meth:`to_record` wrote. Read a column by key, or by
+        its method::
 
             def from_record(self, record: WalletsRecord) -> Wallet:
                 return Wallet(id=ShardedId[Wallet](record["id"]), ...)
+                # or: Wallet(id=ShardedId[Wallet](record.column_id()), ...)
         """
         raise NotImplementedError(_no_row_mapping(type(self), ["from_record"]))
 
@@ -342,7 +350,14 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         line somebody can find. The type checker takes the record on trust here - it is built
         from the fields at run time - so a mapping written out key by key is the checked one.
         """
-        return cast(R, {name: write(getattr(model, name)) for name, write in self._to_col.items()})
+        return cast(
+            R,
+            record_of(
+                self._record_type,
+                tuple(self._to_col),
+                [write(getattr(model, name)) for name, write in self._to_col.items()],
+            ),
+        )
 
     def model_by_field_name(self, record: R) -> M:
         """Every column, into the field of the same name. The counterpart to
@@ -608,10 +623,26 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         return stmt
 
     def _read_back(self, row: Row[Any]) -> M:
-        """A result row, as a model: :meth:`from_record` is handed the row's mapping, read by
-        column name. The row's own mapping, not a copy - reading ten thousand rows makes no
-        dicts."""
-        return self.from_record(cast(R, row._mapping))
+        """A result row, as a model: :meth:`from_record` is handed the row as the table's
+        record, each column under its name."""
+        return self.from_record(record_of(self._record_type, row._fields, row))
+
+    def _read_all(self, rows: Iterable[Row[Any]]) -> list[M]:
+        """Result rows, as models - one record per row, the column names read once. What every
+        read of more than one row goes through."""
+        rows = rows if isinstance(rows, list) else list(rows)
+        if not rows:
+            return []
+        read = self.from_record
+        return [read(r) for r in records(self._record_type, rows[0]._fields, rows)]
+
+    def _as_record(self, record: Mapping[str, Any]) -> R:
+        """What :meth:`to_record` returned, as the table's record: itself, when it is one -
+        never a copy - else its keys in one. Where a write reads nothing back (MySQL has no
+        ``RETURNING``), this is what :meth:`from_record` is handed."""
+        if isinstance(record, self._record_type):
+            return cast(R, record)
+        return cast(R, record_of(self._record_type, tuple(record), tuple(record.values())))
 
     def _bind(
         self, model: M, record: Mapping[str, Any], columns: tuple[str, ...]
@@ -882,11 +913,11 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
             # persisted, and the next update writes them a second time. Every other dialect
             # returns a row, and a row has no events. `add_all` takes the same care for the
             # same reason.
-            return [self.from_record(self.to_record(m)) for m in stamped]
+            return [self.from_record(self._as_record(self.to_record(m))) for m in stamped]
         # RETURNING makes no promise about order, and a caller handing in a list expects the
         # same list back.
         by_id = {row._mapping[self.id_column.name]: row for row in written}
-        return [self._read_back(by_id[self.to_record(m)[self.id_column.name]]) for m in stamped]
+        return self._read_all([by_id[self.to_record(m)[self.id_column.name]] for m in stamped])
 
 
 class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
@@ -1048,9 +1079,7 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
 
         def read(shard: ShardIdentifier) -> list[M]:
             with self._reader(shard=shard) as conn:
-                return [
-                    self._read_back(r) for r in conn.execute(self._among(conn, by_shard[shard]))
-                ]
+                return self._read_all(conn.execute(self._among(conn, by_shard[shard])))
 
         return [model for found in self._on_each(list(by_shard), read) for model in found]
 
@@ -1058,7 +1087,7 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
     ) -> list[M]:
         stmt = self._where(*criteria)
-        return [self._read_back(r) for r in self._read(stmt, shard)]
+        return self._read_all(self._read(stmt, shard))
 
     def find_one_where(
         self, *criteria: ColumnElement[bool], shard: ShardIdentifier | None = None
@@ -1193,9 +1222,9 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
                 written = conn.execute(
                     self._insert_returning(), rows, execution_options=_ONE_STATEMENT
                 )
-                return [self._read_back(r) for r in written]
+                return self._read_all(written)
             conn.execute(insert(self.table), rows)
-        return [self.from_record(r) for r in rows]
+        return [self.from_record(self._as_record(r)) for r in rows]
 
     def add_all_no_result(self, models: Sequence[M]) -> None:
         """Insert without reading anything back.
@@ -1280,6 +1309,34 @@ def _must_hold(col: Any, wanted: type, described: str, why: str) -> None:
             f"{actual.__name__ if isinstance(actual, type) else actual}; it has to be "
             f"{described}, because {why}."
         )
+
+
+def _record_type_of(cls: type) -> type[dict[str, Any]]:
+    """The record class a repository class is generic in - ``WalletsRecord`` for
+    ``WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]])`` - read off
+    its bases, through any generic class of its own in between; ``dict`` where it names none."""
+
+    def walk(klass: type, bound: dict[Any, Any]) -> object | None:
+        for base in klass.__dict__.get("__orig_bases__", klass.__bases__):
+            origin = typing.get_origin(base) or base
+            if not (isinstance(origin, type) and issubclass(origin, _RepositoryCore)):
+                continue
+            args = [
+                bound.get(a, a) if isinstance(a, typing.TypeVar) else a
+                for a in typing.get_args(base)
+            ]
+            params: list[Any] = list(
+                getattr(origin, "__type_params__", ()) or getattr(origin, "__parameters__", ())
+            )
+            names = dict(zip(params, args, strict=False))
+            if origin is _RepositoryCore:
+                return names.get(params[1]) if len(params) > 1 else None
+            found = walk(origin, names)
+            if found is not None:
+                return found
+        return None
+
+    return record_class(walk(cls, {})) or dict
 
 
 def _concrete_types(model_type: type) -> dict[str, Any]:

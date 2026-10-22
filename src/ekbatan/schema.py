@@ -31,7 +31,8 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from enum import Enum
+from typing import Any, Final, Protocol
 
 from sqlalchemy import (
     CHAR,
@@ -50,8 +51,10 @@ from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator, TypeEngine, UserDefinedType
 
 __all__ = [
+    "UNSET",
     "Converter",
     "JsonValue",
+    "Unset",
     "converted",
     "json_column",
     "notifications_table",
@@ -73,6 +76,22 @@ __all__ = [
 type JsonValue = (
     Mapping[str, JsonValue] | Sequence[JsonValue] | str | int | float | Decimal | bool | None
 )
+
+
+class Unset(Enum):
+    """The type of :data:`UNSET`, and nothing else: a value no column holds."""
+
+    UNSET = "UNSET"
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+#: What a record's keyword argument defaults to for a column the database fills itself - a
+#: server default, an identity, an auto-increment, a computed column. Left at ``UNSET``, the
+#: key is not in the record at all, so an insert leaves the column out and the database fills
+#: it: ``WalletsRecord(id=..., ...)`` without ``created_date=`` when the table defaults it.
+UNSET: Final = Unset.UNSET
 
 
 class _Timestamp(TypeDecorator[datetime]):

@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, overload
 from uuid import UUID
 
 import pytest
@@ -30,6 +30,7 @@ from sqlalchemy import BigInteger, Column, DateTime, MetaData, String, Table, Uu
 from ekbatan import AbstractRepository, Model
 from ekbatan.errors import ValidationError
 from ekbatan.ids import ShardedId
+from ekbatan.schema import UNSET, Unset
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from modes import rebased
 
@@ -55,18 +56,74 @@ PEOPLE = Table(
     Column("updated_date", DateTime, nullable=False),
 )
 
-PeopleRecord = TypedDict(
-    "PeopleRecord",
-    {
-        "id": UUID,
-        "version": int,
-        "state": str,
-        "nickname": str,
-        "class": NotRequired[str | None],
-        "created_date": datetime,
-        "updated_date": datetime,
-    },
-)
+
+class PeopleRecord(dict[str, Any]):
+    """A row of `renamed_people`. `class` is a keyword, so it is passed as `class_=`; the
+    database fills it when the record leaves it out (`UNSET`, the default)."""
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        *,
+        id: UUID,
+        version: int,
+        state: str,
+        nickname: str,
+        class_: str | Unset | None = UNSET,
+        created_date: datetime,
+        updated_date: datetime,
+    ) -> None:
+        super().__init__(
+            id=id,
+            version=version,
+            state=state,
+            nickname=nickname,
+            created_date=created_date,
+            updated_date=updated_date,
+        )
+        if class_ is not UNSET:
+            self["class"] = class_
+
+    if TYPE_CHECKING:
+
+        @overload  # type: ignore[override]
+        def __getitem__(self, key: Literal["id"]) -> UUID: ...
+        @overload
+        def __getitem__(self, key: Literal["version"]) -> int: ...
+        @overload
+        def __getitem__(self, key: Literal["state"]) -> str: ...
+        @overload
+        def __getitem__(self, key: Literal["nickname"]) -> str: ...
+        @overload
+        def __getitem__(self, key: Literal["class"]) -> str | None: ...
+        @overload
+        def __getitem__(self, key: Literal["created_date"]) -> datetime: ...
+        @overload
+        def __getitem__(self, key: Literal["updated_date"]) -> datetime: ...
+        def __getitem__(self, key: str) -> Any: ...
+
+    def column_id(self) -> UUID:
+        return self["id"]
+
+    def column_version(self) -> int:
+        return self["version"]
+
+    def column_state(self) -> str:
+        return self["state"]
+
+    def column_nickname(self) -> str:
+        return self["nickname"]
+
+    def column_class(self) -> str | None:
+        return self["class"]
+
+    def column_created_date(self) -> datetime:
+        return self["created_date"]
+
+    def column_updated_date(self) -> datetime:
+        return self["updated_date"]
+
 
 NOW = datetime(2026, 1, 1, 12, 0)
 
@@ -89,17 +146,15 @@ class PersonRepository(AbstractRepository[Person, PeopleRecord, ShardedId[Person
     `class`."""
 
     def to_record(self, person: Person) -> PeopleRecord:
-        record: PeopleRecord = {
-            "id": person.id.value,
-            "version": person.version,
-            "state": person.state.name,
-            "nickname": person.nick,
-            "created_date": person.created_date,
-            "updated_date": person.updated_date or person.created_date,
-        }
-        if person.klass is not None:
-            record["class"] = person.klass
-        return record
+        return PeopleRecord(
+            id=person.id.value,
+            version=person.version,
+            state=person.state.name,
+            nickname=person.nick,
+            class_=UNSET if person.klass is None else person.klass,
+            created_date=person.created_date,
+            updated_date=person.updated_date or person.created_date,
+        )
 
     def from_record(self, record: PeopleRecord) -> Person:
         return Person(

@@ -490,6 +490,12 @@ class _Blocking:
     def __repr__(self) -> str:
         return repr(self._target)
 
+    @property
+    def __wrapped__(self) -> Callable[..., Any]:
+        """The method itself, as ``functools.wraps`` says it: ``rows(...).fetch(self.from_record)``
+        reads the mapper's record class off what it wraps, as off any decorated function."""
+        return self._target
+
 
 class Proxy:
     """An async object, used as if it were sync."""

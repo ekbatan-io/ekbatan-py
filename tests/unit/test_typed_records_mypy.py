@@ -8,9 +8,16 @@ and several written wrong, each wrong in exactly one way:
 - ``to_record`` misspells one, or adds one the table does not have;
 - ``to_record`` gives a column the wrong type - a ``str`` balance, and a ``str`` where the
   converter's column wants a ``Currency``;
-- ``from_record`` reads a key the record does not have, or reads one as the wrong type;
+- ``from_record`` reads a key the record does not have, or reads one as the wrong type - a
+  ``UUID`` where an ``int`` goes, a ``Currency`` read as the ``str`` its column holds;
+- the same two mistakes made through the column methods: ``record.column_balanse()``, and
+  ``Currency(record.column_currency())``;
 - ``from_record`` takes another table's record;
 - a fetch mapper reads a row by attribute rather than by column name.
+
+The generated module has a table of awkward names too - ``class``, ``order date``, ``2fa``, a
+column the database fills - and is itself checked: clean, but for the one ``type: ignore`` each
+record's overloads carry (they are narrower than ``dict.__getitem__``, which is the point).
 
 One ``mypy --strict`` run checks them all. The right repository must be clean and each wrong
 one must fail with the error it was written to provoke, on its line - so each case is proven
@@ -24,7 +31,18 @@ import textwrap
 from pathlib import Path
 
 import pytest
-from sqlalchemy import BIGINT, CHAR, NUMERIC, TIMESTAMP, UUID, VARCHAR, Column, MetaData, Table
+from sqlalchemy import (
+    BIGINT,
+    CHAR,
+    NUMERIC,
+    TIMESTAMP,
+    UUID,
+    VARCHAR,
+    Column,
+    MetaData,
+    Table,
+    text,
+)
 
 from ekbatan.schemagen import ForcedType, SchemagenConfig, render
 
@@ -73,12 +91,17 @@ class CurrencyConverter:
 RIGHT = """
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import select
 
 from ekbatan import DatabaseRegistry, ModelRepository, ShardedId
 
+from ekbatan.schema import UNSET
+from ekbatan.time import Instant
+
 from .model import Currency, Wallet, WalletState
-from .schema import WALLETS, AlertsRecord, WalletsRecord
+from .schema import WALLETS, AlertsRecord, OddsRecord, WalletsRecord
 
 
 class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
@@ -118,47 +141,92 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
             return conn.rows(select(WALLETS)).fetch(self.from_record)
 
 
+def by_method(record: WalletsRecord) -> tuple[int, Currency, Decimal]:
+    return record.column_version(), record.column_currency(), record.column_balance()
+
+
 def unused(record: AlertsRecord) -> None:
     pass
+
+
+def odds(when: Instant) -> OddsRecord:
+    record = OddsRecord(id=1, class_="c", order_date=when, _2fa=None)
+    filled = OddsRecord(id=2, class_="c", order_date=when, _2fa=3, created=when)
+    left = OddsRecord(id=3, class_="c", order_date=when, _2fa=3, created=UNSET)
+    klass: str = record["class"] + record.column_class()
+    day: Instant = record["order date"]
+    two: int | None = record.column_2fa()
+    made: Instant = filled["created"]
+    return left if klass and day and two and made else record
 """
 
 #: (name, the line of RIGHT to change, what it becomes, the mypy error code expected there)
 WRONG = [
-    ("missing_column", "            balance=wallet.balance,\n", "", "typeddict-item"),
+    ("missing_column", "            balance=wallet.balance,\n", "", "call-arg"),
     (
         "misspelt_column",
         "            balance=wallet.balance,\n",
         "            balanse=wallet.balance,\n",
-        "typeddict-unknown-key",
+        "call-arg",
     ),
     (
         "extra_column",
         "            balance=wallet.balance,\n",
         '            balance=wallet.balance,\n            colour="red",\n',
-        "typeddict-unknown-key",
+        "call-arg",
     ),
     (
         "wrong_type",
         "            balance=wallet.balance,\n",
         "            balance=str(wallet.balance),\n",
-        "typeddict-item",
+        "arg-type",
     ),
     (
         "converter_type",
         "            currency=wallet.currency,\n",
         "            currency=wallet.currency.code,\n",
-        "typeddict-item",
+        "arg-type",
     ),
     (
         "wrong_key_read",
         '            balance=record["balance"],\n',
         '            balance=record["balanse"],\n',
-        "typeddict-item",
+        "call-overload",
+    ),
+    (
+        "key_read_as_wrong_type",
+        '            version=record["version"],\n',
+        '            version=record["id"],\n',
+        "arg-type",
     ),
     (
         "read_as_wrong_type",
         '            currency=record["currency"],\n',
         '            currency=Currency(record["currency"]),\n',
+        "arg-type",
+    ),
+    (
+        "unknown_method",
+        "record.column_balance()\n",
+        "record.column_balanse()\n",
+        "attr-defined",
+    ),
+    (
+        "method_read_as_wrong_type",
+        "record.column_currency(),",
+        "Currency(record.column_currency()),",
+        "arg-type",
+    ),
+    (
+        "keyword_of_a_column_name_that_is_not_one",
+        'OddsRecord(id=1, class_="c",',
+        'OddsRecord(id=1, klass="c",',
+        "call-arg",
+    ),
+    (
+        "unset_for_a_column_nobody_fills",
+        "order_date=when, _2fa=3, created=UNSET)",
+        "order_date=UNSET, _2fa=3, created=UNSET)",
         "arg-type",
     ),
     (
@@ -195,8 +263,17 @@ def _schema() -> str:
         Column("id", UUID(), primary_key=True),
         Column("message", VARCHAR(80), nullable=False),
     )
+    odds = Table(
+        "odds",
+        MetaData(),
+        Column("id", BIGINT(), primary_key=True, autoincrement=False),
+        Column("class", VARCHAR(8), nullable=False),
+        Column("order date", TIMESTAMP(), nullable=False),
+        Column("2fa", BIGINT()),
+        Column("created", TIMESTAMP(), server_default=text("now()"), nullable=False),
+    )
     return render(
-        [alerts, wallets],
+        [alerts, odds, wallets],
         framework=[],
         migrations_fingerprint="x",
         module=None,
@@ -273,14 +350,35 @@ def test_the_generated_schema_and_the_right_repository_are_clean(
     assert checked["right"] == [], checked["_stdout"][0][1]
 
 
+def test_the_only_ignores_in_the_generated_module_are_the_overloads_own(tmp_path: Path) -> None:
+    """One ``type: ignore[override]`` per record, on its first overload, and nothing else - and
+    ``--strict`` warns of an unused ignore, so the clean run above proves each is needed."""
+    import sys
+
+    app = tmp_path / "typed_records_app"
+    app.mkdir()
+    (app / "__init__.py").write_text("")
+    (app / "model.py").write_text(MODEL)
+    (app / "converters.py").write_text(CONVERTERS)
+    sys.path.insert(0, str(tmp_path))
+    try:
+        text = _schema()
+    finally:
+        sys.path.remove(str(tmp_path))
+        for name in [m for m in sys.modules if m.startswith("typed_records_app")]:
+            del sys.modules[name]
+    ignores = [line.strip() for line in text.splitlines() if "type: ignore" in line]
+    assert ignores == ["@overload  # type: ignore[override]"] * 3
+
+
 @pytest.mark.parametrize(("name", "old", "new", "code"), WRONG, ids=[w[0] for w in WRONG])
 def test_each_mistake_is_a_type_error_on_its_line(
     checked: dict[str, list[tuple[int, str]]], name: str, old: str, new: str, code: str
 ) -> None:
     source = textwrap.dedent(RIGHT.replace(old, new))
-    # The line the change is on - or, for a key the record lacks or lost, the call it is in:
-    # mypy reports a TypedDict call's keys where the call starts.
-    keys = code == "typeddict-unknown-key" or not new.strip()
+    # The line the change is on - or, for a keyword the record lacks or lost, the call it is in:
+    # mypy reports a call's missing and unexpected keywords where the call starts.
+    keys = code == "call-arg" and "WalletsRecord" not in new and "OddsRecord" not in new
     where = "return WalletsRecord(" if keys else new.strip().splitlines()[0]
     line = next(i for i, text in enumerate(source.splitlines(), 1) if where in text)
     assert checked[name], f"mypy accepted {name}:\n{checked['_stdout'][0][1]}"
@@ -303,5 +401,6 @@ def test_the_record_holds_the_converter_s_own_type(tmp_path: Path) -> None:
         sys.path.remove(str(tmp_path))
         for name in [m for m in sys.modules if m.startswith("typed_records_app")]:
             del sys.modules[name]
-    assert "    currency: Currency\n" in text
+    assert "        currency: Currency,\n" in text
+    assert "    def column_currency(self) -> Currency:\n" in text
     assert "from typed_records_app.model import Currency" in text

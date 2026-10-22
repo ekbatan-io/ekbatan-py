@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
-import sys
 import typing
 from pathlib import Path
 from typing import Any
@@ -32,6 +31,7 @@ from backends import Backend
 from ekbatan.config import DataSourceConfig, split_login
 from ekbatan.schemagen import ForcedType, SchemagenConfig, generate
 from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
+from records import hints as record_hints
 from schemagen_support import fresh, load, migrations
 
 NAIVE = dt.datetime(2026, 3, 1, 9, 30, 0, 123456)
@@ -90,11 +90,7 @@ def generated(backend: Backend, dialect: str, tmp_path: Path) -> tuple[str, Path
 
 
 def _hints(module: Any) -> dict[str, Any]:
-    sys.modules[module.__name__] = module
-    try:
-        return typing.get_type_hints(module.RemindersRecord)
-    finally:
-        sys.modules.pop(module.__name__, None)
+    return record_hints(module.RemindersRecord, vars(module))
 
 
 def test_each_time_column_gets_its_kind(generated: tuple[str, Path, Any], dialect: str) -> None:

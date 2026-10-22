@@ -365,7 +365,7 @@ SQLITE = (
             "sqlite_strict=True",
             'sqlalchemy.VARCHAR(length=20, collation="NOCASE")',
             'sqlalchemy.Column("anything", sql_type(""))',
-            "    id: NotRequired[int]",
+            "        id: int | Unset = UNSET,",
         ),
         never=("autoincrement=False",),
     ),
@@ -439,7 +439,11 @@ _MY_COLUMNS = Trip(
     CREATE VIEW v_v AS SELECT id, qty * 3 AS tripled, name FROM v_people;
     """,
     # A view's NOT NULL column is not `| None` in its record.
-    writes=('    m: Literal["sad", "ok", "happy"]\n    qty: int | None\n    name: str | None\n',),
+    writes=(
+        '        m: Literal["sad", "ok", "happy"],\n'
+        "        qty: int | None,\n"
+        "        name: str | None,\n",
+    ),
 )
 
 #: O1 on MySQL and MariaDB: another database, read as a schema, with keys within it and into it.

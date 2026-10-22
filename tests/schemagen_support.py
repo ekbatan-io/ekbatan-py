@@ -13,7 +13,6 @@ import importlib.util
 import itertools
 import logging
 import sys
-import typing
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -96,6 +95,8 @@ def unused_and_undefined(text: str) -> tuple[set[str], set[str]]:
             defined |= {t.id for t in node.targets if isinstance(t, ast.Name)}
         elif isinstance(node, ast.ClassDef):
             defined.add(node.name)
+    # A record's methods read their own parameters - `self`, each column's keyword.
+    defined |= {a.arg for a in ast.walk(tree) if isinstance(a, ast.arg)}
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
     return imported - used, used - imported - defined
 
@@ -253,18 +254,15 @@ def describe(table: Table) -> list[Any]:
 
 
 def hints(record: Any, namespace: dict[str, Any]) -> dict[str, Any]:
-    """A record's types, read in the module's own namespace - a module run by `exec` has no
-    `sys.modules` entry for `typing.get_type_hints` to find.
-
-    Evaluated in a copy: a warning raised while a hint runs - an unclosed SQLite connection's
+    """A record's types by column, read in the module's own namespace - a module run by `exec`
+    has no `sys.modules` entry to find it in. `tests/records.py` reads them, in a copy of the
+    namespace: a warning raised while a hint runs - an unclosed SQLite connection's
     ResourceWarning, when the garbage collector happens to run then - is registered in the
     evaluating frame's globals as `__warningregistry__`, and the caller's namespace (a cached
     baseline a test iterates) would grow under it."""
-    scope = dict(namespace)
-    return {
-        key: eval(hint.__forward_arg__, scope) if isinstance(hint, typing.ForwardRef) else hint
-        for key, hint in record.__annotations__.items()
-    }
+    from records import hints as record_hints
+
+    return record_hints(record, namespace)
 
 
 def own_names(written: str, namespace: dict[str, Any]) -> set[str]:

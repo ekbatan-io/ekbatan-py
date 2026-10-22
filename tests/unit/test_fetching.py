@@ -10,8 +10,9 @@ wrong one is invisible until the day the data has two.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterator, Mapping
-from typing import TypedDict
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import pytest
 from sqlalchemy import (
@@ -63,10 +64,42 @@ def named(row: RowMapping) -> str:
     return str(row["name"])
 
 
-class AnimalsRecord(TypedDict):
-    id: int
-    name: str
-    legs: int
+class AnimalsRecord(dict[str, Any]):
+    """A row of `animals`."""
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        *,
+        id: int,
+        name: str,
+        legs: int,
+    ) -> None:
+        super().__init__(
+            id=id,
+            name=name,
+            legs=legs,
+        )
+
+    if TYPE_CHECKING:
+
+        @overload  # type: ignore[override]
+        def __getitem__(self, key: Literal["id"]) -> int: ...
+        @overload
+        def __getitem__(self, key: Literal["name"]) -> str: ...
+        @overload
+        def __getitem__(self, key: Literal["legs"]) -> int: ...
+        def __getitem__(self, key: str) -> Any: ...
+
+    def column_id(self) -> int:
+        return self["id"]
+
+    def column_name(self) -> str:
+        return self["name"]
+
+    def column_legs(self) -> int:
+        return self["legs"]
 
 
 ALL = select(ANIMALS).order_by(ANIMALS.c.id)
@@ -124,6 +157,52 @@ class TestFetch:
             return f"{record['name']}:{record['legs']}"
 
         assert db.rows(ALL).fetch(from_record) == ["ant:6", "bee:6", "cat:4"]
+
+
+class TestWhatTheMapperIsHanded:
+    """A mapper whose first parameter names a record class is handed that class, built from
+    the row - so `record.column_name()` works as `record["name"]` does. Anything else is
+    handed the row's mapping."""
+
+    def test_a_mapper_typed_by_a_record_gets_the_record(self, db: Db) -> None:
+        def named(record: AnimalsRecord) -> str:
+            assert type(record) is AnimalsRecord, type(record)
+            return record.column_name() + record["name"]
+
+        assert db.rows(ALL).fetch(named) == ["antant", "beebee", "catcat"]
+        assert db.rows(ONE).fetch_one(named) == "catcat"
+        assert db.rows(ONE).fetch_first(named) == "catcat"
+        assert db.rows(ONE).fetch_one_or_none(named) == "catcat"
+        assert list(db.rows(ALL).each(named)) == ["antant", "beebee", "catcat"]
+        assert list(db.rows(ALL).partitions(named, 2)) == [["antant", "beebee"], ["catcat"]]
+
+    def test_a_lambda_gets_the_mapping(self, db: Db) -> None:
+        seen: list[object] = []
+        db.rows(ALL).fetch(lambda row: seen.append(row))
+        assert all(isinstance(r, RowMapping) for r in seen), seen
+
+    def test_a_decorated_mapper_is_read_through_what_it_wraps(self, db: Db) -> None:
+        def named(record: AnimalsRecord) -> str:
+            return record.column_name()
+
+        @functools.wraps(named)
+        def logged(*args: Any) -> str:
+            return named(*args)
+
+        assert db.rows(ALL).fetch(logged) == ["ant", "bee", "cat"]
+
+    def test_a_method_typed_by_a_record_gets_the_record(self, db: Db) -> None:
+        class Reader:
+            def legs(self, record: AnimalsRecord) -> int:
+                return record.column_legs()
+
+        assert db.rows(ALL).fetch(Reader().legs) == [6, 6, 4]
+
+    def test_an_annotation_nobody_can_read_gets_the_mapping(self, db: Db) -> None:
+        def named(record: NotImportedAnywhere) -> str:  # type: ignore[name-defined]  # noqa: F821
+            return str(record["name"])
+
+        assert db.rows(ALL).fetch(named) == ["ant", "bee", "cat"]
 
 
 class TestFetchFirst:
