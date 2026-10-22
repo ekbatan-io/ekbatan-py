@@ -556,3 +556,80 @@ def test_the_policy_in_a_file_is_read_as_java_reads_it(tmp_path, written_as, rea
     padded or empty value reads as Java's does."""
     text = YAML.replace("unknown-shard-policy: fail", f"unknown-shard-policy: {written_as}")
     assert loaded(tmp_path, "ekbatan.yaml", text).unknown_shard_policy == read
+
+
+# -- the environment is read by name, never held whole (EKB-0436-) ----------------------------
+
+OTHER_SECRET = "Mk-7f3a-OTHER-SECRET"
+
+
+def _holds(value: object, marker: str, depth: int = 0) -> bool:
+    """Whether ``value`` - or what it holds, a few levels down - is the environment or has
+    ``marker`` in it."""
+    import os
+
+    if value is os.environ or depth > 4:
+        return value is os.environ
+    if isinstance(value, str):
+        return marker in value
+    # Plain dicts only: a ConfigParser is a mapping too, and reading it would interpolate.
+    if isinstance(value, dict):
+        return any(_holds(v, marker, depth + 1) for v in list(value.values()))
+    if isinstance(value, (list, tuple, set)):
+        return any(_holds(v, marker, depth + 1) for v in value)
+    if callable(value) and getattr(value, "__self__", None) is os.environ:
+        return True
+    held = getattr(value, "__dict__", None)
+    return isinstance(held, dict) and _holds(held, marker, depth + 1)
+
+
+@pytest.mark.parametrize(
+    ("name", "text"),
+    [
+        (
+            "ekbatan.yaml",
+            "ekbatan:\n  sharding:\n    default-shard: {group: 0, member: 0}\n"
+            "    groups:\n      - group: 0\n        name: g\n        members:\n"
+            "          - member: 0\n            name: m\n            primary-config:\n"
+            "              url: postgresql://h/db\n              password: ${DB_PASSWORD}\n"
+            "              username: ${NOT_SET_ANYWHERE}\n",
+        ),
+        (
+            "ekbatan.ini",
+            "[ekbatan.sharding.groups.0]\ngroup = 0\nname = g\n"
+            "[ekbatan.sharding.groups.0.members.0]\nmember = 0\nname = m\n"
+            "[ekbatan.sharding.groups.0.members.0.primary-config]\nurl = postgresql://h/db\n"
+            "password = %(ENV_DB_PASSWORD)s\nusername = %(ENV_NOT_SET_ANYWHERE)s\n",
+        ),
+    ],
+    ids=["yaml", "ini"],
+)
+def test_loading_never_holds_the_environment_and_its_error_shows_no_secret(
+    tmp_path, monkeypatch, name, text
+):
+    """No ``environ=``: each placeholder is looked up by name. A file whose placeholder is not
+    set fails while it is being filled in, and leaves a traceback whose frames hold neither
+    ``os.environ`` nor a variable the file never named."""
+    monkeypatch.setenv("DB_PASSWORD", SECRET)
+    monkeypatch.setenv("SOME_OTHER_PASSWORD", OTHER_SECRET)
+    path = tmp_path / name
+    path.write_text(text)
+
+    with pytest.raises(ValidationError) as raised:
+        load_sharding_config(path)
+
+    assert SECRET not in str(raised.value) and OTHER_SECRET not in str(raised.value)
+    frames = []
+    tb = raised.value.__traceback__
+    while tb is not None:
+        frames.append(tb.tb_frame)
+        tb = tb.tb_next
+    assert any(f.f_code.co_filename.endswith("ekbatan/config_files.py") for f in frames)
+    holding = [
+        f"{frame.f_code.co_name}.{local}"
+        for frame in frames
+        if frame.f_code.co_filename.endswith("ekbatan/config_files.py")
+        for local, value in frame.f_locals.items()
+        if _holds(value, OTHER_SECRET)
+    ]
+    assert holding == [], f"these hold the environment: {holding}"

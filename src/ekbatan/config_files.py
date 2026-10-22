@@ -128,7 +128,9 @@ def load_sharding_config(
     """The layout under ``ekbatan.sharding`` in the file at ``path``.
 
     The reader is chosen by the file's extension: ``.yaml``/``.yml``, ``.toml``, ``.json`` or
-    ``.ini``. ``environ`` is where variables are looked up, ``os.environ`` when left out.
+    ``.ini``. ``environ`` is where variables are looked up; left out, each one is read from the
+    process environment by its name as its placeholder is filled in - the loader never holds
+    the whole environment, so nothing it raises or keeps can show the rest of it.
     """
     tree, name = _read_file(path, environ)
     return _sharding(_section(tree, name, ("ekbatan", "sharding")), f"{name}: ekbatan.sharding")
@@ -147,10 +149,22 @@ def _read_file(path: str | os.PathLike[str], environ: Mapping[str, str] | None) 
         text = file.read_text(encoding="utf-8")
     except OSError as error:
         raise ValidationError(f"{file}: cannot be read ({error.strerror})") from None
-    variables = os.environ if environ is None else environ
+    # Never the whole environment in a variable: each placeholder's value is looked up by its
+    # name when it is filled in, so no frame, repr or traceback of the loader holds the rest of
+    # the environment (a database password among it). A caller's own mapping is asked the same.
+    lookup = _from_process if environ is None else environ.get
     if kind == "ini":
-        return _read_ini(text, file.name, variables), file.name
-    return _fill(_read_structured(kind, text, file.name), file.name, variables), file.name
+        return _read_ini(text, file.name, lookup), file.name
+    return _fill(_read_structured(kind, text, file.name), file.name, lookup), file.name
+
+
+def _from_process(name: str) -> str | None:
+    """One environment variable of this process, by name - looked up as it is needed."""
+    return os.environ.get(name)
+
+
+#: How a placeholder's value is found: by its name, ``None`` when it is not set.
+_Lookup = Callable[[str], str | None]
 
 
 def _section(tree: Any, name: str, steps: tuple[str, ...]) -> Any:
@@ -209,7 +223,7 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 _INI_ENV = re.compile(r"%\(ENV_")
 
 
-def _fill(node: Any, path: str, variables: Mapping[str, str]) -> Any:
+def _fill(node: Any, path: str, variables: _Lookup) -> Any:
     """``${...}`` filled in everywhere in a YAML, TOML or JSON tree."""
     if isinstance(node, Mapping):
         return {key: _fill(value, f"{path}.{key}", variables) for key, value in node.items()}
@@ -231,8 +245,9 @@ def _fill(node: Any, path: str, variables: Mapping[str, str]) -> Any:
         name, default = match.group(1), match.group(2)
         if name is None or not _ENV_NAME.fullmatch(name):
             raise ValidationError(f"{path}: a '${{' that is not a placeholder like ${{NAME}}")
-        if name in variables:
-            return variables[name]
+        found = variables(name)
+        if found is not None:
+            return found
         if default is not None:
             return default
         raise ValidationError(
@@ -249,7 +264,7 @@ class _EnvironmentInterpolation(configparser.Interpolation):
 
     _TOKEN = re.compile(r"%%|%\(([^)]*)\)s|%")
 
-    def __init__(self, variables: Mapping[str, str], name: str) -> None:
+    def __init__(self, variables: _Lookup, name: str) -> None:
         self._variables = variables
         self._name = name
 
@@ -279,8 +294,9 @@ class _EnvironmentInterpolation(configparser.Interpolation):
                 )
             if reference.startswith("ENV_"):
                 variable = reference[4:]
-                if variable in self._variables:
-                    return self._variables[variable]
+                found = self._variables(variable)
+                if found is not None:
+                    return found
                 raise ValidationError(
                     f"{where}: environment variable {variable!r} is not set; INI placeholders "
                     "have no default"
@@ -297,7 +313,7 @@ class _EnvironmentInterpolation(configparser.Interpolation):
         return self._TOKEN.sub(one, value)
 
 
-def _read_ini(text: str, name: str, variables: Mapping[str, str]) -> Any:
+def _read_ini(text: str, name: str, variables: _Lookup) -> Any:
     parser = configparser.ConfigParser(
         interpolation=_EnvironmentInterpolation(variables, name),
         # Every section is its own: INI's [DEFAULT] would otherwise copy its keys into all of them.
