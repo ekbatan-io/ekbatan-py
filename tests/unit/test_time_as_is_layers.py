@@ -10,16 +10,17 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ekbatan._json import decode, dumps
+from ekbatan._json import decode, dumps, loads
 from ekbatan.action.outbox import EventEntity
 from ekbatan.events.notification import EventNotification, EventNotificationState
 from ekbatan.repository import _from_column, _reader_for, _to_column, _writer_for
 from ekbatan.schema import timestamp_column
 from ekbatan.streaming import ActionEvent
+from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
 
 NAIVE = datetime(2026, 1, 1, 10, 0, 0, 123456)
 TEHRAN = datetime(2026, 1, 1, 13, 30, 0, 654321, tzinfo=timezone(timedelta(hours=3, minutes=30)))
@@ -132,16 +133,21 @@ def test_a_cdc_row_keeps_its_times_as_given(at):
 
 @dataclass(frozen=True)
 class Stamped:
-    at: datetime
+    at: Instant
+    local: LocalDateTime
+    told: OffsetDateTime
 
 
 def test_event_json_writes_a_time_as_it_is():
-    """No offset moved, none added, none dropped: the digits and the offset given are the text."""
-    assert dumps(Stamped(NAIVE)) == '{"at":"2026-01-01T10:00:00.123456"}'
-    assert dumps(Stamped(TEHRAN)) == '{"at":"2026-01-01T13:30:00.654321+03:30"}'
-    utc = NAIVE.replace(tzinfo=UTC)
-    assert dumps(Stamped(utc)) == '{"at":"2026-01-01T10:00:00.123456Z"}'
-    assert decode(Stamped, {"at": "2026-01-01T10:00:00.123456"}).at == NAIVE
-    assert decode(Stamped, {"at": "2026-01-01T13:30:00.654321+03:30"}).at.utcoffset() == (
-        timedelta(hours=3, minutes=30)
+    """No offset moved, none added, none dropped: the digits (and the offset) given are the
+    text. The declared kind only says how a Java reader is told which it is: an Instant's UTC
+    digits get Java's Z, a LocalDateTime's none, an OffsetDateTime keeps its own offset."""
+    value = Stamped(Instant(NAIVE), LocalDateTime(NAIVE), OffsetDateTime(TEHRAN))
+    assert dumps(value) == (
+        '{"at":"2026-01-01T10:00:00.123456Z","local":"2026-01-01T10:00:00.123456",'
+        '"told":"2026-01-01T13:30:00.654321+03:30"}'
     )
+    back = decode(Stamped, loads(dumps(value)))
+    assert back == value
+    assert back.at.tzinfo is None and back.local.tzinfo is None
+    assert back.told.utcoffset() == timedelta(hours=3, minutes=30)

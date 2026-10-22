@@ -16,11 +16,12 @@ from enum import Enum
 
 import pytest
 
-from ekbatan._json import canonical, decode, dumps, json_name, loads
+from ekbatan._json import canonical, canonical_event, decode, dumps, json_name, loads
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId, TypedValue
 from ekbatan.sharding import ShardIdentifier
+from ekbatan.time import Instant, LocalDateTime, OffsetDateTime
 
 MODEL = "01941f29-7c7b-7abc-8042-123456789abc"
 OWNER = uuid.UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479")
@@ -52,11 +53,13 @@ class ProbeEvent(ModelEvent["Wallet"]):
     huge: Decimal | None = Decimal("123456789012345678901234567890.123456789")
     negative: Decimal | None = Decimal("-0.5")
     owner_id: uuid.UUID | None = OWNER
-    at: datetime | None = datetime(2025, 1, 1, tzinfo=UTC)
-    at_micros: datetime | None = datetime(2025, 1, 1, 0, 0, 0, 123456, tzinfo=UTC)
-    at_millis: datetime | None = datetime(2025, 1, 1, 0, 0, 0, 120000, tzinfo=UTC)
-    at_offset: datetime | None = datetime(2025, 1, 1, 2, 0, tzinfo=timezone(timedelta(hours=2)))
-    local_at: datetime | None = datetime(2025, 1, 1, 10, 0)
+    at: Instant | None = Instant(datetime(2025, 1, 1))
+    at_micros: Instant | None = Instant(datetime(2025, 1, 1, 0, 0, 0, 123456))
+    at_millis: Instant | None = Instant(datetime(2025, 1, 1, 0, 0, 0, 120000))
+    at_offset: OffsetDateTime | None = OffsetDateTime(
+        datetime(2025, 1, 1, 2, 0, tzinfo=timezone(timedelta(hours=2)))
+    )
+    local_at: LocalDateTime | None = LocalDateTime(datetime(2025, 1, 1, 10, 0))
     day: date | None = date(2025, 1, 31)
     clock: time | None = time(10, 15, 30)
     state: WalletState | None = WalletState.OPENED
@@ -86,20 +89,27 @@ JAVA_EVENT = (
 
 
 def test_an_event_is_written_byte_for_byte_as_java_writes_it():
-    assert dumps(ProbeEvent(model_id=MODEL).payload()) == JAVA_EVENT
+    assert dumps(canonical_event(ProbeEvent(model_id=MODEL))) == JAVA_EVENT
+
+
+def test_a_payload_without_its_class_has_no_declared_kinds_and_is_refused():
+    """``payload()`` is a plain dict: the declared kinds are on the class, so the outbox writes
+    it through ``canonical_event``. Written on its own, a datetime in it has no kind."""
+    with pytest.raises(ValidationError, match="nothing declares a kind"):
+        dumps(ProbeEvent(model_id=MODEL).payload())
 
 
 @dataclass(frozen=True)
 class DepositParams:
     wallet_id: ShardedId
     amount: Decimal
-    requested_at: datetime
+    requested_at: Instant
     memo: str | None
 
 
 def test_params_take_javas_field_names_in_declaration_order():
     params = DepositParams(
-        ShardedId.of(MODEL), Decimal("10.50"), datetime(2025, 1, 1, 0, 0, 0, 120000, UTC), None
+        ShardedId.of(MODEL), Decimal("10.50"), Instant(datetime(2025, 1, 1, 0, 0, 0, 120000)), None
     )
     # A Java record's components, in order; the typed id as Jackson writes Java's ShardedId.
     assert dumps(params) == (
@@ -200,19 +210,33 @@ def test_a_decimal_that_java_cannot_hold_is_refused():
 
 
 @pytest.mark.parametrize(
-    ("value", "text"),
+    ("value", "kind", "text"),
     [
-        (datetime(2025, 1, 1, 0, 0, 0, 100000, UTC), '"2025-01-01T00:00:00.100Z"'),
-        (datetime(2025, 1, 1, 0, 0, 0, 123400, UTC), '"2025-01-01T00:00:00.123400Z"'),
-        (datetime(2025, 1, 1, 10, 0, 0, 120000), '"2025-01-01T10:00:00.12"'),
+        (datetime(2025, 1, 1, 0, 0, 0, 100000), Instant, '"2025-01-01T00:00:00.100Z"'),
+        (datetime(2025, 1, 1, 0, 0, 0, 123400), Instant, '"2025-01-01T00:00:00.123400Z"'),
+        (datetime(2025, 1, 1, 0, 0), Instant, '"2025-01-01T00:00:00Z"'),
+        (datetime(2025, 1, 1, 10, 0, 0, 120000), LocalDateTime, '"2025-01-01T10:00:00.12"'),
         (
             datetime(2025, 1, 1, 2, 0, 0, 120000, timezone(timedelta(hours=2))),
+            OffsetDateTime,
             '"2025-01-01T02:00:00.12+02:00"',
         ),
         (
             datetime(2025, 1, 1, 2, 0, tzinfo=timezone(timedelta(hours=5, minutes=30, seconds=15))),
+            OffsetDateTime,
             '"2025-01-01T02:00:00+05:30:15"',
         ),
+        # Java's OffsetDateTime at offset zero: trimmed fraction and Z - not an Instant's .400Z.
+        (datetime(2025, 1, 1, 0, 0, 0, 400000, UTC), OffsetDateTime, '"2025-01-01T00:00:00.4Z"'),
+    ],
+)
+def test_each_time_kind_is_written_as_java_writes_its_class(value, kind, text):
+    assert dumps(value, kind) == text
+
+
+@pytest.mark.parametrize(
+    ("value", "text"),
+    [
         (time(0, 0), '"00:00:00"'),
         (time(10, 15, 30, 120000), '"10:15:30.12"'),
         (time(10, 15, 30, 500000, timezone(timedelta(hours=2))), '"10:15:30.500+02:00"'),
@@ -242,7 +266,7 @@ def test_bytes_are_base64():
 
 
 def test_canonical_changes_nothing_the_second_time():
-    once = canonical(ProbeEvent(model_id=MODEL).payload())
+    once = canonical_event(ProbeEvent(model_id=MODEL))
     assert canonical(once) == once
     assert dumps(once) == JAVA_EVENT
 
@@ -268,7 +292,7 @@ def test_an_event_java_wrote_reads_back_as_its_declared_types():
         assert type(got) is type(want), name
     assert str(back.amount) == "10.50", "scale kept"
     assert back.local_at is not None and back.local_at.tzinfo is None, "a LocalDateTime stays local"
-    assert back.at is not None and back.at.utcoffset() == timedelta(0)
+    assert back.at is not None and back.at.tzinfo is None, "an Instant is UTC digits, no zone"
     assert back.at_offset is not None and back.at_offset.utcoffset() == timedelta(hours=2)
 
 
@@ -279,10 +303,10 @@ def test_a_round_trip_restores_dates_times_bytes_and_durations():
         clock: time
         raw: bytes
         wait: timedelta
-        local: datetime
+        local: LocalDateTime
 
     value = Times(date(2025, 1, 31), time(10, 15, 30), b"\x00\xff", timedelta(seconds=-1.5),
-                  datetime(2025, 1, 1, 10, 0))  # fmt: skip
+                  LocalDateTime(datetime(2025, 1, 1, 10, 0)))  # fmt: skip
     assert decode(Times, loads(dumps(value))) == value
 
 

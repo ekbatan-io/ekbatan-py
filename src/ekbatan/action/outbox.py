@@ -16,18 +16,18 @@ import uuid
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Protocol, Self, runtime_checkable
 
 from sqlalchemy import Connection, Table, func, insert, select
 
 from .._builder import FieldBuilder
-from .._json import canonical
+from .._json import canonical, canonical_event
 from .._tracing import Span, span
 from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..persistence import DatabaseRegistry
 from ..sharding import ShardIdentifier
+from ..time import Instant
 
 __all__ = [
     "EventEntity",
@@ -70,13 +70,13 @@ class EventEntity:
     action_id: uuid.UUID
     action_name: str
     action_params: Mapping[str, Any]
-    started_date: datetime
-    completion_date: datetime
+    started_date: Instant
+    completion_date: Instant
     model_id: str | None = None
     model_type: str | None = None
     event_type: str | None = None
     payload: Mapping[str, Any] | None = None
-    event_date: datetime
+    event_date: Instant
     delivered: bool = False
 
     def __post_init__(self) -> None:
@@ -118,13 +118,13 @@ class EventEntity:
         action_id: uuid.UUID,
         action_name: str,
         action_params: Mapping[str, Any],
-        started_date: datetime,
-        completion_date: datetime,
+        started_date: Instant,
+        completion_date: Instant,
         model_id: str | None,
         model_type: str | None,
         event_type: str | None,
         payload: Mapping[str, Any] | None,
-        event_date: datetime,
+        event_date: Instant,
     ) -> EventEntityBuilder:
         """Java's ``createEventEntity(...)``: every field but ``delivered``, as a builder."""
         return (
@@ -184,10 +184,10 @@ class EventEntityBuilder(FieldBuilder[EventEntity]):
     def action_params(self, action_params: Mapping[str, Any]) -> Self:
         return self._set("action_params", action_params)
 
-    def started_date(self, started_date: datetime) -> Self:
+    def started_date(self, started_date: Instant) -> Self:
         return self._set("started_date", started_date)
 
-    def completion_date(self, completion_date: datetime) -> Self:
+    def completion_date(self, completion_date: Instant) -> Self:
         return self._set("completion_date", completion_date)
 
     def model_id(self, model_id: str | None) -> Self:
@@ -202,7 +202,7 @@ class EventEntityBuilder(FieldBuilder[EventEntity]):
     def payload(self, payload: Mapping[str, Any] | None) -> Self:
         return self._set("payload", payload)
 
-    def event_date(self, event_date: datetime) -> Self:
+    def event_date(self, event_date: Instant) -> Self:
         return self._set("event_date", event_date)
 
     def delivered(self, delivered: bool) -> Self:
@@ -273,8 +273,8 @@ class EventPersister(Protocol):
         self,
         namespace: str,
         action_name: str,
-        started_date: datetime,
-        completion_date: datetime,
+        started_date: Instant,
+        completion_date: Instant,
         action_params: Any,
         model_events: Sequence[ModelEvent],
         shard: ShardIdentifier,
@@ -303,8 +303,8 @@ class _SingleTableJson:
         self,
         namespace: str,
         action_name: str,
-        started_date: datetime,
-        completion_date: datetime,
+        started_date: Instant,
+        completion_date: Instant,
         action_params: Any,
         model_events: Sequence[ModelEvent],
         action_event_id: uuid.UUID,
@@ -319,7 +319,7 @@ class _SingleTableJson:
         by only one of them. A consumer that needs the order needs it added to the schema.
         """
         params = _as_json_object(
-            canonical(action_params),
+            canonical(action_params, where="action params"),
             "action_params must be a JSON object; give the action a params dataclass "
             "rather than a bare scalar or list - `Action[DepositParams, Wallet]`, not "
             "`Action[str, Wallet]`. An action with no parameters takes None",
@@ -358,7 +358,7 @@ class _SingleTableJson:
                     model_type=event.model_name,
                     event_type=self._event_type(event),
                     payload=_as_json_object(
-                        canonical(event.payload()),
+                        canonical_event(event),
                         f"{type(event).__name__}.payload() must give a JSON object; check "
                         f"for an override returning a scalar or a list",
                     ),
@@ -407,8 +407,8 @@ class SingleTableJsonEventPersister(_SingleTableJson):
         self,
         namespace: str,
         action_name: str,
-        started_date: datetime,
-        completion_date: datetime,
+        started_date: Instant,
+        completion_date: Instant,
         action_params: Any,
         model_events: Sequence[ModelEvent],
         shard: ShardIdentifier,
