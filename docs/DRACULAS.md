@@ -117,7 +117,7 @@ whatever is decided about the rest.
 | 51 | `fetch_one` means "exactly one", not jOOQ's "at most one" | choice | yes | M | A11 |
 | 52 | ~~`version` defaults to 1~~ **fixed** (`EKB-0292`): required, as Java's; a builder never given one refuses with "version cannot be null" | choice | yes | M | A12 |
 | 53 | Every non-optional field is checked for `None` automatically | choice | yes | M | A13 |
-| 54 | A model's own `__post_init__` must call `super().__post_init__()` | forced | no | M | A14 |
+| 54 | ~~A model's own `__post_init__` must call `super().__post_init__()`~~ **fixed** (`EKB-0497`): a model's own `__post_init__` is wrapped when the class is defined, so the built-in checks run, then its code, then the model's required `validate()` - with or without `super()`, and nothing twice | forced | yes | M | A14 |
 | 55 | An event names its model with a string; forgetting it fails at the first event | forced | partly | M | A15 |
 | 56 | ~~Two events with the same fields are equal, even about different models~~ **fixed** (`EKB-0496`): `model_id` and `model_name` are part of an event's equality and hash, so events about different models are never equal | convention + choice | yes | M | A16 |
 | 57 | Exceptions end in `Error`, share `EkbatanError`; `ValidationError` stands for NPE / IAE / ISE | convention | partly | M | A17, B |

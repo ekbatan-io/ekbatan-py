@@ -68,6 +68,13 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     currency: str
     balance: Decimal
 
+    def validate(self) -> None:
+        # The wallet's own rules, in one place. Ekbatan runs this every time a wallet is made -
+        # opened, changed or read back - after its own checks: every field above is set (their
+        # types say so) and the version is at least 1.
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     @classmethod
     def open(
         cls,
@@ -168,6 +175,10 @@ class Alert(Entity[Id["Alert"]]):
     wallet_id: ShardedId[Wallet]
     recipient: str
     message: str
+
+    def validate(self) -> None:
+        if not self.message.strip():
+            raise ValidationError("message cannot be blank")
 
     @classmethod
     def create(cls, *, wallet_id: ShardedId[Wallet], recipient: str, message: str) -> Alert:

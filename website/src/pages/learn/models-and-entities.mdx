@@ -31,6 +31,10 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     currency: str
     balance: Decimal
 
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     @classmethod
     def open(cls, *, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
         wallet_id = ShardedId[Wallet].random()
@@ -63,13 +67,78 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
             return self
         return self.copy().with_event(WalletClosedEvent(model_id=str(self.id))).state(WalletState.CLOSED).build()`} />
 
-Two patterns worth naming. **A factory** (`open`) builds a *new* aggregate, calls
+Three patterns worth naming. **`validate()`** holds the wallet's own rules and runs on every
+wallet made - see [below](#validate-the-models-own-rules). **A factory** (`open`) builds a *new* aggregate, calls
 `with_initial_version()` and attaches the creation event. **`copy()`** returns a builder
 pre-populated with the current state; mutators build on it, change what changed, attach an event
 and `build()`.
 
 `close()` returning `self` when already closed is the shape to copy: nothing staged means
 nothing emitted, and the action's invocation is still recorded as a sentinel row.
+
+## `validate()`: the model's own rules
+
+Every model and every entity defines `validate()`. It is the one place for the rules a model has
+beyond its field types:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
+    owner_id: UUID
+    currency: str
+    balance: Decimal
+
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+```
+
+**It runs every time a model is made**: `build()`, `copy()...build()`, the constructor,
+`evolve()`, and `from_record` when a repository reads a row. So no path hands back a wallet with
+a negative balance - not a deposit, not a withdrawal, not a row read from the database.
+
+**Ekbatan's own checks run first.** By the time `validate()` runs, every field whose type does not
+allow `None` is set, `version` is at least 1, and on a model `updated_date` has fallen back to
+`created_date` and `events` is a tuple. So `validate()` only says what the types cannot; it never
+checks a `Decimal` field for `None`.
+
+**It is required.** A model or entity without it is refused when its class is defined - at import,
+not at the first row:
+
+```
+TypeError: Wallet must define validate(); write `pass` if it has no rules beyond its types
+```
+
+and mypy and pyright flag the line that makes one (`Cannot instantiate abstract class "Wallet"`).
+A model with no rules of its own says so:
+
+```python
+    def validate(self) -> None:
+        pass  # no rules beyond its types
+```
+
+**Raise `ValidationError`** (from `ekbatan.errors`). That is the convention, and what ekbatan's own
+checks raise. Any other exception works too; it reaches whoever made the row.
+
+**A rule applies to stored rows as well.** Reading a row runs `validate()`, so a rule added today
+refuses an old row that breaks it, where that row is read. Fix the stored rows before you ship a
+stricter rule.
+
+**A base class of your own**, one that real models inherit from, lists `ABC` to say it is not a
+model itself. The rule then applies to each model that inherits from it:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class AuditedModel[ID, S: Enum](Model[ID, S], ABC):
+    audited_by: str
+```
+
+A base that still has abstract methods of its own, besides `validate()`, is let through too.
+
+**Your own `__post_init__` is safe.** If a model defines one, ekbatan wraps it when the class is
+defined: its own checks first, then your `__post_init__`, then `validate()` - whether or not you
+call `super().__post_init__()`. Calling it does no harm and nothing runs twice. Keep rules in
+`validate()`; `__post_init__` is for work such as tidying a field.
 
 ## Why frozen
 
@@ -237,7 +306,8 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
 **What is not generated** — these stay on the model, where you can see them:
 
 - The dataclass itself and its field declarations.
-- Validation. `deposit()` raising on a non-positive amount is business logic, not boilerplate.
+- Validation. `validate()`, and `deposit()` raising on a non-positive amount, are business
+  logic, not boilerplate.
 - Business methods, and the events they attach.
 - Factory methods like `Wallet.open(...)` that set up a fresh aggregate and its first event.
 - The one place your model names it — its own class line. The generator writes a separate file

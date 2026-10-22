@@ -1185,3 +1185,36 @@ Left as it is, noticed on the way:
 - The framework's own tables (`EventsRecord`, `EventNotificationsRecord`, `ScheduledTasksRecord`)
   are records like any table now; nothing in the framework reads them.
 - `docs-parity.py` reports "4 owed" (Java-side, not fatal) before and after.
+
+## mandatory validate() (EKB-0497-)
+
+2026-10-23, unattended, from [VALIDATE-LEDGER.md](VALIDATE-LEDGER.md). **Decided by the user:**
+every concrete `Model` and `Entity` defines `validate(self) -> None`; it is abstract on the base
+(type checkers flag a model without it) and refused at class definition ("X must define
+validate(); write `pass` if it has no rules beyond its types"); ekbatan runs its built-in checks
+first, then `validate()`, every time a model is made; a model's own `__post_init__` is made safe;
+`ValidationError` is the documented convention.
+
+**The ones worth a glance first:**
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **`Persistable` is an `ABC`** (so `Model`, `Entity` and every model have `ABCMeta` as metaclass), and `validate` is an `@abstractmethod` on `Persistable`, inherited by both | measured: mypy flags `Cannot instantiate abstract class "X" with abstract attribute "validate"` with or without `ABCMeta`, **pyright only with it** (`0 errors` without). Side effects: a model cannot also take another, unrelated metaclass; `isinstance(x, Model)` goes through `ABCMeta.__instancecheck__` (cached; the persister branches on `is_model`, not `isinstance`) | no `ABC`: mypy only |
+| **What counts as "not a model, a base"**: a class that lists `ABC` among its own bases (`class AuditedModel[ID, S: Enum](Model[ID, S], ABC)`), or that still has abstract methods of its own besides `validate`. `Model` and `Entity` are written the same way. Everything else without `validate()` is refused | `ABC` is the ordinary Python way to say "abstract"; a class with other abstract methods cannot be made anyway. Checked: `Model[...]` subscriptions create no class, `ModelEvent` and the builders are not `Persistable`, the framework has no other subclasses | a class keyword, `class AuditedModel(Model[...], abstract=True)` |
+| **The refusal is a `TypeError`** with exactly the message the user gave | an error in a class definition, as Python's own are, and as `EKB-0495` refuses an event overriding `event_type` | `EkbatanError` / `ValidationError` |
+| **Order around an own `__post_init__`: built-in checks, then the model's `__post_init__`, then `validate()`** | `validate()` sees what the model's own code set (a tidied field); the built-in checks still come first, as Java's `super(builder)` | `validate()` straight after the built-ins, before the model's code |
+| **Nothing runs twice** is kept by a module-level set of the ids of rows whose wrapped `__post_init__` is running (`_GUARDED`); the framework's `__post_init__` does nothing while its row is in it, and a wrapped one further up runs only its own code | works for frozen and `slots=True` models (no attribute to set on the row), across threads (an id is only in the set while its object is being made); proven by a counter on the built-in checks, two levels deep | a per-instance flag via `object.__setattr__` (breaks with `slots=True`); a thread-local depth counter |
+| **`validate()` runs on every construction**, `without_events()` and `next_version()` included, so also on every row a repository reads | the user's list (build, copy, construction, evolve, `from_record`); those two are `dataclasses.replace` like `evolve`, and skipping them would need a second construction path. Consequence, documented: a stricter rule makes stored rows that break it unreadable, where they are read | skip it on the framework's internal copies |
+| **Any exception from `validate()` propagates unchanged** - not wrapped | the user: "raise ValidationError (or any exception)"; wrapping would hide the type a caller catches | wrap non-`ValidationError` in one |
+| **The built-in checks moved to `Persistable._check_built_ins()`** (private; `Model` overrides it instead of `__post_init__`) | the wrapper has to run them without `__post_init__`'s own re-entry guard | keep them in `__post_init__` and pass a flag |
+| **Example rules**: `Wallet.validate()` refuses a negative balance ("balance cannot be negative") in all 14 examples; `Alert.validate()` refuses a blank message; `TransferStep.validate()` is `pass` with a one-line reason. Java's example `Wallet` has no such rule (its constructor only has the `notNull` lines) | the user's choice for `Wallet`; `Alert`'s message is always text a handler or action wrote, so blank is a mistake; a transfer step is two required fields | `pass` for `Alert` too |
+| **Test fixtures' rules**: the suite's `Wallet` refuses a negative balance, its `Notification` a blank recipient, the two test `Purse`s a negative balance, `test_update_writes_the_record`'s `Person` a blank nick; every other test-defined model is `pass  # no rules beyond its types` | real rules where a model has an obvious one, so the suite runs `validate()` with something to refuse on every path it covers; nothing in the suite built such a row | `pass` everywhere |
+| **The pyright test skips when `pyright` is not on `PATH`** - pyright is not a dependency (and "no new dependencies"). It was run red then green through a temporary `uvx pyright` shim | mypy, a dev dependency, has its own test that always runs | add pyright to the dev group |
+| **`parity-probes/` models got `validate(): pass`** (8 files) so they still import; their recorded outputs were not re-run | without it they fail at import; nothing in a probe depended on the old `super()` rule | leave them broken as historical records |
+
+Left as it is, noticed on the way:
+
+- A `slots=True` model with its own `__post_init__` works, with and without zero-argument
+  `super()` (run on Python 3.14.7; `test_a_slotted_model_with_an_own_post_init_works`).
+- `docs/dracula/A-domain-persistence.md` row 14 keeps the finding's original text under the
+  "fixed" note, as the other fixed rows do.

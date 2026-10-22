@@ -87,7 +87,9 @@ def test_a_time_kind_field_gets_a_setter_of_that_kind(tmp_path: Path, monkeypatc
         "@dataclass(frozen=True, kw_only=True)\n"
         "class Shift(Model[ShardedId['Shift'], ShiftState]):\n"
         "    opens_at: LocalDateTime\n"
-        "    told_at: OffsetDateTime | None = None\n"
+        "    told_at: OffsetDateTime | None = None\n\n"
+        "    def validate(self) -> None:\n"
+        "        pass\n"
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     source = generate(["kinds_app.model"])
@@ -210,7 +212,8 @@ def test_a_name_that_cannot_be_looked_up_is_left_as_it_was():
 
     @dataclass(frozen=True, kw_only=True)
     class Local(Model[ShardedId["Local"], LocalState]):
-        pass
+        def validate(self) -> None:
+            pass  # no rules beyond its types
 
     hint = _concrete_types(Local)["id"]
     assert typing.get_origin(hint) is ShardedId
@@ -238,6 +241,9 @@ class WalletState(Enum):
 @dataclass(frozen=True, kw_only=True)
 class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     balance: Decimal
+
+    def validate(self) -> None:
+        pass
 """
 
 

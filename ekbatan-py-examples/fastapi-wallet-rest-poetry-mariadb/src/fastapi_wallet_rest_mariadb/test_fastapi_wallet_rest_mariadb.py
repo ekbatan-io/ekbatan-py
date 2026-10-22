@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Iterator
+from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -28,9 +30,11 @@ from sqlalchemy.pool import NullPool
 from testcontainers.community.mysql import MySqlContainer
 
 from ekbatan.config import split_login
+from ekbatan.errors import ValidationError
 from ekbatan.ids import ShardedId
 from ekbatan.migrations import validate_scripts
 from ekbatan.sharding import DEFAULT_SHARD
+from ekbatan.time import Instant
 
 from .app import MIGRATIONS, Settings
 from .model import Currency, EmailAddress, Wallet
@@ -463,3 +467,15 @@ def test_the_migration_files_pass_the_checks_a_deploy_runs():
         "V0003__wallets.sql",
         "V0004__alerts.sql",
     ]
+
+
+def test_a_wallet_never_holds_a_negative_balance() -> None:
+    """`Wallet.validate()` is the wallet's one place for its own rules, and ekbatan runs it
+    every time a wallet is made - here, opened with less than nothing."""
+    with pytest.raises(ValidationError, match="balance cannot be negative"):
+        Wallet.open(
+            owner_id=uuid4(),
+            currency=Currency("EUR"),
+            balance=Decimal("-0.01"),
+            created_date=Instant(datetime(2026, 1, 1, 12, 0)),
+        )

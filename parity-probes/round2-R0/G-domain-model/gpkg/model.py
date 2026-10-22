@@ -18,3 +18,6 @@ class Wallet(Model[Id["Wallet"], GenericState, WalletBuilder]):
     balance: Decimal
     #: Java's `String memo`, which its constructor leaves unchecked.
     memo: str
+
+    def validate(self) -> None:
+        pass  # no rules beyond its types

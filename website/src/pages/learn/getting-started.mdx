@@ -88,6 +88,10 @@ new immutable wallet state and attaches a domain event that describes what happe
 class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     ...
 
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     def deposit(self, amount: Decimal) -> Wallet:
         new_balance = self.balance + amount
         return (
@@ -104,6 +108,10 @@ The event is created next to the state change, inside the domain model, before a
 publishes anything to a broker. The wallet is a frozen dataclass, so this returns a *new* wallet
 and the old one is untouched — which is what makes it impossible for the balance to exist
 without the event that explains it.
+
+`validate()` is the wallet's own rules, in one place, and every model must have one. Ekbatan runs
+it every time a wallet is made - opened, changed, or read back from the database - so no wallet
+with a negative balance can exist.
 
 For the deeper model rules, read [Models and entities](/learn/models-and-entities/).
 

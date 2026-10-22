@@ -15,6 +15,10 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
+
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
 ```
 
 Three type parameters:
@@ -31,7 +35,7 @@ on a `Wallet` is typed as a `Wallet`.
 What the base contributes:
 
 ```python
-class Model[ID, S: Enum, B: ModelBuilder = ModelBuilder](Persistable[ID, S, B]):
+class Model[ID, S: Enum, B: ModelBuilder = ModelBuilder](Persistable[ID, S, B], ABC):
     id: ID
     state: S
     version: int                           # required, 1 or more
@@ -39,6 +43,8 @@ class Model[ID, S: Enum, B: ModelBuilder = ModelBuilder](Persistable[ID, S, B]):
     updated_date: Instant | None = None    # falls back to created_date
     events: tuple[ModelEvent, ...] = ()
 
+    @abstractmethod
+    def validate(self) -> None: ...        # required: the model's own rules
     @property
     def is_model(self) -> bool: ...        # always True on Model
     @property
@@ -117,8 +123,26 @@ insert, naming a column and a driver, several frames from the line that made it.
 matters most — it is the optimistic-locking primitive, and a row inserted at 0 quietly starts one
 behind whatever reads it back.
 
-> A subclass defining its own `__post_init__` **must** call `super().__post_init__()` or it loses
-> all four. Python does not call the parent's `__post_init__` for you.
+## `validate()`: the model's own rules
+
+Every model defines `validate(self) -> None`, the one place for its rules beyond its types. Ekbatan
+runs its own checks first - the `None` checks above, `version` at least 1, `updated_date` falling
+back, `events` made a tuple - and then `validate()`, every time a model is made: `build()`,
+`copy()...build()`, the constructor, `evolve()`, `without_events()`, `next_version()`, and
+`from_record` when a repository reads a row.
+
+- **Required.** A model without it is refused when its class is defined: *"Wallet must define
+  validate(); write `pass` if it has no rules beyond its types"*. mypy and pyright flag the
+  line that makes one. No rules of its own: `pass`.
+- **Raise `ValidationError`** (from `ekbatan.errors`) - the convention. Any exception reaches
+  whoever made the row.
+- **A base of your own** that real models inherit from lists `ABC`:
+  `class AuditedModel[ID, S: Enum](Model[ID, S], ABC)`. The rule applies to the models below it.
+- **An own `__post_init__` is safe.** Ekbatan wraps it when the class is defined: its checks, then
+  your `__post_init__`, then `validate()` - with or without `super().__post_init__()`, and nothing
+  runs twice.
+
+See [Learn → Models and entities](/learn/models-and-entities/#validate-the-models-own-rules).
 
 The companion shape, [`Entity`](/reference/entity/), is for state the persistence layer needs to
 track but whose changes do not belong in the event stream — caches, lookup tables, audit-only

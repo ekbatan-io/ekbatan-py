@@ -222,7 +222,15 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
 - **Could match Java?** yes - check only the base fields, but that would lose a useful check.
 - **Surprise:** medium
 
-### 14. A model that writes its own `__post_init__` must call `super().__post_init__()`
+### 14. ~~A model that writes its own `__post_init__` must call `super().__post_init__()`~~ fixed
+
+**Fixed in `EKB-0497`.** A model's own `__post_init__` is wrapped when its class is defined
+(`domain._guard_post_init`): the built-in checks run first, then the model's code, then its
+`validate()` - now required on every model and entity, Java's constructor body - whether or not
+it calls `super().__post_init__()`. When it does, nothing runs twice. Proven by
+`tests/unit/test_validate.py` (`version=0` and `balance=None` refused without `super()`; a
+counter shows one run with it). The text below is the finding as it was.
+
 - **What:** If you add a `__post_init__` to a model and forget `super().__post_init__()`, all the
   base checks and the timestamp handling are silently skipped. In Java the base constructor always
   runs.

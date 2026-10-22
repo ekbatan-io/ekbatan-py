@@ -85,6 +85,10 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     currency: str
     balance: Decimal
 
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     def deposit(self, amount: Decimal) -> "Wallet": ...
 
 
@@ -110,6 +114,10 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     owner_id: UUID
     currency: str
     balance: Decimal
+
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
 
     def deposit(self, amount: Decimal) -> "Wallet": ...
 

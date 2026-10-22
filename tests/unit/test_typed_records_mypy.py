@@ -71,6 +71,9 @@ class Wallet(Model[ShardedId["Wallet"], WalletState]):
     owner_id: UUID
     currency: Currency
     balance: Decimal
+
+    def validate(self) -> None:
+        pass
 """
 
 CONVERTERS = """

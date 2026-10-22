@@ -28,6 +28,7 @@ from sqlalchemy import (
 )
 
 from ekbatan import AbstractRepository, Model
+from ekbatan.errors import ValidationError
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from modes import rebased
@@ -130,6 +131,10 @@ class PurseState(Enum):
 class Purse(Model[Id["Purse"], PurseState]):
     currency: str
     balance: Decimal
+
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
 
 
 def _prepare(registry):

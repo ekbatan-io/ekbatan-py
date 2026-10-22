@@ -18,6 +18,10 @@ class Wallet(Model[UUID, WalletState]):
     currency: str
     balance: Decimal
 
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     def deposit(self, amount: Decimal) -> "Wallet":
         if amount <= 0:
             raise ValidationError(f"deposit amount must be positive, got {amount}")

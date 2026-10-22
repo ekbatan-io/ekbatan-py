@@ -45,6 +45,9 @@ class Shift(Model[ShardedId["Shift"], ShiftState]):
     opens_at: LocalDateTime
     told_at: OffsetDateTime
 
+    def validate(self) -> None:
+        pass
+
 
 @dataclass(frozen=True, kw_only=True)
 class ShiftPlannedEvent(ModelEvent["Shift"]):

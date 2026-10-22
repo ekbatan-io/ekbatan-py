@@ -33,6 +33,10 @@ class Purse(Model[Id["Purse"], PurseState]):
     currency: str
     balance: Decimal
 
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
 
 class Ledger:
     """A second model, so two models' ids can be compared - Java's `OtherModel`."""

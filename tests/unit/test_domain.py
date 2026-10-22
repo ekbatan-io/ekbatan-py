@@ -118,6 +118,9 @@ def test_an_entity_has_a_builder_too_and_no_timestamps():
     class TransferStep(Entity[UUID, Step]):
         transfer_id: UUID
 
+        def validate(self) -> None:
+            pass  # no rules beyond its types
+
     step = TransferStep(id=uuid4(), state=Step.COMPLETE, version=1, transfer_id=uuid4())
     # Defined inside a test, so there is nowhere to put a generated builder. `EntityBuilder`
     # by name is the escape hatch `copy()` names when it refuses.
@@ -135,6 +138,9 @@ def test_an_entity_defaults_its_lifecycle_but_a_model_does_not():
     @dataclass(frozen=True, kw_only=True)
     class Marker(Entity[UUID]):
         note: str
+
+        def validate(self) -> None:
+            pass  # no rules beyond its types
 
     marker = Marker(id=uuid4(), state=GenericState.ACTIVE, version=1, note="x")
     assert marker.state is GenericState.ACTIVE
@@ -360,6 +366,9 @@ def test_the_inherited_copy_carries_fields_the_framework_never_heard_of():
         balance: Decimal
         aliases: tuple[str, ...] = ()
 
+        def validate(self) -> None:
+            pass  # no rules beyond its types
+
     wallet = ShardedWallet(
         id=uuid4(),
         state=WalletState.OPENED,
@@ -554,6 +563,9 @@ def test_a_model_without_a_typed_builder_refuses_both_routes():
     class Bare(Model[UUID, WalletState]):
         note: str
 
+        def validate(self) -> None:
+            pass  # no rules beyond its types
+
     row = Bare(id=uuid4(), state=WalletState.OPENED, version=1, created_date=NOW, note="x")
 
     for call in (lambda: row.copy(), lambda: Bare.builder()):
@@ -576,6 +588,9 @@ def test_a_hand_written_builder_satisfies_it_as_well_as_a_generated_one():
     class ByHand(Model[UUID, WalletState, NoteBuilder]):
         note: str
 
+        def validate(self) -> None:
+            pass  # no rules beyond its types
+
     row = ByHand(id=uuid4(), state=WalletState.OPENED, version=1, created_date=NOW, note="x")
     assert row.copy().note("y").build().note == "y"
     assert (
@@ -596,6 +611,9 @@ def test_the_escape_hatch_the_refusal_names_actually_works():
     @dataclass(frozen=True, kw_only=True)
     class Inline(Model[UUID, WalletState]):
         note: str
+
+        def validate(self) -> None:
+            pass  # no rules beyond its types
 
     row = Inline(id=uuid4(), state=WalletState.OPENED, version=1, created_date=NOW, note="x")
     assert ModelBuilder(Inline).copy_base(row).note("y").build().note == "y"

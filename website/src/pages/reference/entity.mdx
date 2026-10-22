@@ -13,6 +13,10 @@ class Alert(Entity[Id["Alert"], GenericState, AlertBuilder]):
     wallet_id: ShardedId[Wallet]
     recipient: str
     message: str
+
+    def validate(self) -> None:
+        if not self.message.strip():
+            raise ValidationError("message cannot be blank")
 ```
 
 `Entity[ID, S]` takes the id type and, optionally, a state enum. `S` **defaults** —
@@ -22,11 +26,14 @@ with no lifecycle of its own is nearly always a model nobody has thought about y
 
 ```python
 class Entity[ID, S: Enum = GenericState, B: EntityBuilder = EntityBuilder](
-    Persistable[ID, S, B]
+    Persistable[ID, S, B], ABC
 ):
     id: ID
     state: S
     version: int    # required, 1 or more
+
+    @abstractmethod
+    def validate(self) -> None: ...        # required: the entity's own rules
 
     @property
     def is_model(self) -> bool: ...        # always False on Entity
@@ -94,7 +101,7 @@ class Currency(Entity[CurrencyId, GenericState, CurrencyBuilder]):
     code: str
     display_name: str
 
-    def __post_init__(self) -> None:
+    def validate(self) -> None:
         if not self.code.strip():
             raise ValidationError("code cannot be blank")
 
@@ -102,8 +109,10 @@ class Currency(Entity[CurrencyId, GenericState, CurrencyBuilder]):
         return self.copy().display_name(display_name).build()
 ```
 
-`__post_init__` is where a frozen dataclass puts the checks a constructor body would hold,
-because there is no constructor body to put them in.
+`validate()` is required on every entity, as on every [model](/reference/model/#validate-the-models-own-rules):
+the one place for its rules beyond its types, run after ekbatan's own checks every time an
+entity is made - built, copied, read back. An entity without it is refused when its class is
+defined; one with no rules of its own writes `pass`.
 
 The same builder shape as a model, minus the event and timestamp methods:
 

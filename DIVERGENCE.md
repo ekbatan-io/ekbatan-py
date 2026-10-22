@@ -859,9 +859,8 @@ field is null until set, so it is refused by name - "id cannot be null" - rather
 constructor's `TypeError`. Calling the dataclass constructor directly without a field still
 raises `TypeError`: that is the call Java does not let you write.
 
-Two things follow from Python that do not follow from Java. A subclass defining its own
-`__post_init__` must call `super().__post_init__()`, where Java's constructor chaining is
-automatic. And the events tuple is genuinely copied: `events` is annotated as a tuple, nothing
+One thing follows from Python that does not follow from Java: the events tuple is genuinely
+copied: `events` is annotated as a tuple, nothing
 stops a list being passed, and a frozen model holding the caller's list is not frozen - append
 to it afterwards and the model gains an event it was never built with, which the persister then
 writes, in a transaction that had already decided what it was writing. Java says
@@ -899,6 +898,30 @@ until `EKB-0193`, because three lines Java writes by hand had not been written.
 
 Cached per class, since a dataclass's fields are fixed at definition: **1.6 us** per
 construction, measured over 200,000.
+
+## A model's own rules go in `validate()`, which every model and entity must define
+
+> **chosen** - by the user (`EKB-0497`): Java's subclass constructor body becomes a required `validate()`, run after the built-in checks on every row made. See [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#mandatory-validate-ekb-0497-).
+
+In Java a model's constructor is its one central place for validation: `super(builder)` runs the
+base checks, then the subclass's own lines - `Validate.notNull(...)` per field, and any rule
+such as a balance that may not be negative. Every way of making a `Wallet` goes through that
+constructor, so none can skip it.
+
+A frozen dataclass has no constructor body to write. Here the base's `__post_init__` runs the
+built-in checks - the `None` checks read off the types, above, so the `Validate.notNull` lines
+need no counterpart - and then the model's `validate()`, in Java's order. Every path that makes
+a model goes through it: the constructor, `build()`, `copy()...build()`, `evolve`, and
+`from_record`.
+
+`validate()` is **required**, where Java's constructor rules are optional lines. `validate` is
+abstract, so a type checker flags a model without it, and the class is refused when it is
+defined; `pass` says a model has no rules beyond its types.
+
+A model may still write its own `__post_init__`. It is wrapped when the class is defined, so the
+built-in checks and `validate()` run around it whether or not it calls `super().__post_init__()`
+- Java's constructor chaining, which cannot be forgotten, made true here as well. Until
+`EKB-0497` forgetting `super()` switched every built-in check off.
 
 ## Equality is the same row at the same version, as Java's is
 

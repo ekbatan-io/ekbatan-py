@@ -43,10 +43,16 @@ class SampleModel(Model[Id["SampleModel"], GenericState, SampleModelBuilder]):
     label: str = "L"
     name: str = "N"
 
+    def validate(self) -> None:
+        pass  # no rules beyond its types
+
 
 @dataclass(frozen=True, kw_only=True)
 class OtherModel(Model[Id["OtherModel"], GenericState, ModelBuilder]):
     pass
+
+    def validate(self) -> None:
+        pass  # no rules beyond its types
 
 
 class SampleEntityBuilder(EntityBuilder["SampleEntity", "Id[SampleEntity]", "GenericState"]):
@@ -56,6 +62,9 @@ class SampleEntityBuilder(EntityBuilder["SampleEntity", "Id[SampleEntity]", "Gen
 @dataclass(frozen=True, kw_only=True)
 class SampleEntity(Entity[Id["SampleEntity"], GenericState, SampleEntityBuilder]):
     pass
+
+    def validate(self) -> None:
+        pass  # no rules beyond its types
 
 
 ID = Id.of("0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b")

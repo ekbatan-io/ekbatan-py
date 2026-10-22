@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import time
 from collections.abc import Iterator
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -19,9 +20,11 @@ from sqlalchemy import func, select, text
 
 from ekbatan.clock import SystemClock
 from ekbatan.config import split_login
+from ekbatan.errors import ValidationError
 from ekbatan.ids import ShardedId
 from ekbatan.migrations import validate_scripts
 from ekbatan.sharding import DEFAULT_SHARD
+from ekbatan.time import Instant
 
 from .actions import (
     CompleteTransferAction,
@@ -492,3 +495,15 @@ def test_no_service_object_shows_the_password(service: SagaService) -> None:
     for thing in shown:
         assert SECRET not in repr(thing), type(thing).__name__
         assert SECRET not in str(thing), type(thing).__name__
+
+
+def test_a_wallet_never_holds_a_negative_balance() -> None:
+    """`Wallet.validate()` is the wallet's one place for its own rules, and ekbatan runs it
+    every time a wallet is made - here, opened with less than nothing."""
+    with pytest.raises(ValidationError, match="balance cannot be negative"):
+        Wallet.open(
+            owner_id=uuid4(),
+            currency=Currency("EUR"),
+            balance=Decimal("-0.01"),
+            created_date=Instant(datetime(2026, 1, 1, 12, 0)),
+        )

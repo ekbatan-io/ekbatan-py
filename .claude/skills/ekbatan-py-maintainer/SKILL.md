@@ -29,6 +29,10 @@ the Java while porting go in an openspec change, not a code change.
 - A library, not an application.
 - Domain objects stay immutable. A mutation returns a new instance. This is load-bearing: the
   plan holds references, and the executor writes them after `perform()` returns.
+- Every concrete `Model` and `Entity` defines `validate(self) -> None` - its one place for rules
+  beyond its types, `pass` when it has none (AGENTS.md "Every model and entity defines
+  `validate()`"). It is abstract and refused at class definition; ekbatan runs its built-in
+  checks then `validate()` on every row made, and wraps a model's own `__post_init__`.
 - `Action.perform()` declares intent. It stages on the plan; the executor persists afterwards.
 - No nested or composable actions.
 - Preserve optimistic locking. Every update carries `WHERE version = ?`.

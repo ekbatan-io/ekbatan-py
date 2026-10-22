@@ -127,6 +127,10 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     currency: str
     balance: Decimal
 
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     def deposit(self, amount: Decimal) -> Wallet:
         if amount <= 0:
             raise ValidationError(f"deposit amount must be positive, got {amount}")
@@ -141,6 +145,11 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
 
 Frozen, so a deposit returns a new wallet rather than mutating one. `with_event` is the entire
 outbox API from a domain author's point of view.
+
+`validate()` is the wallet's own rules, in one place, and every model and entity must define it
+(`pass` if it has none). Ekbatan runs it every time a wallet is made - opened, changed, or read
+back - after its own checks, so no wallet with a negative balance can exist. See
+[Models and entities](concepts/models-and-entities.md#validate-the-models-own-rules).
 
 **Time is UTC, and stored as given.** A model's dates come from the framework's clock
 (`self.clock.instant()` in an action) - an `Instant`, UTC with no zone attached

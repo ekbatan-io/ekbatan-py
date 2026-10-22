@@ -145,6 +145,9 @@ class Widget(Model[ShardedId["Widget"], WidgetState, WidgetBuilder]):
     name: str
     color: str
 
+    def validate(self) -> None:
+        pass  # no rules beyond its types
+
     @classmethod
     def create(cls, shard: ShardIdentifier, name: str, color: str, now: datetime, *extra: ModelEvent) -> Widget:
         wid = ShardedId["Widget"].generate(shard)

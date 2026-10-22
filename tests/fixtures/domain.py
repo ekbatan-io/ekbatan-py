@@ -72,6 +72,12 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     #: which every row leaves this null is what exposes an untyped NULL bind.
     reward_points: int | None = None
 
+    def validate(self) -> None:
+        # The one place for the wallet's own rules. That every field above is set, and the
+        # version is at least 1, ekbatan has already checked from the types.
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     @classmethod
     def open(
         cls,
@@ -174,6 +180,10 @@ class Notification(Entity[Id["Notification"], GenericState, NotificationBuilder]
     kind: str
     recipient: str
     message: str | None = None
+
+    def validate(self) -> None:
+        if not self.recipient.strip():
+            raise ValidationError("recipient cannot be blank")
 
     @classmethod
     def create(

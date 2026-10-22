@@ -16,6 +16,14 @@ you are holding is the value that will be written" true rather than aspirational
 
     return self.copy().with_event(WalletMoneyDeposited(...)).balance(new_balance).build()
 
+Every model and entity defines :meth:`Persistable.validate` - its own rules, run after the
+built-in checks every time one is made, as Java's constructor runs ``super(builder)`` and then
+its own lines::
+
+    def validate(self) -> None:
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
 Unlike the Java implementation, ``copy()`` is inherited rather than written per model. There it
 is abstract and every model implements the same six lines, handing each field back to its
 builder, because Java cannot reconstruct a subclass whose shape it does not know. Here the
@@ -25,8 +33,10 @@ fields come off the dataclass, so a model that gains one gains it everywhere at 
 from __future__ import annotations
 
 import dataclasses
+import functools
 import importlib
 import typing
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -279,7 +289,7 @@ class EntityBuilder[T, ID = Any, S = Any]:
         return setter
 
     def build(self) -> T:
-        """The instance, checked by its own ``__post_init__``.
+        """The instance, checked by ekbatan's built-in checks and then its ``validate()``.
 
         A field whose setter was never called is passed as ``None`` - what a Java builder field
         holds until it is set - so it is refused as ``"<field> cannot be null"`` by the same
@@ -439,6 +449,80 @@ def _declared_model_name(target: type) -> str | None:
     return None
 
 
+#: The ids of the rows whose own, wrapped ``__post_init__`` is running right now. While one is,
+#: the framework's ``__post_init__`` - reached through ``super()`` - does nothing, and a wrapped
+#: ``__post_init__`` further up runs only its own code: the outermost wrapper does the checks.
+#: An id is only here while its object is being made, so it cannot be another object's.
+_GUARDED: set[int] = set()
+
+
+def _require_validate(cls: type) -> None:
+    """Refuse a concrete model or entity that does not define ``validate()``, as it is defined.
+
+    ``validate`` is abstract on the base, so a type checker already flags a model without it
+    where the model is made (``Cannot instantiate abstract class``). This is the same rule at
+    run time, and earlier than Python's own: an abstract class is only refused when someone
+    makes one, and a model is made far from where it was written.
+
+    A class that is a base for models rather than a model is let through. It says so by listing
+    ``ABC`` among its own bases - ``class Audited(Model[ID, S], ABC)`` - or by still having
+    abstract methods of its own besides ``validate``. The rule then applies to each class that
+    inherits from it. ``Model`` and ``Entity`` are such bases, written the same way.
+    """
+    if not getattr(getattr(cls, "validate", None), "__isabstractmethod__", False):
+        return
+    if ABC in cls.__bases__:
+        return
+    still_abstract = {
+        name for name, value in vars(cls).items() if getattr(value, "__isabstractmethod__", False)
+    }
+    for base in cls.__bases__:
+        for name in getattr(base, "__abstractmethods__", ()):
+            if getattr(getattr(cls, name, None), "__isabstractmethod__", False):
+                still_abstract.add(name)
+    if still_abstract - {"validate"}:
+        return
+    raise TypeError(
+        f"{cls.__name__} must define validate(); write `pass` if it has no rules beyond its types"
+    )
+
+
+def _guard_post_init(cls: type) -> None:
+    """Wrap a ``__post_init__`` the class defines itself, so it cannot lose the built-in checks.
+
+    Dataclasses do not chain ``__post_init__``: a model that writes one replaces the
+    framework's, and forgetting ``super().__post_init__()`` used to switch every built-in check
+    off - a ``version`` of 0 or a ``None`` balance went through. Java's constructor chaining
+    cannot be forgotten. So the model's own method is wrapped where the class is defined, and the
+    wrapper runs, once per row: the built-in checks, then the model's code, then ``validate()``
+    - which therefore sees whatever the model's code set.
+
+    Calling ``super().__post_init__()`` is still fine: inside the wrapper the framework's
+    ``__post_init__`` does nothing, and a wrapped one further up the hierarchy runs only its own
+    code. Nothing runs twice. Arguments - a dataclass ``InitVar`` - are passed through.
+    """
+    own = vars(cls).get("__post_init__")
+    if own is None or getattr(own, "__ekbatan_guarded__", False):
+        return
+
+    @functools.wraps(own)
+    def __post_init__(self: Persistable[Any, Any, Any], *args: Any, **kwargs: Any) -> None:
+        key = id(self)
+        if key in _GUARDED:
+            own(self, *args, **kwargs)
+            return
+        _GUARDED.add(key)
+        try:
+            self._check_built_ins()
+            own(self, *args, **kwargs)
+            self.validate()
+        finally:
+            _GUARDED.discard(key)
+
+    __post_init__.__ekbatan_guarded__ = True  # type: ignore[attr-defined]
+    cls.__post_init__ = __post_init__  # type: ignore[attr-defined]
+
+
 def _no_typed_builder(target: type, route: str) -> EkbatanError:
     """Java refuses this at compile time; there is no compile step here, so it refuses here.
 
@@ -479,7 +563,7 @@ class Persistable[
     ID,
     S: Enum,
     B: EntityBuilder[Any, Any, Any] = EntityBuilder[Any, Any, Any],
-]:
+](ABC):
     """A row, in memory: an identity, a lifecycle state, and an optimistic-locking version.
 
     **Equal when it is the same row at the same version**, as Java's ``Entity.equals`` and
@@ -521,23 +605,62 @@ class Persistable[
         return hash(self.id)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Tell the declared builder what it builds, at the moment the model is defined.
+        """Check the class as it is defined, and tell its builder what it builds.
 
-        The class line already says which builder belongs to this model. Without this the
-        builder would have to say so as well - ``builds = Wallet`` - and saying it means
-        importing the model, which is the import the class line is already making in the other
-        direction. One of the two has to give, and the builder is the one with nothing to lose:
-        it is generated, and it is the half a checker never needs at runtime.
-
-        Only fills a blank. A hand-written builder that sets ``builds`` itself keeps it.
+        - A concrete class without :meth:`validate` is refused here, at import, rather than at
+          the first row built - see :func:`_require_validate`.
+        - A ``__post_init__`` of the class's own is wrapped so the built-in checks and
+          :meth:`validate` run around it whether or not it calls ``super().__post_init__()`` -
+          see :func:`_guard_post_init`.
+        - The builder named on the class line is told what it builds. Without this the builder
+          would have to say so as well - ``builds = Wallet`` - and saying it means importing the
+          model, which is the import the class line is already making in the other direction.
+          Only fills a blank: a hand-written builder that sets ``builds`` itself keeps it.
         """
         super().__init_subclass__(**kwargs)
+        _require_validate(cls)
+        _guard_post_init(cls)
         declared = _declared_builder(cls)
         if declared is not None and declared.builds is None:
             declared.builds = cls
         _keep_row_equality(cls)
 
     def __post_init__(self) -> None:
+        """Ekbatan's built-in checks, then the model's own :meth:`validate` - on every row made.
+
+        The constructor, ``build()``, ``copy()...build()``, :meth:`evolve`, ``from_record``:
+        each makes the row through here, so none of them can hand back a row its model would
+        refuse. Java's order: its ``super(builder)`` checks first, then the subclass's own lines.
+
+        Does nothing when reached through ``super().__post_init__()`` from a ``__post_init__``
+        of the model's own: that one is wrapped (:func:`_guard_post_init`) and runs both itself,
+        once, around the model's code.
+        """
+        if id(self) in _GUARDED:
+            return
+        self._check_built_ins()
+        self.validate()
+
+    @abstractmethod
+    def validate(self) -> None:
+        """The model's own rules - required on every model and entity.
+
+        Called on every row made, after ekbatan's built-in checks have passed: every field
+        whose type does not allow ``None`` is set, ``version`` is at least 1, and on a
+        :class:`Model` ``updated_date`` has fallen back to ``created_date`` and ``events`` is a
+        tuple. So ``validate`` only says what the types cannot::
+
+            def validate(self) -> None:
+                if self.balance < 0:
+                    raise ValidationError("balance cannot be negative")
+
+        Raise :class:`~ekbatan.errors.ValidationError` - the convention, and what ekbatan's
+        own checks raise - or any exception; it reaches whoever made the row. A model with no
+        rules beyond its types writes ``pass``: the method is required so that "no rules" is a
+        decision someone wrote down, not a gap.
+        """
+
+    def _check_built_ins(self) -> None:
         """Refuse a row that could not be written, where it was built.
 
         Java checks all four in ``Model`` / ``Entity``'s constructor, and the reason survives
@@ -545,9 +668,6 @@ class Persistable[
         inside a batched insert, naming a column and a driver, several frames from the line
         that made it. ``version`` matters most - it is the optimistic-locking primitive, and a
         row inserted at 0 quietly starts one behind whatever reads it back.
-
-        A subclass that defines its own ``__post_init__`` must call ``super().__post_init__()``
-        or it loses these; Java's constructor chaining does that for you and Python's does not.
         """
         required = _required(type(self))
         # The framework's own fields first, in the order Java's constructor checks them, then
@@ -620,7 +740,7 @@ class Entity[
     ID,
     S: Enum = GenericState,
     B: EntityBuilder[Any, Any, Any] = EntityBuilder[Any, Any, Any],
-](Persistable[ID, S, B]):
+](Persistable[ID, S, B], ABC):
     """State whose changes are not events.
 
     Writing one emits nothing - but the unit of work that wrote it is still recorded, because
@@ -637,7 +757,7 @@ class Model[
     ID,
     S: Enum,
     B: ModelBuilder[Any, Any, Any] = ModelBuilder[Any, Any, Any],
-](Persistable[ID, S, B]):
+](Persistable[ID, S, B], ABC):
     """A row whose changes are worth telling the rest of the system about.
 
     Events are excluded from equality: two readers of one database row are looking at the same
@@ -669,7 +789,7 @@ class Model[
     updated_date: Instant | None = None
     events: tuple[ModelEvent, ...] = field(default=(), compare=False, repr=False)
 
-    def __post_init__(self) -> None:
+    def _check_built_ins(self) -> None:
         """Everything a row is checked for, and a copy of the events.
 
         The copy is not housekeeping. ``events`` is annotated as a tuple but nothing stops a
@@ -679,13 +799,13 @@ class Model[
         writing. Java's constructor says ``List.copyOf(...)`` for exactly this, and gets an
         unmodifiable list out of it as well.
         """
-        super().__post_init__()
+        super()._check_built_ins()
         if self.events is None:
             raise ValidationError("events cannot be null")
         if not isinstance(self.events, tuple):
             object.__setattr__(self, "events", tuple(self.events))
 
-        # `created_date` is required, and `super().__post_init__()` has already refused a null
+        # `created_date` is required, and `super()._check_built_ins()` has already refused a null
         # one - its annotation is `Instant`, not `Instant | None`.
         # Both are kept exactly as given: no zone is added, removed or moved.
         if self.updated_date is None:

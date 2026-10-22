@@ -156,6 +156,25 @@ Models and entities are `@dataclass(frozen=True, kw_only=True)`. `copy()` return
 `evolve()` is the framework's own shorthand and domain code should prefer `copy()` so every
 change in an application reads the same way.
 
+### Every model and entity defines `validate()`
+
+**Rule** (since `EKB-0497`, the user's decision): every concrete `Model` and `Entity` - in
+examples, docs, tests and fixtures alike - defines `validate(self) -> None`, its one place for
+rules beyond its types (`pass  # no rules beyond its types` when it has none). `None` checks
+never go in it: the built-in checks read them off the types (`balance: Decimal` refuses
+`None`, `note: str | None` accepts it), along with `version >= 1`. Raise `ValidationError`.
+
+- `validate` is abstract on `Persistable` (an `ABC`), so mypy and pyright flag a model without
+  it; `Persistable.__init_subclass__` refuses the class at definition ("X must define
+  validate(); ..."). A base class that lists `ABC` in its own bases, or still has other abstract
+  methods, is let through.
+- The built-in checks (`_check_built_ins`), then `validate()`, run in
+  `Persistable.__post_init__`, so on every construction path: constructor, `build()`,
+  `copy()...build()`, `evolve`, `without_events`, `next_version`, `from_record`.
+- A model's own `__post_init__` is wrapped at definition (`_guard_post_init`): built-ins, then
+  its code, then `validate()`, whether or not it calls `super().__post_init__()`; nothing runs
+  twice. Nobody has to call super.
+
 ### Secrets never print
 
 No password in any `repr`, log line, error message or result. Redact at the source - the config

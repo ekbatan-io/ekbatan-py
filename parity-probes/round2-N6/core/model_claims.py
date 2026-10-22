@@ -71,6 +71,9 @@ probe("m&e.md:190 every number read as Decimal (float field?)", lambda: type(dec
 @dataclass(frozen=True, kw_only=True)
 class Plain(Model[Id["Plain"], GenericState]):
     x: int
+    def validate(self) -> None:
+        pass  # no rules beyond its types
+
 p = Plain(id=Id[Plain].random(), state=GenericState.ACTIVE, version=1, x=1, created_date=now)
 probe("m&e.md:404 copy() without typed builder", lambda: p.copy())
 probe("m&e.md:418 evolve() still works without one", lambda: p.evolve(x=2).x)

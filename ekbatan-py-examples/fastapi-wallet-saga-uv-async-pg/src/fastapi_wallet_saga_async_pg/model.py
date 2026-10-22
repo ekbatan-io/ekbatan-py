@@ -135,6 +135,13 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     currency: Currency
     balance: Decimal
 
+    def validate(self) -> None:
+        # The wallet's own rules, in one place. Ekbatan runs this every time a wallet is made -
+        # opened, changed or read back - after its own checks: every field above is set (their
+        # types say so) and the version is at least 1.
+        if self.balance < 0:
+            raise ValidationError("balance cannot be negative")
+
     @classmethod
     def open(
         cls,
@@ -308,6 +315,9 @@ class TransferStep(Entity[Id["TransferStep"]]):
 
     transfer_id: UUID
     step: StepName
+
+    def validate(self) -> None:
+        pass  # no rules beyond its types: a transfer and a step name, both required
 
     @classmethod
     def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:

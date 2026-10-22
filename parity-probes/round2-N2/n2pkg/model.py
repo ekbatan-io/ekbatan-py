@@ -23,7 +23,13 @@ class Wallet(Model[Id["Wallet"], GenericState, WalletBuilder]):
     #: Java's derived field: computed, never passed in (Java: assigned in the constructor).
     label: str = field(init=False, default="wallet")
 
+    def validate(self) -> None:
+        pass  # no rules beyond its types
+
 
 @dataclass(frozen=True, kw_only=True)
 class HTTPRequest(Model[Id["HTTPRequest"], GenericState, HTTPRequestBuilder]):
     path: str
+
+    def validate(self) -> None:
+        pass  # no rules beyond its types

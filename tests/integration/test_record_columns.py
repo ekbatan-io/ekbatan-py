@@ -187,6 +187,9 @@ class Oddity(Model[ShardedId["Oddity"], OddityState]):
     #: `None` leaves it to the database: the record then has no `filled` key at all.
     filled: int | None
 
+    def validate(self) -> None:
+        pass  # no rules beyond its types
+
 
 #: What `from_record` was handed, by type, and every record `to_record` returned - in order.
 SEEN: list[type] = []

@@ -139,6 +139,10 @@ class Person(Model[ShardedId["Person"], PersonState]):
     #: `None` means "leave it to the database": the record then has no `class` key at all.
     klass: str | None
 
+    def validate(self) -> None:
+        if not self.nick.strip():
+            raise ValidationError("nick cannot be blank")
+
 
 @rebased
 class PersonRepository(AbstractRepository[Person, PeopleRecord, ShardedId[Person]]):

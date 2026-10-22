@@ -72,6 +72,10 @@ all three REST databases' uv projects; those are not generated from one another.
   (`self.clock.instant()`, `clock.instant()`), never `datetime.now()`; its migrations use `TIMESTAMP` (PostgreSQL)
   or `DATETIME(6)` (MySQL, MariaDB), never `TIMESTAMPTZ`; its database runs in UTC. See
   `docs/database/multi-database.md#always-utc`.
+- **Every model and entity defines `validate()`**: `Wallet.validate()` refuses a negative
+  balance ("balance cannot be negative"), `Alert.validate()` a blank message, `TransferStep`
+  has `pass` with a one-line reason. Each example's test checks a negative opening balance is
+  refused.
 - **Time kinds**: an event's time field is declared `Instant` (or `LocalDateTime` /
   `OffsetDateTime`) from `ekbatan.time` - a plain `datetime` field is refused when the action
   runs. Each example's `WalletOpenedEvent` carries `opened_at: Instant`, and a test checks the

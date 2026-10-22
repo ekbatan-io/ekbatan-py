@@ -13,3 +13,6 @@ from .generic_builders import BoxBuilder
 @dataclass(frozen=True, kw_only=True)
 class Box[T](Model[Id["Box"], GenericState, BoxBuilder]):
     content: T
+
+    def validate(self) -> None:
+        pass  # no rules beyond its types

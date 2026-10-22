@@ -48,11 +48,17 @@ class TestModel(Model[Id["TestModel"], TestState, TestModelBuilder]):
     __test__ = False
     name: str
 
+    def validate(self) -> None:
+        pass  # no rules beyond its types
+
 
 @dataclass(frozen=True, kw_only=True)
 class TestProduct(Model[Id["TestProduct"], TestState]):
     __test__ = False
     sku: str
+
+    def validate(self) -> None:
+        pass  # no rules beyond its types
 
 
 @dataclass(frozen=True)

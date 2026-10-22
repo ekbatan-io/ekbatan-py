@@ -16,6 +16,7 @@ import asyncio
 import threading
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -26,6 +27,7 @@ from sqlalchemy import func, select
 from ekbatan import ShardIdentifier
 from ekbatan.clock import SystemClock, VirtualClock
 from ekbatan.errors import ValidationError
+from ekbatan.time import Instant
 
 from .actions import (
     CloseWalletAction,
@@ -476,3 +478,15 @@ def test_no_service_object_shows_the_password(
             await built.aclose()
 
     asyncio.run(main())
+
+
+def test_a_wallet_never_holds_a_negative_balance() -> None:
+    """`Wallet.validate()` is the wallet's one place for its own rules, and ekbatan runs it
+    every time a wallet is made - here, opened with less than nothing."""
+    with pytest.raises(ValidationError, match="balance cannot be negative"):
+        Wallet.open(
+            owner_id=uuid4(),
+            currency="EUR",
+            balance=Decimal("-0.01"),
+            created_date=Instant(datetime(2026, 1, 1, 12, 0)),
+        )
