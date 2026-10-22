@@ -554,13 +554,25 @@ def describe_views(
                         row = (*row[:3], spelled, *row[4:])
                         out.append(f"view column {schema} {tuple(row)}")
             else:
+                from sqlalchemy import inspect as inspect_
+                from sqlalchemy.dialects import sqlite
+
+                inspector = inspect_(connection)
                 kind = "view" if tables is None else "table"
                 for (view,) in connection.exec_driver_sql(
                     f"SELECT name FROM sqlite_master WHERE type = '{kind}'"
                 ).all():
                     quoted = '"' + str(view).replace('"', '""') + '"'
-                    for row in connection.exec_driver_sql(f"PRAGMA table_info({quoted})"):
-                        out.append(f"view column {view} {tuple(row)[:4]}")
+                    columns = {c["name"]: c for c in inspector.get_columns(str(view))}
+                    for cid, column, declared, notnull, *_ in connection.exec_driver_sql(
+                        f"PRAGMA table_info({quoted})"
+                    ):
+                        # As the tables are compared: the type SQLAlchemy reads it as.
+                        try:
+                            spelled = str(columns[column]["type"].compile(dialect=sqlite.dialect()))
+                        except Exception:  # no type at all
+                            spelled = str(declared)
+                        out.append(f"view column {view} {(cid, column, spelled, notnull)}")
             if tables is not None:
                 own = {(s or ("public" if name == "postgresql" else None), t) for s, t in tables}
                 out = [line for line in out if any(_names(line, s, t) for s, t in own)]

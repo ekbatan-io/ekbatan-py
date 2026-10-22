@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy import (
     CheckConstraint,
     Column,
+    Computed,
     ForeignKeyConstraint,
     Index,
     UniqueConstraint,
@@ -386,6 +387,12 @@ class _Writer:
         column_type = self.column_type(relation, column)
         positional = [q(column.name), column_type]
         keywords: list[str] = []
+        sqlite_table = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
+        if sqlite_table is not None and column.name in sqlite_table.generated:
+            # SQLite's own text of the column: SQLAlchemy's reading runs one generated column
+            # into the next.
+            expression, stored = sqlite_table.generated[column.name]
+            column.computed = Computed(expression, persisted=stored)
         if column.computed is not None:
             persisted = column.computed.persisted
             positional.append(

@@ -608,6 +608,24 @@ SQLITE += (
     ),
 )
 
+SQLITE += (
+    # C12, K2, K5, O3: generated columns, named checks and uniques, views on views.
+    Trip(
+        "columns_keys_views",
+        """
+        CREATE TABLE g (
+          id INTEGER PRIMARY KEY, qty INT,
+          doubled INT GENERATED ALWAYS AS (qty * 2) STORED, virt INT AS (qty + 1),
+          code TEXT,
+          CONSTRAINT g_qty_ck CHECK (qty >= 0),
+          CONSTRAINT g_code_uq UNIQUE (code)
+        );
+        CREATE VIEW v_g AS SELECT id, qty, code FROM g;
+        CREATE VIEW v_v AS SELECT id, qty * 3 AS tripled, code FROM v_g;
+        """,
+    ),
+)
+
 CASES_BY_DIALECT: dict[str, tuple[Trip, ...]] = {
     "postgres": POSTGRES,
     "mysql": MYSQL,

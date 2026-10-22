@@ -627,6 +627,10 @@ class SqliteTable:
     without_rowid: bool
     #: Each foreign key, as the text says it.
     foreign_keys: tuple[SqliteForeignKey, ...] = ()
+    #: Each generated column's expression and whether it is STORED, by column name. SQLAlchemy
+    #: reads them with one pattern over the whole text, which runs a ``STORED`` column into the
+    #: ``AS (...)`` of the next one.
+    generated: dict[str, tuple[str, bool]] = field(default_factory=dict)
 
     @property
     def options(self) -> tuple[str, ...]:
@@ -653,6 +657,7 @@ def sqlite_table_parts(sql: str) -> SqliteTable:
     primary: list[str] = []
     declared: dict[str, str] = {}
     foreign_keys: list[SqliteForeignKey] = []
+    generated: dict[str, tuple[str, bool]] = {}
     for definition in split_top_level(body[1:-1]):
         words = _tokens(definition)
         if not words:
@@ -693,6 +698,13 @@ def sqlite_table_parts(sql: str) -> SqliteTable:
             len(words),
         )
         declared[name] = " ".join(upper[1:stop])
+        if "AS" in upper[1:]:
+            at = upper.index("AS", 1)
+            if at + 1 < len(words) and words[at + 1].startswith("("):
+                generated[name] = (
+                    words[at + 1][1:-1].strip(),
+                    upper[at + 2 : at + 3] == ["STORED"],
+                )
         for i, word in enumerate(upper):
             if word == "COLLATE" and i + 1 < len(words):
                 collations[name] = unquote(words[i + 1])
@@ -706,7 +718,13 @@ def sqlite_table_parts(sql: str) -> SqliteTable:
     if len(primary) == 1 and declared.get(primary[0]) == "INTEGER" and not without_rowid:
         alias = primary[0]
     return SqliteTable(
-        collations, alias, autoincrement, "STRICT" in tail, without_rowid, tuple(foreign_keys)
+        collations,
+        alias,
+        autoincrement,
+        "STRICT" in tail,
+        without_rowid,
+        tuple(foreign_keys),
+        generated,
     )
 
 

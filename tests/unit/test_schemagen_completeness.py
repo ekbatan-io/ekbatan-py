@@ -227,3 +227,16 @@ def test_sqlite_foreign_keys_are_read_with_deferrable_wherever_it_is_written() -
         SqliteForeignKey(("r",), False, False),
         SqliteForeignKey(("a", "b"), True, False),
     )
+
+
+def test_sqlite_generated_columns_are_read_each_on_its_own() -> None:
+    found = sqlite_table_parts(
+        "CREATE TABLE g (id INTEGER PRIMARY KEY, qty INT,\n"
+        "  doubled INT GENERATED ALWAYS AS (qty * 2) STORED, virt INT AS (qty + 1),\n"
+        "  v2 AS (f(qty, ')')) VIRTUAL, label TEXT DEFAULT 'AS (x)')"
+    ).generated
+    assert found == {
+        "doubled": ("qty * 2", True),
+        "virt": ("qty + 1", False),
+        "v2": ("f(qty, ')')", False),
+    }
