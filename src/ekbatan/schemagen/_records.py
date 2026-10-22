@@ -5,7 +5,8 @@ jOOQ generates a ``WalletsRecord`` beside the ``WALLETS`` table, and a repositor
 ``toRecord`` / ``fromRecord`` are typed by it. Here the same name is a subclass of
 ``dict[str, Any]`` with ``__slots__ = ()``: to SQLAlchemy it is the very ``dict`` an insert
 binds, and to a type checker it says which columns a table has and what each holds. A column is
-read either way, ``record["wallet_id"]`` or ``record.column_wallet_id()``:
+read by its method, ``record.column_wallet_id()`` - the preferred way; ``record["wallet_id"]``
+is fine too, the record being a ``dict``, and is checked just the same:
 
 - ``__init__`` takes every column as a keyword, so ``WalletsRecord(id=..., ...)`` is checked
   key by key and type by type;
@@ -530,7 +531,8 @@ def render(
 
     doc = (
         f"A row of `{table}`: what a repository's `to_record` writes and `from_record` reads. "
-        f'Read a column as `record["name"]` or `record.column_name()`.'
+        f'Read a column as `record.column_name()` (preferred) or `record["name"]`; both '
+        "are type-checked."
     )
     out = [f"class {name}(dict[str, {any_}]):", f'    """{doc}"""', "", "    __slots__ = ()", ""]
 

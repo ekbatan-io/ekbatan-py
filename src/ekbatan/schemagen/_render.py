@@ -1605,9 +1605,9 @@ with the database it claims to describe.
 
 Each table has its record beside it, `WALLETS` and `WalletsRecord`: a `dict` with a key per
 column, typed as the column reads - a converter's column as the converter's own type. Read a
-column as `record["wallet_id"]` or `record.column_wallet_id()`; build one by keyword,
-`WalletsRecord(id=..., ...)`. It is what a repository's `to_record` returns and `from_record`
-takes, and to SQLAlchemy it is the `dict` an insert binds.
+column as `record.column_wallet_id()` (preferred) or `record["wallet_id"]`, both type-checked;
+build one by keyword, `WalletsRecord(id=..., ...)`. It is what a repository's `to_record`
+returns and `from_record` takes, and to SQLAlchemy it is the `dict` an insert binds.
 
 The framework's own tables are built from `ekbatan.schema` rather than reflected, because their
 shape is a contract a CDC connector and other ports bind to - there is one definition to be

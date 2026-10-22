@@ -129,12 +129,12 @@ class FetchResult:
     **The mapper is handed each row read by column name.** A mapper whose first parameter is
     a record class - a repository's ``from_record(self, record: WalletsRecord)``, a function of
     your own typed the same way - is handed that class, built from the row, so
-    ``record.column_currency()`` works as ``record["currency"]`` does; a repository's own method
-    whose annotation cannot be read is handed the repository's record. Any other mapper - a
-    lambda - is handed the row's mapping, ``row["currency"]``. The statement is not checked
-    against the record, as nothing can check a SQL statement's columns against a type before
-    it runs. A lambda's row is a ``Mapping`` to a type checker, so ``row.currency`` is a type
-    error.
+    ``record.column_currency()`` works (preferred), as does ``record["currency"]``; a
+    repository's own method whose annotation cannot be read is handed the repository's record.
+    Any other mapper - a lambda - is handed the row's mapping, ``row["currency"]``. The
+    statement is not checked against the record, as nothing can check a SQL statement's columns
+    against a type before it runs. A lambda's row is a ``Mapping`` to a type checker, so
+    ``row.currency`` is a type error.
 
     The names do **not** follow jOOQ's, and that is the one place this deliberately parts from
     it. There, ``fetchOne`` means *at most one, raise if there are two* and ``fetchAny`` means

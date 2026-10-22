@@ -4,8 +4,8 @@ A repository is bound to one model and one table. It routes by shard, enforces t
 lock, hides soft-deleted rows from every read path, and maps between rows and models through the
 ``to_record`` / ``from_record`` every repository writes, as every Java one writes ``toRecord`` /
 ``fromRecord``. A row is a *record*: a ``dict`` with a key per column - ``WalletsRecord``,
-which ``schemagen`` writes beside ``WALLETS`` - read as ``record["wallet_id"]`` or
-``record.column_wallet_id()``, so the mapping is checked by a type checker.
+which ``schemagen`` writes beside ``WALLETS`` - read as ``record.column_wallet_id()`` (preferred)
+or ``record["wallet_id"]``, so the mapping is checked by a type checker either way.
 
 The names are Java's. :class:`Repository` is the promise - what the framework asks of a
 repository, and all it asks. :class:`AbstractRepository` keeps that promise against a table, and
@@ -302,7 +302,7 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
     # ---------------------------------------------------------------- mapping
 
     @abstractmethod
-    def to_record(self, model: M) -> R:
+    def to_record(self, model: M, /) -> R:
         """The model as its table's record. **Write this.**
 
         Java's `AbstractRepository` declares `toRecord` abstract and every repository there
@@ -325,17 +325,18 @@ class _RepositoryCore[M: Persistable[Any, Any], R: Mapping[str, Any], K](ABC):
         raise NotImplementedError(_no_row_mapping(type(self), ["to_record"]))
 
     @abstractmethod
-    def from_record(self, record: R) -> M:
+    def from_record(self, record: R, /) -> M:
         """A record as a model. **Write this**, alongside :meth:`to_record`.
 
         The counterpart to Java's abstract `fromRecord`. The framework hands it the table's
         record - a ``WalletsRecord`` built from the result row, or, where an insert or update
-        has no ``RETURNING``, the record :meth:`to_record` wrote. Read a column by key, or by
-        its method::
+        has no ``RETURNING``, the record :meth:`to_record` wrote. Read each column by its
+        method, the preferred way::
 
             def from_record(self, record: WalletsRecord) -> Wallet:
-                return Wallet(id=ShardedId[Wallet](record["id"]), ...)
-                # or: Wallet(id=ShardedId[Wallet](record.column_id()), ...)
+                return Wallet(id=ShardedId[Wallet](record.column_id()), ...)
+
+        ``record["id"]`` is fine too - the record is a ``dict`` - and is type-checked the same.
         """
         raise NotImplementedError(_no_row_mapping(type(self), ["from_record"]))
 
