@@ -1,0 +1,156 @@
+"""schemagen's completeness, without a database: the readers of the database's own text, and
+what the writer makes of what they read.
+
+The round trips that prove each of these on a real database are in
+`tests/integration/test_schemagen_round_trip.py`; the ledger is
+`docs/SCHEMAGEN-COMPLETENESS-LEDGER.md`.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from ekbatan.schemagen._reflect import index_parts, split_top_level, sqlite_table_parts, unquote
+
+# -- index text -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("sql", "elements", "tail"),
+    [
+        ("CREATE INDEX i ON t (a)", ["a"], ""),
+        (
+            "CREATE INDEX t_mixed ON public.t USING btree (a, ((b + 1)) DESC, "
+            'lower(name) COLLATE "C")',
+            ["a", "((b + 1)) DESC", 'lower(name) COLLATE "C"'],
+            "",
+        ),
+        (
+            "CREATE UNIQUE INDEX u ON public.t USING btree (lower(name), a) WHERE (a IS NOT NULL)",
+            ["lower(name)", "a"],
+            "WHERE (a IS NOT NULL)",
+        ),
+        (
+            "CREATE INDEX i ON public.t USING btree (a) INCLUDE (b, name)",
+            ["a"],
+            "INCLUDE (b, name)",
+        ),
+        # A table whose name holds what the reader looks for.
+        ('CREATE INDEX i ON "t (on, x)" (a, b)', ["a", "b"], ""),
+        ('CREATE INDEX "x ON y" ON t ("a,b" DESC)', ['"a,b" DESC'], ""),
+        ("CREATE INDEX i\nON t\n(a)\nWHERE a > 0", ["a"], "WHERE a > 0"),
+        ("CREATE INDEX i ON t (substr(name, 1, 2), 'x,y')", ["substr(name, 1, 2)", "'x,y'"], ""),
+        ("CREATE INDEX i ON ONLY public.m USING btree (a)", ["a"], ""),
+    ],
+)
+def test_an_index_s_elements_are_read_as_the_database_wrote_them(
+    sql: str, elements: list[str], tail: str
+) -> None:
+    assert index_parts(sql) == (elements, tail)
+
+
+def test_text_that_is_no_index_reads_as_nothing() -> None:
+    assert index_parts("CREATE INDEX i") is None
+
+
+def test_splitting_respects_parentheses_and_every_kind_of_quote() -> None:
+    assert split_top_level("a, f(b, c), 'x,y', \"p,q\", `r,s`, [t,u]") == [
+        "a",
+        "f(b, c)",
+        "'x,y'",
+        '"p,q"',
+        "`r,s`",
+        "[t,u]",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("token", "name"),
+    [('"a ""b"""', 'a "b"'), ("`a``b`", "a`b"), ("[a b]", "a b"), ("plain", "plain")],
+)
+def test_unquote(token: str, name: str) -> None:
+    assert unquote(token) == name
+
+
+# -- SQLite's table text ----------------------------------------------------------------------
+
+
+def test_sqlite_column_collations_are_read_and_a_default_saying_collate_is_not() -> None:
+    parts = sqlite_table_parts(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, a VARCHAR(20) COLLATE NOCASE, "
+        'b TEXT DEFAULT \'x COLLATE y\', "c d" TEXT NOT NULL COLLATE "RTRIM", '
+        "CONSTRAINT k CHECK (a <> 'COLLATE'))"
+    )
+    assert parts.collations == {"a": "NOCASE", "c d": "RTRIM"}
+
+
+@pytest.mark.parametrize(
+    ("sql", "alias", "options"),
+    [
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, v TEXT)", "id", ("AUTOINCREMENT",)),
+        ("CREATE TABLE t (id integer primary key, v TEXT)", "id", ()),
+        ("CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id))", "id", ()),
+        ("CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id AUTOINCREMENT))", "id", ()),
+        # Not the rowid's alias: another type, DESC, two columns, or no rowid at all.
+        ("CREATE TABLE t (id INT PRIMARY KEY)", None, ()),
+        ("CREATE TABLE t (id BIGINT PRIMARY KEY)", None, ()),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY DESC)", None, ()),
+        ("CREATE TABLE t (a INTEGER, b INTEGER, PRIMARY KEY (a, b))", None, ()),
+        ("CREATE TABLE t (k INTEGER PRIMARY KEY, v INT) WITHOUT ROWID", None, ("WITHOUT ROWID",)),
+        ("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) STRICT", "id", ("STRICT",)),
+        (
+            "CREATE TABLE t (k TEXT PRIMARY KEY) STRICT, WITHOUT ROWID",
+            None,
+            ("STRICT", "WITHOUT ROWID"),
+        ),
+    ],
+)
+def test_sqlite_rowid_alias_and_table_options(
+    sql: str, alias: str | None, options: tuple[str, ...]
+) -> None:
+    parts = sqlite_table_parts(sql)
+    assert parts.rowid_alias == alias
+    expected = options
+    if "AUTOINCREMENT)" in sql:
+        expected = ("AUTOINCREMENT",)
+    assert parts.options == expected
+
+
+# -- what a column given as the database spells its type reads back as -------------------------
+
+
+@pytest.mark.parametrize(
+    ("database", "spelled", "expected"),
+    [
+        ("postgresql", "xml", str),
+        ("postgresql", "tsquery", str),
+        ("postgresql", "jsonpath", str),
+        ("postgresql", "xml[]", list[str]),
+        ("postgresql", "xml[][]", list[list[str]]),
+        # The drivers disagree (asyncpg's Point, psycopg's text): nothing to say.
+        ("postgresql", "point", None),
+        ("postgresql", "point[]", None),
+        ("postgresql", "address", None),
+        ("mysql", "point", bytes),
+        ("mysql", "point SRID 4326", bytes),
+        ("mysql", "geometry", bytes),
+        ("mariadb", "inet6", str),
+        ("mariadb", "inet4", str),
+        ("mysql", "inet6", None),
+        # SQLite, by its affinity rules.
+        ("sqlite", "UNSIGNED BIG INT", int),
+        ("sqlite", "VARYING CHARACTER(255)", str),
+        ("sqlite", "CLOB", str),
+        ("sqlite", "DOUBLE PRECISION", float),
+        ("sqlite", "FLOATING POINT", int),  # "POINT" holds "INT": SQLite's rule, in order
+        ("sqlite", "", None),
+        ("sqlite", "ANY", None),
+        ("sqlite", "my type(5)", None),
+    ],
+)
+def test_a_spelled_type_reads_as_what_every_driver_gives(
+    database: str, spelled: str, expected: object
+) -> None:
+    from ekbatan.schemagen._records import spelled_type
+
+    assert spelled_type(database, spelled) == expected

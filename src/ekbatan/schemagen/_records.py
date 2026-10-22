@@ -137,6 +137,64 @@ def _dialect_type(t: TypeEngine[Any]) -> object | None:
     return None
 
 
+#: Types SQLAlchemy has no class for, written ``sql_type("...")``, that every driver reads as
+#: the same Python type - measured on psycopg and asyncpg, PyMySQL and aiomysql
+#: (``test_schemagen_types``). The others (``point`` reads as text on psycopg and as asyncpg's
+#: ``Point``) stay ``Any``.
+_SPELLED: dict[str, dict[str, type]] = {
+    "postgresql": {"xml": str, "tsquery": str, "jsonpath": str},
+    "mysql": dict.fromkeys(
+        (
+            "geometry",
+            "point",
+            "linestring",
+            "polygon",
+            "multipoint",
+            "multilinestring",
+            "multipolygon",
+            "geometrycollection",
+            "geomcollection",
+        ),
+        bytes,
+    ),
+}
+_SPELLED["mariadb"] = {**_SPELLED["mysql"], "inet4": str, "inet6": str}
+
+
+def spelled_type(dialect: str, spelled: str) -> object | None:
+    """What a column given as the database spells its type reads back as, where every driver
+    agrees; ``None`` where they do not, or nobody measured."""
+    name = re.sub(r"\s+SRID\s+\d+$", "", spelled.strip(), flags=re.I).lower()
+    if dialect == "postgresql" and name.endswith("[]"):
+        item = spelled_type(dialect, name.rstrip("[]"))
+        dimensions = name.count("[]")
+        if item is None:
+            return None
+        hint: object = item
+        for _ in range(dimensions):
+            hint = list[hint]  # type: ignore[valid-type]
+        return hint
+    if dialect == "sqlite":
+        return _affinity(name)
+    return _SPELLED.get(dialect, {}).get(name)
+
+
+def _affinity(declared: str) -> object | None:
+    """What SQLite reads a column of a type it knows only by affinity as: its rules, in order
+    (https://www.sqlite.org/datatype3.html#determination_of_column_affinity). A NUMERIC
+    affinity holds an int, a float or text, and nothing says which - so that is ``None``."""
+    upper = declared.upper()
+    if "INT" in upper:
+        return int
+    if any(word in upper for word in ("CHAR", "CLOB", "TEXT")):
+        return str
+    if "BLOB" in upper or not upper.strip():
+        return None
+    if any(word in upper for word in ("REAL", "FLOA", "DOUB")):
+        return float
+    return None
+
+
 def _members(hint: object) -> tuple[object, ...]:
     origin = typing.get_origin(hint)
     if origin is typing.Union or origin is types.UnionType:

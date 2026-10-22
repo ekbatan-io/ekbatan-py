@@ -276,3 +276,199 @@ def own_names(written: str, namespace: dict[str, Any]) -> set[str]:
         elif isinstance(node, ast.Assign):
             bound |= {t.id for t in node.targets if isinstance(t, ast.Name)}
     return bound - tables - records - {"__all__"}
+
+
+# -- the round trip: what a database says it is, to compare a migrated one with a rebuilt one ----
+
+#: Tables a migrated database has and a rebuilt one never does.
+_BOOKKEEPING = ("ekbatan_schema_history",)
+
+
+def describe_database(url: str, schemas: tuple[str, ...] = ()) -> list[str]:
+    """Everything a database says about its schema, as sorted lines, from its own catalog.
+
+    Two databases built differently - one by the migrations, one by ``create_all`` from the
+    generated module - describe themselves line for line the same when the module lost nothing.
+    PostgreSQL: relations and their kind, persistence, partitioning and inheritance; columns with
+    their type, NOT NULL, default, identity, generation, collation, dimensions and comment; every
+    constraint and index as the server prints it; sequences, domains, enums. MySQL and MariaDB:
+    ``SHOW CREATE TABLE`` (keys sorted - their order is the order they were made in) and
+    sequences. SQLite: its ``PRAGMA``s, each index's text, and the table's own options.
+    """
+    db = create_engine(url)
+    try:
+        with db.connect() as connection:
+            name = db.dialect.name
+            if name == "postgresql":
+                return _describe_postgres(connection, schemas)
+            if name in ("mysql", "mariadb"):
+                return _describe_mysql(connection, name, schemas)
+            return _describe_sqlite(connection)
+    finally:
+        db.dispose()
+
+
+def _describe_postgres(connection: Any, schemas: tuple[str, ...]) -> list[str]:
+    from sqlalchemy import bindparam, text
+
+    wanted = ["public", *schemas]
+
+    def rows(sql: str) -> list[Any]:
+        statement = text(sql).bindparams(bindparam("s", expanding=True))
+        return list(connection.execute(statement, {"s": wanted}).all())
+
+    out: list[str] = []
+    for row in rows(
+        "SELECT n.nspname, c.relname, c.relkind, c.relpersistence, pg_get_partkeydef(c.oid), "
+        "pg_get_expr(c.relpartbound, c.oid), obj_description(c.oid, 'pg_class'), "
+        "(SELECT string_agg(p.relname, ',' ORDER BY p.relname) FROM pg_inherits i "
+        " JOIN pg_class p ON p.oid = i.inhparent WHERE i.inhrelid = c.oid) "
+        "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname IN :s AND c.relkind IN ('r', 'p', 'v', 'm', 'f')"
+    ):
+        out.append(f"relation {tuple(row)}")
+    for row in rows(
+        "SELECT n.nspname, c.relname, a.attnum, a.attname, format_type(a.atttypid, a.atttypmod), "
+        "a.attnotnull, pg_get_expr(d.adbin, d.adrelid), a.attidentity, a.attgenerated, "
+        "co.collname, a.attndims, col_description(c.oid, a.attnum) "
+        "FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum "
+        "LEFT JOIN pg_collation co ON co.oid = a.attcollation AND a.attcollation <> "
+        "(SELECT typcollation FROM pg_type WHERE oid = a.atttypid) "
+        "WHERE n.nspname IN :s AND c.relkind IN ('r', 'p', 'v', 'm', 'f') "
+        "AND a.attnum > 0 AND NOT a.attisdropped"
+    ):
+        out.append(f"column {tuple(row)}")
+    for row in rows(
+        "SELECT n.nspname, c.relname, con.conname, pg_get_constraintdef(con.oid) "
+        "FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname IN :s"
+    ):
+        out.append(f"constraint {tuple(row)}")
+    for row in rows(
+        "SELECT schemaname, indexname, indexdef FROM pg_indexes WHERE schemaname IN :s"
+    ):
+        out.append(f"index {tuple(row)}")
+    for row in rows(
+        "SELECT schemaname, sequencename, data_type, start_value, min_value, max_value, "
+        "increment_by, cycle, cache_size FROM pg_sequences WHERE schemaname IN :s"
+    ):
+        out.append(f"sequence {tuple(row)}")
+    for row in rows(
+        "SELECT n.nspname, t.typname, t.typtype, format_type(t.typbasetype, t.typtypmod), "
+        "t.typnotnull, t.typdefault, co.collname, "
+        "(SELECT string_agg(pg_get_constraintdef(k.oid), ' AND ' ORDER BY k.conname) "
+        " FROM pg_constraint k WHERE k.contypid = t.oid), "
+        "(SELECT string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder) FROM pg_enum e "
+        " WHERE e.enumtypid = t.oid) "
+        "FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
+        "LEFT JOIN pg_collation co ON co.oid = t.typcollation AND t.typtype = 'd' "
+        "AND t.typcollation <> (SELECT typcollation FROM pg_type WHERE oid = t.typbasetype) "
+        "WHERE n.nspname IN :s AND t.typtype IN ('d', 'e')"
+    ):
+        out.append(f"type {tuple(row)}")
+    return sorted(line for line in out if not any(b in line for b in _BOOKKEEPING))
+
+
+def _describe_mysql(connection: Any, name: str, schemas: tuple[str, ...]) -> list[str]:
+    import re
+
+    from sqlalchemy import text
+
+    out: list[str] = []
+    for schema in [None, *schemas]:
+        where = "DATABASE()" if schema is None else f"'{schema}'"
+        prefix = "" if schema is None else f"`{schema}`."
+        tables = connection.execute(
+            text(
+                "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES "
+                f"WHERE TABLE_SCHEMA = {where} ORDER BY TABLE_NAME"
+            )
+        ).all()
+        for table, kind in tables:
+            if table in _BOOKKEEPING:
+                continue
+            if kind == "VIEW":
+                out.append(f"view {schema}.{table}")
+                continue
+            what = "SEQUENCE" if kind == "SEQUENCE" else "TABLE"
+            created = str(
+                connection.execute(text(f"SHOW CREATE {what} {prefix}`{table}`")).all()[0][1]
+            )
+            created = re.sub(r" AUTO_INCREMENT=\d+", "", created)
+            lines = created.splitlines()
+            keys = sorted(
+                line.rstrip(",")
+                for line in lines
+                if re.match(r"\s*(UNIQUE |FULLTEXT |SPATIAL )?KEY ", line)
+            )
+            body = [line.rstrip(",") for line in lines if line.rstrip(",") not in keys]
+            out += [f"{schema}.{table}: {line}" for line in body + keys]
+    return out
+
+
+def _describe_sqlite(connection: Any) -> list[str]:
+    import re
+
+    from sqlalchemy import inspect as inspect_
+    from sqlalchemy.dialects import sqlite
+
+    from ekbatan.schemagen._reflect import index_parts, sqlite_table_parts, unquote
+
+    def quoted(value: str) -> str:
+        return '"' + value.replace('"', '""') + '"'
+
+    out: list[str] = []
+    inspector = inspect_(connection)
+    for table, sql in connection.exec_driver_sql(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'table' "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ).all():
+        if table in _BOOKKEEPING:
+            continue
+        parts = sqlite_table_parts(str(sql))
+        collations = sorted(parts.collations.items())
+        out.append(f"{table}: options {parts.options}, collations {collations}")
+        columns = {c["name"]: c for c in inspector.get_columns(table)}
+        keyed = {
+            r[1] for r in connection.exec_driver_sql(f"PRAGMA table_info({quoted(table)})") if r[5]
+        }
+        for cid, name, declared, notnull, default, pk, hidden in connection.exec_driver_sql(
+            f"PRAGMA table_xinfo({quoted(table)})"
+        ).all():
+            try:
+                spelled = str(columns[name]["type"].compile(dialect=sqlite.dialect()))
+            except Exception:  # a column with no type: SQLAlchemy has nothing to compile
+                spelled = str(declared)
+            # SQLite lets a key column hold NULL unless it says NOT NULL; create_all says it.
+            notnull = None if name in keyed else notnull
+            out.append(f"{table}: column {(cid, name, spelled, notnull, default, pk, hidden)}")
+        for row in connection.exec_driver_sql(f"PRAGMA foreign_key_list({quoted(table)})"):
+            out.append(f"{table}: fk {tuple(row)[2:]}")
+        for check in inspector.get_check_constraints(table):
+            out.append(f"{table}: check {check['name']} {check['sqltext']}")
+        for row in connection.exec_driver_sql(f"PRAGMA index_list({quoted(table)})").all():
+            index = row[1]
+            out.append(f"{table}: index {index} unique={row[2]} origin={row[3]} partial={row[4]}")
+            for info in connection.exec_driver_sql(f"PRAGMA index_xinfo({quoted(index)})"):
+                out.append(f"{table}:   {index} {tuple(info)}")
+    for index, sql in connection.exec_driver_sql(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL"
+    ).all():
+        found = index_parts(str(sql))
+        if found is not None:
+            elements, tail = found
+            # `"a" ASC` and `a` say the same; what an element says beyond its name is kept.
+            said = [
+                unquote(e.removesuffix(" ASC").strip())
+                if re.fullmatch(r'("[^"]+"|\[[^\]]+\]|`[^`]+`|\w+)( ASC)?', e.strip(), re.I)
+                else e
+                for e in elements
+            ]
+            out.append(f"index {index}: {said} {re.sub(r'\s+', ' ', tail)}")
+    for (view,) in connection.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type = 'view'"
+    ).all():
+        out.append(f"view {view}")
+    return sorted(line for line in out if not any(b in line for b in _BOOKKEEPING))

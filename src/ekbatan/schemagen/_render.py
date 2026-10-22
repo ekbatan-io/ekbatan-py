@@ -33,7 +33,14 @@ from sqlalchemy.sql.elements import TextClause
 
 from ..errors import ValidationError
 from ._config import ForcedType, SchemagenConfig
-from ._records import Field, Unknowable, converter_user_type, python_type, record_name
+from ._records import (
+    Field,
+    Unknowable,
+    converter_user_type,
+    python_type,
+    record_name,
+    spelled_type,
+)
 from ._records import render as render_record
 from ._reflect import FRAMEWORK_TABLES, Reflected, Relation
 from ._types import MODULES, Emitted, emit_type, lit, modules_used, resolve, type_names
@@ -103,6 +110,19 @@ class _Writer:
     def column_type(self, relation: Relation, column: Column[Any]) -> str:
         table = relation.table.name
         key = (relation.schema, table, column.name)
+        sqlite_table = self.reflected.sqlite_tables.get((relation.schema, table))
+        collation = sqlite_table.collations.get(column.name) if sqlite_table else None
+        if collation is not None:
+            # SQLite's reflection does not read a column's COLLATE; its table's text says it.
+            if isinstance(column.type, sqltypes.String) and not column.type.collation:
+                column.type = column.type.copy()
+                column.type.collation = collation
+            elif not isinstance(column.type, sqltypes.String):
+                self.notes.append(
+                    f"{relation.key}.{column.name} is {column.type} COLLATE {collation}: a "
+                    "collation on a column that is not text, which SQLAlchemy cannot declare; "
+                    "create_all builds it without"
+                )
         raw = self.reflected.raw_types.get(key)
         is_json = key in self.reflected.json_columns
         extra = ["JSON"] if is_json else []
@@ -127,8 +147,17 @@ class _Writer:
         where = f"{relation.key}.{column.name}"
         record_key = (relation.key, column.name)
         if forced is None or forced.converter is None:
-            source = self._plain_type(where, column, forced, raw, is_json)
-            self.py_types[record_key] = self.python_type_of(where, self.built(source))
+            source = self._plain_type(where, column, forced, raw, is_json, key)
+            built = self.built(source)
+            spelled = getattr(built, "spelling", None)
+            known = (
+                spelled_type(self.reflected.dialect_name, spelled)
+                if isinstance(spelled, str)
+                else None
+            )
+            self.py_types[record_key] = (
+                known if known is not None else self.python_type_of(where, built)
+            )
             if forced is not None and forced.name == "LocalDateTime":
                 # The same zone-less column as an Instant's; only what the record says differs.
                 from ..time import LocalDateTime
@@ -139,7 +168,7 @@ class _Writer:
         # column would have without this forced type - the next one that matches and is not a
         # converter, else the type table's.
         inner = next((c for c in matching if c.converter is None), None)
-        impl = self._plain_type(where, column, inner, raw, is_json)
+        impl = self._plain_type(where, column, inner, raw, is_json, key)
         self.helpers.add("converted")
         converter = self.use(resolve(forced))
         # The record holds what the converter gives, read off the converter the module builds.
@@ -217,6 +246,7 @@ class _Writer:
         forced: ForcedType | None,
         raw: str | None,
         is_json: bool,
+        relation_key: tuple[str | None, str, str] = (None, "", ""),
     ) -> str:
         """The column's type with no converter: a forced name or SQLAlchemy type, or the type
         table's, or - for a type SQLAlchemy cannot read - the database's own spelling."""
@@ -234,11 +264,23 @@ class _Writer:
             emitted = Emitted("sqlalchemy.JSON(none_as_null=True)")
         else:
             emitted = emit_type(column.type, self.reflected.dialect_name)
-            if emitted is None and raw:
+            if (
+                self.reflected.dialect_name == "sqlite"
+                and raw is not None
+                and not _sqlite_named(raw)
+            ):
+                # A type name SQLite keeps but SQLAlchemy reads only by its affinity - `ANY`,
+                # `UNSIGNED BIG INT`, none at all: written as SQLite spells it, as a STRICT
+                # table requires and as `create_all` builds the same column.
+                emitted = None
+            if emitted is None and (raw or (raw == "" and self.reflected.dialect_name == "sqlite")):
                 # A type SQLAlchemy has no class for: written as the database spells it, so
-                # create_all builds the same column.
+                # create_all builds the same column - with MySQL's spatial reference system,
+                # which its spelling of the type leaves out.
+                srid = self.reflected.srids.get((relation_key[0], relation_key[1], column.name))
+                spelled = raw if srid is None else f"{raw} SRID {srid}"
                 emitted = Emitted(
-                    f"sql_type({lit(raw)})", frozenset({("ekbatan.schema", "sql_type")})
+                    f"sql_type({lit(spelled)})", frozenset({("ekbatan.schema", "sql_type")})
                 )
             elif emitted is None:
                 # Only when the database's spelling is not known - render() on tables built by
@@ -317,7 +359,8 @@ class _Writer:
         return source
 
     def column(self, relation: Relation, column: Column[Any], single_pk: bool) -> str:
-        positional = [q(column.name), self.column_type(relation, column)]
+        column_type = self.column_type(relation, column)
+        positional = [q(column.name), column_type]
         keywords: list[str] = []
         if column.computed is not None:
             persisted = column.computed.persisted
@@ -363,6 +406,7 @@ class _Writer:
             and integer
             and column.identity is None
             and column.autoincrement is not True
+            and not self._rowid_alias(relation, column)
         ):
             keywords.append("autoincrement=False")
 
@@ -370,6 +414,8 @@ class _Writer:
         if sequence is not None:
             positional.append(sequence)
         if default is not None:
+            if "timestamp_column()" in column_type:
+                default = self._at_six_digits(relation, column, default)
             keywords.append(default)
         if column.comment:
             keywords.append(f"comment={q(column.comment)}")
@@ -409,6 +455,32 @@ class _Writer:
                 )
         return None, f"server_default=sqlalchemy.text({q(sql)})"
 
+    def _at_six_digits(self, relation: Relation, column: Column[Any], default: str) -> str:
+        """A MySQL default of the current time, at the column's own precision, made the
+        precision of the column ``timestamp_column()`` builds.
+
+        MySQL refuses ``DATETIME(6) DEFAULT CURRENT_TIMESTAMP``: the default's fractional
+        digits must be the column's. A ``TIMESTAMP DEFAULT CURRENT_TIMESTAMP`` - the most usual
+        MySQL timestamp there is - forced to ``timestamp_column()``, which builds
+        ``DATETIME(6)``, would make a module whose ``create_all`` fails. MariaDB makes the same
+        change itself, silently.
+        """
+        if self.reflected.dialect_name not in ("mysql", "mariadb"):
+            return default
+        changed = _NOW.sub(
+            lambda m: (
+                m.group() if re.search(r"\(\s*6\s*\)$", m.group()) else "CURRENT_TIMESTAMP(6)"
+            ),
+            default,
+        )
+        if changed != default:
+            self.notes.append(
+                f"{relation.key}.{column.name}: its default of the current time is written at "
+                "six digits, CURRENT_TIMESTAMP(6), as the DATETIME(6) timestamp_column() builds "
+                "requires"
+            )
+        return changed
+
     # -- tables ----------------------------------------------------------------------------
 
     def table(self, relation: Relation, generated: set[str]) -> list[str]:
@@ -432,7 +504,23 @@ class _Writer:
         for check in self.reflected.column_checks.get((relation.schema, table.name), []):
             lines.append(f"    sqlalchemy.CheckConstraint({q(check)}),")
         for index in sorted(table.indexes, key=_by_name):
-            lines.append(f"    {self.index(index, inline=True)},")
+            lines.append(f"    {self.index(index, inline=True, relation=relation)},")
+        known = {i.name for i in table.indexes}
+        for spec in self.reflected.extra_indexes.get((relation.schema, table.name), []):
+            if spec.name in known:
+                continue
+            # An index reflection skipped (SQLite's on an expression): written from the
+            # database's own text of it.
+            parts = [q(spec.name), *(f"sqlalchemy.text({q(e)})" for e in spec.elements)]
+            if spec.unique:
+                parts.append("unique=True")
+            if spec.where is not None:
+                parts.append(
+                    f"{self.reflected.dialect_name}_where=sqlalchemy.text({q(spec.where)})"
+                )
+            lines.append(f"    sqlalchemy.Index({', '.join(parts)}),")
+        for option in self.table_options(relation):
+            lines.append(f"    {option},")
         if table.comment:
             lines.append(f"    comment={q(table.comment)},")
         if relation.schema is not None:
@@ -444,13 +532,28 @@ class _Writer:
                 Field(
                     c.name,
                     self.py_types[(relation.key, c.name)],
-                    nullable=bool(c.nullable),
-                    optional=self._filled_by_database(c),
+                    # A key column is NOT NULL as the module declares it - SQLite alone lets one
+                    # hold NULL unless it says otherwise, and the module's key does not.
+                    nullable=bool(c.nullable) and not c.primary_key,
+                    optional=self._filled_by_database(c, relation),
                 )
                 for c in table.columns
             ],
         )
         return ["\n".join(lines)]
+
+    def table_options(self, relation: Relation) -> list[str]:
+        """What the table says about itself beyond its columns and keys, as ``Table`` keywords."""
+        options: list[str] = []
+        found = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
+        if found is not None:
+            if found.autoincrement:
+                options.append("sqlite_autoincrement=True")
+            if found.without_rowid:
+                options.append("sqlite_with_rowid=False")
+            if found.strict:
+                options.append("sqlite_strict=True")
+        return options
 
     def record_of(self, relation: Relation) -> str:
         base = (
@@ -460,10 +563,17 @@ class _Writer:
         )
         return record_name(base)
 
-    @staticmethod
-    def _filled_by_database(column: Column[Any]) -> bool:
+    def _rowid_alias(self, relation: Relation, column: Column[Any]) -> bool:
+        """Whether the column is SQLite's ``INTEGER PRIMARY KEY``: the rowid under another name,
+        which SQLite fills when an insert leaves it out."""
+        found = self.reflected.sqlite_tables.get((relation.schema, relation.table.name))
+        return found is not None and found.rowid_alias == column.name
+
+    def _filled_by_database(self, column: Column[Any], relation: Relation | None = None) -> bool:
         """Whether an insert may leave the column out: the database fills it."""
         if column.computed is not None or column.identity is not None:
+            return True
+        if relation is not None and self._rowid_alias(relation, column):
             return True
         if column.autoincrement is True:
             return True
@@ -518,23 +628,108 @@ class _Writer:
             return f"sqlalchemy.ForeignKeyConstraint([{local}], [{remote}]{named}{options})"
         return None
 
-    def index(self, index: Index, *, inline: bool, table: str | None = None) -> str:
+    def index(
+        self,
+        index: Index,
+        *,
+        inline: bool,
+        table: str | None = None,
+        relation: Relation | None = None,
+    ) -> str:
         parts = [q(str(index.name))]
-        for expression in index.expressions:
-            if isinstance(expression, Column):
-                parts.append(q(expression.name) if inline else f"{table}.c[{q(expression.name)}]")
-            else:
-                parts.append(f"sqlalchemy.text({q(str(expression))})")
+        options = {k: v for k, v in index.dialect_kwargs.items() if v not in (None, [], {}, ())}
+        elements = self.index_elements(relation, index) if relation is not None else None
+        if elements is None:
+            for expression in index.expressions:
+                if isinstance(expression, Column):
+                    parts.append(
+                        q(expression.name) if inline else f"{table}.c[{q(expression.name)}]"
+                    )
+                else:
+                    parts.append(f"sqlalchemy.text({q(str(expression))})")
+        else:
+            plain: set[str] = set()
+            for column, element in elements:
+                if column is not None:
+                    plain.add(column)
+                    parts.append(q(column))
+                else:
+                    parts.append(f"sqlalchemy.text({q(element)})")
+            # What reflection said per column - an op class, a prefix length - is in the text
+            # of an element written as text; said again beside it, it would be said twice.
+            for option in ("postgresql_ops", "mysql_length", "mariadb_length"):
+                if isinstance(options.get(option), dict):
+                    kept = {k: v for k, v in options[option].items() if k in plain}
+                    if kept:
+                        options[option] = kept
+                    else:
+                        del options[option]
         if index.unique:
             parts.append("unique=True")
-        for option, value in sorted(index.dialect_kwargs.items()):
-            if value in (None, [], {}, ()):
-                continue
+        for option, value in sorted(options.items()):
             if option.endswith("_where"):
                 parts.append(f"{option}=sqlalchemy.text({q(str(value))})")
             else:
                 parts.append(f"{option}={lit(value)}")
         return f"sqlalchemy.Index({', '.join(parts)})"
+
+    def index_elements(
+        self, relation: Relation, index: Index
+    ) -> list[tuple[str | None, str]] | None:
+        """The index's key elements, each a column's name where a plain name says all the
+        database does, else the element's text as the database writes it. ``None`` when the
+        database's text is not known or says nothing reflection did not."""
+        key = (relation.schema, relation.table.name, str(index.name))
+        elements = self.reflected.index_elements.get(key)
+        if elements is None:
+            return None
+        found = [(self.plain_column(relation, index, e), e) for e in elements]
+        reflected = [e.name if isinstance(e, Column) else None for e in index.expressions]
+        if None not in [c for c, _ in found] and [c for c, _ in found] == reflected:
+            return None  # every element a plain column, as reflection already says
+        return found
+
+    def plain_column(self, relation: Relation, index: Index, element: str) -> str | None:
+        """The column an index element names and says nothing more about - beyond an op class
+        or a prefix length reflection already reads - else ``None``."""
+        found = re.fullmatch(
+            r'(?:"((?:[^"]|"")+)"|`((?:[^`]|``)+)`|\[([^\]]+)\]|([A-Za-z_][A-Za-z0-9_$]*))'
+            r"(?:\((\d+)\))?(?:\s+(.*))?",
+            element.strip(),
+            re.S,
+        )
+        if found is None:
+            return None
+        quoted, ticked, bracketed, bare, length, rest = found.groups()
+        name = (
+            quoted.replace('""', '"')
+            if quoted is not None
+            else ticked.replace("``", "`")
+            if ticked is not None
+            else bracketed
+            if bracketed is not None
+            else bare
+        )
+        columns = {c.name: c.name for c in relation.table.columns}
+        if name not in columns and self.reflected.dialect_name in ("sqlite", "mysql", "mariadb"):
+            # Neither SQLite nor MySQL tells case apart in a column's name.
+            columns = {c.name.lower(): c.name for c in relation.table.columns}
+            name = name.lower()
+        column = columns.get(name)
+        if column is None:
+            return None
+        options = index.dialect_kwargs
+        if length is not None:
+            lengths = options.get(f"{self.reflected.dialect_name}_length") or {}
+            if not isinstance(lengths, dict) or str(lengths.get(column)) != length:
+                return None
+        rest = (rest or "").strip()
+        if not rest or rest.upper() == "ASC":
+            return column
+        ops = options.get("postgresql_ops") or {}
+        if isinstance(ops, dict) and ops.get(column) == rest:
+            return column
+        return None
 
     def name_of(self, relation: Relation) -> str:
         base = (
@@ -595,8 +790,34 @@ class _Writer:
                     f"{relation.key}: index {index.name} is on an expression; left out"
                 )
                 continue
+            if self.index_elements(relation, index):
+                self.notes.append(
+                    f"{relation.key}: index {index.name} orders or collates a column, which an "
+                    "index beside a framework table is not written with; left out"
+                )
+                continue
             lines.append(self.index(index, inline=False, table=name))
+        known = {i.name for i in relation.table.indexes}
+        for spec in self.reflected.extra_indexes.get((relation.schema, relation.table.name), []):
+            if spec.name not in known and spec.name not in taken:
+                self.notes.append(
+                    f"{relation.key}: index {spec.name} is on an expression; left out"
+                )
         return lines
+
+
+#: MySQL's ways of saying the current time in a default or an ``ON UPDATE``, at any precision.
+_NOW = re.compile(
+    r"\b(?:current_timestamp|now|localtimestamp|localtime)\b(?:\s*\(\s*\d*\s*\))?", re.I
+)
+
+
+def _sqlite_named(raw: str) -> bool:
+    """Whether SQLAlchemy reads a SQLite type by its name, not only by its affinity."""
+    from sqlalchemy.dialects.sqlite.base import ischema_names
+
+    found = re.match(r"\s*([A-Za-z_ ]+?)\s*(\(|$)", raw)
+    return found is not None and found.group(1).upper() in ischema_names
 
 
 def _reserved() -> set[str]:

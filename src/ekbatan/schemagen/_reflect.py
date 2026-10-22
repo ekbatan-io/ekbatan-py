@@ -44,6 +44,20 @@ SYSTEM_SCHEMAS = frozenset(
 
 #: (schema, table, column), where schema is ``None`` for the connection's own.
 ColumnKey = tuple[str | None, str, str]
+#: (schema, table, index or constraint).
+IndexKey = tuple[str | None, str, str]
+
+
+@dataclass(frozen=True)
+class IndexSpec:
+    """An index reflection does not hand back at all - SQLite's on an expression - read from
+    the database's own text of it."""
+
+    name: str
+    unique: bool
+    #: Each key element as the database writes it: ``lower(name)``, ``a DESC``.
+    elements: list[str]
+    where: str | None
 
 
 @dataclass
@@ -73,8 +87,17 @@ class Reflected:
     framework: list[Relation] = field(default_factory=list)
     raw_types: dict[ColumnKey, str] = field(default_factory=dict)
     json_columns: set[ColumnKey] = field(default_factory=set)
+    #: What SQLite's reflection does not read from each table's text, by (schema, table).
+    sqlite_tables: dict[tuple[str | None, str], SqliteTable] = field(default_factory=dict)
+    #: MySQL's spatial columns restricted to one spatial reference system: ``SRID 4326``.
+    srids: dict[ColumnKey, int] = field(default_factory=dict)
     #: Column-level CHECKs reflection does not list (MariaDB), by (schema, table): sql texts.
     column_checks: dict[tuple[str | None, str], list[str]] = field(default_factory=dict)
+    #: Each index's key elements as the database writes them - ``a DESC NULLS LAST``,
+    #: ``lower(name) COLLATE "C"`` - for the indexes reflection reads with something missing.
+    index_elements: dict[IndexKey, list[str]] = field(default_factory=dict)
+    #: Indexes reflection skips (SQLite's on expressions), by (schema, table).
+    extra_indexes: dict[tuple[str | None, str], list[IndexSpec]] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
 
@@ -96,6 +119,8 @@ def reflect(engine: Engine, config: SchemagenConfig) -> Reflected:
         with warnings.catch_warnings():
             # "Did not recognize type 'xml'": said again, better, as a note naming the fix.
             warnings.filterwarnings("ignore", "Did not recognize type", SAWarning)
+            # SQLite's index on an expression: read from its own text instead (_index_elements).
+            warnings.filterwarnings("ignore", "Skipped unsupported reflection", SAWarning)
             metadata.reflect(bind=engine, schema=schema, views=config.views, resolve_fks=False)
         view_names = set(inspector.get_view_names(schema=schema)) if config.views else set()
         schema_name = schema if schema is not None else default
@@ -114,6 +139,7 @@ def reflect(engine: Engine, config: SchemagenConfig) -> Reflected:
         _raw_types(engine, schema, result)
         if engine.dialect.name == "mariadb":
             _mariadb_checks(engine, schema, result)
+        _index_elements(engine, schema, result)
 
     if not config.schemas:
         _note_unread_schemas(inspector, default, result)
@@ -146,21 +172,27 @@ def _raw_types(engine: Engine, schema: str | None, result: Reflected) -> None:
                 ).all()
             )
         elif dialect in ("mysql", "mariadb"):
-            rows = list(
-                connection.execute(
-                    text(
-                        "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE "
-                        "FROM information_schema.COLUMNS "
-                        "WHERE TABLE_SCHEMA = COALESCE(:schema, DATABASE())"
-                    ),
-                    {"schema": schema},
-                ).all()
-            )
+            srid = "SRS_ID" if dialect == "mysql" else "NULL"
+            found = connection.execute(
+                text(
+                    f"SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, {srid} "
+                    "FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = COALESCE(:schema, DATABASE())"
+                ),
+                {"schema": schema},
+            ).all()
+            rows = [r[:3] for r in found]
+            for table, column, _, srs_id in found:
+                if srs_id is not None:
+                    result.srids[(schema, str(table), str(column))] = int(srs_id)
         elif dialect == "sqlite":
-            names = connection.execute(
-                text("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")
-            ).scalars()
-            for table in list(names):
+            found_tables = connection.execute(
+                text("SELECT name, type, sql FROM sqlite_master WHERE type IN ('table', 'view')")
+            ).all()
+            for table, kind, sql in found_tables:
+                if kind == "table" and sql is not None:
+                    result.sqlite_tables[(schema, str(table))] = sqlite_table_parts(str(sql))
+            for table in [str(t[0]) for t in found_tables]:
                 quoted = '"' + table.replace('"', '""') + '"'
                 for info in connection.exec_driver_sql(f"PRAGMA table_info({quoted})").all():
                     rows.append((table, info[1], info[2]))
@@ -210,3 +242,278 @@ def _note_unread_schemas(inspector: object, default: str | None, result: Reflect
                 f"schema {name} has {len(tables)} table(s), not generated: add it to "
                 f'`schemas` to include it (schemas = ["{name}"])'
             )
+
+
+# -- index elements -----------------------------------------------------------------------------
+
+
+def split_top_level(text: str, separator: str = ",") -> list[str]:
+    """``text`` split on ``separator`` where it is outside parentheses and quotes."""
+    parts: list[str] = []
+    depth, quote, start = 0, "", 0
+    for at, character in enumerate(text):
+        if quote:
+            if character == quote:
+                quote = ""
+        elif character in "'\"`":
+            quote = character
+        elif character == "[":
+            quote = "]"
+        elif character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        elif character == separator and depth == 0:
+            parts.append(text[start:at].strip())
+            start = at + 1
+    parts.append(text[start:].strip())
+    return parts
+
+
+def index_parts(sql: str) -> tuple[list[str], str] | None:
+    """``CREATE INDEX n ON t USING m (a, lower(b) DESC) WHERE x`` -> the key elements, and what
+    follows their list. ``None`` when the text is not one this can read."""
+    quote, depth, seen_on, opened = "", 0, False, -1
+    upper = sql.upper()
+    for at, character in enumerate(sql):
+        if quote:
+            if character == quote:
+                quote = ""
+            continue
+        if character in "'\"`":
+            quote = character
+        elif character == "[":
+            quote = "]"
+        elif character == "(":
+            if seen_on and depth == 0 and opened < 0:
+                opened = at
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0 and opened >= 0:
+                return split_top_level(sql[opened + 1 : at]), sql[at + 1 :].strip()
+        elif depth == 0 and not seen_on and character.isspace():
+            seen_on = re.match(r"\s+ON\s", upper[at:]) is not None
+    return None
+
+
+def _index_elements(engine: Engine, schema: str | None, result: Reflected) -> None:
+    """Each index's key elements as the database itself writes them.
+
+    Reflection reads an index's columns, but not all of what is said about each: PostgreSQL's
+    sort order is kept only for a plain column, and its ``COLLATE`` not at all; MySQL's
+    ``DESC`` and its functional key parts are lost; SQLite skips an index on an expression
+    altogether, with only a warning. A column written as a plain name is enough to rebuild the
+    index; anything more is kept here, as text, and written as the database wrote it.
+    """
+    dialect = engine.dialect.name
+    with engine.connect() as connection:
+        if dialect == "postgresql":
+            rows = connection.execute(
+                text(
+                    "SELECT c.relname, i.relname, pg_get_indexdef(i.oid) FROM pg_index x "
+                    "JOIN pg_class i ON i.oid = x.indexrelid "
+                    "JOIN pg_class c ON c.oid = x.indrelid "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = COALESCE(:schema, current_schema())"
+                ),
+                {"schema": schema},
+            ).all()
+            for table, index, definition in rows:
+                parts = index_parts(str(definition))
+                if parts is not None:
+                    result.index_elements[(schema, str(table), str(index))] = parts[0]
+        elif dialect in ("mysql", "mariadb"):
+            expression = "EXPRESSION" if dialect == "mysql" else "NULL"
+            rows = connection.execute(
+                text(
+                    "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, SUB_PART, COLLATION, "
+                    f"{expression}, INDEX_TYPE FROM information_schema.STATISTICS "
+                    "WHERE TABLE_SCHEMA = COALESCE(:schema, DATABASE()) "
+                    "ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX"
+                ),
+                {"schema": schema},
+            ).all()
+            quote = engine.dialect.identifier_preparer.quote
+            for table, index, column, sub_part, collation, functional, kind in rows:
+                if column is not None:
+                    element = quote(str(column))
+                    # A SPATIAL index reports a prefix of 32 that nobody wrote and none may.
+                    if sub_part is not None and str(kind).upper() != "SPATIAL":
+                        element += f"({int(sub_part)})"
+                else:
+                    element = f"({functional})"
+                if collation == "D":
+                    element += " DESC"
+                key = (schema, str(table), str(index))
+                result.index_elements.setdefault(key, []).append(element)
+        elif dialect == "sqlite":
+            rows = connection.execute(
+                text(
+                    "SELECT tbl_name, name, sql FROM sqlite_master "
+                    "WHERE type = 'index' AND sql IS NOT NULL"
+                )
+            ).all()
+            for table, index, sql in rows:
+                parts = index_parts(str(sql))
+                if parts is None:
+                    continue
+                elements, tail = parts
+                result.index_elements[(schema, str(table), str(index))] = elements
+                result.extra_indexes.setdefault((schema, str(table)), []).append(
+                    IndexSpec(
+                        str(index),
+                        str(sql).lstrip().upper().startswith("CREATE UNIQUE"),
+                        elements,
+                        _where(tail),
+                    )
+                )
+
+
+def _where(tail: str) -> str | None:
+    found = re.match(r"\s*WHERE\s+(.*)$", tail, re.I | re.S)
+    return found.group(1).strip() if found else None
+
+
+# -- SQLite's table text ------------------------------------------------------------------------
+
+
+def _tokens(text_: str) -> list[str]:
+    """SQL text as tokens: a quoted name or string, a word, a parenthesised group, a character."""
+    found: list[str] = []
+    at = 0
+    closing = {"'": "'", '"': '"', "`": "`", "[": "]"}
+    while at < len(text_):
+        character = text_[at]
+        if character.isspace():
+            at += 1
+        elif character in closing:
+            end = at + 1
+            while end < len(text_):
+                if text_[end] == closing[character]:
+                    # A doubled quote is the quote itself.
+                    if character != "[" and text_[end + 1 : end + 2] == closing[character]:
+                        end += 2
+                        continue
+                    break
+                end += 1
+            found.append(text_[at : end + 1])
+            at = end + 1
+        elif character == "(":
+            depth, end = 0, at
+            while end < len(text_):
+                if text_[end] in closing:
+                    end += len(_tokens(text_[end:])[0])
+                    continue
+                depth += {"(": 1, ")": -1}.get(text_[end], 0)
+                if depth == 0:
+                    break
+                end += 1
+            found.append(text_[at : end + 1])
+            at = end + 1
+        elif character.isalnum() or character == "_":
+            end = at
+            while end < len(text_) and (text_[end].isalnum() or text_[end] in "_$"):
+                end += 1
+            found.append(text_[at:end])
+            at = end
+        else:
+            found.append(character)
+            at += 1
+    return found
+
+
+def unquote(token: str) -> str:
+    """A name as SQL wrote it, without its quotes."""
+    if len(token) >= 2 and token[0] in "\"'`" and token[-1] == token[0]:
+        return token[1:-1].replace(token[0] * 2, token[0])
+    if len(token) >= 2 and token[0] == "[" and token[-1] == "]":
+        return token[1:-1]
+    return token
+
+
+@dataclass(frozen=True)
+class SqliteTable:
+    """What SQLite's reflection does not read from a table's ``CREATE TABLE`` text."""
+
+    #: Each column's ``COLLATE``, by column name.
+    collations: dict[str, str]
+    #: The column declared ``INTEGER PRIMARY KEY`` - the rowid's alias, which SQLite fills.
+    rowid_alias: str | None
+    autoincrement: bool
+    strict: bool
+    without_rowid: bool
+
+    @property
+    def options(self) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name, on in (
+                ("AUTOINCREMENT", self.autoincrement),
+                ("STRICT", self.strict),
+                ("WITHOUT ROWID", self.without_rowid),
+            )
+            if on
+        )
+
+
+_TABLE_CONSTRAINTS = frozenset({"CONSTRAINT", "PRIMARY", "UNIQUE", "CHECK", "FOREIGN"})
+
+
+def sqlite_table_parts(sql: str) -> SqliteTable:
+    tokens = _tokens(sql)
+    body = next((t for t in tokens if t.startswith("(")), "()")
+    tail = [t.upper() for t in tokens[tokens.index(body) + 1 :]] if body in tokens else []
+    collations: dict[str, str] = {}
+    autoincrement = False
+    primary: list[str] = []
+    declared: dict[str, str] = {}
+    for definition in split_top_level(body[1:-1]):
+        words = _tokens(definition)
+        if not words:
+            continue
+        upper = [w.upper() for w in words]
+        if upper[0] in _TABLE_CONSTRAINTS:
+            if "PRIMARY" in upper and "KEY" in upper:
+                group = next((w for w in words[upper.index("KEY") + 1 :] if w.startswith("(")), "")
+                primary = [unquote(p.split()[0]) for p in split_top_level(group[1:-1]) if p]
+                if len(primary) == 1 and "AUTOINCREMENT" in group.upper():
+                    autoincrement = True
+            continue
+        name = unquote(words[0])
+        # The declared type: the words up to the first constraint keyword.
+        stop = next(
+            (
+                i
+                for i, w in enumerate(upper[1:], 1)
+                if w
+                in (
+                    "CONSTRAINT",
+                    "PRIMARY",
+                    "NOT",
+                    "NULL",
+                    "UNIQUE",
+                    "CHECK",
+                    "DEFAULT",
+                    "COLLATE",
+                    "REFERENCES",
+                    "GENERATED",
+                    "AS",
+                )
+            ),
+            len(words),
+        )
+        declared[name] = " ".join(upper[1:stop])
+        for i, word in enumerate(upper):
+            if word == "COLLATE" and i + 1 < len(words):
+                collations[name] = unquote(words[i + 1])
+            elif word == "AUTOINCREMENT":
+                autoincrement = True
+            elif word == "PRIMARY" and upper[i + 1 : i + 2] == ["KEY"]:
+                order = upper[i + 2 : i + 3]
+                primary = [name] if order != ["DESC"] else []
+    without_rowid = "WITHOUT" in tail and "ROWID" in tail
+    alias = None
+    if len(primary) == 1 and declared.get(primary[0]) == "INTEGER" and not without_rowid:
+        alias = primary[0]
+    return SqliteTable(collations, alias, autoincrement, "STRICT" in tail, without_rowid)
