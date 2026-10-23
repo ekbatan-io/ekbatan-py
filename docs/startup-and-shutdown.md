@@ -71,6 +71,22 @@ In short:
 A fourth object appears only if an event handler is `async def`: the `HandlerLoop` its async
 work runs on. It is covered below with the async app.
 
+## Processes, workers and copies
+
+A few words this page uses for how a server runs your app:
+
+- A **process** is a running copy of Python with its own memory. Inside one process, only one
+  thread runs Python code at a time - so to use several CPU cores, a server runs several
+  processes.
+- A **worker** is one of those processes, serving requests or running tasks. Inside a worker
+  there may be one thread or several.
+- A server can make its workers in two ways. It can **start them fresh**: launch a new Python for
+  each one, which imports your app on its own. Or it can **copy** one process (with `fork()`): the
+  new worker starts as an exact copy of the original, with everything already in memory -
+  including anything your app created when it was imported.
+
+That last difference matters more than it looks, as the next section shows.
+
 ## Import time and startup
 
 The table says *at startup*. That needs a word of explanation, because a Python program has two
@@ -154,19 +170,27 @@ close them at shutdown. The rest of this page does exactly that.
 
 ## Four kinds of program
 
-Where "startup" and "shutdown" are depends on what kind of program you are writing - not on the
-server. There are four kinds:
+Where "startup" and "shutdown" are depends on what kind of program you are writing. There are
+four kinds:
 
 | kind of program | for example | startup and shutdown are | run by |
 | --- | --- | --- | --- |
 | a web app with a lifespan (ASGI) | FastAPI, Starlette | the app's **lifespan** | uvicorn, `fastapi run`, gunicorn with uvicorn workers, hypercorn, granian |
 | a web app without a lifespan (WSGI) | Flask, Django | the **server's own hooks**, or your `main()` around the server | gunicorn, uwsgi, waitress |
 | a task-queue worker | Celery, RQ | the **queue's per-worker hooks**, or your `main()` around the worker | Celery, RQ |
-| a worker you run yourself | a job worker, a consumer, a script | the top and the bottom of **your `main()`** | you |
+| a worker you run yourself | a job worker, a consumer, a script | the top and the bottom of **your `main()`** | you, under Docker, Kubernetes or a process manager |
 
-The next four sections take them one at a time. Each shows the complete code and explains why
-every step is where it is. After them, "Under each server" covers what is specific to each server,
-and the last section covers Kubernetes, which can run any of the four.
+Find your row, and read that section. Each one explains what is particular to that kind of
+program, with the complete code. The first three then take the servers that run them one by one,
+each in the same three parts:
+
+- **How it runs:** how many processes, how many threads in each, and whether workers are copied
+  or started fresh.
+- **Where it can bite:** what goes wrong with that server if nothing is done about it.
+- **What to do:** the complete code, and the server's settings that matter.
+
+After the four kinds come the parts that apply to all of them: the two mistakes ekbatan refuses,
+counting connections, migrations, and Kubernetes.
 
 ## A web app with a lifespan: FastAPI
 
@@ -384,6 +408,81 @@ and, async,
 [`fastapi-wallet-rest-uv-async-pg`'s](../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/app.py);
 [Wiring with FastAPI](wiring-fastapi.md) walks through them.
 
+The lifespan is the same whichever server runs your app. What each server adds is below.
+
+### With uvicorn, or `fastapi run`
+
+**How it runs.** By default, one process. Inside it, one thread runs the event loop that serves
+every request. `async def` endpoints run on that loop. Plain `def` endpoints are handed to a small
+pool of threads (40 by default), so a slow one doesn't hold up the loop. With `--workers 4`,
+uvicorn starts four processes **fresh**, and each imports your app and runs its own lifespan.
+`fastapi run` is uvicorn, with the same options.
+
+**Where it can bite.**
+
+- An `async def` endpoint that calls ekbatan's sync API would stop the loop - and every other
+  request - while it waits on the database. ekbatan raises `BlockingCallError` instead.
+- With `--workers 4`, there are four of every pool: four registries, four job registries, four
+  lock pools. The database sees four times the connections.
+- With plain `def` endpoints, up to 40 requests can run at once in each process. If the
+  registry's pool is smaller, the rest wait for a free connection, and a request that waits
+  longer than `pool_timeout` fails.
+
+**What to do.** Use the lifespan above, unchanged:
+
+```bash
+uvicorn myapp.api:app --workers 4
+```
+
+Write `async def` endpoints with `ekbatan.aio`, or plain `def` endpoints with the sync API. Size
+the pool for how many requests really run at once in one process, then multiply by `--workers`
+when comparing with the database's connection limit (see "When your server runs several
+processes").
+
+### With gunicorn (`-k uvicorn.workers.UvicornWorker`)
+
+**How it runs.** gunicorn starts a main process that does no request work itself: it creates the
+workers, watches them, and replaces any that die. It makes each worker by **copying** itself. Each
+worker then runs uvicorn's event loop and your lifespan, exactly as plain uvicorn would. With
+`--preload`, gunicorn imports your app once in the main process, *before* copying, to save memory
+and start faster.
+
+**Where it can bite.**
+
+- **`--preload` with objects created at import.** If your module creates a registry at import
+  time, with `--preload` it is created once in the main process and copied into every worker,
+  together with its connections. ekbatan raises `ForkedProcessError` when a worker uses it.
+- **Shutdown time.** When gunicorn stops a worker, it waits `--graceful-timeout` (30 seconds by
+  default) and then kills it. If the job registry's `shutdown_max_wait` is longer, a job that
+  needs the full time is killed mid-way.
+- **Worker restarts.** With `--max-requests`, gunicorn replaces each worker after that many
+  requests. Every replacement runs your shutdown and startup again - which is fine, as long as
+  they are in the lifespan.
+- Pools multiply by the number of workers, as with uvicorn.
+
+**What to do.** Keep everything in the lifespan; then `--preload` is harmless, because the
+lifespan runs in each worker, after the copy. Set `--graceful-timeout` longer than the job
+registry's `shutdown_max_wait`:
+
+```bash
+gunicorn myapp.api:app -k uvicorn.workers.UvicornWorker --workers 4 --graceful-timeout 60
+```
+
+### With hypercorn or granian
+
+**How they run.** Both serve ASGI apps such as FastAPI, like uvicorn. With several workers, each
+starts separate processes, and each worker imports your app and runs the lifespan itself.
+hypercorn can run its event loop with asyncio, uvloop or trio. granian is written in Rust and runs
+your Python app inside each of its workers; with `--interface asgi` it runs the lifespan.
+
+**Where it can bite.**
+
+- **hypercorn with trio.** `ekbatan.aio` needs asyncio's event loop, and trio is a different one.
+- Pools multiply by workers, as everywhere.
+
+**What to do.** Use the lifespan above. With hypercorn, use the asyncio or uvloop worker class.
+With granian, run FastAPI with `--interface asgi`.
+
 ## A web app without a lifespan: Flask, Django
 
 ### What is different
@@ -398,13 +497,43 @@ apps. Two things follow for ekbatan:
 - **Requests run on threads** (or on gevent, which behaves like threads), never on an event loop.
   So you use ekbatan's **sync API**, and nothing needs `asyncio.to_thread`.
 
-### With gunicorn
+The order is the same as in the lifespan: create the objects, then start the jobs; at shutdown,
+stop the jobs first, then close the pools. Migrations are best run as their own step before the
+server starts (see "Migrations"). In the code below, `myapp` stands for your app's module,
+`LAYOUT` for the layout read from `ekbatan.yaml`, `registry` for a variable in it that starts as
+`registry = None`, and `your_jobs` for your own function that returns the jobs to run.
 
-gunicorn makes its workers by copying one main process, and gives you two hooks in a
-`gunicorn.conf.py` file: `post_fork` runs in each worker just after it is copied - its startup -
-and `worker_exit` runs as the worker stops - its shutdown. Create the objects in the first and
-close them in the second. `myapp` stands for your app's module, and `LAYOUT` for the layout read
-from `ekbatan.yaml`:
+### With gunicorn (`gthread` or `gevent` workers)
+
+**How it runs.** gunicorn starts a main process that does no request work itself: it creates the
+workers, watches them, and replaces any that die. It makes each worker by **copying** itself. What
+runs inside each worker depends on the worker type:
+
+- `gthread`: a pool of threads (`--threads`), each handling one request at a time.
+- `gevent`: one thread running many requests at once. gevent changes Python's waiting calls -
+  for the database, the network, `sleep` - so that while one request waits, another runs.
+  `--worker-connections` (1000 by default) caps how many.
+
+With `--preload`, gunicorn imports your app once in the main process, *before* copying.
+
+**Where it can bite.**
+
+- **Creating objects at import time.** Flask and Django apps often set things up at module level.
+  With `--preload`, that runs once in the main process and is copied into every worker:
+  `ForkedProcessError`.
+- **More requests than connections.** With `gthread`, up to `--threads` requests run at once per
+  worker; with `gevent`, up to `--worker-connections`. If they all want the database and the pool
+  is smaller, the rest wait, and fail after `pool_timeout`.
+- **`ekbatan.aio` under gevent.** It does not run under gevent's changes; use the sync API there.
+- **Shutdown time.** When gunicorn stops a worker, it waits `--graceful-timeout` (30 seconds by
+  default) and then kills it. If the job registry's `shutdown_max_wait` is longer, a job that
+  needs the full time is killed mid-way.
+- **Worker restarts.** With `--max-requests`, gunicorn replaces each worker after that many
+  requests, and each new worker runs the startup code again.
+
+**What to do.** gunicorn gives you two hooks in a `gunicorn.conf.py` file: `post_fork` runs in
+each worker just after it is copied - its startup - and `worker_exit` runs as the worker stops -
+its shutdown. Create the objects in the first and close them in the second:
 
 ```python
 # gunicorn.conf.py
@@ -435,20 +564,48 @@ def worker_exit(server, worker):
     myapp.registry.close()
 ```
 
-Your views then use `myapp.registry` - set in each worker by `post_fork`, never at import. The
-order is the same as in the lifespan: create, then start the jobs; at shutdown, stop the jobs
-first, then close the pools. Migrations are best run as their own step before gunicorn starts
-(see "Migrations" below).
+Your views then use `myapp.registry` - set in each worker by `post_fork`, never at import. Because
+the objects are created after the copy, `--preload` and `--max-requests` are both harmless. Size
+the pool for `--threads` (gthread) or for how many requests really reach the database at once
+(gevent), and set `--graceful-timeout` longer than `shutdown_max_wait`:
+
+```bash
+gunicorn myapp:app -c gunicorn.conf.py --workers 4 --threads 8 --graceful-timeout 60
+```
 
 ### With uwsgi
 
-uwsgi has the same two moments. Mark a function with `@postfork` to run in each worker after the
-copy, and register the shutdown with `uwsgi.atexit`:
+**How it runs.** uwsgi starts a main process that imports your app and then **copies** itself
+into the workers (`processes = 4`). Each worker can also run several threads (`threads = 2`) or
+use gevent. This copy-after-import is uwsgi's default - like gunicorn with `--preload`, without
+asking for it.
+
+**Where it can bite.**
+
+- **Everything created at import is copied.** A registry created when the app module is imported
+  ends up in every worker: `ForkedProcessError`.
+- **Background threads may not run at all.** uwsgi does not enable Python threads unless you ask
+  for them. The job registry runs on background threads, so without `enable-threads` its jobs
+  never run.
+- **SIGTERM means "reload" by default.** A container stop sends SIGTERM; unless told otherwise,
+  uwsgi treats it as a reload rather than a shutdown, so your app is not shut down cleanly.
+
+**What to do.** First, two settings in `uwsgi.ini`:
+
+```ini
+enable-threads = true  ; let the job registry's threads run
+die-on-term = true     ; SIGTERM shuts down, as a container stop expects
+```
+
+Then use uwsgi's two moments. A function marked `@postfork` runs in each worker after the copy -
+its startup - and the function in `uwsgi.atexit` runs as the worker stops - its shutdown:
 
 ```python
 # myapp/uwsgi_hooks.py - imported by your app module
 import uwsgi
 from uwsgidecorators import postfork
+
+from ekbatan import DatabaseRegistry
 
 import myapp
 
@@ -459,22 +616,35 @@ def create_objects():
 
 
 def close_objects():
-    myapp.registry.close()
+    if myapp.registry is not None:  # None in a process that never served
+        myapp.registry.close()
 
 
 uwsgi.atexit = close_objects
 ```
 
-uwsgi also needs three settings to behave as described here; they are explained under "uwsgi"
-below.
+uwsgi's default copy is then harmless: the objects are created after it, in each worker. Add the
+job registry the same way as in the gunicorn hooks above.
 
 ### With waitress
 
-waitress is started from your own code: `serve(app, ...)` runs until the process is stopped. So,
-as in a plain worker, startup is the top of your `main()` and shutdown is after `serve` returns:
+**How it runs.** One process, and a pool of threads (4 by default) that serve a WSGI app. Nothing
+is copied. Your own `main()` calls `serve(app, ...)`, which runs until the process is stopped.
+
+**Where it can bite.**
+
+- **SIGTERM.** By default, a container stop ends the process at once, before your code after
+  `serve()` runs - so jobs are cut off. (The job registry warns about this when it starts.)
+- **More threads than connections.** With more threads than the pool has connections, requests
+  wait for one.
+
+**What to do.** As in a worker you run yourself, startup is the top of your `main()` and shutdown
+is after `serve` returns:
 
 ```python
 from waitress import serve
+
+from ekbatan import DatabaseRegistry
 
 import myapp
 
@@ -487,8 +657,9 @@ def main() -> None:
         myapp.registry.close()
 ```
 
-waitress runs in one process, so nothing is copied. Make the pool at least as large as `threads`,
-since each thread can hold a connection.
+If you run jobs, call `.register_shutdown_hook()` on the job registry builder, so a container stop
+lets running jobs finish. Make the pool at least as large as `threads`, since each thread can hold
+a connection.
 
 ## A task-queue worker: Celery, RQ
 
@@ -497,7 +668,7 @@ since each thread can hold a connection.
 A task queue runs functions - *tasks* - that other parts of your system put on a queue, in
 separate worker processes. Your task functions use ekbatan's sync API, so the worker needs a
 registry. The question is where to create it, and that depends on how the queue starts its
-processes. Both Celery and RQ, by default, **copy** a main process to run tasks - so a registry
+processes: both Celery and RQ, by default, **copy** a main process to run tasks, so a registry
 created when your task module is imported would end up copied, and be refused with
 `ForkedProcessError`. Each gives you a place that runs in the process that really runs the tasks.
 
@@ -506,8 +677,27 @@ schedules the work.
 
 ### With Celery
 
-Celery's default pool, *prefork*, copies its main process into child processes, and each child
-runs tasks. Celery sends a signal in each child as it starts and as it stops -
+**How it runs.** A Celery worker is a main process that takes tasks from the queue and hands them
+to a pool, which runs them. The pool type decides how:
+
+- `prefork`, the default: the main process **copies** itself into child processes (one per CPU
+  core by default), and each child runs one task at a time.
+- `threads`: one process, a pool of threads.
+- `gevent`: one process, many tasks at once on gevent.
+- `solo`: one process, one task at a time.
+
+Celery imports your task modules in the main process, before it copies anything.
+
+**Where it can bite.**
+
+- **Objects created in your task modules.** With `prefork`, a registry created when a task module
+  is imported is made in the main process and copied into every child: `ForkedProcessError`.
+- **Connections per child.** Each child has its own registry, so connections multiply by the
+  number of children.
+- **Children are replaced.** With `--max-tasks-per-child`, Celery replaces a child after that many
+  tasks; each new child creates its objects again.
+
+**What to do.** Celery sends a signal in each child as it starts and as it stops -
 `worker_process_init` and `worker_process_shutdown`. Create the registry in the first and close it
 in the second:
 
@@ -539,14 +729,24 @@ def credit_wallet(wallet_id: str, amount: str) -> None:
 ```
 
 With `--pool threads`, `--pool gevent` or `--pool solo` there is only one process and nothing is
-copied: use the `worker_init` and `worker_shutdown` signals instead, the same way.
+copied: use the `worker_init` and `worker_shutdown` signals instead, the same way. With `threads`
+or `gevent`, make the pool as large as `--concurrency`, since each task can hold a connection.
 
 ### With RQ
 
-`rq worker` copies its main process for **every** job, runs the job in the copy, and throws the
-copy away - so a registry created in the main process is copied into every job. RQ's
-`SimpleWorker` runs each job in its own process instead, without copying. Start it from your own
-`main()`, which creates the registry first:
+**How it runs.** `rq worker` is a main process that takes jobs from Redis. For **every** job it
+**copies** itself into a short-lived child, runs the job there, and lets the child exit. RQ's
+`SimpleWorker` runs each job in the main process itself, without copying.
+
+**Where it can bite.**
+
+- **A registry created in the main process.** It is copied into every job's child:
+  `ForkedProcessError`.
+- **A registry created inside each job.** That works, but every job opens new connections and
+  closes them again, which is slow for many small jobs.
+
+**What to do.** Run a `SimpleWorker` from your own `main()`, which creates the registry first and
+closes it when the worker stops:
 
 ```python
 from redis import Redis
@@ -739,15 +939,15 @@ or a lock provider is used in a process other than the one that created it, ekba
 `ForkedProcessError`.
 
 The fix is always the same: move the line that creates the object from import time into startup:
-the lifespan, the top of `main()`, or the server's own per-worker hook (each server below says
-which).
+the lifespan, the top of `main()`, or the server's own per-worker hook (the section for your kind
+of program shows which).
 
 ## When your server runs several processes
 
-Inside one Python process, only one thread runs Python code at a time. So to use several CPU
-cores, servers run several copies of your app as separate processes: `uvicorn --workers 4`,
-gunicorn's workers, several Kubernetes replicas. Each process runs your startup code, so each has
-its own registry, its own pools and its own job registry. Two things follow.
+To use several CPU cores, servers run several processes (see "Processes, workers and copies"):
+`uvicorn --workers 4`, gunicorn's workers, Celery's children, several Kubernetes replicas. Each
+process runs your startup code, so each has its own registry, its own pools and its own job
+registry. Two things follow.
 
 **Connections multiply.** Count them before the database does. Say each process has a registry
 pool of 10 connections (with up to 5 extra under load), a jobs pool of 4 and a lock pool of 2:
@@ -772,207 +972,6 @@ startup, as above, is simplest and is safe - ekbatan takes a lock, so when sever
 start at once only one migrates and the others wait. Larger deployments often run them as a
 separate step before the app starts instead; see [Migrations](database/migrations.md).
 
-## Under each server
-
-Everything above applies to every server. What differs from one server to the next is how it
-runs your app: how many processes, how many threads in each, whether it starts each worker fresh
-or copies one process into many, and where it lets you run code at startup and shutdown. Each
-section below answers the same three questions: **how it runs**, **where it can bite you**, and
-**what to do**.
-
-A few words used throughout:
-
-- A **process** is a running copy of Python with its own memory. Several processes are how a
-  Python server uses several CPU cores, because inside one process only one thread runs Python
-  code at a time.
-- A **worker** is one of those processes, serving requests or running tasks.
-- A server **copies** a process with `fork()`: the new worker starts as an exact copy of the
-  original, with everything already in memory - including anything your app created at import.
-  A server that **starts workers fresh** launches a new Python for each one, which imports your
-  app on its own.
-
-**What has been tested here:** uvicorn - every FastAPI example's tests run its lifespan, and a
-test serves an app from a real uvicorn process; the copied-process refusal, with real copied
-processes on all four databases; and the sync API under gevent. The other servers are described
-from how each one starts and stops its workers, and have not been run here.
-
-### uvicorn, and `fastapi run`
-
-**How it runs.** By default, one process. Inside it, one thread runs an *event loop* that serves
-every request: while one request waits on the database or the network, the loop switches to
-another. `async def` endpoints run on that loop. Plain `def` endpoints are handed to a small pool
-of threads (40 by default), so a slow one doesn't hold up the loop. With `--workers 4`, uvicorn
-starts four processes **fresh**, and each imports your app and runs its own lifespan. `fastapi
-run` is uvicorn, with the same options.
-
-**Where it can bite.**
-
-- An `async def` endpoint that calls ekbatan's sync API would stop the loop - and every other
-  request - while it waits on the database. ekbatan raises `BlockingCallError` instead.
-- With `--workers 4`, there are four of every pool: four registries, four job registries, four
-  lock pools. The database sees four times the connections.
-- With plain `def` endpoints, up to 40 requests can run at once in each process. If the
-  registry's pool is smaller, the rest wait for a free connection, and a request that waits
-  longer than `pool_timeout` fails.
-
-**What to do.** Use the lifespan shown above, unchanged. Write `async def` endpoints with
-`ekbatan.aio`, or plain `def` endpoints with the sync API. Size the pool for how many requests
-really run at once in one process, then multiply by `--workers` when comparing with the
-database's connection limit.
-
-### gunicorn running FastAPI (`-k uvicorn.workers.UvicornWorker`)
-
-**How it runs.** gunicorn starts a main process that does no request work itself: it creates the
-workers, watches them, and replaces any that die. It makes each worker by **copying** itself. Each
-worker then runs uvicorn's event loop and your lifespan, exactly as plain uvicorn would. With
-`--preload`, gunicorn imports your app once in the main process, *before* copying, to save memory
-and start faster.
-
-**Where it can bite.**
-
-- **`--preload` with objects created at import.** If your module creates a registry at import
-  time, with `--preload` it is created once in the main process and copied into every worker,
-  together with its connections. ekbatan raises `ForkedProcessError` when a worker uses it.
-- **Shutdown time.** When gunicorn stops a worker, it waits `--graceful-timeout` (30 seconds by
-  default) and then kills it. If the job registry's `shutdown_max_wait` is longer, a job that
-  needs the full time is killed mid-way.
-- **Worker restarts.** With `--max-requests`, gunicorn replaces each worker after that many
-  requests. Every replacement runs your shutdown and startup again - which is fine, as long as
-  they are in the lifespan.
-- Pools multiply by the number of workers, as with uvicorn.
-
-**What to do.** Keep everything in the lifespan; then `--preload` is harmless, because the
-lifespan runs in each worker, after the copy. Set `--graceful-timeout` longer than the job
-registry's `shutdown_max_wait`.
-
-### gunicorn running Flask, Django or another WSGI app (`gthread` or `gevent` workers)
-
-**How it runs.** The same main process, copying itself into workers. What runs inside each worker
-depends on the worker type:
-
-- `gthread`: a pool of threads (`--threads`), each handling one request at a time.
-- `gevent`: one thread running many requests at once. gevent changes Python's waiting calls -
-  for the database, the network, `sleep` - so that while one request waits, another runs.
-  `--worker-connections` (1000 by default) caps how many.
-
-WSGI apps have no lifespan. gunicorn's own hooks take its place: `post_fork` runs in each worker
-just after it is copied, and `worker_exit` runs as the worker stops.
-
-**Where it can bite.**
-
-- **Creating objects at import time.** Flask and Django apps often set things up at module level.
-  With `--preload`, that runs once in the main process and is copied into every worker:
-  `ForkedProcessError`.
-- **More requests than connections.** With `gthread`, up to `--threads` requests run at once per
-  worker; with `gevent`, up to `--worker-connections`. If they all want the database and the pool
-  is smaller, the rest wait, and fail after `pool_timeout`.
-- **`ekbatan.aio` under gevent.** It does not run under gevent's changes; use the sync API there.
-
-**What to do.** Create and close the objects in `post_fork` and `worker_exit`, as shown in "A web
-app without a lifespan" above. Use the sync API. Size the pool for `--threads` (gthread) or for how many requests really reach
-the database at once (gevent), and set `--graceful-timeout` longer than `shutdown_max_wait`.
-
-### uwsgi
-
-**How it runs.** uwsgi starts a main process that imports your app and then **copies** itself
-into the workers (`processes = 4`). Each worker can also run several threads (`threads = 2`) or
-use gevent. This copy-after-import is uwsgi's default - like gunicorn with `--preload`, without
-asking for it.
-
-**Where it can bite.**
-
-- **Everything created at import is copied.** A registry created when the app module is imported
-  ends up in every worker: `ForkedProcessError`.
-- **Background threads may not run at all.** uwsgi does not enable Python threads unless you ask
-  for them. The job registry runs on background threads, so without `enable-threads` its jobs
-  never run.
-- **SIGTERM means "reload" by default.** A container stop sends SIGTERM; unless told otherwise,
-  uwsgi treats it as a reload rather than a shutdown, so your app is not shut down cleanly.
-
-**What to do.** In `uwsgi.ini`:
-
-```ini
-lazy-apps = true       ; each worker imports the app itself, after the copy
-enable-threads = true  ; let the job registry's threads run
-die-on-term = true     ; SIGTERM shuts down, as a container stop expects
-```
-
-Then create and close the objects as shown in "A web app without a lifespan" above. Use the sync
-API.
-
-### hypercorn, and granian
-
-**How they run.** Both serve ASGI apps such as FastAPI, like uvicorn. With several workers each
-starts separate processes, and each worker imports your app and runs the lifespan itself.
-hypercorn can run its event loop with asyncio, uvloop or trio. granian is written in Rust and runs
-your Python app inside each of its workers; with `--interface asgi` it runs the lifespan.
-
-**Where it can bite.**
-
-- **hypercorn with trio.** `ekbatan.aio` needs asyncio's event loop, and trio is a different one.
-- Pools multiply by workers, as everywhere.
-
-**What to do.** Use the lifespan above. With hypercorn, use the asyncio or uvloop worker class.
-With granian, run FastAPI with `--interface asgi`.
-
-### waitress
-
-**How it runs.** One process, and a pool of threads (4 by default) that serve a WSGI app. Nothing
-is copied. Your own `main()` calls `serve(app, ...)`, which runs until the process is stopped.
-
-**Where it can bite.**
-
-- **SIGTERM.** By default, a container stop ends the process at once, before your code after
-  `serve()` runs - so jobs are cut off. (The job registry warns about this when it starts.)
-- **More threads than connections.** With more threads than the pool has connections, requests
-  wait for one.
-
-**What to do.** Create and close the objects around `serve(...)` in your `main()`, as shown in "A
-web app without a lifespan" above. Call `.register_shutdown_hook()` on the job registry builder, so a
-container stop lets running jobs finish. Make the pool at least as large as `threads`.
-
-### Celery
-
-**How it runs.** A Celery worker is a main process that takes tasks from the queue and hands them
-to a pool, which runs them. The pool type decides how:
-
-- `prefork`, the default: the main process **copies** itself into child processes (one per CPU
-  core by default), and each child runs one task at a time.
-- `threads`: one process, a pool of threads.
-- `gevent`: one process, many tasks at once on gevent.
-- `solo`: one process, one task at a time.
-
-Celery imports your task modules in the main process, before it copies anything.
-
-**Where it can bite.**
-
-- **Objects created in your task modules.** With `prefork`, a registry created when a task module
-  is imported is made in the main process and copied into every child: `ForkedProcessError`.
-- **Connections per child.** Each child has its own registry, so connections multiply by the
-  number of children.
-- **Children are replaced.** With `--max-tasks-per-child`, Celery replaces a child after that many
-  tasks; each new child creates its objects again.
-
-**What to do.** Create the registry in each child with `worker_process_init` and close it with
-`worker_process_shutdown`, as shown in "A task-queue worker" above; with `threads`, `gevent` or
-`solo`, use `worker_init` and `worker_shutdown`.
-
-### RQ
-
-**How it runs.** `rq worker` is a main process that takes jobs from Redis. For **every** job it
-**copies** itself into a short-lived child, runs the job there, and lets the child exit. RQ's
-`SimpleWorker` runs each job in the main process itself, without copying.
-
-**Where it can bite.**
-
-- **A registry created in the main process.** It is copied into every job's child:
-  `ForkedProcessError`.
-- **A registry created inside each job.** That works, but every job opens new connections and
-  closes them again, which is slow for many small jobs.
-
-**What to do.** Run a `SimpleWorker` from your own `main()`, as shown in "A task-queue worker"
-above.
-
 ## Running on Kubernetes
 
 **How it runs.** Kubernetes runs your app as **pods** - each pod one container, running one of the
@@ -995,6 +994,14 @@ under the database's limit. Set `terminationGracePeriodSeconds` longer than the 
 shutdown wait (for example gunicorn's `--graceful-timeout`) and the job registry's
 `shutdown_max_wait`. Run migrations as their own step - a Kubernetes Job, or an init container -
 rather than in every pod.
+
+## What has been tested
+
+uvicorn: every FastAPI example's tests run its lifespan, and a test serves an app from a real
+uvicorn process. The copied-process refusal is tested with real copied processes on all four
+databases, and the sync API under gevent. The other servers - gunicorn, uwsgi, hypercorn,
+granian, waitress, Celery and RQ - are described from how each one starts and stops its workers;
+the code shown for them has not been run here.
 
 ## See also
 
