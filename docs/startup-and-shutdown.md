@@ -14,7 +14,7 @@ Your app works on your laptop. Then it meets the real world, and one of these ha
 - **ekbatan raises `ForkedProcessError`.** Your server copies your app into several workers after
   it has started (gunicorn with `--preload`, uwsgi, Celery), and an object made before the copy
   is being used in a worker. Shared that way, its database connections would mix two workers'
-  queries, so ekbatan stops it. *See "Why at startup, and not at import time".*
+  queries, so ekbatan stops it. *See "Import time and startup".*
 - **ekbatan raises `BlockingCallError`.** An `async def` endpoint called the sync API, which
   would have frozen every other request on the server while it waited on the database. *See
   "Two mistakes ekbatan refuses".*
@@ -35,28 +35,27 @@ jobs on background threads. These need two moments of care: they are created whe
 starts, and closed when it stops. Closing them is what lets running jobs finish and connections
 end cleanly instead of being cut off.
 
-The rest of this page shows where those two moments are in a FastAPI app and in a plain worker,
-and why each step is where it is. After that come the two mistakes ekbatan refuses for you, what
-changes when your server runs several processes, and notes for specific servers.
+The rest of this page shows where those two moments are, and why each step is where it is.
 
 ## What needs a start and a stop
 
 There are three kinds of object to look after.
 
 **The database registry** (`DatabaseRegistry`, or `AsyncDatabaseRegistry` for async code) holds
-a pool of database connections for each database in `ekbatan.yaml`. You create one, and every
-repository and the executor are built on it. It opens connections as they are needed, and
-`close()` closes them all.
+a *pool* of database connections for each database in `ekbatan.yaml` - a set of connections kept
+open and lent out to whichever piece of code needs one, so that every query does not have to
+connect from scratch. You create one registry, and every repository and the executor are built
+on it. It opens connections as they are needed, and `close()` closes them all.
 
 **The job registry** (`JobRegistry`) runs your distributed jobs - the event jobs and any
 scheduled jobs of your own - on background threads. After creating it you call `start()`. At
 shutdown you call `stop()`, which waits for running jobs to finish (up to a time limit you set),
 so a deploy does not cut a job off halfway.
 
-**The extra connection pools.** The job registry polls the database, and a keyed lock provider
-holds a connection for each lock it has taken. Each of them gets its own small pool, made with
-`engine_for(...)` from a named entry in `ekbatan.yaml`, so they never take connections away from
-your requests. You create these pools, so you close them, with `dispose()`.
+**The extra connection pools.** The job registry checks the database for work, and a keyed lock
+provider holds a connection for each lock it has taken. Each of them gets its own small pool,
+made with `engine_for(...)` from a named entry in `ekbatan.yaml`, so they never take connections
+away from your requests. You create these pools, so you close them, with `dispose()`.
 
 In short:
 
@@ -71,23 +70,134 @@ In short:
 A fourth object appears only if an event handler is `async def`: the `HandlerLoop` its async
 work runs on. It is covered below with the async app.
 
-### Why "at startup", and not at import time
+## Import time and startup
 
-It is tempting to create the registry at the top of a module, next to the imports. Don't: a
-module is imported in places where your app is not running - a test, a script, a tool that only
-reads your code - and some servers import your app once and then copy the whole process into
-several workers. An object created at import time would then exist, and later connect, in the
-wrong place - or be copied into a worker together with connections that belong to another process.
+The table says *at startup*. That needs a word of explanation, because a Python program has two
+different moments when code runs before any work is done, and only one of them is right for
+these objects.
 
-Your app's startup code runs exactly once, in the process that serves the requests. That is where
-these objects belong. In a FastAPI app it is the lifespan; in a plain worker, the top of
-`main()`.
+### Import time
+
+When Python imports a module - `import myapp`, or `from myapp.api import app` - it runs every line
+at the top level of that file, once, there and then. Defining a function, a class or a constant
+at the top level is harmless. But a line like this runs too:
+
+```python
+# myapp/db.py
+from ekbatan import DatabaseRegistry
+from ekbatan.config_files import load_ekbatan_config
+
+registry = DatabaseRegistry.from_config(load_ekbatan_config("ekbatan.yaml").sharding)  # at import
+```
+
+This is *creating the registry at import time*. It looks convenient: every other module can
+write `from myapp.db import registry` and use it. The trouble is that you do not decide when a
+module is imported, or how often, or in which process. A module is imported:
+
+- when the server starts your app (`uvicorn myapp.api:app` imports `myapp.api`);
+- when your test runner collects your tests, before a single test runs;
+- by a script or a tool that only needs one function from your code;
+- and, with some servers, once in a main process that is then **copied** into several workers.
+
+### Startup
+
+Startup is code your app runs on purpose, when it actually begins to serve: in a FastAPI app the
+*lifespan* function, which the server calls once when it starts the app; in a plain worker, the
+top of your own `main()` function. Nothing runs there just because a module was imported.
+
+```python
+# myapp/api.py
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.registry = DatabaseRegistry.from_config(layout)  # at startup
+    yield
+    app.state.registry.close()                                  # at shutdown
+
+
+app = FastAPI(lifespan=lifespan)
+```
+
+### Side by side
+
+| | import time | startup |
+| --- | --- | --- |
+| when it runs | whenever the module is first imported | when the app starts serving |
+| who triggers it | anything that imports the module: the server, tests, tools | the server, or your `main()`, on purpose |
+| in which process | possibly a main process that is then copied into workers | in each process that really serves |
+| a matching place to close it | none | yes: the lifespan's end, or the end of `main()` |
+
+### What goes wrong at import time
+
+Three things, each one real:
+
+1. **Tests open connections they never asked for.** Collecting your tests imports your modules,
+   so a registry is created - and if the job registry is started at import too, jobs begin
+   running against whatever database the settings point at - before any test has said what it
+   needs.
+2. **A copied worker gets another process's connections.** A server that imports your app first
+   and then copies the process (gunicorn with `--preload`, uwsgi, Celery) hands every worker a
+   copy of the registry, holding the main process's connections. Two processes talking on one
+   connection corrupt each other's queries. ekbatan raises `ForkedProcessError` instead.
+3. **Nothing closes it.** There is no "end of import" to put `close()` and `stop()` in, so at
+   shutdown the job registry is never stopped - running jobs are cut off - and the connections are
+   simply dropped.
+
+So: **define** things at import time - functions, classes, constants, the path to
+`ekbatan.yaml` - but **create the objects that hold connections or threads at startup**, and
+close them at shutdown. The rest of this page does exactly that.
 
 ## A FastAPI app
 
-FastAPI runs a function called the *lifespan* when the app starts and again when it stops. The
-code before its `yield` runs at startup, and the code after it at shutdown - exactly the two
-moments we need.
+### The lifespan, in brief
+
+FastAPI calls the lifespan once when your app starts and resumes it once when the app stops. The
+code before `yield` is startup, the code after it is shutdown, and while it waits at `yield` your
+app serves requests:
+
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: runs once, before the first request.
+    ...
+    try:
+        yield            # the app serves requests while the lifespan waits here
+    finally:
+        # Shutdown: runs once, when the server stops the app - even if startup was cut short.
+        ...
+
+
+app = FastAPI(lifespan=lifespan)
+```
+
+Endpoints reach what the lifespan created through `app.state` (in an endpoint,
+`request.app.state`). For example, an endpoint can build a repository on the registry:
+
+```python
+@app.get("/wallets/{wallet_id}")
+def read_wallet(wallet_id: str, request: Request):
+    wallets = WalletRepository(request.app.state.registry)  # your repository class
+    ...
+```
+
+### One more thing first: code that waits
+
+The lifespan is `async def`. In an async server, one thread runs an *event loop* that serves all
+requests together: whenever one is waiting for the database or the network, the loop moves on to
+another. That only works if `async def` code never waits in a way the loop can't see. ekbatan's
+sync API waits plainly - for a connection, a query, a commit - so inside `async def` it would
+stop the loop, and with it every other request, until it finished.
+
+`asyncio.to_thread(...)` solves that: it runs a plain, waiting call on a separate thread, and the
+`async def` code waits for it the way the loop understands. The lifespans below use it for every
+sync call that waits on the database. (Forget it, and ekbatan stops you with a clear error - see
+"Two mistakes ekbatan refuses".)
+
+### The complete lifespan
 
 Here is a complete lifespan for an app with jobs and a keyed lock provider, first for the sync
 API and then for `ekbatan.aio`. Read it once; the steps below explain it. `your_jobs` stands for
@@ -216,12 +326,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 1. **Read the settings.** `load_ekbatan_config` reads `ekbatan.yaml`: which databases there are,
    and the named pools (`lockConfig`, `jobsConfig`) that `member.config_for(...)` picks out.
-2. **Run the migrations** first, so the tables exist before anything uses them. `migrate` waits
-   on the database, and the lifespan is `async def` - code that waits inside `async def` stops
-   the whole server from answering while it waits. `asyncio.to_thread(...)` runs it on a
-   separate thread instead, and the lifespan waits for it without blocking anything. The same
-   goes for every sync call below that waits on the database. (Forget it, and ekbatan stops you
-   with a clear error - see *Two mistakes ekbatan refuses* below.)
+2. **Run the migrations** first, so the tables exist before anything uses them - on a separate
+   thread, through `asyncio.to_thread`, because `migrate` waits on the database.
 3. **Create the database registry.** Creating it opens nothing; connections open when the first
    request needs one.
 4. **Create the lock pool and the lock provider**, then **the jobs' pool and the job registry**,
@@ -264,12 +370,22 @@ and, async,
 ## A worker without a web server
 
 Some programs have no web server: a process that only runs jobs, consumes messages, or runs a
-script. The same two moments apply, at the top and the bottom of `main()`.
+script. The same two moments apply. Startup is the top of your `main()`; shutdown is its end.
 
-What is different is *when to stop*. A web server tells your lifespan when it is time. A plain
-worker has to listen for that itself. When Docker or Kubernetes stops a container, it sends the
-process a signal called **SIGTERM**, meaning "finish up and exit". The worker below waits for it,
-then shuts down in the same order as before:
+### Knowing when to stop
+
+A web server tells your lifespan when it is time to stop. A plain worker has to notice that
+itself. Programs are asked to stop with a *signal* - a short message the operating system
+delivers to a running process:
+
+- **SIGTERM** is what Docker, Kubernetes and most process managers send to stop a program: "finish
+  up and exit". By default, Python does not finish anything on SIGTERM - it ends the process on
+  the spot, so jobs in progress are cut off.
+- **Ctrl-C** in a terminal sends SIGINT, which Python turns into a `KeyboardInterrupt`.
+
+So a worker that wants to shut down cleanly listens for SIGTERM, and when it arrives, runs its
+shutdown code. The worker below does that with a `threading.Event`: `main()` waits on it, and the
+signal handler sets it.
 
 **Sync**
 
@@ -382,34 +498,70 @@ with everything gathered into the example's own `Worker` class and `build()` fun
 Two mistakes are easy to make and, left alone, would fail later in confusing ways. ekbatan stops
 both at once, with an error that says what to do. Neither fixes anything behind your back.
 
-**Waiting on the database inside `async def`.** An async server answers all its requests on one
-thread, switching between them whenever one is waiting. ekbatan's sync API *waits* - for a
-connection, a query, a commit - and inside `async def` that wait would freeze every request on the
-server until it is over. So a sync call made there raises `BlockingCallError`. The fix is one of
-three: use `ekbatan.aio` in async code; make the endpoint a plain `def` (FastAPI then runs it on a
-thread for you); or wrap the call in `await asyncio.to_thread(...)`, as the lifespan above does.
+### Waiting on the database inside `async def`: `BlockingCallError`
 
-**Using an object in a process it was copied into.** Some servers start your app once and then
-copy the whole process to make several workers - gunicorn with `--preload`, uwsgi, Celery's
-default worker pool and RQ all do this. A copy keeps the objects, but not their background
-threads, and its open connections are the very same ones the original process is using; two
-processes talking on one connection corrupt each other's queries. So if a registry, a job
-registry or a lock provider is used in a process other than the one that created it, ekbatan
-raises `ForkedProcessError`. The fix is the rule from the top of this page: create them in your
-startup code, which runs in each worker, not at import time.
+As explained above, `async def` code shares one thread with every other request, and ekbatan's
+sync API waits plainly. So this endpoint would freeze the whole server while its query runs, and
+ekbatan raises `BlockingCallError` instead:
+
+```python
+@app.get("/wallets/{wallet_id}")
+async def read_wallet(wallet_id: str, request: Request):        # async def ...
+    return WalletRepository(request.app.state.registry).get(...)  # ... calling the sync API
+```
+
+Any one of three fixes works:
+
+```python
+# 1. In async code, use ekbatan.aio: an async repository on an AsyncDatabaseRegistry.
+async def read_wallet(wallet_id: str, request: Request):
+    return await AsyncWalletRepository(request.app.state.registry).get(...)
+
+# 2. Make the endpoint a plain def: FastAPI runs it on a thread for you.
+def read_wallet(wallet_id: str, request: Request):
+    return WalletRepository(request.app.state.registry).get(...)
+
+# 3. Keep async def, and send the sync call to a thread yourself.
+async def read_wallet(wallet_id: str, request: Request):
+    wallets = WalletRepository(request.app.state.registry)
+    return await asyncio.to_thread(wallets.get, ...)
+```
+
+### Using an object in a process it was copied into: `ForkedProcessError`
+
+As explained in "Import time and startup", some servers import your app once and then copy the
+whole process to make several workers - gunicorn with `--preload`, uwsgi, Celery's default worker
+pool and RQ all do this. A copy keeps the objects, but not their background threads, and its open
+connections are the very same ones the original process is using. So if a registry, a job registry
+or a lock provider is used in a process other than the one that created it, ekbatan raises
+`ForkedProcessError`.
+
+The fix is always the same: move the line that creates the object from import time into startup:
+the lifespan, the top of `main()`, or the server's own per-worker hook (each server below says
+which).
 
 ## When your server runs several processes
 
-To use several CPU cores, Python servers run several copies of your app as separate processes:
-`uvicorn --workers 4`, gunicorn's workers, several Kubernetes replicas. Each process runs your
-startup code, so each has its own registry, its own pools and its own job registry. Two things
-follow:
+Inside one Python process, only one thread runs Python code at a time. So to use several CPU
+cores, servers run several copies of your app as separate processes: `uvicorn --workers 4`,
+gunicorn's workers, several Kubernetes replicas. Each process runs your startup code, so each has
+its own registry, its own pools and its own job registry. Two things follow.
 
-- **Connections multiply.** Four processes each holding a pool of 10, plus a jobs pool and a lock
-  pool, means four times that many connections at the database. Size the pools per process, then
-  multiply by processes and replicas, and compare with the database's connection limit.
-- **Jobs need no change.** Every process runs a job registry, and they coordinate through the
-  database, so each job still runs exactly once.
+**Connections multiply.** Count them before the database does. Say each process has a registry
+pool of 10 connections (with up to 5 extra under load), a jobs pool of 4 and a lock pool of 2:
+
+| | per process | 4 workers | 4 workers × 3 replicas |
+| --- | --- | --- | --- |
+| registry pool (10, up to 15 under load) | 15 | 60 | 180 |
+| jobs pool | 4 | 16 | 48 |
+| lock pool | 2 | 8 | 24 |
+| **total, at most** | **21** | **84** | **252** |
+
+Compare the last column with the database's connection limit (PostgreSQL's default
+`max_connections` is 100), and size the pools per process with that in mind.
+
+**Jobs need no change.** Every process runs a job registry, and they coordinate through the
+database, so each job still runs exactly once.
 
 ## Migrations
 
