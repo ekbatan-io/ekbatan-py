@@ -21,6 +21,6 @@ export const LEARN_PAGES = [
     { slug: "sagas", title: "Sagas", blurb: "Split a multi-step workflow into committed actions chained by events, with explicit compensation when a later step fails and nothing to roll back." },
     { slug: "async", title: "Going async", blurb: "Move an existing sync service to ekbatan.aio, file by file: async repositories and actions, an awaited executor, async def endpoints - while jobs stay on threads." },
     { slug: "going-to-production", title: "Going to production", blurb: "What concurrency costs on CPython, how migrations run at deploy, what to alert on, and what this port does not do for you yet." },
-    { slug: "startup-and-shutdown", title: "Startup and shutdown", blurb: "Create ekbatan's objects - the registries, the job registry, the lock providers - in your app's startup code and close them in its shutdown code. Where that is under uvicorn, gunicorn, uwsgi, Celery, RQ and the rest - and the two mistakes it refuses." },
+    { slug: "startup-and-shutdown", title: "Startup and shutdown", blurb: "Which objects hold connections or threads, where to create them when your app starts and close them when it stops - in a FastAPI app, a plain worker, and under each common server." },
     { slug: "complete-project-setup", title: "Complete project setup", blurb: "The whole setup, for your dialect and your installer: scaffold, dependencies, connection config, migrations, generated schema, domain, HTTP layer, tests." },
 ] as const;
