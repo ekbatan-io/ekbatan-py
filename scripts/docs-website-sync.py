@@ -110,7 +110,7 @@ PAIRS: dict[str, tuple[str, ...]] = {
     "jobs/distributed-jobs.md": ("reference/jobs/distributed-jobs.mdx",),
     "runtime/async.md": ("reference/runtime/async.mdx",),
     "going-async.md": ("learn/async.mdx",),
-    "deploying.md": ("learn/deploying.mdx",),
+    "startup-and-shutdown.md": ("learn/startup-and-shutdown.mdx",),
     "sync-or-async.md": ("learn/sync-or-async.mdx",),
     "runtime/concurrency.md": ("reference/runtime/concurrency.mdx",),
     "runtime/observability.md": ("reference/runtime/observability.mdx",),

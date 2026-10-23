@@ -12,10 +12,14 @@ startup order to reason about beyond the order the lines are in.
 > which runs and is tested. The HTTP half is in [Wiring with FastAPI](wiring-fastapi.md); this
 > page is the part that has nothing to do with HTTP.
 
-**Build it when the app starts.** All of this runs once, when your app starts - in the FastAPI
-lifespan, or at the top of a worker's `main()` - and is closed when it stops; never at import
-time. Normal code uses the sync API, `async def` code `ekbatan.aio`. See
-[Deploying](deploying.md).
+**`build()` and `WalletService` are the example's own code**, not something ekbatan provides:
+one function that creates ekbatan's objects, and one class that holds them, with a `start()`
+that calls `jobs.start()` and a `close()` that stops the jobs and closes the registry and the
+engines. The objects that hold connections or threads - the `DatabaseRegistry`, the lock
+provider and its engine, the `JobRegistry` and its engine - are created in your app's startup
+code (the FastAPI lifespan, or the top of a worker's `main()`) and closed in its shutdown code;
+never at import time. Normal code uses the sync API, `async def` code `ekbatan.aio`.
+[Startup and shutdown](startup-and-shutdown.md) has each object's startup and shutdown call, without the example's class.
 
 ## What we're wiring
 

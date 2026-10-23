@@ -289,15 +289,16 @@ Two consequences:
 
 **Build the pools in each process, after it starts.** A server that forks its workers -
 gunicorn, with `--preload` above all, uwsgi, Celery's prefork pool, RQ - copies the parent
-process into each one. Anything ekbatan built in the parent comes along: pools whose connections
+process into each one. Any of ekbatan's objects created in the parent comes along: pools whose connections
 are the parent's own sockets, and the bookkeeping of threads that did not come along. Every
 object that owns connections or threads remembers the process that built it, and in any other
-process it raises `ForkedProcessError` at first use - it is not reset or reconnected. Build it in
-the FastAPI lifespan or at the top of the worker's `main()`; [Deploying](/learn/deploying/) has
+process it raises `ForkedProcessError` at first use - it is not reset or reconnected. Create the
+registry, the job registry and the lock providers in the FastAPI lifespan or at the top of the
+worker's `main()`; [Startup and shutdown](/learn/startup-and-shutdown/) has
 the recipe for each server.
 
 If you would rather not have every web worker also be a job worker, run the jobs in their own
-process: build the service with the jobs registered and the HTTP app absent.
+process: create the job registry there, with its jobs, and leave it out of the web app.
 [`job-worker-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-pg) is that shape, and
 [`job-worker-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-async-pg) the same with the jobs' work awaited on a loop.
 

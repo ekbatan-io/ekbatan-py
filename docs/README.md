@@ -8,8 +8,8 @@ Linked from the top-level [README](../README.md). Each section has its own index
   entities, sagas, sharding
 - **[Getting started](getting-started.md)** - the golden path, install, the extras, the
   generators, your first action
-- **[Deploying](deploying.md)** - create ekbatan when your app starts, stop it when it stops:
-  where that is under each server
+- **[Startup and shutdown](startup-and-shutdown.md)** - create ekbatan's objects in your app's startup code and close
+  them in its shutdown code: which objects, their real calls, and where that is under each server
 
 **Building an application**
 

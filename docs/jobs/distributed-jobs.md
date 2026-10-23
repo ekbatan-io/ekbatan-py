@@ -314,7 +314,7 @@ A `JobRegistry` owns threads and a database pool, and neither survives `fork()`.
 in one process and started in a copy of it - built at import time under gunicorn `--preload`,
 uwsgi, Celery's prefork pool or RQ - raises `ForkedProcessError` from `start()`, and
 db-scheduler's own worker pool refuses work in a forked copy too. Build and start it in the
-FastAPI lifespan, or at the top of the worker's `main()`; [Deploying](../deploying.md) has the recipe per
+FastAPI lifespan, or at the top of the worker's `main()`; [Startup and shutdown](../startup-and-shutdown.md) has the recipe per
 server.
 
 From `async def` code - a lifespan - start and stop it with `await asyncio.to_thread(...)`:

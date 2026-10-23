@@ -143,8 +143,9 @@ missing, what is slower, and what has not been decided yet.
 - [Concepts](docs/concepts/README.md) - the dual-write trap, the outbox, actions, models and
   entities, sagas, sharding
 - [Getting started](docs/getting-started.md) - install, the extras, your first action
-- [Deploying](docs/deploying.md) - create ekbatan when your app starts, stop it when it stops:
-  in the FastAPI lifespan, or at the top of a worker's `main()`
+- [Startup and shutdown](docs/startup-and-shutdown.md) - create ekbatan's objects (the registries, the job registry,
+  the lock providers) in your app's startup code and close them in its shutdown code: the
+  FastAPI lifespan, or a worker's `main()`
 - [Wiring](docs/wiring.md) and [with FastAPI](docs/wiring-fastapi.md) - the complete bootstrap
 - [Database](docs/database/README.md) - tables, repositories, transactions, keyed locks,
   sharding, migrations, the four dialects, schemagen

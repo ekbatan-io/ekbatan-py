@@ -1273,8 +1273,11 @@ The two messages, from `src/ekbatan/_guards.py`:
 
 - `ForkedProcessError`: "`<what>` was created in another process and copied into this one by
   fork() - gunicorn --preload, uwsgi, Celery prefork, RQ and multiprocessing all fork. Its
-  connections and threads belong to the process that created it. Create ekbatan when your app
-  starts - in the FastAPI lifespan, or at the top of the worker's main() - not at import time."
+  connections and threads belong to the process that created it. Create ekbatan's objects - the
+  database registry, the job registry, lock providers - in your app's startup code (the FastAPI
+  lifespan, or the top of the worker's main()), not at import time." (Reworded after EKB-0500:
+  it said "Create ekbatan when your app starts", as if ekbatan were one thing to start; it is a
+  library of objects, and the message now names them.)
 - `BlockingCallError`: "`<what>` was called on an asyncio event loop's thread (inside `async
   def`). The sync API waits on the database, and here it would stop the event loop and every
   request on it. In `async def` code use ekbatan.aio; or make the endpoint a plain `def`; or call
@@ -1300,7 +1303,7 @@ repair, baseline)`) - never a url, so no password can reach either message.
 | **Both errors are also `RuntimeError`s**, as `TransactionThreadError` is | a refusal about where code runs, not about its input | plain `EkbatanError` |
 | **Test scenarios written as coroutines call the sync API through `asyncio.to_thread`**: `test_async_parity.py`'s `aw(...)` became `svc.call(fn, ...)` (sync mode on a worker thread), and its and `test_async.py`'s registry building (it migrates) moved to `to_thread` - 9 places | they called the sync API on the loop, which is now refused; the sync counts are unchanged | run the sync scenarios outside a loop, written twice |
 | **`scripts/bench-async.py`'s sync setup write moved to `to_thread`** | it seeded wallets with the sync repository on the loop | - |
-| **The Deploying page marks uvicorn as the only tested server**; gunicorn, uwsgi, hypercorn, granian, waitress, Celery and RQ are "expected", written from how each starts its workers. The fork refusal itself and gevent are tested | no new dependencies were allowed, so none of those servers is installed here | add them as test-only dependencies and serve the example under each |
-| **The golden path on the front names no server**; the errors are named, with a link to Deploying | the brief: nothing server-specific on the front | - |
+| **The Startup and shutdown page marks uvicorn as the only tested server**; gunicorn, uwsgi, hypercorn, granian, waitress, Celery and RQ are "expected", written from how each starts its workers. The fork refusal itself and gevent are tested | no new dependencies were allowed, so none of those servers is installed here | add them as test-only dependencies and serve the example under each |
+| **The golden path on the front names no server**; the errors are named, with a link to Startup and shutdown | the brief: nothing server-specific on the front | - |
 | **The loop refusal compares the loop's own `_thread_id` with the caller's `threading.get_ident()`**, not just "is a loop running" | found by running `make test-gevent`: under gevent a worker "thread" from `asyncio.to_thread` is a greenlet on the loop's OS thread, so `get_running_loop()` succeeds there and 21 tests were refused wrongly. The loop records the thread - the greenlet, under gevent - that runs it; only that one is refused. A loop without `_thread_id` (none known) is refused as before. Private asyncio attribute, read with `getattr` | detect gevent and skip the check (a server/library branch the brief rules out) |
 | **`test_async_parity.py` runs its sync calls in a greenlet under gevent** (`off_the_loop`), a worker thread otherwise | under `make test-gevent`, `asyncio.to_thread` from a scenario hung (measured, faulthandler at 40 s); asyncio and gevent are documented as not mixing | skip the module's sync half under gevent, dropping 8 sync runs |

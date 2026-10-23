@@ -1608,7 +1608,7 @@ one thread.
   executor, a migration run - refuses to run on a thread with a running asyncio loop, where it
   would stop every other task. Nothing is moved to a thread for the caller.
 
-Both say what to do instead; `docs/deploying.md` has the recipe per server.
+Both say what to do instead; `docs/startup-and-shutdown.md` has the recipe per server.
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 
 > **forced** - Different pool libraries expose different knobs. The missing three are in SHORTCOMINGS.md.

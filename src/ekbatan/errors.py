@@ -136,7 +136,8 @@ class ForkedProcessError(EkbatanError, RuntimeError):
     ``fork()`` - gunicorn ``--preload``, uwsgi, Celery prefork, RQ, ``multiprocessing`` - copies
     the parent's objects into the child: pools whose connections are the parent's own sockets,
     and the bookkeeping of threads that did not come along. Refused, never reset: the fix is to
-    create ekbatan when the app starts, in each process, not at import time.
+    create ekbatan's objects - the database registry, the job registry, lock providers - in the
+    app's startup code, in each process, not at import time.
     """
 
 

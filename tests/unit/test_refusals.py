@@ -37,9 +37,10 @@ def test_the_fork_refusal_says_what_happened_and_what_to_do():
     assert str(error.value) == (
         "Thing(1) was created in another process and copied into this one by fork() - "
         "gunicorn --preload, uwsgi, Celery prefork, RQ and multiprocessing all fork. Its "
-        "connections and threads belong to the process that created it. Create ekbatan when "
-        "your app starts - in the FastAPI lifespan, or at the top of the worker's main() - not "
-        "at import time."
+        "connections and threads belong to the process that created it. Create ekbatan's "
+        "objects - the database registry, the job registry, lock providers - in your app's "
+        "startup code (the FastAPI lifespan, or the top of the worker's main()), not at import "
+        "time."
     )
 
 

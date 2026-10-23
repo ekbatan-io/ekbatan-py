@@ -283,10 +283,14 @@ refusals in the framework - no auto-fixing, no server detection, no per-server b
 done behind the user's back.
 
 - **The golden path**, said the same way on the front of the docs and the website: create
-  ekbatan when your app starts, stop it when it stops - FastAPI: in the lifespan; a plain worker:
-  at the top of `main()`. Normal code: the sync API; `async def` code: `ekbatan.aio`. Nothing
-  server-specific on the front; the per-server recipes live on one page, `docs/deploying.md`
-  (website `learn/deploying`), which marks what is tested and what is only expected.
+  ekbatan's objects in the app's startup code and close them in its shutdown code, never at
+  import time - FastAPI: in the lifespan; a plain worker: at the top and bottom of `main()`.
+  ekbatan is a library of objects, not a service: no doc says "start ekbatan", and the
+  examples' `WalletService` / `Worker` and `build()` are the examples' own code, said so where
+  they are shown. `docs/startup-and-shutdown.md` has the table of every object that holds connections or
+  threads and its real startup and shutdown calls - keep it true to the code. Normal code: the sync API; `async def` code: `ekbatan.aio`. Nothing
+  server-specific on the front; the per-server recipes live on one page, `docs/startup-and-shutdown.md`
+  (website `learn/startup-and-shutdown`), which marks what is tested and what is only expected.
 - **Refusal 1, `ForkedProcessError`**: every object that owns connections or threads records
   `os.getpid()` when built - `TransactionManager` and `AsyncTransactionManager` (so every
   registry), the sync and async lock providers (SQL and Redis), `JobRegistry`, `HandlerLoop` -

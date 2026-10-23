@@ -48,7 +48,7 @@ Status: `todo` / `done` / `n/a`. A row is `done` only when a run shows it.
 | # | item | status |
 | --- | --- | --- |
 | D1 | golden path on the front: docs/getting-started.md, docs/README.md, website getting started / wiring | done |
-| D2 | Deploying page, docs + website, linked from front page and nav | done |
+| D2 | Deploying page (renamed Startup and shutdown later), docs + website, linked from front page and nav | done |
 | D3 | AGENTS.md rules | done |
 | D4 | DRACULAS #38 addressed, #31 note | done |
 | D5 | docs/runtime/concurrency.md, docs/jobs/distributed-jobs.md and website copies | done |
@@ -66,4 +66,4 @@ Status: `todo` / `done` / `n/a`. A row is `done` only when a run shows it.
 | pip + Poetry, two families | done | rest-pip-pg 21, rest-poetry-pg 21, saga-pip-async-pg 22, saga-poetry-async-pg 22 |
 | setup-guide checker, uv x 4 dbs x 2 modes | done | 8/8 OK |
 | website build + check | done | 59 pages, 0 broken links, parity 76/76 |
-| docs-website sync | done | 34 pairs, 0 behind (deploying.md paired with learn/deploying.mdx) |
+| docs-website sync | done | 34 pairs, 0 behind (startup-and-shutdown.md paired with learn/startup-and-shutdown.mdx) |

@@ -69,8 +69,10 @@ execution. It is the same code path as four machines.
 
 **Build them in each process, after it starts** - in the FastAPI lifespan, or at the top of
 the worker's `main()`. A server that forks its workers copies whatever the parent built, and
-ekbatan refuses to work in such a copy (`ForkedProcessError`). [Deploying](/learn/deploying/) has
-the recipe per server.
+ekbatan refuses to work in such a copy (`ForkedProcessError`).
+[Startup and shutdown](/learn/startup-and-shutdown/) lists those objects - the registries, the
+job registry, the lock providers - with their startup and shutdown calls, and the recipe per
+server.
 
 If you would rather not have every web worker also be a job worker, run the jobs in their own
 process.

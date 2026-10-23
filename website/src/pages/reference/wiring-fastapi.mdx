@@ -64,11 +64,18 @@ Pools, the scheduler and the migration run belong to the process, not to a reque
 is where a process-scoped thing is born and buried, and the `try/finally` is what closes pools
 when the server shuts down rather than leaking them.
 
+`build()`, `WalletService`, `service.start()` and `service.close()` / `service.aclose()` are the
+example's own code, not ekbatan's API: `build()` creates ekbatan's objects - the registry, the
+lock provider, the job registry and their engines - and the example's class holds them.
+`start()` calls `jobs.start()`; `close()` calls `jobs.stop()`, then closes the lock provider,
+disposes the engines and closes the registry. [Startup and shutdown](/learn/startup-and-shutdown/) writes the same lifespan with
+those objects themselves.
+
 The lifespan is an `async def`, so it runs on the event loop's thread, where the sync API is
 refused with `BlockingCallError`: building (the migrations) and starting and stopping the jobs
-go through `asyncio.to_thread`, as above. Never build the service at import time - a module-level
-`service = build()` - either: a server that forks its workers would copy it into each one, and
-ekbatan refuses to work in a copy (`ForkedProcessError`). See [Deploying](/learn/deploying/).
+go through `asyncio.to_thread`, as above. Never create ekbatan's objects at import time - a
+module-level `service = build()`, in this example - either: a server that forks its workers would copy it into each one, and
+ekbatan refuses to work in a copy (`ForkedProcessError`). See [Startup and shutdown](/learn/startup-and-shutdown/).
 
 A **factory** rather than a module-level `app = FastAPI()`, so a test can build one against a
 throwaway database with settings of its own - the url and login set with `monkeypatch.setenv`

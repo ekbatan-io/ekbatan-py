@@ -18,6 +18,9 @@ because you can see it.
 One function returning one object. Nothing above it knows which database, which handlers or
 which jobs; nothing below it does either.
 
+Both are your code - here, the example's: `build()` creates ekbatan's objects, and
+`WalletService` is a class the example writes to hold them. ekbatan provides neither.
+
 <ModeTabs>
 <div slot="sync">
 
@@ -175,7 +178,8 @@ fourth for an async event handler, which runs on a loop of its own. See
 
 ## Under FastAPI
 
-Build once, in a lifespan:
+Call `build()` once, in a lifespan - the example's `start()` and `close()` start and stop the
+job registry and close the registry and the engines:
 
 <ModeTabs>
 <div slot="sync">

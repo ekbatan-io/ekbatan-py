@@ -29,7 +29,7 @@ default.
 
 **A distributed job is sync, always.** db-scheduler claims the job's row in `scheduled_tasks`
 and calls `execute` on one of its worker threads, and writes the heartbeat from another. That
-is the same in every Ekbatan service, sync or async, and this example does not change it.
+is the same in every app that uses ekbatan, sync or async, and this example does not change it.
 
 **The job's work is async.** Each job's `execute` hands a coroutine to the **worker loop** -
 a `HandlerLoop`, one event loop on a thread of its own, the same kind dispatch runs async
