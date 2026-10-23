@@ -174,8 +174,10 @@ close them at shutdown. The rest of this page does exactly that.
 
 ## How a server runs your app
 
-Servers differ in a few ways that decide where your startup code can go. Each server section in
-Part 2 starts with "How it runs", in the words below.
+Servers run your app in different ways, and that decides where your startup code can go. Three
+things matter, and this section explains each one. The words it explains - *worker*, *copied*,
+*started fresh*, *threads*, *event loop* - come back in Part 2, where every server has a short
+"How it runs" paragraph written with them.
 
 ### Processes and workers
 
