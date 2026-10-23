@@ -535,7 +535,7 @@ def test_a_read_only_mysql_is_refused(backend, request, files):
     """A replica, or a server set aside. Root could write past `read_only`, which is why this
     refuses rather than trying."""
     if backend.dialect not in ("mysql", "mariadb"):
-        pytest.skip("read_only is MySQL's and MariaDB's; PostgreSQL's replica check is a unit test")
+        pytest.skip("read_only is MySQL's and MariaDB's; PostgreSQL's is the standby test below")
     url = fresh(backend, request)
     files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
 
@@ -547,6 +547,39 @@ def test_a_read_only_mysql_is_refused(backend, request, files):
         query(url, "SET GLOBAL read_only = OFF")
 
     assert tables(url) == set(), "refused before anything was created"
+
+
+def test_a_postgresql_standby_is_refused(backend, tmp_path, files):
+    """A real PostgreSQL replica, not a faked answer: the server starts with `standby.signal` in
+    its data directory, so it stays in recovery - read-only, `pg_is_in_recovery()` true - as a
+    hot standby does. The migrator must refuse it before running anything, with a message that
+    says to point primaryConfig at the primary, not fail half-way on PostgreSQL's own error."""
+    if backend.dialect != "postgres":
+        pytest.skip("a PostgreSQL standby")
+    from testcontainers.core.container import DockerContainer
+    from testcontainers.core.waiting_utils import wait_for_logs
+
+    script = tmp_path / "standby.sh"
+    script.write_text('#!/bin/sh\ntouch "$PGDATA/standby.signal"\n')
+    script.chmod(0o755)
+    files.add("V1__widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+
+    standby = (
+        DockerContainer("postgres:17-alpine")
+        .with_env("POSTGRES_PASSWORD", "standby")
+        .with_exposed_ports(5432)
+        .with_volume_mapping(str(script), "/docker-entrypoint-initdb.d/standby.sh", "ro")
+    )
+    with standby:
+        wait_for_logs(standby, "ready to accept read-only connections", timeout=120)
+        url = (
+            f"postgresql+psycopg://postgres:standby@{standby.get_container_host_ip()}:"
+            f"{standby.get_exposed_port(5432)}/postgres"
+        )
+        assert query(url, "SELECT pg_is_in_recovery()")[0][0] is True, "the server is a standby"
+
+        with pytest.raises(MigrationError, match="is a read-only replica"):
+            migrate(single(url), files.path)
 
 
 class Held:
