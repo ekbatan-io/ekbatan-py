@@ -175,7 +175,8 @@ close them at shutdown. The rest of this page does exactly that.
 ## How a server runs your app
 
 Servers don't all run your app the same way, and that changes where your startup code should go.
-Below are the three differences that matter. Part 2 describes each server in the same words.
+Below are the three differences that matter. Later, each server's "How it runs" paragraph tells
+you what that server does for each of them.
 
 ### Processes and workers
 
