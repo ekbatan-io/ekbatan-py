@@ -1,5 +1,31 @@
 # Startup and shutdown
 
+## Why read this page
+
+Your app works on your laptop. Then it meets the real world, and one of these happens:
+
+- **A deploy cuts a job off halfway.** A new version is rolled out, the old process is stopped
+  while a job is sending emails, and later another instance runs the whole job again - so some
+  people get the email twice. *Closing the job registry properly prevents it; see the shutdown
+  steps below, and "A worker without a web server" for programs that have no web server.*
+- **The database says "too many connections".** It ran fine with one process; then the server was
+  set to four workers, or the app to three replicas, and each copy opened its own connections.
+  *See "When your server runs several processes".*
+- **ekbatan raises `ForkedProcessError`.** Your server copies your app into several workers after
+  it has started (gunicorn with `--preload`, uwsgi, Celery), and an object made before the copy
+  is being used in a worker. Shared that way, its database connections would mix two workers'
+  queries, so ekbatan stops it. *See "Why at startup, and not at import time".*
+- **ekbatan raises `BlockingCallError`.** An `async def` endpoint called the sync API, which
+  would have frozen every other request on the server while it waited on the database. *See
+  "Two mistakes ekbatan refuses".*
+
+All of these come from the same place: a few objects your app creates hold open database
+connections or background threads, and they have to be created, and closed, in the right place.
+This page shows that place and explains each step. Read it before your app goes to production,
+when you move to a server with several workers, or when you meet one of those two errors.
+
+## The idea
+
 Most of what you write with ekbatan - models, repositories, actions, the executor - are plain
 objects. You create them and use them, and when your program ends they simply go away.
 
@@ -9,9 +35,9 @@ jobs on background threads. These need two moments of care: they are created whe
 starts, and closed when it stops. Closing them is what lets running jobs finish and connections
 end cleanly instead of being cut off.
 
-This page shows where those two moments are in a FastAPI app and in a plain worker, and why each
-step is where it is. Near the end it covers two mistakes ekbatan refuses for you, what changes
-when your server runs several processes, and notes for specific servers.
+The rest of this page shows where those two moments are in a FastAPI app and in a plain worker,
+and why each step is where it is. After that come the two mistakes ekbatan refuses for you, what
+changes when your server runs several processes, and notes for specific servers.
 
 ## What needs a start and a stop
 
