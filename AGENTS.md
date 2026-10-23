@@ -276,6 +276,36 @@ share one sync connection between threads, and never quietly swap in another con
 work was meant to be inside the transaction. Async tasks started inside an async transaction do
 share it - they take turns on one thread's connection.
 
+### The golden path, and two refusals
+
+**Rule** (since `EKB-0500`, the user's decision): one golden path in the docs, and two loud
+refusals in the framework - no auto-fixing, no server detection, no per-server branches, nothing
+done behind the user's back.
+
+- **The golden path**, said the same way on the front of the docs and the website: create
+  ekbatan when your app starts, stop it when it stops - FastAPI: in the lifespan; a plain worker:
+  at the top of `main()`. Normal code: the sync API; `async def` code: `ekbatan.aio`. Nothing
+  server-specific on the front; the per-server recipes live on one page, `docs/deploying.md`
+  (website `learn/deploying`), which marks what is tested and what is only expected.
+- **Refusal 1, `ForkedProcessError`**: every object that owns connections or threads records
+  `os.getpid()` when built - `TransactionManager` and `AsyncTransactionManager` (so every
+  registry), the sync and async lock providers (SQL and Redis), `JobRegistry`, `HandlerLoop` -
+  and its doors (`transaction()`, `connection()`, the unjoined `_engine()` a repository's `db()`
+  and `readonly_db()` use; `acquire` / `try_acquire`; `start()`; `run()`) raise in any other
+  process. Never reset, reconnect or dispose in the child. db-scheduler's own pool refusal
+  (`register_at_fork`) stays as it is.
+- **Refusal 2, `BlockingCallError`**: the sync API on a thread with a running asyncio loop -
+  the sync `TransactionManager`'s doors, `ActionExecutor.execute` (before `perform`), and a
+  migration run (`_each` in `migrations.py`). Silent on a worker thread (`asyncio.to_thread`,
+  `run_in_executor`, a FastAPI `def` endpoint, dispatch's threads), under gevent, and on the test
+  harness's calling thread. Never moved to a thread for the caller.
+- Both live in `src/ekbatan/_guards.py`. A new object that owns connections or threads, or a new
+  sync way in to a database, calls them. `tests/integration/test_refusals.py` proves each with
+  real `os.fork()` children on all four databases, and each allowed case silent.
+- **Sync work in an `async def` lifespan goes through `asyncio.to_thread`** - building the
+  service (it runs the migrations), starting and stopping it - in every example, doc and test.
+  A test scenario written as a coroutine calls the sync API the same way.
+
 ### Two modes: sync and async are both first-class
 
 Every reader picks a mode - the sync API or `ekbatan.aio` - and every part of this repository

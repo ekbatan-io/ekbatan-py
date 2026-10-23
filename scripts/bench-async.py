@@ -161,7 +161,8 @@ async def run_sync(
     )
     asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(threads))
     wallets = fresh_wallets(max(levels))
-    repo.add_all_no_result(wallets)
+    # On a worker thread, as every sync call here is: the sync API is refused on the loop's own.
+    await asyncio.to_thread(repo.add_all_no_result, wallets)
 
     async def one(params: DepositParams) -> None:
         await asyncio.to_thread(executor.execute, DepositMoneyAction, params)

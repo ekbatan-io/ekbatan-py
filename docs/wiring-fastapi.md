@@ -18,13 +18,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build(settings)
-        service.start()
+        # Built and started on a worker thread: `build` runs the migrations and starting
+        # registers the jobs, both sync and both waiting on the database - and the sync API
+        # is refused on the event loop's own thread.
+        service = await asyncio.to_thread(build, settings)
+        await asyncio.to_thread(service.start)
         app.state.service = service
         try:
             yield
         finally:
-            service.close()
+            await asyncio.to_thread(service.close)
 
     app = FastAPI(title="Wallet", lifespan=lifespan)
 ```
@@ -36,8 +39,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build(settings)      # sync: it runs the migrations, once, before any request
-        service.start()
+        # `build` is sync - it runs the migrations - and so is starting the jobs: both on a
+        # worker thread, since the sync API is refused on the event loop's own thread.
+        service = await asyncio.to_thread(build, settings)
+        await asyncio.to_thread(service.start)
         app.state.service = service
         try:
             yield
@@ -50,6 +55,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 Pools, the scheduler and the migration run belong to the process, not to a request. `lifespan`
 is where a process-scoped thing is born and buried, and the `try/finally` is what closes pools
 when the server shuts down rather than leaking them.
+
+The lifespan is an `async def`, so it runs on the event loop's thread, where the sync API is
+refused with `BlockingCallError`: building (the migrations) and starting and stopping the jobs
+go through `asyncio.to_thread`, as above. Never build the service at import time - a module-level
+`service = build()` - either: a server that forks its workers would copy it into each one, and
+ekbatan refuses to work in a copy (`ForkedProcessError`). See [Deploying](deploying.md).
 
 A **factory** rather than a module-level `app = FastAPI()`, so a test can build one against a
 throwaway database with settings of its own - the url and login set with `monkeypatch.setenv`

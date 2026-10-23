@@ -3,9 +3,8 @@
 //
 // The order mirrors Java's - the problem, then the model, then building something, then the
 // harder shapes, then the whole project - minus native-image, which has no counterpart, plus
-// five this port needs and Java does not: installing, choosing sync or async, wiring by hand,
-// going async, and what
-// concurrency actually costs on CPython.
+// six this port needs and Java does not: installing, choosing sync or async, wiring by hand,
+// going async, what concurrency actually costs on CPython, and deploying under each server.
 export const LEARN_PAGES = [
     { slug: "getting-started", title: "Getting started", blurb: "Start here. Follow one wallet change through the dual-write problem, model events, action staging, and what the executor commits." },
     { slug: "the-dual-write-trap", title: "The dual-write trap", blurb: "Why writing to a database and to a broker separately creates silent drift, and why the event has to be stored with the state that caused it." },
@@ -22,5 +21,6 @@ export const LEARN_PAGES = [
     { slug: "sagas", title: "Sagas", blurb: "Split a multi-step workflow into committed actions chained by events, with explicit compensation when a later step fails and nothing to roll back." },
     { slug: "async", title: "Going async", blurb: "Move an existing sync service to ekbatan.aio, file by file: async repositories and actions, an awaited executor, async def endpoints - while jobs stay on threads." },
     { slug: "going-to-production", title: "Going to production", blurb: "What concurrency costs on CPython, how migrations run at deploy, what to alert on, and what this port does not do for you yet." },
+    { slug: "deploying", title: "Deploying", blurb: "Create ekbatan when your app starts, stop it when it stops. Where that is under uvicorn, gunicorn, uwsgi, Celery, RQ and the rest - and the two mistakes it refuses." },
     { slug: "complete-project-setup", title: "Complete project setup", blurb: "The whole setup, for your dialect and your installer: scaffold, dependencies, connection config, migrations, generated schema, domain, HTTP layer, tests." },
 ] as const;

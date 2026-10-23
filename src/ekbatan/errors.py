@@ -10,10 +10,12 @@ from __future__ import annotations
 from typing import Any
 
 __all__ = [
+    "BlockingCallError",
     "ConnectivityError",
     "CrossShardError",
     "EkbatanError",
     "EntityNotFoundError",
+    "ForkedProcessError",
     "LockAcquisitionError",
     "StaleRecordError",
     "TransactionContextError",
@@ -125,4 +127,24 @@ class TransactionContextError(EkbatanError, RuntimeError):
     committed on its own, and a rollback could not undo it. Python notices only when the block
     ends, and this says why. Open the transaction where the work runs: in the endpoint, the
     action or the executor, never in a dependency.
+    """
+
+
+class ForkedProcessError(EkbatanError, RuntimeError):
+    """An object that owns connections or threads was used in a process it was copied into.
+
+    ``fork()`` - gunicorn ``--preload``, uwsgi, Celery prefork, RQ, ``multiprocessing`` - copies
+    the parent's objects into the child: pools whose connections are the parent's own sockets,
+    and the bookkeeping of threads that did not come along. Refused, never reset: the fix is to
+    create ekbatan when the app starts, in each process, not at import time.
+    """
+
+
+class BlockingCallError(EkbatanError, RuntimeError):
+    """The sync API was called on an asyncio event loop's thread.
+
+    A sync call waits on the database, and on the loop's thread it would stop every other task
+    - every other request - until it returned. Refused, never moved to a thread behind the
+    caller's back: in ``async def`` code use ``ekbatan.aio``, a plain ``def`` endpoint, or
+    ``await asyncio.to_thread(...)``.
     """

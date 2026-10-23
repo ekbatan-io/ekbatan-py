@@ -13,6 +13,7 @@ Java's `spring-boot-wallet-saga-gradle-pg` adds the same endpoint to the same wa
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -99,13 +100,16 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build()
-        service.start()
+        # Built and started on a worker thread: `build` runs the migrations and starting
+        # registers the jobs, both sync and both waiting on the database - and the sync API
+        # is refused on the event loop's own thread.
+        service = await asyncio.to_thread(build)
+        await asyncio.to_thread(service.start)
         app.state.service = service
         try:
             yield
         finally:
-            service.close()
+            await asyncio.to_thread(service.close)
 
     app = FastAPI(title="Wallet transfers", lifespan=lifespan)
 

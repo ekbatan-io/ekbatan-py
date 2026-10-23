@@ -6,6 +6,19 @@ function you can read top to bottom.
 
 The step with any depth to it is code generation - see [schemagen](database/schemagen.md).
 
+## The golden path
+
+Create ekbatan when your app starts, and stop it when it stops:
+
+- **FastAPI** - in the lifespan.
+- **A plain worker** - at the top of `main()`.
+
+Normal code uses the sync API; `async def` code uses `ekbatan.aio`.
+
+That is all a deployment has to get right, and ekbatan says so when it is not: something built in
+one process and used in a copy of it raises `ForkedProcessError`, and the sync API called inside
+`async def` raises `BlockingCallError`. [Deploying](deploying.md) has the recipe for each server.
+
 ## Requirements
 
 Python **3.13** or newer. The framework uses PEP 695 type parameters and `Self`, and the suite

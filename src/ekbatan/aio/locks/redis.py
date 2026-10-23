@@ -25,11 +25,13 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
+import os
 import time
 import uuid
 from datetime import timedelta
 from typing import Any, Self
 
+from ..._guards import refuse_if_forked
 from ...errors import LockAcquisitionError, ValidationError
 from ...locks._holder import ReleaseReason
 from ...locks.base import check_arguments
@@ -64,7 +66,16 @@ class AsyncRedisKeyedLockProvider:
     ``max_hold`` governs the TTL, as on the sync side.
     """
 
-    __slots__ = ("_client", "_holder", "_id", "_lock", "_owners", "_prefix", "_release")
+    __slots__ = (
+        "_client",
+        "_created_in",
+        "_holder",
+        "_id",
+        "_lock",
+        "_owners",
+        "_prefix",
+        "_release",
+    )
 
     def __init__(self, client: Any, *, namespace: str = DEFAULT_NAMESPACE) -> None:
         refuse_blank_namespace(namespace)
@@ -74,6 +85,8 @@ class AsyncRedisKeyedLockProvider:
         #: Redisson's client id: one UUID per client, the first half of every owner field.
         self._id = str(uuid.uuid4())
         self._owners = itertools.count(1)
+        #: The process that built it. A copy made by fork() would share the client id.
+        self._created_in = os.getpid()
         self._lock = client.register_script(_LOCK)
         self._release = client.register_script(_UNLOCK)
 
@@ -86,6 +99,7 @@ class AsyncRedisKeyedLockProvider:
         return Acquiring(lambda: self._acquire(key, max_hold))
 
     async def _acquire(self, key: str, max_hold: timedelta) -> AsyncLease:
+        refuse_if_forked(self._created_in, type(self).__name__)
         check_arguments(key, max_hold)
         reentered = self._holder.reenter(key)
         if reentered is not None:
@@ -99,6 +113,7 @@ class AsyncRedisKeyedLockProvider:
     ) -> AsyncLease | None:
         """Take the lock if it comes free within ``max_wait``, else ``None`` - contention is an
         empty result, never an exception."""
+        refuse_if_forked(self._created_in, type(self).__name__)
         check_arguments(key, max_hold, max_wait)
         reentered = self._holder.reenter(key)
         if reentered is not None:

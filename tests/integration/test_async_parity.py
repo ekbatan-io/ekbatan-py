@@ -2,10 +2,11 @@
 
 The async API shares its logic with the sync one - statements, routing, the optimistic lock,
 soft delete, the retry policy - so the claim worth testing is that the two *behave* the same.
-Each scenario below is written once, as a coroutine, against a `Service` that awaits a call
-only when it returned something awaitable. The sync run calls straight through; the async run
-awaits. What was committed is then read by a plain sync connection that belongs to neither, so
-the observer is the same for both runs.
+Each scenario below is written once, as a coroutine, against a `Service` whose `call` runs one
+call of either mode. The sync run calls on a worker thread - the sync API is refused on the
+loop's own thread, as it is anywhere (`BlockingCallError`); the async run awaits. What was
+committed is then read by a plain sync connection that belongs to neither, so the observer is
+the same for both runs.
 
 The two exceptions are written out for each mode, because what they test is the concurrency
 model itself: two transactions open at once on threads, and on tasks. Cancellation has no sync
@@ -20,7 +21,6 @@ cannot say - the scenarios written as coroutines, and tasks running at once on o
 from __future__ import annotations
 
 import asyncio
-import inspect
 import threading
 import traceback
 from collections.abc import AsyncIterator, Callable
@@ -72,9 +72,24 @@ def mode(request: Any) -> str:
     return str(request.param)
 
 
-async def aw(value: Any) -> Any:
-    """Await it if it is awaitable - which is what lets one scenario drive both modes."""
-    return await value if inspect.isawaitable(value) else value
+async def call(mode: str, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """One call, of either mode - which is what lets one scenario drive both. A sync call runs
+    on a worker thread, as the docs say to call the sync API from `async def` code."""
+    if mode == "sync":
+        return await off_the_loop(fn, *args, **kwargs)
+    return await fn(*args, **kwargs)
+
+
+async def off_the_loop(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """A sync call from the scenario's coroutine: on a worker thread - or, under `make
+    test-gevent`, in a greenlet of its own, since asyncio's thread pool and gevent's patched
+    threads do not mix (measured: `asyncio.to_thread` hangs there). Either way not on the loop's
+    own thread or greenlet, where the sync API is refused."""
+    if under_gevent():
+        import gevent
+
+        return gevent.spawn(fn, *args, **kwargs).get()
+    return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 # ------------------------------------------------------------------ the extra actions
@@ -182,7 +197,10 @@ class Service:
     delete: type
 
     async def execute(self, action: type, params: Any, **options: Any) -> Any:
-        return await aw(self.executor.execute(action, params, **options))
+        return await self.call(self.executor.execute, action, params, **options)
+
+    async def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        return await call(self.mode, fn, *args, **kwargs)
 
     async def open_wallet(self, balance: str = "10", wallet_id: Any = None) -> Wallet:
         params = CreateWalletParams(
@@ -208,7 +226,8 @@ async def service(
     names = SHARDS if sharded else {GLOBAL: MAIN}
     sharding = EmbeddedBitsShardingStrategy() if sharded else NoShardingStrategy()
     if mode == "sync":
-        registry = _registry(backend, names)
+        # Migrations are sync in both modes, so on a worker thread in both.
+        registry = await off_the_loop(_registry, backend, names)
         wallets: Any = WalletRepository(Wallet, WALLETS, registry, sharding=sharding, clock=clock)
         kinds: tuple[type, ...] = (
             CreateWalletAction,
@@ -219,7 +238,7 @@ async def service(
         )
         executor_type: Any = ActionExecutor
     else:
-        registry = _registry(backend, names, kind=AsyncDatabaseRegistry)
+        registry = await off_the_loop(_registry, backend, names, kind=AsyncDatabaseRegistry)
         wallets = AsyncWalletRepository(Wallet, WALLETS, registry, sharding=sharding, clock=clock)
         kinds = (
             AsyncCreateWalletAction,
@@ -243,7 +262,7 @@ async def service(
     try:
         yield Service(mode, registry, executor, wallets, *kinds)
     finally:
-        await aw(registry.close() if mode == "sync" else registry.aclose())
+        await call(mode, registry.close if mode == "sync" else registry.aclose)
 
 
 def committed(backend: Any, name: str = MAIN) -> tuple[dict[Any, Decimal], list[dict[str, Any]]]:
@@ -275,8 +294,8 @@ def test_a_deposit_commits_the_row_and_its_event_together(mode, backend, clock):
             wallet = await svc.open_wallet("10")
             after = await svc.execute(svc.deposit, deposit(wallet, "5"))
             assert after.balance == Decimal("15")
-            assert (await aw(svc.wallets.get(wallet.id))).balance == Decimal("15")
-            assert (await aw(svc.wallets.get(wallet.id))).version == 2
+            assert (await svc.call(svc.wallets.get, wallet.id)).balance == Decimal("15")
+            assert (await svc.call(svc.wallets.get, wallet.id)).version == 2
 
         balances, events = committed(backend)
         assert balances == {wallet.id.value: Decimal("15")}
@@ -324,7 +343,7 @@ def test_a_failed_outbox_write_rolls_back_the_row_already_written(mode, backend,
                 balance=Decimal("10"),
                 created_date=NOW,
             )
-            await aw(svc.wallets.add(wallet))  # outside any unit of work: commits itself
+            await svc.call(svc.wallets.add, wallet)  # outside any unit of work: commits itself
             with pytest.raises(RuntimeError, match="outbox down"):
                 await svc.execute(svc.deposit, deposit(wallet, "5"))
 
@@ -378,12 +397,12 @@ def test_a_soft_deleted_row_is_hidden_from_every_read(mode, backend, clock):
             gone = await svc.open_wallet("20")
             await svc.execute(svc.delete, WalletIdParams(wallet_id=gone.id))
 
-            assert await aw(svc.wallets.find(gone.id)) is None
+            assert await svc.call(svc.wallets.find, gone.id) is None
             with pytest.raises(EntityNotFoundError):
-                await aw(svc.wallets.get(gone.id))
-            assert [w.id for w in await aw(svc.wallets.find_where())] == [kept.id]
-            assert [w.id for w in await aw(svc.wallets.all())] == [kept.id]
-            assert await aw(svc.wallets.find_where(WALLETS.c.owner_id == gone.owner_id)) == []
+                await svc.call(svc.wallets.get, gone.id)
+            assert [w.id for w in await svc.call(svc.wallets.find_where)] == [kept.id]
+            assert [w.id for w in await svc.call(svc.wallets.all)] == [kept.id]
+            assert await svc.call(svc.wallets.find_where, WALLETS.c.owner_id == gone.owner_id) == []
 
         balances, events = committed(backend)
         assert set(balances) == {kept.id.value, gone.id.value}, "the row is still there"
@@ -399,9 +418,11 @@ def test_a_sharded_unit_of_work_lands_on_its_own_shard(mode, backend, clock):
         async with service(mode, backend, clock, sharded=True) as svc:
             wallet = await svc.open_wallet("10", wallet_id=ShardedId[Wallet].generate(MEXICO))
             await svc.execute(svc.deposit, deposit(wallet, "5"))
-            assert [w.id for w in await aw(svc.wallets.find_where(shard=MEXICO))] == [wallet.id]
-            assert await aw(svc.wallets.find_where(shard=GLOBAL)) == []
-            assert [w.id for w in await aw(svc.wallets.find_where())] == [wallet.id]
+            assert [w.id for w in await svc.call(svc.wallets.find_where, shard=MEXICO)] == [
+                wallet.id
+            ]
+            assert await svc.call(svc.wallets.find_where, shard=GLOBAL) == []
+            assert [w.id for w in await svc.call(svc.wallets.find_where)] == [wallet.id]
 
         mexico, mexico_events = committed(backend, SHARDS[MEXICO])
         assert mexico == {wallet.id.value: Decimal("15")}

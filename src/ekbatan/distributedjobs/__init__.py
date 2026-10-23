@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import atexit
 import logging
+import os
 import signal
 import threading
 from abc import ABC, abstractmethod
@@ -31,6 +32,7 @@ from db_scheduler.task.helper import Tasks
 from db_scheduler.task.schedule import Schedule
 from sqlalchemy import Engine
 
+from .._guards import refuse_if_forked
 from .._logtext import java_list
 from ..errors import ValidationError
 from ._shutdown import ShutdownHook
@@ -134,6 +136,7 @@ class JobRegistry:
     """
 
     __slots__ = (
+        "_created_in",
         "_hook",
         "_job_names",
         "_names_requiring_registration",
@@ -163,6 +166,9 @@ class JobRegistry:
         #: Jobs whose schedule is disabled are excluded: db-scheduler deliberately writes no
         #: execution for those, so their absence is correct rather than a failure.
         self._names_requiring_registration = list(names_requiring_registration)
+        #: The process that built it. db-scheduler's worker pool refuses work in a copy made by
+        #: fork() too; this says so at `start()`, in the framework's words.
+        self._created_in = os.getpid()
 
     @property
     def scheduler(self) -> Scheduler:
@@ -179,7 +185,11 @@ class JobRegistry:
         Logs one WARNING, once per process, when nothing handles SIGTERM - neither
         :meth:`JobRegistryBuilder.register_shutdown_hook` nor anything else in the process - since
         a container stop would then cut running jobs off. It installs and changes nothing.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this registry was
+        copied into by ``fork()``: build it in the process that runs the jobs.
         """
+        refuse_if_forked(self._created_in, repr(self))
         LOG.info(
             "Starting JobRegistry with %d job(s): %s",
             len(self._job_names),

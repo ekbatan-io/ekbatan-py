@@ -104,7 +104,8 @@ marked unverified.
 - **Could match Java?** partly. A cancel flag or event checked between segments is possible, but it would be new API.
 - **Surprise:** medium
 
-### Build the scheduler after `fork()`
+### Build the scheduler after `fork()` - addressed: refused with a clear message (`EKB-0500`)
+- **Addressed:** a `JobRegistry` - and every other object that owns connections or threads: the sync and async `TransactionManager` (so every registry), the lock providers, `HandlerLoop` - records the process that built it, and in any other raises `ForkedProcessError`: built in another process and copied by `fork()` (gunicorn `--preload`, uwsgi, Celery prefork, RQ...); create ekbatan when your app starts, in the FastAPI lifespan or at the top of the worker's `main()`. Nothing is reset or reconnected. `src/ekbatan/_guards.py`; proven with real `os.fork()` children in `tests/integration/test_refusals.py`; recipes per server in `docs/deploying.md`.
 - **What:** under gunicorn `--preload`, uwsgi or a manual fork, a `JobRegistry`/`Scheduler` built before the fork has no worker threads in the child, and its pool refuses work. Java developers never meet this.
 - **Python:** `db-scheduler/src/db_scheduler/pool.py:35-54` (`os.register_at_fork` marks pools as forked); README "Threads, and forking".
 - **Java:** none.

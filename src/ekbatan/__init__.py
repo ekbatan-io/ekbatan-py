@@ -63,10 +63,12 @@ from .domain import (
     Persistable,
 )
 from .errors import (
+    BlockingCallError,
     ConnectivityError,
     CrossShardError,
     EkbatanError,
     EntityNotFoundError,
+    ForkedProcessError,
     LockAcquisitionError,
     StaleRecordError,
     TransactionContextError,
@@ -151,6 +153,7 @@ __all__ = [
     "ActionRegistry",
     "ActionRegistryBuilder",
     "ActionSpec",
+    "BlockingCallError",
     "ChangePersister",
     "Clock",
     "ConnectivityError",
@@ -184,6 +187,7 @@ __all__ = [
     "ExecutionConfigurationBuilder",
     "ExecutionContext",
     "FetchResult",
+    "ForkedProcessError",
     "GenericState",
     "HandlingConfig",
     "HandlingConfigBuilder",

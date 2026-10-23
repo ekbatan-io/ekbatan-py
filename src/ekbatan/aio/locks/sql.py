@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from abc import ABC, abstractmethod
 from datetime import timedelta
 from typing import Any, Self
@@ -20,6 +21,7 @@ from typing import Any, Self
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from ..._guards import refuse_if_forked
 from ...errors import LockAcquisitionError, ValidationError
 from ...locks._holder import ReleaseReason
 from ...locks.base import check_arguments, lock_key_hash
@@ -69,6 +71,8 @@ class AsyncSqlKeyedLockProvider(ABC):
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._holder = AsyncKeyedReentrantHolder()
+        #: The process that built it: its pool's connections belong to that one.
+        self._created_in = os.getpid()
 
     @classmethod
     def builder(cls) -> AsyncSqlKeyedLockProviderBuilder[Self]:
@@ -91,6 +95,7 @@ class AsyncSqlKeyedLockProvider(ABC):
         return Acquiring(lambda: self._acquire(key, max_hold))
 
     async def _acquire(self, key: str, max_hold: timedelta) -> AsyncLease:
+        refuse_if_forked(self._created_in, type(self).__name__)
         check_arguments(key, max_hold)
         reentered = self._holder.reenter(key)
         if reentered is not None:
@@ -103,6 +108,7 @@ class AsyncSqlKeyedLockProvider(ABC):
     async def try_acquire(
         self, key: str, max_wait: timedelta, max_hold: timedelta
     ) -> AsyncLease | None:
+        refuse_if_forked(self._created_in, type(self).__name__)
         check_arguments(key, max_hold, max_wait)
         reentered = self._holder.reenter(key)
         if reentered is not None:

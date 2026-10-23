@@ -57,7 +57,7 @@ class _ShardRepository:
     def _db(self, shard: ShardIdentifier) -> Iterator[Connection]:
         """Java's ``db(shard)``: the shard's primary, outside any open transaction. Each
         statement commits itself."""
-        with Db(self._registry.manager(shard).primary).execution_options(
+        with Db(self._registry.manager(shard)._engine()).execution_options(
             isolation_level="AUTOCOMMIT"
         ) as conn:
             yield conn
@@ -66,7 +66,7 @@ class _ShardRepository:
     def _readonly_db(self, shard: ShardIdentifier) -> Iterator[Connection]:
         """Java's ``readonlyDb(shard)``: the shard's replica, or its primary when it has none.
         Never the open transaction."""
-        with Db(self._registry.manager(shard).replica).execution_options(
+        with Db(self._registry.manager(shard)._engine(readonly=True)).execution_options(
             isolation_level="AUTOCOMMIT"
         ) as conn:
             yield conn

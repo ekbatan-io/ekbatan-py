@@ -183,13 +183,14 @@ Build once, in a lifespan:
 ```python
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    service = build(settings)
-    service.start()
+    # sync work, on a worker thread: the sync API is refused on the event loop's own
+    service = await asyncio.to_thread(build, settings)
+    await asyncio.to_thread(service.start)
     app.state.service = service
     try:
         yield
     finally:
-        service.close()
+        await asyncio.to_thread(service.close)
 ```
 
 </div>
@@ -198,8 +199,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 ```python
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    service = build(settings)        # sync: building opens no connection
-    service.start()
+    # building runs the migrations and starting registers the jobs: both sync, so both on a
+    # worker thread - the sync API is refused on the event loop's own
+    service = await asyncio.to_thread(build, settings)
+    await asyncio.to_thread(service.start)
     app.state.service = service
     try:
         yield

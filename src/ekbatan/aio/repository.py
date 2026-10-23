@@ -116,7 +116,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
         See the sync :meth:`~ekbatan.repository.AbstractRepository.db`: it does **not** join an
         open transaction, which is why :meth:`tx_db_else_db` is the usual choice.
         """
-        async with AsyncDb(self._manager(key, model, shard).primary) as conn:
+        async with AsyncDb(self._manager(key, model, shard)._engine()) as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")
             yield conn
 
@@ -138,7 +138,7 @@ class AbstractAsyncRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K]
     ) -> AsyncIterator[AsyncDb]:
         """The **replica**, for a read that can live with replication lag - the primary when
         the shard has none. Never joins an open transaction, as the sync one does not."""
-        async with AsyncDb(self._manager(key, None, shard).replica) as conn:
+        async with AsyncDb(self._manager(key, None, shard)._engine(readonly=True)) as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")
             yield conn
 

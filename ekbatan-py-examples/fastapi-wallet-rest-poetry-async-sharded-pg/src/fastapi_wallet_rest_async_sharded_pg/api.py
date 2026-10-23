@@ -13,6 +13,7 @@ repositories are `ekbatan.aio`'s, and every database call is awaited.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -112,8 +113,11 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        service = build()
-        service.start()
+        # Built and started on a worker thread: `build` runs the migrations and starting
+        # registers the jobs, both sync and both waiting on the database - and the sync API
+        # is refused on the event loop's own thread.
+        service = await asyncio.to_thread(build)
+        await asyncio.to_thread(service.start)
         app.state.service = service
         try:
             yield

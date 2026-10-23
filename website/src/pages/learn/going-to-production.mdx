@@ -21,7 +21,7 @@ Under **asyncio** it is not, because a blocking call there stops the entire even
 than one thread.
 
 ```python
-# wrong, inside an async def
+# refused inside an async def: BlockingCallError
 wallet = wallets.get(wallet_id)
 
 # right, with the sync API
@@ -66,6 +66,11 @@ before comparing with `max_connections`** — this is the usual way a Python dep
 Every worker process also runs the scheduler. That is fine and is the point: the scheduler is
 cluster-exclusive, so four processes contend for the same rows and exactly one wins each
 execution. It is the same code path as four machines.
+
+**Build them in each process, after it starts** - in the FastAPI lifespan, or at the top of
+the worker's `main()`. A server that forks its workers copies whatever the parent built, and
+ekbatan refuses to work in such a copy (`ForkedProcessError`). [Deploying](/learn/deploying/) has
+the recipe per server.
 
 If you would rather not have every web worker also be a job worker, run the jobs in their own
 process.

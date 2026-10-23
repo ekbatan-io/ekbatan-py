@@ -1525,8 +1525,8 @@ that is why it needs no `to_thread` anywhere. And the ambient transaction lives 
 correct if this port ever grows an async surface.
 
 It has since grown one - see the next section, `ekbatan.aio`. An `async def` handler calling
-straight into the *sync* API is still a real mistake with a real cost, and nothing in the API
-stops you making it.
+straight into the *sync* API is still a real mistake with a real cost, and since `EKB-0500` the
+sync API refuses it - see the section after next.
 
 ### Under gevent this divergence does not exist
 
@@ -1591,6 +1591,24 @@ Differences inside the async API, each deliberate: a read across shards asks eve
 task, where Java's is the thread; and a cancelled wait for an async lock closes its connection.
 The full page is `docs/runtime/async.md`.
 
+
+## Two refusals Java has no need of: after `fork()`, and the sync API on an event loop
+
+> **chosen** - the user's design (2026-10-23): refuse loudly, fix nothing. See [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md#golden-path-and-two-refusals-ekb-0500-).
+
+Java runs one process with virtual threads, so neither case exists there. Python servers fork
+their workers (gunicorn, uwsgi, Celery prefork, RQ), and an async server runs every request on
+one thread.
+
+- **`ForkedProcessError`**: every object that owns connections or threads - the sync and async
+  transaction managers (so every registry), the keyed lock providers, `JobRegistry`,
+  `HandlerLoop` - remembers the process that built it and refuses to work in any other. A copy's
+  connections are the parent's sockets. Nothing is reset or reconnected.
+- **`BlockingCallError`**: the sync API - a transaction, a connection, a repository, the
+  executor, a migration run - refuses to run on a thread with a running asyncio loop, where it
+  would stop every other task. Nothing is moved to a thread for the caller.
+
+Both say what to do instead; `docs/deploying.md` has the recipe per server.
 ## The pool knobs are SQLAlchemy's, and three of Hikari's have no counterpart
 
 > **forced** - Different pool libraries expose different knobs. The missing three are in SHORTCOMINGS.md.

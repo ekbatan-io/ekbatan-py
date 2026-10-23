@@ -17,6 +17,7 @@ dependency - raises :class:`~ekbatan.errors.TransactionContextError`.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
@@ -27,6 +28,7 @@ from typing import Any, Literal, Protocol, Self
 
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
+from ._guards import refuse_if_forked, refuse_on_an_event_loop
 from ._logtext import java_list, java_shard, java_shard_pair
 from ._tracing import Span, span
 from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
@@ -192,7 +194,7 @@ class Transaction:
 class TransactionManager:
     """One shard's databases, and the transaction boundary around them."""
 
-    __slots__ = ("_owns_replica", "dialect", "label", "primary", "replica", "shard")
+    __slots__ = ("_created_in", "_owns_replica", "dialect", "label", "primary", "replica", "shard")
 
     def __init__(
         self,
@@ -214,10 +216,24 @@ class TransactionManager:
         self._owns_replica = replica is not None
         self.dialect = dialect or primary.dialect.name
         self.label = label or str(shard)
+        #: The process that built it: its pools are this process's sockets.
+        self._created_in = os.getpid()
 
     @property
     def shares_one_pool(self) -> bool:
         return not self._owns_replica
+
+    def _door(self) -> None:
+        """The two refusals, at every way in to this shard's databases: not in a process this
+        manager was copied into by ``fork()``, and not on an event loop's thread."""
+        refuse_if_forked(self._created_in, repr(self))
+        refuse_on_an_event_loop(f"the sync API ({self!r})")
+
+    def _engine(self, *, readonly: bool = False) -> Engine:
+        """The pool for a connection outside any transaction - the replica if ``readonly`` -
+        through the door. What a repository's ``db()`` and ``readonly_db()`` connect with."""
+        self._door()
+        return self.replica if readonly else self.primary
 
     @contextmanager
     def transaction(self) -> Iterator[Transaction]:
@@ -238,7 +254,12 @@ class TransactionManager:
 
         Anything inside the block reaching for ``tx_db`` or ``tx_db_else_db`` on this shard
         finds this transaction and joins it, without being handed anything.
+
+        Refused with :class:`~ekbatan.errors.BlockingCallError` on an event loop's thread, and
+        with :class:`~ekbatan.errors.ForkedProcessError` in a process this manager was copied
+        into by ``fork()``.
         """
+        self._door()
         with _transaction_span(self.shard), Db(self.primary) as conn:
             token = _join(self, _Owned(conn, threading.get_ident()))
             # Begin, commit and roll back by hand rather than through `with conn.begin()`. The
@@ -304,7 +325,10 @@ class TransactionManager:
 
         A read taken inside a transaction ignores it and joins the transaction - it has to see
         the writes that transaction has already made, and a replica by definition has not.
+
+        Refused on an event loop's thread and after ``fork()``, as :meth:`transaction` is.
         """
+        self._door()
         existing = _owned_here(self)
         if existing is not None:
             yield existing

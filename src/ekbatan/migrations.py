@@ -78,6 +78,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Self
 from sqlalchemy import Boolean, Column, Index, Integer, MetaData, String, Table
 from sqlalchemy.schema import CreateIndex, CreateTable
 
+from ._guards import refuse_on_an_event_loop
 from .config import DataSourceConfig, ShardingConfig
 from .errors import EkbatanError, ValidationError
 from .persistence import DatabaseRegistry
@@ -1170,7 +1171,11 @@ def _each[T](
     ``log_the_stop`` writes it to the log as well, as Java's builder ``migrate()`` does:
     ``Stopped at <target>; already migrated: [<names>]`` at ERROR, outside the target's log
     context.
+
+    The one way in to every database a migration run touches, so the sync-on-a-loop refusal is
+    here: refused before the first target, raised as itself rather than as a ``MigrationError``.
     """
+    refuse_on_an_event_loop("ekbatan.migrations (migrate, info, repair, baseline)")
     results: list[T] = []
     done: list[str] = []
     for each in chosen:
@@ -1765,7 +1770,7 @@ def migrate_registry(registry: DatabaseRegistry, metadata: MetaData) -> None:
     no answer for a column that changed.
     """
     for shard in registry.shards:
-        metadata.create_all(registry.manager(shard).primary)
+        metadata.create_all(registry.manager(shard)._engine())
 
 
 def emit_ddl(metadata: MetaData, dialect: str) -> str:

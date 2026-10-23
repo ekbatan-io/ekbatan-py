@@ -24,9 +24,12 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import os
 import threading
 from collections.abc import Awaitable
 from typing import Any
+
+from .._guards import refuse_if_forked
 
 __all__ = ["HandlerLoop"]
 
@@ -36,7 +39,7 @@ LOG = logging.getLogger("io.ekbatan.events.localeventhandler.job.EventHandlingJo
 class HandlerLoop:
     """An asyncio event loop on a thread of its own, and a blocking way to run work on it."""
 
-    __slots__ = ("_closed", "_gate", "_loop", "_name", "_thread")
+    __slots__ = ("_closed", "_created_in", "_gate", "_loop", "_name", "_thread")
 
     def __init__(self, *, name: str = "ekbatan-handler-loop") -> None:
         self._name = name
@@ -44,6 +47,9 @@ class HandlerLoop:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._closed = False
+        #: The process that built it. Its thread does not survive fork(): run() in a copy would
+        #: wait for ever.
+        self._created_in = os.getpid()
 
     def run[T](self, work: Awaitable[T]) -> T:
         """Run ``work`` on the loop and wait for its result, from any thread but the loop's own.
@@ -51,7 +57,13 @@ class HandlerLoop:
         Whatever ``work`` raises is raised here, as it was raised: a cancellation as
         ``asyncio.CancelledError``, and a ``KeyboardInterrupt`` or ``SystemExit`` too - carried
         across rather than let loose on the loop, where asyncio would stop the loop with it.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this loop was
+        copied into by ``fork()``.
         """
+        if os.getpid() != self._created_in:
+            _close(work)
+            refuse_if_forked(self._created_in, repr(self))
         loop = self._started()
         if threading.current_thread() is self._thread:
             _close(work)

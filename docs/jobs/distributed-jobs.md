@@ -308,6 +308,19 @@ signal.signal(signal.SIGTERM, wind_up)
 Dropping `previous` is the easy mistake, and harmless only in a `__main__` where nothing had
 installed anything. Inside a gunicorn or uvicorn worker it silently discards the server's own.
 
+## Build it in the process that runs the jobs
+
+A `JobRegistry` owns threads and a database pool, and neither survives `fork()`. A registry built
+in one process and started in a copy of it - built at import time under gunicorn `--preload`,
+uwsgi, Celery's prefork pool or RQ - raises `ForkedProcessError` from `start()`, and
+db-scheduler's own worker pool refuses work in a forked copy too. Build and start it in the
+FastAPI lifespan, or at the top of the worker's `main()`; [Deploying](../deploying.md) has the recipe per
+server.
+
+From `async def` code - a lifespan - start and stop it with `await asyncio.to_thread(...)`:
+starting registers the jobs in the database, and stopping waits for the jobs in flight, and
+either would hold up the event loop meanwhile.
+
 ## The `scheduled_tasks` table
 
 One row per registered job, and it is the coordination itself rather than a log of it: the row

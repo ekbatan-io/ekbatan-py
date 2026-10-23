@@ -181,7 +181,7 @@ tick **5 times where a free loop manages about 55**. Every other request on that
 the duration.
 
 ```python
-# wrong, in an async def
+# refused in an async def: BlockingCallError
 wallet = wallets.get(wallet_id)
 
 # right
@@ -213,7 +213,10 @@ database wait awaited: `async def perform`, async repositories, an executor you 
 asyncpg, aiomysql or aiosqlite. Measured on one PostgreSQL with a pool of 40, it does about one
 and a half times the work of the sync API in a 40-thread pool once 50 or more requests are in
 flight, with a lone request a little slower. An `async def` handler calling the *sync* API
-straight is still a real mistake with a real cost, and nothing in the API stops you making it.
+straight is still a real mistake with a real cost, so the sync API refuses it: on an event
+loop's thread its transactions, connections, repositories, executor and migration runs raise
+`BlockingCallError`, which names the three ways out above. It refuses and does nothing else - it
+never moves the call to a thread for you.
 
 ## gevent: cheap blocking, with nothing to change
 
@@ -283,6 +286,15 @@ Two consequences:
 - **Every worker process runs the scheduler.** That is fine and is the point - db-scheduler is
   cluster-exclusive, so four processes contend for the same rows and exactly one wins each
   execution. It is the same code path as four machines.
+
+**Build the pools in each process, after it starts.** A server that forks its workers -
+gunicorn, with `--preload` above all, uwsgi, Celery's prefork pool, RQ - copies the parent
+process into each one. Anything ekbatan built in the parent comes along: pools whose connections
+are the parent's own sockets, and the bookkeeping of threads that did not come along. Every
+object that owns connections or threads remembers the process that built it, and in any other
+process it raises `ForkedProcessError` at first use - it is not reset or reconnected. Build it in
+the FastAPI lifespan or at the top of the worker's `main()`; [Deploying](/learn/deploying/) has
+the recipe for each server.
 
 If you would rather not have every web worker also be a job worker, run the jobs in their own
 process: build the service with the jobs registered and the HTTP app absent.

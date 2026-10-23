@@ -113,7 +113,8 @@ follow the guide and run the project. Area F merges the two.
 - **What:** Every example is FastAPI, which is built on an event loop. The framework only has
   blocking calls. A plain `def` endpoint is fine (FastAPI runs it in a thread pool), but an
   `async def` endpoint that calls the executor stops every other request in that process for the
-  length of the call. Nothing in the API warns you. In Spring MVC every request has its own
+  length of the call. ~~Nothing in the API warns you.~~ Since `EKB-0500` the sync API refuses
+  it with `BlockingCallError` (see `docs/deploying.md`). In Spring MVC every request has its own
   (virtual) thread, so blocking costs nothing.
 - **Python:** `ekbatan-py-examples/fastapi_wallet_rest_pg/api.py:158-240` (all endpoints `def`);
   `docs/wiring-fastapi.md:72-84`; `DIVERGENCE.md:1317-1350` (measured: 5 heartbeat ticks instead

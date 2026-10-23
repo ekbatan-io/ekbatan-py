@@ -101,7 +101,8 @@ sides. Ordered by surprise, highest first.
 - **What:** `perform`, `execute`, handlers and repositories are plain blocking functions. Java
   can block for free on virtual threads. In an `async def` FastAPI endpoint, a direct
   `executor.execute(...)` stops the whole event loop. You need `await asyncio.to_thread(...)`
-  or a plain `def` endpoint.
+  or a plain `def` endpoint. **Since `EKB-0500` it is refused**, not silent: the sync API on an
+  event loop's thread raises `BlockingCallError` before it touches the database.
 - **Python:** `src/ekbatan/action/executor.py:274-355` (no `async` anywhere in `src/`), `DIVERGENCE.md` "The framework is synchronous..."
 - **Java:** `ActionExecutor.java:160` (blocking, run on virtual threads)
 - **Why:** Python forces it. Blocking is only free under gevent. asyncio needs a second, async API.

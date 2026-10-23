@@ -89,14 +89,14 @@ whatever is decided about the rest.
 
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
-| 31 | The framework is blocking; an `async def` FastAPI endpoint that calls it stalls the server | forced | partly (gevent) | H | B, E |
+| 31 | The framework is blocking; an `async def` FastAPI endpoint that calls it stalls the server. **Now refused, not silent** (`EKB-0500`): the sync API on an event loop's thread raises `BlockingCallError`, naming `ekbatan.aio`, a plain `def` endpoint and `asyncio.to_thread` | forced | partly (gevent) | H | B, E |
 | 32 | SIGTERM does not let running jobs finish unless you turn it on (main thread only). **Addressed: warns at startup** (`EKB-0498`): a registry started where nothing in the process handles SIGTERM logs one warning naming the two fixes, `register_shutdown_hook()` or `stop()` in your own shutdown; under uvicorn it stays quiet | forced | partly | H | D, E |
 | 33 | Drain-at-exit is a second switch, `stop_on_exit`, on `atexit`. It does not cover SIGTERM, so turning it on or off does not change #32's startup warning; only a SIGTERM handler does | forced | partly | M | D |
 | 34 | `workers(n)`: job threads have a ceiling, one per job by default | forced | no | M | D |
 | 35 | `stop()` never interrupts a running job; it waits once, then leaves it. **Kept as a limit** (`EKB-0269`): Python cannot interrupt a thread; `stop()` returns when Java's does for an interrupted job, and logs that it cannot interrupt where Java logs its interrupt | forced | no | M | D |
 | 36 | A waiting `acquire` cannot be interrupted. **Kept as a limit** (`EKB-0268`): Python has no thread interrupt; the docs say to use `try_acquire` with a bounded wait where stopping matters | forced | partly | M | D |
 | 37 | ~~A lock provider's `close()` releases every thread's held locks; Java's does nothing~~ **fixed** (`EKB-0266`): `close()` does nothing, as Java's; open leases stay held | choice | yes | M | D |
-| 38 | Build the scheduler after `fork()` (gunicorn `--preload`) | forced | no | M | D |
+| 38 | Build the scheduler after `fork()` (gunicorn `--preload`). **Addressed: refused with a clear message** (`EKB-0500`): every object that owns connections or threads - registries, lock providers, the job registry, the handler loop - raises `ForkedProcessError` when used in a process `fork()` copied it into, saying to build it in the lifespan or at the top of `main()`; nothing is reset. Per-server recipes: `docs/deploying.md` | forced | no | M | D, E |
 | 39 | Each server process has its own pools and scheduler | forced | no | M | E |
 | 40 | Handlers run on real OS threads, one batch wide per shard | forced | partly | L | B |
 | 41 | ~~Redis `acquire` polls every 50 ms instead of being woken~~ **fixed** (`EKB-0267`): waiters subscribe to Redisson's unlock channel, and a bounded wait ends on time | forced | partly | L | D |

@@ -18,6 +18,7 @@ back, and disposing of a pool.
 
 from __future__ import annotations
 
+import os
 import shlex
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -27,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
+from .._guards import refuse_if_forked
 from ..config import DataSourceConfig, ShardMemberConfig
 from ..errors import ValidationError
 from ..fetching import FetchResult
@@ -123,7 +125,7 @@ class AsyncTransactionManager:
     primary's *engine*; a read inside a transaction joins it.
     """
 
-    __slots__ = ("_owns_replica", "dialect", "label", "primary", "replica", "shard")
+    __slots__ = ("_created_in", "_owns_replica", "dialect", "label", "primary", "replica", "shard")
 
     def __init__(
         self,
@@ -140,10 +142,18 @@ class AsyncTransactionManager:
         self._owns_replica = replica is not None
         self.dialect = dialect or primary.dialect.name
         self.label = label or str(shard)
+        #: The process that built it: its pools are this process's sockets.
+        self._created_in = os.getpid()
 
     @property
     def shares_one_pool(self) -> bool:
         return not self._owns_replica
+
+    def _engine(self, *, readonly: bool = False) -> AsyncEngine:
+        """The pool for a connection outside any transaction - the replica if ``readonly`` -
+        refused in a process this manager was copied into by ``fork()``."""
+        refuse_if_forked(self._created_in, repr(self))
+        return self.replica if readonly else self.primary
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[AsyncTransaction]:
@@ -155,7 +165,11 @@ class AsyncTransactionManager:
 
         A cancelled task is a failure like any other: ``CancelledError`` is a
         ``BaseException``, the transaction is rolled back, and the cancellation carries on.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this manager was
+        copied into by ``fork()``.
         """
+        refuse_if_forked(self._created_in, repr(self))
         with _transaction_span(self.shard):
             async with AsyncDb(self.primary) as conn:
                 token = _join(self, conn)
@@ -185,13 +199,13 @@ class AsyncTransactionManager:
     async def connection(self, *, readonly: bool = False) -> AsyncIterator[AsyncDb]:
         """The ambient transaction if there is one, else a connection that commits each
         statement as it runs - the sync :meth:`~ekbatan.persistence.TransactionManager.connection`,
-        awaited."""
+        awaited. Refused after ``fork()``, as :meth:`transaction` is."""
+        engine = self._engine(readonly=readonly)
         existing = self.current()
         if existing is not None:
             yield existing
             return
 
-        engine = self.replica if readonly else self.primary
         async with AsyncDb(engine) as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")
             yield conn

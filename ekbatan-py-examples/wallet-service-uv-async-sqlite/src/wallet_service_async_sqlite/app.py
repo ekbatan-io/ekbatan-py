@@ -75,9 +75,10 @@ class WalletService:
         Returns once the stipend's first run is over. A `FixedDelay` job is due the moment it is
         registered, so the stipend pays every open wallet right at startup; waiting for that
         here means a wallet opened afterwards is not paid by surprise half a second later.
-        Awaited, so the wait does not hold up the event loop.
+        Awaited, so the wait does not hold up the event loop; starting - sync, it registers the
+        jobs in the database - runs on a worker thread for the same reason.
         """
-        self.jobs.start()
+        await asyncio.to_thread(self.jobs.start)
         deadline = time.monotonic() + 15
         while not await self._stipend_has_run():
             if time.monotonic() > deadline:

@@ -30,12 +30,14 @@ the work, in both ports.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import uuid
 from datetime import timedelta
 from typing import Any, Self
 
+from .._guards import refuse_if_forked
 from .._metrics import counter
 from ..errors import LockAcquisitionError, ValidationError
 from ._holder import KeyedReentrantHolder, ReleaseReason
@@ -159,7 +161,7 @@ class RedisKeyedLockProvider:
     lease.
     """
 
-    __slots__ = ("_client", "_holder", "_id", "_lock", "_prefix", "_release")
+    __slots__ = ("_client", "_created_in", "_holder", "_id", "_lock", "_prefix", "_release")
 
     def __init__(self, client: Any, *, namespace: str = DEFAULT_NAMESPACE) -> None:
         refuse_blank_namespace(namespace)
@@ -168,6 +170,9 @@ class RedisKeyedLockProvider:
         self._holder = KeyedReentrantHolder()
         #: Redisson's client id: one UUID per client, the first half of every owner field.
         self._id = str(uuid.uuid4())
+        #: The process that built it. A copy made by fork() would share the client id, so its
+        #: threads could pass for the parent's as the same owner.
+        self._created_in = os.getpid()
         self._lock = client.register_script(_LOCK)
         self._release = client.register_script(_UNLOCK)
 
@@ -177,6 +182,7 @@ class RedisKeyedLockProvider:
 
     def acquire(self, key: str, max_hold: timedelta) -> Lease:
         """Take the lock, waiting as long as it takes."""
+        refuse_if_forked(self._created_in, type(self).__name__)
         check(key, max_hold)
         reentered = self._holder.reenter(key)
         if reentered is not None:
@@ -191,6 +197,7 @@ class RedisKeyedLockProvider:
         Contention is an empty result, never an exception: a caller cannot tell a busy lock from
         a broken one if both arrive the same way, and the two call for opposite responses.
         """
+        refuse_if_forked(self._created_in, type(self).__name__)
         check(key, max_hold, max_wait)
         reentered = self._holder.reenter(key)
         if reentered is not None:

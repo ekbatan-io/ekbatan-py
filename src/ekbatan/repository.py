@@ -950,7 +950,7 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
         a row your own open transaction already holds will also block until one of them gives
         up, which is the other reason this is the deliberate choice rather than the default.
         """
-        with Db(self._manager(key, model, shard).primary).execution_options(
+        with Db(self._manager(key, model, shard)._engine()).execution_options(
             isolation_level="AUTOCOMMIT"
         ) as conn:
             yield conn
@@ -1008,7 +1008,7 @@ class AbstractRepository[M: Persistable[Any, Any], R: Mapping[str, Any], K](
         on the secondary for the same reason. If you need to see the transaction's own writes,
         that is what :meth:`tx_db_else_db` is for.
         """
-        with Db(self._manager(key, None, shard).replica).execution_options(
+        with Db(self._manager(key, None, shard)._engine(readonly=True)).execution_options(
             isolation_level="AUTOCOMMIT"
         ) as conn:
             yield conn

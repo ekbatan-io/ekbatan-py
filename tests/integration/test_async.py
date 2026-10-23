@@ -95,8 +95,13 @@ def test_a_request_waiting_past_pool_timeout_fails_fast(backend, dialect, clock)
     password = data_source(backend.url("ekbatan_async_pool")).password
 
     async def scenario() -> None:
-        registry = one_database(
-            backend, "ekbatan_async_pool", pool_size=2, max_overflow=0, pool_timeout=0.5
+        registry = await asyncio.to_thread(
+            one_database,
+            backend,
+            "ekbatan_async_pool",
+            pool_size=2,
+            max_overflow=0,
+            pool_timeout=0.5,
         )
         try:
             wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
@@ -146,8 +151,13 @@ def test_requests_beyond_the_pool_wait_their_turn_and_all_commit(backend, dialec
         pytest.skip("SQLite has no connection pool to size: pool settings are for the servers")
 
     async def scenario() -> None:
-        registry = one_database(
-            backend, "ekbatan_async_queue", pool_size=2, max_overflow=0, pool_timeout=30
+        registry = await asyncio.to_thread(
+            one_database,
+            backend,
+            "ekbatan_async_queue",
+            pool_size=2,
+            max_overflow=0,
+            pool_timeout=30,
         )
         out = most = 0
 
@@ -218,7 +228,7 @@ def slow_reads(delays: dict[str, float], seen: dict[str, Any]) -> Iterator[None]
 @asynccontextmanager
 async def two_shards(backend: Any, clock: Any, prefix: str) -> AsyncIterator[Any]:
     names = {GLOBAL: f"{prefix}_global", MEXICO: f"{prefix}_mexico"}
-    registry = _registry(backend, names, kind=AsyncDatabaseRegistry)
+    registry = await asyncio.to_thread(_registry, backend, names, kind=AsyncDatabaseRegistry)
     try:
         yield (
             registry,
@@ -378,7 +388,7 @@ class SlowOutbox:
 @pytest.mark.parametrize("where", ["in perform", "inside the transaction"])
 def test_a_timeout_around_a_unit_of_work_commits_nothing(backend, clock, where):
     async def scenario() -> None:
-        registry = one_database(backend, "ekbatan_async_timeout")
+        registry = await asyncio.to_thread(one_database, backend, "ekbatan_async_timeout")
         try:
             wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
             stored = await wallets.add(a_wallet())
@@ -527,7 +537,7 @@ def connections_out(registry: AsyncDatabaseRegistry, seen: dict[str, int]) -> It
 
 def test_reads_gathered_in_perform_each_take_a_connection(backend, clock):
     async def scenario() -> None:
-        registry = one_database(backend, "ekbatan_async_gather")
+        registry = await asyncio.to_thread(one_database, backend, "ekbatan_async_gather")
         try:
             wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
             a, b = await wallets.add(a_wallet()), await wallets.add(a_wallet())
@@ -559,7 +569,7 @@ def test_statements_gathered_inside_one_transaction_take_turns(backend, clock):
     error, and no speed-up: a transaction is one connection."""
 
     async def scenario() -> None:
-        registry = one_database(backend, "ekbatan_async_turns")
+        registry = await asyncio.to_thread(one_database, backend, "ekbatan_async_turns")
         try:
             wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
             seen: dict[str, int] = {}
@@ -589,7 +599,7 @@ def test_the_async_runs_connect_through_the_driver_this_run_asked_for(backend, d
     )
 
     async def driver() -> str:
-        registry = one_database(backend, "ekbatan_async_driver")
+        registry = await asyncio.to_thread(one_database, backend, "ekbatan_async_driver")
         try:
             async with registry.default.connection() as conn:
                 await conn.execute(text("SELECT 1"))

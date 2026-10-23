@@ -15,6 +15,7 @@ contention is best-effort. If that matters, you want optimistic locking, not a b
 from __future__ import annotations
 
 import logging
+import os
 from abc import ABC, abstractmethod
 from datetime import timedelta
 from decimal import Decimal
@@ -22,6 +23,7 @@ from typing import Any, Self
 
 from sqlalchemy import Connection, Engine
 
+from .._guards import refuse_if_forked
 from ..errors import LockAcquisitionError, ValidationError
 from ._holder import KeyedReentrantHolder, ReleaseReason
 from .base import Lease, check, lock_key_hash
@@ -49,6 +51,8 @@ class SqlKeyedLockProvider(ABC):
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         self._holder = KeyedReentrantHolder()
+        #: The process that built it: its holds, its watchdog and its pool belong to that one.
+        self._created_in = os.getpid()
 
     @classmethod
     def builder(cls) -> SqlKeyedLockProviderBuilder[Self]:
@@ -72,6 +76,7 @@ class SqlKeyedLockProvider(ABC):
     # ------------------------------------------------------------------ the API
 
     def acquire(self, key: str, max_hold: timedelta) -> Lease:
+        refuse_if_forked(self._created_in, type(self).__name__)
         check(key, max_hold)
         reentered = self._holder.reenter(key)
         if reentered is not None:
@@ -82,6 +87,7 @@ class SqlKeyedLockProvider(ABC):
                 return lease
 
     def try_acquire(self, key: str, max_wait: timedelta, max_hold: timedelta) -> Lease | None:
+        refuse_if_forked(self._created_in, type(self).__name__)
         check(key, max_hold, max_wait)
         reentered = self._holder.reenter(key)
         if reentered is not None:

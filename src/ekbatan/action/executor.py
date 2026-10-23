@@ -19,6 +19,7 @@ from typing import Any, Self
 
 from sqlalchemy import MetaData, Table
 
+from .._guards import refuse_on_an_event_loop
 from .._logtext import java_list, java_shard
 from .._tracing import Span, span
 from ..clock import Clock, SystemClock
@@ -508,7 +509,11 @@ class ActionExecutor(_ExecutorCore):
 
         Java's ``execute(principal, DepositMoneyAction.class, params)``: the action is named by
         its type, and the registered instance is the one that runs.
+
+        Refused with :class:`~ekbatan.errors.BlockingCallError` on an event loop's thread, before
+        the action runs: in ``async def`` code, ``ekbatan.aio``'s ``AsyncActionExecutor``.
         """
+        refuse_on_an_event_loop("the sync ActionExecutor.execute")
         running, policy = self._running(action, config)
         name = running.name
         retried = 0

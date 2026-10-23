@@ -12,6 +12,11 @@ startup order to reason about beyond the order the lines are in.
 > which runs and is tested. The HTTP half is in [Wiring with FastAPI](wiring-fastapi.md); this
 > page is the part that has nothing to do with HTTP.
 
+**Build it when the app starts.** All of this runs once, when your app starts - in the FastAPI
+lifespan, or at the top of a worker's `main()` - and is closed when it stops; never at import
+time. Normal code uses the sync API, `async def` code `ekbatan.aio`. See
+[Deploying](deploying.md).
+
 ## What we're wiring
 
 One function that returns one object. Nothing above it knows which database, which handlers or

@@ -1262,3 +1262,45 @@ changes no handler, names the scheduler's window, silent with the hook / an app 
 hook it does not, a uvicorn subprocess on a free port whose lifespan starts and stops the jobs
 does not). Red/green: with the call removed, 5 fail (every "warns" case); with the handler check
 blinded, 5 fail (every "silent because someone handles it" case, the uvicorn one included).
+
+## golden path and two refusals (EKB-0500-)
+
+The brief (2026-10-23): one golden path in the docs - create ekbatan when the app starts, stop it
+when it stops; sync API in normal code, `ekbatan.aio` in `async def` - and two loud refusals,
+nothing fixed behind the user's back. Ledger: `docs/GOLDEN-PATH-LEDGER.md`.
+
+The two messages, from `src/ekbatan/_guards.py`:
+
+- `ForkedProcessError`: "`<what>` was created in another process and copied into this one by
+  fork() - gunicorn --preload, uwsgi, Celery prefork, RQ and multiprocessing all fork. Its
+  connections and threads belong to the process that created it. Create ekbatan when your app
+  starts - in the FastAPI lifespan, or at the top of the worker's main() - not at import time."
+- `BlockingCallError`: "`<what>` was called on an asyncio event loop's thread (inside `async
+  def`). The sync API waits on the database, and here it would stop the event loop and every
+  request on it. In `async def` code use ekbatan.aio; or make the endpoint a plain `def`; or call
+  it with `await asyncio.to_thread(...)`."
+
+`<what>` is the object's `repr` (`the sync API (TransactionManager(ekbatan_main, postgresql))`,
+`PostgresKeyedLockProvider`, `JobRegistry(1 jobs: [...])`, `HandlerLoop(...)`), the executor
+(`the sync ActionExecutor.execute`) or the migrations (`ekbatan.migrations (migrate, info,
+repair, baseline)`) - never a url, so no password can reach either message.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **A repository's reads got a door too**: `db()`, `readonly_db()`, the events repository and `migrate_registry` now take their engine through a private `TransactionManager._engine()` (and `AsyncTransactionManager._engine()`), which refuses | the brief assumed every sync repository access passes `connection()`/`transaction()`; the built-in reads did not - they went straight to `manager.primary`/`.replica` - so a `wallets.find()` in a coroutine, or after a fork, would have slipped through. Found by reading, proven by `test_every_sync_door_is_refused_inside_a_coroutine` (six doors) | leave reads unguarded |
+| **Migration runs are refused on an event loop** (at `_each`, the one way in for `migrate`, `info`, `repair`, `baseline` and the builder's), raised as `BlockingCallError` itself rather than wrapped in `MigrationError` | the brief names a sync `migrate(...)` in an async lifespan as a case that "now refuses", but migrations open their own connections and pass no `TransactionManager` door, so without this they would not have | leave migrations unrefused, or guard only `migrate` |
+| **`JobRegistry.start()` / `stop()` are not refused on an event loop**, only after fork | they are lifecycle calls, not the request path; `stop()` can run from a SIGTERM handler, which Python runs on the main thread - the thread an asyncio server's loop is running on - so refusing there would break the shutdown hook | refuse `start()` on a loop too. The examples call both through `asyncio.to_thread` anyway (below), which is what the docs show |
+| **The examples' lifespans call `build`, `start` and (sync services) `close` through `asyncio.to_thread`** - ten FastAPI apps, and the async SQLite service's `start()` | `build` runs the migrations, so it was refused on the loop; `start`/`close` are not refused but wait on the database or on running jobs, and one pattern is easier to read and copy than two | move only `build` |
+| **The Redis lock providers remember their process too**, sync and async | after fork the copy keeps the parent's client id, so a child thread with the same thread id would pass for the parent's lock owner - the same shape as the SQL case | SQL providers only, as the brief listed "the keyed lock providers' engines" |
+| **`HandlerLoop.run()` is refused after fork** | it owns a thread; in a copy that thread is gone and `run()` waited for ever (`tests/unit/test_refusals.py`: "the child hung" with the check removed) | leave it to hang |
+| **Registries carry no pid of their own** | a registry has no way in to a database except through its managers, which carry it; the message names the manager | a pid on the registry as well |
+| **`close()`, `aclose()`, `dispose` and `current()` are not guarded** | the brief's doors are the ways in; `current()` touches no database. Open point: a forked child that closes a registry it inherited closes sockets the parent still uses - first use refuses before that, so it only happens to a child that never used it | refuse `close()` in a copy too |
+| **The async lock providers check at await time** (`_acquire`, `try_acquire`), not when `acquire()` builds its awaitable | `acquire()` returns an `Acquiring` without running anything, and the async API's other refusals also happen when awaited | check in `acquire()` itself |
+| **EKB-0250's sync-lock-on-a-loop refusal keeps raising `ValidationError`** | it refuses for its own reason (two requests would share one holder) and changing an existing error type breaks callers; the fork check runs before it | make it a `BlockingCallError` |
+| **Both errors are also `RuntimeError`s**, as `TransactionThreadError` is | a refusal about where code runs, not about its input | plain `EkbatanError` |
+| **Test scenarios written as coroutines call the sync API through `asyncio.to_thread`**: `test_async_parity.py`'s `aw(...)` became `svc.call(fn, ...)` (sync mode on a worker thread), and its and `test_async.py`'s registry building (it migrates) moved to `to_thread` - 9 places | they called the sync API on the loop, which is now refused; the sync counts are unchanged | run the sync scenarios outside a loop, written twice |
+| **`scripts/bench-async.py`'s sync setup write moved to `to_thread`** | it seeded wallets with the sync repository on the loop | - |
+| **The Deploying page marks uvicorn as the only tested server**; gunicorn, uwsgi, hypercorn, granian, waitress, Celery and RQ are "expected", written from how each starts its workers. The fork refusal itself and gevent are tested | no new dependencies were allowed, so none of those servers is installed here | add them as test-only dependencies and serve the example under each |
+| **The golden path on the front names no server**; the errors are named, with a link to Deploying | the brief: nothing server-specific on the front | - |
+| **The loop refusal compares the loop's own `_thread_id` with the caller's `threading.get_ident()`**, not just "is a loop running" | found by running `make test-gevent`: under gevent a worker "thread" from `asyncio.to_thread` is a greenlet on the loop's OS thread, so `get_running_loop()` succeeds there and 21 tests were refused wrongly. The loop records the thread - the greenlet, under gevent - that runs it; only that one is refused. A loop without `_thread_id` (none known) is refused as before. Private asyncio attribute, read with `getattr` | detect gevent and skip the check (a server/library branch the brief rules out) |
+| **`test_async_parity.py` runs its sync calls in a greenlet under gevent** (`off_the_loop`), a worker thread otherwise | under `make test-gevent`, `asyncio.to_thread` from a scenario hung (measured, faulthandler at 40 s); asyncio and gevent are documented as not mixing | skip the module's sync half under gevent, dropping 8 sync runs |
