@@ -7,7 +7,7 @@ Your app works on your laptop. Then it meets the real world, and one of these ha
 - **A deploy cuts a job off halfway.** A new version is rolled out, the old process is stopped
   while a job is sending emails, and later another instance runs the whole job again - so some
   people get the email twice. *Closing the job registry properly prevents it; see the shutdown
-  steps below, and "A worker without a web server" for programs that have no web server.*
+  steps below, and "A worker you run yourself" for programs that have no web server.*
 - **The database says "too many connections".** It ran fine with one process; then the server was
   set to four workers, or the app to three replicas, and each copy opened its own connections.
   *See "When your server runs several processes".*
@@ -35,7 +35,8 @@ jobs on background threads. These need two moments of care: they are created whe
 starts, and closed when it stops. Closing them is what lets running jobs finish and connections
 end cleanly instead of being cut off.
 
-The rest of this page shows where those two moments are, and why each step is where it is.
+The rest of this page shows where those two moments are in each kind of program, and why each
+step is where it is.
 
 ## What needs a start and a stop
 
@@ -151,7 +152,23 @@ So: **define** things at import time - functions, classes, constants, the path t
 `ekbatan.yaml` - but **create the objects that hold connections or threads at startup**, and
 close them at shutdown. The rest of this page does exactly that.
 
-## A FastAPI app
+## Four kinds of program
+
+Where "startup" and "shutdown" are depends on what kind of program you are writing - not on the
+server. There are four kinds:
+
+| kind of program | for example | startup and shutdown are | run by |
+| --- | --- | --- | --- |
+| a web app with a lifespan (ASGI) | FastAPI, Starlette | the app's **lifespan** | uvicorn, `fastapi run`, gunicorn with uvicorn workers, hypercorn, granian |
+| a web app without a lifespan (WSGI) | Flask, Django | the **server's own hooks**, or your `main()` around the server | gunicorn, uwsgi, waitress |
+| a task-queue worker | Celery, RQ | the **queue's per-worker hooks**, or your `main()` around the worker | Celery, RQ |
+| a worker you run yourself | a job worker, a consumer, a script | the top and the bottom of **your `main()`** | you |
+
+The next four sections take them one at a time. Each shows the complete code and explains why
+every step is where it is. After them, "Under each server" covers what is specific to each server,
+and the last section covers Kubernetes, which can run any of the four.
+
+## A web app with a lifespan: FastAPI
 
 ### The lifespan, in brief
 
@@ -367,7 +384,192 @@ and, async,
 [`fastapi-wallet-rest-uv-async-pg`'s](../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/app.py);
 [Wiring with FastAPI](wiring-fastapi.md) walks through them.
 
-## A worker without a web server
+## A web app without a lifespan: Flask, Django
+
+### What is different
+
+Flask and Django apps are *WSGI* apps - the older, simpler way Python web servers talk to web
+apps. Two things follow for ekbatan:
+
+- **There is no lifespan.** A WSGI app is just a function the server calls for each request; it
+  has no "the app is starting" or "the app is stopping" step of its own. The *server* has them
+  instead, as hooks you can fill in - or, with a server you start from your own code, your
+  `main()` is the startup and shutdown.
+- **Requests run on threads** (or on gevent, which behaves like threads), never on an event loop.
+  So you use ekbatan's **sync API**, and nothing needs `asyncio.to_thread`.
+
+### With gunicorn
+
+gunicorn makes its workers by copying one main process, and gives you two hooks in a
+`gunicorn.conf.py` file: `post_fork` runs in each worker just after it is copied - its startup -
+and `worker_exit` runs as the worker stops - its shutdown. Create the objects in the first and
+close them in the second. `myapp` stands for your app's module, and `LAYOUT` for the layout read
+from `ekbatan.yaml`:
+
+```python
+# gunicorn.conf.py
+from ekbatan import DatabaseRegistry, engine_for
+from ekbatan.distributedjobs import job_registry
+
+
+def post_fork(server, worker):
+    import myapp
+
+    member = myapp.LAYOUT.groups[0].members[0]
+    myapp.registry = DatabaseRegistry.from_config(myapp.LAYOUT)
+    myapp.jobs_engine = engine_for(member.config_for("jobsConfig"))
+    myapp.jobs = (
+        job_registry()
+        .engine(myapp.jobs_engine)
+        .with_jobs(myapp.your_jobs(myapp.registry))
+        .build()
+    )
+    myapp.jobs.start()
+
+
+def worker_exit(server, worker):
+    import myapp
+
+    myapp.jobs.stop()
+    myapp.jobs_engine.dispose()
+    myapp.registry.close()
+```
+
+Your views then use `myapp.registry` - set in each worker by `post_fork`, never at import. The
+order is the same as in the lifespan: create, then start the jobs; at shutdown, stop the jobs
+first, then close the pools. Migrations are best run as their own step before gunicorn starts
+(see "Migrations" below).
+
+### With uwsgi
+
+uwsgi has the same two moments. Mark a function with `@postfork` to run in each worker after the
+copy, and register the shutdown with `uwsgi.atexit`:
+
+```python
+# myapp/uwsgi_hooks.py - imported by your app module
+import uwsgi
+from uwsgidecorators import postfork
+
+import myapp
+
+
+@postfork
+def create_objects():
+    myapp.registry = DatabaseRegistry.from_config(myapp.LAYOUT)
+
+
+def close_objects():
+    myapp.registry.close()
+
+
+uwsgi.atexit = close_objects
+```
+
+uwsgi also needs three settings to behave as described here; they are explained under "uwsgi"
+below.
+
+### With waitress
+
+waitress is started from your own code: `serve(app, ...)` runs until the process is stopped. So,
+as in a plain worker, startup is the top of your `main()` and shutdown is after `serve` returns:
+
+```python
+from waitress import serve
+
+import myapp
+
+
+def main() -> None:
+    myapp.registry = DatabaseRegistry.from_config(myapp.LAYOUT)
+    try:
+        serve(myapp.app, listen="0.0.0.0:8080", threads=8)
+    finally:
+        myapp.registry.close()
+```
+
+waitress runs in one process, so nothing is copied. Make the pool at least as large as `threads`,
+since each thread can hold a connection.
+
+## A task-queue worker: Celery, RQ
+
+### What is different
+
+A task queue runs functions - *tasks* - that other parts of your system put on a queue, in
+separate worker processes. Your task functions use ekbatan's sync API, so the worker needs a
+registry. The question is where to create it, and that depends on how the queue starts its
+processes. Both Celery and RQ, by default, **copy** a main process to run tasks - so a registry
+created when your task module is imported would end up copied, and be refused with
+`ForkedProcessError`. Each gives you a place that runs in the process that really runs the tasks.
+
+You usually do not start ekbatan's own job registry in a task-queue worker: the queue already
+schedules the work.
+
+### With Celery
+
+Celery's default pool, *prefork*, copies its main process into child processes, and each child
+runs tasks. Celery sends a signal in each child as it starts and as it stops -
+`worker_process_init` and `worker_process_shutdown`. Create the registry in the first and close it
+in the second:
+
+```python
+# tasks.py
+from celery import Celery
+from celery.signals import worker_process_init, worker_process_shutdown
+
+from ekbatan import DatabaseRegistry
+
+app = Celery("myapp", broker="redis://localhost")
+registry: DatabaseRegistry | None = None  # set in each child, never at import
+
+
+@worker_process_init.connect
+def create_registry(**_):
+    global registry
+    registry = DatabaseRegistry.from_config(LAYOUT)
+
+
+@worker_process_shutdown.connect
+def close_registry(**_):
+    registry.close()
+
+
+@app.task
+def credit_wallet(wallet_id: str, amount: str) -> None:
+    ...  # build the repository and the executor on `registry`, and run the action
+```
+
+With `--pool threads`, `--pool gevent` or `--pool solo` there is only one process and nothing is
+copied: use the `worker_init` and `worker_shutdown` signals instead, the same way.
+
+### With RQ
+
+`rq worker` copies its main process for **every** job, runs the job in the copy, and throws the
+copy away - so a registry created in the main process is copied into every job. RQ's
+`SimpleWorker` runs each job in its own process instead, without copying. Start it from your own
+`main()`, which creates the registry first:
+
+```python
+from redis import Redis
+from rq import Queue, SimpleWorker
+
+from ekbatan import DatabaseRegistry
+
+import tasks
+
+
+def main() -> None:
+    tasks.registry = DatabaseRegistry.from_config(tasks.LAYOUT)
+    try:
+        redis = Redis()
+        SimpleWorker([Queue(connection=redis)], connection=redis).work()
+    finally:
+        tasks.registry.close()
+```
+
+For a few occasional jobs, creating and closing a registry inside the job itself also works; it
+just opens new connections every time.
+
+## A worker you run yourself
 
 Some programs have no web server: a process that only runs jobs, consumes messages, or runs a
 script. The same two moments apply. Startup is the top of your `main()`; shutdown is its end.
@@ -666,38 +868,8 @@ just after it is copied, and `worker_exit` runs as the worker stops.
   is smaller, the rest wait, and fail after `pool_timeout`.
 - **`ekbatan.aio` under gevent.** It does not run under gevent's changes; use the sync API there.
 
-**What to do.** Create the objects in `post_fork` and close them in `worker_exit`:
-
-```python
-# gunicorn.conf.py
-from ekbatan import DatabaseRegistry, engine_for
-from ekbatan.distributedjobs import job_registry
-
-
-def post_fork(server, worker):
-    import myapp
-
-    member = myapp.LAYOUT.groups[0].members[0]
-    myapp.registry = DatabaseRegistry.from_config(myapp.LAYOUT)
-    myapp.jobs_engine = engine_for(member.config_for("jobsConfig"))
-    myapp.jobs = (
-        job_registry()
-        .engine(myapp.jobs_engine)
-        .with_jobs(myapp.your_jobs(myapp.registry))
-        .build()
-    )
-    myapp.jobs.start()
-
-
-def worker_exit(server, worker):
-    import myapp
-
-    myapp.jobs.stop()
-    myapp.jobs_engine.dispose()
-    myapp.registry.close()
-```
-
-Use the sync API. Size the pool for `--threads` (gthread) or for how many requests really reach
+**What to do.** Create and close the objects in `post_fork` and `worker_exit`, as shown in "A web
+app without a lifespan" above. Use the sync API. Size the pool for `--threads` (gthread) or for how many requests really reach
 the database at once (gevent), and set `--graceful-timeout` longer than `shutdown_max_wait`.
 
 ### uwsgi
@@ -725,8 +897,8 @@ enable-threads = true  ; let the job registry's threads run
 die-on-term = true     ; SIGTERM shuts down, as a container stop expects
 ```
 
-Then create the objects where the app starts in each worker, or in a function decorated with
-`uwsgidecorators.postfork`. Use the sync API.
+Then create and close the objects as shown in "A web app without a lifespan" above. Use the sync
+API.
 
 ### hypercorn, and granian
 
@@ -755,8 +927,8 @@ is copied. Your own `main()` calls `serve(app, ...)`, which runs until the proce
 - **More threads than connections.** With more threads than the pool has connections, requests
   wait for one.
 
-**What to do.** Create the objects at the top of `main()`, before `serve(...)`, and stop and close
-them after it returns. Call `.register_shutdown_hook()` on the job registry builder, so a
+**What to do.** Create and close the objects around `serve(...)` in your `main()`, as shown in "A
+web app without a lifespan" above. Call `.register_shutdown_hook()` on the job registry builder, so a
 container stop lets running jobs finish. Make the pool at least as large as `threads`.
 
 ### Celery
@@ -781,28 +953,9 @@ Celery imports your task modules in the main process, before it copies anything.
 - **Children are replaced.** With `--max-tasks-per-child`, Celery replaces a child after that many
   tasks; each new child creates its objects again.
 
-**What to do.** With `prefork`, create the registry in each child with the `worker_process_init`
-signal and close it with `worker_process_shutdown`:
-
-```python
-from celery.signals import worker_process_init, worker_process_shutdown
-
-from ekbatan import DatabaseRegistry
-
-
-@worker_process_init.connect
-def create_registry(**_):
-    tasks.registry = DatabaseRegistry.from_config(tasks.LAYOUT)
-
-
-@worker_process_shutdown.connect
-def close_registry(**_):
-    tasks.registry.close()
-```
-
-Build the repositories and the executor your tasks use on that registry, in the same place. With
-`threads`, `gevent` or `solo` there is only one process: use the `worker_init` and
-`worker_shutdown` signals instead. Tasks use the sync API.
+**What to do.** Create the registry in each child with `worker_process_init` and close it with
+`worker_process_shutdown`, as shown in "A task-queue worker" above; with `threads`, `gevent` or
+`solo`, use `worker_init` and `worker_shutdown`.
 
 ### RQ
 
@@ -817,11 +970,10 @@ Build the repositories and the executor your tasks use on that registry, in the 
 - **A registry created inside each job.** That works, but every job opens new connections and
   closes them again, which is slow for many small jobs.
 
-**What to do.** For many jobs, run a `SimpleWorker` from your own `main()`, which creates the
-registry first and closes it when the worker stops. For occasional jobs, creating and closing the
-registry inside the job is fine.
+**What to do.** Run a `SimpleWorker` from your own `main()`, as shown in "A task-queue worker"
+above.
 
-### Kubernetes
+## Running on Kubernetes
 
 **How it runs.** Kubernetes runs your app as **pods** - each pod one container, running one of the
 setups above. Several **replicas** are several pods, often on different machines. A deploy starts
