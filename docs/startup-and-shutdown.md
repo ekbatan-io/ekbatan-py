@@ -271,8 +271,8 @@ process runs it again about a minute later - so write jobs that are safe to run 
 
 ## Find your kind of program
 
-This is where Part 2 starts. Where "startup" and "shutdown" are depends on what kind of program
-you are writing, and there are four kinds - read only the section for yours:
+This is where Part 2 starts. Where your startup and shutdown code goes depends on what kind of
+program you are writing. There are four kinds - read only the section for yours:
 
 | kind of program | for example | run by |
 | --- | --- | --- |
