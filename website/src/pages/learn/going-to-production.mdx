@@ -110,7 +110,8 @@ CPython kills the process without running exit hooks. Under uvicorn or gunicorn 
 because the server turns SIGTERM into a lifespan shutdown and the lifespan calls `jobs.stop()`,
 as the examples do. A **standalone worker** has no server, so add `.register_shutdown_hook()`;
 without it the rows wait out the dead-execution window, 60 seconds on framework defaults, before
-another instance picks them up. [Details](/reference/jobs/distributed-jobs/).
+another instance picks them up. A registry started where nothing handles SIGTERM logs one
+warning saying so. [Details](/reference/jobs/distributed-jobs/).
 
 **No connection-pool leak detection.** Nothing warns you about a connection that is checked
 out and never returned. A simple detector would be worse than nothing — a handler raising on

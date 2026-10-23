@@ -280,6 +280,26 @@ lifespan, a Django shutdown - wants none of this, and the REST examples are writ
 uvicorn turns SIGTERM into a lifespan shutdown, and the lifespan stops the jobs. The case it
 exists for is a **standalone worker process**, which has no framework shutdown to hang off.
 
+**It tells you when nothing catches SIGTERM.** If the hook is off and nothing else in the process
+handles SIGTERM either, `start()` logs one warning, once per process:
+
+```text
+WARNING io.ekbatan.distributedjobs.JobRegistry Nothing in this process handles SIGTERM. Jobs
+still running when the process gets SIGTERM (a container stop or a deploy) are cut off, and
+another instance runs them again after the dead-execution window (60 seconds). To let them
+finish first, call register_shutdown_hook() on the job registry builder, or call stop() on the
+JobRegistry from your own shutdown code, such as a FastAPI lifespan.
+```
+
+It only reads the signal's handler; it installs and changes nothing. Any handler at all counts
+as somebody owning shutdown, so it stays quiet under uvicorn, whose handler is in place before
+your lifespan runs (measured on uvicorn 0.28, 0.29, 0.32, 0.52 and 0.54, and with several
+workers), under an asyncio `loop.add_signal_handler`, and when SIGTERM is ignored on
+purpose. It reads the same answer from any thread, so a lifespan that starts the registry in a
+thread pool is judged correctly. A `build_manual()` registry never warns. The two ways to clear
+it are the two above: `.register_shutdown_hook()` for a standalone worker, or `jobs.stop()` in
+the shutdown you already have.
+
 **If you write the handler yourself, keep what you find:**
 
 ```python

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import atexit
 import logging
+import signal
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from datetime import timedelta
@@ -139,6 +141,10 @@ class JobRegistry:
         "_stop_on_exit",
     )
 
+    #: Whether :meth:`start` warns when nothing in the process handles SIGTERM. Off for
+    #: :class:`ManualJobRegistry`: it runs nothing on its own, only on a test's own thread.
+    _warns_when_sigterm_is_unhandled = True
+
     def __init__(
         self,
         scheduler: Scheduler,
@@ -168,7 +174,12 @@ class JobRegistry:
         return tuple(self._job_names)
 
     def start(self) -> None:
-        """Begin polling and executing registered jobs."""
+        """Begin polling and executing registered jobs.
+
+        Logs one WARNING, once per process, when nothing handles SIGTERM - neither
+        :meth:`JobRegistryBuilder.register_shutdown_hook` nor anything else in the process - since
+        a container stop would then cut running jobs off. It installs and changes nothing.
+        """
         LOG.info(
             "Starting JobRegistry with %d job(s): %s",
             len(self._job_names),
@@ -184,6 +195,8 @@ class JobRegistry:
             atexit.register(self._stop_at_exit)
         if self._hook is not None:
             self._hook.install()
+        elif self._warns_when_sigterm_is_unhandled:
+            _warn_if_sigterm_is_unhandled(self._scheduler)
 
     def _verify_every_job_registered(self) -> None:
         """Confirm that starting actually registered the jobs, because nothing else will.
@@ -276,6 +289,8 @@ class ManualJobRegistry(JobRegistry):
 
     __slots__ = ()
 
+    _warns_when_sigterm_is_unhandled = False
+
     @property
     def scheduler(self) -> ManualScheduler:
         from db_scheduler.testhelper import ManualScheduler as _ManualScheduler
@@ -283,6 +298,48 @@ class ManualJobRegistry(JobRegistry):
         scheduler = super().scheduler
         assert isinstance(scheduler, _ManualScheduler)
         return scheduler
+
+
+#: Set once the warning below has been logged; it is logged at most once per process.
+_sigterm_warned = False
+_sigterm_warned_lock = threading.Lock()
+
+
+def _warn_if_sigterm_is_unhandled(scheduler: Scheduler) -> None:
+    """Log one WARNING when nothing in this process handles SIGTERM. Changes no handler.
+
+    SIGTERM is how a container is stopped. With its default handling CPython ends the process at
+    once - no `atexit`, no `stop()` - so a job part way through is cut off, and its row waits out
+    the dead-execution window before another instance runs it again. Anything else in the slot
+    means somebody owns the signal: uvicorn and gunicorn install theirs before the application
+    starts, as does asyncio's `add_signal_handler` and an application's own `signal.signal`. Only
+    the default is warned about; an ignored signal (`SIG_IGN`) was chosen by someone, and `None`
+    is a handler set outside Python.
+
+    `signal.getsignal` reads the process's handler from any thread, so a registry started off the
+    main thread - a FastAPI lifespan run in a thread pool - sees the same answer.
+    """
+    global _sigterm_warned
+    if signal.getsignal(signal.SIGTERM) != signal.SIG_DFL:
+        return
+    with _sigterm_warned_lock:
+        if _sigterm_warned:
+            return
+        _sigterm_warned = True
+    window = getattr(scheduler, "max_age_before_considered_dead", None)
+    after = (
+        f"after the dead-execution window ({window.total_seconds():g} seconds)"
+        if isinstance(window, timedelta)
+        else "after the dead-execution window"
+    )
+    LOG.warning(
+        "Nothing in this process handles SIGTERM. Jobs still running when the process gets "
+        "SIGTERM (a container stop or a deploy) are cut off, and another instance runs them "
+        "again %s. To let them finish first, call register_shutdown_hook() on the job registry "
+        "builder, or call stop() on the JobRegistry from your own shutdown code, such as a "
+        "FastAPI lifespan.",
+        after,
+    )
 
 
 def job_registry() -> JobRegistryBuilder:
@@ -465,6 +522,10 @@ class JobRegistryBuilder:
         installed there, and it raises rather than silently doing nothing if it has not got one.
         A service that already has somewhere to call :meth:`JobRegistry.stop` - a FastAPI
         lifespan, a Django shutdown - wants none of this and should keep it off.
+
+        Left off in a process where nothing else handles SIGTERM either, :meth:`JobRegistry.start`
+        logs one WARNING saying so. Under uvicorn or gunicorn it does not: the server's handler is
+        already in place when the application starts.
         """
         self._shutdown_hook = enabled
         return self

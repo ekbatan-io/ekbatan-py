@@ -90,8 +90,8 @@ whatever is decided about the rest.
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
 | 31 | The framework is blocking; an `async def` FastAPI endpoint that calls it stalls the server | forced | partly (gevent) | H | B, E |
-| 32 | SIGTERM does not let running jobs finish unless you turn it on (main thread only) | forced | partly | H | D, E |
-| 33 | Drain-at-exit is a second switch, `stop_on_exit`, on `atexit` | forced | partly | M | D |
+| 32 | SIGTERM does not let running jobs finish unless you turn it on (main thread only). **Addressed: warns at startup** (`EKB-0498`): a registry started where nothing in the process handles SIGTERM logs one warning naming the two fixes, `register_shutdown_hook()` or `stop()` in your own shutdown; under uvicorn it stays quiet | forced | partly | H | D, E |
+| 33 | Drain-at-exit is a second switch, `stop_on_exit`, on `atexit`. It does not cover SIGTERM, so turning it on or off does not change #32's startup warning; only a SIGTERM handler does | forced | partly | M | D |
 | 34 | `workers(n)`: job threads have a ceiling, one per job by default | forced | no | M | D |
 | 35 | `stop()` never interrupts a running job; it waits once, then leaves it. **Kept as a limit** (`EKB-0269`): Python cannot interrupt a thread; `stop()` returns when Java's does for an interrupted job, and logs that it cannot interrupt where Java logs its interrupt | forced | no | M | D |
 | 36 | A waiting `acquire` cannot be interrupted. **Kept as a limit** (`EKB-0268`): Python has no thread interrupt; the docs say to use `try_acquire` with a bounded wait where stopping matters | forced | partly | M | D |

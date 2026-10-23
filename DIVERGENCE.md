@@ -1673,6 +1673,11 @@ carefully, behind a flag. The example now chains, and says why.
 `JobRegistry.stop()` and the `with` block always did the right thing - the gap was only ever
 what happens when nobody calls them, which is exactly the container-stop case.
 
+**Off, but not silent** (`EKB-0498`). Java has nothing to warn about, since its hook is on. Here
+`start()` logs one warning, once per process, when the hook is off and nothing else in the
+process handles SIGTERM, naming the two fixes. It reads the handler and changes nothing; under
+uvicorn, whose handler is installed before the lifespan runs, it is quiet.
+
 **The loop - closed in `EKB-0214`.** Java's `EventFanoutJob.execute` is
 `while (!shouldStop(ctx))` around `drainOneRound()`, sleeping `pollDelay` between idle rounds:
 one execution runs for the life of the process and checks

@@ -155,7 +155,7 @@ follow the guide and run the project. Area F merges the two.
 - **Why:** Python forces it - one signal handler per process, and servers like uvicorn and
   gunicorn take it; a library that grabbed it would break them.
 - **Could match Java?** partly - under uvicorn the lifespan already stops it; a bare worker has
-  to opt in.
+  to opt in. Since `EKB-0498` a bare worker that has not is told so by one warning at startup.
 - **Surprise:** medium
 
 ### Typed builders are committed by hand, and a user project has no check that they are current

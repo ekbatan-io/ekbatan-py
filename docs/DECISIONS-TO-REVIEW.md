@@ -1218,3 +1218,47 @@ Left as it is, noticed on the way:
   `super()` (run on Python 3.14.7; `test_a_slotted_model_with_an_own_post_init_works`).
 - `docs/dracula/A-domain-persistence.md` row 14 keeps the finding's original text under the
   "fixed" note, as the other fixed rows do.
+
+## SIGTERM warning (EKB-0498-)
+
+2026-10-23, unattended. **Decided by the user** (Dracula #32): `register_shutdown_hook()` stays
+off, but a registry that starts where nothing handles SIGTERM says so, once, in plain words. It
+installs and changes no handler.
+
+**Measured first** (`signal.getsignal(signal.SIGTERM)`, read where the registry would start):
+
+| where | what is in the SIGTERM slot | warns? |
+| --- | --- | --- |
+| plain script, main thread | `SIG_DFL` | yes |
+| plain script, another thread | `SIG_DFL` (getsignal works from any thread) | yes |
+| uvicorn 0.52.4 (this repo's lock), FastAPI lifespan, on the loop and in a thread pool | `Server.handle_exit` | no |
+| uvicorn 0.54.0 (the REST example's lock), the same, and with `--workers 2` (each worker) | `Server.handle_exit` | no |
+| uvicorn 0.32.0 (the examples' floor), 0.29.0 (throwaway venvs in /tmp) | `Server.handle_exit` | no |
+| uvicorn 0.28.1 (before its `capture_signals`) | asyncio's `_sighandler_noop` | no |
+| asyncio `loop.add_signal_handler`, on the loop and from `asyncio.to_thread` | `_sighandler_noop` | no |
+| after `asyncio.run()` returns | `SIG_DFL` again | yes |
+| gevent 26.9.0 `patch_all()`, main thread and a thread | `SIG_DFL`, same object as unpatched | yes |
+| gunicorn | **not measured**: not installed in any env here, and not added | - |
+
+So by the time a lifespan starts the registry, uvicorn's handler is already in place in every
+version tried; the design stands.
+
+| decision | why | the other way |
+| --- | --- | --- |
+| **Warn only on `SIG_DFL`**; `SIG_IGN` and `None` (a handler set outside Python) stay quiet | the brief's rule: any other handler means somebody owns the signal. An ignored SIGTERM was chosen by someone; the process then dies only to SIGKILL, and jobs are cut off then too | also warn on `SIG_IGN` |
+| **Once per process**, a module flag behind a lock | one process, one signal slot, one fact to report; a test suite or a worker that starts several registries, or restarts one, would repeat the same line | once per registry |
+| **Checked at the end of `start()`**, after the jobs are verified and the hook installed, and skipped when the hook is on | a start that failed has nothing to warn about; with the hook on the slot is ours anyway | check at `build()` - but the handler can be installed between build and start (the job-worker example does exactly that) |
+| **`stop_on_exit` does not affect it** | `atexit` never runs on SIGTERM, so turning it on or off changes nothing about this; DRACULAS #33 says so | stay quiet when `stop_on_exit(False)` |
+| **`ManualJobRegistry` never warns** (a class attribute `_warns_when_sigterm_is_unhandled = False`) | it runs nothing on its own, only on a test's own thread when asked, and is never on `atexit` either | warn like any registry |
+| **The window in the text is the scheduler's own** (`max_age_before_considered_dead`, "60 seconds" on defaults) | a user who lengthened the heartbeat sees their own number | a fixed "60 seconds" |
+| **The same text off the main thread**, which still names `register_shutdown_hook()` though it needs the main thread | the docs say it needs the main thread, and the other fix (stop in your shutdown code) is named beside it; a second wording for one case is more to keep true | a second message off the main thread |
+| **The REST examples' tests run the lifespan under `TestClient` inside pytest**, where nothing handles SIGTERM, so the warning **is** logged there - into pytest's captured log, not the test output (checked: the `make` output has no such line) | true in that process; under uvicorn the same app is quiet (the integration test serves one) | silence it in the examples' tests |
+| **The job-worker example is unchanged**: its `run()` installs its own chaining handler before `start()`, so it does not warn | it already handles SIGTERM; nothing to add | switch it to `register_shutdown_hook()` |
+
+Tests: `tests/unit/test_sigterm_warning.py` (11: warns with the exact text, once per process,
+changes no handler, names the scheduler's window, silent with the hook / an app handler /
+`SIG_IGN` / asyncio, off the main thread both ways, manual registry silent) and
+`tests/integration/test_sigterm_warning.py` (3, real processes: a bare worker warns once, with the
+hook it does not, a uvicorn subprocess on a free port whose lifespan starts and stops the jobs
+does not). Red/green: with the call removed, 5 fail (every "warns" case); with the handler check
+blinded, 5 fail (every "silent because someone handles it" case, the uvicorn one included).

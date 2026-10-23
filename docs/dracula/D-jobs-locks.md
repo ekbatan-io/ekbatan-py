@@ -43,6 +43,7 @@ marked unverified.
 - **Why:** Python forces it. CPython has one handler slot per signal, so taking it silently would steal the app's own SIGTERM. Also `atexit` does not run on SIGTERM.
 - **Could match Java?** partly. It could be on by default and chain the old handler, which it already does when asked. But it would still fail off the main thread, and it would still take a slot the app may want.
 - **Surprise:** high
+- **Addressed: warns at startup** (`EKB-0498`). Left off by the user's decision, but `start()` now logs one warning, once per process, when nothing in the process handles SIGTERM: running jobs would be cut off by a container stop, and the two fixes are `register_shutdown_hook()` or `stop()` in your own shutdown code. It changes no handler, and stays quiet under uvicorn, whose handler is in place before the lifespan runs.
 
 ### `workers(n)`: job threads have a ceiling, one per job by default
 - **What:** Python has a `workers(n)` setting that Java does not. Job bodies run on real OS threads, at most one per registered job unless you raise it. Java runs each job on its own virtual thread, with no ceiling. In Python, if you schedule overlapping runs or use immediate execution, jobs wait for a free thread.
