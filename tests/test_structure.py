@@ -113,7 +113,7 @@ EXAMPLE_DEPENDENCIES = {
     "pydantic",
     "starlette",
     "uvicorn",
-    "httpx",
+    "httpx2",
     # The example suites, which run against real servers for the same reason the framework's
     # do - and `testcontainers` is also the framework's own `codegen` extra, because
     # `schemagen` starts a throwaway database exactly as Java's build does.

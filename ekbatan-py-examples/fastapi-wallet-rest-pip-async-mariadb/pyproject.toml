@@ -6,7 +6,7 @@ requires-python = ">=3.13"
 dependencies = ["ekbatan[mariadb,mariadb-async,migrations]", "fastapi>=0.115", "uvicorn[standard]>=0.32"]
 
 [dependency-groups]
-dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[mysql]>=4.15", "httpx>=0.27"]
+dev = ["ekbatan[codegen]", "pytest>=8.0", "testcontainers[mysql]>=4.15", "httpx2>=2.0"]
 
 [build-system]
 requires = ["setuptools>=69"]

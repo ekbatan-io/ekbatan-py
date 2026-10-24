@@ -99,7 +99,7 @@ tracing = ["opentelemetry-sdk>=1.27"]
 examples = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "httpx>=0.27",
+    "httpx2>=2.0",
     # The REST examples migrate from files at startup, as a deployment does - so they need the
     # `migrations` extra, which the framework itself keeps optional.
     "yoyo-migrations>=9.0,<10",

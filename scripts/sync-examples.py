@@ -258,7 +258,7 @@ def dev_dependencies(e: Example) -> list[str]:
     if e.containers:
         deps.append(f"testcontainers[{e.containers}]>=4.15")
     if e.web:
-        deps.append("httpx>=0.27")
+        deps.append("httpx2>=2.0")
     return deps
 
 
@@ -330,7 +330,7 @@ def pyproject(e: Example, build: str) -> str:
     if e.containers:
         group.append(f'testcontainers = {{ version = ">=4.15", extras = ["{e.containers}"] }}')
     if e.web:
-        group.append('httpx = ">=0.27"')
+        group.append('httpx2 = ">=2.0"')
     return (
         f"{head}dependencies = [\n{listed}\n]\n\n"
         '[build-system]\nrequires = ["poetry-core>=2.0,<3.0"]\n'
