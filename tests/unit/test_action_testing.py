@@ -17,11 +17,9 @@ from ekbatan import Action, Clock, VirtualClock, run_action
 from ekbatan.errors import EkbatanError, ValidationError
 from ekbatan.ids import Id, ShardedId
 from fixtures.actions import (
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositParams,
-    NotifyAction,
-    NotifyParams,
+    CreateNotificationAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.domain import (
     NOW,
@@ -33,7 +31,7 @@ from fixtures.domain import (
 )
 
 
-class DepositAction(Action[DepositParams, Wallet]):
+class DepositAction(Action[WalletDepositMoneyAction.Params, Wallet]):
     """Takes a repository, the way a real one does - stubbed here, since the point is that no
     database is involved."""
 
@@ -41,7 +39,7 @@ class DepositAction(Action[DepositParams, Wallet]):
         super().__init__(clock)
         self.wallet = wallet
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
         return self.plan.update(self.wallet.deposit(params.amount))
 
 
@@ -60,7 +58,9 @@ def test_running_an_action_reports_what_it_staged(clock):
 
     staged = run_action(
         DepositAction(wallet, clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"
+        ),
     )
 
     assert staged.result.balance == Decimal("150.00")
@@ -80,7 +80,9 @@ def test_it_reports_what_was_emitted(clock):
 
     staged = run_action(
         DepositAction(wallet, clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@x"
+        ),
     )
 
     assert [type(e).__name__ for e in staged.events] == ["WalletMoneyDepositedEvent"]
@@ -90,8 +92,10 @@ def test_it_reports_what_was_emitted(clock):
 
 def test_an_insert_and_its_event_are_both_visible(clock):
     staged = run_action(
-        CreateWalletAction(clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("10.00")),
+        WalletCreateAction(clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("10.00")
+        ),
     )
 
     assert len(staged.added(Wallet)) == 1
@@ -101,8 +105,10 @@ def test_an_insert_and_its_event_are_both_visible(clock):
 
 def test_an_entity_stages_without_emitting(clock):
     staged = run_action(
-        NotifyAction(clock),
-        NotifyParams(wallet_id=ShardedId[Wallet].random(), kind="X", recipient="ada@x"),
+        CreateNotificationAction(clock),
+        CreateNotificationAction.Params(
+            wallet_id=ShardedId[Wallet].random(), kind="X", recipient="ada@x"
+        ),
     )
 
     assert len(staged.added(Notification)) == 1
@@ -138,7 +144,9 @@ def test_a_refusal_is_an_ordinary_exception(clock):
     with pytest.raises(ValidationError, match="amount"):
         run_action(
             DepositAction(wallet, clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"
+            ),
         )
 
 
@@ -158,8 +166,10 @@ def test_the_binding_is_gone_afterwards(clock):
     from ekbatan import current_plan
 
     run_action(
-        CreateWalletAction(clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+        WalletCreateAction(clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")
+        ),
     )
     with pytest.raises(EkbatanError, match="no unit of work here"):
         current_plan()
@@ -169,8 +179,10 @@ def test_the_plan_cannot_be_emptied_from_outside(clock):
     """A caller holding the real map could empty the plan, and the executor would then commit a
     unit of work that had quietly become a no-op."""
     staged = run_action(
-        CreateWalletAction(clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+        WalletCreateAction(clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")
+        ),
     )
 
     with pytest.raises(AttributeError):

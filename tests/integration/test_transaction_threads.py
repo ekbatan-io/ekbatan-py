@@ -119,21 +119,21 @@ def _count(registry: Any) -> int:
         return int(conn.execute(select(func.count()).select_from(WALLETS)).scalar_one())
 
 
-def test_a_repository_write_in_a_to_thread_thread_is_refused(registry, wallets, clock):
+def test_a_repository_write_in_a_to_thread_thread_is_refused(registry, wallet_repository, clock):
     manager = registry.default
 
     with manager.transaction(), pytest.raises(TransactionThreadError):
-        asyncio.run(asyncio.to_thread(wallets.add, _wallet(clock)))
+        asyncio.run(asyncio.to_thread(wallet_repository.add, _wallet(clock)))
     assert _count(registry) == 0, "nothing was written on the borrowed connection"
 
 
-def test_a_to_thread_thread_may_open_a_transaction_of_its_own(registry, wallets, clock):
+def test_a_to_thread_thread_may_open_a_transaction_of_its_own(registry, wallet_repository, clock):
     """Its own block makes it that thread's transaction; the outer one is not touched."""
     manager = registry.default
 
     def own() -> bool:
         with manager.transaction() as tx:
-            wallets.add(_wallet(clock))
+            wallet_repository.add(_wallet(clock))
             return manager.current() is tx.connection
 
     with manager.transaction():
@@ -202,7 +202,7 @@ def client_for() -> Iterator[Any]:
 
 
 def test_a_sync_endpoint_with_no_transaction_in_the_caller_works(
-    registry, wallets, clock, client_for
+    registry, wallet_repository, clock, client_for
 ):
     from fastapi import FastAPI
 
@@ -210,14 +210,16 @@ def test_a_sync_endpoint_with_no_transaction_in_the_caller_works(
 
     @app.post("/wallets")
     def open_wallet() -> dict[str, bool]:
-        wallets.add(_wallet(clock))
+        wallet_repository.add(_wallet(clock))
         return {"ok": True}
 
     assert client_for(app).post("/wallets").status_code == 200
     assert _count(registry) == 1
 
 
-def test_a_transaction_opened_in_the_endpoint_covers_its_work(registry, wallets, clock, client_for):
+def test_a_transaction_opened_in_the_endpoint_covers_its_work(
+    registry, wallet_repository, clock, client_for
+):
     """The documented way: open it where the work runs. A failure rolls the write back."""
     from fastapi import FastAPI, HTTPException
 
@@ -227,7 +229,7 @@ def test_a_transaction_opened_in_the_endpoint_covers_its_work(registry, wallets,
     def open_wallet(fail: bool) -> dict[str, bool]:
         manager = registry.default
         with manager.transaction() as tx:
-            wallets.add(_wallet(clock))
+            wallet_repository.add(_wallet(clock))
             assert manager.current() is tx.connection
             if fail:
                 raise HTTPException(status_code=409)
@@ -241,7 +243,7 @@ def test_a_transaction_opened_in_the_endpoint_covers_its_work(registry, wallets,
 
 
 def test_a_transaction_opened_in_a_sync_yield_dependency_is_said_to_miss_the_endpoint(
-    registry, wallets, clock, client_for
+    registry, wallet_repository, clock, client_for
 ):
     """What the docs warn against: the endpoint runs in another context, sees no transaction,
     and its write commits on its own. The block's end says why, instead of Python's bare
@@ -260,7 +262,7 @@ def test_a_transaction_opened_in_a_sync_yield_dependency_is_said_to_miss_the_end
     @app.post("/wallets", dependencies=[Depends(in_transaction)])
     def open_wallet() -> dict[str, bool]:
         seen.append(manager.current())
-        wallets.add(_wallet(clock))
+        wallet_repository.add(_wallet(clock))
         return {"ok": True}
 
     with pytest.raises(TransactionContextError) as raised:

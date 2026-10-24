@@ -3,14 +3,14 @@ shards whose drain sleeps 0.5 s and see whether it takes ~0.5 s (concurrent) or 
 import tempfile, time, threading
 from common import probe
 from wallet_service_sqlite.schema import EVENTS, EVENT_NOTIFICATIONS, metadata
-from wallet_service_sqlite.handlers import MoneyDepositedEventHandler
+from wallet_service_sqlite.handlers import WalletMoneyDepositedEventHandler
 from ekbatan import (ShardingConfig, ShardGroupConfig, ShardMemberConfig, DataSourceConfig, DatabaseRegistry, ShardIdentifier)
 from ekbatan.events import EventHandlerRegistry
 from ekbatan.events.fanout import EventFanout
 d = tempfile.mkdtemp()
 reg = DatabaseRegistry.from_config(ShardingConfig(default_shard=ShardIdentifier(0, 0), groups=tuple(
     ShardGroupConfig(group=g, name=f"g{g}", members=(ShardMemberConfig(member=0, configs={"primaryConfig": DataSourceConfig(url=f"sqlite:///{d}/{g}.db")}),)) for g in (0, 1))))
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(None)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(None)])
 seen = []
 class Slow(EventFanout):
     __slots__ = ()

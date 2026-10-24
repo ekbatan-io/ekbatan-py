@@ -217,10 +217,12 @@ def test_the_repository_reads_back_every_row_the_persister_wrote(write, registry
     write(ItemCreated(model_id=an_id(), description="a"))
     write()
 
-    repository = EventEntityRepository(registry)
+    event_entity_repository = EventEntityRepository(registry)
 
-    assert repository.count(DEFAULT_SHARD) == 2
-    assert sorted(e.event_type or "sentinel" for e in repository.find_all(DEFAULT_SHARD)) == [
+    assert event_entity_repository.count(DEFAULT_SHARD) == 2
+    assert sorted(
+        e.event_type or "sentinel" for e in event_entity_repository.find_all(DEFAULT_SHARD)
+    ) == [
         "ItemCreated",
         "sentinel",
     ]

@@ -28,7 +28,7 @@ MODES = ("sync", "async")
 
 
 @pytest.fixture
-def wallets(registry, clock):
+def wallet_repository(registry, clock):
     return WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
 
@@ -54,10 +54,10 @@ def spoil(registry, statement) -> None:
         conn.execute(statement)
 
 
-def test_a_row_the_model_refuses_is_refused_where_it_is_read(registry, wallets):
-    kept = wallets.add(a_wallet())
-    spoiled = wallets.add(a_wallet())
-    assert wallets.get(spoiled.id).balance == Decimal(10), "a good row reads back"
+def test_a_row_the_model_refuses_is_refused_where_it_is_read(registry, wallet_repository):
+    kept = wallet_repository.add(a_wallet())
+    spoiled = wallet_repository.add(a_wallet())
+    assert wallet_repository.get(spoiled.id).balance == Decimal(10), "a good row reads back"
 
     spoil(
         registry,
@@ -65,30 +65,30 @@ def test_a_row_the_model_refuses_is_refused_where_it_is_read(registry, wallets):
     )
 
     with pytest.raises(ValidationError, match="balance cannot be negative"):
-        wallets.get(spoiled.id)
+        wallet_repository.get(spoiled.id)
     with pytest.raises(ValidationError, match="balance cannot be negative"):
-        wallets.find_many([kept.id, spoiled.id])
-    assert wallets.get(kept.id).balance == Decimal(10), "only the bad row is refused"
+        wallet_repository.find_many([kept.id, spoiled.id])
+    assert wallet_repository.get(kept.id).balance == Decimal(10), "only the bad row is refused"
 
 
-def test_every_read_path_checks_the_rows_it_makes(registry, wallets):
-    stored = wallets.add(a_wallet())
+def test_every_read_path_checks_the_rows_it_makes(registry, wallet_repository):
+    stored = wallet_repository.add(a_wallet())
     spoil(
         registry,
         update(WALLETS).where(WALLETS.c.id == stored.id.value).values(balance=Decimal("-1")),
     )
     for read in (
-        lambda: wallets.find(stored.id),
-        lambda: wallets.find_where(WALLETS.c.id == stored.id.value),
-        lambda: wallets.find_one_where(WALLETS.c.id == stored.id.value),
-        lambda: wallets.all(),
+        lambda: wallet_repository.find(stored.id),
+        lambda: wallet_repository.find_where(WALLETS.c.id == stored.id.value),
+        lambda: wallet_repository.find_one_where(WALLETS.c.id == stored.id.value),
+        lambda: wallet_repository.all(),
     ):
         with pytest.raises(ValidationError, match="balance cannot be negative"):
             read()
 
 
-def test_an_entity_s_validate_runs_on_load(registry, notes, wallets):
-    wallet = wallets.add(a_wallet())
+def test_an_entity_s_validate_runs_on_load(registry, notes, wallet_repository):
+    wallet = wallet_repository.add(a_wallet())
     note = notes.add(
         Notification.create(
             id=Id[Notification].random(), wallet_id=wallet.id, kind="email", recipient="ada@x"

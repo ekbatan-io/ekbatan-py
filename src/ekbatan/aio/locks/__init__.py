@@ -3,7 +3,7 @@
 The caller takes the lock around the unit of work, as on the sync side::
 
     async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
-        wallet = await executor.execute(DepositMoneyAction, params)
+        wallet = await executor.execute(WalletDepositMoneyAction, params)
 
 The holder is the task. Same backends as ``ekbatan.locks`` - PostgreSQL advisory locks, MySQL and
 MariaDB ``GET_LOCK``, and Redis in ``ekbatan.aio.locks.redis`` - holding the same keys, so an async

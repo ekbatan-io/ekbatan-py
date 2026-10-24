@@ -28,7 +28,7 @@ def a_row(**overrides) -> dict:
         "id": uuid.uuid4(),
         "namespace": "com.example.finance",
         "action_id": uuid.uuid4(),
-        "action_name": "DepositMoneyAction",
+        "action_name": "WalletDepositMoneyAction",
         "action_params": {"amount": "50.00"},
         "started_date": PRECISE,
         "completion_date": datetime(2026, 8, 2, 10, 15, 31, tzinfo=UTC),
@@ -96,7 +96,7 @@ def test_a_sentinel_row_becomes_an_event_with_nothing_to_route_on():
         None,
         None,
     )
-    assert event.action_name == "DepositMoneyAction", "the action context is still there"
+    assert event.action_name == "WalletDepositMoneyAction", "the action context is still there"
     assert event.action_params == {"amount": "50.00"}
 
 

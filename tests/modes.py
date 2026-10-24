@@ -57,6 +57,12 @@ def twin(sync: Any) -> Callable[[Any], Any]:
 
     def register(async_twin: Any) -> Any:
         TWINS[sync] = async_twin
+        # An action's parameters are its nested `Params`, as Java's `WalletCreateAction.Params`;
+        # a test written against the sync class builds them through whichever class the mode
+        # put under that name, so the twin carries the same one.
+        params = getattr(sync, "Params", None)
+        if params is not None and "Params" not in vars(async_twin):
+            async_twin.Params = params
         return async_twin
 
     return register

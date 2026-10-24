@@ -21,43 +21,15 @@ from modes import twin
 from .domain import Notification, Wallet
 
 
-@dataclass(frozen=True, kw_only=True)
-class CreateWalletParams:
-    owner_id: UUID
-    currency: str
-    initial_balance: Decimal
-    wallet_id: ShardedId[Wallet] | None = None
+class WalletCreateAction(Action["WalletCreateAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        owner_id: UUID
+        currency: str
+        initial_balance: Decimal
+        wallet_id: ShardedId[Wallet] | None = None
 
-
-@dataclass(frozen=True, kw_only=True)
-class DepositParams:
-    wallet_id: ShardedId[Wallet]
-    amount: Decimal
-    recipient: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class TransferParams:
-    from_wallet_id: ShardedId[Wallet]
-    to_wallet_id: ShardedId[Wallet]
-    amount: Decimal
-
-
-@dataclass(frozen=True, kw_only=True)
-class WalletIdParams:
-    wallet_id: ShardedId[Wallet]
-
-
-@dataclass(frozen=True, kw_only=True)
-class NotifyParams:
-    wallet_id: ShardedId[Wallet]
-    kind: str
-    recipient: str
-    message: str | None = None
-
-
-class CreateWalletAction(Action[CreateWalletParams, Wallet]):
-    def perform(self, principal: str | None, params: CreateWalletParams) -> Wallet:
+    def perform(self, principal: str | None, params: Params) -> Wallet:
         return self.plan.add(
             Wallet.open(
                 id=params.wallet_id or ShardedId[Wallet].random(),
@@ -69,46 +41,62 @@ class CreateWalletAction(Action[CreateWalletParams, Wallet]):
         )
 
 
-class DepositMoneyAction(Action[DepositParams, Wallet]):
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        amount: Decimal
+        recipient: str
+
     def __init__(
-        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+        self, wallet_repository: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
     ) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
-class CloseWalletAction(Action[WalletIdParams, Wallet]):
+class WalletCloseAction(Action["WalletCloseAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+
     def __init__(
-        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+        self, wallet_repository: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
     ) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         closed = wallet.close()
         # An already-closed wallet comes back unchanged, so there is nothing to stage - and
         # therefore no event. The invocation is still recorded.
         return self.plan.update(closed) if closed is not wallet else wallet
 
 
-class TransferMoneyAction(Action[TransferParams, tuple[Wallet, Wallet]]):
+class WalletTransferMoneyAction(Action["WalletTransferMoneyAction.Params", tuple[Wallet, Wallet]]):
     """Two models, one transaction. Both balances move or neither does, and nothing in here
     arranges that."""
 
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        from_wallet_id: ShardedId[Wallet]
+        to_wallet_id: ShardedId[Wallet]
+        amount: Decimal
+
     def __init__(
-        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+        self, wallet_repository: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
     ) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: TransferParams) -> tuple[Wallet, Wallet]:
-        source = self.wallets.get(params.from_wallet_id)
-        destination = self.wallets.get(params.to_wallet_id)
+    def perform(self, principal: str | None, params: Params) -> tuple[Wallet, Wallet]:
+        source = self.wallet_repository.get(params.from_wallet_id)
+        destination = self.wallet_repository.get(params.to_wallet_id)
         if source.currency != destination.currency:
             raise ValidationError(
                 f"cannot transfer {source.currency} into a {destination.currency} wallet"
@@ -119,10 +107,17 @@ class TransferMoneyAction(Action[TransferParams, tuple[Wallet, Wallet]]):
         )
 
 
-class NotifyAction(Action[NotifyParams, Notification]):
+class CreateNotificationAction(Action["CreateNotificationAction.Params", Notification]):
     """Writes an entity. Emits nothing - and is still recorded, as one sentinel row."""
 
-    def perform(self, principal: str | None, params: NotifyParams) -> Notification:
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        kind: str
+        recipient: str
+        message: str | None = None
+
+    def perform(self, principal: str | None, params: Params) -> Notification:
         return self.plan.add(
             Notification.create(
                 id=Id[Notification].random(),
@@ -134,7 +129,7 @@ class NotifyAction(Action[NotifyParams, Notification]):
         )
 
 
-class DepositThenFailAction(Action[DepositParams, Wallet]):
+class WalletDepositThenFailAction(Action[WalletDepositMoneyAction.Params, Wallet]):
     """Stages a real change and then raises.
 
     No business has one. It exists because "staging is not writing" cannot be observed any
@@ -142,13 +137,13 @@ class DepositThenFailAction(Action[DepositParams, Wallet]):
     """
 
     def __init__(
-        self, wallets: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
+        self, wallet_repository: AbstractRepository[Wallet, ShardedId[Wallet]], clock: Clock
     ) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         self.plan.update(wallet.deposit(params.amount))
         raise ValidationError("changed my mind")
 
@@ -169,9 +164,9 @@ class TwinAction[P, R](AsyncAction[P, R]):
         return type(self).__name__.removeprefix("Async")
 
 
-@twin(CreateWalletAction)
-class AsyncCreateWalletAction(TwinAction[CreateWalletParams, Wallet]):
-    async def perform(self, principal: str | None, params: CreateWalletParams) -> Wallet:
+@twin(WalletCreateAction)
+class AsyncWalletCreateAction(TwinAction[WalletCreateAction.Params, Wallet]):
+    async def perform(self, principal: str | None, params: WalletCreateAction.Params) -> Wallet:
         return self.plan.add(
             Wallet.open(
                 id=params.wallet_id or ShardedId[Wallet].random(),
@@ -183,38 +178,44 @@ class AsyncCreateWalletAction(TwinAction[CreateWalletParams, Wallet]):
         )
 
 
-@twin(DepositMoneyAction)
-class AsyncDepositMoneyAction(TwinAction[DepositParams, Wallet]):
-    def __init__(self, wallets: Any, clock: Clock) -> None:
+@twin(WalletDepositMoneyAction)
+class AsyncWalletDepositMoneyAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
+    def __init__(self, wallet_repository: Any, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(
+        self, principal: str | None, params: WalletDepositMoneyAction.Params
+    ) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
-@twin(CloseWalletAction)
-class AsyncCloseWalletAction(TwinAction[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Any, clock: Clock) -> None:
+@twin(WalletCloseAction)
+class AsyncWalletCloseAction(TwinAction[WalletCloseAction.Params, Wallet]):
+    def __init__(self, wallet_repository: Any, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: WalletCloseAction.Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         closed = wallet.close()
         return self.plan.update(closed) if closed is not wallet else wallet
 
 
-@twin(TransferMoneyAction)
-class AsyncTransferMoneyAction(TwinAction[TransferParams, tuple[Wallet, Wallet]]):
-    def __init__(self, wallets: Any, clock: Clock) -> None:
+@twin(WalletTransferMoneyAction)
+class AsyncWalletTransferMoneyAction(
+    TwinAction[WalletTransferMoneyAction.Params, tuple[Wallet, Wallet]]
+):
+    def __init__(self, wallet_repository: Any, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: TransferParams) -> tuple[Wallet, Wallet]:
-        source = await self.wallets.get(params.from_wallet_id)
-        destination = await self.wallets.get(params.to_wallet_id)
+    async def perform(
+        self, principal: str | None, params: WalletTransferMoneyAction.Params
+    ) -> tuple[Wallet, Wallet]:
+        source = await self.wallet_repository.get(params.from_wallet_id)
+        destination = await self.wallet_repository.get(params.to_wallet_id)
         if source.currency != destination.currency:
             raise ValidationError(
                 f"cannot transfer {source.currency} into a {destination.currency} wallet"
@@ -225,9 +226,11 @@ class AsyncTransferMoneyAction(TwinAction[TransferParams, tuple[Wallet, Wallet]]
         )
 
 
-@twin(NotifyAction)
-class AsyncNotifyAction(TwinAction[NotifyParams, Notification]):
-    async def perform(self, principal: str | None, params: NotifyParams) -> Notification:
+@twin(CreateNotificationAction)
+class AsyncCreateNotificationAction(TwinAction[CreateNotificationAction.Params, Notification]):
+    async def perform(
+        self, principal: str | None, params: CreateNotificationAction.Params
+    ) -> Notification:
         return self.plan.add(
             Notification.create(
                 id=Id[Notification].random(),
@@ -239,13 +242,15 @@ class AsyncNotifyAction(TwinAction[NotifyParams, Notification]):
         )
 
 
-@twin(DepositThenFailAction)
-class AsyncDepositThenFailAction(TwinAction[DepositParams, Wallet]):
-    def __init__(self, wallets: Any, clock: Clock) -> None:
+@twin(WalletDepositThenFailAction)
+class AsyncWalletDepositThenFailAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
+    def __init__(self, wallet_repository: Any, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(
+        self, principal: str | None, params: WalletDepositMoneyAction.Params
+    ) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         self.plan.update(wallet.deposit(params.amount))
         raise ValidationError("changed my mind")

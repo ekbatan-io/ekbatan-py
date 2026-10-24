@@ -5,14 +5,14 @@ to a compiler and different things to everyone else. These wrap it so they are d
 too - and, when the id carries shard bits, so that routing can be read off the id without
 asking anything else::
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)      # ShardedId[Wallet], not UUID
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)  # ShardedId[Wallet], not UUID
 
 Spelled as Java spells them, with the model as the type argument::
 
     ShardedId[Wallet].generate(shard)       # Java: ShardedId.generate(Wallet.class, shard)
-    Id[Alert].random()                      # Java: Id.random(Alert.class)
-    Id[Alert].of(value)                     # Java: Id.of(Alert.class, value)
+    Id[Notification].random()               # Java: Id.random(Notification.class)
+    Id[Notification].of(value)              # Java: Id.of(Notification.class, value)
 
 The subscript does what Java's class argument does: it tells the checker which model this is,
 and nothing else. **Passing one model's id where another's is expected is a type error** - mypy

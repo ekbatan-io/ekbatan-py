@@ -5,7 +5,7 @@ from datetime import datetime, date, time, timedelta, timezone, UTC
 from decimal import Decimal
 from uuid import uuid4, UUID
 from common import probe
-from wallet_service_sqlite.model import Wallet, WalletState, MoneyDepositedEvent, WalletOpenedEvent, Alert
+from wallet_service_sqlite.model import Wallet, WalletState, WalletMoneyDepositedEvent, WalletCreatedEvent, Alert
 from wallet_service_sqlite.builders import WalletBuilder
 from ekbatan import ModelEvent, Model, ShardedId, Id, GenericState
 from ekbatan._json import dumps, decode, loads
@@ -28,7 +28,7 @@ probe("m&e.md:117 equality differs on version", lambda: w == w.next_version())
 probe("m&e.md:225 updated_date falls back to created_date", lambda: w.updated_date == w.created_date)
 probe("m&e.md:225 naive created_date taken as UTC, aware value kept UTC", lambda: (Wallet.open(owner_id=uuid4(), currency="E", balance=Decimal(1), created_date=datetime(2025,1,1,10)).created_date,
       Wallet.open(owner_id=uuid4(), currency="E", balance=Decimal(1), created_date=datetime(2025,1,1,12, tzinfo=timezone(timedelta(hours=2)))).created_date))
-probe("m&e.md:141 blank model_id refused at event creation", lambda: MoneyDepositedEvent(model_id="", amount=Decimal(1), new_balance=Decimal(1)))
+probe("m&e.md:141 blank model_id refused at event creation", lambda: WalletMoneyDepositedEvent(model_id="", amount=Decimal(1), new_balance=Decimal(1)))
 
 class Colour(enum.Enum):
     RED = 1
@@ -64,7 +64,7 @@ back = decode(Ev, loads(text))
 probe("m&e.md:166 round trip types", lambda: {f.name: type(getattr(back, f.name)).__name__ for f in dataclasses.fields(Ev)})
 probe("m&e.md:166 round trip equal (except union)", lambda: [f.name for f in dataclasses.fields(Ev) if getattr(back, f.name) != getattr(ev, f.name)])
 probe("m&e.md:166 at_off read back offset", lambda: back.at_off.isoformat())
-probe("m&e.md:195 unknown key dropped, missing key -> None", lambda: decode(MoneyDepositedEvent, {"modelId": "x", "amount": 1, "zzz": 2}))
+probe("m&e.md:195 unknown key dropped, missing key -> None", lambda: decode(WalletMoneyDepositedEvent, {"modelId": "x", "amount": 1, "zzz": 2}))
 probe("m&e.md:190 every number read as Decimal (float field?)", lambda: type(decode(Ev, loads(text)).ratio).__name__)
 
 # m&e.md:404 model with no typed builder: copy() refusal message

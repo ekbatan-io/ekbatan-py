@@ -22,7 +22,9 @@ from uuid import uuid4
 from sqlalchemy import event, insert, select, text
 
 from ekbatan.ids import ShardedId
-from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.actions import (
+    WalletCreateAction,
+)
 from fixtures.domain import Wallet
 from fixtures.executing import run
 from fixtures.repositories import WalletRepository
@@ -91,17 +93,17 @@ def _wallet(created: datetime) -> Wallet:
 
 def test_a_naive_time_reaches_the_driver_as_it_is_and_comes_back_equal(registry, clock, dialect):
     """Naive UTC to the microsecond, through a model and its repository, on every database."""
-    wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+    wallet_repository = WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
     with captured(registry) as seen:
-        written = wallets.add(_wallet(PRECISE))
+        written = wallet_repository.add(_wallet(PRECISE))
 
     to_sqlalchemy, to_driver = _handed(seen, PRECISE)
     assert to_sqlalchemy, "the repository hands SQLAlchemy the model's own value"
     if dialect != "sqlite":  # SQLAlchemy writes SQLite's DATETIME as text; see the next test
         assert to_driver, "and SQLAlchemy hands it to the driver untouched"
 
-    read = wallets.get(written.id)
+    read = wallet_repository.get(written.id)
     assert read.created_date == PRECISE
     assert read.created_date.tzinfo is None
     assert read.created_date.microsecond == 123456
@@ -111,9 +113,9 @@ def test_on_sqlite_sqlalchemy_writes_the_digits_as_given(registry, clock, dialec
     """SQLite has no time type: SQLAlchemy stores the value's own digits as text."""
     if dialect != "sqlite":
         return
-    wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+    wallet_repository = WalletRepository(Wallet, WALLETS, registry, clock=clock)
     with captured(registry) as seen:
-        wallets.add(_wallet(PRECISE))
+        wallet_repository.add(_wallet(PRECISE))
     sent = [v for _, params in seen for v in _flat(params)]
     assert "2026-01-01 10:00:00.123456" in sent
 
@@ -121,14 +123,14 @@ def test_on_sqlite_sqlalchemy_writes_the_digits_as_given(registry, clock, dialec
 def test_an_aware_time_is_handed_to_the_driver_unchanged(registry, clock, dialect):
     """A +03:30 value is not moved to UTC or stripped by the framework. What the database does
     with it is the driver's and the database's business - here it is only observed."""
-    wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+    wallet_repository = WalletRepository(Wallet, WALLETS, registry, clock=clock)
     model = _wallet(TEHRAN)
     assert model.created_date is TEHRAN, "the model keeps it as given"
 
     failure: Exception | None = None
     with captured(registry) as seen:
         try:
-            written = wallets.add(model)
+            written = wallet_repository.add(model)
         except Exception as error:  # a driver may refuse an aware value for a zone-less column
             failure = error
 
@@ -140,7 +142,7 @@ def test_an_aware_time_is_handed_to_the_driver_unchanged(registry, clock, dialec
         assert not type(failure).__module__.startswith("ekbatan"), f"the driver's: {failure!r}"
         return
 
-    read = wallets.get(written.id)
+    read = wallet_repository.get(written.id)
     raw = _raw(registry, "created_date", WALLETS.fullname, written.id.value)
     if isinstance(raw, str):
         raw = datetime.fromisoformat(raw)
@@ -181,8 +183,10 @@ def test_an_action_writes_the_clocks_own_value_to_the_outbox(executor, registry,
     with captured(registry) as seen:
         run(
             executor,
-            CreateWalletAction(executor.clock),
-            CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")),
+            WalletCreateAction(executor.clock),
+            WalletCreateAction.Params(
+                owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")
+            ),
         )
 
     rows = [c for compiled, _ in seen for c in compiled if "event_date" in c]
@@ -190,7 +194,7 @@ def test_an_action_writes_the_clocks_own_value_to_the_outbox(executor, registry,
     for c in rows:
         for name in ("started_date", "completion_date", "event_date"):
             assert c[name] is PRECISE, (name, c[name])
-    row = next(r for r in outbox() if r["action_name"] == "CreateWalletAction")
+    row = next(r for r in outbox() if r["action_name"] == "WalletCreateAction")
     assert row["started_date"] == row["completion_date"] == row["event_date"] == PRECISE
     assert row["started_date"].tzinfo is None
 
@@ -203,8 +207,10 @@ def test_an_aware_clock_reaches_the_driver_unchanged(executor, registry, clock, 
         try:
             run(
                 executor,
-                CreateWalletAction(executor.clock),
-                CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")),
+                WalletCreateAction(executor.clock),
+                WalletCreateAction.Params(
+                    owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")
+                ),
             )
         except Exception as error:
             assert not type(error).__module__.startswith("ekbatan"), repr(error)

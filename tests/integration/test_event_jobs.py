@@ -27,7 +27,9 @@ from ekbatan.events.jobs import (
     EventFanoutJob,
     EventHandlingJob,
 )
-from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.actions import (
+    WalletCreateAction,
+)
 from fixtures.executing import run
 from fixtures.handlers import RecordingHandler
 from fixtures.schema import EVENT_NOTIFICATIONS, SCHEDULED_TASKS
@@ -194,8 +196,10 @@ def test_the_pipeline_runs_from_the_job_table(registry, executor, handlers, reco
 
     run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")
+        ),
     )
 
     # `drain_once()` rather than driving the scheduler, which is how Java's own integration
@@ -218,8 +222,10 @@ def test_a_disabled_handling_job_holds_its_row_and_does_nothing(
 
     run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")
+        ),
     )
     fanout_job.fanout.drain_once()  # handling is switched off, so only this one runs
 
@@ -242,8 +248,10 @@ def test_the_metrics_are_the_ones_the_java_implementation_emits(
 
     run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1.00")
+        ),
     )
 
     # `metrics._METER_PROVIDER` does not exist - the global lives in `_internal`, unlike

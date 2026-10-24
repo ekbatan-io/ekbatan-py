@@ -30,7 +30,7 @@ def a_notification():
         .updated_date(NOW)
         .namespace("example.wallet")
         .action_id(uuid.uuid4())
-        .action_name("CreateWalletAction")
+        .action_name("WalletCreateAction")
         .action_params({})
         .started_date(NOW)
         .completion_date(NOW)

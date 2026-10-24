@@ -7,7 +7,7 @@ from wallet_service_sqlite.schema import WALLETS
 from ekbatan.clock import SystemClock
 from ekbatan import ShardedId
 
-svc = service(); repo = svc.wallets; clock = SystemClock()
+svc = service(); repo = svc.wallet_repository; clock = SystemClock()
 mk = lambda: Wallet.open(owner_id=uuid4(), currency="EUR", balance=Decimal(10), created_date=clock.now())
 a = mk()
 r = repo.add(a)

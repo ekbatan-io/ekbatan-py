@@ -15,7 +15,9 @@ from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
 from ekbatan.ids import ShardedId
 
-from .actions import NotifyAction, NotifyParams
+from .actions import (
+    CreateNotificationAction,
+)
 from .domain import Wallet, WalletClosedEvent, WalletMoneyDepositedEvent
 
 
@@ -80,7 +82,7 @@ def fatal(name: str = "exploder") -> RecordingHandler:
     return RecordingHandler(name, WalletMoneyDepositedEvent, explode)
 
 
-class MoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler:
     """Chains into another unit of work - the shape a saga step has.
 
     Reads the recipient off the producing action's parameters, because a delivery address has
@@ -97,8 +99,8 @@ class MoneyDepositedEventHandler:
     def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.calls += 1
         self.executor.execute(
-            NotifyAction,
-            NotifyParams(
+            CreateNotificationAction,
+            CreateNotificationAction.Params(
                 wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
                 kind="MONEY_DEPOSITED",
                 recipient=str(envelope.action_params.get("recipient", "")),

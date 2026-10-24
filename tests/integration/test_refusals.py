@@ -49,7 +49,9 @@ from ekbatan.distributedjobs import DistributedJob, job_registry
 from ekbatan.events import HandlerLoop
 from ekbatan.ids import ShardedId
 from ekbatan.migrations import migrate
-from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.actions import (
+    WalletCreateAction,
+)
 from fixtures.domain import NOW, Wallet
 from fixtures.handlers import RecordingHandler
 from fixtures.logins import single
@@ -143,16 +145,16 @@ def count(registry: DatabaseRegistry) -> int:
         return int(conn.execute(sql_select(func.count()).select_from(WALLETS)).scalar_one())
 
 
-def each_door(registry: DatabaseRegistry, wallets: Any, known: Wallet) -> list[str]:
+def each_door(registry: DatabaseRegistry, wallet_repository: Any, known: Wallet) -> list[str]:
     """Every way the sync API reaches a database, each tried once; what each raised."""
     manager = registry.default
     tries: dict[str, Callable[[], object]] = {
         "transaction": lambda: manager.transaction().__enter__(),
         "connection": lambda: manager.connection().__enter__(),
         "readonly connection": lambda: manager.connection(readonly=True).__enter__(),
-        "repository read (db)": lambda: wallets.find(known.id),
-        "repository readonly_db": lambda: wallets.readonly_db().__enter__(),
-        "repository write (tx_db_else_db)": lambda: wallets.add(a_wallet()),
+        "repository read (db)": lambda: wallet_repository.find(known.id),
+        "repository readonly_db": lambda: wallet_repository.readonly_db().__enter__(),
+        "repository write (tx_db_else_db)": lambda: wallet_repository.add(a_wallet()),
     }
     said: list[str] = []
     for name, attempt in tries.items():
@@ -178,18 +180,18 @@ def fork_db(backend: Any) -> dict[Any, str]:
 def test_a_sync_registry_built_before_fork_is_refused_in_the_child(backend, fork_db, clock):
     registry = _registry(backend, fork_db)
     try:
-        wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
-        known = wallets.add(a_wallet())  # the pool now holds a live connection to copy
+        wallet_repository = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+        known = wallet_repository.add(a_wallet())  # the pool now holds a live connection to copy
 
-        said = in_a_child(lambda: each_door(registry, wallets, known))
+        said = in_a_child(lambda: each_door(registry, wallet_repository, known))
 
         refused(said)
         assert len(said) == 6
         assert said[0].startswith(f"ForkedProcessError: {registry.default!r} was created")
         # The parent is untouched: its pool still works, reads and writes.
-        assert wallets.find(known.id) == known
+        assert wallet_repository.find(known.id) == known
         with registry.default.transaction():
-            wallets.add(a_wallet())
+            wallet_repository.add(a_wallet())
         assert count(registry) == 2
     finally:
         registry.close()
@@ -198,8 +200,8 @@ def test_a_sync_registry_built_before_fork_is_refused_in_the_child(backend, fork
 def test_a_sync_registry_built_in_the_child_works(backend, fork_db, clock):
     parent = _registry(backend, fork_db)  # migrated, emptied, and holding the parent's pool
     try:
-        wallets = WalletRepository(Wallet, WALLETS, parent, clock=clock)
-        wallets.add(a_wallet())
+        wallet_repository = WalletRepository(Wallet, WALLETS, parent, clock=clock)
+        wallet_repository.add(a_wallet())
 
         def child() -> list[str]:
             own = DatabaseRegistry.from_config(single(backend.url(fork_db[DEFAULT_SHARD])))
@@ -223,16 +225,16 @@ def test_an_async_registry_built_before_fork_is_refused_in_the_child(backend, fo
     async def scenario() -> list[str]:
         registry = await asyncio.to_thread(_registry, backend, fork_db, kind=AsyncDatabaseRegistry)
         try:
-            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
-            known = await wallets.add(a_wallet())
+            wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            known = await wallet_repository.add(a_wallet())
             manager = registry.default
 
             async def doors() -> list[str]:
                 tries = {
                     "transaction": lambda: manager.transaction().__aenter__(),
                     "connection": lambda: manager.connection().__aenter__(),
-                    "repository read": lambda: wallets.find(known.id),
-                    "repository write": lambda: wallets.add(a_wallet()),
+                    "repository read": lambda: wallet_repository.find(known.id),
+                    "repository write": lambda: wallet_repository.add(a_wallet()),
                 }
                 said: list[str] = []
                 for name, attempt in tries.items():
@@ -246,9 +248,9 @@ def test_an_async_registry_built_before_fork_is_refused_in_the_child(backend, fo
 
             said = in_a_child(lambda: asyncio.run(doors()))
             # The parent's pool, on the parent's loop, still works.
-            assert await wallets.find(known.id) == known
+            assert await wallet_repository.find(known.id) == known
             async with manager.transaction():
-                await wallets.add(a_wallet())
+                await wallet_repository.add(a_wallet())
             async with manager.connection(readonly=True) as conn:
                 rows = await conn.execute(sql_select(func.count()).select_from(WALLETS))
                 assert rows.scalar_one() == 2
@@ -320,8 +322,8 @@ def test_closing_a_sync_registry_in_the_child_is_refused_and_leaves_the_parent_a
     close() in the copy is refused like every other call there, and touches nothing."""
     registry = _registry(backend, fork_db)
     try:
-        wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
-        known = wallets.add(a_wallet())  # the pool now holds a live connection to copy
+        wallet_repository = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+        known = wallet_repository.add(a_wallet())  # the pool now holds a live connection to copy
         dialect = registry.default.dialect
         with registry.default.connection() as conn:
             before = session(conn, dialect)
@@ -344,7 +346,7 @@ def test_closing_a_sync_registry_in_the_child_is_refused_and_leaves_the_parent_a
         assert said[1].startswith(f"ForkedProcessError: {registry.default!r} was created")
         with registry.default.connection() as conn:
             assert session(conn, dialect) == before, "the child closed the parent's connection"
-        assert wallets.find(known.id) == known
+        assert wallet_repository.find(known.id) == known
     finally:
         registry.close()
 
@@ -360,8 +362,8 @@ def test_closing_an_async_registry_in_the_child_is_refused_and_leaves_the_parent
     async def scenario() -> list[str]:
         registry = await asyncio.to_thread(_registry, backend, fork_db, kind=AsyncDatabaseRegistry)
         try:
-            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
-            known = await wallets.add(a_wallet())
+            wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            known = await wallet_repository.add(a_wallet())
             dialect = registry.default.dialect
             async with registry.default.connection() as conn:
                 before = await async_session(conn, dialect)
@@ -381,7 +383,7 @@ def test_closing_an_async_registry_in_the_child_is_refused_and_leaves_the_parent
             async with registry.default.connection() as conn:
                 after = await async_session(conn, dialect)
             assert after == before, "the child closed the parent's connection"
-            assert await wallets.find(known.id) == known
+            assert await wallet_repository.find(known.id) == known
             assert said[0].startswith(f"ForkedProcessError: {registry!r} was created")
             assert said[1].startswith(f"ForkedProcessError: {registry.default!r} was created")
             return said
@@ -651,11 +653,11 @@ def test_a_job_registry_built_before_fork_is_refused_in_the_child(registry, back
 # ============================================================ refusal 2: on an event loop
 
 
-def test_every_sync_door_is_refused_inside_a_coroutine(registry, wallets, clock, backend):
-    known = wallets.add(a_wallet())
+def test_every_sync_door_is_refused_inside_a_coroutine(registry, wallet_repository, clock, backend):
+    known = wallet_repository.add(a_wallet())
 
     async def on_the_loop() -> list[str]:
-        return each_door(registry, wallets, known)
+        return each_door(registry, wallet_repository, known)
 
     said = asyncio.run(on_the_loop())
     assert len(said) == 6
@@ -668,15 +670,17 @@ def test_every_sync_door_is_refused_inside_a_coroutine(registry, wallets, clock,
 def test_the_sync_executor_is_refused_before_the_action_runs(executor, registry, clock):
     performed: list[bool] = []
 
-    class Watched(CreateWalletAction):
-        def perform(self, principal: str | None, params: CreateWalletParams) -> Wallet:
+    class Watched(WalletCreateAction):
+        def perform(self, principal: str | None, params: WalletCreateAction.Params) -> Wallet:
             performed.append(True)
             return super().perform(principal, params)
 
     from fixtures.executing import registered
 
     ready = registered(executor, Watched(clock))
-    params = CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1"))
+    params = WalletCreateAction.Params(
+        owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")
+    )
 
     async def on_the_loop() -> None:
         ready.execute(Watched, params)
@@ -703,21 +707,23 @@ def test_a_migration_run_is_refused_inside_a_coroutine(backend):
     assert str(error.value) == (f"ekbatan.migrations (migrate, info, repair, baseline) {BLOCKING}")
 
 
-def test_an_async_handler_that_calls_the_sync_api_on_the_handler_loop_is_refused(registry, wallets):
+def test_an_async_handler_that_calls_the_sync_api_on_the_handler_loop_is_refused(
+    registry, wallet_repository
+):
     if under_gevent():
         pytest.skip(NOT_UNDER_GEVENT)
-    known = wallets.add(a_wallet())
+    known = wallet_repository.add(a_wallet())
     loop = HandlerLoop()
     try:
 
         async def handler_body() -> Any:
-            return wallets.find(known.id)  # sync, on the handler loop's own thread
+            return wallet_repository.find(known.id)  # sync, on the handler loop's own thread
 
         with pytest.raises(BlockingCallError):
             loop.run(handler_body())
 
         async def handler_body_done_right() -> Any:
-            return await asyncio.to_thread(wallets.find, known.id)
+            return await asyncio.to_thread(wallet_repository.find, known.id)
 
         assert loop.run(handler_body_done_right()) == known
     finally:
@@ -727,30 +733,32 @@ def test_an_async_handler_that_calls_the_sync_api_on_the_handler_loop_is_refused
 # -- where the sync API is meant to run: silent
 
 
-def test_silent_on_a_to_thread_thread(registry, wallets):
+def test_silent_on_a_to_thread_thread(registry, wallet_repository):
     async def on_the_loop() -> Wallet:
-        return await asyncio.to_thread(wallets.add, a_wallet())
+        return await asyncio.to_thread(wallet_repository.add, a_wallet())
 
     asyncio.run(on_the_loop())
     assert count(registry) == 1
 
 
-def test_silent_on_a_run_in_executor_thread(registry, wallets):
+def test_silent_on_a_run_in_executor_thread(registry, wallet_repository):
     async def on_the_loop() -> Wallet:
-        return await asyncio.get_running_loop().run_in_executor(None, wallets.add, a_wallet())
+        return await asyncio.get_running_loop().run_in_executor(
+            None, wallet_repository.add, a_wallet()
+        )
 
     asyncio.run(on_the_loop())
     assert count(registry) == 1
 
 
-def test_silent_on_a_plain_thread_while_a_loop_runs_elsewhere(registry, wallets):
+def test_silent_on_a_plain_thread_while_a_loop_runs_elsewhere(registry, wallet_repository):
     """A loop running on one thread says nothing about another - dispatch's case: its sync
     handlers run on delivery threads while its handler loop runs on its own."""
     loop = HandlerLoop()
     try:
         loop.run(asyncio.sleep(0))  # the loop is running, on its thread
         done: list[Any] = []
-        worker = threading.Thread(target=lambda: done.append(wallets.add(a_wallet())))
+        worker = threading.Thread(target=lambda: done.append(wallet_repository.add(a_wallet())))
         worker.start()
         worker.join(20)
         assert len(done) == 1
@@ -759,7 +767,7 @@ def test_silent_on_a_plain_thread_while_a_loop_runs_elsewhere(registry, wallets)
     assert count(registry) == 1
 
 
-def test_silent_in_a_fastapi_def_endpoint(registry, wallets):
+def test_silent_in_a_fastapi_def_endpoint(registry, wallet_repository):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -768,14 +776,16 @@ def test_silent_in_a_fastapi_def_endpoint(registry, wallets):
     @app.post("/wallets")
     def open_wallet() -> dict[str, int]:
         with registry.default.transaction():
-            wallets.add(a_wallet())
+            wallet_repository.add(a_wallet())
         return {"count": count(registry)}
 
     with TestClient(app) as client:
         assert client.post("/wallets").json() == {"count": 1}
 
 
-def test_a_fastapi_async_def_endpoint_that_calls_the_sync_api_is_refused(registry, wallets):
+def test_a_fastapi_async_def_endpoint_that_calls_the_sync_api_is_refused(
+    registry, wallet_repository
+):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -783,7 +793,7 @@ def test_a_fastapi_async_def_endpoint_that_calls_the_sync_api_is_refused(registr
 
     @app.post("/wallets")
     async def open_wallet() -> dict[str, int]:
-        wallets.add(a_wallet())
+        wallet_repository.add(a_wallet())
         return {"count": 1}
 
     with TestClient(app, raise_server_exceptions=True) as client, pytest.raises(BlockingCallError):
@@ -809,8 +819,8 @@ def test_silent_for_a_sync_handler_on_dispatch_s_threads(executor, pipeline, reg
     )
     run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")),
     )
     fanout.drain_once()
     dispatch.drain_once()
@@ -819,7 +829,7 @@ def test_silent_for_a_sync_handler_on_dispatch_s_threads(executor, pipeline, reg
     assert all(name != main for name, _ in seen), f"on dispatch's threads: {seen}"
 
 
-def test_silent_on_the_test_harness_s_calling_thread(registry, wallets):
+def test_silent_on_the_test_harness_s_calling_thread(registry, wallet_repository):
     """`tests/modes.py` runs the async objects on a portal - a loop on a thread of its own -
     while the test's thread, with no loop of its own, calls the sync API freely. A sync call
     sent to the portal's loop is refused like any other."""
@@ -828,10 +838,10 @@ def test_silent_on_the_test_harness_s_calling_thread(registry, wallets):
     portal = Portal()
     try:
         assert portal.call(asyncio.sleep(0, "on the loop")) == "on the loop"
-        wallets.add(a_wallet())  # this thread: no loop, so no refusal
+        wallet_repository.add(a_wallet())  # this thread: no loop, so no refusal
 
         async def on_the_portal_loop() -> Any:
-            return wallets.add(a_wallet())
+            return wallet_repository.add(a_wallet())
 
         with pytest.raises(BlockingCallError):
             portal.call(on_the_portal_loop())
@@ -840,14 +850,14 @@ def test_silent_on_the_test_harness_s_calling_thread(registry, wallets):
     assert count(registry) == 1
 
 
-def test_silent_in_gevent_greenlets(registry, wallets):
+def test_silent_in_gevent_greenlets(registry, wallet_repository):
     """Under `make test-gevent` every thread is a greenlet and no asyncio loop runs: the sync
     API is the one to use, concurrently, and is never refused."""
     if not under_gevent():
         pytest.skip("meaningful only under gevent's monkey-patching: make test-gevent")
     import gevent
 
-    greenlets = [gevent.spawn(wallets.add, a_wallet()) for _ in range(5)]
+    greenlets = [gevent.spawn(wallet_repository.add, a_wallet()) for _ in range(5)]
     gevent.joinall(greenlets, timeout=30, raise_error=True)
     assert count(registry) == 5
 

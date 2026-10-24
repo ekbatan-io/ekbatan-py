@@ -31,9 +31,9 @@ class ActionRegistry:
 
     Built from a collection, or through :meth:`builder`::
 
-        ActionRegistry([OpenWallet(), CloseWallet(wallets)])
+        ActionRegistry([WalletCreateAction(clock), WalletCloseAction(clock, wallet_repository)])
 
-        ActionRegistry.builder().with_action(OpenWallet()).build()
+        ActionRegistry.builder().with_action(WalletCreateAction(clock)).build()
     """
 
     __slots__ = ("_by_type",)

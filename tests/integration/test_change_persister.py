@@ -29,8 +29,10 @@ NOW = datetime(2026, 1, 1, 10, 0, 0)
 
 
 @pytest.fixture
-def persister(registry, wallets):
-    return ChangePersister(RepositoryRegistry([wallets]), SingleTableJsonEventPersister(registry))
+def persister(registry, wallet_repository):
+    return ChangePersister(
+        RepositoryRegistry([wallet_repository]), SingleTableJsonEventPersister(registry)
+    )
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
@@ -57,13 +59,13 @@ def write(persister, registry, shard, changes):
         )
 
 
-def test_it_writes_the_rows_and_then_their_events(persister, registry, wallets):
+def test_it_writes_the_rows_and_then_their_events(persister, registry, wallet_repository):
     wallet = a_wallet()
     staged = PersistableChanges(additions={wallet.id: wallet})
 
     write(persister, registry, registry.default_shard, {Wallet: staged})
 
-    assert wallets.get(wallet.id).balance == Decimal("100.0000")
+    assert wallet_repository.get(wallet.id).balance == Decimal("100.0000")
     with registry.default.connection(readonly=True) as conn:
         rows = list(conn.execute(select(EVENTS.c.model_id, EVENTS.c.event_type)))
     assert [r.event_type for r in rows] == ["WalletCreatedEvent"]
@@ -78,7 +80,7 @@ def test_a_unit_of_work_that_staged_nothing_still_leaves_a_row(persister, regist
     assert [(r.action_name, r.event_type) for r in rows] == [("SomeAction", None)]
 
 
-def test_it_opens_no_transaction_of_its_own(persister, registry, wallets):
+def test_it_opens_no_transaction_of_its_own(persister, registry, wallet_repository):
     """Handed a connection, it writes on it - so the caller's rollback takes everything."""
     wallet = a_wallet()
     try:
@@ -97,14 +99,14 @@ def test_it_opens_no_transaction_of_its_own(persister, registry, wallets):
     except RuntimeError:
         pass
 
-    assert wallets.find(wallet.id) is None
+    assert wallet_repository.find(wallet.id) is None
     with registry.default.connection(readonly=True) as conn:
         assert conn.execute(select(func.count()).select_from(EVENTS)).scalar_one() == 0
 
 
-def test_an_entity_is_written_and_emits_nothing(registry, notifications):
+def test_an_entity_is_written_and_emits_nothing(registry, notification_repository):
     persister = ChangePersister(
-        RepositoryRegistry([notifications]), SingleTableJsonEventPersister(registry)
+        RepositoryRegistry([notification_repository]), SingleTableJsonEventPersister(registry)
     )
     note = Notification.create(
         wallet_id=ShardedId[Wallet].random(),
@@ -120,7 +122,7 @@ def test_an_entity_is_written_and_emits_nothing(registry, notifications):
         {Notification: PersistableChanges(additions={note.id: note})},
     )
 
-    assert notifications.get(note.id).recipient == "ada@x"
+    assert notification_repository.get(note.id).recipient == "ada@x"
     with registry.default.connection(readonly=True) as conn:
         rows = list(conn.execute(select(EVENTS.c.event_type)))
     assert [r.event_type for r in rows] == [None], "an entity's changes are not events"

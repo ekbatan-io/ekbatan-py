@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from ekbatan import Action, Clock, run_action
 from ekbatan.ids import ShardedId
-from fixtures.actions import DepositParams
+from fixtures.actions import WalletDepositMoneyAction
 from fixtures.domain import NOW, Wallet
 from fixtures.repositories import WalletRepository
 from fixtures.schema import WALLETS
@@ -31,12 +31,12 @@ def a_wallet(balance: str = "100.00") -> Wallet:
     ).without_events()
 
 
-class DepositAction(Action[DepositParams, Wallet]):
+class DepositAction(Action[WalletDepositMoneyAction.Params, Wallet]):
     def __init__(self, wallet: Wallet, clock: Clock) -> None:
         super().__init__(clock)
         self.wallet = wallet
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
         return self.plan.update(self.wallet.deposit(params.amount))
 
 
@@ -47,14 +47,18 @@ def test_nothing_reaches_a_database(registry, clock):
     """The point of the whole module: the action runs, the plan fills, and the row is not
     written anywhere."""
 
-    wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
-    stored = wallets.add(a_wallet("100.00"))
+    wallet_repository = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+    stored = wallet_repository.add(a_wallet("100.00"))
 
     staged = run_action(
         DepositAction(stored, clock),
-        DepositParams(wallet_id=stored.id, amount=Decimal("50.00"), recipient="ada@x"),
+        WalletDepositMoneyAction.Params(
+            wallet_id=stored.id, amount=Decimal("50.00"), recipient="ada@x"
+        ),
     )
 
     assert staged.result.balance == Decimal("150.0000")
-    assert wallets.get(stored.id).balance == Decimal("100.0000"), "the database is untouched"
-    assert wallets.get(stored.id).version == 1
+    assert wallet_repository.get(stored.id).balance == Decimal("100.0000"), (
+        "the database is untouched"
+    )
+    assert wallet_repository.get(stored.id).version == 1

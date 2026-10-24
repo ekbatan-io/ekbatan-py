@@ -4,18 +4,20 @@ An action's business logic is worth testing on its own: what it stages, what it 
 refuses. None of that needs a database, and a test that spins one up to find out whether a
 deposit emits one event is a slow test of the wrong thing.
 
-    (ActionSpec.of(DepositMoney(wallets))
-        .execute(DepositParams(...))
+    (ActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
+        .execute(WalletDepositMoneyAction.Params(...))
         .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-        .assert_emitted(WalletMoneyDeposited, 1))
+        .assert_emitted(WalletMoneyDepositedEvent, 1))
 
 :class:`ActionSpec` and :class:`ActionAssert` are Java's, method for method. :func:`run_action`
 hands back the same information as data, for a test that reads better as plain ``assert``::
 
-    staged = run_action(DepositMoney(wallets), DepositParams(...))
+    staged = run_action(
+        WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(...)
+    )
 
     assert staged.updated(Wallet)[0].balance == Decimal("150.00")
-    assert [type(e).__name__ for e in staged.events] == ["WalletMoneyDeposited"]
+    assert [type(e).__name__ for e in staged.events] == ["WalletMoneyDepositedEvent"]
 
 Both bind the plan through the same mechanism the executor uses, so the action sees exactly
 the lifetime it sees in production - ``self.plan`` works, a plan reached from a thread the
@@ -337,11 +339,11 @@ class ActionSpec[P, R]:
 
     ::
 
-        (ActionSpec.of(DepositMoneyAction(wallets, clock))
+        (ActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
             .with_principal("alice")
-            .execute(DepositParams(wallet_id=wallet_id, amount=Decimal("50")))
+            .execute(WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("50")))
             .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-            .assert_emitted(MoneyDepositedEvent, 1)
+            .assert_emitted(WalletMoneyDepositedEvent, 1)
             .assert_no_additions())
 
     Runs exactly as :func:`run_action` does - the plan bound through the executor's own

@@ -3,13 +3,18 @@
 The counterpart to :class:`ekbatan.action.Action`, differing in one line - ``perform`` is a
 coroutine::
 
-    class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-        def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
-            super().__init__(clock)
-            self.wallets = wallets
+    class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+        @dataclass(frozen=True, kw_only=True)
+        class Params:
+            wallet_id: ShardedId[Wallet]
+            amount: Decimal
 
-        async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-            wallet = await self.wallets.get(params.wallet_id)
+        def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
+            super().__init__(clock)
+            self.wallet_repository = wallet_repository
+
+        async def perform(self, principal: str | None, params: Params) -> Wallet:
+            wallet = await self.wallet_repository.get(params.wallet_id)
             return self.plan.update(wallet.deposit(params.amount))
 
 The clock, the name and the plan are the sync action's own code. The plan is in the same

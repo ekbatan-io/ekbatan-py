@@ -10,10 +10,10 @@ def p(k, v):
 
 p("actionevent.fields", [f.name for f in dataclasses.fields(ActionEvent)])
 p("actionevent.field_count", len(dataclasses.fields(ActionEvent)))
-row = {"id": "00000000-0000-0000-0000-000000000001", "namespace": "com.example.finance", "action_id": "00000000-0000-0000-0000-000000000002", "action_name": "DepositMoneyAction",
+row = {"id": "00000000-0000-0000-0000-000000000001", "namespace": "com.example.finance", "action_id": "00000000-0000-0000-0000-000000000002", "action_name": "WalletDepositMoneyAction",
        "action_params": {"amount": 10.5}, "started_date": "2026-01-01T10:00:00Z",
        "completion_date": "2026-01-01T10:00:01Z", "model_id": "w1", "model_type": "Wallet",
-       "event_type": "MoneyDepositedEvent", "payload": {"amount": 10.50, "newBalance": 110.5},
+       "event_type": "WalletMoneyDepositedEvent", "payload": {"amount": 10.50, "newBalance": 110.5},
        "event_date": "2026-01-01T10:00:00Z", "delivered": False}
 ev = ActionEvent.from_row(row)
 p("from_row.payload_amount", repr(ev.payload["amount"]))

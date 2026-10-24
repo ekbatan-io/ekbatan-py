@@ -14,10 +14,8 @@ from uuid import uuid4
 from sqlalchemy import event, select
 
 from fixtures.actions import (
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.executing import run
 from fixtures.handlers import failing, succeeding
@@ -50,25 +48,27 @@ def _watch(registry: Any) -> tuple[list[tuple[str, Any, Any]], Any]:
     return seen, lambda: event.remove(engine, "before_cursor_execute", hook)
 
 
-def _deposited(executor: Any, wallets: Any) -> None:
+def _deposited(executor: Any, wallet_repository: Any) -> None:
     wallet = run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100")),
     )
     run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("1"), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("1"), recipient="ada@example.com"
+        ),
     )
 
 
 def test_fan_out_and_dispatch_write_the_clocks_own_value(
-    executor, wallets, pipeline, registry, clock, dialect
+    executor, wallet_repository, pipeline, registry, clock, dialect
 ):
     clock.pause_at(PRECISE)
     fanout, dispatch = pipeline(succeeding("audit"))
-    _deposited(executor, wallets)
+    _deposited(executor, wallet_repository)
 
     seen, stop = _watch(registry)
     try:
@@ -97,12 +97,12 @@ def test_fan_out_and_dispatch_write_the_clocks_own_value(
 
 
 def test_a_retry_time_is_the_clocks_value_plus_the_backoff_as_it_is(
-    executor, wallets, pipeline, registry, clock
+    executor, wallet_repository, pipeline, registry, clock
 ):
     clock.pause_at(PRECISE)
     flaky = failing("flaky", times=1)
     fanout, dispatch = pipeline(flaky, max_backoff=timedelta(seconds=60))
-    _deposited(executor, wallets)
+    _deposited(executor, wallet_repository)
     fanout.drain_once()
 
     dispatch.drain_once()

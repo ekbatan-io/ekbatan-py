@@ -45,15 +45,13 @@ from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationErro
 from ekbatan.ids import ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy
 from fixtures.actions import (
-    AsyncCreateWalletAction,
-    AsyncDepositMoneyAction,
-    AsyncDepositThenFailAction,
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
-    DepositThenFailAction,
-    WalletIdParams,
+    AsyncWalletCreateAction,
+    AsyncWalletDepositMoneyAction,
+    AsyncWalletDepositThenFailAction,
+    WalletCloseAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
+    WalletDepositThenFailAction,
 )
 from fixtures.domain import NOW, Wallet
 from fixtures.logins import data_source
@@ -95,63 +93,65 @@ async def off_the_loop(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any
 # ------------------------------------------------------------------ the extra actions
 
 
-class BumpThenDepositAction(Action[DepositParams, Wallet]):
+class BumpThenDepositAction(Action[WalletDepositMoneyAction.Params, Wallet]):
     """Loses a version race on its first attempt: between its read and its commit, somebody
     else's update lands on the same wallet."""
 
-    def __init__(self, wallets: Any, clock: Any) -> None:
+    def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
         self.attempts = 0
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+    def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
         self.attempts += 1
-        wallet = self.wallets.get(params.wallet_id)
+        wallet = self.wallet_repository.get(params.wallet_id)
         if self.attempts == 1:
             # Outside the unit of work - there is no transaction open during `perform` - so
             # this commits at once and moves the version on under the read above.
-            self.wallets.update(wallet.deposit(Decimal("1")))
+            self.wallet_repository.update(wallet.deposit(Decimal("1")))
         return self.plan.update(wallet.deposit(params.amount))
 
 
-class AsyncBumpThenDepositAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: Any, clock: Any) -> None:
+class AsyncBumpThenDepositAction(AsyncAction[WalletDepositMoneyAction.Params, Wallet]):
+    def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
         self.attempts = 0
 
     @property
     def name(self) -> str:
         return "BumpThenDepositAction"
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
+    async def perform(
+        self, principal: str | None, params: WalletDepositMoneyAction.Params
+    ) -> Wallet:
         self.attempts += 1
-        wallet = await self.wallets.get(params.wallet_id)
+        wallet = await self.wallet_repository.get(params.wallet_id)
         if self.attempts == 1:
-            await self.wallets.update(wallet.deposit(Decimal("1")))
+            await self.wallet_repository.update(wallet.deposit(Decimal("1")))
         return self.plan.update(wallet.deposit(params.amount))
 
 
-class DeleteWalletAction(Action[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Any, clock: Any) -> None:
+class DeleteWalletAction(Action[WalletCloseAction.Params, Wallet]):
+    def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
-        return self.plan.update(self.wallets.get(params.wallet_id).delete())
+    def perform(self, principal: str | None, params: WalletCloseAction.Params) -> Wallet:
+        return self.plan.update(self.wallet_repository.get(params.wallet_id).delete())
 
 
-class AsyncDeleteWalletAction(AsyncAction[WalletIdParams, Wallet]):
-    def __init__(self, wallets: Any, clock: Any) -> None:
+class AsyncDeleteWalletAction(AsyncAction[WalletCloseAction.Params, Wallet]):
+    def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
     @property
     def name(self) -> str:
         return "DeleteWalletAction"
 
-    async def perform(self, principal: str | None, params: WalletIdParams) -> Wallet:
-        return self.plan.update((await self.wallets.get(params.wallet_id)).delete())
+    async def perform(self, principal: str | None, params: WalletCloseAction.Params) -> Wallet:
+        return self.plan.update((await self.wallet_repository.get(params.wallet_id)).delete())
 
 
 class FailingOutbox:
@@ -189,7 +189,7 @@ class Service:
     mode: str
     registry: Any
     executor: Any
-    wallets: Any
+    wallet_repository: Any
     create: type
     deposit: type
     deposit_then_fail: type
@@ -203,7 +203,7 @@ class Service:
         return await call(self.mode, fn, *args, **kwargs)
 
     async def open_wallet(self, balance: str = "10", wallet_id: Any = None) -> Wallet:
-        params = CreateWalletParams(
+        params = WalletCreateAction.Params(
             owner_id=uuid4(),
             currency="EUR",
             initial_balance=Decimal(balance),
@@ -231,38 +231,42 @@ async def service(
     if mode == "sync":
         # Migrations are sync in both modes, so on a worker thread in both.
         registry = await off_the_loop(_registry, backend, names)
-        wallets: Any = WalletRepository(Wallet, WALLETS, registry, sharding=sharding, clock=clock)
+        wallet_repository: Any = WalletRepository(
+            Wallet, WALLETS, registry, sharding=sharding, clock=clock
+        )
         kinds: tuple[type, ...] = (
-            CreateWalletAction,
-            DepositMoneyAction,
-            DepositThenFailAction,
+            WalletCreateAction,
+            WalletDepositMoneyAction,
+            WalletDepositThenFailAction,
             BumpThenDepositAction,
             DeleteWalletAction,
         )
         executor_type: Any = ActionExecutor
     else:
         registry = await off_the_loop(_registry, backend, names, kind=AsyncDatabaseRegistry)
-        wallets = AsyncWalletRepository(Wallet, WALLETS, registry, sharding=sharding, clock=clock)
+        wallet_repository = AsyncWalletRepository(
+            Wallet, WALLETS, registry, sharding=sharding, clock=clock
+        )
         kinds = (
-            AsyncCreateWalletAction,
-            AsyncDepositMoneyAction,
-            AsyncDepositThenFailAction,
+            AsyncWalletCreateAction,
+            AsyncWalletDepositMoneyAction,
+            AsyncWalletDepositThenFailAction,
             AsyncBumpThenDepositAction,
             AsyncDeleteWalletAction,
         )
         executor_type = AsyncActionExecutor
     create, *rest = kinds
-    actions = [create(clock), *(kind(wallets, clock) for kind in rest)]
+    actions = [create(clock), *(kind(wallet_repository, clock) for kind in rest)]
     executor = executor_type(
         namespace="example.wallet",
         registry=registry,
-        repositories=[wallets],
+        repositories=[wallet_repository],
         actions=actions,
         outbox=outbox(registry) if outbox is not None else None,
         clock=clock,
     )
     try:
-        yield Service(mode, registry, executor, wallets, *kinds)
+        yield Service(mode, registry, executor, wallet_repository, *kinds)
     finally:
         await call(mode, registry.close if mode == "sync" else registry.aclose)
 
@@ -279,8 +283,10 @@ def committed(backend: Any, name: str = MAIN) -> tuple[dict[Any, Decimal], list[
         engine.dispose()
 
 
-def deposit(wallet: Wallet, amount: str) -> DepositParams:
-    return DepositParams(wallet_id=wallet.id, amount=Decimal(amount), recipient="ana")
+def deposit(wallet: Wallet, amount: str) -> WalletDepositMoneyAction.Params:
+    return WalletDepositMoneyAction.Params(
+        wallet_id=wallet.id, amount=Decimal(amount), recipient="ana"
+    )
 
 
 def by_action(events: list[dict[str, Any]], action: str) -> list[dict[str, Any]]:
@@ -296,16 +302,16 @@ def test_a_deposit_commits_the_row_and_its_event_together(mode, backend, clock):
             wallet = await svc.open_wallet("10")
             after = await svc.execute(svc.deposit, deposit(wallet, "5"))
             assert after.balance == Decimal("15")
-            assert (await svc.call(svc.wallets.get, wallet.id)).balance == Decimal("15")
-            assert (await svc.call(svc.wallets.get, wallet.id)).version == 2
+            assert (await svc.call(svc.wallet_repository.get, wallet.id)).balance == Decimal("15")
+            assert (await svc.call(svc.wallet_repository.get, wallet.id)).version == 2
 
         balances, events = committed(backend)
         assert balances == {wallet.id.value: Decimal("15")}
-        deposited = by_action(events, "DepositMoneyAction")
+        deposited = by_action(events, "WalletDepositMoneyAction")
         assert [e["event_type"] for e in deposited] == ["WalletMoneyDepositedEvent"]
         assert deposited[0]["payload"]["newBalance"] == Decimal("15")
         assert deposited[0]["action_params"]["amount"] == Decimal("5")
-        assert [e["event_type"] for e in by_action(events, "CreateWalletAction")] == [
+        assert [e["event_type"] for e in by_action(events, "WalletCreateAction")] == [
             "WalletCreatedEvent"
         ]
 
@@ -321,7 +327,7 @@ def test_a_failing_action_commits_neither_row_nor_event(mode, backend, clock):
 
         balances, events = committed(backend)
         assert balances == {wallet.id.value: Decimal("10")}
-        assert by_action(events, "DepositThenFailAction") == []
+        assert by_action(events, "WalletDepositThenFailAction") == []
 
     asyncio.run(scenario())
 
@@ -345,7 +351,9 @@ def test_a_failed_outbox_write_rolls_back_the_row_already_written(mode, backend,
                 balance=Decimal("10"),
                 created_date=NOW,
             )
-            await svc.call(svc.wallets.add, wallet)  # outside any unit of work: commits itself
+            await svc.call(
+                svc.wallet_repository.add, wallet
+            )  # outside any unit of work: commits itself
             with pytest.raises(RuntimeError, match="outbox down"):
                 await svc.execute(svc.deposit, deposit(wallet, "5"))
 
@@ -397,14 +405,19 @@ def test_a_soft_deleted_row_is_hidden_from_every_read(mode, backend, clock):
         async with service(mode, backend, clock) as svc:
             kept = await svc.open_wallet("10")
             gone = await svc.open_wallet("20")
-            await svc.execute(svc.delete, WalletIdParams(wallet_id=gone.id))
+            await svc.execute(svc.delete, WalletCloseAction.Params(wallet_id=gone.id))
 
-            assert await svc.call(svc.wallets.find, gone.id) is None
+            assert await svc.call(svc.wallet_repository.find, gone.id) is None
             with pytest.raises(EntityNotFoundError):
-                await svc.call(svc.wallets.get, gone.id)
-            assert [w.id for w in await svc.call(svc.wallets.find_where)] == [kept.id]
-            assert [w.id for w in await svc.call(svc.wallets.all)] == [kept.id]
-            assert await svc.call(svc.wallets.find_where, WALLETS.c.owner_id == gone.owner_id) == []
+                await svc.call(svc.wallet_repository.get, gone.id)
+            assert [w.id for w in await svc.call(svc.wallet_repository.find_where)] == [kept.id]
+            assert [w.id for w in await svc.call(svc.wallet_repository.all)] == [kept.id]
+            assert (
+                await svc.call(
+                    svc.wallet_repository.find_where, WALLETS.c.owner_id == gone.owner_id
+                )
+                == []
+            )
 
         balances, events = committed(backend)
         assert set(balances) == {kept.id.value, gone.id.value}, "the row is still there"
@@ -420,17 +433,17 @@ def test_a_sharded_unit_of_work_lands_on_its_own_shard(mode, backend, clock):
         async with service(mode, backend, clock, sharded=True) as svc:
             wallet = await svc.open_wallet("10", wallet_id=ShardedId[Wallet].generate(MEXICO))
             await svc.execute(svc.deposit, deposit(wallet, "5"))
-            assert [w.id for w in await svc.call(svc.wallets.find_where, shard=MEXICO)] == [
-                wallet.id
-            ]
-            assert await svc.call(svc.wallets.find_where, shard=GLOBAL) == []
-            assert [w.id for w in await svc.call(svc.wallets.find_where)] == [wallet.id]
+            assert [
+                w.id for w in await svc.call(svc.wallet_repository.find_where, shard=MEXICO)
+            ] == [wallet.id]
+            assert await svc.call(svc.wallet_repository.find_where, shard=GLOBAL) == []
+            assert [w.id for w in await svc.call(svc.wallet_repository.find_where)] == [wallet.id]
 
         mexico, mexico_events = committed(backend, SHARDS[MEXICO])
         assert mexico == {wallet.id.value: Decimal("15")}
         assert {e["action_name"] for e in mexico_events} == {
-            "CreateWalletAction",
-            "DepositMoneyAction",
+            "WalletCreateAction",
+            "WalletDepositMoneyAction",
         }
         assert committed(backend, SHARDS[GLOBAL]) == ({}, [])
 
@@ -440,12 +453,12 @@ def test_a_sharded_unit_of_work_lands_on_its_own_shard(mode, backend, clock):
 def test_each_mode_refuses_the_other_kind_of_action(mode, backend, clock):
     async def scenario() -> None:
         async with service(mode, backend, clock) as svc:
-            other = AsyncCreateWalletAction(clock) if mode == "sync" else CreateWalletAction(clock)
+            other = AsyncWalletCreateAction(clock) if mode == "sync" else WalletCreateAction(clock)
             with pytest.raises(ValidationError, match="all-sync or all-async"):
                 type(svc.executor)(
                     namespace="example.wallet",
                     registry=svc.registry,
-                    repositories=[svc.wallets],
+                    repositories=[svc.wallet_repository],
                     actions=[other],
                     clock=clock,
                 )
@@ -456,8 +469,8 @@ def test_each_mode_refuses_the_other_kind_of_action(mode, backend, clock):
 # ------------------------------------------------- two transactions at once: threads, tasks
 
 
-def _isolation_row(wallets: Any) -> dict[str, Any]:
-    return wallets.to_record(
+def _isolation_row(wallet_repository: Any) -> dict[str, Any]:
+    return wallet_repository.to_record(
         Wallet.open(
             id=ShardedId[Wallet].random(),
             owner_id=uuid4(),
@@ -495,7 +508,10 @@ def test_two_concurrent_transactions_never_see_each_other(mode, backend, clock, 
         async def scenario() -> None:
             async with service(mode, backend, clock) as svc:
                 manager = svc.registry.default
-                row_a, row_b = _isolation_row(svc.wallets), _isolation_row(svc.wallets)
+                row_a, row_b = (
+                    _isolation_row(svc.wallet_repository),
+                    _isolation_row(svc.wallet_repository),
+                )
                 a_in, b_checked, a_checked = (threading.Event() for _ in range(3))
                 seen: dict[str, Any] = {}
 
@@ -515,7 +531,7 @@ def test_two_concurrent_transactions_never_see_each_other(mode, backend, clock, 
                         tx.execute(insert(WALLETS).values(row_b))
                         seen["b_conn"] = manager.current()
                         seen["b_sees_a"] = count(tx.execute(where_id(row_a)))
-                        with svc.wallets.tx_db_else_db() as conn:
+                        with svc.wallet_repository.tx_db_else_db() as conn:
                             seen["b_joined"] = conn is tx.connection
                         b_checked.set()
                         # Open until A has looked, so what A saw was B uncommitted.
@@ -534,7 +550,10 @@ def test_two_concurrent_transactions_never_see_each_other(mode, backend, clock, 
         async def scenario() -> None:
             async with service(mode, backend, clock) as svc:
                 manager = svc.registry.default
-                row_a, row_b = _isolation_row(svc.wallets), _isolation_row(svc.wallets)
+                row_a, row_b = (
+                    _isolation_row(svc.wallet_repository),
+                    _isolation_row(svc.wallet_repository),
+                )
                 a_in, b_checked, a_checked = (asyncio.Event() for _ in range(3))
                 seen: dict[str, Any] = {}
 
@@ -554,7 +573,7 @@ def test_two_concurrent_transactions_never_see_each_other(mode, backend, clock, 
                         await tx.execute(insert(WALLETS).values(row_b))
                         seen["b_conn"] = manager.current()
                         seen["b_sees_a"] = count(await tx.execute(where_id(row_a)))
-                        async with svc.wallets.tx_db_else_db() as conn:
+                        async with svc.wallet_repository.tx_db_else_db() as conn:
                             seen["b_joined"] = conn is tx.connection
                         b_checked.set()
                         await asyncio.wait_for(a_checked.wait(), 10)
@@ -581,7 +600,7 @@ def test_many_concurrent_async_deposits_each_commit_exactly_once(mode, backend, 
 
         balances, events = committed(backend)
         assert balances == {w.id.value: Decimal(i + 1) for i, w in enumerate(wallets)}
-        deposited = by_action(events, "DepositMoneyAction")
+        deposited = by_action(events, "WalletDepositMoneyAction")
         assert len(deposited) == 50
         assert {e["model_id"] for e in deposited} == {str(w.id) for w in wallets}
 
@@ -598,7 +617,7 @@ def test_a_cancelled_task_rolls_its_transaction_back(mode, backend, clock):
     async def scenario() -> None:
         async with service(mode, backend, clock) as svc:
             manager = svc.registry.default
-            row = _isolation_row(svc.wallets)
+            row = _isolation_row(svc.wallet_repository)
             inside = asyncio.Event()
 
             async def work() -> None:

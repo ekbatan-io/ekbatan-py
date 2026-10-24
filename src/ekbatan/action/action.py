@@ -2,13 +2,18 @@
 
 Subclass :class:`Action`, take whatever it needs in ``__init__``, and write ``perform``::
 
-    class DepositMoney(Action[DepositParams, Wallet]):
-        def __init__(self, wallets: ModelRepository[Wallet, UUID], clock: Clock) -> None:
-            super().__init__(clock)
-            self.wallets = wallets
+    class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+        @dataclass(frozen=True, kw_only=True)
+        class Params:
+            wallet_id: ShardedId[Wallet]
+            amount: Decimal
 
-        def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-            wallet = self.wallets.get(params.wallet_id)
+        def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
+            super().__init__(clock)
+            self.wallet_repository = wallet_repository
+
+        def perform(self, principal: str | None, params: Params) -> Wallet:
+            wallet = self.wallet_repository.get(params.wallet_id)
             return self.plan.update(wallet.deposit(params.amount))
 
 Three per-invocation values, and the same three mechanisms Java uses for them:

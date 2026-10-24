@@ -30,7 +30,7 @@ MODES = ("sync", "async")
 
 
 @pytest.fixture
-def wallets(
+def wallet_repository(
     registry: DatabaseRegistry, clock: VirtualClock
 ) -> AbstractRepository[Wallet, WalletsRecord, UUID]:
     return WalletRepository(Wallet, WALLETS, registry, clock=clock)
@@ -51,9 +51,9 @@ def a_wallet_with(**fields: object) -> Wallet:
     return a_wallet().evolve(**fields)
 
 
-def test_an_inserted_row_reads_back_exactly(wallets, clock):
-    stored = wallets.add(a_wallet())
-    found = wallets.get(stored.id)
+def test_an_inserted_row_reads_back_exactly(wallet_repository, clock):
+    stored = wallet_repository.add(a_wallet())
+    found = wallet_repository.get(stored.id)
 
     assert found == stored.without_events()
     assert found.balance == Decimal("100.0000")
@@ -70,59 +70,61 @@ def test_an_inserted_row_reads_back_exactly(wallets, clock):
     )
 
 
-def test_a_row_read_back_carries_no_events(wallets):
+def test_a_row_read_back_carries_no_events(wallet_repository):
     written = a_wallet()
     assert written.events, "the model handed to the repository had an event attached"
 
-    stored = wallets.add(written)
+    stored = wallet_repository.add(written)
 
     assert stored.events == (), (
         "what comes back is the database's view of the row, and events are not a column"
     )
-    assert wallets.get(written.id).events == (), "nor on a later read"
+    assert wallet_repository.get(written.id).events == (), "nor on a later read"
 
 
-def test_a_missing_row_is_absent_or_an_error(wallets):
-    assert wallets.find(uuid4()) is None
+def test_a_missing_row_is_absent_or_an_error(wallet_repository):
+    assert wallet_repository.find(uuid4()) is None
     with pytest.raises(EntityNotFoundError):
-        wallets.get(uuid4())
+        wallet_repository.get(uuid4())
 
 
-def test_an_update_moves_the_version_by_one(wallets):
-    w = wallets.add(a_wallet("0.00"))
-    w = wallets.update(w.deposit(Decimal("1.00")))
-    w = wallets.update(w.deposit(Decimal("2.00")))
+def test_an_update_moves_the_version_by_one(wallet_repository):
+    w = wallet_repository.add(a_wallet("0.00"))
+    w = wallet_repository.update(w.deposit(Decimal("1.00")))
+    w = wallet_repository.update(w.deposit(Decimal("2.00")))
 
-    found = wallets.get(w.id)
+    found = wallet_repository.get(w.id)
     assert found.balance == Decimal("3.0000")
     assert found.version == 3
 
 
-def test_update_takes_the_row_as_it_was_read(wallets):
+def test_update_takes_the_row_as_it_was_read(wallet_repository):
     """The repository owns the optimistic lock, so the repository moves the version. Asking
     the caller to move it first makes the obvious call the one that fails - and fail as a lost
     race, which it is not."""
-    stored = wallets.add(a_wallet("100.00"))
+    stored = wallet_repository.add(a_wallet("100.00"))
     assert stored.version == 1
 
-    returned = wallets.update(stored.deposit(Decimal("50.00")))
+    returned = wallet_repository.update(stored.deposit(Decimal("50.00")))
 
     assert returned.version == 2, "handed back one version on, like the row now in the table"
-    assert wallets.get(stored.id).version == 2
-    assert wallets.get(stored.id).balance == Decimal("150.0000")
+    assert wallet_repository.get(stored.id).version == 2
+    assert wallet_repository.get(stored.id).balance == Decimal("150.0000")
 
 
-def test_a_stale_update_is_refused(wallets):
-    w = wallets.add(a_wallet("100.00"))
-    wallets.update(w.deposit(Decimal("10.00")))
+def test_a_stale_update_is_refused(wallet_repository):
+    w = wallet_repository.add(a_wallet("100.00"))
+    wallet_repository.update(w.deposit(Decimal("10.00")))
 
     with pytest.raises(StaleRecordError, match="concurrently modified"):
-        wallets.update(w.deposit(Decimal("99.00")))
+        wallet_repository.update(w.deposit(Decimal("99.00")))
 
-    assert wallets.get(w.id).balance == Decimal("110.0000"), "the first writer's value stands"
+    assert wallet_repository.get(w.id).balance == Decimal("110.0000"), (
+        "the first writer's value stands"
+    )
 
 
-def test_a_stale_batch_update_raises_and_keeps_what_it_matched(wallets):
+def test_a_stale_batch_update_raises_and_keeps_what_it_matched(wallet_repository):
     """One statement, no transaction of the framework's own - so the rows that did match are
     written and the call still raises. Java's
     `should_throw_optimistic_lock_exception_when_updateAll_with_stale_versions` asserts exactly
@@ -130,40 +132,40 @@ def test_a_stale_batch_update_raises_and_keeps_what_it_matched(wallets):
     one there is nothing to take it back, which is the reason to run a batch inside one when
     the pieces belong together.
     """
-    stored = wallets.add_all([a_wallet("10.00") for _ in range(3)])
-    wallets.update(stored[1].deposit(Decimal("5.00")))  # someone else moved it
+    stored = wallet_repository.add_all([a_wallet("10.00") for _ in range(3)])
+    wallet_repository.update(stored[1].deposit(Decimal("5.00")))  # someone else moved it
 
     with pytest.raises(StaleRecordError, match="but matched 2"):
-        wallets.update_all([w.deposit(Decimal("1.00")) for w in stored])
+        wallet_repository.update_all([w.deposit(Decimal("1.00")) for w in stored])
 
-    balances = {w.id: w.balance for w in wallets.find_many([w.id for w in stored])}
+    balances = {w.id: w.balance for w in wallet_repository.find_many([w.id for w in stored])}
     assert balances[stored[0].id] == Decimal("11.0000"), "matched, so written"
     assert balances[stored[2].id] == Decimal("11.0000"), "matched, so written"
     assert balances[stored[1].id] == Decimal("15.0000"), "the other writer's value stands"
 
 
-def test_a_batch_is_one_statement(wallets, registry):
+def test_a_batch_is_one_statement(wallet_repository, registry):
     seen: list[tuple[str, bool]] = []
 
     @event.listens_for(registry.default.primary.sqlalchemy_engine, "before_cursor_execute")
     def record(conn, cursor, statement, parameters, context, executemany):
         seen.append((statement.split()[0].upper(), executemany))
 
-    wallets.add_all([a_wallet() for _ in range(10)])
+    wallet_repository.add_all([a_wallet() for _ in range(10)])
     inserts = [s for s in seen if s[0] == "INSERT"]
     assert inserts == [("INSERT", True)], "ten staged rows must cost one statement, not ten"
 
 
-def test_an_empty_batch_is_a_no_op(wallets):
-    assert wallets.add_all([]) == []
-    assert wallets.update_all([]) == []
-    assert wallets.find_many([]) == []
+def test_an_empty_batch_is_a_no_op(wallet_repository):
+    assert wallet_repository.add_all([]) == []
+    assert wallet_repository.update_all([]) == []
+    assert wallet_repository.find_many([]) == []
 
 
-def test_deleting_is_a_domain_event(wallets):
+def test_deleting_is_a_domain_event(wallet_repository):
     """The framework has no delete of its own. The model says what deletion means for it, and
     a deletion nobody downstream hears about is a row that silently stops existing."""
-    wallet = wallets.add(a_wallet())
+    wallet = wallet_repository.add(a_wallet())
 
     gone = wallet.delete()
 
@@ -172,21 +174,21 @@ def test_deleting_is_a_domain_event(wallets):
     assert gone.delete() is gone, "deleting a deleted row changes nothing and emits nothing"
 
 
-def test_a_deleted_row_is_invisible_to_every_read(wallets):
-    kept, gone = wallets.add_all([a_wallet(), a_wallet()])
-    wallets.update(gone.delete())
+def test_a_deleted_row_is_invisible_to_every_read(wallet_repository):
+    kept, gone = wallet_repository.add_all([a_wallet(), a_wallet()])
+    wallet_repository.update(gone.delete())
 
-    assert wallets.find(gone.id) is None
-    assert wallets.exists(gone.id) is False
-    assert wallets.count() == 1
-    assert [w.id for w in wallets.all()] == [kept.id]
+    assert wallet_repository.find(gone.id) is None
+    assert wallet_repository.exists(gone.id) is False
+    assert wallet_repository.count() == 1
+    assert [w.id for w in wallet_repository.all()] == [kept.id]
     with pytest.raises(EntityNotFoundError):
-        wallets.get(gone.id)
+        wallet_repository.get(gone.id)
 
 
-def test_predicate_reads_apply_the_same_filter(wallets):
+def test_predicate_reads_apply_the_same_filter(wallet_repository):
     _ada, grace, gone = (
-        wallets.add(
+        wallet_repository.add(
             Wallet.open(
                 id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
@@ -197,17 +199,19 @@ def test_predicate_reads_apply_the_same_filter(wallets):
         )
         for c in ("EUR", "USD", "EUR")
     )
-    wallets.update(gone.delete())
+    wallet_repository.update(gone.delete())
 
-    assert len(wallets.find_where(WALLETS.c.currency == "EUR")) == 1
-    assert wallets.count(WALLETS.c.currency == "EUR") == 1
-    assert wallets.exists_where(WALLETS.c.owner_id == gone.owner_id) is False
-    assert wallets.find_one_where(WALLETS.c.currency == "USD").id == grace.id
+    assert len(wallet_repository.find_where(WALLETS.c.currency == "EUR")) == 1
+    assert wallet_repository.count(WALLETS.c.currency == "EUR") == 1
+    assert wallet_repository.exists_where(WALLETS.c.owner_id == gone.owner_id) is False
+    assert wallet_repository.find_one_where(WALLETS.c.currency == "USD").id == grace.id
 
 
 def test_an_entity_round_trips_without_events(registry, clock):
-    notes = NotificationRepository(Notification, NOTIFICATIONS, registry, clock=clock)
-    stored = notes.add(
+    notification_repository = NotificationRepository(
+        Notification, NOTIFICATIONS, registry, clock=clock
+    )
+    stored = notification_repository.add(
         Notification.create(
             id=Id[Notification].random(),
             wallet_id=ShardedId[Wallet].random(),
@@ -215,14 +219,14 @@ def test_an_entity_round_trips_without_events(registry, clock):
             recipient="ada@x",
         )
     )
-    found = notes.get(stored.id)
+    found = notification_repository.get(stored.id)
     assert found == stored
     assert found.message is None, "an unset nullable column comes back null, not empty"
     assert not found.is_model
 
 
 def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
-    wallets = WalletRepository(
+    wallet_repository = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     mexico = ShardIdentifier(1, 0)
@@ -242,13 +246,15 @@ def test_rows_route_to_the_shard_their_id_names(sharded_registry, clock):
     )
     # One call per shard: a batch spanning two databases would need a transaction that spans
     # them, and there isn't one.
-    wallets.add(here)
-    wallets.add(there)
+    wallet_repository.add(here)
+    wallet_repository.add(there)
 
-    assert wallets.count(shard=ShardIdentifier(0, 0)) == 1
-    assert wallets.count(shard=mexico) == 1
-    assert wallets.find(there.id).currency == "MXN", "a lookup by id finds it wherever it lives"
-    assert {w.id for w in wallets.find_many([here.id, there.id])} == {here.id, there.id}
+    assert wallet_repository.count(shard=ShardIdentifier(0, 0)) == 1
+    assert wallet_repository.count(shard=mexico) == 1
+    assert wallet_repository.find(there.id).currency == "MXN", (
+        "a lookup by id finds it wherever it lives"
+    )
+    assert {w.id for w in wallet_repository.find_many([here.id, there.id])} == {here.id, there.id}
 
 
 # ---------------------------------------------------------- saying which kind of thing it is
@@ -278,8 +284,10 @@ def test_an_entity_needs_no_timestamps(registry, clock):
     from fixtures.domain import Notification
     from fixtures.schema import NOTIFICATIONS
 
-    notes = NotificationEntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
-    stored = notes.add(
+    notification_repository = NotificationEntityRepository(
+        Notification, NOTIFICATIONS, registry, clock=clock
+    )
+    stored = notification_repository.add(
         Notification.create(
             wallet_id=ShardedId[Wallet].random(),
             kind="X",
@@ -287,7 +295,7 @@ def test_an_entity_needs_no_timestamps(registry, clock):
             id=Id[Notification].random(),
         )
     )
-    assert notes.get(stored.id) == stored
+    assert notification_repository.get(stored.id) == stored
 
 
 def test_declaring_the_wrong_kind_is_refused(registry):
@@ -361,17 +369,17 @@ def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
         DataSource.from_config(data_source(backend.url(lagging))),
     )
     with DatabaseRegistry({shard: manager}, shard) as reg:
-        wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
-        stored = wallets.add(a_wallet())
+        wallet_repository = WalletRepository(Wallet, WALLETS, reg, clock=clock)
+        stored = wallet_repository.add(a_wallet())
 
-        assert wallets.find(stored.id) is not None
-        assert wallets.get(stored.id).id == stored.id
-        assert wallets.count() == 1
-        assert wallets.exists(stored.id) is True
-        assert [w.id for w in wallets.find_many([stored.id])] == [stored.id]
-        assert wallets.find_one_where(WALLETS.c.currency == "EUR") is not None
+        assert wallet_repository.find(stored.id) is not None
+        assert wallet_repository.get(stored.id).id == stored.id
+        assert wallet_repository.count() == 1
+        assert wallet_repository.exists(stored.id) is True
+        assert [w.id for w in wallet_repository.find_many([stored.id])] == [stored.id]
+        assert wallet_repository.find_one_where(WALLETS.c.currency == "EUR") is not None
 
-        with wallets.readonly_db() as conn:
+        with wallet_repository.readonly_db() as conn:
             from sqlalchemy import func, select
 
             assert conn.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 0, (
@@ -403,16 +411,16 @@ def test_readonly_db_does_not_join_an_open_transaction(backend, clock):
         DataSource.from_config(data_source(backend.url(lagging))),
     )
     with DatabaseRegistry({shard: manager}, shard) as reg:
-        wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
+        wallet_repository = WalletRepository(Wallet, WALLETS, reg, clock=clock)
         with manager.transaction():
-            wallets.add(a_wallet())
+            wallet_repository.add(a_wallet())
             # The built-in read does not join the transaction, as Java's `db()` does not...
-            assert wallets.count() == 0
+            assert wallet_repository.count() == 0
             # ...`tx_db_else_db()` does, and sees the uncommitted row.
-            with wallets.tx_db_else_db() as conn:
+            with wallet_repository.tx_db_else_db() as conn:
                 assert conn.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 1
             # `readonly_db()` does not, and the replica has nothing.
-            with wallets.readonly_db() as conn:
+            with wallet_repository.readonly_db() as conn:
                 on_replica = conn.execute(select(func.count()).select_from(WALLETS)).scalar_one()
     assert on_replica == 0, "readonly_db() joined the transaction; Java's readonlyDb() does not"
 
@@ -441,38 +449,42 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
         ),
     }
     with DatabaseRegistry(managers, default) as reg:
-        wallets = WalletRepository(
+        wallet_repository = WalletRepository(
             Wallet, WALLETS, reg, clock=clock
         )  # NoShardingStrategy by default
-        wallets.add(a_wallet())
+        wallet_repository.add(a_wallet())
 
         # Put a row on the other shard behind the repository's back. Stamped by hand because
         # `add()` would route it back to the default shard, which is the thing being tested.
-        row = wallets.to_record(a_wallet("99.00"))
+        row = wallet_repository.to_record(a_wallet("99.00"))
         # Zone-less, as the column holds it: asyncpg refuses an aware value for a TIMESTAMP.
         row["created_date"] = row["updated_date"] = clock.instant()
         with managers[other].connection() as conn:
             conn.execute(WALLETS.insert(), row)
 
-        assert wallets.count() == 1, "an unsharded repository scattered onto another shard"
-        assert [shard for shard, _ in wallets.dbs()] == [default]
+        assert wallet_repository.count() == 1, (
+            "an unsharded repository scattered onto another shard"
+        )
+        assert [shard for shard, _ in wallet_repository.dbs()] == [default]
 
 
-def test_find_one_where_refuses_a_predicate_that_is_not_unique(wallets):
+def test_find_one_where_refuses_a_predicate_that_is_not_unique(wallet_repository):
     from ekbatan.errors import ValidationError
 
-    wallets.add_all([a_wallet("1.00"), a_wallet("2.00")])
+    wallet_repository.add_all([a_wallet("1.00"), a_wallet("2.00")])
 
-    assert wallets.find_one_where(WALLETS.c.balance == Decimal("1.00")).balance == Decimal("1.00")
+    assert wallet_repository.find_one_where(
+        WALLETS.c.balance == Decimal("1.00")
+    ).balance == Decimal("1.00")
 
     with pytest.raises(ValidationError, match="not unique"):
-        wallets.find_one_where(WALLETS.c.currency == "EUR")
+        wallet_repository.find_one_where(WALLETS.c.currency == "EUR")
 
 
 # -- what a write hands back, on every dialect --------------------------------------------------
 
 
-def test_an_updated_row_comes_back_without_the_events_that_changed_it(wallets):
+def test_an_updated_row_comes_back_without_the_events_that_changed_it(wallet_repository):
     """The counterpart of `test_a_row_read_back_carries_no_events`, for the update path.
 
     MySQL has no `UPDATE ... RETURNING`, so there is nothing to read back and the obvious
@@ -481,33 +493,35 @@ def test_an_updated_row_comes_back_without_the_events_that_changed_it(wallets):
     stream. Java takes the same branch (`if MYSQL: ... return domainObject.nextVersion()`) and
     is protected from this only by `nextVersion()` going through a builder.
     """
-    stored = wallets.add(a_wallet())
+    stored = wallet_repository.add(a_wallet())
     changed = stored.deposit(Decimal("5.00"))
     assert changed.events, "the model handed to the repository had an event attached"
 
-    written = wallets.update(changed)
+    written = wallet_repository.update(changed)
 
     assert written.events == (), "what comes back is the database's view of the row"
     assert written.balance == Decimal("105.0000")
     assert written.version == changed.version + 1
 
 
-def test_a_write_hands_back_the_same_shape_on_every_dialect(wallets, registry):
+def test_a_write_hands_back_the_same_shape_on_every_dialect(wallet_repository, registry):
     """A raw uuid passed where a typed id belongs comes back typed, whether or not the
     database can RETURNING. Java cannot be handed one at all; here it has to be normalised."""
     engine = registry.default.primary.sqlalchemy_engine
     with engine.connect():
         pass
 
-    stored = wallets.add(a_wallet())
-    updated = wallets.update(stored.deposit(Decimal("1.00")))
+    stored = wallet_repository.add(a_wallet())
+    updated = wallet_repository.update(stored.deposit(Decimal("1.00")))
 
     assert isinstance(stored.id, ShardedId)
     assert isinstance(updated.id, ShardedId)
     assert type(stored) is type(updated) is Wallet
 
 
-def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(wallets, monkeypatch, mode):
+def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(
+    wallet_repository, monkeypatch, mode
+):
     """Java raises IllegalStateException rather than StaleRecordException here.
 
     The distinction is load-bearing: the executor retries a stale record, and an update keyed
@@ -522,7 +536,7 @@ def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(wallets, monk
     class TwoRowsMatched:
         rowcount = 2
 
-    stored = wallets.add(a_wallet())
+    stored = wallet_repository.add(a_wallet())
     if mode == "sync":
         monkeypatch.setattr(Connection, "execute", lambda self, *a, **k: TwoRowsMatched())
     else:
@@ -534,7 +548,7 @@ def test_matching_more_rows_than_were_asked_for_is_not_a_lost_race(wallets, monk
         monkeypatch.setattr(AsyncConnection, "execute", execute)
 
     with pytest.raises(EkbatanError) as raised:
-        wallets.update_no_result(stored.deposit(Decimal("1.00")))
+        wallet_repository.update_no_result(stored.deposit(Decimal("1.00")))
 
     assert not isinstance(raised.value, StaleRecordError), "retrying would not help"
     assert "is not unique" in str(raised.value)
@@ -554,8 +568,10 @@ def test_all_null_column_in_a_batch(registry, clock):
     """
     from fixtures.schema import NOTIFICATIONS
 
-    notes = NotificationEntityRepository(Notification, NOTIFICATIONS, registry, clock=clock)
-    stored = notes.add_all(
+    notification_repository = NotificationEntityRepository(
+        Notification, NOTIFICATIONS, registry, clock=clock
+    )
+    stored = notification_repository.add_all(
         [
             Notification.create(
                 id=Id[Notification].random(),
@@ -569,12 +585,12 @@ def test_all_null_column_in_a_batch(registry, clock):
     )
     assert all(s.message is None for s in stored)
 
-    back = notes.update_all([s.evolve(kind="CHANGED") for s in stored])
+    back = notification_repository.update_all([s.evolve(kind="CHANGED") for s in stored])
     assert [b.kind for b in back] == ["CHANGED"] * 3
     assert all(b.message is None for b in back)
 
 
-def test_converted_values_survive_a_batch(wallets, clock):
+def test_converted_values_survive_a_batch(wallet_repository, clock):
     """Java's `should_preserve_converted_values_when_updateAll_batches_multiple_rows`.
 
     Asserted by re-reading, as Java's does. What a batch update *returns* differs by dialect -
@@ -582,7 +598,7 @@ def test_converted_values_survive_a_batch(wallets, clock):
     handed in rather than the scale the column stores. What is stored is the same everywhere,
     and that is the part that is a promise.
     """
-    made = wallets.add_all(
+    made = wallet_repository.add_all(
         [
             Wallet.open(
                 id=ShardedId[Wallet].random(),
@@ -594,9 +610,9 @@ def test_converted_values_survive_a_batch(wallets, clock):
             for c, b in [("EUR", "1.25"), ("USD", "2.50"), ("MXN", "3.75")]
         ]
     )
-    wallets.update_all([w.evolve(balance=w.balance * 2) for w in made])
+    wallet_repository.update_all([w.evolve(balance=w.balance * 2) for w in made])
 
-    back = wallets.find_many([w.id for w in made])
+    back = wallet_repository.find_many([w.id for w in made])
 
     assert len(back) == 3
     assert sorted(str(w.balance) for w in back) == ["2.5000", "5.0000", "7.5000"]
@@ -605,9 +621,9 @@ def test_converted_values_survive_a_batch(wallets, clock):
     assert all(w.version == 2 for w in back)
 
 
-def test_an_update_leaves_updated_date_alone(wallets, clock):
+def test_an_update_leaves_updated_date_alone(wallet_repository, clock):
     """Java's `should_updateAll_and_update_store_identical_timestamps`."""
-    a, b = wallets.add_all(
+    a, b = wallet_repository.add_all(
         [
             Wallet.open(
                 id=ShardedId[Wallet].random(),
@@ -621,8 +637,8 @@ def test_an_update_leaves_updated_date_alone(wallets, clock):
     )
     clock.advance(timedelta(hours=3))
 
-    one = wallets.update(a.evolve(balance=Decimal("2")))
-    many = wallets.update_all([b.evolve(balance=Decimal("2"))])
+    one = wallet_repository.update(a.evolve(balance=Decimal("2")))
+    many = wallet_repository.update_all([b.evolve(balance=Decimal("2"))])
 
     # Java writes `updatedDate` nowhere in `ekbatan-core`, and neither does this. A framework
     # that quietly rewrote a column the application set is one you cannot use to record when
@@ -633,8 +649,8 @@ def test_an_update_leaves_updated_date_alone(wallets, clock):
 
     # Setting it is the caller's, and it survives the write untouched.
     at = clock.instant()
-    marked = wallets.update(wallets.get(a.id).copy().updated_date(at).build())
-    assert wallets.get(a.id).updated_date == at
+    marked = wallet_repository.update(wallet_repository.get(a.id).copy().updated_date(at).build())
+    assert wallet_repository.get(a.id).updated_date == at
     assert marked.updated_date == at
 
 
@@ -646,62 +662,66 @@ def test_an_update_leaves_updated_date_alone(wallets, clock):
 # Enum state), and a scalar survives a binder that ignores the declared type.
 
 
-def test_a_json_list_column_round_trips(wallets):
+def test_a_json_list_column_round_trips(wallet_repository):
     """Java's `Dummy.aliases`, whole purpose."""
-    stored = wallets.add(a_wallet_with(aliases=["primary", "billing", "éè"]))
+    stored = wallet_repository.add(a_wallet_with(aliases=["primary", "billing", "éè"]))
 
-    found = wallets.get(stored.id)
+    found = wallet_repository.get(stored.id)
 
     assert found.aliases == ["primary", "billing", "éè"]
     assert isinstance(found.aliases, list)
 
 
-def test_an_empty_json_list_is_not_confused_with_a_missing_one(wallets):
+def test_an_empty_json_list_is_not_confused_with_a_missing_one(wallet_repository):
     """Java maps an empty list to a null column and back to an empty list, so the two are
     deliberately indistinguishable there. Here they are stored as they are given, which means
     the distinction survives - and a reader has to be able to tell them apart."""
-    empty = wallets.get(wallets.add(a_wallet_with(aliases=[])).id)
-    absent = wallets.get(wallets.add(a_wallet()).id)
+    empty = wallet_repository.get(wallet_repository.add(a_wallet_with(aliases=[])).id)
+    absent = wallet_repository.get(wallet_repository.add(a_wallet()).id)
 
     assert empty.aliases == []
     assert absent.aliases == [], "the field's own default, not a null read back as one"
 
 
-def test_json_lists_survive_a_batch(wallets):
+def test_json_lists_survive_a_batch(wallet_repository):
     """The batch path builds a derived VALUES table by hand, so it is a different binder from
     the single-row one and can lose a mapper the single-row path keeps."""
-    made = wallets.add_all([a_wallet_with(aliases=[f"alias-{n}", f"other-{n}"]) for n in range(3)])
+    made = wallet_repository.add_all(
+        [a_wallet_with(aliases=[f"alias-{n}", f"other-{n}"]) for n in range(3)]
+    )
     assert sorted(w.aliases[0] for w in made) == ["alias-0", "alias-1", "alias-2"]
 
-    wallets.update_all([w.evolve(aliases=[*w.aliases, "added"]) for w in made])
+    wallet_repository.update_all([w.evolve(aliases=[*w.aliases, "added"]) for w in made])
 
-    back = wallets.find_many([w.id for w in made])
+    back = wallet_repository.find_many([w.id for w in made])
     assert all(w.aliases[-1] == "added" for w in back)
     assert sorted(len(w.aliases) for w in back) == [3, 3, 3]
 
 
-def test_an_integer_column_null_in_every_row_of_a_batch(wallets):
+def test_an_integer_column_null_in_every_row_of_a_batch(wallet_repository):
     """The untyped-NULL bind, on an integer rather than the text column
     `test_all_null_column_in_a_batch` already covers. A derived VALUES table whose column is
     NULL in every row has no inferable type, and which types a driver will refuse to guess
     differs between them - so the case is worth having on more than one."""
-    made = wallets.add_all([a_wallet() for _ in range(3)])
+    made = wallet_repository.add_all([a_wallet() for _ in range(3)])
     assert all(w.reward_points is None for w in made)
 
-    wallets.update_all([w.evolve(balance=Decimal("5")) for w in made])
+    wallet_repository.update_all([w.evolve(balance=Decimal("5")) for w in made])
 
-    back = wallets.find_many([w.id for w in made])
+    back = wallet_repository.find_many([w.id for w in made])
     assert all(w.reward_points is None for w in back)
     assert all(w.balance == Decimal("5.0000") for w in back)
 
 
-def test_an_integer_column_set_in_some_rows_and_null_in_others(wallets):
+def test_an_integer_column_set_in_some_rows_and_null_in_others(wallet_repository):
     """The mixed shape, which is what makes a per-column type decision necessary rather than a
     per-batch one."""
-    made = wallets.add_all([a_wallet_with(reward_points=points) for points in (10, None, 30)])
+    made = wallet_repository.add_all(
+        [a_wallet_with(reward_points=points) for points in (10, None, 30)]
+    )
 
     back = sorted(
-        wallets.find_many([w.id for w in made]),
+        wallet_repository.find_many([w.id for w in made]),
         key=lambda w: (w.reward_points is None, w.reward_points or 0),
     )
     assert [w.reward_points for w in back] == [10, 30, None]
@@ -725,16 +745,18 @@ def test_an_integer_column_set_in_some_rows_and_null_in_others(wallets):
         (lambda repo: repo.add_all([a_wallet(), None]), "Model in collection cannot be null"),
     ],
 )
-def test_none_is_refused_with_javas_message_and_nothing_is_written(wallets, call, message):
+def test_none_is_refused_with_javas_message_and_nothing_is_written(
+    wallet_repository, call, message
+):
     """Java's `Validate.notNull` checks. A `None` batch used to be read as empty and do nothing,
     and a `None` model failed on its first attribute."""
     with pytest.raises(ValidationError, match=f"^{message}$"):
-        call(wallets)
-    assert wallets.count() == 0
+        call(wallet_repository)
+    assert wallet_repository.count() == 0
 
 
-def test_an_entity_repository_names_entities(notifications):
+def test_an_entity_repository_names_entities(notification_repository):
     with pytest.raises(ValidationError, match=r"^Entities collection cannot be null$"):
-        notifications.add_all(None)
+        notification_repository.add_all(None)
     with pytest.raises(ValidationError, match=r"^Entity cannot be null$"):
-        notifications.add(None)
+        notification_repository.add(None)

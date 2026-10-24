@@ -15,17 +15,12 @@ from sqlalchemy import event
 from ekbatan.errors import ValidationError
 from ekbatan.ids import ShardedId
 from fixtures.actions import (
-    CloseWalletAction,
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
-    DepositThenFailAction,
-    NotifyAction,
-    NotifyParams,
-    TransferMoneyAction,
-    TransferParams,
-    WalletIdParams,
+    CreateNotificationAction,
+    WalletCloseAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
+    WalletDepositThenFailAction,
+    WalletTransferMoneyAction,
 )
 from fixtures.domain import Wallet, WalletState
 from fixtures.executing import run
@@ -37,12 +32,14 @@ MODES = ("sync", "async")
 def a_wallet(executor, balance="100.00", currency="EUR"):
     return run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency=currency, initial_balance=Decimal(balance)),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency=currency, initial_balance=Decimal(balance)
+        ),
     )
 
 
-def test_state_and_events_commit_together(executor, wallets, outbox, registry):
+def test_state_and_events_commit_together(executor, wallet_repository, outbox, registry):
     wallet = a_wallet(executor, "100.00")
 
     commits: list[str] = []
@@ -52,18 +49,20 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
 
     run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"
+        ),
     )
 
-    assert wallets.get(wallet.id).balance == Decimal("150.0000")
+    assert wallet_repository.get(wallet.id).balance == Decimal("150.0000")
     assert len(commits) == 1, "one unit of work is one transaction, whatever it touched"
 
     rows = outbox()
     assert len(rows) == 2
-    (deposited,) = [r for r in rows if r["action_name"] == "DepositMoneyAction"]
+    (deposited,) = [r for r in rows if r["action_name"] == "WalletDepositMoneyAction"]
     assert deposited["namespace"] == "example.wallet"
-    assert deposited["action_name"] == "DepositMoneyAction"
+    assert deposited["action_name"] == "WalletDepositMoneyAction"
     assert deposited["model_id"] == str(wallet.id)
     assert deposited["model_type"] == "Wallet"
     assert deposited["event_type"] == "WalletMoneyDepositedEvent"
@@ -83,60 +82,64 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
     }
 
 
-def test_a_failed_unit_of_work_writes_neither(executor, wallets, outbox):
+def test_a_failed_unit_of_work_writes_neither(executor, wallet_repository, outbox):
     wallet = a_wallet(executor, "100.00")
     before = len(outbox())
 
     with pytest.raises(ValidationError, match="amount"):
         run(
             executor,
-            DepositMoneyAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("-50"), recipient="ada@example.com"),
+            WalletDepositMoneyAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("-50"), recipient="ada@example.com"
+            ),
         )
 
-    assert wallets.get(wallet.id).balance == Decimal("100.0000")
-    assert wallets.get(wallet.id).version == 1
+    assert wallet_repository.get(wallet.id).balance == Decimal("100.0000")
+    assert wallet_repository.get(wallet.id).version == 1
     assert len(outbox()) == before, "no event for a change that did not happen"
 
 
-def test_a_failure_after_staging_discards_the_plan(executor, wallets, outbox):
+def test_a_failure_after_staging_discards_the_plan(executor, wallet_repository, outbox):
     wallet = a_wallet(executor, "100.00")
     before = len(outbox())
 
     with pytest.raises(ValidationError, match="changed my mind"):
         run(
             executor,
-            DepositThenFailAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("25"), recipient="ada@example.com"),
+            WalletDepositThenFailAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("25"), recipient="ada@example.com"
+            ),
         )
 
-    assert wallets.get(wallet.id).balance == Decimal("100.0000"), "staging is not writing"
+    assert wallet_repository.get(wallet.id).balance == Decimal("100.0000"), "staging is not writing"
     assert len(outbox()) == before
 
 
-def test_events_of_one_unit_of_work_share_an_action_id(executor, wallets, outbox):
+def test_events_of_one_unit_of_work_share_an_action_id(executor, wallet_repository, outbox):
     source = a_wallet(executor, "100.00")
     destination = a_wallet(executor, "0.00")
 
     run(
         executor,
-        TransferMoneyAction(wallets, executor.clock),
-        TransferParams(
+        WalletTransferMoneyAction(wallet_repository, executor.clock),
+        WalletTransferMoneyAction.Params(
             from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("25.00")
         ),
     )
 
-    transfer = [r for r in outbox() if r["action_name"] == "TransferMoneyAction"]
+    transfer = [r for r in outbox() if r["action_name"] == "WalletTransferMoneyAction"]
     assert len(transfer) == 2
     assert len({r["action_id"] for r in transfer}) == 1, "one invocation, one action id"
     assert len({r["id"] for r in transfer}) == 2, "each event is its own row"
 
-    assert wallets.get(source.id).balance == Decimal("75.0000")
-    assert wallets.get(destination.id).balance == Decimal("25.0000")
+    assert wallet_repository.get(source.id).balance == Decimal("75.0000")
+    assert wallet_repository.get(destination.id).balance == Decimal("25.0000")
 
 
 def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_order(
-    executor, wallets, outbox
+    executor, wallet_repository, outbox
 ):
     """Both halves of what the outbox actually says about a multi-event invocation.
 
@@ -156,13 +159,13 @@ def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_orde
     destination = a_wallet(executor, "0.00")
     run(
         executor,
-        TransferMoneyAction(wallets, executor.clock),
-        TransferParams(
+        WalletTransferMoneyAction(wallet_repository, executor.clock),
+        WalletTransferMoneyAction.Params(
             from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("10.00")
         ),
     )
 
-    transfer = [r for r in outbox() if r["action_name"] == "TransferMoneyAction"]
+    transfer = [r for r in outbox() if r["action_name"] == "WalletTransferMoneyAction"]
 
     assert {r["event_type"] for r in transfer} == {
         "WalletMoneyWithdrawnEvent",
@@ -175,11 +178,13 @@ def test_the_rows_of_one_invocation_share_its_context_and_do_not_promise_an_orde
     )
 
 
-def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, outbox, notifications):
+def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(
+    executor, outbox, notification_repository
+):
     run(
         executor,
-        NotifyAction(executor.clock),
-        NotifyParams(
+        CreateNotificationAction(executor.clock),
+        CreateNotificationAction.Params(
             wallet_id=ShardedId[Wallet].random(),
             kind="MONEY_DEPOSITED",
             recipient="ada@example.com",
@@ -189,13 +194,13 @@ def test_a_unit_of_work_that_emits_nothing_still_writes_a_sentinel(executor, out
     rows = outbox()
     assert len(rows) == 1
     sentinel = rows[0]
-    assert sentinel["action_name"] == "NotifyAction"
+    assert sentinel["action_name"] == "CreateNotificationAction"
     assert sentinel["event_type"] is None
     assert sentinel["model_id"] is None
     assert sentinel["model_type"] is None
     assert sentinel["payload"] is None
     assert sentinel["event_date"] is not None
-    assert len(notifications.all()) == 1, "the entity itself was written"
+    assert len(notification_repository.all()) == 1, "the entity itself was written"
 
 
 def test_the_sentinels_payload_is_sql_null_not_json_null(executor, registry):
@@ -207,8 +212,8 @@ def test_the_sentinels_payload_is_sql_null_not_json_null(executor, registry):
 
     run(
         executor,
-        NotifyAction(executor.clock),
-        NotifyParams(
+        CreateNotificationAction(executor.clock),
+        CreateNotificationAction.Params(
             wallet_id=ShardedId[Wallet].random(), kind="MONEY_DEPOSITED", recipient="a@b.c"
         ),
     )
@@ -220,16 +225,22 @@ def test_the_sentinels_payload_is_sql_null_not_json_null(executor, registry):
         )
 
 
-def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outbox):
+def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallet_repository, outbox):
     wallet = a_wallet(executor, "0.00")
     closed = run(
-        executor, CloseWalletAction(wallets, executor.clock), WalletIdParams(wallet_id=wallet.id)
+        executor,
+        WalletCloseAction(wallet_repository, executor.clock),
+        WalletCloseAction.Params(wallet_id=wallet.id),
     )
     before = {r["id"] for r in outbox()}
 
-    run(executor, CloseWalletAction(wallets, executor.clock), WalletIdParams(wallet_id=wallet.id))
+    run(
+        executor,
+        WalletCloseAction(wallet_repository, executor.clock),
+        WalletCloseAction.Params(wallet_id=wallet.id),
+    )
 
-    again = wallets.get(wallet.id)
+    again = wallet_repository.get(wallet.id)
     assert again.state is WalletState.CLOSED
     assert again.version == closed.version, "closing a closed wallet moves nothing"
 
@@ -239,12 +250,14 @@ def test_a_no_op_close_changes_nothing_and_emits_nothing(executor, wallets, outb
     assert [r["event_type"] for r in rows] == [None], "recorded, but nothing happened"
 
 
-def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
+def test_every_row_carries_the_full_action_params(executor, wallet_repository, outbox):
     wallet = a_wallet(executor, "0.00")
     run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"
+        ),
     )
 
     deposited = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
@@ -256,12 +269,16 @@ def test_every_row_carries_the_full_action_params(executor, wallets, outbox):
     }, "a consumer can read what the event deliberately does not carry"
 
 
-def test_the_namespace_is_on_every_row_and_events_are_undelivered(executor, wallets, outbox):
+def test_the_namespace_is_on_every_row_and_events_are_undelivered(
+    executor, wallet_repository, outbox
+):
     wallet = a_wallet(executor, "0.00")
     run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"
+        ),
     )
 
     rows = outbox()
@@ -269,13 +286,15 @@ def test_the_namespace_is_on_every_row_and_events_are_undelivered(executor, wall
     assert all(r["delivered"] is False for r in rows)
 
 
-def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outbox):
+def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallet_repository, outbox):
     wallet = a_wallet(executor, "0.00")
     for amount in ("1.00", "2.00"):
         run(
             executor,
-            DepositMoneyAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"),
+            WalletDepositMoneyAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"
+            ),
         )
 
     deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent"]
@@ -286,12 +305,14 @@ def test_one_event_per_row_and_a_new_action_id_each_time(executor, wallets, outb
     assert {r["payload"]["amount"] for r in deposits} == {Decimal("1.00"), Decimal("2.00")}
 
 
-def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, clock):
+def test_the_timestamps_bracket_the_unit_of_work(executor, wallet_repository, outbox, clock):
     wallet = a_wallet(executor, "0.00")
     run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@example.com"
+        ),
     )
 
     row = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
@@ -304,7 +325,7 @@ def test_the_timestamps_bracket_the_unit_of_work(executor, wallets, outbox, cloc
 
 
 def test_decimals_are_json_numbers_and_keep_their_scale_except_on_mysql(
-    executor, wallets, outbox, registry
+    executor, wallet_repository, outbox, registry
 ):
     """Java writes a BigDecimal as a JSON number, so this port does too, and reads every number
     back as a Decimal - nothing is lost on the way in.
@@ -316,8 +337,10 @@ def test_decimals_are_json_numbers_and_keep_their_scale_except_on_mysql(
     wallet = a_wallet(executor, "100.00")
     run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"
+        ),
     )
     row = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
     amount, param = row["payload"]["amount"], row["action_params"]["amount"]

@@ -33,12 +33,10 @@ from ekbatan.events import (
 )
 from ekbatan.ids import ShardedId
 from fixtures.actions import (
-    AsyncNotifyAction,
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
-    NotifyParams,
+    AsyncCreateNotificationAction,
+    CreateNotificationAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.domain import Notification, Wallet, WalletMoneyDepositedEvent
 from fixtures.executing import run
@@ -49,16 +47,18 @@ from fixtures.schema import NOTIFICATIONS
 pytestmark = pytest.mark.skipif(under_gevent(), reason=NOT_UNDER_GEVENT)
 
 
-def a_deposit(executor: Any, wallets: Any) -> None:
+def a_deposit(executor: Any, wallet_repository: Any) -> None:
     wallet = run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100")),
     )
     run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("10"), recipient="ada@example.com"
+        ),
     )
 
 
@@ -80,8 +80,8 @@ class NotifyingHandler:
 
     async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         await self.executor.execute(
-            AsyncNotifyAction,
-            NotifyParams(
+            AsyncCreateNotificationAction,
+            CreateNotificationAction.Params(
                 wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
                 kind="MONEY_DEPOSITED",
                 recipient=str(envelope.action_params.get("recipient", "")),
@@ -91,26 +91,26 @@ class NotifyingHandler:
 
 
 def test_an_async_handler_awaits_an_async_executor_on_the_handler_loop(
-    backend, dialect, registry, executor, wallets, clock, notifications_in
+    backend, dialect, registry, executor, wallet_repository, clock, notifications_in
 ):
     if dialect == "sqlite":
         pytest.skip("SQLite takes one writer at a time; two pools over one file contend")
     loop = HandlerLoop()
     # The handlers' own async registry and executor, used only on the handler loop.
     handler_registry = _registry(backend, {GLOBAL: "ekbatan_main"}, kind=AsyncDatabaseRegistry)
-    notifications = AsyncNotificationRepository(
+    notification_repository = AsyncNotificationRepository(
         Notification, NOTIFICATIONS, handler_registry, clock=clock
     )
     handler_executor = AsyncActionExecutor(
         namespace="example.wallet",
         registry=handler_registry,
-        repositories=[notifications],
-        actions=[AsyncNotifyAction(clock)],
+        repositories=[notification_repository],
+        actions=[AsyncCreateNotificationAction(clock)],
         clock=clock,
     )
     fanout, dispatch = wired(registry, clock, NotifyingHandler(handler_executor), handler_loop=loop)
     try:
-        a_deposit(executor, wallets)
+        a_deposit(executor, wallet_repository)
         fanout.drain_once()
         assert dispatch.drain_once() == 1
 
@@ -139,12 +139,12 @@ class Sleeping:
 
 
 def test_one_batch_of_async_handlers_runs_on_one_loop_at_once(
-    registry, executor, wallets, clock, notifications_in
+    registry, executor, wallet_repository, clock, notifications_in
 ):
     handlers = [Sleeping(f"sleeper-{n}") for n in range(5)]
     fanout, dispatch = wired(registry, clock, *handlers)
     try:
-        a_deposit(executor, wallets)
+        a_deposit(executor, wallet_repository)
         fanout.drain_once()
         started = time.monotonic()
         dispatch.drain_once()
@@ -167,7 +167,7 @@ class Interrupting:
 
 
 def test_a_handler_raising_keyboard_interrupt_fails_its_row_and_the_loop_goes_on(
-    registry, executor, wallets, clock, notifications_in, caplog
+    registry, executor, wallet_repository, clock, notifications_in, caplog
 ):
     """asyncio stops a loop that a task lets a KeyboardInterrupt out of. The handler loop
     carries it back to the delivery thread instead - which records the failure at ERROR, as for
@@ -176,14 +176,14 @@ def test_a_handler_raising_keyboard_interrupt_fails_its_row_and_the_loop_goes_on
     fanout, dispatch = wired(registry, clock, Interrupting())
     later_fanout, later_dispatch = wired(registry, clock, ok, handler_loop=dispatch.handler_loop)
     try:
-        a_deposit(executor, wallets)
+        a_deposit(executor, wallet_repository)
         fanout.drain_once()
         with caplog.at_level(logging.ERROR):
             dispatch.drain_once()
         assert notifications_in() == {"FAILED": 1}
         assert any("threw Error KeyboardInterrupt" in r.getMessage() for r in caplog.records)
 
-        a_deposit(executor, wallets)  # a fresh event, for the second registry
+        a_deposit(executor, wallet_repository)  # a fresh event, for the second registry
         later_fanout.drain_once()
         later_dispatch.drain_once()
         assert ok.calls == 1, "the loop survived it"

@@ -1520,11 +1520,11 @@ class RepositoryRegistry:
     Built from a collection when that is all you have, or through :meth:`builder` when you
     want each registration to say what it is::
 
-        RepositoryRegistry([wallets, alerts])
+        RepositoryRegistry([wallet_repository, notification_repository])
 
         (RepositoryRegistry.builder()
-            .with_model_repository(wallets)
-            .with_entity_repository(alerts)
+            .with_model_repository(wallet_repository)
+            .with_entity_repository(notification_repository)
             .build())
     """
 

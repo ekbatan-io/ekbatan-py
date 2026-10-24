@@ -8,20 +8,16 @@ from uuid import uuid4
 
 from ekbatan.ids import ShardedId
 from fixtures.actions import (
-    CloseWalletAction,
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
-    NotifyAction,
-    NotifyParams,
-    WalletIdParams,
+    CreateNotificationAction,
+    WalletCloseAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.domain import Wallet, WalletCreatedEvent, WalletMoneyDepositedEvent
 from fixtures.executing import run
 from fixtures.handlers import (
-    MoneyDepositedEventHandler,
     RecordingHandler,
+    WalletMoneyDepositedEventHandler,
     failing,
     fatal,
     on_close,
@@ -36,25 +32,31 @@ HANDLER_KINDS = ("sync", "async")
 def a_wallet(executor, balance="100.00"):
     return run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)
+        ),
     )
 
 
-def deposit(executor, wallets, wallet, amount="10.00"):
+def deposit(executor, wallet_repository, wallet, amount="10.00"):
     return run(
         executor,
-        DepositMoneyAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"),
+        WalletDepositMoneyAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal(amount), recipient="ada@example.com"
+        ),
     )
 
 
-def test_an_event_reaches_every_subscribed_handler(executor, wallets, pipeline, notifications_in):
+def test_an_event_reaches_every_subscribed_handler(
+    executor, wallet_repository, pipeline, notifications_in
+):
     email, indexer = succeeding("email"), succeeding("indexer")
     fanout, dispatch = pipeline(email, indexer)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
 
     assert fanout.drain_once() == 1
     assert notifications_in() == {"PENDING": 2}, "one row per subscriber, not one shared"
@@ -64,12 +66,14 @@ def test_an_event_reaches_every_subscribed_handler(executor, wallets, pipeline, 
     assert email.calls == 1 and indexer.calls == 1
 
 
-def test_fan_out_marks_delivered_and_dispatch_does_not(executor, wallets, pipeline, outbox):
+def test_fan_out_marks_delivered_and_dispatch_does_not(
+    executor, wallet_repository, pipeline, outbox
+):
     email = succeeding("email")
     fanout, _ = pipeline(email)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     delivered = {r["event_type"]: r["delivered"] for r in outbox()}
@@ -77,11 +81,13 @@ def test_fan_out_marks_delivered_and_dispatch_does_not(executor, wallets, pipeli
     assert email.calls == 0, "fan-out creates work; it does not do it"
 
 
-def test_an_event_nobody_subscribes_to_stays_available(executor, wallets, pipeline, outbox):
+def test_an_event_nobody_subscribes_to_stays_available(
+    executor, wallet_repository, pipeline, outbox
+):
     fanout, _ = pipeline(on_close("closer"))  # subscribed to something else entirely
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     assert fanout.drain_once() == 0
 
     deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent"]
@@ -99,21 +105,23 @@ def test_a_sentinel_row_is_never_fanned_out(executor, pipeline, notifications_in
     fanout, _ = pipeline(succeeding("email"))
     run(
         executor,
-        NotifyAction(executor.clock),
-        NotifyParams(wallet_id=ShardedId[Wallet].random(), kind="X", recipient="ada@example.com"),
+        CreateNotificationAction(executor.clock),
+        CreateNotificationAction.Params(
+            wallet_id=ShardedId[Wallet].random(), kind="X", recipient="ada@example.com"
+        ),
     )
     assert fanout.drain_once() == 0, "a row with no event type belongs on no topic"
     assert notifications_in() == {}
 
 
 def test_a_handler_that_fails_a_few_times_is_retried(
-    executor, wallets, pipeline, notifications_in, clock
+    executor, wallet_repository, pipeline, notifications_in, clock
 ):
     flaky = failing("flaky", times=2)
     fanout, dispatch = pipeline(flaky, max_backoff=timedelta(seconds=60))
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     dispatch.drain_once()
@@ -136,7 +144,7 @@ def test_a_handler_that_fails_a_few_times_is_retried(
 
 
 def test_a_handler_that_never_succeeds_eventually_stops(
-    executor, wallets, pipeline, notifications_in, clock
+    executor, wallet_repository, pipeline, notifications_in, clock
 ):
     never = failing("never")
     fanout, dispatch = pipeline(
@@ -144,7 +152,7 @@ def test_a_handler_that_never_succeeds_eventually_stops(
     )
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     dispatch.drain_once()
@@ -160,13 +168,13 @@ def test_a_handler_that_never_succeeds_eventually_stops(
 
 
 def test_an_event_already_past_retention_is_never_handed_over(
-    executor, wallets, pipeline, notifications_in, clock
+    executor, wallet_repository, pipeline, notifications_in, clock
 ):
     email = succeeding("email")
     fanout, dispatch = pipeline(email, retention=timedelta(seconds=7))
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     clock.advance(timedelta(seconds=60))
@@ -176,12 +184,14 @@ def test_an_event_already_past_retention_is_never_handed_over(
     assert email.calls == 0, "the check is before invocation, not after"
 
 
-def test_a_fatal_handler_does_not_discard_its_batch(executor, wallets, pipeline, notifications_in):
+def test_a_fatal_handler_does_not_discard_its_batch(
+    executor, wallet_repository, pipeline, notifications_in
+):
     exploder, email = fatal("exploder"), succeeding("email")
     fanout, dispatch = pipeline(exploder, email, max_backoff=timedelta(milliseconds=1))
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
     dispatch.drain_once()
 
@@ -196,13 +206,13 @@ def test_a_fatal_handler_does_not_discard_its_batch(executor, wallets, pipeline,
 
 
 def test_a_succeeded_notification_is_not_delivered_again(
-    executor, wallets, pipeline, notifications_in
+    executor, wallet_repository, pipeline, notifications_in
 ):
     email = succeeding("email")
     fanout, dispatch = pipeline(email)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
     for _ in range(3):
         dispatch.drain_once()
@@ -212,13 +222,13 @@ def test_a_succeeded_notification_is_not_delivered_again(
 
 
 def test_each_event_and_handler_pair_produces_one_notification(
-    executor, wallets, pipeline, notifications_in
+    executor, wallet_repository, pipeline, notifications_in
 ):
     email = succeeding("email")
     fanout, _ = pipeline(email)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     for _ in range(3):
         fanout.drain_once()
 
@@ -228,14 +238,18 @@ def test_each_event_and_handler_pair_produces_one_notification(
 
 
 def test_handlers_only_see_the_event_type_they_subscribed_to(
-    executor, wallets, pipeline, notifications_in
+    executor, wallet_repository, pipeline, notifications_in
 ):
     deposits, closes = succeeding("on_deposit"), on_close("on_close")
     fanout, dispatch = pipeline(deposits, closes)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
-    run(executor, CloseWalletAction(wallets, executor.clock), WalletIdParams(wallet_id=wallet.id))
+    deposit(executor, wallet_repository, wallet)
+    run(
+        executor,
+        WalletCloseAction(wallet_repository, executor.clock),
+        WalletCloseAction.Params(wallet_id=wallet.id),
+    )
 
     fanout.drain_until_idle()
     dispatch.drain_until_idle()
@@ -245,12 +259,14 @@ def test_handlers_only_see_the_event_type_they_subscribed_to(
     assert [e.event.__class__.__name__ for e in closes.received] == ["WalletClosedEvent"]
 
 
-def test_a_handler_receives_a_typed_event_and_its_producing_context(executor, wallets, pipeline):
+def test_a_handler_receives_a_typed_event_and_its_producing_context(
+    executor, wallet_repository, pipeline
+):
     email = succeeding("email")
     fanout, dispatch = pipeline(email)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet, "12.50")
+    deposit(executor, wallet_repository, wallet, "12.50")
     fanout.drain_once()
     dispatch.drain_once()
 
@@ -260,7 +276,7 @@ def test_a_handler_receives_a_typed_event_and_its_producing_context(executor, wa
     assert envelope.model_id == str(wallet.id)
     assert envelope.model_type == "Wallet"
     assert envelope.namespace == "example.wallet"
-    assert envelope.action_name == "DepositMoneyAction"
+    assert envelope.action_name == "WalletDepositMoneyAction"
     assert envelope.action_params["recipient"] == "ada@example.com", (
         "readable off the envelope, so the event need not carry a routing concern"
     )
@@ -268,18 +284,18 @@ def test_a_handler_receives_a_typed_event_and_its_producing_context(executor, wa
 
 
 def test_a_handler_may_start_another_unit_of_work(
-    executor, wallets, pipeline, notifications, outbox
+    executor, wallet_repository, pipeline, notification_repository, outbox
 ):
-    notifier = MoneyDepositedEventHandler(executor)
+    notifier = WalletMoneyDepositedEventHandler(executor)
     fanout, dispatch = pipeline(notifier)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet, "12.50")
+    deposit(executor, wallet_repository, wallet, "12.50")
     fanout.drain_once()
     dispatch.drain_once()
 
     assert notifier.calls == 1
-    written = notifications.all()
+    written = notification_repository.all()
     assert len(written) == 1
     assert written[0].recipient == "ada@example.com"
     # MySQL's JSON column keeps a number with a fraction as a double, so the scale goes there -
@@ -293,20 +309,20 @@ def test_a_handler_may_start_another_unit_of_work(
     # every invocation with the same one. What is being asserted is that all three ran and each
     # was its own unit of work, which the action ids below say.
     assert {r["action_name"] for r in outbox()} == {
-        "CreateWalletAction",
-        "DepositMoneyAction",
-        "NotifyAction",
+        "WalletCreateAction",
+        "WalletDepositMoneyAction",
+        "CreateNotificationAction",
     }
     assert len({r["action_id"] for r in outbox()}) == 3, "the chained work is its own unit"
 
 
 def test_a_renamed_handler_still_drains_its_old_queue(
-    executor, wallets, pipeline, notifications_in
+    executor, wallet_repository, pipeline, notifications_in
 ):
     old = succeeding("wallet-emailer")
     fanout, _ = pipeline(old)
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     renamed = succeeding("wallet-notifier")
@@ -325,7 +341,7 @@ def test_a_renamed_handler_still_drains_its_old_queue(
 
 
 def test_several_events_past_retention_expire_together(
-    executor, wallets, pipeline, notifications_in, clock
+    executor, wallet_repository, pipeline, notifications_in, clock
 ):
     """Java's `preflight_expiration_handles_multiple_events_in_one_batch`.
 
@@ -337,7 +353,7 @@ def test_several_events_past_retention_expire_together(
 
     wallet = a_wallet(executor)
     for _ in range(4):
-        deposit(executor, wallets, wallet)
+        deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
     assert notifications_in() == {"PENDING": 4}
 
@@ -349,7 +365,7 @@ def test_several_events_past_retention_expire_together(
 
 
 def test_several_failing_handlers_expire_together_after_their_window(
-    executor, wallets, pipeline, notifications_in, clock
+    executor, wallet_repository, pipeline, notifications_in, clock
 ):
     """Java's `post_failure_expiration_handles_multiple_events_in_one_batch`.
 
@@ -363,7 +379,7 @@ def test_several_failing_handlers_expire_together_after_their_window(
 
     wallet = a_wallet(executor)
     for _ in range(3):
-        deposit(executor, wallets, wallet)
+        deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     dispatch.drain_once()
@@ -377,7 +393,7 @@ def test_several_failing_handlers_expire_together_after_their_window(
 
 
 def test_a_handler_slower_than_the_window_expires_rather_than_retrying_into_the_past(
-    executor, wallets, pipeline, notifications_in, clock
+    executor, wallet_repository, pipeline, notifications_in, clock
 ):
     """Java's `slow_failing_handler_expires_using_post_invocation_time`.
 
@@ -403,7 +419,7 @@ def test_a_handler_slower_than_the_window_expires_rather_than_retrying_into_the_
     )
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     dispatch.drain_once()
@@ -415,7 +431,7 @@ def test_a_handler_slower_than_the_window_expires_rather_than_retrying_into_the_
 
 
 def test_an_event_nobody_wanted_is_picked_up_once_someone_does(
-    executor, wallets, pipeline, notifications_in, outbox
+    executor, wallet_repository, pipeline, notifications_in, outbox
 ):
     """The second half of Java's `zero_subscribers...leaves_events_available_for_later_fanout`.
 
@@ -424,7 +440,7 @@ def test_an_event_nobody_wanted_is_picked_up_once_someone_does(
     """
     nobody_fanout, _ = pipeline()
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
 
     nobody_fanout.drain_once()
     assert [r["delivered"] for r in outbox() if r["event_type"]] == [False, False], (
@@ -442,15 +458,15 @@ def test_an_event_nobody_wanted_is_picked_up_once_someone_does(
 
 
 def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
-    executor, wallets, notifications, pipeline, notifications_in, outbox
+    executor, wallet_repository, notification_repository, pipeline, notifications_in, outbox
 ):
     """Java's `widget_handler_chains_into_note_action_and_note_handler_writes_audit_entry`.
 
-    The existing chaining test stops one level short: `NotifyAction` writes an entity, and an entity
-    emits nothing, so nothing downstream can subscribe. This goes the distance Java's does - a
-    handler starts an action, that action's model emits its own event, and a *second* handler
-    is dispatched from it, which writes a row of its own. Which is the shape every saga has,
-    and the one where a pipeline that only half works still looks fine.
+    The existing chaining test stops one level short: `CreateNotificationAction` writes an entity,
+    and an entity emits nothing, so nothing downstream can subscribe. This goes the distance Java's
+    does - a handler starts an action, that action's model emits its own event, and a *second*
+    handler is dispatched from it, which writes a row of its own. Which is the shape every saga
+    has, and the one where a pipeline that only half works still looks fine.
 
     Both hops do real work on purpose. A second handler that only counted its calls would prove
     the dispatch reached it and nothing about whether the unit of work it starts can commit -
@@ -469,8 +485,8 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
             self.calls += 1
             run(
                 executor,
-                CreateWalletAction(executor.clock),
-                CreateWalletParams(
+                WalletCreateAction(executor.clock),
+                WalletCreateAction.Params(
                     owner_id=uuid4(), currency="USD", initial_balance=Decimal("0.00")
                 ),
             )
@@ -492,8 +508,8 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
             self.received.append(envelope)
             run(
                 executor,
-                NotifyAction(executor.clock),
-                NotifyParams(
+                CreateNotificationAction(executor.clock),
+                CreateNotificationAction.Params(
                     wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
                     kind="WALLET_OPENED",
                     recipient="auditor@example.com",
@@ -506,14 +522,14 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
     fanout, dispatch = pipeline(opener, auditor)
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet, "12.50")
+    deposit(executor, wallet_repository, wallet, "12.50")
 
     # Round one: the deposit reaches the opener, which opens a second wallet.
     fanout.drain_once()
     dispatch.drain_once()
 
     assert opener.calls == 1
-    assert wallets.count() == 2, "the chained action really wrote a row"
+    assert wallet_repository.count() == 2, "the chained action really wrote a row"
     first_pass = auditor.calls
 
     # Round two: the wallet the *handler* created emits its own event, which is fanned out and
@@ -524,10 +540,10 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
     assert auditor.calls > first_pass, "the second level was dispatched too"
     opened = [e for e in auditor.received if e.event.currency == "USD"]
     assert len(opened) == 1, "and it is the wallet the handler opened, not the original"
-    assert opened[0].action_name == "CreateWalletAction"
+    assert opened[0].action_name == "WalletCreateAction"
     assert opened[0].model_type == "Wallet"
 
-    audited = [n for n in notifications.all() if n.kind == "WALLET_OPENED"]
+    audited = [n for n in notification_repository.all() if n.kind == "WALLET_OPENED"]
     assert len(audited) == auditor.calls, (
         "the second hop's own unit of work committed, one row per dispatch"
     )
@@ -542,7 +558,9 @@ def test_a_chained_action_s_own_event_is_fanned_out_and_dispatched_in_turn(
 # -- a batch's handlers run at the same time, as Java's do ---------------------------------------
 
 
-def test_a_batch_invokes_its_handlers_concurrently(executor, wallets, pipeline, notifications_in):
+def test_a_batch_invokes_its_handlers_concurrently(
+    executor, wallet_repository, pipeline, notifications_in
+):
     """Java forks a virtual thread per notification in a batch; this forks a real one.
 
     Four handlers that each block until all four have arrived. Delivered one after another this
@@ -561,7 +579,7 @@ def test_a_batch_invokes_its_handlers_concurrently(executor, wallets, pipeline, 
     ]
 
     fanout, dispatch = pipeline(*handlers)
-    deposit(executor, wallets, a_wallet(executor))
+    deposit(executor, wallet_repository, a_wallet(executor))
 
     assert fanout.drain_once() == 1
     dispatch.drain_once()
@@ -572,7 +590,7 @@ def test_a_batch_invokes_its_handlers_concurrently(executor, wallets, pipeline, 
 
 
 def test_one_notification_is_delivered_inline_with_no_thread(
-    executor, wallets, pipeline, notifications_in, handler_kind
+    executor, wallet_repository, pipeline, notifications_in, handler_kind
 ):
     """The quiet batch, which is most of them. A pool would be built and never used. (An async
     handler runs on the handler loop; the delivery pool is still never built.)"""
@@ -586,7 +604,7 @@ def test_one_notification_is_delivered_inline_with_no_thread(
     )
 
     fanout, dispatch = pipeline(handler)
-    deposit(executor, wallets, a_wallet(executor))
+    deposit(executor, wallet_repository, a_wallet(executor))
     fanout.drain_once()
     dispatch.drain_once()
 
@@ -597,7 +615,7 @@ def test_one_notification_is_delivered_inline_with_no_thread(
 
 
 def test_a_batch_of_outcomes_is_one_update_per_bucket_not_one_per_row(
-    executor, wallets, pipeline, notifications_in, registry
+    executor, wallet_repository, pipeline, notifications_in, registry
 ):
     """Java commits a batch in about four `UPDATE`s; this used to take one per row.
 
@@ -609,7 +627,7 @@ def test_a_batch_of_outcomes_is_one_update_per_bucket_not_one_per_row(
 
     handlers = [succeeding(f"h{n}") for n in range(12)]
     fanout, dispatch = pipeline(*handlers)
-    deposit(executor, wallets, a_wallet(executor))
+    deposit(executor, wallet_repository, a_wallet(executor))
     assert fanout.drain_once() == 1
 
     updates: list[str] = []
@@ -630,13 +648,13 @@ def test_a_batch_of_outcomes_is_one_update_per_bucket_not_one_per_row(
 
 
 def test_outcomes_that_differ_get_their_own_statement(
-    executor, wallets, pipeline, notifications_in, registry
+    executor, wallet_repository, pipeline, notifications_in, registry
 ):
     """The other half of the same rule: a bucket is per decision, not per batch."""
     from sqlalchemy import event
 
     fanout, dispatch = pipeline(succeeding("ok1"), succeeding("ok2"), failing("flaky"))
-    deposit(executor, wallets, a_wallet(executor))
+    deposit(executor, wallet_repository, a_wallet(executor))
     fanout.drain_once()
 
     updates: list[str] = []
@@ -657,7 +675,7 @@ def test_outcomes_that_differ_get_their_own_statement(
 
 
 def test_a_new_notification_is_due_at_its_event_s_date_not_at_fan_out_time(
-    executor, wallets, pipeline, clock, registry
+    executor, wallet_repository, pipeline, clock, registry
 ):
     """Java's fan-out sets `next_retry_at` to the event's `event_date`. So an event dated
     later than the fan-out clock waits for its date, and an older event fanned out late is
@@ -667,7 +685,7 @@ def test_a_new_notification_is_due_at_its_event_s_date_not_at_fan_out_time(
     from fixtures.schema import EVENT_NOTIFICATIONS
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     event_date = clock.instant()
     clock.pause_at(clock.instant() - timedelta(hours=1))
 
@@ -688,7 +706,7 @@ def test_a_new_notification_is_due_at_its_event_s_date_not_at_fan_out_time(
 
 
 def test_a_failing_row_expires_as_soon_as_its_next_retry_would_land_past_the_deadline(
-    executor, wallets, pipeline, notifications_in, clock
+    executor, wallet_repository, pipeline, notifications_in, clock
 ):
     """Java's rule: after a failure, a row whose next retry would come after `event_date +
     retention` expires there and then, rather than sitting `FAILED` with a retry nobody makes."""
@@ -696,7 +714,7 @@ def test_a_failing_row_expires_as_soon_as_its_next_retry_would_land_past_the_dea
     fanout, dispatch = pipeline(never, retention=timedelta(seconds=40))
 
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     dispatch.drain_once()  # fails at +0s; the next retry, +30s, is inside the window
@@ -710,7 +728,7 @@ def test_a_failing_row_expires_as_soon_as_its_next_retry_would_land_past_the_dea
 
 
 def test_a_failed_outcome_write_keeps_the_outcomes_already_written(
-    executor, wallets, pipeline, registry, monkeypatch
+    executor, wallet_repository, pipeline, registry, monkeypatch
 ):
     """Java writes each outcome bucket as its own statement, successes before retries. When
     the retry write fails, the success already written stays, so that handler is not called
@@ -724,7 +742,7 @@ def test_a_failed_outcome_write_keeps_the_outcomes_already_written(
     ok, flaky = succeeding("ok"), failing("flaky")
     fanout, dispatch = pipeline(ok, flaky)
     wallet = a_wallet(executor)
-    deposit(executor, wallets, wallet)
+    deposit(executor, wallet_repository, wallet)
     fanout.drain_once()
 
     def refuse(*args, **kwargs):

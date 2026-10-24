@@ -498,8 +498,8 @@ class ActionExecutor(_ExecutorCore):
     ) -> R:
         """Run one unit of work and commit what it staged.
 
-        Java's ``execute(principal, DepositMoneyAction.class, params)``: the action is named by
-        its type, and the registered instance is the one that runs.
+        Java's ``execute(principal, WalletDepositMoneyAction.class, params)``: the action is
+        named by its type, and the registered instance is the one that runs.
 
         Refused with :class:`~ekbatan.errors.BlockingCallError` on an event loop's thread, before
         the action runs: in ``async def`` code, ``ekbatan.aio``'s ``AsyncActionExecutor``.

@@ -111,7 +111,7 @@ class WalletRepository(AbstractRepository[Wallet, WalletsRecord, ShardedId[Walle
 
 
 @pytest.fixture
-def wallets(registry, clock):
+def wallet_repository(registry, clock):
     return WalletRepository(Wallet, WALLETS, registry, clock=clock)
 
 
@@ -136,27 +136,27 @@ class TestTheAccessorsHandBackADb:
     """Every public accessor, one assertion each - because a single one left behind would be
     found at the call site, in an editor, long after this change."""
 
-    def test_db(self, wallets):
-        with wallets.db() as conn:
+    def test_db(self, wallet_repository):
+        with wallet_repository.db() as conn:
             assert isinstance(conn, Db)
 
-    def test_readonly_db(self, wallets):
-        with wallets.readonly_db() as conn:
+    def test_readonly_db(self, wallet_repository):
+        with wallet_repository.readonly_db() as conn:
             assert isinstance(conn, Db)
 
-    def test_tx_db_else_db(self, wallets):
-        with wallets.tx_db_else_db() as conn:
+    def test_tx_db_else_db(self, wallet_repository):
+        with wallet_repository.tx_db_else_db() as conn:
             assert isinstance(conn, Db)
 
-    def test_dbs(self, wallets):
-        assert all(isinstance(conn, Db) for _, conn in wallets.dbs())
+    def test_dbs(self, wallet_repository):
+        assert all(isinstance(conn, Db) for _, conn in wallet_repository.dbs())
 
-    def test_readonly_dbs(self, wallets):
-        assert all(isinstance(conn, Db) for _, conn in wallets.readonly_dbs())
+    def test_readonly_dbs(self, wallet_repository):
+        assert all(isinstance(conn, Db) for _, conn in wallet_repository.readonly_dbs())
 
-    def test_tx_db_inside_a_transaction(self, wallets, registry):
+    def test_tx_db_inside_a_transaction(self, wallet_repository, registry):
         with registry.default.transaction():
-            assert isinstance(wallets.tx_db(), Db)
+            assert isinstance(wallet_repository.tx_db(), Db)
 
     def test_the_transaction_itself(self, registry):
         with registry.default.transaction() as tx:
@@ -165,62 +165,62 @@ class TestTheAccessorsHandBackADb:
 
 
 class TestAQueryARepositoryWrites:
-    def test_it_maps_with_from_record(self, wallets):
+    def test_it_maps_with_from_record(self, wallet_repository):
         owner = uuid4()
-        wallets.add(a_wallet(owner))
-        wallets.add(a_wallet(owner, currency="USD", balance="50.00"))
-        wallets.add(a_wallet(uuid4()))
+        wallet_repository.add(a_wallet(owner))
+        wallet_repository.add(a_wallet(owner, currency="USD", balance="50.00"))
+        wallet_repository.add(a_wallet(uuid4()))
 
-        found = wallets.find_all_by_owner(owner)
+        found = wallet_repository.find_all_by_owner(owner)
 
         assert len(found) == 2
         assert all(isinstance(w, Wallet) for w in found)
         assert {w.currency for w in found} == {"EUR", "USD"}
         assert sorted(w.balance for w in found) == [Decimal("50.0000"), Decimal("100.0000")]
 
-    def test_a_soft_deleted_row_is_excluded_by_the_query_that_says_so(self, wallets):
+    def test_a_soft_deleted_row_is_excluded_by_the_query_that_says_so(self, wallet_repository):
         """A repository writing its own query writes its own filter, as the Java one does.
         Nothing applies it on the caller's behalf here."""
         owner = uuid4()
-        stored = wallets.add(a_wallet(owner))
-        wallets.update(stored.delete())
+        stored = wallet_repository.add(a_wallet(owner))
+        wallet_repository.update(stored.delete())
 
-        assert wallets.find_all_by_owner(owner) == []
+        assert wallet_repository.find_all_by_owner(owner) == []
 
-    def test_fetch_first_on_an_empty_table(self, wallets):
-        assert wallets.find_richest_on(HERE) is None
+    def test_fetch_first_on_an_empty_table(self, wallet_repository):
+        assert wallet_repository.find_richest_on(HERE) is None
 
-    def test_fetch_first_takes_the_top_row(self, wallets):
+    def test_fetch_first_takes_the_top_row(self, wallet_repository):
         owner = uuid4()
-        wallets.add(a_wallet(owner, balance="10.00"))
-        wallets.add(a_wallet(owner, balance="999.00"))
+        wallet_repository.add(a_wallet(owner, balance="10.00"))
+        wallet_repository.add(a_wallet(owner, balance="999.00"))
 
-        richest = wallets.find_richest_on(HERE)
+        richest = wallet_repository.find_richest_on(HERE)
 
         assert richest is not None
         assert richest.balance == Decimal("999.0000")
 
-    def test_a_mapper_that_is_not_from_record(self, wallets):
+    def test_a_mapper_that_is_not_from_record(self, wallet_repository):
         owner = uuid4()
-        wallets.add(a_wallet(owner, currency="EUR"))
-        wallets.add(a_wallet(owner, currency="USD"))
-        wallets.add(a_wallet(owner, currency="EUR"))
+        wallet_repository.add(a_wallet(owner, currency="EUR"))
+        wallet_repository.add(a_wallet(owner, currency="USD"))
+        wallet_repository.add(a_wallet(owner, currency="EUR"))
 
-        assert wallets.currencies_on(HERE) == ["EUR", "USD"]
+        assert wallet_repository.currencies_on(HERE) == ["EUR", "USD"]
 
-    def test_batches(self, wallets):
+    def test_batches(self, wallet_repository):
         owner = uuid4()
         for _ in range(5):
-            wallets.add(a_wallet(owner))
+            wallet_repository.add(a_wallet(owner))
 
-        assert wallets.in_batches_on(HERE, 2) == [2, 2, 1]
+        assert wallet_repository.in_batches_on(HERE, 2) == [2, 2, 1]
 
-    def test_execute_still_answers_what_has_no_rows(self, wallets):
+    def test_execute_still_answers_what_has_no_rows(self, wallet_repository):
         owner = uuid4()
-        wallets.add(a_wallet(owner, balance="1.50"))
-        wallets.add(a_wallet(owner, balance="2.50"))
+        wallet_repository.add(a_wallet(owner, balance="1.50"))
+        wallet_repository.add(a_wallet(owner, balance="2.50"))
 
-        assert wallets.total_on(HERE) == Decimal("4.0000")
+        assert wallet_repository.total_on(HERE) == Decimal("4.0000")
 
 
 class TestScatter:

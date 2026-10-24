@@ -34,10 +34,8 @@ import pytest
 
 from ekbatan.ids import ShardedId
 from fixtures.actions import (
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.domain import NOW, Wallet
 from fixtures.executing import run
@@ -163,8 +161,8 @@ def test_concurrent_units_of_work_all_commit_and_none_interleave(registry, execu
     def create(i: int):
         return run(
             executor,
-            CreateWalletAction(executor.clock),
-            CreateWalletParams(
+            WalletCreateAction(executor.clock),
+            WalletCreateAction.Params(
                 owner_id=uuid4(), currency="EUR", initial_balance=Decimal(f"{i}.00")
             ),
         )
@@ -184,7 +182,7 @@ def test_concurrent_units_of_work_all_commit_and_none_interleave(registry, execu
 
 
 def test_concurrent_updates_to_one_row_leave_exactly_one_winner_per_version(
-    registry, executor, wallets, dialect
+    registry, executor, wallet_repository, dialect
 ):
     """Optimistic locking is what makes thread-per-request safe without a lock around the row.
 
@@ -199,14 +197,16 @@ def test_concurrent_updates_to_one_row_leave_exactly_one_winner_per_version(
 
     from ekbatan.errors import StaleRecordError
 
-    wallet = wallets.add(a_wallet("0.00"))
+    wallet = wallet_repository.add(a_wallet("0.00"))
 
     def deposit(_i: int) -> str:
         try:
             run(
                 executor,
-                DepositMoneyAction(wallets, executor.clock),
-                DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="a@b"),
+                WalletDepositMoneyAction(wallet_repository, executor.clock),
+                WalletDepositMoneyAction.Params(
+                    wallet_id=wallet.id, amount=Decimal("1.00"), recipient="a@b"
+                ),
             )
             return "ok"
         except StaleRecordError:
@@ -214,7 +214,7 @@ def test_concurrent_updates_to_one_row_leave_exactly_one_winner_per_version(
 
     outcomes = _in_parallel(deposit)
 
-    final = wallets.get(wallet.id)
+    final = wallet_repository.get(wallet.id)
     assert outcomes.count("ok") >= 1
     assert final.version == 1 + outcomes.count("ok"), (
         "the version moved once per committed deposit, and no more"

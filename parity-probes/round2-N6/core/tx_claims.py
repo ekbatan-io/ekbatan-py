@@ -3,18 +3,18 @@ from decimal import Decimal
 from uuid import uuid4
 from sqlalchemy import select, update, text
 from common import probe, service
-from wallet_service_sqlite.actions import OpenWalletAction, DepositMoneyAction, OpenWalletParams, DepositParams
+from wallet_service_sqlite.actions import WalletCreateAction, WalletDepositMoneyAction, OpenWalletParams, DepositParams
 from wallet_service_sqlite.schema import WALLETS, EVENTS
 from ekbatan import DatabaseRegistry, ExecutionConfiguration, DEFAULT_RETRIES
 
 svc = service()
-ex, wallets, reg = svc.executor, svc.wallets, svc.registry
+ex, wallet_repository, reg = svc.executor, svc.wallet_repository, svc.registry
 tm = reg.default
-w = ex.execute(OpenWalletAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("100")))
+w = ex.execute(WalletCreateAction, OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("100")))
 
 # actions.md:53 "plan.update returns the row ... stamped, version already moved"
 def stamped():
-    w2 = wallets.get(w.id)
+    w2 = wallet_repository.get(w.id)
     from ekbatan.action.plan import ActionPlan
     from ekbatan.clock import SystemClock
     p = ActionPlan(SystemClock())
@@ -35,11 +35,11 @@ def nested():
             with tm.transaction() as inner:
                 out["inner_is_new_connection"] = inner is not outer
                 out["inner_sees_outer_write"] = inner.execute(select(WALLETS.c.currency).where(WALLETS.c.id == w.id.value)).scalar()
-                out["tx_db_inside_inner_is_inner"] = wallets.tx_db() is inner.connection
+                out["tx_db_inside_inner_is_inner"] = wallet_repository.tx_db() is inner.connection
                 inner.execute(update(WALLETS).where(WALLETS.c.id == w.id.value).values(owner_id=uuid4()))
         except Exception as e:
             out["inner_write_after_outer"] = f"{type(e).__name__}: {str(e).splitlines()[0][:80]}"
-        out["tx_db_after_inner_is_outer"] = wallets.tx_db() is outer.connection
+        out["tx_db_after_inner_is_outer"] = wallet_repository.tx_db() is outer.connection
     return out
 probe("tm.md:69-80 nested block (sqlite)", nested)
 
@@ -48,11 +48,11 @@ def action_in_tx():
     class Boom(Exception): pass
     try:
         with tm.transaction():
-            ex.execute(DepositMoneyAction, DepositParams(wallet_id=w.id, amount=Decimal("5"), recipient="x"))
+            ex.execute(WalletDepositMoneyAction, DepositParams(wallet_id=w.id, amount=Decimal("5"), recipient="x"))
             raise Boom()
     except Boom:
         pass
-    return str(wallets.get(w.id).balance)
+    return str(wallet_repository.get(w.id).balance)
 probe("tm.md:82 action inside rolled-back block stays committed (balance 105?)", action_in_tx)
 
 # tm.md:120 a second manager for the same shard sees no transaction
@@ -67,10 +67,10 @@ probe("tm.md:120 second manager same shard current() inside first's block", seco
 def inherited_read():
     with tm.transaction() as tx:
         tx.execute(update(WALLETS).where(WALLETS.c.id == w.id.value).values(currency="GBP"))
-        got = wallets.get(w.id).currency
+        got = wallet_repository.get(w.id).currency
         tx.rollback() if False else None
         raise_after = got
-    wallets_after = wallets.get(w.id).currency
+    wallets_after = wallet_repository.get(w.id).currency
     return {"inside_inherited_get": raise_after, "after_commit": wallets_after}
 probe("tm.md:96 inherited get inside block (committed state?)", inherited_read)
 
@@ -83,13 +83,13 @@ def conn_join():
             b = c is tx.connection
     with tm.connection() as c:
         c.execute(update(WALLETS).where(WALLETS.c.id == w.id.value).values(currency="CHF"))
-    return {"connection_joins": a, "readonly_joins": b, "autocommit_write_kept": wallets.get(w.id).currency}
+    return {"connection_joins": a, "readonly_joins": b, "autocommit_write_kept": wallet_repository.get(w.id).currency}
 probe("tm.md:156-160 tm.connection join / autocommit", conn_join)
 
 # repositories.md: db() opens its own connection inside a block
 def db_inside():
     with tm.transaction() as tx:
-        with wallets.db() as c:
+        with wallet_repository.db() as c:
             return {"db_is_tx": c is tx.connection}
 probe("repositories.md: db() inside a block opens its own", db_inside)
 svc.close()

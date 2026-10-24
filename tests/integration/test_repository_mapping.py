@@ -72,11 +72,11 @@ def test_asking_for_the_by_name_mapping_is_a_line_you_write(registry, clock):
         def from_record(self, record):
             return self.model_by_field_name(record)
 
-    wallets = Written(Wallet, WALLETS, registry, clock=clock)
+    wallet_repository = Written(Wallet, WALLETS, registry, clock=clock)
     wallet = a_wallet()
 
-    wallets.add(wallet)
-    assert wallets.get(wallet.id).balance == wallet.balance
+    wallet_repository.add(wallet)
+    assert wallet_repository.get(wallet.id).balance == wallet.balance
 
 
 def a_wallet() -> Wallet:

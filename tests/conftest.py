@@ -305,7 +305,7 @@ def sharded_registry(backend: Backend, portal: Portal | None) -> Iterator[Databa
 
 
 @pytest.fixture
-def wallets(registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
+def wallet_repository(registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
     from fixtures.domain import Wallet
     from fixtures.schema import WALLETS
 
@@ -313,7 +313,7 @@ def wallets(registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
 
 
 @pytest.fixture
-def notifications(registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
+def notification_repository(registry: DatabaseRegistry, clock: VirtualClock, mode: str) -> Any:
     from fixtures.domain import Notification
     from fixtures.schema import NOTIFICATIONS
 
@@ -322,16 +322,20 @@ def notifications(registry: DatabaseRegistry, clock: VirtualClock, mode: str) ->
 
 @pytest.fixture
 def executor(
-    registry: DatabaseRegistry, clock: VirtualClock, wallets: Any, notifications: Any, mode: str
+    registry: DatabaseRegistry,
+    clock: VirtualClock,
+    wallet_repository: Any,
+    notification_repository: Any,
+    mode: str,
 ) -> Any:
     from ekbatan.action import ActionExecutor, ActionRegistry, SingleTableJsonEventPersister
     from ekbatan.repository import RepositoryRegistry
     from fixtures.actions import (
-        CloseWalletAction,
-        CreateWalletAction,
-        DepositMoneyAction,
-        NotifyAction,
-        TransferMoneyAction,
+        CreateNotificationAction,
+        WalletCloseAction,
+        WalletCreateAction,
+        WalletDepositMoneyAction,
+        WalletTransferMoneyAction,
     )
 
     # The suite's application actions, registered as an application's build() registers its
@@ -348,17 +352,17 @@ def executor(
         .database_registry(registry)
         .repository_registry(
             RepositoryRegistry.builder()
-            .with_model_repository(wallets)
-            .with_entity_repository(notifications)
+            .with_model_repository(wallet_repository)
+            .with_entity_repository(notification_repository)
             .build()
         )
         .action_registry(
             ActionRegistry.builder()
-            .with_action(of(CreateWalletAction)(clock))
-            .with_action(of(DepositMoneyAction)(wallets, clock))
-            .with_action(of(CloseWalletAction)(wallets, clock))
-            .with_action(of(TransferMoneyAction)(wallets, clock))
-            .with_action(of(NotifyAction)(clock))
+            .with_action(of(WalletCreateAction)(clock))
+            .with_action(of(WalletDepositMoneyAction)(wallet_repository, clock))
+            .with_action(of(WalletCloseAction)(wallet_repository, clock))
+            .with_action(of(WalletTransferMoneyAction)(wallet_repository, clock))
+            .with_action(of(CreateNotificationAction)(clock))
             .build()
         )
         .event_persister(of(SingleTableJsonEventPersister)(registry))

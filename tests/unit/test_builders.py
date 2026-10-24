@@ -430,7 +430,7 @@ def test_an_envelope_leaves_model_id_and_type_none_unless_set():
         .event_id(uuid.UUID(int=1))
         .namespace("example.wallet")
         .action_id(uuid.UUID(int=2))
-        .action_name("DepositMoneyAction")
+        .action_name("WalletDepositMoneyAction")
         .action_params({"amount": "1"})
         .started_date(NOW)
         .completion_date(NOW)
@@ -455,7 +455,7 @@ def test_an_action_event_can_be_a_sentinel_row():
         .id(uuid.UUID(int=1))
         .namespace("example.wallet")
         .action_id(uuid.UUID(int=2))
-        .action_name("CloseWalletAction")
+        .action_name("WalletCloseAction")
         .action_params({})
         .started_date(NOW)
         .completion_date(NOW)
@@ -472,7 +472,7 @@ def test_an_action_event_built_with_every_setter_matches_the_constructor():
         "id": uuid.UUID(int=1),
         "namespace": "example.wallet",
         "action_id": uuid.UUID(int=2),
-        "action_name": "DepositMoneyAction",
+        "action_name": "WalletDepositMoneyAction",
         "action_params": {"amount": "1"},
         "started_date": NOW,
         "completion_date": NOW,

@@ -313,9 +313,10 @@ class _SingleTableJson:
         """
         params = _as_json_object(
             canonical(action_params, where="action params"),
-            "action_params must be a JSON object; give the action a params dataclass "
-            "rather than a bare scalar or list - `Action[DepositParams, Wallet]`, not "
-            "`Action[str, Wallet]`. An action with no parameters takes None",
+            "action_params must be a JSON object; give the action a params dataclass, its "
+            "nested `Params`, rather than a bare scalar or list - "
+            '`Action["WalletDepositMoneyAction.Params", Wallet]`, not `Action[str, Wallet]`. '
+            "An action with no parameters takes None",
         )
         if not model_events:
             # A unit of work that emitted nothing is still recorded - one row, every event

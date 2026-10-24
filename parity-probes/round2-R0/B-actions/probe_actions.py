@@ -404,7 +404,7 @@ def scalar(shard: ShardIdentifier, sql: str) -> Any:
         return c.execute(text(sql)).scalar_one()
 
 
-def wallets(s: ShardIdentifier) -> int:
+def wallet_repository(s: ShardIdentifier) -> int:
     return scalar(s, "select count(*) from wallets")
 
 
@@ -511,8 +511,8 @@ def probe() -> None:
     created = executor.execute(CreateAction, CountryParams("DE"), principal=alice)
     p("s1.result_version", created.version)
     p("s1.result_events_attached", len(created.events))
-    p("s1.wallets_global", wallets(GLOBAL))
-    p("s1.wallets_mexico", wallets(MEXICO))
+    p("s1.wallets_global", wallet_repository(GLOBAL))
+    p("s1.wallets_mexico", wallet_repository(MEXICO))
     p("s1.outbox_global", outbox(GLOBAL))
     p("s1.outbox_mexico", outbox(MEXICO))
     r1 = rows(GLOBAL)[0]
@@ -582,7 +582,7 @@ def probe() -> None:
     p("s6.caller_exception", err(e6))
     p("s6.same_instance", e6 is THROWN[0])
     p("s6.attempts", ATTEMPTS[0])
-    p("s6.wallets", wallets(GLOBAL))
+    p("s6.wallets", wallet_repository(GLOBAL))
     p("s6.outbox", outbox(GLOBAL))
 
     # S7 perform throws StaleRecord directly
@@ -646,7 +646,7 @@ def probe() -> None:
     STAGED_IDS.clear()
     w13 = executor.execute(FreshPlanAction, NoParams(), principal=alice)
     p("s13.attempts", ATTEMPTS[0])
-    p("s13.wallets", wallets(GLOBAL))
+    p("s13.wallets", wallet_repository(GLOBAL))
     p("s13.result_is_second_attempt", w13.id.value == STAGED_IDS[1])
     p("s13.outbox", outbox(GLOBAL))
 
@@ -657,8 +657,8 @@ def probe() -> None:
     if isinstance(e14, CrossShardError):
         p("s14.active_shard", sh(e14.active_shard))
         p("s14.requested_shard", sh(e14.requested_shard))
-    p("s14.wallets_global", wallets(GLOBAL))
-    p("s14.wallets_mexico", wallets(MEXICO))
+    p("s14.wallets_global", wallet_repository(GLOBAL))
+    p("s14.wallets_mexico", wallet_repository(MEXICO))
     p("s14.outbox_global", outbox(GLOBAL))
     p("s14.outbox_mexico", outbox(MEXICO))
 
@@ -668,8 +668,8 @@ def probe() -> None:
     spy_exec = build_executor(actions, outbox_persister=spy)
     spy_exec.execute(TwoShardAction, CountryParams("mx-first"), principal=alice, config=cross)
     p("s15.commit_order", spy.order)
-    p("s15.wallets_global", wallets(GLOBAL))
-    p("s15.wallets_mexico", wallets(MEXICO))
+    p("s15.wallets_global", wallet_repository(GLOBAL))
+    p("s15.wallets_mexico", wallet_repository(MEXICO))
     p("s15.outbox_global", outbox(GLOBAL))
     p("s15.outbox_mexico", outbox(MEXICO))
     g15 = rows(GLOBAL)[0]
@@ -696,8 +696,8 @@ def probe() -> None:
                                             principal=alice, config=no_retry_cross))
     p("s16.caller_exception", err(e16))
     p("s16.attempts", ATTEMPTS[0])
-    p("s16.wallets_global", wallets(GLOBAL))
-    p("s16.wallets_mexico", wallets(MEXICO))
+    p("s16.wallets_global", wallet_repository(GLOBAL))
+    p("s16.wallets_mexico", wallet_repository(MEXICO))
     p("s16.outbox_global", outbox(GLOBAL))
     p("s16.outbox_mexico", outbox(MEXICO))
 
@@ -710,13 +710,13 @@ def probe() -> None:
                                             principal=alice, config=cross))
     p("s17.caller_exception", err(e17))
     p("s17.attempts", ATTEMPTS[0])
-    p("s17.wallets_global", wallets(GLOBAL))
+    p("s17.wallets_global", wallet_repository(GLOBAL))
     p("s17.outbox_global", outbox(GLOBAL))
 
     # S18 unknown shard falls back to default
     truncate()
     executor.execute(CreateAction, CountryParams("AU"), principal=alice)
-    p("s18.wallets_global", wallets(GLOBAL))
+    p("s18.wallets_global", wallet_repository(GLOBAL))
     p("s18.outbox_global", outbox(GLOBAL))
     p("s18.outbox_mexico", outbox(MEXICO))
 
@@ -728,7 +728,7 @@ def probe() -> None:
     truncate()
     e20 = catching(lambda: executor.execute(NullParamsAction, None, principal=alice))
     p("s20.caller_exception", err(e20))
-    p("s20.wallets", wallets(GLOBAL))
+    p("s20.wallets", wallet_repository(GLOBAL))
     p("s20.outbox", outbox(GLOBAL))
     if outbox(GLOBAL):
         p("s20.stored_action_params", rows(GLOBAL)[0]["params"])
@@ -737,7 +737,7 @@ def probe() -> None:
     truncate()
     e21 = catching(lambda: executor.execute(ScalarParamsAction, "MX", principal=alice))
     p("s21.caller_exception", err(e21))
-    p("s21.wallets", wallets(GLOBAL))
+    p("s21.wallets", wallet_repository(GLOBAL))
 
     # S23-25 staging one row twice
     for kind in ("add-add", "add-update", "update-update"):
@@ -746,7 +746,7 @@ def probe() -> None:
         e = catching(lambda kind=kind: executor.execute(DoubleStageAction, kind, principal=alice))
         p(f"s23.{kind}.caller_exception", err(e))
         p(f"s23.{kind}.attempts", ATTEMPTS[0])
-        p(f"s23.{kind}.wallets", wallets(GLOBAL))
+        p(f"s23.{kind}.wallets", wallet_repository(GLOBAL))
 
     # S26 event simple-name collision
     truncate()
@@ -754,7 +754,7 @@ def probe() -> None:
     e26b = catching(lambda: executor.execute(DupEventAction, CountryParams("b"), principal=alice))
     p("s26.first", err(e26a))
     p("s26.second", err(e26b))
-    p("s26.wallets", wallets(GLOBAL))
+    p("s26.wallets", wallet_repository(GLOBAL))
     e26c = catching(lambda: executor.execute(DupEventAction, CountryParams("a"), principal=alice))
     p("s26.first_again", err(e26c))
 
@@ -764,13 +764,13 @@ def probe() -> None:
     spy_exec.execute(CreateAction, CountryParams("DE"), principal=alice)
     p("s27.during_other_connection_sees_wallet", spy.during_other)
     p("s27.during_in_transaction_sees_wallet", spy.during_tx)
-    p("s27.after_other_connection_sees_wallet", wallets(GLOBAL))
+    p("s27.after_other_connection_sees_wallet", wallet_repository(GLOBAL))
     truncate()
     spy.fail = True
     e27 = catching(lambda: spy_exec.execute(CreateAction, CountryParams("DE"), principal=alice))
     spy.fail = False
     p("s27.persister_failure_exception", err(e27))
-    p("s27.persister_failure_wallets", wallets(GLOBAL))
+    p("s27.persister_failure_wallets", wallet_repository(GLOBAL))
     p("s27.persister_failure_outbox", outbox(GLOBAL))
 
     # S28 a read inside perform does not see the staged add
@@ -781,7 +781,7 @@ def probe() -> None:
     truncate()
     e29 = catching(lambda: executor.execute(OuterAction, NoParams(), principal=alice))
     p("s29.outer_exception", err(e29))
-    p("s29.wallets", wallets(GLOBAL))
+    p("s29.wallets", wallet_repository(GLOBAL))
     p("s29.inner_wallet_committed", wallet_repo.find(INNER_ID[0]) is not None)
     p("s29.outbox_rows", outbox(GLOBAL))
 
@@ -887,7 +887,7 @@ def probe() -> None:
 
     e43 = catching(outer_tx)
     p("s43.caller_exception", err(e43))
-    p("s43.wallets_after_outer_rollback", wallets(GLOBAL))
+    p("s43.wallets_after_outer_rollback", wallet_repository(GLOBAL))
     p("s43.outbox_after_outer_rollback", outbox(GLOBAL))
 
     # S39 ActionSpec
@@ -919,7 +919,7 @@ def probe() -> None:
             raise AssertionError("bad")
 
     p("s39.result_verifier_gets_result", err(catching(lambda: a.assert_result(result_verifier))))
-    p("s39.nothing_persisted", wallets(GLOBAL))
+    p("s39.nothing_persisted", wallet_repository(GLOBAL))
     p("s39.principal_seen", SEEN[0])
     throw_spec = ActionSpec.of(ThrowAction(clock))
     p("s39.throws_subclass_ok", err(catching(lambda: throw_spec.assert_throws(Exception, "illegalarg"))))

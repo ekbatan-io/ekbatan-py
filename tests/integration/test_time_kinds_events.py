@@ -106,12 +106,12 @@ for _action in (ScheduleAction, AwareInstantAction, PlainTimeEventAction):
     stager_twin(_action)
 
 
-def _nothing_saved(wallets: Any, outbox: Any) -> None:
-    assert wallets.count() == 0, "the model's row was rolled back"
+def _nothing_saved(wallet_repository: Any, outbox: Any) -> None:
+    assert wallet_repository.count() == 0, "the model's row was rolled back"
     assert outbox() == [], "and no outbox row was written"
 
 
-def test_each_kind_reaches_the_outbox_as_java_writes_it(executor, wallets, outbox, clock):
+def test_each_kind_reaches_the_outbox_as_java_writes_it(executor, wallet_repository, outbox, clock):
     clock.pause_at(datetime(2026, 3, 1, 9, 30, 0, 120000))
     run(executor, ScheduleAction(executor.clock), ScheduleParams(at=clock.instant()))
 
@@ -152,10 +152,10 @@ def test_each_kind_reaches_the_outbox_as_java_writes_it(executor, wallets, outbo
     ids=["plain-event-field", "aware-instant", "plain-params-field", "untyped-params-field"],
 )
 def test_a_refused_time_fails_the_action_and_saves_nothing(
-    executor, wallets, outbox, action, params, message
+    executor, wallet_repository, outbox, action, params, message
 ):
     # By name: under the async run the harness puts each action's twin in its place.
     with pytest.raises(ValidationError) as raised:
         run(executor, globals()[action](executor.clock), params)
     assert message in str(raised.value)
-    _nothing_saved(wallets, outbox)
+    _nothing_saved(wallet_repository, outbox)

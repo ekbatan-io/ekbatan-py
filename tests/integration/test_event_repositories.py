@@ -29,7 +29,7 @@ def an_event(event_type: str | None = "WalletCreatedEvent", minutes: int = 0) ->
         id=uuid.uuid4(),
         namespace="example.wallet",
         action_id=uuid.uuid4(),
-        action_name="CreateWalletAction",
+        action_name="WalletCreateAction",
         action_params={"owner": "ada"},
         started_date=at,
         completion_date=at,
@@ -59,7 +59,7 @@ def a_notification(
         .updated_date(NOW)
         .namespace("example.wallet")
         .action_id(uuid.uuid4())
-        .action_name("CreateWalletAction")
+        .action_name("WalletCreateAction")
         .action_params({})
         .started_date(NOW)
         .completion_date(NOW)
@@ -70,12 +70,12 @@ def a_notification(
 
 
 @pytest.fixture
-def events(registry):
+def event_entity_repository(registry):
     return EventEntityRepository(registry)
 
 
 @pytest.fixture
-def notifications(registry):
+def event_notification_repository(registry):
     return EventNotificationRepository(registry)
 
 
@@ -90,7 +90,9 @@ def stored(registry, notification: EventNotification):
 # -- events -------------------------------------------------------------------------------------
 
 
-def test_find_undelivered_takes_handled_types_oldest_first_and_skips_the_rest(registry, events):
+def test_find_undelivered_takes_handled_types_oldest_first_and_skips_the_rest(
+    registry, event_entity_repository
+):
     later = an_event(minutes=2)
     earlier = an_event(minutes=1)
     unhandled = an_event("NobodyListens")
@@ -99,67 +101,74 @@ def test_find_undelivered_takes_handled_types_oldest_first_and_skips_the_rest(re
         [later, earlier, unhandled, sentinel], DEFAULT_SHARD
     )
 
-    found = events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)
+    found = event_entity_repository.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)
 
     assert [e.id for e in found] == [earlier.id, later.id]
 
 
-def test_find_undelivered_honours_the_limit(registry, events):
+def test_find_undelivered_honours_the_limit(registry, event_entity_repository):
     OutboxRepository(registry).add_all_no_result(
         [an_event(minutes=m) for m in range(3)], DEFAULT_SHARD
     )
-    assert len(events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 2)) == 2
+    assert (
+        len(event_entity_repository.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 2)) == 2
+    )
 
 
-def test_find_undelivered_with_no_handled_types_reads_nothing(registry, events):
+def test_find_undelivered_with_no_handled_types_reads_nothing(registry, event_entity_repository):
     OutboxRepository(registry).add_all_no_result([an_event()], DEFAULT_SHARD)
-    assert events.find_undelivered(DEFAULT_SHARD, [], 10) == []
+    assert event_entity_repository.find_undelivered(DEFAULT_SHARD, [], 10) == []
 
 
-def test_mark_delivered_takes_exactly_those_rows_out(registry, events):
+def test_mark_delivered_takes_exactly_those_rows_out(registry, event_entity_repository):
     first, second = an_event(minutes=1), an_event(minutes=2)
     OutboxRepository(registry).add_all_no_result([first, second], DEFAULT_SHARD)
 
-    events.mark_delivered([first.id], DEFAULT_SHARD)
+    event_entity_repository.mark_delivered([first.id], DEFAULT_SHARD)
 
-    assert [e.id for e in events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)] == [
-        second.id
-    ]
+    assert [
+        e.id
+        for e in event_entity_repository.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)
+    ] == [second.id]
 
 
 # -- notifications ------------------------------------------------------------------------------
 
 
-def test_a_notification_already_there_is_not_inserted_twice(registry, notifications):
+def test_a_notification_already_there_is_not_inserted_twice(
+    registry, event_notification_repository
+):
     """Java's `onConflictDoNothing`: fan-out running twice over the same events is harmless."""
     notification = a_notification()
-    notifications.add_all_no_result([notification], DEFAULT_SHARD)
-    notifications.add_all_no_result([notification], DEFAULT_SHARD)
+    event_notification_repository.add_all_no_result([notification], DEFAULT_SHARD)
+    event_notification_repository.add_all_no_result([notification], DEFAULT_SHARD)
 
-    assert len(notifications.find_due(DEFAULT_SHARD, 10, NOW)) == 1
+    assert len(event_notification_repository.find_due(DEFAULT_SHARD, 10, NOW)) == 1
 
 
-def test_find_due_takes_pending_and_failed_whose_time_has_come_soonest_first(notifications):
+def test_find_due_takes_pending_and_failed_whose_time_has_come_soonest_first(
+    event_notification_repository,
+):
     failed = a_notification(
         EventNotificationState.FAILED, attempts=1, retry_in=-timedelta(minutes=1)
     )
     pending = a_notification()
     not_yet = a_notification(retry_in=timedelta(minutes=5))
     done = a_notification(EventNotificationState.SUCCEEDED)
-    notifications.add_all_no_result([pending, failed, not_yet, done], DEFAULT_SHARD)
+    event_notification_repository.add_all_no_result([pending, failed, not_yet, done], DEFAULT_SHARD)
 
-    due = notifications.find_due(DEFAULT_SHARD, 10, NOW)
+    due = event_notification_repository.find_due(DEFAULT_SHARD, 10, NOW)
 
     assert [n.id for n in due] == [failed.id, pending.id]
     assert due[0].state is EventNotificationState.FAILED
 
 
-def test_mark_succeeded_counts_the_attempt(registry, notifications):
+def test_mark_succeeded_counts_the_attempt(registry, event_notification_repository):
     notification = a_notification(attempts=2)
-    notifications.add_all_no_result([notification], DEFAULT_SHARD)
+    event_notification_repository.add_all_no_result([notification], DEFAULT_SHARD)
     later = NOW + timedelta(seconds=5)
 
-    notifications.mark_succeeded_all([notification.id], later, DEFAULT_SHARD)
+    event_notification_repository.mark_succeeded_all([notification.id], later, DEFAULT_SHARD)
 
     after = stored(registry, notification)
     assert after.state is EventNotificationState.SUCCEEDED
@@ -167,12 +176,14 @@ def test_mark_succeeded_counts_the_attempt(registry, notifications):
     assert after.updated_date == later
 
 
-def test_mark_failed_counts_the_attempt_and_moves_the_retry(registry, notifications):
+def test_mark_failed_counts_the_attempt_and_moves_the_retry(
+    registry, event_notification_repository
+):
     notification = a_notification()
-    notifications.add_all_no_result([notification], DEFAULT_SHARD)
+    event_notification_repository.add_all_no_result([notification], DEFAULT_SHARD)
     retry = NOW + timedelta(seconds=30)
 
-    notifications.mark_failed_bucket([notification.id], retry, NOW, DEFAULT_SHARD)
+    event_notification_repository.mark_failed_bucket([notification.id], retry, NOW, DEFAULT_SHARD)
 
     after = stored(registry, notification)
     assert (after.state, after.attempts, after.next_retry_at) == (
@@ -182,12 +193,16 @@ def test_mark_failed_counts_the_attempt_and_moves_the_retry(registry, notificati
     )
 
 
-def test_expiry_before_the_call_is_not_an_attempt_and_after_a_failure_is(registry, notifications):
+def test_expiry_before_the_call_is_not_an_attempt_and_after_a_failure_is(
+    registry, event_notification_repository
+):
     preflight, post_failure = a_notification(attempts=4), a_notification(attempts=4)
-    notifications.add_all_no_result([preflight, post_failure], DEFAULT_SHARD)
+    event_notification_repository.add_all_no_result([preflight, post_failure], DEFAULT_SHARD)
 
-    notifications.mark_expired_all_preflight([preflight.id], NOW, DEFAULT_SHARD)
-    notifications.mark_expired_all_post_failure([post_failure.id], NOW, DEFAULT_SHARD)
+    event_notification_repository.mark_expired_all_preflight([preflight.id], NOW, DEFAULT_SHARD)
+    event_notification_repository.mark_expired_all_post_failure(
+        [post_failure.id], NOW, DEFAULT_SHARD
+    )
 
     assert stored(registry, preflight).attempts == 4
     assert stored(registry, post_failure).attempts == 5
@@ -195,12 +210,12 @@ def test_expiry_before_the_call_is_not_an_attempt_and_after_a_failure_is(registr
     assert stored(registry, post_failure).state is EventNotificationState.EXPIRED
 
 
-def test_deferring_leaves_it_pending_and_unattempted(registry, notifications):
+def test_deferring_leaves_it_pending_and_unattempted(registry, event_notification_repository):
     notification = a_notification(attempts=1)
-    notifications.add_all_no_result([notification], DEFAULT_SHARD)
+    event_notification_repository.add_all_no_result([notification], DEFAULT_SHARD)
     retry = NOW + timedelta(minutes=1)
 
-    notifications.defer_pending_bucket([notification.id], retry, NOW, DEFAULT_SHARD)
+    event_notification_repository.defer_pending_bucket([notification.id], retry, NOW, DEFAULT_SHARD)
 
     after = stored(registry, notification)
     assert (after.state, after.attempts, after.next_retry_at) == (
@@ -210,16 +225,16 @@ def test_deferring_leaves_it_pending_and_unattempted(registry, notifications):
     )
 
 
-def test_marking_nothing_touches_nothing(notifications):
-    notifications.mark_succeeded_all([], NOW, DEFAULT_SHARD)
-    notifications.mark_failed_bucket([], NOW, NOW, DEFAULT_SHARD)
+def test_marking_nothing_touches_nothing(event_notification_repository):
+    event_notification_repository.mark_succeeded_all([], NOW, DEFAULT_SHARD)
+    event_notification_repository.mark_failed_bucket([], NOW, NOW, DEFAULT_SHARD)
 
 
-def test_the_timestamps_come_back_as_they_were_written(notifications):
+def test_the_timestamps_come_back_as_they_were_written(event_notification_repository):
     """Equal to what was written, no zone added - so comparable with the default clock."""
     notification = a_notification()
-    notifications.add_all_no_result([notification], DEFAULT_SHARD)
-    (back,) = notifications.find_due(DEFAULT_SHARD, 10, NOW)
+    event_notification_repository.add_all_no_result([notification], DEFAULT_SHARD)
+    (back,) = event_notification_repository.find_due(DEFAULT_SHARD, 10, NOW)
     assert back.created_date == NOW
     assert back.created_date.tzinfo is None
     assert back.event_date.tzinfo is None
@@ -228,23 +243,26 @@ def test_the_timestamps_come_back_as_they_were_written(notifications):
 # -- which connection a read takes ---------------------------------------------------------------
 
 
-def test_find_undelivered_does_not_join_an_open_transaction(registry, events):
+def test_find_undelivered_does_not_join_an_open_transaction(registry, event_entity_repository):
     """Java's `findUndelivered` reads on a connection of its own, so inside an open transaction
     it does not see that transaction's uncommitted rows."""
     with registry.default.transaction():
         OutboxRepository(registry).add_all_no_result([an_event()], DEFAULT_SHARD)
-        inside = events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)
+        inside = event_entity_repository.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)
     assert inside == [], "find_undelivered joined the open transaction; Java's does not"
-    assert len(events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)) == 1
+    assert (
+        len(event_entity_repository.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10))
+        == 1
+    )
 
 
-def test_find_due_does_not_join_an_open_transaction(registry, notifications):
+def test_find_due_does_not_join_an_open_transaction(registry, event_notification_repository):
     """Java's `findDue` reads on `db()`, a plain primary connection, never the transaction."""
     with registry.default.transaction():
-        notifications.add_all_no_result([a_notification()], DEFAULT_SHARD)
-        inside = notifications.find_due(DEFAULT_SHARD, 10, NOW)
+        event_notification_repository.add_all_no_result([a_notification()], DEFAULT_SHARD)
+        inside = event_notification_repository.find_due(DEFAULT_SHARD, 10, NOW)
     assert inside == [], "find_due joined the open transaction; Java's does not"
-    assert len(notifications.find_due(DEFAULT_SHARD, 10, NOW)) == 1
+    assert len(event_notification_repository.find_due(DEFAULT_SHARD, 10, NOW)) == 1
 
 
 @pytest.fixture

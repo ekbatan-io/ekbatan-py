@@ -14,12 +14,9 @@ from uuid import uuid4
 from ekbatan import Action, count_statements
 from ekbatan.ids import ShardedId
 from fixtures.actions import (
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
-    TransferMoneyAction,
-    TransferParams,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
+    WalletTransferMoneyAction,
 )
 from fixtures.domain import Wallet
 from fixtures.executing import run
@@ -31,19 +28,23 @@ MODES = ("sync", "async")
 def a_wallet(executor, balance="100.00"):
     return run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)
+        ),
     )
 
 
-def test_one_unit_of_work_is_one_transaction(executor, wallets, registry):
+def test_one_unit_of_work_is_one_transaction(executor, wallet_repository, registry):
     wallet = a_wallet(executor)
 
     with count_statements(registry) as cost:
         run(
             executor,
-            DepositMoneyAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("1"), recipient="ada@x"),
+            WalletDepositMoneyAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("1"), recipient="ada@x"
+            ),
         )
 
     assert cost.transactions == 1
@@ -53,14 +54,14 @@ def test_one_unit_of_work_is_one_transaction(executor, wallets, registry):
     )
 
 
-def test_two_models_still_cost_one_transaction(executor, wallets, registry):
+def test_two_models_still_cost_one_transaction(executor, wallet_repository, registry):
     source, destination = a_wallet(executor), a_wallet(executor, "0.00")
 
     with count_statements(registry) as cost:
         run(
             executor,
-            TransferMoneyAction(wallets, executor.clock),
-            TransferParams(
+            WalletTransferMoneyAction(wallet_repository, executor.clock),
+            WalletTransferMoneyAction.Params(
                 from_wallet_id=source.id, to_wallet_id=destination.id, amount=Decimal("5")
             ),
         )
@@ -70,7 +71,7 @@ def test_two_models_still_cost_one_transaction(executor, wallets, registry):
     assert cost.writes["events"] == 1, "two events, one batched statement"
 
 
-def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
+def test_staging_many_rows_costs_one_statement(executor, wallet_repository, registry):
     @dataclass(frozen=True, kw_only=True)
     class HowMany:
         count: int
@@ -94,17 +95,21 @@ def test_staging_many_rows_costs_one_statement(executor, wallets, registry):
     assert cost.transactions == 1
     assert cost.writes["wallets"] == 1, "twenty-five rows is one statement, not twenty-five"
     assert cost.writes["events"] == 1
-    assert wallets.count() == 25
+    assert wallet_repository.count() == 25
 
 
-def test_a_failed_unit_of_work_rolls_back_rather_than_committing(executor, wallets, registry):
+def test_a_failed_unit_of_work_rolls_back_rather_than_committing(
+    executor, wallet_repository, registry
+):
     wallet = a_wallet(executor)
 
     with count_statements(registry) as cost, contextlib.suppress(Exception):
         run(
             executor,
-            DepositMoneyAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"),
+            WalletDepositMoneyAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("-1"), recipient="ada@x"
+            ),
         )
 
     assert cost.transactions == 0

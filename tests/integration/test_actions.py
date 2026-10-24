@@ -23,11 +23,9 @@ from ekbatan.errors import (
 )
 from ekbatan.ids import ShardedId
 from fixtures.actions import (
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
     TwinAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.domain import NOW, Wallet
 from fixtures.executing import run
@@ -40,8 +38,10 @@ MODES = ("sync", "async")
 def a_wallet(executor):
     return run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")
+        ),
     )
 
 
@@ -89,7 +89,9 @@ class _PlainNote:
         self.text = "hello"
 
 
-def test_params_holding_a_plain_object_fail_and_store_nothing(executor, wallets, registry):
+def test_params_holding_a_plain_object_fail_and_store_nothing(
+    executor, wallet_repository, registry
+):
     """A plain object in the params used to be stored as its repr, `<_PlainNote object at
     0x...>`: the action committed and the data was gone. Now it is refused, and nothing is
     written - neither the wallet nor the outbox row."""
@@ -100,7 +102,7 @@ def test_params_holding_a_plain_object_fail_and_store_nothing(executor, wallets,
     with pytest.raises(ValidationError, match="_PlainNote cannot be written as JSON"):
         run(executor, OpensWithANoteAction(executor.clock), NoteParams(note=_PlainNote()))
 
-    assert wallets.count() == 0
+    assert wallet_repository.count() == 0
     with registry.default.connection() as conn:
         assert conn.execute(select(func.count()).select_from(EVENTS)).scalar_one() == 0
 
@@ -425,53 +427,57 @@ def test_such_a_failure_is_never_retried(executor, mode):
 # ------------------------------------------------------------------------------- the plan
 
 
-class StagesTwiceAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets, clock: Clock) -> None:
+class StagesTwiceAction(Action[WalletDepositMoneyAction.Params, Wallet]):
+    def __init__(self, wallet_repository, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         once = self.plan.update(wallet.deposit(params.amount))
         return self.plan.update(once.deposit(params.amount))
 
 
-class ComposesThenStagesAction(Action[DepositParams, Wallet]):
+class ComposesThenStagesAction(Action[WalletDepositMoneyAction.Params, Wallet]):
     """The same two changes, written the way they should be."""
 
-    def __init__(self, wallets, clock: Clock) -> None:
+    def __init__(self, wallet_repository, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: WalletDepositMoneyAction.Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount).deposit(params.amount))
 
 
 @twin(StagesTwiceAction)
-class AsyncStagesTwiceAction(TwinAction[DepositParams, Wallet]):
-    def __init__(self, wallets, clock: Clock) -> None:
+class AsyncStagesTwiceAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
+    def __init__(self, wallet_repository, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(
+        self, principal: str | None, params: WalletDepositMoneyAction.Params
+    ) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         once = self.plan.update(wallet.deposit(params.amount))
         return self.plan.update(once.deposit(params.amount))
 
 
 @twin(ComposesThenStagesAction)
-class AsyncComposesThenStagesAction(TwinAction[DepositParams, Wallet]):
-    def __init__(self, wallets, clock: Clock) -> None:
+class AsyncComposesThenStagesAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
+    def __init__(self, wallet_repository, clock: Clock) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(
+        self, principal: str | None, params: WalletDepositMoneyAction.Params
+    ) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount).deposit(params.amount))
 
 
-def test_staging_one_row_twice_is_refused(executor, wallets, outbox):
+def test_staging_one_row_twice_is_refused(executor, wallet_repository, outbox):
     """A unit of work writes each row once, so two stagings cannot mean two writes. Collapsing
     them silently would leave the value handed back by the first call claiming a version it no
     longer has and a balance nobody is going to write."""
@@ -481,21 +487,25 @@ def test_staging_one_row_twice_is_refused(executor, wallets, outbox):
     with pytest.raises(ValidationError, match="already staged"):
         run(
             executor,
-            StagesTwiceAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
+            StagesTwiceAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"
+            ),
         )
 
-    assert wallets.get(wallet.id).version == 1, "and nothing was written"
+    assert wallet_repository.get(wallet.id).version == 1, "and nothing was written"
     assert len(outbox()) == before
 
 
-def test_the_error_says_what_to_do_instead(executor, wallets):
+def test_the_error_says_what_to_do_instead(executor, wallet_repository):
     wallet = a_wallet(executor)
     with pytest.raises(ValidationError) as raised:
         run(
             executor,
-            StagesTwiceAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
+            StagesTwiceAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"
+            ),
         )
     message = str(raised.value)
     assert "already staged" in message
@@ -503,17 +513,19 @@ def test_the_error_says_what_to_do_instead(executor, wallets):
     assert "Wallet" in message and str(wallet.id) in message
 
 
-def test_composing_first_then_staging_once_works(executor, wallets, outbox):
+def test_composing_first_then_staging_once_works(executor, wallet_repository, outbox):
     wallet = a_wallet(executor)
     before = {r["id"] for r in outbox()}
 
     result = run(
         executor,
-        ComposesThenStagesAction(wallets, executor.clock),
-        DepositParams(wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"),
+        ComposesThenStagesAction(wallet_repository, executor.clock),
+        WalletDepositMoneyAction.Params(
+            wallet_id=wallet.id, amount=Decimal("5.00"), recipient="ada@x"
+        ),
     )
 
-    stored = wallets.get(wallet.id)
+    stored = wallet_repository.get(wallet.id)
     assert stored.balance == Decimal("10.0000"), "both changes landed"
     assert stored.version == 2, "one write, one version"
     assert stored == result, "and what the action returned is what the database holds"
@@ -526,7 +538,7 @@ def test_composing_first_then_staging_once_works(executor, wallets, outbox):
     )
 
 
-def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
+def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallet_repository):
     class CreateThenTopUp(Action[None, Wallet]):
         def perform(self, principal: str | None, params: None) -> Wallet:
             fresh = self.plan.add(
@@ -543,7 +555,7 @@ def test_inserting_and_then_changing_the_same_row_is_refused(executor, wallets):
     with pytest.raises(ValidationError, match="already staged"):
         run(executor, CreateThenTopUp(executor.clock), None)
 
-    assert wallets.count() == 0
+    assert wallet_repository.count() == 0
 
 
 # -------------------------------------------------------------------------------- tracing
@@ -597,7 +609,7 @@ def collecting_spans():
         trace._TRACER_PROVIDER = previous
 
 
-def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallets):
+def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallet_repository):
     """Java's `all_spans_share_same_trace_id`, `perform_span_is_child_of_execute_span` and
     `persist_span_is_child_of_execute_span`.
 
@@ -605,7 +617,7 @@ def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallets):
     persist to sit under the execute, so the shape of the failure is readable at a glance.
     """
     with collecting_spans() as collected:
-        wallet = wallets.add(
+        wallet = wallet_repository.add(
             Wallet.open(
                 id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
@@ -616,8 +628,10 @@ def test_every_span_of_one_unit_of_work_belongs_to_one_trace(executor, wallets):
         )
         run(
             executor,
-            DepositMoneyAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@x"),
+            WalletDepositMoneyAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("1.00"), recipient="ada@x"
+            ),
         )
 
     by_name = {s.name: s for s in collected}
@@ -659,7 +673,7 @@ def test_the_retry_count_is_on_the_action_span_whether_or_not_it_retried(executo
     assert [e.name for e in retried.events].count("retry") == 1
 
 
-def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets):
+def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallet_repository):
     """An operator filtering a trace on `ekbatan.action.name` is filtering across both
     implementations. A name invented here would quietly not be there."""
     sdk = pytest.importorskip("opentelemetry.sdk.trace")
@@ -686,7 +700,7 @@ def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets)
         import ekbatan._tracing as tracing
 
         importlib.reload(tracing)
-        wallet = wallets.add(
+        wallet = wallet_repository.add(
             Wallet.open(
                 id=ShardedId[Wallet].random(),
                 owner_id=uuid4(),
@@ -697,8 +711,8 @@ def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets)
         )
         run(
             executor,
-            DepositMoneyAction(wallets, executor.clock),
-            DepositParams(
+            WalletDepositMoneyAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
                 wallet_id=wallet.id, amount=Decimal("50.00"), recipient="ada@example.com"
             ),
         )
@@ -713,7 +727,7 @@ def test_the_spans_are_the_ones_the_java_implementation_emits(executor, wallets)
         "ekbatan.repository",
         "ekbatan.event.persist",
     } <= set(emitted)
-    assert emitted["ekbatan.action.execute"]["ekbatan.action.name"] == "DepositMoneyAction"
+    assert emitted["ekbatan.action.execute"]["ekbatan.action.name"] == "WalletDepositMoneyAction"
     assert emitted["ekbatan.action.execute"]["ekbatan.action.outcome"] == "success"
     assert emitted["ekbatan.repository"]["db.operation.name"] == "BATCH_UPDATE"
     assert emitted["ekbatan.repository"]["ekbatan.entity.type"] == "Wallet"

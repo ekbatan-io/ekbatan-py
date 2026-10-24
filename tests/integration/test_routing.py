@@ -89,49 +89,52 @@ def test_a_strategy_that_cannot_route_from_an_id_says_so(sharded_registry, clock
         def shard_for(self, persistable: object) -> ShardIdentifier | None:
             return MEXICO
 
-    wallets = WalletRepository(
+    wallet_repository = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=ByTenantColumn(), clock=clock
     )
 
-    assert wallets.shard_of(a_wallet(GLOBAL)) == MEXICO, "the row still routes"
+    assert wallet_repository.shard_of(a_wallet(GLOBAL)) == MEXICO, "the row still routes"
     with pytest.raises(UnsupportedError, match="override shard_for"):
-        wallets.shard_for(uuid4())
+        wallet_repository.shard_for(uuid4())
 
 
 def test_without_sharding_everything_is_the_default_shard(registry, clock):
-    wallets = WalletRepository(
+    wallet_repository = WalletRepository(
         Wallet, WALLETS, registry, sharding=NoShardingStrategy(), clock=clock
     )
-    assert wallets.shard_for(uuid4()) == registry.default_shard
-    assert wallets.shard_of_all([a_wallet(GLOBAL), a_wallet(MEXICO)]) == registry.default_shard
+    assert wallet_repository.shard_for(uuid4()) == registry.default_shard
+    assert (
+        wallet_repository.shard_of_all([a_wallet(GLOBAL), a_wallet(MEXICO)])
+        == registry.default_shard
+    )
 
 
 # ------------------------------------------------------------ getting a connection
 
 
-def test_tx_db_else_db_joins_an_open_transaction(registry, wallets):
+def test_tx_db_else_db_joins_an_open_transaction(registry, wallet_repository):
     manager = registry.default
     with manager.transaction() as outer:
         assert outer.shard == manager.shard, "the block knows which shard it is on"
         assert outer.dialect == manager.dialect
-        with wallets.tx_db_else_db() as joined:
+        with wallet_repository.tx_db_else_db() as joined:
             assert joined is outer.connection
-        assert wallets.tx_db() is outer.connection
+        assert wallet_repository.tx_db() is outer.connection
 
-    assert wallets.tx_db() is None, "outside one, there is no transaction to join"
-    with wallets.tx_db_else_db() as standalone:
+    assert wallet_repository.tx_db() is None, "outside one, there is no transaction to join"
+    with wallet_repository.tx_db_else_db() as standalone:
         assert standalone is not None, "and each statement on it commits itself"
 
 
-def test_db_deliberately_does_not_join(registry, wallets):
+def test_db_deliberately_does_not_join(registry, wallet_repository):
     manager = registry.default
-    with manager.transaction() as outer, wallets.db() as separate:
+    with manager.transaction() as outer, wallet_repository.db() as separate:
         assert separate is not outer.connection, (
             "db() is the escape hatch; tx_db_else_db is the one repository code should use"
         )
 
 
-def test_a_write_inside_a_transaction_joins_it(registry, wallets):
+def test_a_write_inside_a_transaction_joins_it(registry, wallet_repository):
     wallet = Wallet.open(
         id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
@@ -141,17 +144,17 @@ def test_a_write_inside_a_transaction_joins_it(registry, wallets):
     )
     try:
         with registry.default.transaction():
-            wallets.add(wallet)
+            wallet_repository.add(wallet)
             raise RuntimeError("boom")
     except RuntimeError:
         pass
 
-    assert wallets.find(wallet.id) is None, (
+    assert wallet_repository.find(wallet.id) is None, (
         "the repository wrote inside the caller's transaction, so the rollback took it"
     )
 
 
-def test_a_built_in_read_inside_a_transaction_does_not_see_its_writes(registry, wallets):
+def test_a_built_in_read_inside_a_transaction_does_not_see_its_writes(registry, wallet_repository):
     """As Java's: `findById` and `existsById` go to `db()`, a connection of their own."""
     wallet = Wallet.open(
         id=ShardedId[Wallet].random(),
@@ -161,13 +164,13 @@ def test_a_built_in_read_inside_a_transaction_does_not_see_its_writes(registry, 
         created_date=NOW,
     )
     with registry.default.transaction():
-        wallets.add(wallet)
-        assert wallets.find(wallet.id) is None
-        assert not wallets.exists(wallet.id)
+        wallet_repository.add(wallet)
+        assert wallet_repository.find(wallet.id) is None
+        assert not wallet_repository.exists(wallet.id)
         # A query of your own on `tx_db_else_db()` joins the transaction and sees the row.
-        with wallets.tx_db_else_db(key=wallet.id) as conn:
+        with wallet_repository.tx_db_else_db(key=wallet.id) as conn:
             assert conn.execute(select(WALLETS).where(WALLETS.c.id == wallet.id.value)).first()
-    assert wallets.find(wallet.id) is not None
+    assert wallet_repository.find(wallet.id) is not None
 
 
 def test_dbs_visits_every_shard(sharded_registry, sharded_wallets):
@@ -226,28 +229,28 @@ def test_a_subclass_can_write_its_own_routed_query(sharded_registry, clock):
                     select(self.column("currency")).where(self.id_matches(key))
                 ).scalar_one_or_none()
 
-    wallets = WalletRepository(
+    wallet_repository = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
     here, there = a_wallet(GLOBAL), a_wallet(MEXICO, "MXN")
-    wallets.add(here)
-    wallets.add(there)
+    wallet_repository.add(here)
+    wallet_repository.add(there)
 
-    assert wallets.total_balance_on(GLOBAL) == Decimal("1.0000")
-    assert wallets.total_balance_on(MEXICO) == Decimal("1.0000")
-    assert wallets.currency_of(there.id) == "MXN", "routed by the id, with no shard named"
+    assert wallet_repository.total_balance_on(GLOBAL) == Decimal("1.0000")
+    assert wallet_repository.total_balance_on(MEXICO) == Decimal("1.0000")
+    assert wallet_repository.currency_of(there.id) == "MXN", "routed by the id, with no shard named"
 
 
-def test_column_refuses_a_name_the_table_does_not_have(wallets):
-    assert wallets.column("balance") is WALLETS.c.balance
+def test_column_refuses_a_name_the_table_does_not_have(wallet_repository):
+    assert wallet_repository.column("balance") is WALLETS.c.balance
     with pytest.raises(ValidationError, match="no column 'nonsense'"):
-        wallets.column("nonsense")
+        wallet_repository.column("nonsense")
 
 
 # ------------------------------------------------------------------ no-result writes
 
 
-def test_the_no_result_writes_write(wallets):
+def test_the_no_result_writes_write(wallet_repository):
     one = Wallet.open(
         id=ShardedId[Wallet].random(),
         owner_id=uuid4(),
@@ -255,8 +258,8 @@ def test_the_no_result_writes_write(wallets):
         balance=Decimal("1.00"),
         created_date=NOW,
     )
-    wallets.add_no_result(one)
-    assert wallets.get(one.id).balance == Decimal("1.0000")
+    wallet_repository.add_no_result(one)
+    assert wallet_repository.get(one.id).balance == Decimal("1.0000")
 
     many = [
         Wallet.open(
@@ -268,20 +271,24 @@ def test_the_no_result_writes_write(wallets):
         )
         for _ in range(3)
     ]
-    wallets.add_all_no_result(many)
-    assert wallets.count() == 4
+    wallet_repository.add_all_no_result(many)
+    assert wallet_repository.count() == 4
 
-    wallets.update_no_result(wallets.get(one.id).evolve(balance=Decimal("9.00")))
-    assert wallets.get(one.id).balance == Decimal("9.0000")
+    wallet_repository.update_no_result(
+        wallet_repository.get(one.id).evolve(balance=Decimal("9.00"))
+    )
+    assert wallet_repository.get(one.id).balance == Decimal("9.0000")
 
-    refreshed = [wallets.get(m.id).evolve(balance=Decimal("5.00")) for m in many]
-    wallets.update_all_no_result(refreshed)
-    assert {w.balance for w in wallets.find_many([m.id for m in many])} == {Decimal("5.0000")}
+    refreshed = [wallet_repository.get(m.id).evolve(balance=Decimal("5.00")) for m in many]
+    wallet_repository.update_all_no_result(refreshed)
+    assert {w.balance for w in wallet_repository.find_many([m.id for m in many])} == {
+        Decimal("5.0000")
+    }
 
 
-def test_the_dialect_is_reachable_for_the_query_that_has_to_differ(wallets, registry):
-    assert wallets.dialect() == registry.dialect
-    assert wallets.dialect(shard=registry.default_shard) == registry.dialect
+def test_the_dialect_is_reachable_for_the_query_that_has_to_differ(wallet_repository, registry):
+    assert wallet_repository.dialect() == registry.dialect
+    assert wallet_repository.dialect(shard=registry.default_shard) == registry.dialect
 
 
 # ------------------------------------------------- the executor asks the same question
@@ -309,7 +316,7 @@ def _executor_over(registry, repo, clock):
 
 
 @dataclass(frozen=True, kw_only=True)
-class OpenWalletParams:
+class WalletCreateParams:
     """A params object rather than a bare `str`, because the outbox stores these as a JSON
     object and a scalar there is a row no typed consumer can read. Java refuses the scalar for
     the same reason."""
@@ -318,7 +325,7 @@ class OpenWalletParams:
 
 
 def _open_wallet(currency, clock):
-    class OpenWalletAction(Action[OpenWalletParams, Wallet]):
+    class WalletCreateAction(Action[WalletCreateParams, Wallet]):
         def perform(self, principal: str | None, params):
             return self.plan.add(
                 Wallet.open(
@@ -330,25 +337,31 @@ def _open_wallet(currency, clock):
                 )
             )
 
-    return OpenWalletAction(clock), OpenWalletParams(currency=currency)
+    return WalletCreateAction(clock), WalletCreateParams(currency=currency)
 
 
 def test_a_strategy_that_cannot_route_by_id_alone_still_runs(sharded_registry, clock, outbox):
     """The repository could always route these; only the executor could not."""
-    repo = WalletRepository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
-    executor = _executor_over(sharded_registry, repo, clock)
+    wallet_repository = WalletRepository(
+        Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock
+    )
+    executor = _executor_over(sharded_registry, wallet_repository, clock)
 
     action, params = _open_wallet("MXN", clock)
     wallet = run(executor, action, params)
 
-    assert repo.find_where(WALLETS.c.currency == "MXN", shard=MEXICO)[0].id == wallet.id
+    assert (
+        wallet_repository.find_where(WALLETS.c.currency == "MXN", shard=MEXICO)[0].id == wallet.id
+    )
 
 
 def test_state_and_its_events_land_on_one_shard(sharded_registry, clock):
     """The id and the row can name different shards. When they do, the state and the outbox
     row must still be one transaction on one database, or the whole promise is gone."""
-    repo = WalletRepository(Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock)
-    executor = _executor_over(sharded_registry, repo, clock)
+    wallet_repository = WalletRepository(
+        Wallet, WALLETS, sharded_registry, sharding=_ByCurrency(), clock=clock
+    )
+    executor = _executor_over(sharded_registry, wallet_repository, clock)
 
     action, params = _open_wallet("MXN", clock)
     run(executor, action, params)
@@ -358,7 +371,7 @@ def test_state_and_its_events_land_on_one_shard(sharded_registry, clock):
             conn.execute(select(func.count()).select_from(WALLETS)).scalar_one(),
             conn.execute(select(func.count()).select_from(EVENTS)).scalar_one(),
         )
-        for shard, conn in repo.readonly_dbs()
+        for shard, conn in wallet_repository.readonly_dbs()
     }
     assert rows == {GLOBAL: (0, 0), MEXICO: (1, 1)}, (
         "the row went one way and its events the other, in two transactions"
@@ -372,10 +385,10 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
     `ekbatan.aio` asks every shard at once instead - one round trip's wait - and takes the
     answers in shard order, so the row found is the same; the reads after the shard that
     answered are cancelled, so a later shard may or may not have run its query."""
-    repo = WalletRepository(
+    wallet_repository = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
-    repo.add(a_wallet(GLOBAL, "SEK"))  # the only match, on the first shard visited
+    wallet_repository.add(a_wallet(GLOBAL, "SEK"))  # the only match, on the first shard visited
 
     selects = dict.fromkeys(sharded_registry.shards, 0)
 
@@ -394,11 +407,11 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
         )
 
     later = {0} if mode == "sync" else {0, 1}
-    assert repo.find_one_where(WALLETS.c.currency == "SEK") is not None
+    assert wallet_repository.find_one_where(WALLETS.c.currency == "SEK") is not None
     assert selects[GLOBAL] == 1 and selects[MEXICO] in later
 
     selects.update(dict.fromkeys(selects, 0))
-    assert repo.exists_where(WALLETS.c.currency == "SEK") is True
+    assert wallet_repository.exists_where(WALLETS.c.currency == "SEK") is True
     assert selects[GLOBAL] == 1 and selects[MEXICO] in later
 
 
@@ -481,7 +494,7 @@ def _statements(engine):
     return seen
 
 
-def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
+def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallet_repository):
     """Java's repository never opens one: inside a transaction it joins, outside one each
     statement commits itself. Opening one here would decide what is atomic on the caller's
     behalf, which is theirs to decide."""
@@ -495,7 +508,7 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
         balance=Decimal("1.00"),
         created_date=NOW,
     )
-    wallets.add(wallet)
+    wallet_repository.add(wallet)
 
     assert seen == ["INSERT"], "one statement, no BEGIN of the framework's own"
 
@@ -506,7 +519,7 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
     assert found is not None, "and it committed - a separate connection sees it"
 
 
-def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
+def test_a_batch_is_one_statement_however_many_rows(registry, wallet_repository):
     """Nothing is chunked. Splitting a batch past the server's bind-parameter ceiling is the
     caller's, because only they know what the pieces mean if one of them fails."""
     seen = _statements(registry.default.primary.sqlalchemy_engine)
@@ -521,22 +534,22 @@ def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
         )
         for _ in range(250)
     ]
-    stored = wallets.add_all(many)
+    stored = wallet_repository.add_all(many)
     assert seen.count("INSERT") == 1, "250 rows, one INSERT, even reading them back"
 
     seen.clear()
-    wallets.update_all([w.deposit(Decimal("1.00")) for w in stored])
+    wallet_repository.update_all([w.deposit(Decimal("1.00")) for w in stored])
     assert seen.count("UPDATE") == 1, "250 rows, one UPDATE"
 
     seen.clear()
-    assert len(wallets.find_many([w.id for w in stored])) == 250
+    assert len(wallet_repository.find_many([w.id for w in stored])) == 250
     assert seen.count("SELECT") == 1, "250 ids, one SELECT"
 
 
 def test_the_block_is_told_which_shard_it_is_on(sharded_registry, clock):
     """Java hands its block a DSLContext bound to one shard's connection. The counterpart here
     is a Transaction, which says the same and can also be asked which shard that is."""
-    repo = WalletRepository(
+    wallet_repository = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
 
@@ -550,12 +563,12 @@ def test_the_block_is_told_which_shard_it_is_on(sharded_registry, clock):
             assert tx.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 0
 
             # and a repository call joins it without being handed anything
-            repo.add(a_wallet(shard))
-            assert repo.tx_db(shard=shard) is tx.connection
+            wallet_repository.add(a_wallet(shard))
+            assert wallet_repository.tx_db(shard=shard) is tx.connection
 
     counts = {
         shard: conn.execute(select(func.count()).select_from(WALLETS)).scalar_one()
-        for shard, conn in repo.readonly_dbs()
+        for shard, conn in wallet_repository.readonly_dbs()
     }
     assert counts == {GLOBAL: 1, MEXICO: 1}, "each landed on the shard its block was for"
 
@@ -585,21 +598,21 @@ def test_no_sharding_says_it_resolves_nothing_from_an_id_and_still_reads_by_id(r
     assert strategy.shard_for_id(uuid4()) is None
     assert strategy.shard_for(a_wallet(MEXICO)) is None
 
-    wallets = WalletRepository(Wallet, WALLETS, registry, sharding=strategy, clock=clock)
-    stored = wallets.add(a_wallet(GLOBAL))
+    wallet_repository = WalletRepository(Wallet, WALLETS, registry, sharding=strategy, clock=clock)
+    stored = wallet_repository.add(a_wallet(GLOBAL))
 
-    assert wallets.get(stored.id).id == stored.id, "reads by id are not refused"
+    assert wallet_repository.get(stored.id).id == stored.id, "reads by id are not refused"
 
 
 def test_a_cross_shard_refusal_names_the_two_shards_that_disagreed(sharded_registry, clock):
     """Java's `CrossShardException` carries `activeShard` and `requestedShard` as fields, so a
     caller can branch on them rather than parse the message."""
-    wallets = WalletRepository(
+    wallet_repository = WalletRepository(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
     )
 
     with pytest.raises(CrossShardError) as raised:
-        wallets.add_all([a_wallet(GLOBAL), a_wallet(MEXICO)])
+        wallet_repository.add_all([a_wallet(GLOBAL), a_wallet(MEXICO)])
 
     assert {raised.value.active_shard, raised.value.requested_shard} == {GLOBAL, MEXICO}
     assert "allow_cross_shard=True" in str(raised.value), "and says what to do instead"

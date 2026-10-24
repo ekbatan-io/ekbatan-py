@@ -6,7 +6,7 @@ all. Which action runs, the retry policy, how a plan is split by shard, the cros
 and every log line and span attribute are the sync executor's code. What is here awaits
 ``perform``, the transaction and the writes::
 
-    wallet = await executor.execute(DepositMoneyAction, params)
+    wallet = await executor.execute(WalletDepositMoneyAction, params)
 """
 
 from __future__ import annotations

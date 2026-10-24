@@ -34,10 +34,8 @@ from ekbatan.locks.sql import (
     PostgresKeyedLockProvider,
 )
 from fixtures.actions import (
-    CreateWalletAction,
-    CreateWalletParams,
-    DepositMoneyAction,
-    DepositParams,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.executing import run
 from fixtures.logins import data_source
@@ -461,7 +459,7 @@ def test_the_get_lock_timeout_is_the_value_java_sends():
 # policy applied at the boundary, not a thing the domain code knows about.
 
 
-def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallets, request):
+def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallet_repository, request):
     """Java's `deposit_succeeds_when_lock_is_uncontested`.
 
     Nothing clever - but it is the composition the whole lock exists to support, and neither the
@@ -469,22 +467,28 @@ def test_a_lease_can_wrap_a_whole_unit_of_work(locks, executor, wallets, request
     """
     wallet = run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")
+        ),
     )
 
     with locks.acquire(f"wallet:{wallet.id}", timedelta(seconds=10)):
         updated = run(
             executor,
-            DepositMoneyAction(wallets, executor.clock),
-            DepositParams(wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@x"),
+            WalletDepositMoneyAction(wallet_repository, executor.clock),
+            WalletDepositMoneyAction.Params(
+                wallet_id=wallet.id, amount=Decimal("25.50"), recipient="ada@x"
+            ),
         )
 
     assert updated.balance == Decimal("125.5000")
-    assert wallets.get(wallet.id).balance == Decimal("125.5000"), "and it committed"
+    assert wallet_repository.get(wallet.id).balance == Decimal("125.5000"), "and it committed"
 
 
-def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, wallets, request):
+def test_a_second_caller_waits_for_the_first_and_then_proceeds(
+    locks, executor, wallet_repository, request
+):
     """Java's `brokenAcquire_blocksIndefinitely_whenLockHeldElsewhere`.
 
     `acquire` has no wait timeout by design: it waits as long as it takes. The name in Java calls
@@ -496,8 +500,10 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
     """
     wallet = run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("100.00")
+        ),
     )
     key = f"wallet:{wallet.id}"
 
@@ -509,8 +515,10 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
             finished.append(
                 run(
                     executor,
-                    DepositMoneyAction(wallets, executor.clock),
-                    DepositParams(wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@x"),
+                    WalletDepositMoneyAction(wallet_repository, executor.clock),
+                    WalletDepositMoneyAction.Params(
+                        wallet_id=wallet.id, amount=Decimal("10.00"), recipient="ada@x"
+                    ),
                 )
             )
 
@@ -520,11 +528,13 @@ def test_a_second_caller_waits_for_the_first_and_then_proceeds(locks, executor, 
 
     assert waiter.is_alive(), "still waiting, because the other holder has not let go"
     assert finished == []
-    assert wallets.get(wallet.id).balance == Decimal("100.0000"), "and nothing was written"
+    assert wallet_repository.get(wallet.id).balance == Decimal("100.0000"), (
+        "and nothing was written"
+    )
 
     held_by_someone_else.release()
     waiter.join(30)
 
     assert not waiter.is_alive(), "the wait ended when the holder released"
     assert finished and finished[0].balance == Decimal("110.0000")
-    assert wallets.get(wallet.id).balance == Decimal("110.0000")
+    assert wallet_repository.get(wallet.id).balance == Decimal("110.0000")

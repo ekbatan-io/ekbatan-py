@@ -17,7 +17,9 @@ from uuid import uuid4
 
 from sqlalchemy import text
 
-from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.actions import (
+    WalletCreateAction,
+)
 from fixtures.domain import WalletCreatedEvent
 from fixtures.executing import run
 from fixtures.handlers import RecordingHandler
@@ -31,8 +33,8 @@ def count(registry, sql: str) -> int:
 def a_wallet_created(executor) -> None:
     run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("1")),
     )
 
 

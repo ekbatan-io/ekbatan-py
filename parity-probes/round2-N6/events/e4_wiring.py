@@ -16,7 +16,7 @@ from ekbatan.events import (EventHandlerRegistry, LocalEventHandlerConfig, Handl
                             EventFanoutJob, EventHandlingJob, EventEnvelope)
 from fixtures.logins import data_source
 from fixtures.schema import EVENTS, EVENT_NOTIFICATIONS, metadata
-from fixtures.domain import WalletMoneyDepositedEvent as MoneyDepositedEvent
+from fixtures.domain import WalletMoneyDepositedEvent as WalletMoneyDepositedEvent
 
 def p(k, v): print(f"PROBE {k}: {v}", flush=True)
 b = start("sqlite", Path(tempfile.mkdtemp())); b.prepare("w", metadata)
@@ -27,16 +27,16 @@ registry = DatabaseRegistry.from_config(ShardingConfig.builder().default_shard(S
 engine = registry.manager(S0).primary if hasattr(registry.manager(S0), "primary") else create_engine(b.url("w"))
 clock = SystemClock(); executor = None
 
-class MoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler:
     name = "money-deposited"
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
     def __init__(self, executor) -> None:
         self.executor = executor
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
 
 # ---- as written ----
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
 jobs = (

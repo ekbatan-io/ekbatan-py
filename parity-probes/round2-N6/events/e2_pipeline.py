@@ -34,7 +34,7 @@ from ekbatan.persistence import DatabaseRegistry  # noqa: E402
 from ekbatan.repository import RepositoryRegistry  # noqa: E402
 from ekbatan.sharding import ShardIdentifier  # noqa: E402
 from fixtures.actions import (  # noqa: E402
-    CreateWalletAction, CreateWalletParams, DepositMoneyAction, DepositParams, NotifyAction,
+    WalletCreateAction, CreateWalletParams, WalletDepositMoneyAction, DepositParams, NotifyAction,
     NotifyParams,
 )
 from fixtures.domain import Wallet, WalletCreatedEvent, WalletMoneyDepositedEvent  # noqa: E402
@@ -69,17 +69,17 @@ def registry_for(names):
 
 reg = registry_for({S0: "n6_main"})
 clock = VirtualClock(T0)
-wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
+wallet_repository = WalletRepository(Wallet, WALLETS, reg, clock=clock)
 notes = NotificationRepository(__import__("fixtures.domain", fromlist=["Notification"]).Notification,
                                NOTIFICATIONS, reg, clock=clock)
 
 
 def make_executor(with_events: bool):
     b = (ActionExecutor.builder().namespace("example.wallet").database_registry(reg)
-         .repository_registry(RepositoryRegistry.builder().with_model_repository(wallets)
+         .repository_registry(RepositoryRegistry.builder().with_model_repository(wallet_repository)
                               .with_entity_repository(notes).build())
-         .action_registry(ActionRegistry.builder().with_action(CreateWalletAction(clock))
-                          .with_action(DepositMoneyAction(wallets, clock))
+         .action_registry(ActionRegistry.builder().with_action(WalletCreateAction(clock))
+                          .with_action(WalletDepositMoneyAction(wallet_repository, clock))
                           .with_action(NotifyAction(clock)).build())
          .clock(clock))
     if with_events:
@@ -102,15 +102,15 @@ def q(sql):
 # --- outbox row (outbox.md:81 default persister, :103-107 JSON; model-event.mdx serialisation) ---
 ex = make_executor(with_events=False)  # outbox.md:81 - no events= at all
 wid = ShardedId[Wallet].random()
-ex.execute(CreateWalletAction, CreateWalletParams(owner_id=uuid4(), currency="EUR",
+ex.execute(WalletCreateAction, CreateWalletParams(owner_id=uuid4(), currency="EUR",
                                                   initial_balance=Decimal("100.00"), wallet_id=wid))
 clock.advance(timedelta(seconds=5)) if hasattr(clock, "advance") else None
-ex.execute(DepositMoneyAction, DepositParams(wallet_id=wid, amount=Decimal("10.50"), recipient="a@b"))
+ex.execute(WalletDepositMoneyAction, DepositParams(wallet_id=wid, amount=Decimal("10.50"), recipient="a@b"))
 ex.execute(NotifyAction, NotifyParams(wallet_id=wid, kind="k", recipient="r"))
 rows = q("SELECT action_name, event_type, payload, action_params, delivered, id, event_date FROM events ORDER BY event_date, action_name")
 for r in rows:
     p(f"outbox.row.{r[0]}", f"type={r[1]} payload={r[2]} params={r[3]} delivered={r[4]} id={r[5]!r}")
-dep = [r for r in rows if r[0] == "DepositMoneyAction"][0]
+dep = [r for r in rows if r[0] == "WalletDepositMoneyAction"][0]
 p("outbox.default_persister_without_events_kw", "wrote rows" if rows else "no rows")
 p("outbox.payload_starts_modelId_modelName", str(dep[2]).startswith('{"modelId":') and '"modelName":"Wallet"' in str(dep[2]))
 p("outbox.payload_camel_newBalance", '"newBalance"' in str(dep[2]))
@@ -193,7 +193,7 @@ disp = EventDispatch(reg, handlers, notifications=EVENT_NOTIFICATIONS, clock=clo
 # Put the clock back to just after the event to see real deliveries.
 def D(v):
     return v if isinstance(v, datetime) and v.tzinfo else (v.replace(tzinfo=UTC) if isinstance(v, datetime) else datetime.fromisoformat(v).replace(tzinfo=UTC))
-dep_date = D([r for r in rows if r[0] == "DepositMoneyAction"][0][6])
+dep_date = D([r for r in rows if r[0] == "WalletDepositMoneyAction"][0][6])
 clock.pause_at(dep_date + timedelta(seconds=1))
 disp.drain_once()
 p("dispatch.max_concurrent_handlers_one_event", MAX)

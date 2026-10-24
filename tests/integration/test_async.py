@@ -34,11 +34,11 @@ from ekbatan.aio import AsyncActionExecutor, AsyncDatabaseRegistry, AsyncDb
 from ekbatan.ids import ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 from fixtures.actions import (
-    AsyncCreateWalletAction,
-    AsyncDepositMoneyAction,
-    CreateWalletParams,
-    DepositParams,
+    AsyncWalletCreateAction,
+    AsyncWalletDepositMoneyAction,
     TwinAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from fixtures.domain import NOW, Wallet
 from fixtures.logins import data_source, single
@@ -72,18 +72,23 @@ def one_database(backend: Any, name: str, **settings: Any) -> AsyncDatabaseRegis
     return AsyncDatabaseRegistry.from_config(single(backend.url(name), **settings))
 
 
-def executor_over(registry: AsyncDatabaseRegistry, wallets: Any, clock: Any) -> Any:
+def executor_over(registry: AsyncDatabaseRegistry, wallet_repository: Any, clock: Any) -> Any:
     return AsyncActionExecutor(
         namespace="example.wallet",
         registry=registry,
-        repositories=[wallets],
-        actions=[AsyncCreateWalletAction(clock), AsyncDepositMoneyAction(wallets, clock)],
+        repositories=[wallet_repository],
+        actions=[
+            AsyncWalletCreateAction(clock),
+            AsyncWalletDepositMoneyAction(wallet_repository, clock),
+        ],
         clock=clock,
     )
 
 
-def open_params(balance: str = "0") -> CreateWalletParams:
-    return CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance))
+def open_params(balance: str = "0") -> WalletCreateAction.Params:
+    return WalletCreateAction.Params(
+        owner_id=uuid4(), currency="EUR", initial_balance=Decimal(balance)
+    )
 
 
 # ------------------------------------------------------------------- the pool is the cap
@@ -106,8 +111,8 @@ def test_a_request_waiting_past_pool_timeout_fails_fast(backend, dialect, clock)
             pool_timeout=0.5,
         )
         try:
-            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
-            executor = executor_over(registry, wallets, clock)
+            wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            executor = executor_over(registry, wallet_repository, clock)
             manager = registry.default
             holding, release = asyncio.Event(), asyncio.Event()
             held = 0
@@ -126,7 +131,7 @@ def test_a_request_waiting_past_pool_timeout_fails_fast(backend, dialect, clock)
 
             started = time.monotonic()
             with pytest.raises(sqlalchemy.exc.TimeoutError) as refused:
-                await executor.execute(AsyncCreateWalletAction, open_params())
+                await executor.execute(AsyncWalletCreateAction, open_params())
             waited = time.monotonic() - started
 
             assert 0.4 <= waited < 3, f"failed after {waited:.2f}s, not after pool_timeout"
@@ -137,9 +142,11 @@ def test_a_request_waiting_past_pool_timeout_fails_fast(backend, dialect, clock)
             release.set()
             await asyncio.gather(*holders)
             # The pool recovers: the next request gets a connection.
-            await executor.execute(AsyncCreateWalletAction, open_params())
+            await executor.execute(AsyncWalletCreateAction, open_params())
             assert checked_out(registry) == 0
-            assert await wallets.count() == 1, "only the request that got a connection wrote"
+            assert await wallet_repository.count() == 1, (
+                "only the request that got a connection wrote"
+            )
         finally:
             await registry.aclose()
 
@@ -176,13 +183,13 @@ def test_requests_beyond_the_pool_wait_their_turn_and_all_commit(backend, dialec
         event.listen(pool, "checkout", checkout)
         event.listen(pool, "checkin", checkin)
         try:
-            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
-            executor = executor_over(registry, wallets, clock)
+            wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            executor = executor_over(registry, wallet_repository, clock)
             made = await asyncio.gather(
-                *(executor.execute(AsyncCreateWalletAction, open_params(str(i))) for i in range(20))
+                *(executor.execute(AsyncWalletCreateAction, open_params(str(i))) for i in range(20))
             )
             assert len({w.id for w in made}) == 20
-            assert await wallets.count() == 20
+            assert await wallet_repository.count() == 20
             assert most == 2, f"{most} connections were out at once on a pool of two"
         finally:
             event.remove(pool, "checkout", checkout)
@@ -248,18 +255,22 @@ def test_a_read_across_shards_asks_them_at_once_and_keeps_the_sync_order(backend
     wait, both are running at once, and the rows still come back first shard first."""
 
     async def scenario() -> None:
-        async with two_shards(backend, clock, "ekbatan_async_scatter") as (_, names, wallets):
-            here = await wallets.add(a_wallet(GLOBAL))
-            there = await wallets.add(a_wallet(MEXICO))
+        async with two_shards(backend, clock, "ekbatan_async_scatter") as (
+            _,
+            names,
+            wallet_repository,
+        ):
+            here = await wallet_repository.add(a_wallet(GLOBAL))
+            there = await wallet_repository.add(a_wallet(MEXICO))
             seen: dict[str, Any] = {}
             with slow_reads({names[GLOBAL]: 0.45, names[MEXICO]: 0.3}, seen):
                 started = time.monotonic()
-                found = await wallets.find_where()
+                found = await wallet_repository.find_where()
                 took = time.monotonic() - started
-                counted = await wallets.count()
-                anywhere = await wallets.exists_where(WALLETS.c.id == there.id.value)
-                one = await wallets.find_one_where(WALLETS.c.id == there.id.value)
-                many = await wallets.find_many([there.id, here.id])
+                counted = await wallet_repository.count()
+                anywhere = await wallet_repository.exists_where(WALLETS.c.id == there.id.value)
+                one = await wallet_repository.find_one_where(WALLETS.c.id == there.id.value)
+                many = await wallet_repository.find_many([there.id, here.id])
 
         assert seen["most"] == 2, "the two shards were read at the same time"
         assert took < 0.7, f"{took:.2f}s - one after another would be 0.75s or more"
@@ -348,7 +359,11 @@ def test_dbs_is_one_shard_at_a_time_and_opens_only_what_is_asked_for(backend, cl
     sync: lazy and one after another. Stopping at the first opens nothing on the second."""
 
     async def scenario() -> None:
-        async with two_shards(backend, clock, "ekbatan_async_dbs") as (registry, _, wallets):
+        async with two_shards(backend, clock, "ekbatan_async_dbs") as (
+            registry,
+            _,
+            wallet_repository,
+        ):
             opened: list[Any] = []
             for shard in registry.shards:
                 event.listen(
@@ -356,12 +371,15 @@ def test_dbs_is_one_shard_at_a_time_and_opens_only_what_is_asked_for(backend, cl
                     "connect",
                     lambda *_, shard=shard: opened.append(shard),
                 )
-            async for shard, conn in wallets.dbs():
+            async for shard, conn in wallet_repository.dbs():
                 assert shard == GLOBAL
                 assert isinstance(conn, AsyncDb)
                 break
             assert opened == [GLOBAL]
-            assert [shard async for shard, _ in wallets.readonly_dbs()] == [GLOBAL, MEXICO]
+            assert [shard async for shard, _ in wallet_repository.readonly_dbs()] == [
+                GLOBAL,
+                MEXICO,
+            ]
 
     asyncio.run(scenario())
 
@@ -369,13 +387,15 @@ def test_dbs_is_one_shard_at_a_time_and_opens_only_what_is_asked_for(backend, cl
 # ------------------------------------------------------------------------------- timeouts
 
 
-class SlowDepositAction(TwinAction[DepositParams, Wallet]):
-    def __init__(self, wallets: Any, clock: Any) -> None:
+class SlowDepositAction(TwinAction[WalletDepositMoneyAction.Params, Wallet]):
+    def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(
+        self, principal: str | None, params: WalletDepositMoneyAction.Params
+    ) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         await asyncio.sleep(5)
         return self.plan.update(wallet.deposit(params.amount))
 
@@ -392,21 +412,23 @@ def test_a_timeout_around_a_unit_of_work_commits_nothing(backend, clock, where):
     async def scenario() -> None:
         registry = await asyncio.to_thread(one_database, backend, "ekbatan_async_timeout")
         try:
-            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
-            stored = await wallets.add(a_wallet())
+            wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            stored = await wallet_repository.add(a_wallet())
             executor = AsyncActionExecutor(
                 namespace="example.wallet",
                 registry=registry,
-                repositories=[wallets],
+                repositories=[wallet_repository],
                 actions=[
-                    SlowDepositAction(wallets, clock),
-                    AsyncDepositMoneyAction(wallets, clock),
+                    SlowDepositAction(wallet_repository, clock),
+                    AsyncWalletDepositMoneyAction(wallet_repository, clock),
                 ],
                 outbox=SlowOutbox() if where == "inside the transaction" else None,
                 clock=clock,
             )
-            action = SlowDepositAction if where == "in perform" else AsyncDepositMoneyAction
-            params = DepositParams(wallet_id=stored.id, amount=Decimal("5"), recipient="ada")
+            action = SlowDepositAction if where == "in perform" else AsyncWalletDepositMoneyAction
+            params = WalletDepositMoneyAction.Params(
+                wallet_id=stored.id, amount=Decimal("5"), recipient="ada"
+            )
 
             started = time.monotonic()
             with pytest.raises(TimeoutError):
@@ -416,7 +438,9 @@ def test_a_timeout_around_a_unit_of_work_commits_nothing(backend, clock, where):
 
             assert registry.default.current() is None, "nothing is left ambient"
             assert checked_out(registry) == 0, "the connection went back"
-            assert (await wallets.get(stored.id)).balance == Decimal("10.0000"), "not committed"
+            assert (await wallet_repository.get(stored.id)).balance == Decimal("10.0000"), (
+                "not committed"
+            )
             async with registry.default.connection() as conn:
                 events = await conn.execute(select(func.count()).select_from(EVENTS))
                 assert events.scalar_one() == 0
@@ -503,13 +527,14 @@ class ReadsTwoAtOnceAction(TwinAction[tuple[str, str], tuple[Wallet, Wallet]]):
     """Reads two wallets with `asyncio.gather` in `perform` - outside any transaction, so each
     read takes a connection of its own."""
 
-    def __init__(self, wallets: Any, clock: Any) -> None:
+    def __init__(self, wallet_repository: Any, clock: Any) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Any) -> tuple[Wallet, Wallet]:
         first, second = await asyncio.gather(
-            self.wallets.get(params["first"]), self.wallets.get(params["second"])
+            self.wallet_repository.get(params["first"]),
+            self.wallet_repository.get(params["second"]),
         )
         return first, second
 
@@ -540,13 +565,13 @@ def test_reads_gathered_in_perform_each_take_a_connection(backend, clock):
     async def scenario() -> None:
         registry = await asyncio.to_thread(one_database, backend, "ekbatan_async_gather")
         try:
-            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
-            a, b = await wallets.add(a_wallet()), await wallets.add(a_wallet())
+            wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            a, b = await wallet_repository.add(a_wallet()), await wallet_repository.add(a_wallet())
             executor = AsyncActionExecutor(
                 namespace="example.wallet",
                 registry=registry,
-                repositories=[wallets],
-                actions=[ReadsTwoAtOnceAction(wallets, clock)],
+                repositories=[wallet_repository],
+                actions=[ReadsTwoAtOnceAction(wallet_repository, clock)],
                 clock=clock,
             )
             seen: dict[str, Any] = {}
@@ -571,13 +596,13 @@ def test_statements_gathered_inside_one_transaction_take_turns(backend, clock):
     async def scenario() -> None:
         registry = await asyncio.to_thread(one_database, backend, "ekbatan_async_turns")
         try:
-            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            wallet_repository = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
             seen: dict[str, int] = {}
             with connections_out(registry, seen):
                 async with registry.default.transaction():
-                    await asyncio.gather(*(wallets.add(a_wallet()) for _ in range(3)))
+                    await asyncio.gather(*(wallet_repository.add(a_wallet()) for _ in range(3)))
             assert seen["most"] == 1
-            assert await wallets.count() == 3
+            assert await wallet_repository.count() == 3
         finally:
             await registry.aclose()
 

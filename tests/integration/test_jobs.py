@@ -21,9 +21,11 @@ from sqlalchemy import func, select
 
 from ekbatan.distributedjobs import DistributedJob, JobRegistry, job_registry
 from ekbatan.errors import ValidationError
-from fixtures.actions import CreateWalletAction, CreateWalletParams
+from fixtures.actions import (
+    WalletCreateAction,
+)
 from fixtures.executing import run
-from fixtures.jobs import CountWalletsJob, PayStipendJob
+from fixtures.jobs import WalletReportJob, WalletStipendJob
 from fixtures.schema import SCHEDULED_TASKS
 
 #: Where the scheduler's clock starts. Any fixed instant will do; a fixed one keeps the tests
@@ -35,8 +37,10 @@ SCHEDULER_EPOCH = datetime(2026, 1, 1, 12, 0)
 def wallet(executor):
     return run(
         executor,
-        CreateWalletAction(executor.clock),
-        CreateWalletParams(owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")),
+        WalletCreateAction(executor.clock),
+        WalletCreateAction.Params(
+            owner_id=uuid4(), currency="EUR", initial_balance=Decimal("0.00")
+        ),
     )
 
 
@@ -57,20 +61,20 @@ def a_registry(registry, clock, jobs) -> JobRegistry:
 
 
 class TestRunningJobs:
-    def test_a_job_runs_and_reschedules(self, registry, executor, wallets, clock, wallet):
-        job = PayStipendJob(executor, wallets)
+    def test_a_job_runs_and_reschedules(self, registry, executor, wallet_repository, clock, wallet):
+        job = WalletStipendJob(executor, wallet_repository)
         jobs = a_registry(registry, clock, [job])
 
         jobs.start()
         jobs.scheduler.run_any_due_executions()
 
         assert job.runs == 1
-        assert wallets.get(wallet.id).balance == Decimal("1.0000")
+        assert wallet_repository.get(wallet.id).balance == Decimal("1.0000")
 
     def test_a_slot_that_is_not_due_yet_does_not_run(
-        self, registry, executor, wallets, clock, wallet
+        self, registry, executor, wallet_repository, clock, wallet
     ):
-        job = PayStipendJob(executor, wallets)
+        job = WalletStipendJob(executor, wallet_repository)
         jobs = a_registry(registry, clock, [job])
         jobs.start()
 
@@ -83,12 +87,12 @@ class TestRunningJobs:
         assert job.runs == 2, "a recurring job must actually recur"
 
     def test_one_row_per_job_however_many_instances_register_it(
-        self, registry, executor, wallets, clock, wallet
+        self, registry, executor, wallet_repository, clock, wallet
     ):
         """A rolling deploy starts every instance within the same second, and each registers the
         same jobs. One job, one row - the row is what stops five servers running it."""
         for _ in range(4):
-            a_registry(registry, clock, [PayStipendJob(executor, wallets)]).start()
+            a_registry(registry, clock, [WalletStipendJob(executor, wallet_repository)]).start()
 
         with registry.default.connection(readonly=True) as conn:
             rows = conn.execute(select(func.count()).select_from(SCHEDULED_TASKS)).scalar_one()
@@ -96,15 +100,15 @@ class TestRunningJobs:
         assert rows == 1
 
     def test_work_done_by_a_job_is_audited_like_any_other(
-        self, registry, executor, wallets, clock, wallet, outbox
+        self, registry, executor, wallet_repository, clock, wallet, outbox
     ):
-        jobs = a_registry(registry, clock, [PayStipendJob(executor, wallets)])
+        jobs = a_registry(registry, clock, [WalletStipendJob(executor, wallet_repository)])
         jobs.start()
         jobs.scheduler.run_any_due_executions()
 
         deposits = [r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent"]
         assert len(deposits) == 1
-        assert deposits[0]["action_name"] == "DepositMoneyAction", (
+        assert deposits[0]["action_name"] == "WalletDepositMoneyAction", (
             "a job is a caller, not a special case; a consumer cannot tell and need not"
         )
         assert deposits[0]["namespace"] == "example.wallet"
@@ -162,7 +166,7 @@ class TestRunningJobs:
 
 class TestDisabledJobs:
     def test_a_disabled_schedule_registers_no_row_and_never_runs(
-        self, registry, executor, wallets, clock, wallet
+        self, registry, executor, wallet_repository, clock, wallet
     ):
         """How a job is switched off for an environment where the work is someone else's -
         without deleting the code. There is no separate `enabled` flag, in either language: the
@@ -190,7 +194,7 @@ class TestDisabledJobs:
         assert rows == 0, "db-scheduler deliberately writes no execution for a disabled schedule"
 
     def test_and_start_does_not_mistake_that_for_a_failure(
-        self, registry, executor, wallets, clock
+        self, registry, executor, wallet_repository, clock
     ):
         """`start()` insists every job got a row - except the disabled ones, whose absence is
         correct rather than a symptom."""
@@ -204,7 +208,7 @@ class TestDisabledJobs:
 
             def execute(self, ctx: ExecutionContext) -> None: ...
 
-        jobs = a_registry(registry, clock, [Dormant(), CountWalletsJob(wallets)])
+        jobs = a_registry(registry, clock, [Dormant(), WalletReportJob(wallet_repository)])
 
         jobs.start()  # must not raise
 
@@ -238,10 +242,12 @@ class TestVerifyingRegistration:
         with pytest.raises(ValidationError, match="wallet-stipend"):
             jobs.start()
 
-    def test_and_says_so_when_it_cannot_even_check(self, registry, executor, wallets, clock):
+    def test_and_says_so_when_it_cannot_even_check(
+        self, registry, executor, wallet_repository, clock
+    ):
         """A dropped table takes the verification query down with it. Reported as "could not
         verify" rather than as a missing job, because those are different problems."""
-        jobs = a_registry(registry, clock, [PayStipendJob(executor, wallets)])
+        jobs = a_registry(registry, clock, [WalletStipendJob(executor, wallet_repository)])
         jobs.start()
 
         SCHEDULED_TASKS.drop(registry.default.primary.sqlalchemy_engine)
@@ -251,8 +257,12 @@ class TestVerifyingRegistration:
         finally:
             SCHEDULED_TASKS.create(registry.default.primary.sqlalchemy_engine)
 
-    def test_a_healthy_start_says_nothing(self, registry, executor, wallets, clock, wallet):
-        a_registry(registry, clock, [PayStipendJob(executor, wallets)]).start()  # must not raise
+    def test_a_healthy_start_says_nothing(
+        self, registry, executor, wallet_repository, clock, wallet
+    ):
+        a_registry(
+            registry, clock, [WalletStipendJob(executor, wallet_repository)]
+        ).start()  # must not raise
 
 
 class TestRefusingARegistryThatCannotWork:
@@ -269,13 +279,16 @@ class TestRefusingARegistryThatCannotWork:
         with pytest.raises(ValidationError, match="blank name"):
             a_registry(registry, clock, [Nameless()])
 
-    def test_two_jobs_with_one_name_are_refused(self, registry, executor, wallets, clock):
+    def test_two_jobs_with_one_name_are_refused(self, registry, executor, wallet_repository, clock):
         """They would be the same row, so one would silently replace the other."""
         with pytest.raises(ValidationError, match="unique"):
             a_registry(
                 registry,
                 clock,
-                [PayStipendJob(executor, wallets), PayStipendJob(executor, wallets)],
+                [
+                    WalletStipendJob(executor, wallet_repository),
+                    WalletStipendJob(executor, wallet_repository),
+                ],
             )
 
     def test_a_null_schedule_is_refused(self, registry, clock):
@@ -299,9 +312,9 @@ class TestRefusingARegistryThatCannotWork:
         with pytest.raises(ValidationError, match="at least one"):
             a_registry(registry, clock, [])
 
-    def test_a_registry_with_no_data_source_is_refused(self, executor, wallets):
+    def test_a_registry_with_no_data_source_is_refused(self, executor, wallet_repository):
         with pytest.raises(ValidationError, match=r"^data_source is required$"):
-            job_registry().with_job(PayStipendJob(executor, wallets)).build()
+            job_registry().with_job(WalletStipendJob(executor, wallet_repository)).build()
 
     def test_a_none_job_is_refused_where_it_was_passed(self, registry, clock):
         """Rather than at build(), where it surfaced with no indication of which call put it
@@ -312,13 +325,15 @@ class TestRefusingARegistryThatCannotWork:
             job_registry().with_jobs([None])  # type: ignore[list-item]
 
     @pytest.mark.parametrize("bad", [timedelta(), timedelta(seconds=-1)])
-    def test_an_interval_that_would_spin_is_refused(self, registry, executor, wallets, clock, bad):
+    def test_an_interval_that_would_spin_is_refused(
+        self, registry, executor, wallet_repository, clock, bad
+    ):
         """A zero or negative interval makes db-scheduler skip its wait entirely and poll in a
         tight loop - around ten thousand queries a second, measured."""
         builder = (
             job_registry()
             .data_source(registry.default.primary)
-            .with_job(PayStipendJob(executor, wallets))
+            .with_job(WalletStipendJob(executor, wallet_repository))
         )
         with pytest.raises(ValidationError, match="poll_interval must be positive"):
             builder.poll_interval(bad).build()

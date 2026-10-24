@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import uuid4, UUID
 from sqlalchemy import select, func
 from common import probe
-from wallet_service_sqlite.model import Wallet, WalletState, WalletOpenedEvent
+from wallet_service_sqlite.model import Wallet, WalletState, WalletCreatedEvent
 from wallet_service_sqlite.builders import WalletBuilder
 from wallet_service_sqlite.schema import WALLETS, EVENTS, metadata
 from wallet_service_sqlite.repository import WalletRepository
@@ -35,7 +35,7 @@ clock = SystemClock()
 def open_snippet(shard):
     wallet_id = ShardedId[Wallet].generate(shard)
     return (WalletBuilder().id(wallet_id).state(WalletState.OPENED).owner_id(uuid4()).currency("EUR").balance(Decimal(1))
-            .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=uuid4(), currency="EUR", opening_balance=Decimal(1))).build())
+            .with_event(WalletCreatedEvent(model_id=str(wallet_id), owner_id=uuid4(), currency="EUR", opening_balance=Decimal(1))).build())
 probe("sharding.md:162 sharded Wallet.open snippet as written", lambda: open_snippet(MEXICO))
 
 repo = WalletRepository(reg)
@@ -92,11 +92,11 @@ class TwoParams:
     a: ShardedId[Wallet]
     b: ShardedId[Wallet]
 class TouchBoth(Action[TwoParams, None]):
-    def __init__(self, wallets, clock):
-        super().__init__(clock); self.wallets = wallets
+    def __init__(self, wallet_repository, clock):
+        super().__init__(clock); self.wallet_repository = wallet_repository
     def perform(self, principal, params):
-        self.plan.update(self.wallets.get(params.a).deposit(Decimal(1)))
-        self.plan.update(self.wallets.get(params.b).deposit(Decimal(1)))
+        self.plan.update(self.wallet_repository.get(params.a).deposit(Decimal(1)))
+        self.plan.update(self.wallet_repository.get(params.b).deposit(Decimal(1)))
 ex = ActionExecutor(namespace="com.example.n6", registry=reg, repositories=[repo], actions=[TouchBoth(repo, clock)], events=EVENTS)
 probe("sharding.md:389 cross-shard refused, naming two shards", lambda: ex.execute(TouchBoth, TwoParams(a=g.id, b=m.id)))
 logbuf.truncate(0); logbuf.seek(0)

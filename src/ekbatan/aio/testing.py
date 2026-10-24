@@ -2,11 +2,13 @@
 
 ::
 
-    staged = await async_run_action(DepositMoneyAction(wallets, clock), DepositParams(...))
+    staged = await async_run_action(
+        WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(...)
+    )
     assert staged.updated(Wallet)[0].balance == Decimal("150.00")
 
-    (await AsyncActionSpec.of(DepositMoneyAction(wallets, clock))
-        .execute(DepositParams(...)))
+    (await AsyncActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
+        .execute(WalletDepositMoneyAction.Params(...)))
         .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
         .assert_emitted(WalletMoneyDepositedEvent, 1)
 
