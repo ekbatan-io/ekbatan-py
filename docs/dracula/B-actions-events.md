@@ -70,7 +70,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. `schema` could default to `"eventlog"` on the dialects that have schemas, and the builder could take `events(table)` the way the constructor does. Passing the table in has to stay while SQLite is supported.
 - **Surprise:** high
 
-### No annotations, no discovery: every action, handler and job is listed by hand
+### No annotations, no discovery: every action, handler and job is listed by hand - kept by the user's decision (2026-10-24)
+- **Kept by the user's decision (2026-10-24)**: left as it is.
 - **What:** Java marks classes `@EkbatanAction` / `@EkbatanEventHandler` and a DI module (Spring,
   Quarkus, Micronaut) finds them, builds them with their dependencies, and builds the registries,
   executor and jobs. Here you write a `build()` function that constructs every action with its

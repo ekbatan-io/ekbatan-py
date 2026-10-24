@@ -11,7 +11,8 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 
 ---
 
-### A Java `application.yml` datasource block does not load
+### A Java `application.yml` datasource block does not load - kept by the user's decision (2026-10-24)
+- **Kept by the user's decision (2026-10-24)**: left as it is.
 - **What:** The config file uses the Python field names for a datasource. Java's keys - `jdbcUrl`,
   `maximumPoolSize`, `driverClassName`, `minimumIdle`, `idleTimeout`, `leakDetectionThreshold` - are
   refused as "unknown key". The layout around them (`defaultShard`, `groups`, `primaryConfig`...)
@@ -23,7 +24,8 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - `jdbcUrl` could be read as an alias of `url` and `maximumPoolSize` mapped to `pool_size`; `driverClassName`, `minimumIdle`, `idleTimeout` and `leakDetectionThreshold` have nothing to map to.
 - **Surprise:** high
 
-### The pool settings are SQLAlchemy's, not Hikari's
+### The pool settings are SQLAlchemy's, not Hikari's - kept by the user's decision (2026-10-24)
+- **Kept by the user's decision (2026-10-24)**: left as it is.
 - **What:** Java has one ceiling, `maximumPoolSize`. Python has `pool_size` plus `max_overflow`,
   and adds `pool_timeout`, `pool_recycle` (30 min), `pool_pre_ping` (on) and `echo` (print all SQL).
   Java's `minimumIdle`, `idleTimeout` and `leakDetectionThreshold` do not exist - so no warning
@@ -70,7 +72,8 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - a build hook or a pre-commit step could run it; nothing runs automatically before `python -m app`.
 - **Surprise:** high
 
-### Typed builders come from a command you run by hand, and nothing checks they are current
+### Typed builders come from a command you run by hand, and nothing checks they are current - to be decided later (the user, 2026-10-24)
+- **To be decided later (the user, 2026-10-24)**, as #21 was.
 - **What:** Java's `@AutoBuilder` annotation processor writes `WalletBuilder` on every compile, so
   it can never be stale. In Python you run `python -m ekbatan.codegen myapp.model --out
   myapp/builders.py` and commit the file. No annotation: every model in the module gets one. A

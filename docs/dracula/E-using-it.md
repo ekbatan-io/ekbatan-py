@@ -10,7 +10,8 @@ follow the guide and run the project. Area F merges the two.
 
 ---
 
-### `ekbatan` is not on PyPI, so every install command in the docs fails
+### `ekbatan` is not on PyPI, so every install command in the docs fails - planned: published on PyPI later (the user, 2026-10-24)
+- **Planned (the user, 2026-10-24)**: ekbatan will be published on PyPI later.
 - **What:** The docs say `uv add ekbatan[postgres]`, but neither `ekbatan` nor
   `ekbatan-py-db-scheduler` has been published. A Java developer adds a Maven Central coordinate
   and it resolves. **(run)** `https://pypi.org/pypi/ekbatan/json` and
@@ -48,7 +49,8 @@ follow the guide and run the project. Area F merges the two.
   system, use the factory form (`uvicorn --factory wallet.api:create_app`), and test the page.
 - **Surprise:** high
 
-### No DI container, no annotations, nothing found for you: you wire every piece by hand
+### No DI container, no annotations, nothing found for you: you wire every piece by hand - kept by the user's decision (2026-10-24)
+- **Kept by the user's decision (2026-10-24)**: left as it is.
 - **What:** There is no `@EkbatanAction`, `@EkbatanRepository`, `@EkbatanEventHandler` or
   `@EkbatanDistributedJob`, and no Spring/Quarkus/Micronaut module. Your `build()` function
   constructs every repository, action, handler and job, registers each one, builds the jobs and
@@ -161,7 +163,8 @@ follow the guide and run the project. Area F merges the two.
   to opt in. Since `EKB-0498` a bare worker that has not is told so by one warning at startup.
 - **Surprise:** medium
 
-### Typed builders are committed by hand, and a user project has no check that they are current
+### Typed builders are committed by hand, and a user project has no check that they are current - to be decided later (the user, 2026-10-24)
+- **To be decided later (the user, 2026-10-24)**, as #21 was.
 - **What:** Java's annotation processor rewrites `WalletBuilder` on every compile. Here you run
   `python -m ekbatan.codegen` yourself and commit the file. The repository checks its own
   examples with `scripts/check-builders.py`, but that script is not shipped and only looks at
