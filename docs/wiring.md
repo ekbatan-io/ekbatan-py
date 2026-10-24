@@ -359,7 +359,6 @@ executor = ActionExecutor(
         .with_action(RaiseAlertAction(clock))
         .build()
     ),
-    events=EVENTS,
     clock=running,
 )
 ```
@@ -378,7 +377,6 @@ executor = AsyncActionExecutor(
         .with_action(CloseWalletAction(wallets, clock))
         .build()
     ),
-    events=EVENTS,
     clock=running,
 )
 ```
@@ -420,7 +418,6 @@ handler_executor = AsyncActionExecutor(
     registry=handler_registry,
     repositories=[handler_wallets, AlertRepository(handler_registry, clock=running)],
     actions=[DepositMoneyAction(handler_wallets, clock), RaiseAlertAction(clock)],
-    events=EVENTS,
     clock=running,
 )
 handlers = EventHandlerRegistry([MoneyDepositedEventHandler(handler_executor)])
@@ -447,10 +444,9 @@ jobs = (
     job_registry()
     .engine(jobs_engine)
     .with_jobs([
-        EventFanoutJob(registry, handlers, events=EVENTS,
-                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
+        EventFanoutJob(registry, handlers, config=events_config, clock=running),
         EventHandlingJob(registry, handlers,
-                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running,
+                         config=events_config, clock=running,
                          # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled),
         PayStipendJob(executor, wallets),
@@ -470,10 +466,9 @@ jobs = (
     job_registry()
     .engine(jobs_engine)
     .with_jobs([
-        EventFanoutJob(events_registry, handlers, events=EVENTS,
-                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running),
+        EventFanoutJob(events_registry, handlers, config=events_config, clock=running),
         EventHandlingJob(events_registry, handlers,
-                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=running,
+                         config=events_config, clock=running,
                          # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled,
                          handler_loop=handler_loop),

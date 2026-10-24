@@ -54,7 +54,9 @@ every push.
 
 Nothing to order. SQLite has one namespace per file, no `CREATE SCHEMA`, no init script, and no
 user to grant anything to. `ATTACH` is the nearest thing to a second schema and it is
-per-connection rather than per-database, so leave every table unqualified.
+per-connection rather than per-database, so leave every table unqualified. The framework's two
+event tables are plain `events` and `event_notifications` here: ekbatan maps its `eventlog` onto
+the file by itself.
 
 ```
 migrations/

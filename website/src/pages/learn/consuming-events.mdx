@@ -254,7 +254,7 @@ Capture only the outbox:
     "database.user": "wallet",
     "database.password": "wallet",
     "database.dbname": "wallet",
-    "table.include.list": "public.events",
+    "table.include.list": "eventlog.events",
     "plugin.name": "pgoutput",
 
     "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
@@ -270,9 +270,9 @@ Capture only the outbox:
 }
 ```
 
-`table.include.list` is `public.events` because the framework's tables are in no schema unless
-you name one. The schema is a parameter: pass `schema="eventlog"` to `outbox_table(...)` and the
-connector lists `eventlog.events` instead.
+`table.include.list` is `eventlog.events` because on PostgreSQL the framework keeps its two event
+tables in a schema of their own, `eventlog`, in each database. (On MySQL and MariaDB they are in
+the connected database itself, so there the connector lists `<your database>.events`.)
 
 The transform **drops UPDATE rows** — including fan-out's `delivered` flip — **skips sentinel
 rows** where `event_type` is null, and encodes the row as Avro using the schemas you mount into

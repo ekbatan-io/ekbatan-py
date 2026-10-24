@@ -85,40 +85,18 @@ MariaDB suite" was exercising the MySQL code path.
 
 ## Migration order
 
-MariaDB has no schemas, so an `eventlog` namespace has to be its own **database**. The connecting
-user usually only has rights on the main one, so the cross-database `GRANT`s have to come from an
-init script that runs as root, before anything else connects.
+The framework's two event tables go in the connected database itself, beside your own:
+`events` and `event_notifications`. On PostgreSQL ekbatan keeps them in a schema of their own,
+`eventlog` - but on MariaDB a schema *is* a database, and one `eventlog` database would be shared by
+every database on the server, so shards and other applications on it would read each
+other's events. So there is no `eventlog` database to create, no init script and no cross-database
+grant: ekbatan maps `eventlog` onto the connected database by itself.
 
 ```
-mariadb_init.sql              # root-only GRANTs, mounted into the container at startup
 migrations/
-  V0000__eventlog_database.sql  # CREATE DATABASE IF NOT EXISTS eventlog
   V0001__eventlog.sql           # events + event_notifications + their indexes
   V0002__scheduled_tasks.sql    # only if you run distributed jobs or in-process handlers
   V0003__wallets.sql            # your domain tables
-```
-
-All of that is only needed if you want the framework's tables in a namespace of their own. By
-default they go in the connected database, where none of it applies - see
-[Schema or database](/reference/multi-database/#schema-vs-database).
-
-### `mariadb_init.sql`
-
-The container runs every `.sql` in `/docker-entrypoint-initdb.d/` as root before it reports ready.
-That is the only place this can live: your application connects as the named user, and a user
-cannot grant itself anything.
-
-```sql
-GRANT ALL PRIVILEGES ON *.* TO 'wallet'@'%';
-FLUSH PRIVILEGES;
-```
-
-```yaml
-services:
-  wallet-db:
-    image: mariadb:11.4
-    volumes:
-      - ./mariadb_init.sql:/docker-entrypoint-initdb.d/mariadb_init.sql:ro
 ```
 
 ## MariaDB-specific gotchas

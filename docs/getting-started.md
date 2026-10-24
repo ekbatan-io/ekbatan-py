@@ -278,7 +278,6 @@ executor = ActionExecutor(
     registry=registry,
     repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
     actions=ActionRegistry.builder().with_action(DepositMoneyAction(wallets, clock)).build(),
-    events=EVENTS,
 )
 ```
 
@@ -293,7 +292,6 @@ executor = AsyncActionExecutor(
     registry=registry,
     repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
     actions=ActionRegistry.builder().with_action(DepositMoneyAction(wallets, clock)).build(),
-    events=EVENTS,
 )
 ```
 

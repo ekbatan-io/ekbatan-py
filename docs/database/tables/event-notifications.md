@@ -6,7 +6,10 @@ rows with the same `event_id` and different `handler_name`.
 
 **Needed when:** you handle events in-process.
 **Written by:** the fan-out job creates rows; the dispatch job updates them.
-**Built by:** `ekbatan.schema.notifications_table(metadata, name="event_notifications", schema=None)`.
+**Built by:** `ekbatan.schema.notifications_table(metadata)`.
+**Where:** `eventlog.event_notifications` on PostgreSQL - a schema of its own, in each database; `event_notifications` in
+the connected database on MySQL, MariaDB and SQLite. Fixed, as the framework names it itself -
+see [Framework tables](../tables.md).
 
 Like `events`, this is an internal row shape rather than a `Model` or `Entity`. The dispatch job
 updates rows directly as delivery state changes.
@@ -16,7 +19,9 @@ updates rows directly as delivery state changes.
 ### PostgreSQL
 
 ```sql
-CREATE TABLE event_notifications (
+CREATE SCHEMA IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.event_notifications (
     id              UUID         NOT NULL,
     event_id        UUID         NOT NULL,
     handler_name    VARCHAR(255) NOT NULL,
@@ -40,7 +45,7 @@ CREATE TABLE event_notifications (
     CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
 );
 
-CREATE INDEX ix_event_notifications_due ON event_notifications (state, next_retry_at);
+CREATE INDEX ix_event_notifications_due ON eventlog.event_notifications (state, next_retry_at);
 ```
 
 MySQL and MariaDB are the same with `JSON` for `JSONB`, `DATETIME(6)` for the timestamps and

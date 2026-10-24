@@ -27,9 +27,10 @@ uv add "ekbatan[postgres]"
 
 ## Migration order
 
-PostgreSQL has no separate "create the eventlog database" step: `eventlog`, if you want one at
-all, is a schema inside the connected database and the first migration creates it inline. This
-framework puts its tables in no schema unless you ask, so usually there is nothing to create.
+The framework's two event tables live in a schema of their own, `eventlog`, inside the connected
+database: `eventlog.events` and `eventlog.event_notifications`. The first migration creates the
+schema inline - `CREATE SCHEMA IF NOT EXISTS eventlog;` - and then the tables in it. Nothing passes
+the tables to the framework: the executor and the event jobs name them themselves.
 
 ```
 migrations/
@@ -94,8 +95,9 @@ in key order are unequal.
 
 **Schema, not database.** `eventlog` is a schema inside the connected database:
 `CREATE SCHEMA IF NOT EXISTS eventlog;` in your first migration, and no init script - the
-connecting user normally has the right. Only needed if you want the tables in a schema of their
-own. By default there is no schema.
+connecting user normally has the right. Each database has its own, so shards that are databases on
+one server never share event tables. Hand-written SQL names them `eventlog.events` and
+`eventlog.event_notifications`.
 
 **Plain `TIMESTAMP`, never `TIMESTAMPTZ`.** Run the server with `TZ=UTC`. CI runs this suite a
 second time under `TZ=America/New_York` because that is where a driver inferring a zoned type

@@ -25,40 +25,18 @@ uv add "ekbatan[mysql]"
 
 ## Migration order
 
-MySQL has no schemas, so an `eventlog` namespace has to be its own **database**. The connecting
-user usually only has rights on the main one, so the cross-database `GRANT`s have to come from an
-init script that runs as root, before anything else connects.
+The framework's two event tables go in the connected database itself, beside your own:
+`events` and `event_notifications`. On PostgreSQL ekbatan keeps them in a schema of their own,
+`eventlog` - but on MySQL a schema *is* a database, and one `eventlog` database would be shared by
+every database on the server, so shards and other applications on it would read each
+other's events. So there is no `eventlog` database to create, no init script and no cross-database
+grant: ekbatan maps `eventlog` onto the connected database by itself.
 
 ```
-mysql_init.sql              # root-only GRANTs, mounted into the container at startup
 migrations/
-  V0000__eventlog_database.sql  # CREATE DATABASE IF NOT EXISTS eventlog
   V0001__eventlog.sql           # events + event_notifications + their indexes
   V0002__scheduled_tasks.sql    # only if you run distributed jobs or in-process handlers
   V0003__wallets.sql            # your domain tables
-```
-
-All of that is only needed if you want the framework's tables in a namespace of their own. By
-default they go in the connected database, where none of it applies - see
-[Schema or database](multi-database.md#schema-vs-database).
-
-### `mysql_init.sql`
-
-The container runs every `.sql` in `/docker-entrypoint-initdb.d/` as root before it reports ready.
-That is the only place this can live: your application connects as the named user, and a user
-cannot grant itself anything.
-
-```sql
-GRANT ALL PRIVILEGES ON *.* TO 'wallet'@'%';
-FLUSH PRIVILEGES;
-```
-
-```yaml
-services:
-  wallet-db:
-    image: mysql:8.4
-    volumes:
-      - ./mysql_init.sql:/docker-entrypoint-initdb.d/mysql_init.sql:ro
 ```
 
 ## Framework tables
@@ -130,10 +108,9 @@ is not free here.
 second: a 250 ms wait is a single try, 500 ms waits one second, 1.5 s waits two.
 [Measured](keyed-locks.md#mysql-rounds-the-wait-to-whole-seconds).
 
-**`eventlog` would be a separate database.** Only if you want the tables in a namespace of their
-own. It needs a migration
-to create it and an init script to grant rights - the grant cannot be in a migration, because the
-migrator connects as the user that needs granting.
+**No `eventlog` database.** The event tables are in the connected database: a separate `eventlog`
+database would be shared by every database on the server, so shards and other applications on it
+would read each other's events. Hand-written SQL names them `events` and `event_notifications`.
 
 **One schema change per migration file.** MySQL commits every schema change on its own, the
 moment it runs, so a migration that fails after one leaves it behind. The migrator records the

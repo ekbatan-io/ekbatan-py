@@ -252,23 +252,22 @@ rule is `scheduled_tasks`, which is db-scheduler's own schema - see
 
 ## Schema vs database
 
-On PostgreSQL a schema is a namespace **inside** the connected database. `CREATE SCHEMA IF NOT
-EXISTS eventlog;` in your first migration is all it takes, and the connecting user normally has
-the right to do it.
+The framework's two event tables have a fixed home: a schema called `eventlog`. What that is
+depends on the database.
 
-On MySQL and MariaDB "schema" and "database" are the same thing, so `schema="eventlog"` means a
-**separate database**. Two consequences:
+On PostgreSQL a schema is a namespace **inside** the connected database, so the tables are
+`eventlog.events` and `eventlog.event_notifications`. `CREATE SCHEMA IF NOT EXISTS eventlog;` in
+your first migration is all it takes, the connecting user normally has the right to do it, and
+every database - every shard - has its own.
 
-1. a migration that creates it, and
-2. an init script granting the connecting user rights to it.
+On MySQL and MariaDB "schema" and "database" are the same thing, so an `eventlog` schema would be
+a **separate database** - one for the whole server, shared by every database on it. Shards and
+other applications on that server would read each other's events. So there the two tables live in
+the connected database itself, as plain `events` and `event_notifications`, and ekbatan maps
+`eventlog` onto it by itself. SQLite, which has no schemas, does the same.
 
-The grant cannot live in a migration - the migrator connects as that user, and a user cannot
-grant itself anything.
-
-**This framework defaults to no schema at all**, because a Python service usually owns its
-database outright and one fewer namespace is one fewer thing to configure. Pass a schema, such as
-`schema="eventlog"`, when you want the tables kept apart - see
-[Framework tables](tables.md).
+Nothing passes the tables to the framework on any database: the executor's default event writer,
+the fan-out job and the handling job name them themselves - see [Framework tables](tables.md).
 
 ## Partial indexes (PostgreSQL only)
 

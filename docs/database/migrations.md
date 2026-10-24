@@ -349,7 +349,9 @@ print(emit_ddl(metadata, "postgresql"))
 
 Run it, read it, save it as `V0001__schema.sql`, **commit it**. Generated once and then owned by
 you, rather than regenerated behind your back on every deploy - which is the difference between a
-migration and a `create_all`. The output is the same every time it is generated, so a diff of it
+migration and a `create_all`. On PostgreSQL it starts with `CREATE SCHEMA IF NOT EXISTS eventlog;`
+and puts the two event tables in that schema; on MySQL, MariaDB and SQLite it writes them into the
+database itself - where the framework reads them on each. The output is the same every time it is generated, so a diff of it
 means something.
 
 `create_all` has no answer for a column that changed, which is why the examples migrate from
@@ -363,7 +365,8 @@ from ekbatan.migrations import migrate_registry
 migrate_registry(registry, metadata)     # create_all, every shard
 ```
 
-For a throwaway database in a test. Not for anything you will have to change later.
+For a throwaway database in a test. Not for anything you will have to change later. It puts the
+event tables where the framework reads them: it creates the `eventlog` schema first on PostgreSQL.
 
 ## Writing migrations by hand
 

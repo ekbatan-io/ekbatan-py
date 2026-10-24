@@ -186,7 +186,8 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Surprise:** medium
 - **Fixed** (`EKB-0248`): each logger is named after the Java class that writes the same lines (`io.ekbatan.core.action.ActionExecutor`, ...), the tracer scope is `io.ekbatan.core` at this package's version, `opentelemetry-api` is a dependency, and the migrator puts `ekbatanShard` and `ekbatanTarget` on its records. See `docs/runtime/observability.md#loggers`.
 
-### The framework's tables are not in an `eventlog` schema
+### ~~The framework's tables are not in an `eventlog` schema~~ matched on PostgreSQL (`EKB-0520`)
+- **Fixed** (`EKB-0520`, the user's decision 2026-10-24): the tables are fixed, as Java's, and nothing passes them - `eventlog.events` / `eventlog.event_notifications` on PostgreSQL; on MySQL and MariaDB the connected database (a separate `eventlog` database would be shared by every database on the server); SQLite has no schemas. See `docs/EVENTLOG-LEDGER.md`.
 - **What:** Java keeps `events` and `event_notifications` in the PostgreSQL schema `eventlog`. The
   Python table helpers default to no schema, so `emit_ddl` and the examples create them in the
   default schema (`public`). Overlaps area A/B.

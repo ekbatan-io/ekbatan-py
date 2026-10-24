@@ -114,7 +114,6 @@ handling = (
     EventHandlingJob.builder()
     .registry(registry)
     .handlers(handlers)
-    .notifications(EVENT_NOTIFICATIONS)
     .handler_loop(handler_loop)
     .build()
 )
@@ -195,10 +194,9 @@ jobs = (
     job_registry()
     .engine(engine)
     .with_jobs([
-        EventFanoutJob(registry, handlers, events=EVENTS,
-                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
+        EventFanoutJob(registry, handlers, config=events_config, clock=clock),
         EventHandlingJob(registry, handlers,
-                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock,
+                         config=events_config, clock=clock,
                          enabled=events_config.handling.enabled),
     ])
     .build()
@@ -220,10 +218,9 @@ jobs = (
     job_registry()
     .engine(engine)
     .with_jobs([
-        EventFanoutJob(registry, handlers, events=EVENTS,
-                       notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),
+        EventFanoutJob(registry, handlers, config=events_config, clock=clock),
         EventHandlingJob(registry, handlers,
-                         notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock,
+                         config=events_config, clock=clock,
                          enabled=events_config.handling.enabled, handler_loop=handler_loop),
     ])
     .build()

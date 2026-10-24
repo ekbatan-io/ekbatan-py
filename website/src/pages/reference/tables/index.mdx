@@ -57,23 +57,50 @@ EVENT_NOTIFICATIONS = notifications_table(metadata)
 SCHEDULED_TASKS = scheduled_tasks_table(metadata)
 ```
 
-Each takes `name=` and `schema=`, so a second outbox, or the tables in their own `eventlog`
-schema, is one argument:
+**Where the two event tables are is fixed**, and nothing passes them to the framework: the
+executor's default event writer, the fan-out job and the handling job name them themselves.
+`outbox_table()` and `notifications_table()` take no name and no schema - they describe exactly
+the tables the framework uses:
+
+| database | the two event tables |
+| --- | --- |
+| PostgreSQL | `eventlog.events`, `eventlog.event_notifications` - a schema of their own, in each database |
+| MySQL, MariaDB | `events`, `event_notifications` - in the connected database |
+| SQLite | `events`, `event_notifications` - in the file |
+
+On MySQL and MariaDB a schema is a database, and one `eventlog` database would be shared by every
+database on the server - shards and other applications would read each other's events - so there,
+as on SQLite, every connection ekbatan opens maps `eventlog` onto the connected database. An engine
+you build yourself, rather than with `engine_for`, needs the same mapping before you read these
+tables through it:
 
 ```python
-EVENTS = outbox_table(metadata, schema="eventlog")
+from sqlalchemy import create_engine
+from ekbatan.schema import eventlog_translation
+
+engine = create_engine(url, execution_options={"schema_translate_map": eventlog_translation("mysql")})
 ```
 
-In practice you do not write them by hand at all - `schemagen` emits them alongside your own
-tables, and `migrate()` creates them from your migration files. See
-[schemagen](/reference/schemagen/) and [Migrations](/reference/migrations/).
-
-On PostgreSQL a schema is a namespace inside the database. On MySQL and MariaDB "schema" and
-"database" are the same thing, so `schema="eventlog"` means a **separate database**, and the
-connecting user needs rights to it.
+In practice you do not write the tables by hand at all - `schemagen` emits them alongside your
+own tables, and `migrate()` creates them from your migration files. See [schemagen](/reference/schemagen/)
+and [Migrations](/reference/migrations/). On PostgreSQL, `create_all` makes the `eventlog` schema before
+the two tables.
 
 In a sharded application every shard gets its own copy of all three. `migrate()` applies the same
 migration files to each.
+
+### Tables already in PostgreSQL's default schema
+
+A PostgreSQL database whose migrations put the two event tables in its default schema moves them
+in its next migration. Rows, keys and indexes go with each table:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS eventlog;
+ALTER TABLE events SET SCHEMA eventlog;
+ALTER TABLE event_notifications SET SCHEMA eventlog;
+```
+
+Nothing to move on MySQL, MariaDB or SQLite: there they stay in the database itself.
 
 ## See also
 

@@ -6,7 +6,10 @@ commit.
 
 **Needed when:** you use the default persister, which is the normal setup.
 **Written by:** the executor, inside the action's transaction.
-**Built by:** `ekbatan.schema.outbox_table(metadata, name="events", schema=None)`.
+**Built by:** `ekbatan.schema.outbox_table(metadata)`.
+**Where:** `eventlog.events` on PostgreSQL - a schema of its own, in each database; `events` in
+the connected database on MySQL, MariaDB and SQLite. Fixed, as the framework names it itself -
+see [Framework tables](../tables.md).
 
 It is not a `Model` or an `Entity`. It has no version and no soft-delete state - nothing updates
 a committed event row except the `delivered` flag, and that belongs to the consumer.
@@ -20,7 +23,9 @@ DDL below is the table SQLAlchemy emits for it, with the two indexes the example
 ### PostgreSQL
 
 ```sql
-CREATE TABLE events (
+CREATE SCHEMA IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.events (
     id              UUID         NOT NULL,
     namespace       VARCHAR(255) NOT NULL,
     action_id       UUID         NOT NULL,
@@ -37,8 +42,8 @@ CREATE TABLE events (
     PRIMARY KEY (id)
 );
 
-CREATE INDEX ix_events_action_id ON events (action_id);
-CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
+CREATE INDEX ix_events_action_id ON eventlog.events (action_id);
+CREATE INDEX ix_events_undelivered ON eventlog.events (event_type, event_date)
     WHERE delivered = FALSE;
 ```
 
@@ -140,7 +145,7 @@ The fan-out job and a polling consumer look for rows not yet delivered. On Postg
 is **partial** - it holds only the rows still waiting:
 
 ```sql
-CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
+CREATE INDEX ix_events_undelivered ON eventlog.events (event_type, event_date)
     WHERE delivered = FALSE;
 ```
 

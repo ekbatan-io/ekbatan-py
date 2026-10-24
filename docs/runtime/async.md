@@ -294,7 +294,6 @@ job = (
     EventHandlingJob.builder()
     .registry(events_registry)                  # sync: fan-out and dispatch read the queue
     .handlers(handlers)
-    .notifications(EVENT_NOTIFICATIONS)
     .handler_loop(handler_loop)
     .build()
 )

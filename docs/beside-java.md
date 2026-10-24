@@ -39,7 +39,7 @@ reading.
 | PostgreSQL types | **yes** |
 | MySQL types | **yes** (see below) |
 | MariaDB `id`, `action_id` | **no**: `UUID` in Java, `CHAR(36)` here - the text a consumer reads is the same |
-| schema | **no**: Java's tables are in `eventlog`, this framework's in no schema unless you pass one; the connector lists whichever table it reads |
+| schema | **on PostgreSQL, yes**: both are `eventlog.events`. **On MySQL and MariaDB, no**: Java's are in a separate `eventlog` database, this framework's in the connected database, because a separate one would be shared by every database on the server |
 | index names | **no**: `idx_events_action_id` in Java, `ix_events_action_id` here - only a name |
 
 **On MySQL** the Java migration adds `CHARACTER SET ascii` to the uuid columns. That makes the

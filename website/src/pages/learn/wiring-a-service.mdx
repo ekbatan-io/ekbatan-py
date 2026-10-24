@@ -121,7 +121,6 @@ executor = ActionExecutor(
         .with_action(DepositMoneyAction(wallets, clock))
         .build()
     ),
-    events=EVENTS,
 )
 ```
 
@@ -139,7 +138,6 @@ executor = AsyncActionExecutor(
         .with_action(DepositMoneyAction(wallets, clock))
         .build()
     ),
-    events=EVENTS,
 )
 ```
 

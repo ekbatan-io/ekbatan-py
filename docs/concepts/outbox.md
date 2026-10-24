@@ -71,16 +71,13 @@ because neither half is a separate call you could make.
 And this is the table they land in - [`events`](../database/tables/events.md) has its DDL on
 every dialect, column by column.
 
-## Passing the table explicitly
+## Where the table is
 
-`events=EVENTS` is not ceremony. The table is passed in rather than reached for globally, which
-is what lets two services run in one process against two outboxes - exactly what the saga
-example's tests do. It is also what makes the generated schema module the single source of truth
-for the table's shape.
-
-Leave it out - no `events=` and no `outbox=` - and the executor writes through the default
-persister to the framework's own `events` table definition (`outbox_table`). Pass it whenever
-your table has another name or schema.
+Nothing passes the table to the framework: the executor's default event writer names it itself,
+and so do the event jobs that read it. It is `eventlog.events` on PostgreSQL - a schema of its own,
+in each database - and plain `events` in the connected database on MySQL, MariaDB and SQLite; see
+[Schema vs database](../database/multi-database.md#schema-vs-database) for why. The generated
+schema module declares the same table as `EVENTS`, so a test can read it back.
 
 ## The table's columns
 

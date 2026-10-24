@@ -99,7 +99,6 @@ executor = (
     .database_registry(registry)
     .repository_registry(RepositoryRegistry([wallets, alerts]))
     .action_registry(ActionRegistry([OpenWalletAction(clock), DepositMoneyAction(wallets, clock)]))
-    .event_persister(AsyncSingleTableJsonEventPersister(registry, EVENTS))
     .clock(clock)
     .build()
 )

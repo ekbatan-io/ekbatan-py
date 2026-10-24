@@ -54,7 +54,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** yes. The serialiser could camelCase keys on write and reverse it in `decode`, or a per-field name could be allowed. Either changes every stored row, so it needs a decision.
 - **Surprise:** high
 
-### You declare the outbox and notification tables yourself, pass them in three places, and by default they are not in `eventlog`
+### ~~You declare the outbox and notification tables yourself, pass them in three places, and by default they are not in `eventlog`~~ fixed (`EKB-0520`)
+- **Fixed** (`EKB-0520`, the user's decision 2026-10-24): the tables are fixed, as Java's, and nothing passes them - `eventlog.events` / `eventlog.event_notifications` on PostgreSQL; on MySQL and MariaDB the connected database (a separate `eventlog` database would be shared by every database on the server); SQLite has no schemas. See `docs/EVENTLOG-LEDGER.md`.
 - **What:** Java writes to a fixed `eventlog.events` / `eventlog.event_notifications`. Here the
   application builds `outbox_table(metadata)` / `notifications_table(metadata)` and hands them to
   the executor (`events=` or a hand-built `SingleTableJsonEventPersister(registry, EVENTS)`), the
