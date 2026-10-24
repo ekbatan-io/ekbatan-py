@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -102,9 +103,9 @@ class Backend(ABC):
 
     def engine(self, name: str, **kwargs: Any) -> Any:
         """SQLAlchemy's own engine on one logical database, for a test's own statements. It maps
-        `eventlog` onto that database where it is not a schema, as a data source's engine does
-        (ekbatan.schema.eventlog_translation) - so a test reads the event tables where the
-        framework writes them."""
+        `eventlog` onto that database where it is neither a schema nor a database (SQLite), as a
+        data source's engine does (ekbatan.schema.eventlog_translation) - so a test reads the
+        event tables where the framework writes them."""
         from ekbatan.schema import eventlog_translation
 
         translation = eventlog_translation(self.dialect)
@@ -133,6 +134,16 @@ class Backend(ABC):
 
     def _enable_constraints(self, conn: Any) -> None:  # noqa: B027
         """And back on afterwards."""
+
+    def apart(self, name: str) -> None:  # noqa: B027
+        """Put the database ``name`` on a server of its own. Only MySQL and MariaDB need it: their
+        ``eventlog`` is the server's, so two databases that each need event tables of their own -
+        two shards, a primary and its replica - need two servers, as Java's examples give each
+        shard one. Elsewhere the event tables belong to the database."""
+
+    def drop_eventlog(self, name: str) -> None:  # noqa: B027
+        """Throw away the event tables the database ``name`` sees, where they are not its own -
+        MySQL's and MariaDB's ``eventlog`` - for a test whose own migrations create them."""
 
     def stop(self) -> None:  # noqa: B027
         """A container has something to shut down; a directory does not."""
@@ -194,6 +205,91 @@ class ServerBackend(Backend):
 
 
 class MysqlFamilyBackend(ServerBackend):
+    """MySQL and MariaDB, where ``eventlog`` is a database of its own on the server: the event
+    tables are the server's, not a logical database's.
+
+    So they are created once per server, from ``migrations/mysql-eventlog`` - Java's
+    ``V0000__create_eventlog_database.sql``, then the tables - and each logical database migrates
+    only what it has of its own. Emptying a database between tests empties its server's event
+    tables with it, which is right while one test runs at a time. A database that needs event
+    tables of its own beside another's goes on a second server (:meth:`apart`).
+    """
+
+    #: The database that holds the history of the server's ``eventlog`` migration.
+    EVENTLOG_OWNER = "ekbatan_eventlog"
+
+    def __init__(
+        self, dialect: str, container: Any, driver: str, start: Callable[[], Any] | None = None
+    ) -> None:
+        super().__init__(dialect, container, driver)
+        #: Starts another server like this one, for :meth:`apart`.
+        self._start = start
+        self._apart: set[str] = set()
+        self._other: MysqlFamilyBackend | None = None
+
+    def apart(self, name: str) -> None:
+        self._apart.add(name)
+
+    def _home(self, name: str) -> MysqlFamilyBackend:
+        """The server the database ``name`` is on: this one, or the second for :meth:`apart`."""
+        if name not in self._apart:
+            return self
+        if self._other is None:
+            assert self._start is not None, "a second server cannot start a third"
+            self._other = MysqlFamilyBackend(self.dialect, self._start(), self._driver)
+        return self._other
+
+    def url(self, name: str) -> str:
+        home = self._home(name)
+        return super().url(name) if home is self else home.url(name)
+
+    def prepare(self, name: str, metadata: MetaData) -> None:
+        self._home(name).ensure_eventlog()
+        super().prepare(name, metadata)
+
+    def ensure_eventlog(self) -> None:
+        """This server's ``eventlog``, as the suite's migration builds it - built again if a test
+        threw it away (:meth:`drop_eventlog`)."""
+        from ekbatan.migrations import migrate
+        from fixtures.logins import single
+
+        engine = create_engine(self._base, isolation_level="AUTOCOMMIT")
+        try:
+            with engine.connect() as conn:
+                found = conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.tables WHERE (table_schema ="
+                        " 'eventlog' AND table_name IN ('events', 'event_notifications')) OR"
+                        " (table_schema = :owner AND table_name = 'ekbatan_schema_history')"
+                    ),
+                    {"owner": self.EVENTLOG_OWNER},
+                ).scalar()
+        finally:
+            engine.dispose()
+        if found == 3:
+            return
+        self._drop_eventlog_here()
+        migrate(single(self.url(self.EVENTLOG_OWNER)), self.MIGRATIONS / "mysql-eventlog")
+
+    def drop_eventlog(self, name: str) -> None:
+        self._home(name)._drop_eventlog_here()
+
+    def _drop_eventlog_here(self) -> None:
+        """This server's ``eventlog`` gone, with the history of the migration that made it."""
+        engine = create_engine(self._base, isolation_level="AUTOCOMMIT")
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("DROP DATABASE IF EXISTS eventlog"))
+                conn.execute(text(f"DROP DATABASE IF EXISTS {self.EVENTLOG_OWNER}"))
+        finally:
+            engine.dispose()
+        self._created.discard(self.EVENTLOG_OWNER)
+
+    def stop(self) -> None:
+        if self._other is not None:
+            self._other.stop()
+        super().stop()
+
     def _disable_constraints(self, conn: Any) -> None:
         conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
 
@@ -230,15 +326,15 @@ def start(dialect: str, tmp_root: Path) -> Backend:
     # `username="root"`, because this backend creates a logical database per fixture and
     # testcontainers' default `test` user is granted rights on the `test` schema only -
     # `CREATE DATABASE` comes back as "Access denied for user 'test'@'%'".
-    if dialect == "mysql":
-        container = MySqlContainer(IMAGES["mysql"], dialect="pymysql", username="root")
-    else:
-        # No dedicated MariaDB module; the MySQL one drives it given the right image. The
-        # default readiness line is the right one: both servers announce "ready for
-        # connections" twice - once from the temporary server the entrypoint runs to
-        # initialise the data directory, then again from the real one. Waiting for the first
-        # connects to a server that is about to shut down, which arrives as
-        # "Lost connection to MySQL server during query" some tests later.
-        container = MySqlContainer(IMAGES["mariadb"], dialect="pymysql", username="root")
-    container.start()
-    return MysqlFamilyBackend(dialect, container, "pymysql")
+    #
+    # No dedicated MariaDB module; the MySQL one drives it given the right image. The default
+    # readiness line is the right one: both servers announce "ready for connections" twice - once
+    # from the temporary server the entrypoint runs to initialise the data directory, then again
+    # from the real one. Waiting for the first connects to a server that is about to shut down,
+    # which arrives as "Lost connection to MySQL server during query" some tests later.
+    def server() -> Any:
+        started = MySqlContainer(IMAGES[dialect], dialect="pymysql", username="root")
+        started.start()
+        return started
+
+    return MysqlFamilyBackend(dialect, server(), "pymysql", server)

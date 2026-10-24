@@ -684,8 +684,8 @@ def _engine_kwargs(config: DataSourceConfig) -> dict[str, Any]:
         "json_serializer": column_dumps,
         "json_deserializer": loads,
     }
-    # Where the event tables are: `eventlog` is a schema on PostgreSQL and the connection's own
-    # database everywhere else. See ekbatan.schema.eventlog_translation.
+    # Where the event tables are: `eventlog` is a schema on PostgreSQL, a database on MySQL and
+    # MariaDB, and the file itself on SQLite. See ekbatan.schema.eventlog_translation.
     translation = eventlog_translation(config.dialect)
     if translation is not None:
         kwargs["execution_options"] = {"schema_translate_map": translation}

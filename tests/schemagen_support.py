@@ -35,8 +35,12 @@ SQLALCHEMY_NAME = {
 
 
 def fresh(backend: Backend, prefix: str = "sg") -> str:
-    """A url to a database nobody has used, on the session's container."""
-    return backend.url(f"{prefix}_{next(_COUNTER)}")
+    """A url to a database nobody has used, on the session's container - and on MySQL and
+    MariaDB with no `eventlog` on the server yet, since the event tables there are the server's
+    and the test's own migrations create them (`Backend.drop_eventlog`)."""
+    name = f"{prefix}_{next(_COUNTER)}"
+    backend.drop_eventlog(name)
+    return backend.url(name)
 
 
 def migrations(root: Path, *files: str) -> Path:

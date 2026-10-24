@@ -296,7 +296,9 @@ def registry(backend: Backend, portal: Portal | None) -> Iterator[DatabaseRegist
 
 @pytest.fixture
 def sharded_registry(backend: Backend, portal: Portal | None) -> Iterator[DatabaseRegistry]:
-    """Two databases, so routing and isolation are real rather than simulated."""
+    """Two databases, so routing and isolation are real rather than simulated - on two servers
+    on MySQL and MariaDB, where each server has one `eventlog` (`Backend.apart`)."""
+    backend.apart("ekbatan_mexico")
     yield from _either_registry(
         backend, {GLOBAL: "ekbatan_global", MEXICO: "ekbatan_mexico"}, portal
     )

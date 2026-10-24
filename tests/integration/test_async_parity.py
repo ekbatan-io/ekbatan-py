@@ -224,6 +224,9 @@ async def service(
 ) -> AsyncIterator[Service]:
     """A wallet service over fresh databases: sync, or on `ekbatan.aio` and asyncpg."""
     names = SHARDS if sharded else {GLOBAL: MAIN}
+    if sharded:
+        # Two servers on MySQL and MariaDB, where each server has one `eventlog`.
+        backend.apart(SHARDS[MEXICO])
     sharding = EmbeddedBitsShardingStrategy() if sharded else NoShardingStrategy()
     if mode == "sync":
         # Migrations are sync in both modes, so on a worker thread in both.

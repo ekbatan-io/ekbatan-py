@@ -965,8 +965,9 @@ def test_a_framework_table_s_own_indexes_are_kept_and_an_expression_one_is_said(
     """The helpers declare no indexes; the migrations choose them, and `create_all` builds the
     ones on the helper's columns. One on an expression cannot be tied to the helper's table."""
     family = _family(dialect)
-    # Where emit_ddl put it: the `eventlog` schema on PostgreSQL, the database itself elsewhere.
-    events, where = ("eventlog.events", "eventlog") if dialect == "postgres" else ("events", None)
+    # Where emit_ddl put it: in `eventlog` - a schema on PostgreSQL, a database on MySQL and
+    # MariaDB - and in the file itself on SQLite.
+    events, where = ("events", None) if dialect == "sqlite" else ("eventlog.events", "eventlog")
     # PostgreSQL only: SQLite's reflection skips an expression index with a warning of its own,
     # and MariaDB has none (ledger, docs gaps).
     expression = (

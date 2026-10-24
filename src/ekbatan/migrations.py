@@ -1769,13 +1769,13 @@ def migrate_registry(registry: DatabaseRegistry, metadata: MetaData) -> None:
     For development and tests. Real deployments migrate from files, because ``create_all`` has
     no answer for a column that changed.
 
-    The event tables land where the framework reads them: in a schema called ``eventlog`` on
-    PostgreSQL, created here first, and in the database itself everywhere else
-    (:func:`~ekbatan.schema.eventlog_translation`).
+    The event tables land where the framework reads them, in ``eventlog``, created here first: a
+    schema on PostgreSQL, a database of its own on MySQL and MariaDB. On SQLite they are in the
+    file itself (:func:`~ekbatan.schema.eventlog_translation`).
     """
     from sqlalchemy import text
 
-    from .schema import EVENTLOG_SCHEMA, eventlog_translation
+    from .schema import _EVENTLOG_CREATES, EVENTLOG_SCHEMA, eventlog_translation
 
     in_eventlog = any(table.schema == EVENTLOG_SCHEMA for table in metadata.tables.values())
     for shard in registry.shards:
@@ -1785,7 +1785,7 @@ def migrate_registry(registry: DatabaseRegistry, metadata: MetaData) -> None:
             engine = engine.execution_options(schema_translate_map=translation)
         elif in_eventlog:
             with engine.begin() as conn:
-                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {EVENTLOG_SCHEMA}"))
+                conn.execute(text(_EVENTLOG_CREATES[engine.dialect.name]))
         metadata.create_all(engine)
 
 
@@ -1795,11 +1795,12 @@ def emit_ddl(metadata: MetaData, dialect: str) -> str:
     A starting point for the first migration - run it, read it, commit it as a file. Generated
     once and then owned by you, rather than regenerated behind your back on every deploy.
 
-    The event tables are written where the framework reads them: on PostgreSQL in a schema
-    called ``eventlog``, created first, and everywhere else in the database itself
+    The event tables are written where the framework reads them, in ``eventlog``, created
+    first: a schema on PostgreSQL, a database of its own on MySQL and MariaDB - Java's
+    ``V0000__create_eventlog_database.sql``. On SQLite they are in the file itself
     (:func:`~ekbatan.schema.eventlog_translation`).
     """
-    from .schema import EVENTLOG_SCHEMA, eventlog_translation
+    from .schema import _EVENTLOG_CREATES, EVENTLOG_SCHEMA, eventlog_translation
 
     target_dialect = _dialect(dialect)
     translation = eventlog_translation(target_dialect.name) or {}
@@ -1813,7 +1814,7 @@ def emit_ddl(metadata: MetaData, dialect: str) -> str:
             # stub leaves out.
             table = original.to_metadata(MetaData(), schema=cast(Any, translation[original.schema]))
         elif original.schema == EVENTLOG_SCHEMA and not schema_created:
-            statements.append(f"CREATE SCHEMA IF NOT EXISTS {EVENTLOG_SCHEMA};")
+            statements.append(f"{_EVENTLOG_CREATES[target_dialect.name]};")
             schema_created = True
         statements.append(str(CreateTable(table).compile(dialect=target_dialect)).strip() + ";")
         # By name: `table.indexes` is a set, so its order changes from one process to the next,

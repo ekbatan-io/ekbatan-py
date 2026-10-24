@@ -1,9 +1,11 @@
--- The framework's outbox: `events`, and `event_notifications` for the in-process handlers.
--- Generated once with ekbatan.migrations.emit_ddl(metadata, "mariadb") and pasted, rather
--- than built from schema.py at migration time: a migration has to mean the same thing forever.
+-- The framework's outbox: `eventlog.events`, and `eventlog.event_notifications` for the in-process
+-- handlers, in the `eventlog` database V0000 creates.
+-- Generated once with ekbatan.migrations.emit_ddl(metadata, "mariadb") and pasted - its first
+-- statement, the CREATE DATABASE, is V0000 - rather than built from schema.py at migration time:
+-- a migration has to mean the same thing forever.
 -- An applied migration is never edited; a change goes in the next file.
 
-CREATE TABLE event_notifications (
+CREATE TABLE eventlog.event_notifications (
     id CHAR(36) NOT NULL,
     event_id CHAR(36) NOT NULL,
     handler_name VARCHAR(255) NOT NULL,
@@ -27,9 +29,9 @@ CREATE TABLE event_notifications (
     CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
 );
 
-CREATE INDEX ix_event_notifications_due ON event_notifications (state, next_retry_at);
+CREATE INDEX ix_event_notifications_due ON eventlog.event_notifications (state, next_retry_at);
 
-CREATE TABLE events (
+CREATE TABLE eventlog.events (
     id CHAR(36) NOT NULL,
     namespace VARCHAR(255) NOT NULL,
     action_id CHAR(36) NOT NULL,
@@ -46,6 +48,6 @@ CREATE TABLE events (
     PRIMARY KEY (id)
 );
 
-CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+CREATE INDEX ix_events_undelivered ON eventlog.events (delivered, event_type, event_date);
 
-CREATE INDEX ix_events_action_id ON events (action_id);
+CREATE INDEX ix_events_action_id ON eventlog.events (action_id);

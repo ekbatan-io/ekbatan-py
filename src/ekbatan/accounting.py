@@ -38,8 +38,8 @@ class StatementCount:
     rollbacks: int = 0
 
     #: Write statements per table, by its name without a schema: ``writes["events"]`` on every
-    #: database, though the statement says ``eventlog.events`` on PostgreSQL and the database's
-    #: own name before it elsewhere (``main.events`` on SQLite).
+    #: database, though the statement says ``eventlog.events`` on PostgreSQL, MySQL and MariaDB,
+    #: and the file's own name before it on SQLite (``main.events``).
     writes: Counter[str] = field(default_factory=Counter)
 
     statements: list[str] = field(default_factory=list)

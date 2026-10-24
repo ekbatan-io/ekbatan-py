@@ -51,6 +51,13 @@ MIGRATIONS = tuple(
     f"migrations/{name}.sql"
     for name in ("V0001__eventlog", "V0002__scheduled_tasks", "V0003__wallets", "V0004__alerts")
 )
+#: MySQL's and MariaDB's first migration: the `eventlog` database the event tables go in.
+EVENTLOG_DATABASE = "migrations/V0000__create_eventlog_database.sql"
+
+
+def migrations_of(db: str) -> tuple[str, ...]:
+    return ((EVENTLOG_DATABASE,) if db in ("mysql", "mariadb") else ()) + MIGRATIONS
+
 
 TEXT = PAGE.read_text()
 IMPORTS = dict(re.findall(r'^import (\w+) from "([^"]+)\?raw";', TEXT, re.M))
@@ -90,8 +97,14 @@ def test_an_async_file_shown_once_is_the_same_on_all_three_databases(name: str) 
     assert len(set(contents.values())) == 1, f"{name} differs between the async examples"
 
 
-@pytest.mark.parametrize("db", SYNC_SERVER)
-@pytest.mark.parametrize("name", [*MIGRATIONS, "model.py", "converters.py"])
+@pytest.mark.parametrize(
+    ("db", "name"),
+    [
+        (db, name)
+        for db in SYNC_SERVER
+        for name in (*migrations_of(db), "model.py", "converters.py")
+    ],
+)
 def test_a_file_shown_once_for_both_modes_is_the_same_in_both(db: str, name: str) -> None:
     sync, async_ = (EXAMPLES / SYNC_SERVER[db] / name), (EXAMPLES / ASYNC_SERVER[db] / name)
     assert sync.read_text() == async_.read_text(), f"{name} differs between the modes on {db}"

@@ -254,6 +254,8 @@ def lagging_replica(backend):
     from fixtures.schema import metadata
 
     written, lagging = "ekbatan_written", "ekbatan_lagging"
+    # Two servers on MySQL and MariaDB, where `eventlog` is the server's: a replica has its own.
+    backend.apart(lagging)
     for name in (written, lagging):
         backend.prepare(name, metadata)
         backend.truncate(name, metadata)

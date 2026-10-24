@@ -28,16 +28,25 @@ def _generator():
 GENERATE = _generator()
 
 
-@pytest.mark.parametrize("directory", sorted(set(GENERATE.DIRECTORIES.values())))
-def test_the_committed_file_is_what_the_metadata_generates(directory):
-    committed = (MIGRATIONS / directory / GENERATE.FILE).read_text()
+@pytest.mark.parametrize("relative", sorted(GENERATE.files()))
+def test_the_committed_file_is_what_the_metadata_generates(relative):
+    committed = (MIGRATIONS / relative).read_text()
 
-    assert committed == GENERATE.render(directory), (
-        f"tests/migrations/{directory}/{GENERATE.FILE} is stale: "
-        f"run `uv run python tests/migrations/generate.py`"
+    assert committed == GENERATE.files()[relative], (
+        f"tests/migrations/{relative} is stale: run `uv run python tests/migrations/generate.py`"
     )
 
 
-@pytest.mark.parametrize("directory", sorted(set(GENERATE.DIRECTORIES.values())))
-def test_the_suite_s_migrations_pass_the_checks_a_deployment_s_would(directory):
-    assert [s.script for s in validate_scripts(MIGRATIONS / directory)] == [GENERATE.FILE]
+def test_every_committed_file_is_one_the_generator_writes():
+    committed = {str(p.relative_to(MIGRATIONS)) for p in MIGRATIONS.glob("*/*.sql")}
+
+    assert committed == set(GENERATE.files())
+
+
+@pytest.mark.parametrize(
+    ("directory", "scripts"),
+    [(d, [GENERATE.FILE]) for d in sorted(set(GENERATE.DIRECTORIES.values()))]
+    + [(GENERATE.EVENTLOG_DIRECTORY, list(GENERATE.EVENTLOG_FILES))],
+)
+def test_the_suite_s_migrations_pass_the_checks_a_deployment_s_would(directory, scripts):
+    assert [s.script for s in validate_scripts(MIGRATIONS / directory)] == scripts

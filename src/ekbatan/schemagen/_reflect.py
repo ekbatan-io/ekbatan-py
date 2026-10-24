@@ -33,10 +33,15 @@ FRAMEWORK_TABLES = {
     "scheduled_tasks": "scheduled_tasks_table",
 }
 
-#: The two event tables - in ``eventlog`` on PostgreSQL, in the database itself elsewhere (see
-#: `ekbatan.schema.eventlog_translation`) - and written either way as `outbox_table(metadata)` and
-#: `notifications_table(metadata)`, whose schema is fixed.
+#: The two event tables - in ``eventlog``, a schema on PostgreSQL and a database on MySQL and
+#: MariaDB, and in the file itself on SQLite (see `ekbatan.schema.eventlog_translation`) - and
+#: written either way as `outbox_table(metadata)` and `notifications_table(metadata)`, whose schema
+#: is fixed.
 EVENT_TABLES = frozenset({"events", "event_notifications"})
+
+#: Where ``eventlog`` is a schema or a database of its own, by SQLAlchemy dialect name - the
+#: databases whose event tables are read from it.
+EVENTLOG_DIALECTS = frozenset({"postgresql", "mysql", "mariadb"})
 
 #: Tables that belong to the migration machinery and to nobody else - this framework's history,
 #: and Flyway's, for a database the Java port migrated. Always left out, as Java's builds leave
@@ -230,11 +235,11 @@ def reflect(engine: Engine, config: SchemagenConfig) -> Reflected:
     for name in config.schemas:
         if name != default and name not in wanted:
             wanted.append(name)
-    # On PostgreSQL the event tables are in `eventlog`: read them from there - and nothing else of
-    # that schema, unless `schemas` names it.
+    # The event tables are in `eventlog` - a schema on PostgreSQL, a database on MySQL and MariaDB:
+    # read them from there - and nothing else of it, unless `schemas` names it.
     eventlog_only = False
     if (
-        engine.dialect.name == "postgresql"
+        engine.dialect.name in EVENTLOG_DIALECTS
         and EVENTLOG_SCHEMA not in wanted
         and EVENTLOG_SCHEMA in inspector.get_schema_names()
     ):
@@ -417,7 +422,7 @@ def _note_unread_schemas(inspector: object, default: str | None, result: Reflect
     for name in sorted(names):
         if name == default or name in SYSTEM_SCHEMAS or name.startswith("pg_"):
             continue
-        if name == EVENTLOG_SCHEMA and result.dialect_name == "postgresql":
+        if name == EVENTLOG_SCHEMA and result.dialect_name in EVENTLOG_DIALECTS:
             continue  # read already, for its event tables
         tables = inspector.get_table_names(schema=name)  # type: ignore[attr-defined]
         if tables:

@@ -523,6 +523,7 @@ def test_no_service_object_shows_the_password(
 
 def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:
     assert [script.script for script in validate_scripts(MIGRATIONS)] == [
+        "V0000__create_eventlog_database.sql",
         "V0001__eventlog.sql",
         "V0002__scheduled_tasks.sql",
         "V0003__wallets.sql",

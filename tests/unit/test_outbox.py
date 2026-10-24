@@ -196,14 +196,16 @@ def test_the_event_tables_are_named_as_java_names_them() -> None:
     assert notifications_table(metadata).fullname == "eventlog.event_notifications"
 
 
-def test_eventlog_is_a_schema_on_postgresql_and_the_database_itself_elsewhere() -> None:
-    assert eventlog_translation("postgres") is None
-    assert eventlog_translation("postgresql") is None
-    for dialect in ("mysql", "mariadb", "sqlite"):
-        assert eventlog_translation(dialect) == {"eventlog": None}, dialect
+def test_eventlog_is_mapped_onto_the_database_only_on_sqlite() -> None:
+    """A schema in each database on PostgreSQL and a database of its own on MySQL and MariaDB -
+    real on both, so nothing is mapped. SQLite has neither: its connections map it onto the
+    file."""
+    for dialect in ("postgres", "postgresql", "mysql", "mariadb"):
+        assert eventlog_translation(dialect) is None, dialect
+    assert eventlog_translation("sqlite") == {"eventlog": None}
 
 
-def test_emit_ddl_creates_the_schema_on_postgresql_and_no_schema_elsewhere() -> None:
+def test_emit_ddl_creates_eventlog_first_where_it_is_a_schema_or_a_database() -> None:
     from ekbatan.migrations import emit_ddl
     from ekbatan.schema import notifications_table
 
@@ -215,8 +217,13 @@ def test_emit_ddl_creates_the_schema_on_postgresql_and_no_schema_elsewhere() -> 
     assert postgres.startswith("CREATE SCHEMA IF NOT EXISTS eventlog;\n")
     assert "CREATE TABLE eventlog.events (" in postgres
     assert "CREATE TABLE eventlog.event_notifications (" in postgres
-    for dialect in ("mysql", "mariadb", "sqlite"):
-        other = emit_ddl(metadata, dialect)
-        assert "eventlog" not in other, dialect
-        assert "CREATE TABLE events (" in other, dialect
+    for dialect in ("mysql", "mariadb"):
+        mysql = emit_ddl(metadata, dialect)
+        assert mysql.startswith("CREATE DATABASE IF NOT EXISTS eventlog;\n"), dialect
+        assert mysql.count("CREATE DATABASE") == 1, dialect
+        assert "CREATE TABLE eventlog.events (" in mysql, dialect
+        assert "CREATE TABLE eventlog.event_notifications (" in mysql, dialect
+    sqlite = emit_ddl(metadata, "sqlite")
+    assert "eventlog" not in sqlite
+    assert "CREATE TABLE events (" in sqlite
     assert metadata.tables["eventlog.events"].schema == "eventlog", "the caller's metadata is kept"

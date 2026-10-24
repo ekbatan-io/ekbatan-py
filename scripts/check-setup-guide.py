@@ -51,6 +51,12 @@ MIGRATIONS = (
     "V0003__wallets.sql",
     "V0004__alerts.sql",
 )
+#: MySQL's and MariaDB's first migration: the `eventlog` database the event tables go in.
+EVENTLOG_DATABASE = "V0000__create_eventlog_database.sql"
+
+
+def migrations_of(db: str) -> tuple[str, ...]:
+    return ((EVENTLOG_DATABASE,) if db in ("mysql", "mariadb") else ()) + MIGRATIONS
 
 
 @dataclass
@@ -286,10 +292,10 @@ def check(output: str, db: str, items: list[Item]) -> list[str]:
         if not re.search(rf"\b{table}\b", output):
             problems.append(f"table {table} missing")
     wheel = output.split("== wheel", 1)[1] if "== wheel" in output else ""
-    for packed in ("schema.py", "ekbatan.yaml", *MIGRATIONS):
+    for packed in ("schema.py", "ekbatan.yaml", *migrations_of(db)):
         if packed not in wheel:
             problems.append(f"{packed} is not in the wheel")
-    installed = f"== installed {list(MIGRATIONS)} True"
+    installed = f"== installed {list(migrations_of(db))} True"
     if installed not in output:
         problems.append("the installed wheel does not find its migrations and config")
     expected = page_outbox(db)

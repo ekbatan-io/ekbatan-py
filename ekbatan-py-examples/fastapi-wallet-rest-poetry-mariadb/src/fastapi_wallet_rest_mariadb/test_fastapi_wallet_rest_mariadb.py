@@ -470,6 +470,7 @@ def test_the_migration_files_pass_the_checks_a_deploy_runs():
     """No database needed, so CI catches it: two files with one version, a file whose name would
     be skipped without a word, a rollback file. Each is refused here rather than at startup."""
     assert [script.script for script in validate_scripts(MIGRATIONS)] == [
+        "V0000__create_eventlog_database.sql",
         "V0001__eventlog.sql",
         "V0002__scheduled_tasks.sql",
         "V0003__wallets.sql",

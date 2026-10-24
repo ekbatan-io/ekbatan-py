@@ -19,6 +19,7 @@ import pg_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/s
 import mysql_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/ekbatan.yaml?raw";
 import mysql_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/repository.py?raw";
 import mysql_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/app.py?raw";
+import mysql_V0000__create_eventlog_database_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0000__create_eventlog_database.sql?raw";
 import mysql_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0001__eventlog.sql?raw";
 import mysql_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0002__scheduled_tasks.sql?raw";
 import mysql_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0003__wallets.sql?raw";
@@ -27,6 +28,7 @@ import mysql_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-m
 import mariadb_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/ekbatan.yaml?raw";
 import mariadb_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/repository.py?raw";
 import mariadb_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/app.py?raw";
+import mariadb_V0000__create_eventlog_database_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0000__create_eventlog_database.sql?raw";
 import mariadb_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0001__eventlog.sql?raw";
 import mariadb_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0002__scheduled_tasks.sql?raw";
 import mariadb_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0003__wallets.sql?raw";
@@ -191,7 +193,7 @@ EOF
 You end with this - the package under `src/`, and everything the service reads at runtime inside
 it, so a wheel carries it along with the code:
 
-<div data-db="pg mysql mariadb" data-mode="sync">
+<div data-db="pg" data-mode="sync">
 
 ```
 wallet/
@@ -219,7 +221,7 @@ wallet/
 ```
 
 </div>
-<div data-db="pg mysql mariadb" data-mode="async">
+<div data-db="mysql mariadb" data-mode="sync">
 
 ```
 wallet/
@@ -229,6 +231,64 @@ wallet/
    ├─ __init__.py
    ├─ ekbatan.yaml          the settings: database, pools, namespace
    ├─ migrations/           the SQL files, run in order at startup
+   │  ├─ V0000__create_eventlog_database.sql
+   │  ├─ V0001__eventlog.sql
+   │  ├─ V0002__scheduled_tasks.sql
+   │  ├─ V0003__wallets.sql
+   │  └─ V0004__alerts.sql
+   ├─ model.py              the domain
+   ├─ converters.py         column values as the domain's own classes
+   ├─ builders.py           GENERATED, committed
+   ├─ schema.py             GENERATED, gitignored
+   ├─ repository.py         the queries this app asks
+   ├─ actions.py            the units of work
+   ├─ handlers.py           in-process event handlers
+   ├─ jobs.py               cluster-exclusive background work
+   ├─ app.py                the wiring, all of it
+   ├─ api.py                the HTTP layer, and nothing else
+   └─ test_wallet.py
+```
+
+</div>
+<div data-db="pg" data-mode="async">
+
+```
+wallet/
+├─ Makefile
+├─ pyproject.toml
+└─ src/wallet/
+   ├─ __init__.py
+   ├─ ekbatan.yaml          the settings: database, pools, namespace
+   ├─ migrations/           the SQL files, run in order at startup
+   │  ├─ V0001__eventlog.sql
+   │  ├─ V0002__scheduled_tasks.sql
+   │  ├─ V0003__wallets.sql
+   │  └─ V0004__alerts.sql
+   ├─ model.py              the domain
+   ├─ converters.py         column values as the domain's own classes
+   ├─ builders.py           GENERATED, committed
+   ├─ schema.py             GENERATED, gitignored
+   ├─ repository.py         the queries this app asks, awaited
+   ├─ actions.py            the units of work, async
+   ├─ handlers.py           in-process event handlers, async
+   ├─ jobs.py               cluster-exclusive background work, its work awaited
+   ├─ app.py                the wiring, all of it
+   ├─ api.py                the HTTP layer, and nothing else
+   └─ test_wallet.py
+```
+
+</div>
+<div data-db="mysql mariadb" data-mode="async">
+
+```
+wallet/
+├─ Makefile
+├─ pyproject.toml
+└─ src/wallet/
+   ├─ __init__.py
+   ├─ ekbatan.yaml          the settings: database, pools, namespace
+   ├─ migrations/           the SQL files, run in order at startup
+   │  ├─ V0000__create_eventlog_database.sql
    │  ├─ V0001__eventlog.sql
    │  ├─ V0002__scheduled_tasks.sql
    │  ├─ V0003__wallets.sql
@@ -356,6 +416,13 @@ docker run --rm -d --name wallet-mariadb \
 
 The login matches the defaults in `ekbatan.yaml` (step 4), so the service runs against this
 container with nothing set. Elsewhere, set the variables the file names.
+
+</div>
+
+<div data-db="mysql mariadb">
+
+The login is root because the first migration (step 5) creates a second database, `eventlog`, for
+the framework's event tables. Any login allowed to create that database and to use it will do.
 
 </div>
 
@@ -748,12 +815,50 @@ concern, so each can be read and reviewed on its own. **The framework does not s
 a bundled migration**: they are your tables, reviewed like every other, and the framework only
 says what shape they must have. They are the same in both modes.
 
+</div>
+
+<div data-db="pg">
+
 | File | What it is |
 |---|---|
-| `V0001__eventlog.sql` | the framework's outbox - `events`, and `event_notifications` for the in-process handlers |
+| `V0001__eventlog.sql` | the framework's outbox - `eventlog.events`, and `eventlog.event_notifications` for the in-process handlers, in a schema of their own |
 | `V0002__scheduled_tasks.sql` | the job scheduler's table; the event handlers run on the scheduler |
 | `V0003__wallets.sql` | your domain table |
 | `V0004__alerts.sql` | what the deposit handler (step 11) writes |
+
+</div>
+
+<div data-db="mysql mariadb">
+
+| File | What it is |
+|---|---|
+| `V0000__create_eventlog_database.sql` | the `eventlog` database, where the framework's two event tables go |
+| `V0001__eventlog.sql` | the framework's outbox - `eventlog.events`, and `eventlog.event_notifications` for the in-process handlers |
+| `V0002__scheduled_tasks.sql` | the job scheduler's table; the event handlers run on the scheduler |
+| `V0003__wallets.sql` | your domain table |
+| `V0004__alerts.sql` | what the deposit handler (step 11) writes |
+
+### The `eventlog` database
+
+MySQL and MariaDB have no schemas inside a database - a schema *is* a database. So `eventlog`,
+where the framework keeps `events` and `event_notifications`, is a database of its own beside
+`wallet`, and the first migration makes it. It runs on `wallet`'s connection, so the login needs
+the right to create a database and to use it - root here (step 2).
+
+There is one `eventlog` per server, shared by every database on it: two shards, or two services,
+on one server write into the same two tables.
+
+</div>
+
+<div data-db="mysql">
+
+<CodeBlock filename="src/wallet/migrations/V0000__create_eventlog_database.sql" language="sql" shadow="default" code={mysql_V0000__create_eventlog_database_sql} />
+
+</div>
+
+<div data-db="mariadb">
+
+<CodeBlock filename="src/wallet/migrations/V0000__create_eventlog_database.sql" language="sql" shadow="default" code={mariadb_V0000__create_eventlog_database_sql} />
 
 </div>
 
@@ -800,6 +905,9 @@ outbox_table(metadata)
 notifications_table(metadata)
 print(emit_ddl(metadata, "postgresql"))  # or "mysql", "mariadb"
 ```
+
+On MySQL and MariaDB the first statement it prints, `CREATE DATABASE IF NOT EXISTS eventlog;`, is
+the file `V0000`.
 
 An applied file is never edited: the migrator records a checksum of each one and refuses to start
 when an applied file has changed, been renamed or gone missing. A change goes in the next file.
@@ -1938,7 +2046,7 @@ confusing error on the first write rather than at boot:
 <div data-db="pg">
 
 ```bash
-docker exec wallet-pg psql -U ekbatan -d wallet -c '\dt'
+docker exec wallet-pg psql -U ekbatan -d wallet -c '\dt public.*' -c '\dt eventlog.*'
 ```
 
 </div>
@@ -1946,7 +2054,7 @@ docker exec wallet-pg psql -U ekbatan -d wallet -c '\dt'
 <div data-db="mysql">
 
 ```bash
-docker exec wallet-mysql mysql -uroot -pekbatan wallet -e 'SHOW TABLES'
+docker exec wallet-mysql mysql -uroot -pekbatan -e 'SHOW TABLES FROM wallet; SHOW TABLES FROM eventlog'
 ```
 
 </div>
@@ -1954,15 +2062,15 @@ docker exec wallet-mysql mysql -uroot -pekbatan wallet -e 'SHOW TABLES'
 <div data-db="mariadb">
 
 ```bash
-docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e 'SHOW TABLES'
+docker exec wallet-mariadb mariadb -uroot -pekbatan -e 'SHOW TABLES FROM wallet; SHOW TABLES FROM eventlog'
 ```
 
 </div>
 
 <div data-db="pg mysql mariadb">
 
-`alerts`, `ekbatan_schema_history` (the migrator's own), `event_notifications`, `events`,
-`scheduled_tasks` and `wallets`.
+`alerts`, `ekbatan_schema_history` (the migrator's own), `scheduled_tasks` and `wallets` - and in
+`eventlog`, `event_notifications` and `events`.
 
 Open a wallet and deposit into it:
 
@@ -1988,7 +2096,7 @@ point:
 
 ```bash
 docker exec wallet-pg psql -U ekbatan -d wallet -c \
-  'SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date'
+  'SELECT action_name, model_type, event_type, delivered FROM eventlog.events ORDER BY event_date'
 ```
 
 | action_name | model_type | event_type | delivered |
@@ -2003,7 +2111,7 @@ docker exec wallet-pg psql -U ekbatan -d wallet -c \
 
 ```bash
 docker exec wallet-mysql mysql -uroot -pekbatan wallet -e \
-  'SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date'
+  'SELECT action_name, model_type, event_type, delivered FROM eventlog.events ORDER BY event_date'
 ```
 
 | action_name | model_type | event_type | delivered |
@@ -2018,7 +2126,7 @@ docker exec wallet-mysql mysql -uroot -pekbatan wallet -e \
 
 ```bash
 docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e \
-  'SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date'
+  'SELECT action_name, model_type, event_type, delivered FROM eventlog.events ORDER BY event_date'
 ```
 
 | action_name | model_type | event_type | delivered |

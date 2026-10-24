@@ -20,11 +20,12 @@ puts them too: `V0001__eventlog.sql`.
 **Where the two event tables live is fixed, as Java's, and nothing passes them.** They are
 ``eventlog.events`` and ``eventlog.event_notifications``: the executor's default persister, the
 fan-out job and the handling job all name them themselves. On PostgreSQL ``eventlog`` is a
-schema of its own, in every database - exactly Java's. On MySQL and MariaDB a schema *is* a
-database, and one ``eventlog`` database would be shared by every database on the server, so
-shards and other applications would read each other's events; there, as on SQLite (which has no
-schemas), the two tables live in the application's own database, and every connection ekbatan
-opens maps ``eventlog`` onto it - :func:`eventlog_translation`.
+schema of its own, in every database. On MySQL and MariaDB a schema *is* a database, so
+``eventlog`` is a database of its own beside the application's, created by the first migration
+(``CREATE DATABASE IF NOT EXISTS eventlog``) - and there is one per server, shared by every
+database on it: two shards or two applications on one server write into the same two tables.
+SQLite has no schemas, so there the two tables live in its one file, and every connection
+ekbatan opens maps ``eventlog`` onto it - :func:`eventlog_translation`.
 
 Two rules that outlive any one dialect:
 
@@ -87,15 +88,15 @@ EVENTLOG_SCHEMA: Final = "eventlog"
 def eventlog_translation(dialect: str) -> dict[str, str | None] | None:
     """The ``schema_translate_map`` a connection to ``dialect`` runs with, or ``None``.
 
-    ``None`` on PostgreSQL, where ``eventlog`` is a real schema in each database. Everywhere else
-    ``eventlog`` is mapped onto the connection's own database: on MySQL and MariaDB because a
-    separate ``eventlog`` database would be shared by every database on the server, on SQLite
-    because it has no schemas. ``dialect`` is a SQLAlchemy dialect name (``postgresql``) or this
+    ``None`` on PostgreSQL, where ``eventlog`` is a schema in each database, and on MySQL and
+    MariaDB, where it is a database of its own on the server: both are real, so nothing is
+    mapped. Only SQLite has neither, so there ``eventlog`` is mapped onto the connection's own
+    database - its one file. ``dialect`` is a SQLAlchemy dialect name (``postgresql``) or this
     framework's (``postgres``).
     """
-    if dialect in ("postgresql", "postgres"):
-        return None
-    return {EVENTLOG_SCHEMA: None}
+    if dialect == "sqlite":
+        return {EVENTLOG_SCHEMA: None}
+    return None
 
 
 #: What a JSON column reads back: an object, an array, text, a number, a boolean or ``None``.
@@ -325,17 +326,26 @@ def sql_type(spelling: str) -> TypeEngine[Any]:
     return _SqlType(spelling)
 
 
+#: What makes ``eventlog`` exist before a table is created in it, by SQLAlchemy dialect name: a
+#: schema on PostgreSQL, a database on MySQL and MariaDB (Java's
+#: ``V0000__create_eventlog_database.sql``). SQLite has nothing to make.
+_EVENTLOG_CREATES: Final = {
+    "postgresql": f"CREATE SCHEMA IF NOT EXISTS {EVENTLOG_SCHEMA}",
+    "mysql": f"CREATE DATABASE IF NOT EXISTS {EVENTLOG_SCHEMA}",
+    "mariadb": f"CREATE DATABASE IF NOT EXISTS {EVENTLOG_SCHEMA}",
+}
+
+
 def _creates_eventlog(table: Table) -> Table:
-    """``create_all`` makes the ``eventlog`` schema on PostgreSQL before the table - it creates no
-    schema by itself. Elsewhere ``eventlog`` is the database, and there is nothing to make."""
-    event.listen(
-        table,
-        "before_create",
-        # SQLAlchemy's DDL() carries no annotations.
-        DDL(f"CREATE SCHEMA IF NOT EXISTS {EVENTLOG_SCHEMA}").execute_if(  # type: ignore[no-untyped-call]
-            dialect="postgresql"
-        ),
-    )
+    """``create_all`` makes ``eventlog`` before the table - it creates no schema, and no
+    database, by itself: the schema on PostgreSQL, the database on MySQL and MariaDB."""
+    for dialect, statement in _EVENTLOG_CREATES.items():
+        event.listen(
+            table,
+            "before_create",
+            # SQLAlchemy's DDL() carries no annotations.
+            DDL(statement).execute_if(dialect=dialect),  # type: ignore[no-untyped-call]
+        )
     return table
 
 
@@ -344,8 +354,8 @@ def outbox_table(metadata: MetaData) -> Table:
     none.
 
     The name and the schema are fixed, as Java's are: the framework reads and writes exactly this
-    table, so it takes no other. On MySQL, MariaDB and SQLite ``eventlog`` is the application's
-    own database - see :func:`eventlog_translation`.
+    table, so it takes no other. ``eventlog`` is a schema on PostgreSQL, a database of its own on
+    MySQL and MariaDB, and the file itself on SQLite - see :func:`eventlog_translation`.
     """
     return _creates_eventlog(
         Table(
