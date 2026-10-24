@@ -57,7 +57,8 @@ Not repeated: urls that name the driver (`postgresql+psycopg://` vs `jdbc:postgr
 - **Could match Java?** partly - the table name, the CRC32 checksum and a timestamp column could all be copied; it would cost the stronger edit detection.
 - **Surprise:** high
 
-### `schema.py` comes from a command you run by hand against Docker
+### `schema.py` comes from a command you run by hand against Docker - kept by the user's decision (2026-10-24)
+- **Kept by the user's decision (2026-10-24)**: no automatic regeneration - pip runs nothing before `python -m app`, so no one way fits uv, pip and Poetry. schemagen keeps starting a Docker container (testcontainers) and applying the migrations on it, the Makefile regenerates when the migrations change, and the import check refuses a stale file.
 - **What:** Java's jOOQ classes are made by the Gradle build every time (start container, run
   Flyway, generate into `build/`). In Python you run `python -m ekbatan.schemagen --migrations ...
   --out app/schema.py`, it starts a Docker container (Postgres by default). The examples

@@ -70,7 +70,8 @@ follow the guide and run the project. Area F merges the two.
   discovery by decorator is possible but not usual Python.
 - **Surprise:** high
 
-### The generated `schema.py` is not built when you run, and a stale one refuses to import
+### The generated `schema.py` is not built when you run, and a stale one refuses to import - kept by the user's decision (2026-10-24)
+- **Kept by the user's decision (2026-10-24)**: no automatic regeneration - pip runs nothing before `python -m app`, so no one way fits uv, pip and Poetry. schemagen keeps starting a Docker container (testcontainers) and applying the migrations on it, the Makefile regenerates when the migrations change, and the import check refuses a stale file.
 - **What:** Java regenerates jOOQ classes as part of compiling, so `./gradlew bootRun` on a fresh
   clone just works. Here `python -m yourapp` never regenerates. On a fresh clone the import fails
   until you run `make`; after **any** change to a migration file - even adding a comment - the
