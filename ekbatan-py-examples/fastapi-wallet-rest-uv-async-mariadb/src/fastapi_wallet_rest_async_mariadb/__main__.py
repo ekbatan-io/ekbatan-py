@@ -1,7 +1,6 @@
 """Run the service.
 
-    docker compose up -d          # or any Postgres
-    make run
+    make run          # starts the database in compose.yaml, and stops it after
 
 Then:
 

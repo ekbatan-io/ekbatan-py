@@ -57,15 +57,13 @@ of the migrations it came from and **checks it on import**. Gradle cannot compil
 regenerating; nothing in Python runs before `python -m app`, so a stale schema would otherwise
 just quietly disagree with the database.
 
-```
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=ekbatan -e POSTGRES_USER=ekbatan -e POSTGRES_DB=wallet postgres:17-alpine
-```
-
 <!-- build: written by scripts/sync-examples.py -->
 ```
 make            # generate what is out of date, then test the built wheel, installed
-make run        # run it; the database comes first, above
+make run        # start the database, run it, stop the database
 ```
+
+`make run` needs only Docker: it starts the database `compose.yaml` describes - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the database when the app stops. `docker compose down` throws the database away.
 
 Built with **uv**. The same project with [pip and setuptools](../fastapi-wallet-rest-pip-pg) and [Poetry](../fastapi-wallet-rest-poetry-pg) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 <!-- /build -->

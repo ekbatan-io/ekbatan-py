@@ -1,0 +1,20 @@
+# The database `make run` starts, and stops when the app stops. Written by
+# scripts/sync-examples.py: the image the tests use, the login and database
+# ekbatan.yaml defaults to.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ekbatan
+      POSTGRES_PASSWORD: ekbatan
+      POSTGRES_DB: shard_global
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - "./compose-init.sql:/docker-entrypoint-initdb.d/compose-init.sql:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ekbatan -d shard_global"]
+      interval: 1s
+      timeout: 5s
+      retries: 60

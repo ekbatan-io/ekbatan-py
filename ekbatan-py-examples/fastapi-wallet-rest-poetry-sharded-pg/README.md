@@ -7,8 +7,10 @@ The REST wallet service again, over **two databases**, with routing that needs n
 <!-- build: written by scripts/sync-examples.py -->
 ```
 make            # generate what is out of date, then test the built wheel, installed
-make run        # run it; the database comes first, above
+make run        # start the database, run it, stop the database
 ```
+
+`make run` needs only Docker: it starts the database `compose.yaml` describes - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the database when the app stops. `docker compose down` throws the database away.
 
 Built with **Poetry**. The same project with [uv](../fastapi-wallet-rest-uv-sharded-pg) and [pip and setuptools](../fastapi-wallet-rest-pip-sharded-pg) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 

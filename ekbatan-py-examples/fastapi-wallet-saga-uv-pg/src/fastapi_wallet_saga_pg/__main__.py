@@ -1,9 +1,6 @@
 """Run the saga service.
 
-    docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=ekbatan -e POSTGRES_USER=ekbatan \
-      -e POSTGRES_DB=wallet postgres:17-alpine
-
-    make run
+    make run          # starts the database in compose.yaml, and stops it after
 
 Open two wallets, transfer between them, and watch the saga advance:
 

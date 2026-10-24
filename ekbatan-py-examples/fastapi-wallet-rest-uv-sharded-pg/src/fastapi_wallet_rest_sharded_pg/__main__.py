@@ -3,11 +3,7 @@
 Two databases on one server is enough to see the routing - the framework opens two pools
 against two urls and cannot tell that one process is behind both:
 
-    docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=ekbatan -e POSTGRES_USER=ekbatan \
-      -e POSTGRES_DB=postgres postgres:17-alpine
-    psql ... -c 'CREATE DATABASE shard_global' -c 'CREATE DATABASE shard_mexico'
-
-    make run
+    make run          # starts the server in compose.yaml, both databases on it
 
 Then open a wallet in each and watch the ids carry their shard:
 

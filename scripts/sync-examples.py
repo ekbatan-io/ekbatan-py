@@ -355,7 +355,12 @@ def makefile(e: Example, build: str) -> str:
         "# scripts/sync-examples.py, from its uv twin; edit the template there.",
         "#",
         "#     make            generate what is out of date, then test the built wheel, installed",
-        "#     make run        run it" + (" (needs the database in README.md)" if e.image else ""),
+        "#     make run        "
+        + (
+            "start the database (compose.yaml), run it, stop the database"
+            if has_db(e)
+            else "run it"
+        ),
     ]
     if e.image:
         lines += [
@@ -440,15 +445,92 @@ def makefile(e: Example, build: str) -> str:
             "\tpoetry run pytest --pyargs $(PACKAGE)",
         ]
     lines += ["", f"run: {needs}"]
-    if build == "uv":
-        lines += ["\tuv sync --quiet", "\tuv run python -m $(PACKAGE)"]
-    elif build == "pip":
-        lines += ["\t$(VENV)/pip install -q -e .", "\t$(VENV)/python -m $(PACKAGE)"]
+    install, start = {
+        "uv": ("uv sync --quiet", "uv run python -m $(PACKAGE)"),
+        "pip": ("$(VENV)/pip install -q -e .", "$(VENV)/python -m $(PACKAGE)"),
+        "poetry": ("poetry install --quiet", "poetry run python -m $(PACKAGE)"),
+    }[build]
+    lines += [f"\t{install}"]
+    if has_db(e):
+        # As Java's Spring Boot examples do on `bootRun`: the database in compose.yaml comes up
+        # first, healthy, and is stopped when the app stops - Ctrl-C included.
+        lines += [
+            "\tdocker compose up -d --wait",
+            f"\ttrap 'docker compose stop' EXIT; trap 'exit 130' INT TERM; {start}",
+        ]
     else:
-        lines += ["\tpoetry install --quiet", "\tpoetry run python -m $(PACKAGE)"]
+        lines += [f"\t{start}"]
     generated = "$(SRC)/schema.py " if e.image else ""
     extra = {"uv": "", "pip": " build src/*.egg-info", "poetry": ""}[build]
     lines += ["", "clean:", f"\trm -rf {generated}dist .venv{extra}", ""]
+    return "\n".join(lines)
+
+
+def has_db(e: Example) -> bool:
+    """Whether the example runs against a database server - every one but SQLite's."""
+    return e.db != "sqlite"
+
+
+#: The sharded examples' second database; `POSTGRES_DB` makes the first. Run once, on the first
+#: start, by the image's entrypoint.
+SHARDED_INIT = "CREATE DATABASE shard_mexico;\n"
+
+#: What each kind of server needs on top of the image: its environment, its port, and a check
+#: that it is ready - over TCP, because on its first start each image runs a server on its
+#: socket only while it sets itself up.
+SERVERS = {
+    "pg": (
+        "postgres",
+        ["POSTGRES_USER: ekbatan", "POSTGRES_PASSWORD: ekbatan", "POSTGRES_DB: {db}", "TZ: UTC"],
+        "5432",
+        '["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ekbatan -d {db}"]',
+    ),
+    "mysql": (
+        "mysql",
+        ["MYSQL_ROOT_PASSWORD: ekbatan", "MYSQL_DATABASE: {db}", "TZ: UTC"],
+        "3306",
+        '["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-pekbatan"]',
+    ),
+    "mariadb": (
+        "mariadb",
+        ["MARIADB_ROOT_PASSWORD: ekbatan", "MARIADB_DATABASE: {db}", "TZ: UTC"],
+        "3306",
+        '["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]',
+    ),
+}
+
+
+def compose(e: Example) -> str:
+    """The database `make run` starts - as each of Java's examples declares its own in a
+    `compose.yaml`. The image is the one the example's tests start; the login and the database
+    are its `ekbatan.yaml`'s defaults."""
+    service, environment, port, check = SERVERS[e.db]
+    db = "shard_global" if e.variant == "sharded" else "wallet"
+    lines = [
+        "# The database `make run` starts, and stops when the app stops. Written by",
+        "# scripts/sync-examples.py: the image the tests use, the login and database",
+        "# ekbatan.yaml defaults to.",
+        "services:",
+        f"  {service}:",
+        f"    image: {e.image}",
+        "    environment:",
+        *[f"      {line.format(db=db)}" for line in environment],
+        "    ports:",
+        f'      - "{port}:{port}"',
+    ]
+    if e.db == "pg" and e.variant == "sharded":
+        lines += [
+            "    volumes:",
+            '      - "./compose-init.sql:/docker-entrypoint-initdb.d/compose-init.sql:ro"',
+        ]
+    lines += [
+        "    healthcheck:",
+        f"      test: {check.format(db=db)}",
+        "      interval: 1s",
+        "      timeout: 5s",
+        "      retries: 60",
+        "",
+    ]
     return "\n".join(lines)
 
 
@@ -468,10 +550,18 @@ def build_section(e: Example, build: str) -> str:
     links = " and ".join(f"[{BUILD_NAMES[b]}](../{e.directory(b).name})" for b in others)
     commands = (
         "make            # generate what is out of date, then test the built wheel, installed\n"
-        "make run        # run it" + ("; the database comes first, above" if e.image else "")
+        "make run        # start the database, run it, stop the database"
     )
     if not e.image:
         commands = "make run        # run it\nmake            # test the built wheel, installed"
+    database = (
+        "\n\n`make run` needs only Docker: it starts the database `compose.yaml` describes - the "
+        "image the tests use, with the login and database `ekbatan.yaml` defaults to - waits "
+        "until it is ready, runs the app, and stops the database when the app stops. "
+        "`docker compose down` throws the database away."
+        if has_db(e)
+        else ""
+    )
     python = (
         "\n\nThe venv is made with `python3`, which must be 3.13 or later - "
         "`make PYTHON=python3.13` if yours is older."
@@ -481,7 +571,7 @@ def build_section(e: Example, build: str) -> str:
     poetry = "\n\nNeeds `poetry` 2 on the path." if build == "poetry" else ""
     return (
         "<!-- build: written by scripts/sync-examples.py -->\n"
-        f"```\n{commands}\n```\n\n"
+        f"```\n{commands}\n```{database}\n\n"
         f"Built with **{BUILD_NAMES[build]}**. The same project with {links} differs only in "
         f"`pyproject.toml`, `Makefile` and `.gitignore`.{python}{poetry}\n"
         "<!-- /build -->"
@@ -511,6 +601,10 @@ def wanted(e: Example) -> dict[Path, str | Path]:
         files[target / "Makefile"] = makefile(e, build)
         files[target / ".gitignore"] = gitignore(e, build)
         files[target / "README.md"] = readme(e, build)
+        if has_db(e):
+            files[target / "compose.yaml"] = compose(e)
+            if e.db == "pg" and e.variant == "sharded":
+                files[target / "compose-init.sql"] = SHARDED_INIT
         if build == "poetry":
             files[target / "poetry.toml"] = poetry_toml()
         if build != "uv":

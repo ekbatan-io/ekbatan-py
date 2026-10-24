@@ -2,7 +2,7 @@
 # scripts/sync-examples.py, from its uv twin; edit the template there.
 #
 #     make            generate what is out of date, then test the built wheel, installed
-#     make run        run it (needs the database in README.md)
+#     make run        start the database (compose.yaml), run it, stop the database
 #     make schema     regenerate schema.py from the migrations
 #     make builders   regenerate builders.py after a model change
 #     make clean      throw away what is generated and the environment
@@ -37,7 +37,8 @@ test: $(SRC)/schema.py
 
 run: $(SRC)/schema.py
 	uv sync --quiet
-	uv run python -m $(PACKAGE)
+	docker compose up -d --wait
+	trap 'docker compose stop' EXIT; trap 'exit 130' INT TERM; uv run python -m $(PACKAGE)
 
 clean:
 	rm -rf $(SRC)/schema.py dist .venv

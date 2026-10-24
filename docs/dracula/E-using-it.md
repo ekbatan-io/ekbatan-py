@@ -191,7 +191,8 @@ follow the guide and run the project. Area F merges the two.
 - **Could match Java?** no - but the docs cover the sizing.
 - **Surprise:** medium
 
-### No compose file: you bring your own database to run an example
+### ~~No compose file: you bring your own database to run an example~~ fixed (`EKB-0522`)
+- **Fixed** (the user's decision, 2026-10-24): each example with a database has a `compose.yaml`, written by `scripts/sync-examples.py`, and `make run` brings it up (`docker compose up -d --wait`), runs the app, and stops it when the app stops - Ctrl-C included, run in a terminal for PostgreSQL, MySQL, MariaDB, sharded and a job worker. Spring Boot's `bootRun` does the same from `compose.yaml`; Quarkus and Micronaut ask for `docker compose up -d` by hand.
 - **What:** `./gradlew bootRun` in a Java example starts Postgres from its `compose.yaml` and
   stops it afterwards. No Python example has a compose file; `make run` expects a server already
   listening on `localhost` with login `ekbatan/ekbatan`. The run instructions say

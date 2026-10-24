@@ -6,18 +6,13 @@ async repositories, on asyncpg, and the deposit under an async keyed lock. The e
 async too. The same service as [`fastapi-wallet-rest-uv-sharded-pg`](../fastapi-wallet-rest-uv-sharded-pg)
 otherwise - the same model, events, converters and migrations, the same routing, the same tests.
 
-Two databases on one server are enough to run it:
-
-```
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=ekbatan -e POSTGRES_USER=ekbatan -e POSTGRES_DB=postgres postgres:17-alpine
-psql ... -c 'CREATE DATABASE shard_global' -c 'CREATE DATABASE shard_mexico'
-```
-
 <!-- build: written by scripts/sync-examples.py -->
 ```
 make            # generate what is out of date, then test the built wheel, installed
-make run        # run it; the database comes first, above
+make run        # start the database, run it, stop the database
 ```
+
+`make run` needs only Docker: it starts the database `compose.yaml` describes - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the database when the app stops. `docker compose down` throws the database away.
 
 Built with **uv**. The same project with [pip and setuptools](../fastapi-wallet-rest-pip-async-sharded-pg) and [Poetry](../fastapi-wallet-rest-poetry-async-sharded-pg) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 <!-- /build -->

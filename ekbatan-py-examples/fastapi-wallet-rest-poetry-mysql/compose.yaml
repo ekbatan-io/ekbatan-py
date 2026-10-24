@@ -1,0 +1,17 @@
+# The database `make run` starts, and stops when the app stops. Written by
+# scripts/sync-examples.py: the image the tests use, the login and database
+# ekbatan.yaml defaults to.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ekbatan
+      MYSQL_DATABASE: wallet
+      TZ: UTC
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-pekbatan"]
+      interval: 1s
+      timeout: 5s
+      retries: 60

@@ -7,15 +7,13 @@ One of three databases for the same service - the Python counterpart to Java's `
 grid - and each built three ways, with uv, pip and Poetry. See [`../README.md`](../README.md) for
 why the matrix is 42 projects here and 36 there.
 
-```
-docker run -d -p 3306:3306 -e MARIADB_ROOT_PASSWORD=ekbatan -e MARIADB_DATABASE=wallet mariadb:11.4
-```
-
 <!-- build: written by scripts/sync-examples.py -->
 ```
 make            # generate what is out of date, then test the built wheel, installed
-make run        # run it; the database comes first, above
+make run        # start the database, run it, stop the database
 ```
+
+`make run` needs only Docker: it starts the database `compose.yaml` describes - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the database when the app stops. `docker compose down` throws the database away.
 
 Built with **pip and setuptools**. The same project with [uv](../fastapi-wallet-rest-uv-mariadb) and [Poetry](../fastapi-wallet-rest-poetry-mariadb) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 

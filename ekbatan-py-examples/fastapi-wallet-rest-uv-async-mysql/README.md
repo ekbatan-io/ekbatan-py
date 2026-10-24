@@ -10,15 +10,13 @@ otherwise - the same model, events, converters and migrations - and the same aga
 PostgreSQL in [`fastapi-wallet-rest-uv-async-pg`](../fastapi-wallet-rest-uv-async-pg) and MariaDB in
 [`fastapi-wallet-rest-uv-async-mariadb`](../fastapi-wallet-rest-uv-async-mariadb).
 
-```
-docker run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=ekbatan -e MYSQL_DATABASE=wallet mysql:8.4
-```
-
 <!-- build: written by scripts/sync-examples.py -->
 ```
 make            # generate what is out of date, then test the built wheel, installed
-make run        # run it; the database comes first, above
+make run        # start the database, run it, stop the database
 ```
+
+`make run` needs only Docker: it starts the database `compose.yaml` describes - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the database when the app stops. `docker compose down` throws the database away.
 
 Built with **uv**. The same project with [pip and setuptools](../fastapi-wallet-rest-pip-async-mysql) and [Poetry](../fastapi-wallet-rest-poetry-async-mysql) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 <!-- /build -->
