@@ -19,6 +19,7 @@ Status: `todo` / `done` / `n/a`. A row is `done` only when a run shows it.
 | F7 | `JobRegistry.start()` (db-scheduler's own pool refusal kept unchanged) | done | `test_a_job_registry_built_before_fork_is_refused_in_the_child` (built and manual) |
 | F8 | `HandlerLoop.run()` (owns a thread) | done | unit `test_a_handler_loop_started_before_fork_...`; red: "the child hung" |
 | F9 | tests: real fork, created-before refused / created-in-child works / parent after fork works, sync + async, four databases | done | built-in-child works and parent untouched asserted in each; red with the check off: 10 of 10 fork tests fail (sqlite+pg run) |
+| F10 | closing in a copy refused too (the user's decision, 2026-10-24): registry and `TransactionManager` `close()` / `aclose()`, `HandlerLoop.close()` | done | `test_closing_a_sync_registry_in_the_child_is_refused_and_leaves_the_parent_alone`, the async one (x4 dbs: the parent's server session is the same one afterwards), unit `test_closing_a_handler_loop_in_the_child_is_refused_at_once`; red before: 8 of 8 + 1 failed - the parent's session ended (pg/mysql/mariadb), async SQLite hung, the loop's close waited and raised `RuntimeError` |
 
 ## Refusal 2: the sync API on an event loop's thread
 

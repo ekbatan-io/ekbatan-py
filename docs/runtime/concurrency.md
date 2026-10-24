@@ -284,7 +284,8 @@ gunicorn, with `--preload` above all, uwsgi, Celery's prefork pool, RQ - copies 
 process into each one. Any of ekbatan's objects created in the parent comes along: pools whose connections
 are the parent's own sockets, and the bookkeeping of threads that did not come along. Every
 object that owns connections or threads remembers the process that built it, and in any other
-process it raises `ForkedProcessError` at first use - it is not reset or reconnected. Create the
+process it raises `ForkedProcessError` at first use - it is not reset or reconnected. Closing
+it there is refused too: `close()` in the copy would end the parent's database sessions. Create the
 registry, the job registry and the lock providers in the FastAPI lifespan or at the top of the
 worker's `main()`; [Startup and shutdown](../startup-and-shutdown.md) has
 the recipe for each server.

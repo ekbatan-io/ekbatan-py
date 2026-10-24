@@ -211,6 +211,12 @@ class AsyncTransactionManager:
             yield conn
 
     async def aclose(self) -> None:
+        """Dispose this shard's pools.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this manager was
+        copied into by ``fork()``, as the sync manager's ``close()``.
+        """
+        refuse_if_forked(self._created_in, repr(self))
         await self.primary.dispose()
         if self._owns_replica:
             await self.replica.dispose()
@@ -244,7 +250,13 @@ class AsyncDatabaseRegistry(_ShardRegistry[AsyncTransactionManager]):
         )
 
     async def aclose(self) -> None:
-        """Dispose every pool. One failing shard does not strand the rest."""
+        """Dispose every pool. One failing shard does not strand the rest.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError`, before any pool is touched, in
+        a process this registry was copied into by ``fork()``, as the sync registry's
+        ``close()``.
+        """
+        refuse_if_forked(self._created_in, repr(self))
         first: BaseException | None = None
         for shard, manager in self._managers.items():
             try:

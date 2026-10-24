@@ -126,3 +126,29 @@ def test_a_handler_loop_started_before_fork_is_refused_in_the_child_rather_than_
         assert loop.run(asyncio.sleep(0, "still")) == "still", "the parent's loop is untouched"
     finally:
         loop.close()
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="no fork() on this platform")
+def test_closing_a_handler_loop_in_the_child_is_refused_at_once():
+    """Its thread did not come along: close() in the copy is refused straight away, rather than
+    waiting for that thread and then failing to close a loop the copy believes is running."""
+    loop = HandlerLoop()
+    try:
+        assert loop.run(asyncio.sleep(0, "parent")) == "parent"
+
+        def close() -> object:
+            started = time.monotonic()
+            try:
+                loop.close()
+            except ForkedProcessError as error:
+                return f"refused at once: {time.monotonic() - started < 1.0}: {error}"
+            return "closed"
+
+        said = _in_a_child(close)
+        assert said.startswith(
+            "refused at once: True: HandlerLoop('ekbatan-handler-loop', running) was created"
+        )
+        assert said.endswith("not at import time.")
+        assert loop.run(asyncio.sleep(0, "still")) == "still", "the parent's loop is untouched"
+    finally:
+        loop.close()

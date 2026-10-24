@@ -205,8 +205,8 @@ A server makes its workers in one of two ways:
 
 A copy keeps the objects but not their background threads, and its connections are the very same
 ones the original process is still using. So an object created before the copy must not be used
-after it - and ekbatan refuses with `ForkedProcessError` if it is. Creating the objects at
-startup, in each worker, avoids the problem whichever way the server works.
+after it, not even closed - and ekbatan refuses with `ForkedProcessError` if it is. Creating the
+objects at startup, in each worker, avoids the problem whichever way the server works.
 
 ### Threads, or an event loop
 
@@ -1193,6 +1193,10 @@ uwsgi, Celery's default worker pool and RQ all do this. A copy keeps the objects
 background threads, and its open connections are the very same ones the original process is
 using. So if a registry, a job registry or a lock provider is used in a process other than the
 one that created it, ekbatan raises `ForkedProcessError`.
+
+That includes closing it. In a copy, `registry.close()` would tell the database to end the
+sessions the copy holds - and they are the original process's sessions, so the original would lose
+its connections. `close()` and `aclose()` in a copy are refused too, and touch nothing.
 
 The fix is always the same: move the line that creates the object from import time into startup:
 the lifespan, the top of `main()`, or the server's own per-worker hook (the section for your kind

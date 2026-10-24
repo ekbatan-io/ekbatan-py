@@ -339,6 +339,13 @@ class TransactionManager:
             yield conn
 
     def close(self) -> None:
+        """Dispose this shard's pools.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this manager was
+        copied into by ``fork()``: the pools hold the parent's connections, and closing them
+        would end the parent's sessions.
+        """
+        refuse_if_forked(self._created_in, repr(self))
         self.primary.dispose()
         if self._owns_replica:
             self.replica.dispose()
@@ -366,7 +373,7 @@ class _ShardRegistry[TM: _ShardManager]:
     so they are answered once, here. Only building a manager and closing one differ.
     """
 
-    __slots__ = ("_managers", "default_shard", "dialect", "unknown_shard_policy")
+    __slots__ = ("_created_in", "_managers", "default_shard", "dialect", "unknown_shard_policy")
 
     def __init__(
         self,
@@ -401,6 +408,8 @@ class _ShardRegistry[TM: _ShardManager]:
         self.default_shard = default_shard
         self.unknown_shard_policy = _policy(unknown_shard_policy)
         self.dialect = self._managers[default_shard].dialect
+        #: The process that built it, so closing it in a copy is refused before any shard is.
+        self._created_in = os.getpid()
 
     @classmethod
     def from_config(cls, config: ShardingConfig) -> Self:
@@ -503,7 +512,13 @@ class DatabaseRegistry(_ShardRegistry[TransactionManager]):
         )
 
     def close(self) -> None:
-        """Dispose every pool. One failing shard does not strand the rest."""
+        """Dispose every pool. One failing shard does not strand the rest.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError`, before any pool is touched, in
+        a process this registry was copied into by ``fork()``: the pools hold the parent's
+        connections, and closing them would end the parent's sessions.
+        """
+        refuse_if_forked(self._created_in, repr(self))
         first: BaseException | None = None
         for shard, manager in self._managers.items():
             try:

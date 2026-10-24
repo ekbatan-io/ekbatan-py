@@ -97,7 +97,13 @@ class HandlerLoop:
 
     def close(self, timeout: float = 10.0) -> None:
         """Cancel what is still running on it, stop it and let its thread go. Safe to call twice,
-        and safe to call on one never started."""
+        and safe to call on one never started.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this loop was
+        copied into by ``fork()``: its thread did not come along, so there is nothing here to
+        stop.
+        """
+        refuse_if_forked(self._created_in, repr(self))
         with self._gate:
             if self._closed:
                 return

@@ -32,7 +32,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy import select as sql_select
 
 from conftest import NOT_UNDER_GEVENT, _registry, under_gevent
@@ -281,6 +281,114 @@ def test_an_async_registry_built_in_the_child_works(backend, fork_db, clock):
         assert count(parent) == 1
     finally:
         parent.close()
+
+
+# ------------------------------------------------------------ closing in the copy is refused
+
+#: The server's own name for a session, per dialect. SQLite has no server.
+SESSION_ID = {
+    "postgres": "select pg_backend_pid()",
+    "mysql": "select connection_id()",
+    "mariadb": "select connection_id()",
+}
+
+
+def session(conn: Any, dialect: str) -> object:
+    """Which server session ``conn`` is talking to - on SQLite, which connection object it is.
+    The same one before and after the child's close() means the child left it alone."""
+    sql = SESSION_ID.get(dialect)
+    if sql is None:
+        return id(conn.connection.dbapi_connection)
+    return conn.execute(text(sql)).scalar_one()
+
+
+async def async_session(conn: Any, dialect: str) -> object:
+    sql = SESSION_ID.get(dialect)
+    if sql is None:
+        raw = await conn.get_raw_connection()
+        return id(raw.dbapi_connection)
+    return (await conn.execute(text(sql))).scalar_one()
+
+
+def test_closing_a_sync_registry_in_the_child_is_refused_and_leaves_the_parent_alone(
+    backend, fork_db, clock
+):
+    """The copied pools hold the parent's sockets, and closing them in the child ended the
+    parent's sessions - measured on PostgreSQL, MySQL and MariaDB before this was refused. Now
+    close() in the copy is refused like every other call there, and touches nothing."""
+    registry = _registry(backend, fork_db)
+    try:
+        wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+        known = wallets.add(a_wallet())  # the pool now holds a live connection to copy
+        dialect = registry.default.dialect
+        with registry.default.connection() as conn:
+            before = session(conn, dialect)
+
+        def close_both() -> list[str]:
+            said: list[str] = []
+            for closing in (registry.close, registry.default.close):
+                try:
+                    closing()
+                except BaseException as error:
+                    said.append(f"{type(error).__name__}: {error}")
+                else:
+                    said.append("closed")
+            return said
+
+        said = in_a_child(close_both)
+        refused(said)
+        assert len(said) == 2
+        assert said[0].startswith(f"ForkedProcessError: {registry!r} was created")
+        assert said[1].startswith(f"ForkedProcessError: {registry.default!r} was created")
+        with registry.default.connection() as conn:
+            assert session(conn, dialect) == before, "the child closed the parent's connection"
+        assert wallets.find(known.id) == known
+    finally:
+        registry.close()
+
+
+def test_closing_an_async_registry_in_the_child_is_refused_and_leaves_the_parent_alone(
+    backend, fork_db, clock
+):
+    """As the sync one. Before it was refused, aiosqlite's close() in the copy never returned:
+    it waits on a thread that did not come along."""
+    if under_gevent():
+        pytest.skip(NOT_UNDER_GEVENT)
+
+    async def scenario() -> list[str]:
+        registry = await asyncio.to_thread(_registry, backend, fork_db, kind=AsyncDatabaseRegistry)
+        try:
+            wallets = AsyncWalletRepository(Wallet, WALLETS, registry, clock=clock)
+            known = await wallets.add(a_wallet())
+            dialect = registry.default.dialect
+            async with registry.default.connection() as conn:
+                before = await async_session(conn, dialect)
+
+            async def close_both() -> list[str]:
+                said: list[str] = []
+                for closing in (registry.aclose, registry.default.aclose):
+                    try:
+                        await closing()
+                    except BaseException as error:
+                        said.append(f"{type(error).__name__}: {error}")
+                    else:
+                        said.append("closed")
+                return said
+
+            said = in_a_child(lambda: asyncio.run(close_both()))
+            async with registry.default.connection() as conn:
+                after = await async_session(conn, dialect)
+            assert after == before, "the child closed the parent's connection"
+            assert await wallets.find(known.id) == known
+            assert said[0].startswith(f"ForkedProcessError: {registry!r} was created")
+            assert said[1].startswith(f"ForkedProcessError: {registry.default!r} was created")
+            return said
+        finally:
+            await registry.aclose()
+
+    said = asyncio.run(scenario())
+    refused(said)
+    assert len(said) == 2
 
 
 #: The SQL lock providers, per dialect: sync, then async.
