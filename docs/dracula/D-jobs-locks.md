@@ -45,8 +45,9 @@ marked unverified.
 - **Surprise:** high
 - **Addressed: warns at startup** (`EKB-0498`). Left off by the user's decision, but `start()` now logs one warning, once per process, when nothing in the process handles SIGTERM: running jobs would be cut off by a container stop, and the two fixes are `register_shutdown_hook()` or `stop()` in your own shutdown code. It changes no handler, and stays quiet under uvicorn, whose handler is in place before the lifespan runs.
 
-### `workers(n)`: job threads have a ceiling, one per job by default
-- **What:** Python has a `workers(n)` setting that Java does not. Job bodies run on real OS threads, at most one per registered job unless you raise it. Java runs each job on its own virtual thread, with no ceiling. In Python, if you schedule overlapping runs or use immediate execution, jobs wait for a free thread.
+### `workers(n)`: job threads have a ceiling, one per job by default - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept as a limit. A job never runs twice at once, so the default - one thread per registered job - is all the threads registered jobs can use, and none waits. Run: three jobs of 2 seconds each, with the default, ran all at once (8 runs in 7 s); with `workers(1)`, one at a time (4 runs).
+- **What:** Python has a `workers(n)` setting that Java does not. Job bodies run on real OS threads, at most one per registered job unless you raise it. Java runs each job on its own virtual thread, with no ceiling. A job waits for a thread only when `workers` is set below the number of jobs, or when tasks are added by hand through the scheduler customizer.
 - **Python:** `src/ekbatan/distributedjobs/__init__.py:381-413`, used at `:597` (`threads(self._workers or len(self._jobs))`).
 - **Java:** `JobRegistry.java:420-422` (`threads(jobs.size())` plus `Executors.newVirtualThreadPerTaskExecutor()`).
 - **Why:** Python forces it. There are no virtual threads.
