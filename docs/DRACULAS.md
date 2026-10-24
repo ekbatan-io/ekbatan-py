@@ -108,7 +108,7 @@ whatever is decided about the rest.
 |---|---|---|---|---|---|
 | 43 | ~~Timestamps are stored without a time zone, `clock.now()` has one: comparing them raises `TypeError`~~ **fixed differently** (`EKB-0384`, after `EKB-0294`): the default clock now gives naive UTC, the same as what the columns hand back, and nothing is converted - see Part 1, bug 11 | choice | partly | H (re-checked by run) | A1 |
 | 44 | ~~A transaction inside a transaction joins the outer one; Java's opens a second~~ **fixed** (`EKB-0301`): a nested block opens a second transaction on a second connection, as Java's; an action run inside the caller's transaction commits on its own | choice | yes | H | A3 |
-| 45 | A model names its builder as a type argument, in a different order from Java; leaving it out fails only on `copy()` | forced | partly | H | A4 |
+| 45 | A model names its builder as a type argument, in a different order from Java; leaving it out fails only when `builder()` or `copy()` is called. **Settled by the user (2026-10-24)**: kept as it is - the error at `builder()` or `copy()` says what to write and where | forced | partly | H | A4 |
 | 46 | ~~Built-in reads see the open transaction's uncommitted rows~~ **fixed** (`EKB-0259`): the built-in reads use `db()`, outside the open transaction, as Java's do - see Part 1, bug 8 | choice | yes | M | A7 |
 | 47 | A repository's key type is the typed id, not the raw UUID | choice | yes | M | A6 |
 | 48 | Read methods are named differently (`find`, `find_where`, `all`), return `None` not `Optional` | choice + convention | partly | M | A8 |

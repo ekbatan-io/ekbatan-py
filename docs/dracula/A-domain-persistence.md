@@ -69,7 +69,8 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   belong only to `tx_db_else_db`.
 - **Surprise:** high
 
-### 4. A model must name its builder as a type argument, and only finds out at runtime
+### 4. A model must name its builder as a type argument, and only finds out at runtime - settled by the user (2026-10-24)
+- **Settled by the user (2026-10-24)**: kept as it is - the error at `builder()` or `copy()` says what to write and where. Refusing at class definition was weighed and left: the builder generator imports the model before the builder exists, and an entity that never calls `builder()` (the examples' `Alert`) needs none.
 - **What:** You write `class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder])`. The
   type arguments are in a different order from Java (`Model<Wallet, ID, STATE>`): there is no
   self type, and the third one is the *builder*. Leave the builder out and the class still
