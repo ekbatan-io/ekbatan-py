@@ -20,8 +20,8 @@ Your app works on your laptop. Then it meets the real world, and one of these ha
   set to four workers, or the app to three replicas, and each copy opened its own connections.
   *See [When your server runs several processes](#when-your-server-runs-several-processes).*
 - **ekbatan raises `ForkedProcessError`.** Your server copied your app into several workers after
-  the app had already created its objects, and a worker used one of them. *See
-  [Import time and startup](#import-time-and-startup).*
+  the app had already created its objects, and a worker used one of them - even just to close it
+  at shutdown. *See [Import time and startup](#import-time-and-startup).*
 - **ekbatan raises `BlockingCallError`.** An `async def` endpoint called the sync API, which
   would have frozen every other request on the server while it waited on the database. *See
   [Two mistakes ekbatan refuses](#two-mistakes-ekbatan-refuses).*
