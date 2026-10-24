@@ -6,8 +6,8 @@ Linked from the top-level [README](../README.md). Each section has its own index
 
 - **[Concepts](concepts/README.md)** - the dual-write trap, the outbox, actions, models and
   entities, sagas, sharding
-- **[Getting started](getting-started.md)** - the golden path, install, the extras, the
-  generators, your first action
+- **[Getting started](getting-started.md)** - install, the extras, the generators, your first
+  action
 - **[Startup and shutdown](startup-and-shutdown.md)** - create ekbatan's objects in your app's startup code and close
   them in its shutdown code: which objects, their real calls, and where that is under each server
 

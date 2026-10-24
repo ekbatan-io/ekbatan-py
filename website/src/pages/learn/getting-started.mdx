@@ -21,26 +21,6 @@ are easy to see.
 Read the page in order. It starts with the failure case, then introduces the outbox pattern,
 then shows how ekbatan represents the same idea with models, actions, and an executor.
 
-## The golden path
-
-Create ekbatan's objects in your app's startup code and close them in its shutdown code - never
-at import time:
-
-- **FastAPI** - in the lifespan.
-- **A plain worker** - at the top and the bottom of `main()`.
-
-The objects that hold connections or threads are the database registry (`DatabaseRegistry`, or
-`AsyncDatabaseRegistry` in `ekbatan.aio`), the job registry (`JobRegistry`: `start()` and
-`stop()`), the keyed lock providers and, for `async def` event handlers, a `HandlerLoop`.
-Repositories, the executor and actions hold nothing and are just created. Normal code uses the
-sync API; `async def` code uses `ekbatan.aio`.
-
-That is all a deployment has to get right, and ekbatan says so when it is not: one of those
-objects created in one process and used in a copy of it raises `ForkedProcessError`, and the sync
-API called inside `async def` raises `BlockingCallError`. [Startup and shutdown](/learn/startup-and-shutdown/) has
-each object's startup and shutdown call, the lifespan and `main()` written out, and the recipe
-for each server.
-
 ## 1. The problem
 
 Many event-driven services start with this shape:
@@ -88,11 +68,6 @@ neither does.
 
 Publishing happens after the database commit by reading the committed event row.
 
-Most teams bolt this on by hand: add a table, remember to write to it in every transaction,
-build a poller. It works, and you carry the discipline forever — every new action has to
-remember, and every review has to check. The rest of this page is what it looks like when the
-framework owns that instead.
-
 For the conceptual version, read [The outbox](/learn/outbox/).
 
 ## 3. Where the event comes from
@@ -108,10 +83,6 @@ new immutable wallet state and attaches a domain event that describes what happe
 class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     ...
 
-    def validate(self) -> None:
-        if self.balance < 0:
-            raise ValidationError("balance cannot be negative")
-
     def deposit(self, amount: Decimal) -> Wallet:
         new_balance = self.balance + amount
         return (
@@ -120,18 +91,14 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
             .balance(new_balance)
             .build()
         )
+
+    ...
 ```
 
 The event is not a Kafka message. It is a domain fact: "money was deposited into this wallet."
 
 The event is created next to the state change, inside the domain model, before any code
-publishes anything to a broker. The wallet is a frozen dataclass, so this returns a *new* wallet
-and the old one is untouched — which is what makes it impossible for the balance to exist
-without the event that explains it.
-
-`validate()` is the wallet's own rules, in one place, and every model must have one. Ekbatan runs
-it every time a wallet is made - opened, changed, or read back from the database - so no wallet
-with a negative balance can exist.
+publishes anything to a broker.
 
 For the deeper model rules, read [Models and entities](/learn/models-and-entities/).
 
@@ -164,17 +131,15 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
 </div>
 </ModeTabs>
 
+Each sample comes in two modes: the sync API, and `ekbatan.aio`, where database calls are
+awaited. [Sync or async?](/learn/sync-or-async/) helps you choose.
+
 The important part is what does **not** happen here:
 
 - no manual transaction
-- no manual `INSERT INTO events`
+- no manual `INSERT INTO eventlog.events`
 - no broker publish
 - no second write to remember
-
-The framework comes in two modes: the sync API, and `ekbatan.aio`, where every database call is
-awaited. The switch above a sample shows it either way; the choice is remembered on every page.
-Only the code that waits on the database differs - here, `async def perform` and `await` on the
-read. [Sync or async?](/learn/sync-or-async/) helps you choose.
 
 `perform()` declares intent. It builds the next state and stages it.
 
@@ -225,8 +190,8 @@ Action.perform(...)
         |
         v
 one DB transaction
-  - UPDATE wallets SET balance = ?, version = ? WHERE id = ? AND version = ?
-  - INSERT INTO events
+  - UPDATE wallets
+  - INSERT eventlog.events
   - commit
 ```
 
@@ -240,21 +205,12 @@ For the API details, read [ActionExecutor](/reference/action-executor/).
 
 ## 6. What happens after commit
 
-After commit, `events` contains a durable row. From there, you choose how to use it.
-
-```sql
-SELECT action_name, model_type, event_type, delivered FROM eventlog.events ORDER BY event_date;
-```
-
-| action_name | model_type | event_type | delivered |
-| --- | --- | --- | --- |
-| `WalletCreateAction` | `Wallet` | `WalletCreatedEvent` | false |
-| `WalletDepositMoneyAction` | `Wallet` | `WalletMoneyDepositedEvent` | false |
+After commit, `eventlog.events` contains a durable row. From there, you choose how to use it.
 
 ```text
-events
+eventlog.events
       |
-      +--> in-process handler (database-backed, any service instance)
+      +--> local event handler (database-backed, any service instance)
       |
       +--> handler that manually publishes to Kafka / Pulsar / RabbitMQ / ...
       |
@@ -264,8 +220,7 @@ events
 ```
 
 All of those paths start from the same committed row. They are downstream of the database
-transaction, so they cannot make the original state change partially committed. `delivered` is
-how the in-process path marks its own progress; a CDC-only deployment ignores it.
+transaction, so they cannot make the original state change partially committed.
 
 They are also at-least-once delivery paths. A handler or broker consumer can run twice after a
 crash or retry. Use idempotency keys, unique constraints, or the outbox event id so duplicate
@@ -280,18 +235,16 @@ For the practical choices, read [Consuming events](/learn/consuming-events/).
 
 The whole framework grows from the same small model:
 
-- **Two modes**: the sync API and `ekbatan.aio` share every rule, so the guarantees below hold in
-  both.
 - **Repositories** map immutable dataclasses to rows through the `to_record` / `from_record`
   you write.
 - **Models** emit events; **entities** do not.
-- **Actions** stage new and changed objects; they never write.
-- **The executor** commits staged state and its events together, in one transaction.
-- **In-process handlers, CDC, brokers and routers** consume committed outbox rows later.
-- **Sharding** routes the same actions across several databases, unchanged.
-- **Sagas** coordinate the workflows that should not be forced into one transaction.
-- **Distributed jobs** run periodic work on exactly one instance of a cluster.
-- **Keyed locks** are the pessimistic tool for when losing a version race is the wrong outcome.
+- **Actions** stage new and updated objects.
+- **The executor** commits staged state and events together.
+- **Local handlers, CDC, brokers, and routers** consume committed outbox rows later.
+- **Sharding** routes the same action model across multiple databases.
+- **Sagas** coordinate multi-step workflows that should not be forced into one database
+  transaction.
+- **Two modes**, the sync API and `ekbatan.aio`, follow the same rules.
 
 You do not need all of those on day one. The important invariant stays the same:
 
@@ -317,5 +270,7 @@ If you are ready to wire a real project:
 
 - [Complete project setup](/learn/complete-project-setup/) — dependencies, migrations, schema
   generation, application config, and a runnable example for each supported database.
+- [Startup and shutdown](/learn/startup-and-shutdown/) — where to create and close ekbatan's
+  objects: in a FastAPI lifespan, or at the top and bottom of a worker's `main()`.
 
 <LearnPager current="getting-started" />

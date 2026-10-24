@@ -6,25 +6,6 @@ function you can read top to bottom.
 
 The step with any depth to it is code generation - see [schemagen](database/schemagen.md).
 
-## The golden path
-
-Create ekbatan's objects in your app's startup code and close them in its shutdown code - never
-at import time:
-
-- **FastAPI** - in the lifespan.
-- **A plain worker** - at the top and the bottom of `main()`.
-
-The objects that hold connections or threads are the database registry (`DatabaseRegistry`, or
-`AsyncDatabaseRegistry` in `ekbatan.aio`), the job registry (`JobRegistry`: `start()` and
-`stop()`), the keyed lock providers and, for `async def` event handlers, a `HandlerLoop`.
-Repositories, the executor and actions hold nothing and are just created. Normal code uses the
-sync API; `async def` code uses `ekbatan.aio`.
-
-That is all a deployment has to get right, and ekbatan says so when it is not: one of those
-objects created in one process and used in a copy of it raises `ForkedProcessError`, and the sync
-API called inside `async def` raises `BlockingCallError`. [Startup and shutdown](startup-and-shutdown.md) has each
-object's startup and shutdown call, the lifespan and `main()` written out, and the recipe for each server.
-
 ## Requirements
 
 Python **3.13** or newer. The framework uses PEP 695 type parameters and `Self`, and the suite
@@ -295,6 +276,10 @@ executor = AsyncActionExecutor(
 )
 ```
 
+Create these in your app's startup code and close the registry in its shutdown code - in a
+FastAPI lifespan, or at the top and bottom of a worker's `main()`, never at import time.
+[Startup and shutdown](startup-and-shutdown.md) has the calls for every object.
+
 ### 5. Run it
 
 **Sync**
@@ -390,4 +375,7 @@ the jobs stay on threads. How to choose is [Sync or async?](sync-or-async.md); t
 - [Wiring with FastAPI](wiring-fastapi.md) - a lifespan, a dependency, and the three pools
 - [Concurrency](runtime/concurrency.md) - threads, the GIL, and the one way to use this wrongly
 - [Sync or async?](sync-or-async.md) - how to choose, and what is the same either way
-- [`ekbatan-py-examples/`](../ekbatan-py-examples) - eleven runnable projects
+- [Startup and shutdown](startup-and-shutdown.md) - where to create and close ekbatan's objects:
+  in a FastAPI lifespan, or at the top and bottom of a worker's `main()`
+- [`ekbatan-py-examples/`](../ekbatan-py-examples) - fourteen runnable projects, each for uv, pip
+  and Poetry
