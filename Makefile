@@ -85,7 +85,7 @@ schema: $(addprefix schema-,$(GENERATES))
 # it lints itself. Naming the directories here rather than passing `.` is what keeps the two
 # from both half-owning it - and is why this target does not fail on formatting that belongs to
 # a package this one only vendors.
-OURS := src tests ekbatan-py-examples scripts
+OURS := src tests ekbatan-py-examples scripts website/src/setup-guide
 
 lint: schema
 	$(UV) ruff check $(OURS)

@@ -1,0 +1,22 @@
+# The service's Ekbatan settings: the database, the namespace and the handling switch.
+# `${WALLET_DATABASE_URL:...}` is an environment variable with a default; the script points it at
+# a file in a temporary directory. SQLite has no login, so none is given.
+ekbatan:
+  namespace: example.wallet
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: default
+        members:
+          - member: 0
+            name: default
+            configs:
+              primaryConfig:
+                url: ${WALLET_DATABASE_URL:sqlite:///wallet.db}
+
+  local-event-handler:
+    handling:
+      enabled: true

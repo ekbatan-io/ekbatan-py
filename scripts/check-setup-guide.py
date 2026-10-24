@@ -8,14 +8,14 @@ one database, one installer and one mode, and in page order writes every file th
 `CodeBlock` is the example file it imports) and runs every shell command and the Makefile. Then
 it checks what the page promises.
 
-On PostgreSQL, MySQL and MariaDB: `make test` passes, the service answers, a deposit raises an
-alert, the tables are there, the outbox holds exactly the rows the page's table lists, and the
-wheel holds `schema.py`, the config and the migrations - and, installed into a fresh venv away
-from the source, imports and finds them. On SQLite, where the service is a script: `make test`
-passes, `make run` delivers the alert and prints every outbox row the page's sample output shows,
-and the wheel holds `schema.py` and the config and finds them installed. The packaging step runs
-inside a git repository, made if the page did not make one, because a real project lives in one
-and some build tools honour `.gitignore` only there.
+On PostgreSQL, MySQL and MariaDB: the service answers, a deposit's notification arrives through
+the page's own endpoints, the tables are there, the outbox holds exactly the rows the page's
+table lists, and the wheel holds `schema.py`, the config and the migrations - and, installed
+into a fresh venv away from the source, imports and finds them. On SQLite, where the service is
+a script: `make run` delivers the notification and prints every outbox row the page's sample
+output shows, and the wheel holds `schema.py` and the config and finds them installed. The
+packaging step runs inside a git repository, made if the page did not make one, because a real
+project lives in one and some build tools honour `.gitignore` only there.
 
 Needs Docker (not for SQLite), network, and Python 3.13+ found by `uv python find`. Not part of
 `make lint`.
@@ -49,7 +49,7 @@ MIGRATIONS = (
     "V0001__eventlog.sql",
     "V0002__scheduled_tasks.sql",
     "V0003__wallets.sql",
-    "V0004__alerts.sql",
+    "V0004__notifications.sql",
 )
 #: MySQL's and MariaDB's first migration: the `eventlog` database the event tables go in.
 EVENTLOG_DATABASE = "V0000__create_eventlog_database.sql"
@@ -216,12 +216,14 @@ def script_for(
                 )
                 continue
             if text.strip() == "make run":
+                # Up once FastAPI serves its own docs page: the lifespan - migrations, pools, jobs -
+                # has finished by then.
                 parts.append(
                     "(make run > run.log 2>&1 &)\n"
                     "for i in $(seq 1 120); do\n"
-                    "  curl -s localhost:8000/health >/dev/null 2>&1 && break; sleep 1\n"
+                    "  curl -sf localhost:8000/docs >/dev/null 2>&1 && break; sleep 1\n"
                     "done\n"
-                    'echo "== health $(curl -s localhost:8000/health)"'
+                    "echo \"== up $(curl -s -o /dev/null -w '%{http_code}' localhost:8000/docs)\""
                 )
                 continue
             if text.startswith(("uv build", "pip wheel", "poetry build")):
@@ -253,9 +255,6 @@ def script_for(
                     f'(cd .. && installed/bin/python -c "{finds}")'
                 )
                 continue
-            if text.strip() == "make test":
-                parts.append('echo "== make test"; make test 2>&1 | tail -1')
-                continue
             if text.startswith("docker exec"):
                 # The service answered only after its startup migrations ran, so the tables
                 # and the outbox are there to read.
@@ -264,12 +263,15 @@ def script_for(
                 )
                 continue
             if text.startswith("WALLET=$("):
-                parts.append(text.rsplit("\n\ncurl -s localhost:8000/wallets/$WALLET/alerts", 1)[0])
+                notifications = "\n\ncurl -s localhost:8000/wallets/$WALLET/notifications"
+                parts.append(text.rsplit(notifications, 1)[0])
                 parts.append(
-                    "for i in $(seq 1 30); do n=$(curl -s localhost:8000/wallets/$WALLET/alerts "
+                    "for i in $(seq 1 30); do "
+                    "n=$(curl -s localhost:8000/wallets/$WALLET/notifications "
                     "| python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'); "
                     '[ "${n:-0}" -ge 1 ] && break; sleep 1; done\n'
-                    'echo "== alerts $(curl -s localhost:8000/wallets/$WALLET/alerts)"'
+                    'echo "== notifications '
+                    '$(curl -s localhost:8000/wallets/$WALLET/notifications)"'
                 )
                 continue
             parts.append(localise(text, install))
@@ -278,17 +280,14 @@ def script_for(
 
 def check(output: str, db: str, items: list[Item]) -> list[str]:
     """What the page promises, against what happened."""
-    problems = []
-    tested = re.search(r"== make test\n(.*)", output)
-    if not tested or "passed" not in tested.group(1) or "failed" in tested.group(1):
-        problems.append(f"make test: {tested.group(1) if tested else 'never ran'}")
+    problems: list[str] = []
     if db == "sqlite":
         return problems + check_script(output, items)
-    if '== health {"status":"ok"}' not in output:
+    if "== up 200" not in output:
         problems.append("the service did not answer")
-    if not re.search(r'== alerts \[\{.*"recipient":"ada@example.com"', output):
-        problems.append("no alert after the deposit")
-    for table in ("alerts", "event_notifications", "events", "scheduled_tasks", "wallets"):
+    if not re.search(r'== notifications \[\{.*"recipient":"ada@example.com"', output):
+        problems.append("no notification after the deposit")
+    for table in ("notifications", "event_notifications", "events", "scheduled_tasks", "wallets"):
         if not re.search(rf"\b{table}\b", output):
             problems.append(f"table {table} missing")
     wheel = output.split("== wheel", 1)[1] if "== wheel" in output else ""
@@ -302,7 +301,9 @@ def check(output: str, db: str, items: list[Item]) -> list[str]:
     rows = [
         tuple(cell.strip() for cell in re.split(r"\t|\|", line) if cell.strip() != "")
         for line in output.splitlines()
-        if line.strip().startswith(("OpenWalletAction", "DepositMoneyAction", "RaiseAlertAction"))
+        if line.strip().startswith(
+            ("WalletCreateAction", "WalletDepositMoneyAction", "CreateNotificationAction")
+        )
     ]
     if [tuple(c for c in row if c) for row in rows] != [
         tuple(c for c in row if c) for row in expected
@@ -316,11 +317,12 @@ OUTBOX_LINE = re.compile(r"^\s+(\w+Action)\s+(\w+Event|\(none - a sentinel\))", 
 
 
 def check_script(output: str, items: list[Item]) -> list[str]:
-    """SQLite: the script delivered the alert and printed every outbox row the page shows."""
+    """SQLite: the script delivered the notification and printed every outbox row the page
+    shows."""
     problems = []
     ran = output.split("== run", 1)[1] if "== run" in output else ""
-    if "alert for ada@example.com" not in ran:
-        problems.append("the script printed no alert after the deposit")
+    if "MONEY_DEPOSITED for ada@example.com" not in ran:
+        problems.append("the script printed no notification after the deposit")
     shown = [item.text for item in items if item.kind == "text"]
     if len(shown) != 1:
         problems.append(f"the page shows {len(shown)} sample outputs for this choice, not one")

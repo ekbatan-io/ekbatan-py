@@ -43,10 +43,10 @@ const rows = [
     },
 ] as const;
 
-// Link to the example project for the current database, installer AND mode - each example is
-// carried once per build tool, and each has an async twin. Rendered as an extra row at the
-// bottom; only the entry matching every choice is visible, by the same rule as the content
-// blocks in MDX.
+// Link to the example project closest to the current database, installer AND mode - the same
+// wallet, grown into a whole service. Each example is carried once per build tool, and each has
+// an async twin. Rendered as an extra row at the bottom; only the entry matching every choice is
+// visible, by the same rule as the content blocks in MDX.
 const installs = ["uv", "pip", "poetry"] as const;
 const examples = installs.flatMap((install) =>
     (["sync", "async"] as const).flatMap((mode) => {

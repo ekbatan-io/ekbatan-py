@@ -1,0 +1,39 @@
+# The service's Ekbatan settings: the database, the namespace, the jobs and the event handling.
+# `${NAME:default}` is an environment variable with a default, so the file runs as it is against
+# the container in step 2, and anywhere else with the variables set.
+ekbatan:
+  namespace: example.wallet
+  sharding:
+    defaultShard:
+      group: 0
+      member: 0
+    groups:
+      - group: 0
+        name: default
+        members:
+          - member: 0
+            name: default
+            configs:
+              # Requests. Sized for how many are served at once.
+              primaryConfig:
+                dataSourceProperties:
+                  application_name: wallet-service
+                  options: -c TimeZone=UTC
+                url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+              # The scheduler. At least twice its worker threads.
+              jobsConfig:
+                dataSourceProperties:
+                  application_name: wallet-jobs
+                  options: -c TimeZone=UTC
+                url: ${WALLET_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 8
+
+  local-event-handler:
+    handling:
+      enabled: true

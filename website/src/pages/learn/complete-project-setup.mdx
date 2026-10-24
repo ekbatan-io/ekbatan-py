@@ -8,70 +8,46 @@ lead: Every file of a working service, for your database, your installer and you
 import SetupPicker from "../../components/SetupPicker.astro";
 import CodeBlock from "../../components/CodeBlock.astro";
 import LearnPager from "../../components/LearnPager.astro";
-import pg_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/ekbatan.yaml?raw";
-import pg_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/repository.py?raw";
-import pg_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/app.py?raw";
+import model_py from "../../setup-guide/model.py?raw";
+import converters_py from "../../setup-guide/converters.py?raw";
+import sync_actions_py from "../../setup-guide/sync/actions.py?raw";
+import sync_handlers_py from "../../setup-guide/sync/handlers.py?raw";
+import sync_jobs_py from "../../setup-guide/sync/jobs.py?raw";
+import sync_repository_py from "../../setup-guide/sync/repository.py?raw";
+import sync_app_py from "../../setup-guide/sync/app.py?raw";
+import sync_api_py from "../../setup-guide/sync/api.py?raw";
+import async_actions_py from "../../setup-guide/async/actions.py?raw";
+import async_handlers_py from "../../setup-guide/async/handlers.py?raw";
+import async_jobs_py from "../../setup-guide/async/jobs.py?raw";
+import async_repository_py from "../../setup-guide/async/repository.py?raw";
+import async_app_py from "../../setup-guide/async/app.py?raw";
+import async_api_py from "../../setup-guide/async/api.py?raw";
+import pg_sync_ekbatan_yaml from "../../setup-guide/pg/sync/ekbatan.yaml?raw";
+import pg_async_ekbatan_yaml from "../../setup-guide/pg/async/ekbatan.yaml?raw";
 import pg_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0001__eventlog.sql?raw";
 import pg_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0002__scheduled_tasks.sql?raw";
 import pg_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0003__wallets.sql?raw";
-import pg_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0004__alerts.sql?raw";
-import pg_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/test_fastapi_wallet_rest_pg.py?raw";
-import mysql_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/ekbatan.yaml?raw";
-import mysql_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/repository.py?raw";
-import mysql_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/app.py?raw";
+import pg_V0004__notifications_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/migrations/V0004__notifications.sql?raw";
+import mysql_sync_ekbatan_yaml from "../../setup-guide/mysql/sync/ekbatan.yaml?raw";
+import mysql_async_ekbatan_yaml from "../../setup-guide/mysql/async/ekbatan.yaml?raw";
 import mysql_V0000__create_eventlog_database_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0000__create_eventlog_database.sql?raw";
 import mysql_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0001__eventlog.sql?raw";
 import mysql_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0002__scheduled_tasks.sql?raw";
 import mysql_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0003__wallets.sql?raw";
-import mysql_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0004__alerts.sql?raw";
-import mysql_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/test_fastapi_wallet_rest_mysql.py?raw";
-import mariadb_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/ekbatan.yaml?raw";
-import mariadb_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/repository.py?raw";
-import mariadb_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/app.py?raw";
+import mysql_V0004__notifications_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mysql/src/fastapi_wallet_rest_mysql/migrations/V0004__notifications.sql?raw";
+import mariadb_sync_ekbatan_yaml from "../../setup-guide/mariadb/sync/ekbatan.yaml?raw";
+import mariadb_async_ekbatan_yaml from "../../setup-guide/mariadb/async/ekbatan.yaml?raw";
 import mariadb_V0000__create_eventlog_database_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0000__create_eventlog_database.sql?raw";
 import mariadb_V0001__eventlog_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0001__eventlog.sql?raw";
 import mariadb_V0002__scheduled_tasks_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0002__scheduled_tasks.sql?raw";
 import mariadb_V0003__wallets_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0003__wallets.sql?raw";
-import mariadb_V0004__alerts_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0004__alerts.sql?raw";
-import mariadb_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/test_fastapi_wallet_rest_mariadb.py?raw";
-import shared_model_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/model.py?raw";
-import shared_converters_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/converters.py?raw";
-import shared_actions_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/actions.py?raw";
-import shared_handlers_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/handlers.py?raw";
-import shared_jobs_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/jobs.py?raw";
-import shared_api_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-pg/src/fastapi_wallet_rest_pg/api.py?raw";
-import pg_async_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/ekbatan.yaml?raw";
-import pg_async_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/test_fastapi_wallet_rest_async_pg.py?raw";
-import mysql_async_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src/fastapi_wallet_rest_async_mysql/ekbatan.yaml?raw";
-import mysql_async_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src/fastapi_wallet_rest_async_mysql/test_fastapi_wallet_rest_async_mysql.py?raw";
-import mariadb_async_ekbatan_yaml from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src/fastapi_wallet_rest_async_mariadb/ekbatan.yaml?raw";
-import mariadb_async_test from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src/fastapi_wallet_rest_async_mariadb/test_fastapi_wallet_rest_async_mariadb.py?raw";
-import async_repository_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/repository.py?raw";
-import async_actions_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/actions.py?raw";
-import async_handlers_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/handlers.py?raw";
-import pg_async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/app.py?raw";
-import mysql_async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql/src/fastapi_wallet_rest_async_mysql/app.py?raw";
-import mariadb_async_app_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb/src/fastapi_wallet_rest_async_mariadb/app.py?raw";
-import async_api_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/api.py?raw";
-import sqlite_ekbatan_yaml from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/ekbatan.yaml?raw";
+import mariadb_V0004__notifications_sql from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb/src/fastapi_wallet_rest_mariadb/migrations/V0004__notifications.sql?raw";
+import sqlite_ekbatan_yaml from "../../setup-guide/sqlite/ekbatan.yaml?raw";
 import sqlite_schema_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/schema.py?raw";
-import sqlite_model_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/model.py?raw";
-import sqlite_repository_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/repository.py?raw";
-import sqlite_actions_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/actions.py?raw";
-import sqlite_handlers_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/handlers.py?raw";
-import async_jobs_py from "../../../../ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg/src/fastapi_wallet_rest_async_pg/jobs.py?raw";
-import sqlite_async_jobs_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/jobs.py?raw";
-import sqlite_jobs_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/jobs.py?raw";
-import sqlite_app_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/app.py?raw";
-import sqlite_main_py from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/__main__.py?raw";
-import sqlite_test from "../../../../ekbatan-py-examples/wallet-service-uv-sqlite/src/wallet_service_sqlite/test_wallet_service_sqlite.py?raw";
-import sqlite_async_ekbatan_yaml from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/ekbatan.yaml?raw";
-import sqlite_async_repository_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/repository.py?raw";
-import sqlite_async_actions_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/actions.py?raw";
-import sqlite_async_handlers_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/handlers.py?raw";
-import sqlite_async_app_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/app.py?raw";
-import sqlite_async_main_py from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/__main__.py?raw";
-import sqlite_async_test from "../../../../ekbatan-py-examples/wallet-service-uv-async-sqlite/src/wallet_service_async_sqlite/test_wallet_service_async_sqlite.py?raw";
+import sqlite_sync_app_py from "../../setup-guide/sqlite/sync/app.py?raw";
+import sqlite_sync_main_py from "../../setup-guide/sqlite/sync/__main__.py?raw";
+import sqlite_async_app_py from "../../setup-guide/sqlite/async/app.py?raw";
+import sqlite_async_main_py from "../../setup-guide/sqlite/async/__main__.py?raw";
 
 <SetupPicker />
 
@@ -80,29 +56,27 @@ sync API, or `ekbatan.aio` with every database call awaited - and the whole page
 itself; the choice persists across pages. Not sure which mode? [Sync or
 async?](/learn/sync-or-async/) takes two minutes.
 
-**Every file on this page is the real file** of an example project that is tested on every
-commit, read from it when this site is built, so it cannot drift. Each example exists once per
-database, once per installer and once per mode - the picker's *Example* row names the one for
-your choices, `fastapi-wallet-rest-uv-pg` to `wallet-service-poetry-async-sqlite` - and each of
-those builds its wheel and tests it installed. Copy each file to the path in its header and the
-project runs; the steps were checked by doing exactly that, in an empty folder, for every
-database, installer and mode.
+**Every file on this page is a real file**, read when this site is built, so it cannot drift
+from what was checked: copy each file to the path in its header and the project runs. The steps
+are checked by doing exactly that, in an empty folder, for every database, installer and mode -
+the service starts, a deposit's notification arrives, and the outbox holds the rows step 15
+lists.
 
 <div data-db="pg mysql mariadb">
 
-This is a **complete** service: migrations, generated schema, domain, actions, repository,
-handler, keyed lock, wiring, HTTP layer, a test and a Makefile.
+This is a **complete** service: migrations, generated schema, domain, actions, repository, an
+event handler, a distributed job, wiring, a small HTTP layer and a Makefile.
 
-You need Python 3.13 or later, and Docker: the database in step 2, the schema generator and the
-test each run a container.
+You need Python 3.13 or later, and Docker: the database in step 2 and the schema generator each
+run a container.
 
 </div>
 
 <div data-db="sqlite">
 
 On SQLite the service is smaller, and runs with nothing installed but Python 3.13 or later: no
-web layer, no migrations, no container. One module set, a hand-written schema, a script that
-drives it, and a test.
+web layer, no migrations, no container. One module set, a hand-written schema, and a script that
+drives it.
 
 </div>
 
@@ -206,7 +180,7 @@ wallet/
    │  ├─ V0001__eventlog.sql
    │  ├─ V0002__scheduled_tasks.sql
    │  ├─ V0003__wallets.sql
-   │  └─ V0004__alerts.sql
+   │  └─ V0004__notifications.sql
    ├─ model.py              the domain
    ├─ converters.py         column values as the domain's own classes
    ├─ builders.py           GENERATED, committed
@@ -216,8 +190,7 @@ wallet/
    ├─ handlers.py           in-process event handlers
    ├─ jobs.py               cluster-exclusive background work
    ├─ app.py                the wiring, all of it
-   ├─ api.py                the HTTP layer, and nothing else
-   └─ test_wallet.py
+   └─ api.py                the HTTP layer, and nothing else
 ```
 
 </div>
@@ -235,7 +208,7 @@ wallet/
    │  ├─ V0001__eventlog.sql
    │  ├─ V0002__scheduled_tasks.sql
    │  ├─ V0003__wallets.sql
-   │  └─ V0004__alerts.sql
+   │  └─ V0004__notifications.sql
    ├─ model.py              the domain
    ├─ converters.py         column values as the domain's own classes
    ├─ builders.py           GENERATED, committed
@@ -245,8 +218,7 @@ wallet/
    ├─ handlers.py           in-process event handlers
    ├─ jobs.py               cluster-exclusive background work
    ├─ app.py                the wiring, all of it
-   ├─ api.py                the HTTP layer, and nothing else
-   └─ test_wallet.py
+   └─ api.py                the HTTP layer, and nothing else
 ```
 
 </div>
@@ -263,7 +235,7 @@ wallet/
    │  ├─ V0001__eventlog.sql
    │  ├─ V0002__scheduled_tasks.sql
    │  ├─ V0003__wallets.sql
-   │  └─ V0004__alerts.sql
+   │  └─ V0004__notifications.sql
    ├─ model.py              the domain
    ├─ converters.py         column values as the domain's own classes
    ├─ builders.py           GENERATED, committed
@@ -273,8 +245,7 @@ wallet/
    ├─ handlers.py           in-process event handlers, async
    ├─ jobs.py               cluster-exclusive background work, its work awaited
    ├─ app.py                the wiring, all of it
-   ├─ api.py                the HTTP layer, and nothing else
-   └─ test_wallet.py
+   └─ api.py                the HTTP layer, and nothing else
 ```
 
 </div>
@@ -292,7 +263,7 @@ wallet/
    │  ├─ V0001__eventlog.sql
    │  ├─ V0002__scheduled_tasks.sql
    │  ├─ V0003__wallets.sql
-   │  └─ V0004__alerts.sql
+   │  └─ V0004__notifications.sql
    ├─ model.py              the domain
    ├─ converters.py         column values as the domain's own classes
    ├─ builders.py           GENERATED, committed
@@ -302,8 +273,7 @@ wallet/
    ├─ handlers.py           in-process event handlers, async
    ├─ jobs.py               cluster-exclusive background work, its work awaited
    ├─ app.py                the wiring, all of it
-   ├─ api.py                the HTTP layer, and nothing else
-   └─ test_wallet.py
+   └─ api.py                the HTTP layer, and nothing else
 ```
 
 </div>
@@ -326,7 +296,6 @@ wallet/
    ├─ handlers.py           in-process event handlers
    ├─ jobs.py               cluster-exclusive background work
    ├─ app.py                the wiring, all of it
-   └─ test_wallet.py
 ```
 
 </div>
@@ -348,7 +317,6 @@ wallet/
    ├─ handlers.py           in-process event handlers, async
    ├─ jobs.py               cluster-exclusive background work, its work awaited
    ├─ app.py                the wiring, all of it
-   └─ test_wallet.py
 ```
 
 </div>
@@ -377,8 +345,8 @@ generate it from.
 
 <div data-db="pg mysql mariadb">
 
-The service connects to it in step 16; the schema generator and the test start throwaway
-containers of their own.
+The service connects to it in step 15; the schema generator starts a throwaway container of its
+own.
 
 </div>
 
@@ -428,8 +396,8 @@ the framework's event tables. Any login allowed to create that database and to u
 
 <div data-db="sqlite">
 
-Nothing to start: a SQLite database is a file, made on first use. The script and the test each
-point the service at one in a temporary folder.
+Nothing to start: a SQLite database is a file, made on first use. The script points the service
+at one in a temporary folder.
 
 </div>
 
@@ -441,7 +409,7 @@ point the service at one in a temporary folder.
 
 ```bash
 uv add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
-uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+uv add --dev "ekbatan[codegen]"
 ```
 
 </div>
@@ -449,7 +417,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 
 ```bash
 uv add "ekbatan[postgres,postgres-async,migrations]" fastapi "uvicorn[standard]" httpx
-uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+uv add --dev "ekbatan[codegen]"
 ```
 
 </div>
@@ -457,7 +425,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
 
 ```bash
 uv add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
-uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+uv add --dev "ekbatan[codegen]"
 ```
 
 </div>
@@ -465,7 +433,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 
 ```bash
 uv add "ekbatan[mysql,mysql-async,migrations]" fastapi "uvicorn[standard]" httpx
-uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+uv add --dev "ekbatan[codegen]"
 ```
 
 </div>
@@ -473,7 +441,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 
 ```bash
 uv add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
-uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+uv add --dev "ekbatan[codegen]"
 ```
 
 </div>
@@ -481,7 +449,7 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 
 ```bash
 uv add "ekbatan[mariadb,mariadb-async,migrations]" fastapi "uvicorn[standard]" httpx
-uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+uv add --dev "ekbatan[codegen]"
 ```
 
 </div>
@@ -489,7 +457,6 @@ uv add --dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
 
 ```bash
 uv add ekbatan
-uv add --dev pytest
 ```
 
 </div>
@@ -497,7 +464,6 @@ uv add --dev pytest
 
 ```bash
 uv add "ekbatan[sqlite-async]"
-uv add --dev pytest
 ```
 
 </div>
@@ -510,7 +476,7 @@ uv add --dev pytest
 
 ```bash
 pip install "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
-pip install "ekbatan[codegen]" pytest "testcontainers[postgres]"
+pip install "ekbatan[codegen]"
 pip install -e .
 ```
 
@@ -519,7 +485,7 @@ pip install -e .
 
 ```bash
 pip install "ekbatan[postgres,postgres-async,migrations]" fastapi "uvicorn[standard]" httpx
-pip install "ekbatan[codegen]" pytest "testcontainers[postgres]"
+pip install "ekbatan[codegen]"
 pip install -e .
 ```
 
@@ -528,7 +494,7 @@ pip install -e .
 
 ```bash
 pip install "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
-pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install "ekbatan[codegen]"
 pip install -e .
 ```
 
@@ -537,7 +503,7 @@ pip install -e .
 
 ```bash
 pip install "ekbatan[mysql,mysql-async,migrations]" fastapi "uvicorn[standard]" httpx
-pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install "ekbatan[codegen]"
 pip install -e .
 ```
 
@@ -546,7 +512,7 @@ pip install -e .
 
 ```bash
 pip install "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
-pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install "ekbatan[codegen]"
 pip install -e .
 ```
 
@@ -555,7 +521,7 @@ pip install -e .
 
 ```bash
 pip install "ekbatan[mariadb,mariadb-async,migrations]" fastapi "uvicorn[standard]" httpx
-pip install "ekbatan[codegen]" pytest "testcontainers[mysql]"
+pip install "ekbatan[codegen]"
 pip install -e .
 ```
 
@@ -564,7 +530,6 @@ pip install -e .
 
 ```bash
 pip install ekbatan
-pip install pytest
 pip install -e .
 ```
 
@@ -573,7 +538,6 @@ pip install -e .
 
 ```bash
 pip install "ekbatan[sqlite-async]"
-pip install pytest
 pip install -e .
 ```
 
@@ -587,7 +551,7 @@ pip install -e .
 
 ```bash
 poetry add "ekbatan[postgres,migrations]" fastapi "uvicorn[standard]" httpx
-poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+poetry add --group dev "ekbatan[codegen]"
 poetry install
 ```
 
@@ -596,7 +560,7 @@ poetry install
 
 ```bash
 poetry add "ekbatan[postgres,postgres-async,migrations]" fastapi "uvicorn[standard]" httpx
-poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[postgres]"
+poetry add --group dev "ekbatan[codegen]"
 poetry install
 ```
 
@@ -605,7 +569,7 @@ poetry install
 
 ```bash
 poetry add "ekbatan[mysql,migrations]" fastapi "uvicorn[standard]" httpx
-poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry add --group dev "ekbatan[codegen]"
 poetry install
 ```
 
@@ -614,7 +578,7 @@ poetry install
 
 ```bash
 poetry add "ekbatan[mysql,mysql-async,migrations]" fastapi "uvicorn[standard]" httpx
-poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry add --group dev "ekbatan[codegen]"
 poetry install
 ```
 
@@ -623,7 +587,7 @@ poetry install
 
 ```bash
 poetry add "ekbatan[mariadb,migrations]" fastapi "uvicorn[standard]" httpx
-poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry add --group dev "ekbatan[codegen]"
 poetry install
 ```
 
@@ -632,7 +596,7 @@ poetry install
 
 ```bash
 poetry add "ekbatan[mariadb,mariadb-async,migrations]" fastapi "uvicorn[standard]" httpx
-poetry add --group dev "ekbatan[codegen]" pytest "testcontainers[mysql]"
+poetry add --group dev "ekbatan[codegen]"
 poetry install
 ```
 
@@ -641,7 +605,6 @@ poetry install
 
 ```bash
 poetry add ekbatan
-poetry add --group dev pytest
 poetry install
 ```
 
@@ -650,7 +613,6 @@ poetry install
 
 ```bash
 poetry add "ekbatan[sqlite-async]"
-poetry add --group dev pytest
 poetry install
 ```
 
@@ -691,7 +653,7 @@ changes this file and nothing else.
 
 <div data-db="pg" data-mode="sync">
 
-<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={pg_ekbatan_yaml} />
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={pg_sync_ekbatan_yaml} />
 
 </div>
 <div data-db="pg" data-mode="async">
@@ -702,7 +664,7 @@ changes this file and nothing else.
 
 <div data-db="mysql" data-mode="sync">
 
-<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mysql_ekbatan_yaml} />
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mysql_sync_ekbatan_yaml} />
 
 </div>
 <div data-db="mysql" data-mode="async">
@@ -713,7 +675,7 @@ changes this file and nothing else.
 
 <div data-db="mariadb" data-mode="sync">
 
-<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mariadb_ekbatan_yaml} />
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={mariadb_sync_ekbatan_yaml} />
 
 </div>
 <div data-db="mariadb" data-mode="async">
@@ -729,7 +691,7 @@ changes this file and nothing else.
 </div>
 <div data-db="sqlite" data-mode="async">
 
-<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={sqlite_async_ekbatan_yaml} />
+<CodeBlock filename="src/wallet/ekbatan.yaml" language="yaml" shadow="default" code={sqlite_ekbatan_yaml} />
 
 </div>
 
@@ -747,25 +709,23 @@ refused.
 
 <div data-db="pg mysql mariadb" data-mode="sync">
 
-**Three pools on one member.** `primaryConfig` is for requests. `jobsConfig` is the scheduler's,
+**Two pools on one member.** `primaryConfig` is for requests. `jobsConfig` is the scheduler's,
 sized at least twice its worker count, because the scheduler heartbeats from a housekeeping
-thread and a job body holding the last connection starves it. `lockConfig` holds keyed-lock
-leases, one connection each for as long as the lease is held. `app.py` (step 13) builds the last
-two with `DataSource.from_config` and closes them.
+thread and a job body holding the last connection starves it. `app.py` (step 13) builds it with
+`DataSource.from_config` and closes it.
 
 </div>
 
 <div data-db="pg mysql mariadb" data-mode="async">
 
-**Four pools on one member, one url.** The url names the sync driver; the async side reads it as
+**Three pools on one member, one url.** The url names the sync driver; the async side reads it as
 "this database" and connects through its async default - asyncpg for PostgreSQL, aiomysql for
 MySQL and MariaDB.
 
 - `primaryConfig` - requests, async. It is also the cap on requests waiting on the database:
-  past `poolSize` they queue, for at most `poolTimeout` seconds, then fail with a 503.
-- `handlersConfig` - the event handler's units of work, async, used only on the loop the handler
-  runs on.
-- `lockConfig` - keyed-lock leases, async: one connection each for as long as a lease is held.
+  past `poolSize` they queue, for at most `poolTimeout` seconds, then fail.
+- `handlersConfig` - the event handler's and the stipend job's units of work, async, used only
+  on the loop the handler runs on.
 - `jobsConfig` - sync: the scheduler, and the fan-out and dispatch jobs. At least the job
   workers plus three, because the scheduler heartbeats and a job body holding the last
   connection starves it.
@@ -824,7 +784,7 @@ says what shape they must have. They are the same in both modes.
 | `V0001__eventlog.sql` | the framework's outbox - `eventlog.events`, and `eventlog.event_notifications` for the in-process handlers, in a schema of their own |
 | `V0002__scheduled_tasks.sql` | the job scheduler's table; the event handlers run on the scheduler |
 | `V0003__wallets.sql` | your domain table |
-| `V0004__alerts.sql` | what the deposit handler (step 11) writes |
+| `V0004__notifications.sql` | what the deposit handler's action (step 11) writes |
 
 </div>
 
@@ -836,7 +796,7 @@ says what shape they must have. They are the same in both modes.
 | `V0001__eventlog.sql` | the framework's outbox - `eventlog.events`, and `eventlog.event_notifications` for the in-process handlers |
 | `V0002__scheduled_tasks.sql` | the job scheduler's table; the event handlers run on the scheduler |
 | `V0003__wallets.sql` | your domain table |
-| `V0004__alerts.sql` | what the deposit handler (step 11) writes |
+| `V0004__notifications.sql` | what the deposit handler (step 11) writes |
 
 ### The `eventlog` database
 
@@ -867,7 +827,7 @@ on one server write into the same two tables.
 <CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={pg_V0001__eventlog_sql} />
 <CodeBlock filename="src/wallet/migrations/V0002__scheduled_tasks.sql" language="sql" shadow="default" code={pg_V0002__scheduled_tasks_sql} />
 <CodeBlock filename="src/wallet/migrations/V0003__wallets.sql" language="sql" shadow="default" code={pg_V0003__wallets_sql} />
-<CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={pg_V0004__alerts_sql} />
+<CodeBlock filename="src/wallet/migrations/V0004__notifications.sql" language="sql" shadow="default" code={pg_V0004__notifications_sql} />
 
 </div>
 
@@ -876,7 +836,7 @@ on one server write into the same two tables.
 <CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={mysql_V0001__eventlog_sql} />
 <CodeBlock filename="src/wallet/migrations/V0002__scheduled_tasks.sql" language="sql" shadow="default" code={mysql_V0002__scheduled_tasks_sql} />
 <CodeBlock filename="src/wallet/migrations/V0003__wallets.sql" language="sql" shadow="default" code={mysql_V0003__wallets_sql} />
-<CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={mysql_V0004__alerts_sql} />
+<CodeBlock filename="src/wallet/migrations/V0004__notifications.sql" language="sql" shadow="default" code={mysql_V0004__notifications_sql} />
 
 </div>
 
@@ -885,7 +845,7 @@ on one server write into the same two tables.
 <CodeBlock filename="src/wallet/migrations/V0001__eventlog.sql" language="sql" shadow="default" code={mariadb_V0001__eventlog_sql} />
 <CodeBlock filename="src/wallet/migrations/V0002__scheduled_tasks.sql" language="sql" shadow="default" code={mariadb_V0002__scheduled_tasks_sql} />
 <CodeBlock filename="src/wallet/migrations/V0003__wallets.sql" language="sql" shadow="default" code={mariadb_V0003__wallets_sql} />
-<CodeBlock filename="src/wallet/migrations/V0004__alerts.sql" language="sql" shadow="default" code={mariadb_V0004__alerts_sql} />
+<CodeBlock filename="src/wallet/migrations/V0004__notifications.sql" language="sql" shadow="default" code={mariadb_V0004__notifications_sql} />
 
 </div>
 
@@ -912,8 +872,7 @@ the file `V0000`.
 An applied file is never edited: the migrator records a checksum of each one and refuses to start
 when an applied file has changed, been renamed or gone missing. A change goes in the next file.
 `app.py` runs them at startup with `migrate(layout, MIGRATIONS)`, before anything opens a pool -
-sync in both modes - and the test checks their names without a database through
-`validate_scripts`.
+sync in both modes.
 
 </div>
 
@@ -1096,9 +1055,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	uv run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -1114,9 +1072,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	uv run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -1132,9 +1089,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	uv run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -1150,9 +1106,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	uv run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -1168,9 +1123,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	uv run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -1186,9 +1140,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	uv run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uv run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -1200,9 +1153,8 @@ PKG := src/wallet
 $(PKG)/builders.py: $(PKG)/model.py
 	uv run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/builders.py ; uv run python -m wallet
-test: $(PKG)/builders.py ; uv run pytest
 ```
 
 </div>
@@ -1223,9 +1175,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
@@ -1241,9 +1192,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
@@ -1259,9 +1209,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
@@ -1277,9 +1226,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
@@ -1295,9 +1243,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
@@ -1313,9 +1260,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; pytest
 ```
 
 </div>
@@ -1327,9 +1273,8 @@ PKG := src/wallet
 $(PKG)/builders.py: $(PKG)/model.py
 	python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/builders.py ; python -m wallet
-test: $(PKG)/builders.py ; pytest
 ```
 
 </div>
@@ -1350,9 +1295,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	poetry run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
@@ -1368,9 +1312,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	poetry run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
@@ -1386,9 +1329,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	poetry run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
@@ -1404,9 +1346,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	poetry run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
@@ -1422,9 +1363,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	poetry run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload
-test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
@@ -1440,9 +1380,8 @@ $(PKG)/schema.py: $(wildcard $(PKG)/migrations/*.sql) pyproject.toml
 $(PKG)/builders.py: $(PKG)/model.py
 	poetry run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/schema.py $(PKG)/builders.py ; poetry run uvicorn --factory wallet.api:create_app --reload --limit-concurrency 50
-test: $(PKG)/schema.py $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
@@ -1454,9 +1393,8 @@ PKG := src/wallet
 $(PKG)/builders.py: $(PKG)/model.py
 	poetry run python -m ekbatan.codegen wallet.model --out $@
 
-.PHONY: run test
+.PHONY: run
 run:  $(PKG)/builders.py ; poetry run python -m wallet
-test: $(PKG)/builders.py ; poetry run pytest
 ```
 
 </div>
@@ -1493,13 +1431,13 @@ imports it.
 
 <div data-db="pg mysql mariadb">
 
-<CodeBlock filename="src/wallet/model.py" language="python" shadow="yellow" code={shared_model_py} />
+<CodeBlock filename="src/wallet/model.py" language="python" shadow="yellow" code={model_py} />
 
 </div>
 
 <div data-db="sqlite">
 
-<CodeBlock filename="src/wallet/model.py" language="python" shadow="yellow" code={sqlite_model_py} />
+<CodeBlock filename="src/wallet/model.py" language="python" shadow="yellow" code={model_py} />
 
 </div>
 
@@ -1508,7 +1446,7 @@ The model is the same file in both modes: nothing in it waits on anything. Read
 persisted by the framework - a balance cannot change without the event that explains it, because
 there is no other way to change one.
 
-`copy()` returns the builder the class line names - `Model[ShardedId["Wallet"], WalletState,
+`copy()` returns the builder the class line names - `Model[Id["Wallet"], WalletState,
 WalletBuilder]` - which is what lets a checker see the real field types. `make` writes it:
 
 <div data-install="uv">
@@ -1543,10 +1481,10 @@ poetry run python -m ekbatan.codegen wallet.model --out src/wallet/builders.py
 letters. The table stores plain text, so something has to turn one into the other. That is a
 **converter** - a class with two methods, `from_db` and `to_db`, and no SQLAlchemy in it:
 
-<CodeBlock filename="src/wallet/converters.py" language="python" shadow="yellow" code={shared_converters_py} />
+<CodeBlock filename="src/wallet/converters.py" language="python" shadow="yellow" code={converters_py} />
 
-Then tell schemagen which columns use them. One rule picks columns by their **type** (every
-`CHAR(3)` column is a currency code), the other picks one column by its **name**:
+Then tell schemagen which columns use it. The rule picks columns by their **type** - every
+`CHAR(3)` column is a currency code, whatever it is called:
 
 ```bash
 cat >> pyproject.toml <<'EOF'
@@ -1554,10 +1492,6 @@ cat >> pyproject.toml <<'EOF'
 [[tool.ekbatan.schemagen.forced-types]]
 converter = "wallet.converters.CurrencyConverter"
 include-types = "CHAR\\(3\\)"
-
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "wallet.converters.EmailAddressConverter"
-include-expression = "alerts\\.recipient"
 EOF
 ```
 
@@ -1649,7 +1583,7 @@ poetry run python -m ekbatan.schemagen --migrations src/wallet/migrations \
 
 </div>
 
-The two columns come out wrapped:
+The column comes out wrapped:
 
 ```python
 sqlalchemy.Column("currency", converted(sqlalchemy.CHAR(length=3), CurrencyConverter()), nullable=False),
@@ -1662,34 +1596,37 @@ writing converters: [schemagen](/reference/schemagen/#write-your-own-converter).
 
 <div data-db="sqlite">
 
-Not in this project: `currency` stays a plain string, so there is nothing to convert. A
-converter is a small class with `from_db` and `to_db` that schemagen wires to a column - see
-[schemagen](/reference/schemagen/#write-your-own-converter).
+`Wallet.currency` is a `Currency`, not a string: a small class that takes only three capital
+letters. The file stores plain text, so a **converter** turns one into the other - a class with
+two methods, `from_db` and `to_db`, and no SQLAlchemy in it. The hand-written `schema.py` (step 6)
+wraps the column in it, as schemagen would:
+
+<CodeBlock filename="src/wallet/converters.py" language="python" shadow="yellow" code={converters_py} />
 
 </div>
 
-`balance` is `Decimal`, never `float`. And there is no id class to write: the id is
-`ShardedId[Wallet]`, which carries its shard inside the uuid - what lets you add a second database
-later, see [Adding a shard](/learn/sharding/). `Alert` is an entity: tracked by the persistence
-layer, invisible to the event stream.
+`balance` is `Decimal`, never `float`. And there is no id class to write: the id is `Id[Wallet]`
+- `ShardedId[Wallet]` when you add a second database later, see [Adding a shard](/learn/sharding/).
+`Notification` is an entity: tracked by the persistence layer, invisible to the event stream - it
+is what the event handler's action writes (step 11).
 
 ## 9. The repository
 
 <div data-db="pg" data-mode="sync">
 
-<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={pg_repository_py} />
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sync_repository_py} />
 
 </div>
 
 <div data-db="mysql" data-mode="sync">
 
-<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={mysql_repository_py} />
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sync_repository_py} />
 
 </div>
 
 <div data-db="mariadb" data-mode="sync">
 
-<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={mariadb_repository_py} />
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sync_repository_py} />
 
 </div>
 
@@ -1701,12 +1638,12 @@ layer, invisible to the event stream.
 
 <div data-db="sqlite" data-mode="sync">
 
-<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sqlite_repository_py} />
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sync_repository_py} />
 
 </div>
 <div data-db="sqlite" data-mode="async">
 
-<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={sqlite_async_repository_py} />
+<CodeBlock filename="src/wallet/repository.py" language="python" shadow="default" code={async_repository_py} />
 
 </div>
 
@@ -1733,7 +1670,7 @@ A read with no shard named asks every shard at the same time.
 
 <div data-db="pg mysql mariadb" data-mode="sync">
 
-<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={shared_actions_py} />
+<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={sync_actions_py} />
 
 </div>
 <div data-db="pg mysql mariadb" data-mode="async">
@@ -1744,19 +1681,21 @@ A read with no shard named asks every shard at the same time.
 
 <div data-db="sqlite" data-mode="sync">
 
-<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={sqlite_actions_py} />
+<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={sync_actions_py} />
 
 </div>
 <div data-db="sqlite" data-mode="async">
 
-<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={sqlite_async_actions_py} />
+<CodeBlock filename="src/wallet/actions.py" language="python" shadow="default" code={async_actions_py} />
 
 </div>
 
 <div data-mode="sync">
 
 `perform` reads, changes and stages; it writes nothing. The executor runs it, then opens one
-transaction for the rows and their events.
+transaction for the rows and their events. Each action's parameters are its nested `Params`, and
+they are written to the outbox as JSON. `CreateNotificationAction` is the one the handler in step
+11 runs.
 
 </div>
 
@@ -1771,7 +1710,7 @@ and so is what the executor does with it - one transaction for the rows and thei
 
 <div data-db="pg mysql mariadb" data-mode="sync">
 
-<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={shared_handlers_py} />
+<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={sync_handlers_py} />
 
 </div>
 <div data-db="pg mysql mariadb" data-mode="async">
@@ -1782,12 +1721,12 @@ and so is what the executor does with it - one transaction for the rows and thei
 
 <div data-db="sqlite" data-mode="sync">
 
-<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={sqlite_handlers_py} />
+<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={sync_handlers_py} />
 
 </div>
 <div data-db="sqlite" data-mode="async">
 
-<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={sqlite_async_handlers_py} />
+<CodeBlock filename="src/wallet/handlers.py" language="python" shadow="default" code={async_handlers_py} />
 
 </div>
 
@@ -1809,13 +1748,13 @@ them on that loop.
 
 <div data-db="pg mysql mariadb" data-mode="sync">
 
-<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={shared_jobs_py} />
+<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={sync_jobs_py} />
 
 </div>
 
 <div data-db="sqlite" data-mode="sync">
 
-<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={sqlite_jobs_py} />
+<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={sync_jobs_py} />
 
 </div>
 
@@ -1827,12 +1766,15 @@ them on that loop.
 
 <div data-db="sqlite" data-mode="async">
 
-<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={sqlite_async_jobs_py} />
+<CodeBlock filename="src/wallet/jobs.py" language="python" shadow="default" code={async_jobs_py} />
 
 </div>
 
-Exclusivity comes from the `scheduled_tasks` row: whichever instance claims it runs. **The body
-must still tolerate running twice** - a claim can be lost to a dead-execution timeout.
+Every two seconds, each open wallet below 100.00 gets 10.00, through the same
+`WalletDepositMoneyAction` a request runs - so its deposits are events like any other, and reach
+the handler too. Exclusivity comes from the `scheduled_tasks` row: whichever instance claims it
+runs. **The body must still tolerate running twice** - a claim can be lost to a dead-execution
+timeout; this one reads only the wallets still below the threshold.
 
 <div data-mode="async">
 
@@ -1848,43 +1790,43 @@ async?](/learn/sync-or-async/#what-always-runs-on-threads).
 
 <div data-db="pg" data-mode="sync">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={pg_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={sync_app_py} />
 
 </div>
 
 <div data-db="mysql" data-mode="sync">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mysql_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={sync_app_py} />
 
 </div>
 
 <div data-db="mariadb" data-mode="sync">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mariadb_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={sync_app_py} />
 
 </div>
 
 <div data-db="pg" data-mode="async">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={pg_async_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={async_app_py} />
 
 </div>
 
 <div data-db="mysql" data-mode="async">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mysql_async_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={async_app_py} />
 
 </div>
 
 <div data-db="mariadb" data-mode="async">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={mariadb_async_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={async_app_py} />
 
 </div>
 
 <div data-db="sqlite" data-mode="sync">
 
-<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={sqlite_app_py} />
+<CodeBlock filename="src/wallet/app.py" language="python" shadow="orange" code={sqlite_sync_app_py} />
 
 </div>
 <div data-db="sqlite" data-mode="async">
@@ -1896,12 +1838,12 @@ async?](/learn/sync-or-async/#what-always-runs-on-threads).
 <div data-db="pg mysql mariadb" data-mode="async">
 
 **Async where it waits, threads where they poll, one config file.** The requests get an
-`AsyncDatabaseRegistry`, async repositories, an `AsyncActionExecutor` and an async keyed lock. The
-handler gets an async registry and executor of its own, used only on its `HandlerLoop` - by the
-handler and by the stipend's work. What polls - the scheduler, fan-out, dispatch and the stipend
-job - gets a sync `DatabaseRegistry` on `jobsConfig`. All of it is built from the same
-`ekbatan.yaml`, and `aclose()` closes it in order: the jobs first, then the handler's pool on its
-own loop, then the rest. Each database's `app.py` names its own lock provider.
+`AsyncDatabaseRegistry`, async repositories and an `AsyncActionExecutor`. The handler gets an
+async registry and executor of its own, used only on its `HandlerLoop` - by the handler and by
+the stipend's work. What polls - the scheduler, fan-out, dispatch and the stipend job - gets a
+sync `DatabaseRegistry` on `jobsConfig`. All of it is built from the same `ekbatan.yaml`, and
+`aclose()` closes it in order: the jobs first, then the handler's pool on its own loop, then the
+rest. The same `app.py` serves all three databases: which one is the url's business.
 
 </div>
 
@@ -1911,8 +1853,8 @@ own loop, then the rest. Each database's `app.py` names its own lock provider.
 `AsyncDatabaseRegistry`, async repositories and an `AsyncActionExecutor`. The handler gets an
 async registry and executor of its own, used only on its `HandlerLoop` - by the handler and by
 the stipend's work. What polls - the scheduler, fan-out, dispatch and the stipend job - gets a
-sync `DatabaseRegistry`, which also creates the tables. `start()` is awaited and returns once the
-stipend's first run is over; `aclose()` closes it all in order.
+sync `DatabaseRegistry`, which also creates the tables. `start()` and `aclose()` are awaited;
+`aclose()` closes it all in order.
 
 </div>
 
@@ -1920,12 +1862,12 @@ stipend's first run is over; `aclose()` closes it all in order.
 
 <div data-db="pg mysql mariadb" data-mode="sync">
 
-<CodeBlock filename="src/wallet/api.py" language="python" shadow="yellow" code={shared_api_py} />
+<CodeBlock filename="src/wallet/api.py" language="python" shadow="yellow" code={sync_api_py} />
 
-Endpoints are plain `def`, not `async def`: FastAPI runs a `def` on a worker thread, where a
-blocking database call blocks one thread. The deposit is taken under a keyed lock, around the
-unit of work. On the event loop itself a sync keyed lock is refused - for `async def` endpoints,
-pick **Async** in the picker.
+Three endpoints - create a wallet, deposit, and read what the handler wrote - each naming a unit
+of work and nothing else. They are plain `def`, not `async def`: FastAPI runs a `def` on a worker
+thread, where a blocking database call blocks one thread. On the event loop itself the sync API
+is refused - for `async def` endpoints, pick **Async** in the picker.
 
 </div>
 
@@ -1933,22 +1875,21 @@ pick **Async** in the picker.
 
 <CodeBlock filename="src/wallet/api.py" language="python" shadow="yellow" code={async_api_py} />
 
-Endpoints are `async def` and await: they run on the event loop itself, and nothing in them
-blocks it. The deposit takes an async keyed lock with `try_acquire` - its holder is the request's
-task, and waiting for it does not block the loop - and answers 503 when the wallet stays busy. A
-request that waited `poolTimeout` for a connection gets a 503 with `Retry-After`, too. A sync call
-here - the sync executor, a sync repository - would block every request at once.
+Three endpoints - create a wallet, deposit, and read what the handler wrote - each naming a unit
+of work and nothing else. They are `async def` and await: they run on the event loop itself, and
+nothing in them blocks it. A sync call here - the sync executor, a sync repository - would block
+every request at once.
 
 </div>
 
 <div data-db="sqlite">
 
-No HTTP here: a script drives the service - opens a wallet, deposits, waits for the handler and
-prints the outbox.
+No HTTP here: a script drives the service - creates a wallet, deposits, waits for the handler
+and prints the outbox.
 
 <div data-mode="sync">
 
-<CodeBlock filename="src/wallet/__main__.py" language="python" shadow="yellow" code={sqlite_main_py} />
+<CodeBlock filename="src/wallet/__main__.py" language="python" shadow="yellow" code={sqlite_sync_main_py} />
 
 </div>
 <div data-mode="async">
@@ -1959,78 +1900,7 @@ prints the outbox.
 
 </div>
 
-## 15. The test
-
-<div data-db="pg" data-mode="sync">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={pg_test} />
-
-</div>
-<div data-db="pg" data-mode="async">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={pg_async_test} />
-
-</div>
-
-<div data-db="mysql" data-mode="sync">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mysql_test} />
-
-</div>
-<div data-db="mysql" data-mode="async">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mysql_async_test} />
-
-</div>
-
-<div data-db="mariadb" data-mode="sync">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mariadb_test} />
-
-</div>
-<div data-db="mariadb" data-mode="async">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={mariadb_async_test} />
-
-</div>
-
-<div data-db="sqlite" data-mode="sync">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={sqlite_test} />
-
-</div>
-<div data-db="sqlite" data-mode="async">
-
-<CodeBlock filename="src/wallet/test_wallet.py" language="python" shadow="default" code={sqlite_async_test} />
-
-</div>
-
-```bash
-make test
-```
-
-<div data-db="pg mysql mariadb">
-
-**The `with TestClient(...)` matters.** `TestClient` runs the lifespan only inside a context
-manager; without it `app.state.service` is never set and every request fails on the dependency.
-
-</div>
-
-<div data-db="pg mysql mariadb" data-mode="async">
-
-The app's async pools live on the loop the test client runs the app on. A test that reaches past
-HTTP into the service awaits on that same loop, through `client.portal`.
-
-</div>
-
-<div data-db="sqlite" data-mode="async">
-
-Each test is a coroutine, run on a loop of its own by `drive`, with the service built, started and
-closed around it - an async pool belongs to the loop it is used on.
-
-</div>
-
-## 16. Run + verify
+## 15. Run + verify
 
 ```bash
 make run
@@ -2069,25 +1939,26 @@ docker exec wallet-mariadb mariadb -uroot -pekbatan -e 'SHOW TABLES FROM wallet;
 
 <div data-db="pg mysql mariadb">
 
-`alerts`, `ekbatan_schema_history` (the migrator's own), `scheduled_tasks` and `wallets` - and in
-`eventlog`, `event_notifications` and `events`.
+`ekbatan_schema_history` (the migrator's own), `notifications`, `scheduled_tasks` and `wallets` -
+and in `eventlog`, `event_notifications` and `events`.
 
-Open a wallet and deposit into it:
+Create a wallet and deposit into it. It starts at 100.00, so the stipend job (step 12), which
+tops up wallets below that, leaves it alone:
 
 ```bash
 WALLET=$(curl -sX POST localhost:8000/wallets \
   -H 'Content-Type: application/json' \
-  -d '{"owner_id": "'$(uuidgen)'", "currency": "EUR", "opening_balance": "0.00"}' \
+  -d '{"ownerId": "'$(uuidgen)'", "currency": "EUR", "initialBalance": "100.00"}' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
 curl -sX POST localhost:8000/wallets/$WALLET/deposits \
   -H 'Content-Type: application/json' -d '{"amount": "25.50", "recipient": "ada@example.com"}'
 
-curl -s localhost:8000/wallets/$WALLET/alerts
+curl -s localhost:8000/wallets/$WALLET/notifications
 ```
 
-The alert arrives within a poll interval or two: the deposit's event is fanned out to the handler,
-which raises the alert in a unit of work of its own. Then read the outbox, which is the whole
+The notification arrives within a poll interval or two: the deposit's event is fanned out to the
+handler, which writes it in a unit of work of its own. Then read the outbox, which is the whole
 point:
 
 </div>
@@ -2101,9 +1972,9 @@ docker exec wallet-pg psql -U ekbatan -d wallet -c \
 
 | action_name | model_type | event_type | delivered |
 | --- | --- | --- | --- |
-| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | `f` |
-| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | `t` |
-| `RaiseAlertAction` |  |  | `f` |
+| `WalletCreateAction` | `Wallet` | `WalletCreatedEvent` | `f` |
+| `WalletDepositMoneyAction` | `Wallet` | `WalletMoneyDepositedEvent` | `t` |
+| `CreateNotificationAction` |  |  | `f` |
 
 </div>
 
@@ -2116,9 +1987,9 @@ docker exec wallet-mysql mysql -uroot -pekbatan wallet -e \
 
 | action_name | model_type | event_type | delivered |
 | --- | --- | --- | --- |
-| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | `0` |
-| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | `1` |
-| `RaiseAlertAction` | `NULL` | `NULL` | `0` |
+| `WalletCreateAction` | `Wallet` | `WalletCreatedEvent` | `0` |
+| `WalletDepositMoneyAction` | `Wallet` | `WalletMoneyDepositedEvent` | `1` |
+| `CreateNotificationAction` | `NULL` | `NULL` | `0` |
 
 </div>
 
@@ -2131,107 +2002,60 @@ docker exec wallet-mariadb mariadb -uroot -pekbatan wallet -e \
 
 | action_name | model_type | event_type | delivered |
 | --- | --- | --- | --- |
-| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | `0` |
-| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | `1` |
-| `RaiseAlertAction` | `NULL` | `NULL` | `0` |
+| `WalletCreateAction` | `Wallet` | `WalletCreatedEvent` | `0` |
+| `WalletDepositMoneyAction` | `Wallet` | `WalletMoneyDepositedEvent` | `1` |
+| `CreateNotificationAction` | `NULL` | `NULL` | `0` |
 
 </div>
 
 <div data-db="pg mysql mariadb">
 
 Three rows, each written in the same transaction as the change it describes - the same three in
-both modes. Only the deposit is delivered: a handler subscribes to `MoneyDepositedEvent`, and
-nothing subscribes to the opened wallet - an event nobody handles stays undelivered rather than
-being marked done and thrown away, so a handler added later still finds it. The alert's row
-carries no event at all: writing an entity emits nothing, and the unit of work is recorded
-anyway.
+both modes. Only the deposit is delivered: a handler subscribes to `WalletMoneyDepositedEvent`,
+and nothing subscribes to the created wallet - an event nobody handles stays undelivered rather
+than being marked done and thrown away, so a handler added later still finds it. The
+notification's row carries no event at all: writing an entity emits nothing, and the unit of
+work is recorded anyway.
 
 </div>
 
 <div data-db="sqlite">
 
-The script makes a database in a temporary folder, builds the service on it and narrates what
-happens:
+The script makes a database in a temporary folder, builds the service on it, creates a wallet,
+deposits into it, waits for the handler's notification and prints the outbox:
 
 <div data-mode="sync">
 
 ```text
-== start the jobs
-   fan-out, handling and the stipend are polling
-
-== open a wallet
-   01a15385-dcb7-7a8f-8000-ebb10ad856f4  balance 100.00  on shard 0:0
-
-== deposit into it
-   balance 125.5000, version 2
-   the row and its event were written by one transaction
-
-== let the in-process handler react
-   alert for ada@example.com: 25.50 received, balance 125.5000
-   the handler read the recipient off the action's parameters, not the event
-
-== a day later, the daily stipend runs, as one instance of a cluster would
-   balance 126.5000
-
-== close it
-   closed twice; the second time changed nothing and emitted nothing
-
-== what a consumer reads from the outbox
-   action                 event              delivered  payload
-   OpenWalletAction       WalletOpenedEvent  False      {'modelId': ..., 'openingBalance': Decimal('100.00')}
-   DepositMoneyAction     MoneyDepositedEvent True       {'modelId': ..., 'amount': Decimal('25.50'), ...}
-   RaiseAlertAction       (none - a sentinel) False
-   DepositMoneyAction     MoneyDepositedEvent False      {'modelId': ..., 'amount': Decimal('1.00'), ...}
-   CloseWalletAction      WalletClosedEvent  False      {'modelId': ..., 'modelName': 'Wallet'}
-   CloseWalletAction      (none - a sentinel) False
-
-   6 rows, every one written in the same transaction as the change it describes.
+wallet 01a15385-dcb7-7a8f-8000-ebb10ad856f4, balance 125.50
+MONEY_DEPOSITED for ada@example.com: Deposit of 25.50 received. New balance: 125.50.
+  WalletCreateAction         WalletCreatedEvent
+  WalletDepositMoneyAction   WalletMoneyDepositedEvent
+  CreateNotificationAction   (none - a sentinel)
 ```
 
 </div>
 <div data-mode="async">
 
 ```text
-== start the jobs
-   fan-out and handling are polling
-
-== open a wallet
-   01a15381-1ef0-7794-8000-a10859a830b6  balance 100.00  on shard 0:0
-
-== deposit into it
-   balance 125.5000, version 2
-   the row and its event were written by one transaction
-
-== let the in-process handler react
-   alert for ada@example.com: 25.50 received, balance 125.5000
-   the handler read the recipient off the action's parameters, not the event
-
-== close it
-   closed twice; the second time changed nothing and emitted nothing
-
-== what a consumer reads from the outbox
-   action                 event              delivered  payload
-   OpenWalletAction       WalletOpenedEvent  False      {'modelId': ..., 'openingBalance': Decimal('100.00')}
-   DepositMoneyAction     MoneyDepositedEvent True       {'modelId': ..., 'amount': Decimal('25.50'), ...}
-   RaiseAlertAction       (none - a sentinel) False
-   CloseWalletAction      WalletClosedEvent  False      {'modelId': ..., 'modelName': 'Wallet'}
-   CloseWalletAction      (none - a sentinel) False
-
-   5 rows, every one written in the same transaction as the change it describes.
+wallet 01a15385-dcb7-7a8f-8000-ebb10ad856f4, balance 125.50
+MONEY_DEPOSITED for ada@example.com: Deposit of 25.50 received. New balance: 125.50.
+  WalletCreateAction         WalletCreatedEvent
+  WalletDepositMoneyAction   WalletMoneyDepositedEvent
+  CreateNotificationAction   (none - a sentinel)
 ```
 
 </div>
 
-Every row was written in the same transaction as the change it describes. Only the first deposit
-is delivered by the time the outbox is printed: a handler subscribes to `MoneyDepositedEvent`, and
-nothing subscribes to the opened or closed wallet - an event nobody handles stays undelivered
-rather than being thrown away, so a handler added later still finds it. The alert's row and the
-second close carry no event at all: they changed nothing that is news, and the unit of work is
-recorded anyway.
+Every row was written in the same transaction as the change it describes. A handler subscribes
+to `WalletMoneyDepositedEvent`, and nothing subscribes to the created wallet - an event nobody
+handles stays undelivered rather than being thrown away, so a handler added later still finds it.
+The notification's row carries no event at all: writing an entity emits nothing, and the unit of
+work is recorded anyway.
 
 </div>
 
-## 17. Package it
+## 16. Package it
 
 What you deploy is a wheel, built from this folder - and a wheel holds only what the build tool
 decides to put in it:
@@ -2265,7 +2089,7 @@ python3 -m zipfile -l dist/*.whl | grep -E 'schema.py|ekbatan.yaml|\.sql'
 
 <div data-db="pg mysql mariadb">
 
-`schema.py`, `ekbatan.yaml` and the four migrations must all be listed: the service imports the
+`schema.py`, `ekbatan.yaml` and the migrations must all be listed: the service imports the
 first and reads the others at startup, and a wheel without them fails there, not here. Each tool
 has its own rule, which is why step 1 carries a line for two of them. Checked by building a
 wheel with each:
@@ -2287,27 +2111,29 @@ which is why step 1 carries a line for pip. Checked by building a wheel with eac
 | poetry-core (`poetry new`) | only with `[[tool.poetry.include]]` | packed |
 | hatchling | only with `artifacts = ["src/wallet/schema.py"]` under `[tool.hatch.build.targets.wheel]` | packed |
 
-## 18. The example projects
+## 17. The example projects
 
-When you want to see more than one service's worth, they are the reference. Each exists three
-times, built with uv, pip and Poetry - `-uv-`, `-pip-`, `-poetry-` in the name - with only the
-build files differing:
+When you want to see more than one service's worth, they are the reference: the same wallet,
+grown into whole services - two shards, a keyed lock, a REST API with its own tests. Each exists
+three times, built with uv, pip and Poetry - `-uv-`, `-pip-`, `-poetry-` in the name - with only
+the build files differing:
 
 | | |
 | --- | --- |
-| [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) · [`-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mysql) · [`-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb) | this project, sync |
-| [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) · [`-async-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql) · [`-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb) | this project, async |
-| [`wallet-service-uv-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-sqlite) · [`wallet-service-uv-async-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-async-sqlite) | this project on SQLite, sync and async |
-| [`fastapi-wallet-rest-uv-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) · [`fastapi-wallet-rest-uv-async-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg) | two databases, with placement asserted, sync and async |
-| [`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg) · [`fastapi-wallet-saga-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-async-pg) | a transfer across shards, with compensation, sync and async |
-| [`job-worker-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-pg) · [`job-worker-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-async-pg) | no HTTP at all - a worker running distributed jobs, its jobs' work sync or awaited |
+| [`fastapi-wallet-rest-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-pg) · [`-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mysql) · [`-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-mariadb) | the wallet as a REST service, two shards, sync |
+| [`fastapi-wallet-rest-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-pg) · [`-async-mysql`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mysql) · [`-async-mariadb`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-mariadb) | the same, async |
+| [`wallet-service-uv-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-sqlite) · [`wallet-service-uv-async-sqlite`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/wallet-service-uv-async-sqlite) | the wallet on SQLite, run by a script, sync and async |
+| [`fastapi-wallet-rest-uv-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-sharded-pg) · [`fastapi-wallet-rest-uv-async-sharded-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-rest-uv-async-sharded-pg) | the REST service again, its test following a Mexican wallet |
+| [`fastapi-wallet-saga-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-pg) · [`fastapi-wallet-saga-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/fastapi-wallet-saga-uv-async-pg) | a transfer between two wallets as a saga, with compensation, sync and async |
+| [`job-worker-uv-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-pg) · [`job-worker-uv-async-pg`](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples/job-worker-uv-async-pg) | no HTTP at all - a worker running the stipend and a report job, sync or awaited |
 
 The [examples index](https://github.com/ekbatan-io/ekbatan-py/tree/main/ekbatan-py-examples) lists all 42.
 
 ## After setup
 
-You have a service that writes domain rows and their events in one transaction, and a test that
-exercises it. What is left is operational: how many pools, how many threads, and what to watch.
+You have a service that writes domain rows and their events in one transaction, reacts to its
+own events, and runs a job once across a cluster. What is left is operational: how many pools,
+how many threads, and what to watch.
 
 <LearnPager current="complete-project-setup" />
 
