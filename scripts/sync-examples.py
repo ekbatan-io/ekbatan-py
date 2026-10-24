@@ -505,7 +505,7 @@ def compose(e: Example) -> str:
     `compose.yaml`. The image is the one the example's tests start; the login and the database
     are its `ekbatan.yaml`'s defaults."""
     service, environment, port, check = SERVERS[e.db]
-    db = "shard_global" if e.variant == "sharded" else "wallet"
+    db = "shard_global" if "sharded" in e.variant else "wallet"
     lines = [
         "# The database `make run` starts, and stops when the app stops. Written by",
         "# scripts/sync-examples.py: the image the tests use, the login and database",
@@ -518,7 +518,7 @@ def compose(e: Example) -> str:
         "    ports:",
         f'      - "{port}:{port}"',
     ]
-    if e.db == "pg" and e.variant == "sharded":
+    if e.db == "pg" and "sharded" in e.variant:
         lines += [
             "    volumes:",
             '      - "./compose-init.sql:/docker-entrypoint-initdb.d/compose-init.sql:ro"',
@@ -603,7 +603,7 @@ def wanted(e: Example) -> dict[Path, str | Path]:
         files[target / "README.md"] = readme(e, build)
         if has_db(e):
             files[target / "compose.yaml"] = compose(e)
-            if e.db == "pg" and e.variant == "sharded":
+            if e.db == "pg" and "sharded" in e.variant:
                 files[target / "compose-init.sql"] = SHARDED_INIT
         if build == "poetry":
             files[target / "poetry.toml"] = poetry_toml()

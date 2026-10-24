@@ -7,12 +7,14 @@ services:
     environment:
       POSTGRES_USER: ekbatan
       POSTGRES_PASSWORD: ekbatan
-      POSTGRES_DB: wallet
+      POSTGRES_DB: shard_global
       TZ: UTC
     ports:
       - "5432:5432"
+    volumes:
+      - "./compose-init.sql:/docker-entrypoint-initdb.d/compose-init.sql:ro"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ekbatan -d wallet"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ekbatan -d shard_global"]
       interval: 1s
       timeout: 5s
       retries: 60
