@@ -77,4 +77,5 @@ Judgement calls go in `DECISIONS-TO-REVIEW.md` under "The eventlog database on M
 
 | # | item | status | proof |
 | --- | --- | --- | --- |
-| A1 | `scripts/check-setup-guide.py` for PostgreSQL, MySQL and MariaDB, uv and pip | todo | |
+| A1 | `scripts/check-setup-guide.py` for PostgreSQL, MySQL and MariaDB, uv and pip | done | run on main at `0c18991`, after landing: 12 of 12 ok - each database with uv and pip, sync and async; the ports were free first and nothing was left running |
+| A2 | psycopg async and gevent, re-run on main after landing (they ran before the rebase only) | done | on `0c18991`: `make test-psycopg-async` 1336 passed, 15 skipped; `make test-gevent` 2841 passed, 488 skipped (the async runs, which gevent does not mix with); both exit 0 |
