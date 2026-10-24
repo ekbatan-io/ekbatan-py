@@ -126,9 +126,10 @@ rather than closing it; an idempotent `execute()` is the only complete answer.
 ## Wiring
 
 ```python
+jobs_data_source = DataSource.from_config(DataSourceConfig(url=url, pool_size=8))
 jobs = (
     job_registry()
-    .engine(create_engine(url, pool_size=8, max_overflow=0))
+    .data_source(jobs_data_source)
     .with_jobs([PayStipendJob(executor, wallets), WalletReportJob(wallets)])
     .workers(3)
     .build()
@@ -136,6 +137,7 @@ jobs = (
 jobs.start()
 ...
 jobs.stop()
+jobs_data_source.close()  # the registry never closes the pool it polls
 ```
 
 The event pipeline's two jobs are registered here too - they *are* distributed jobs. See
@@ -214,8 +216,8 @@ lowering in tests.
 
 The scheduler's poll query differs by database: the generic form,
 `OFFSET 0 ROWS FETCH FIRST n ROWS ONLY`, is one MySQL and MariaDB cannot parse. The scheduler
-takes the dialect from the engine, and **SQLAlchemy resolves it from the url when the engine is
-created, with no I/O**. So a scheduler started before its database is reachable - which pools are
+takes the dialect from the data source's engine, and **SQLAlchemy resolves it from the url when
+that engine is created, with no I/O**. So a scheduler started before its database is reachable - which pools are
 built to allow - still sends the right query once the database is up. There is no detection step
 to fail and nothing to set by hand.
 
@@ -253,7 +255,7 @@ write:
 ```python
 jobs = (
     job_registry()
-    .engine(engine)
+    .data_source(jobs_data_source)
     .with_jobs([...])
     .register_shutdown_hook()     # the SIGTERM half; off unless you say this
     .build()

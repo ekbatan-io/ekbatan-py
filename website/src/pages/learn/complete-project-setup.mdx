@@ -684,7 +684,7 @@ refused.
 sized at least twice its worker count, because the scheduler heartbeats from a housekeeping
 thread and a job body holding the last connection starves it. `lockConfig` holds keyed-lock
 leases, one connection each for as long as the lease is held. `app.py` (step 13) builds the last
-two with `engine_for` and disposes them.
+two with `DataSource.from_config` and closes them.
 
 </div>
 

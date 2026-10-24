@@ -192,7 +192,7 @@ events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
 jobs = (
     job_registry()
-    .engine(engine)
+    .data_source(jobs_data_source)
     .with_jobs([
         EventFanoutJob(registry, handlers, config=events_config, clock=clock),
         EventHandlingJob(registry, handlers,
@@ -216,7 +216,7 @@ events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 # layout file as the async one.
 jobs = (
     job_registry()
-    .engine(engine)
+    .data_source(jobs_data_source)
     .with_jobs([
         EventFanoutJob(registry, handlers, config=events_config, clock=clock),
         EventHandlingJob(registry, handlers,

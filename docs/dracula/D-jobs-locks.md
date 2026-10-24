@@ -147,7 +147,11 @@ marked unverified.
 - **Could match Java?** partly. A `close()` alias on `Lease` is cheap. `Optional` is not Python.
 - **Surprise:** low
 
-### Lock providers: one `builder()` per class, an `engine`, and public constructors
+### Lock providers: one `builder()` per class, ~~an `engine`~~ a data source, and public constructors
+- **Engine part fixed** (`EKB-0524`): `PostgresKeyedLockProvider.builder().data_source(data_source).build()`,
+  as Java's `connectionProvider(cp)`, and the constructor takes the same `DataSource` - an `Engine`
+  is refused; the job registry's builder takes `.data_source(...)` too. The public constructors and
+  the Redis points below are unchanged.
 - **What:** Java uses `PostgresKeyedLockProvider.Builder.postgresKeyedLockProvider().connectionProvider(cp).build()`. Python uses `PostgresKeyedLockProvider.builder().engine(engine).build()`, or just `PostgresKeyedLockProvider(engine)`. The Redis provider uses `.client(redis.Redis)` and is not exported from `ekbatan.locks` (import it from `ekbatan.locks.redis`). Its constructor raises `LockAcquisitionError` for a blank namespace, while its builder raises `ValidationError` for the same mistake.
 - **Python:** `src/ekbatan/locks/sql.py:51-55,263-283`; `redis.py:87-97,175-202`; `locks/__init__.py:17-26`.
 - **Java:** `PostgresKeyedLockProvider.java:240-266`; `RedisKeyedLockProvider.java:161-201`.

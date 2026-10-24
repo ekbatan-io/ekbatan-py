@@ -228,7 +228,7 @@ spans `perform` and the commit, and the action knows nothing about it:
 ```python
 from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
 
-locks = AsyncPostgresKeyedLockProvider.builder().engine(async_engine_for(lock_config)).build()
+locks = AsyncPostgresKeyedLockProvider.builder().data_source(AsyncDataSource.from_config(lock_config)).build()
 
 async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
     wallet = await executor.execute(DepositMoneyAction, params)
@@ -370,10 +370,10 @@ awaited work.
 
 ## Passwords
 
-As on the sync side, no password is printed: not by an async engine, url, manager or registry,
-not in a connection refused by asyncpg, psycopg's async mode or aiomysql, not by an async keyed
-lock, its lease or its refusal - a Redis url's password included - and not with the engine's echo
-on. Tested with a marker password on PostgreSQL (asyncpg and psycopg async), MySQL, MariaDB and
+As on the sync side, no password is printed: not by an async data source, its engine or url, a
+manager or a registry, not in a connection refused by asyncpg, psycopg's async mode or aiomysql,
+not by an async keyed lock, its lease or its refusal - a Redis url's password included - and not
+with the engine's echo on. Tested with a marker password on PostgreSQL (asyncpg and psycopg async), MySQL, MariaDB and
 Redis.
 
 ## gevent
@@ -402,7 +402,7 @@ Everything is in `ekbatan.aio`, its `locks` package, and two names in `ekbatan.e
 | `AsyncActionSpec`, `async_run_action` | testing without a database |
 | `ekbatan.aio.locks`: `AsyncPostgresKeyedLockProvider`, `AsyncMySQLKeyedLockProvider`, `AsyncMariaDBKeyedLockProvider`, `AsyncKeyedLockProvider`, `AsyncLease`; `ekbatan.aio.locks.redis`: `AsyncRedisKeyedLockProvider` | keyed locks, taken around `await executor.execute(...)` |
 | `ekbatan.events`: `AsyncEventHandler`, `HandlerLoop` | an event handler with `async def handle`, and the loop dispatch runs it on - which a job can run its async work on too |
-| `async_engine_for`, `async_url`, `ASYNC_DEFAULT_DRIVERS` | the async pool for one config, and which driver it uses |
+| `AsyncDataSource`, `async_url`, `ASYNC_DEFAULT_DRIVERS` | the async pool for one config (`AsyncDataSource.from_config`, closed with `aclose()`), and which driver it uses |
 
 ## See also
 

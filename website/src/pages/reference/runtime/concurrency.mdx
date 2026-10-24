@@ -114,7 +114,7 @@ started, is kept rather than retired when idle; the standard library has no pool
 idle threads.
 
 ```python
-job_registry().engine(engine).with_jobs(jobs).workers(3).build()
+job_registry().data_source(jobs_data_source).with_jobs(jobs).workers(3).build()
 ```
 
 Two sizing rules, and the second has teeth:

@@ -125,7 +125,7 @@ whatever is decided about the rest.
 | 59 | The clock is the framework's own - its one method is `instant()`, as Java's, since `EKB-0419`; `VirtualClock` is in the main package and starts frozen. **Settled by the user (2026-10-24)**: kept as it is | forced + choice | partly | M | A19, B |
 | 60 | `ShardedId.shard` refuses a non-v7 UUID | choice | yes | L | A20 |
 | 61 | Registries have public constructors; the repository and action registries refuse duplicates Java replaces | choice | yes | L | A21, B |
-| 62 | Database wiring takes SQLAlchemy engines; `manager()`, `default`, `shards` | forced + choice | partly | L | A22 |
+| 62 | Database wiring takes ~~SQLAlchemy engines~~ data sources since `EKB-0524` (`DataSource.from_config(config)`, the user's naming 2026-10-24; an `Engine` is refused); `manager()`, `default`, `shards` | forced + choice | partly | L | A22 |
 | 63 | The sharding strategy has a different shape; no `ShardedUUID` class | convention | partly | L | A24 |
 | 64 | On MySQL, `add` / `update` return a rebuilt object | choice | yes | L | A28 |
 | 65 | Typed values compare across subclasses and print bare | choice | yes | L | A26 |
@@ -171,7 +171,7 @@ whatever is decided about the rest.
 | 90 | The scheduler port has no `SchedulerClient` builder | choice | yes | M | D |
 | 91 | `build_manual()` and `ManualJobRegistry` exist only here | choice | yes | L | D |
 | 92 | Lock API: `None`, `release()`, `held`, a Protocol | convention | partly | L | D |
-| 93 | Lock providers: `builder().engine(...)`, public constructors; Redis provider not exported | convention | partly | L | D |
+| 93 | Lock providers: ~~`builder().engine(...)`~~ `builder().data_source(...)` since `EKB-0524`, as Java's `connectionProvider(...)`; public constructors; Redis provider not exported | convention | partly | L | D |
 | 94 | Scheduler port: no `register_shutdown_hook()`, some renamed builder methods, refuses zero intervals | choice | yes | L | D |
 | 95 | `JobRegistry` extras: `.scheduler`, `with_config`, `with` block | convention | partly | L | D |
 

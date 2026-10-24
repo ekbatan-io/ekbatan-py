@@ -207,7 +207,7 @@ unit of work:
 ```python
 from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
 
-locks = AsyncPostgresKeyedLockProvider.builder().engine(async_engine_for(lock_config)).build()
+locks = AsyncPostgresKeyedLockProvider.builder().data_source(AsyncDataSource.from_config(lock_config)).build()
 
 async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
     wallet = await executor.execute(DepositMoneyAction, params)
@@ -281,18 +281,16 @@ On MySQL and MariaDB the lock's name is the hash as bare unsigned hex, with no p
 <div slot="sync">
 
 ```python
-locks = PostgresKeyedLockProvider(
-    create_engine(url, pool_size=5, max_overflow=0)
-)
+lock_data_source = DataSource.from_config(DataSourceConfig(url=url, pool_size=5))
+locks = PostgresKeyedLockProvider(lock_data_source)
 ```
 
 </div>
 <div slot="async">
 
 ```python
-locks = AsyncPostgresKeyedLockProvider(
-    create_async_engine(url, pool_size=5, max_overflow=0)
-)
+lock_data_source = AsyncDataSource.from_config(DataSourceConfig(url=url, pool_size=5))
+locks = AsyncPostgresKeyedLockProvider(lock_data_source)
 ```
 
 </div>
@@ -300,11 +298,13 @@ locks = AsyncPostgresKeyedLockProvider(
 
 A provider is a plain object you construct and hand to whatever needs it — there is no registry
 to declare it in and nothing discovers it. `locks.close()` does nothing: a lease still
-open stays held until it is released or its `max_hold` passes. The engine is yours — you created
-it, so you dispose it (`await engine.dispose()` for an async one) — and the order matters: let the leases end before disposing the pool they
-are holding connections from.
+open stays held until it is released or its `max_hold` passes. The data source is yours — you
+created it, so you close it (`await lock_data_source.aclose()` for an async one) — and the order
+matters: let the leases end before closing the pool they are holding connections from. A
+provider takes only a data source of its own mode: an `Engine`, or an async data source given to a
+sync provider, is refused with a message that says what to pass.
 
-Redis takes a client rather than an engine:
+Redis takes a client rather than a data source:
 
 <ModeTabs>
 <div slot="sync">
@@ -329,10 +329,10 @@ locks = AsyncRedisKeyedLockProvider(redis.asyncio.Redis(host="localhost"))
 
 Size the SQL pool by **concurrent leases**, not by request rate: a lease is a connection for as
 long as it is held. If twelve requests can hold twelve different keys at once, the pool needs
-twelve, and `max_overflow=0` so the thirteenth waits rather than opening a connection the
-database has not budgeted for.
+twelve, and `max_overflow` left at its default, 0, so the thirteenth waits rather than opening
+a connection the database has not budgeted for.
 
-### Dedicated pool via its own engine
+### Dedicated pool via its own data source
 
 **Give it its own pool.** A SQL keyed lock is *session*-scoped: each hold keeps a connection for
 as long as the lease lasts, because that is what the lock physically is. A lease taken during a
@@ -350,7 +350,7 @@ smaller than people expect. It is bounded by **how many leases are held at the s
 not by request rate: a hundred requests a second each holding a lease for 20 ms need two or
 three connections, while ten long imports holding one for a minute each need ten.
 
-`max_overflow=0` is deliberate on that engine. Overflow exists to absorb bursts, and a burst of
+`max_overflow=0` is deliberate on that pool. Overflow exists to absorb bursts, and a burst of
 lock holders is exactly the thing you want to refuse rather than absorb — a refused
 `try_acquire` is a 503 the caller can retry, while an absorbed one is an unbounded number of
 connections held for the length of a lease.

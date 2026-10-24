@@ -71,7 +71,7 @@ and room for any other:
 | --- | --- |
 | `"primaryConfig"` | **required.** The pool for writes and transactional reads |
 | `"secondaryConfig"` | optional. A read replica for non-transactional reads; omit it and both go to the primary |
-| anything else | yours - `"jobsConfig"`, `"lockConfig"`, `"analyticsConfig"`. Read back with `member.config_for(name)` and build with `engine_for(...)`; the registry builds only the two above |
+| anything else | yours - `"jobsConfig"`, `"lockConfig"`, `"analyticsConfig"`. Read back with `member.config_for(name)` and build with `DataSource.from_config(...)`; the registry builds only the two above |
 
 The two reserved names are spelled exactly as shown. A group needs a `name`; a member's `name` is
 optional and labels its spans and log lines.

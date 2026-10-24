@@ -70,7 +70,7 @@ src/ekbatan/
   ids.py             Id, ShardedId, TypedValue
   sharding.py        ShardIdentifier, the strategies, the bit layout
   repository.py      Repository, ModelRepository, EntityRepository, RepositoryRegistry
-  persistence.py     DatabaseRegistry, TransactionManager, Transaction
+  persistence.py     DataSource, DatabaseRegistry, TransactionManager, Transaction
   fetching.py        Db - the connection every accessor hands back - and FetchResult
   config.py          DataSourceConfig, ShardConfig, ShardingConfig
   schema.py          the framework's own tables, and the column helpers
@@ -292,12 +292,19 @@ done behind the user's back.
   server-specific on the front; the per-server recipes live on one page, `docs/startup-and-shutdown.md`
   (website `learn/startup-and-shutdown`), which marks what is tested and what is only expected.
 - **Refusal 1, `ForkedProcessError`**: every object that owns connections or threads records
-  `os.getpid()` when built - `TransactionManager` and `AsyncTransactionManager` (so every
-  registry), the sync and async lock providers (SQL and Redis), `JobRegistry`, `HandlerLoop` -
-  and its doors (`transaction()`, `connection()`, the unjoined `_engine()` a repository's `db()`
-  and `readonly_db()` use; `acquire` / `try_acquire`; `start()`; `run()`) raise in any other
-  process. Never reset, reconnect or dispose in the child. db-scheduler's own pool refusal
-  (`register_at_fork`) stays as it is.
+  `os.getpid()` when built - `DataSource` and `AsyncDataSource`, `TransactionManager` and
+  `AsyncTransactionManager` (so every registry), the sync and async lock providers (SQL and
+  Redis), `JobRegistry`, `HandlerLoop` - and its doors (a data source's `sqlalchemy_engine` and
+  `close()` / `aclose()`; `transaction()`, `connection()`, the unjoined `_engine()` a
+  repository's `db()` and `readonly_db()` use; `acquire` / `try_acquire`; `start()`; `run()`)
+  raise in any other process. Never reset, reconnect or dispose in the child. db-scheduler's own
+  pool refusal (`register_at_fork`) stays as it is.
+- **A pool is a `DataSource`** (since `EKB-0524`, the user's naming): built only with
+  `DataSource.from_config(config)` / `AsyncDataSource.from_config(config)`, as Java's
+  `ConnectionProvider` only with `hikariConnectionProvider(cfg)`. The transaction managers, the
+  SQL lock providers (`.data_source(...)`) and `job_registry().data_source(...)` take nothing
+  else - an SQLAlchemy `Engine` is refused. "Engine" means SQLAlchemy's own object only:
+  `data_source.sqlalchemy_engine`. db-scheduler is still handed that engine by ekbatan.
 - **Refusal 2, `BlockingCallError`**: the sync API on a thread with a running asyncio loop -
   the sync `TransactionManager`'s doors, `ActionExecutor.execute` (before `perform`), and a
   migration run (`_each` in `migrations.py`). Silent on a worker thread (`asyncio.to_thread`,

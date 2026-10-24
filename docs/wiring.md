@@ -15,9 +15,9 @@ startup order to reason about beyond the order the lines are in.
 **`build()` and `WalletService` are the example's own code**, not something ekbatan provides:
 one function that creates ekbatan's objects, and one class that holds them, with a `start()`
 that calls `jobs.start()` and a `close()` that stops the jobs and closes the registry and the
-engines. The objects that hold connections or threads - the `DatabaseRegistry`, the lock
-provider and its engine, the `JobRegistry` and its engine - are created in your app's startup
-code (the FastAPI lifespan, or the top of a worker's `main()`) and closed in its shutdown code;
+data sources. The objects that hold connections or threads - the `DatabaseRegistry`, the lock
+provider and its data source, the `JobRegistry` and its data source - are created in your app's
+startup code (the FastAPI lifespan, or the top of a worker's `main()`) and closed in its shutdown code;
 never at import time. Normal code uses the sync API, `async def` code `ekbatan.aio`.
 [Startup and shutdown](startup-and-shutdown.md) has each object's startup and shutdown call, without the example's class.
 
@@ -262,22 +262,26 @@ scheduler and the locks, and this file builds them:
 
 ```python
 member = layout.groups[0].members[0]
-jobs_engine = engine_for(member.config_for("jobsConfig"))
-lock_engine = engine_for(member.config_for("lockConfig"))
+jobs_data_source = DataSource.from_config(member.config_for("jobsConfig"))
+lock_data_source = DataSource.from_config(member.config_for("lockConfig"))
 ```
 
 **Async**
 
 ```python
 member = layout.groups[0].members[0]
-jobs_engine = engine_for(member.config_for("jobsConfig"))            # sync: the scheduler
-lock_engine = async_engine_for(member.config_for("lockConfig"))      # async: the leases
-handler_engine = async_engine_for(member.config_for("handlersConfig"))  # async: the handler
+# sync: the scheduler
+jobs_data_source = DataSource.from_config(member.config_for("jobsConfig"))
+# async: the leases
+lock_data_source = AsyncDataSource.from_config(member.config_for("lockConfig"))
+# async: the handler
+handler_data_source = AsyncDataSource.from_config(member.config_for("handlersConfig"))
 ```
 
-Each is an ordinary SQLAlchemy engine built from that member's settings - async ones with
-`async_engine_for`. They are yours, so dispose them at shutdown, after the scheduler and the
-locks have stopped.
+Each is a data source built from that member's settings - the async ones with
+`AsyncDataSource.from_config`. They are yours, so close them at shutdown, after the scheduler and
+the locks have stopped: `close()`, or `await aclose()` for an async one. A manager closes the data
+sources it was given, so on the async side `events_registry.close()` closes the jobs pool.
 
 ## 3. Migrations, before anything opens a pool
 
@@ -313,7 +317,7 @@ registry = AsyncDatabaseRegistry.from_config(layout)
 # What polls - the scheduler, fan-out, dispatch - stays sync, on the jobs pool.
 events_registry = (
     DatabaseRegistry.builder()
-    .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+    .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
     .build()
 )
 ```
@@ -409,7 +413,7 @@ events_config = ekbatan.local_event_handler  # `local-event-handler` in the file
 handler_loop = HandlerLoop()
 handler_registry = (
     AsyncDatabaseRegistry.builder()
-    .with_default_database(AsyncTransactionManager(layout.default_shard, handler_engine))
+    .with_default_database(AsyncTransactionManager(layout.default_shard, handler_data_source))
     .build()
 )
 handler_wallets = WalletRepository(handler_registry, clock=running)
@@ -438,11 +442,11 @@ and gone by the time a handler runs.
 **Sync**
 
 ```python
-locks = PostgresKeyedLockProvider(lock_engine)
+locks = PostgresKeyedLockProvider(lock_data_source)
 
 jobs = (
     job_registry()
-    .engine(jobs_engine)
+    .data_source(jobs_data_source)
     .with_jobs([
         EventFanoutJob(registry, handlers, config=events_config, clock=running),
         EventHandlingJob(registry, handlers,
@@ -460,11 +464,11 @@ jobs = (
 **Async**
 
 ```python
-locks = AsyncPostgresKeyedLockProvider(lock_engine)
+locks = AsyncPostgresKeyedLockProvider(lock_data_source)
 
 jobs = (
     job_registry()
-    .engine(jobs_engine)
+    .data_source(jobs_data_source)
     .with_jobs([
         EventFanoutJob(events_registry, handlers, config=events_config, clock=running),
         EventHandlingJob(events_registry, handlers,

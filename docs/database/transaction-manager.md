@@ -20,10 +20,12 @@ tm = registry.manager(MEXICO)              # a specific one
 
 Each one owns four things, for exactly one shard:
 
-- **One pool pair** — the primary `Engine`, and the replica `Engine` if that shard has one. An
-  `Engine` is pool, dialect and lifecycle in one, which is why there is no separate connection
-  provider here.
-- **A dialect**, read off `engine.dialect.name`. It is what picks the keyed-lock provider, the
+- **One pool pair** — the primary `DataSource`, and the replica's if that shard has one. A data
+  source is one database's pool, built from its config with `DataSource.from_config`; SQLAlchemy's
+  own engine behind it is `data_source.sqlalchemy_engine`. A manager takes nothing else - an
+  `Engine` is refused - and its `close()` closes the data sources it was given.
+- **A dialect** - the data source's, as the layout names it: `postgres`, `mysql`, `mariadb` or
+  `sqlite`, unless you pass `dialect=`. It is what picks the keyed-lock provider, the
   `RETURNING` support and the column renderings, so it is the manager's business rather than a
   per-call argument.
 - **A `ShardIdentifier`** — `ShardIdentifier(0, 0)` when you are not sharding. It labels the
@@ -33,7 +35,7 @@ Each one owns four things, for exactly one shard:
   `await` and a `ThreadPoolExecutor` does not inherit one by accident.
 
 In async mode the registry is an `AsyncDatabaseRegistry` and each manager an
-`AsyncTransactionManager`, from `ekbatan.aio`: the same four things, with `AsyncEngine` pools,
+`AsyncTransactionManager`, from `ekbatan.aio`: the same four things, with `AsyncDataSource` pools,
 and every block below is `async with`. A cancelled task rolls its transaction back like any
 other failure.
 

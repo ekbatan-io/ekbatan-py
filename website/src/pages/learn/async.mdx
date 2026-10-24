@@ -103,21 +103,23 @@ executor = (
     .build()
 )
 
-lock_engine = async_engine_for(member.config_for("lockConfig"))      # the lock's leases
-locks = AsyncPostgresKeyedLockProvider.builder().engine(lock_engine).build()
+# the lock's leases
+lock_data_source = AsyncDataSource.from_config(member.config_for("lockConfig"))
+locks = AsyncPostgresKeyedLockProvider.builder().data_source(lock_data_source).build()
 
 handler_loop = HandlerLoop()                                          # where the handler runs
 handler_registry = (                                                  # the handler: asyncpg
     AsyncDatabaseRegistry.builder()
     .with_default_database(AsyncTransactionManager(
-        layout.default_shard, async_engine_for(member.config_for("handlersConfig"))))
+        layout.default_shard, AsyncDataSource.from_config(member.config_for("handlersConfig"))))
     .build()
 )
 
-jobs_engine = engine_for(member.config_for("jobsConfig"))            # what polls: psycopg
+# what polls: psycopg
+jobs_data_source = DataSource.from_config(member.config_for("jobsConfig"))
 events_registry = (
     DatabaseRegistry.builder()
-    .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+    .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
     .build()
 )
 ```
@@ -125,8 +127,9 @@ events_registry = (
 The handler's executor is an `AsyncActionExecutor` over `handler_registry`, with an async
 `RaiseAlertAction`; the handling job is given `handler_loop`, and fan-out and dispatch are built
 over `events_registry`. At shutdown: stop the jobs, close the handler's registry on its loop
-(`handler_loop.run(handler_registry.aclose())`), close the loop, then
-`await registry.aclose()`.
+(`handler_loop.run(handler_registry.aclose())`), close the loop, close `events_registry` - its
+manager closes the jobs pool it was given - then the locks and `await lock_data_source.aclose()`,
+and last `await registry.aclose()`.
 
 ## 5. The settings file
 

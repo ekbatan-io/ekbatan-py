@@ -809,6 +809,29 @@ Java's `EventHandler` is an interface. Here it is a `Protocol`: anything with `n
 anything. `aliases` is optional and read with `getattr`, which is what makes a handler rename
 possible without every handler declaring an empty set.
 
+## A data source wraps SQLAlchemy's engine
+
+> **chosen** - by the user (2026-10-24): `engine_for` became `DataSource.from_config`, and the parts that take a pool take only a data source, as Java's take only a `ConnectionProvider`. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md), "DataSource and AsyncDataSource (EKB-0524-)".
+
+Java's `ConnectionProvider` holds a HikariCP pool and offers `acquire`, `release`, `evict`,
+`getDataSource`, `jdbcUrl` and `close`. Here `DataSource` - `AsyncDataSource` in `ekbatan.aio` -
+holds SQLAlchemy's engine and offers `sqlalchemy_engine`, `url`, `dialect` and `close()`
+(`aclose()`): taking a connection, giving it back and throwing a broken one away are SQLAlchemy's
+`connect()`, `close()` and `invalidate()` on that engine. What is the same:
+
+- **one way to build one**: `from_config(config)`, as `hikariConnectionProvider(cfg)` is Java's
+  only public way to a provider (its constructor is private; calling `DataSource(...)` here is a
+  `TypeError` naming `from_config`);
+- **the same takers**: the transaction manager, the SQL lock providers' `data_source(...)`
+  (Java's `connectionProvider(...)`) and the job registry's - each refuses anything else, an
+  SQLAlchemy `Engine` included;
+- **the same ownership**: a transaction manager's `close()` closes the data sources it was given;
+  lock providers and the job registry close none.
+
+What differs: a data source closed here can be used again - SQLAlchemy opens a new pool - where a
+closed Hikari pool refuses; and a data source used or closed in a process `fork()` copied it into
+raises `ForkedProcessError`, as every object here that owns connections does.
+
 ## Names that still differ, and why
 
 > **parity** - A table of names, each differing because the thing differs. No behaviour.
@@ -822,7 +845,7 @@ differs, not because the name was chosen freely:
 | `ModelId`, `Identifiable`, `ShardAwareId` | - | interfaces that exist to name a shape Python reads off the object |
 | `ShardedUUID`, `Backoff` | `sharded_uuid()`, `backoff()` | a class holding only static methods is a function here |
 | `Transaction` (package-private) | - | the auto-commit dance SQLAlchemy already does; the public `Transaction` here is the counterpart to the `DSLContext` Java hands the block, not to this |
-| `ConnectionProvider` | - | `Engine` is pool, dialect and lifecycle in one |
+| `ConnectionProvider` | `DataSource`, `AsyncDataSource` | named after the `DataSourceConfig` it is built from; see "A data source wraps SQLAlchemy's engine" below |
 | `Entity.Builder`, `Model.Builder` | `EntityBuilder`, `ModelBuilder` | same two builders, unnested - a nested class is not a Python idiom, and `ModelBuilder` can then inherit rather than repeat |
 | `resolveShardIdentifier()` | `.shard` | a property, because it reads a field of the id rather than doing work |
 | `ModelId.stringValue()` | `str(id)` | what `__str__` is for; `Id.toString()` in Java returns the same string |
@@ -968,7 +991,7 @@ map is copied and read-only, as `Map.copyOf` is. The keys are Java's spelling, s
 describes both ports.
 
 The registry builds pools for the primary and secondary only, as `fromConfig` does. Anything else
-on the member is built by the application with `engine_for(config)` - Java's
+on the member is built by the application with `DataSource.from_config(config)` - Java's
 `ConnectionProvider.hikariConnectionProvider(config)` - and the examples now declare their
 scheduler and lock pools as `"jobsConfig"` and `"lockConfig"` exactly as Java's `application.yml`
 does, rather than calling `create_engine` beside the layout.

@@ -333,7 +333,11 @@ counter shows one run with it). The text below is the finding as it was.
   better kept.
 - **Surprise:** low
 
-### 22. Database wiring is built from SQLAlchemy engines, with shorter names
+### 22. Database wiring is built from ~~SQLAlchemy engines~~ data sources, with shorter names
+- **Engine part fixed** (`EKB-0524`, the user's naming 2026-10-24): a manager takes `DataSource`s
+  (`AsyncDataSource`s in `ekbatan.aio`), built only with `DataSource.from_config(config)` - Java's
+  `hikariConnectionProvider(cfg)` - and an `Engine` is refused; `engine_for` is gone. The shorter
+  names and the constructor shape below are unchanged. See `docs/DATASOURCE-LEDGER.md`.
 - **What:** `TransactionManager(shard, primary_engine, replica_engine=None, dialect="", label="")`
   takes SQLAlchemy `Engine`s, with the shard first and required (Java: `(primaryProvider,
   secondaryProvider, dialect[, shardIdentifier])`, shard defaults to `DEFAULT`). Engines come from

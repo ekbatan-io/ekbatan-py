@@ -131,7 +131,7 @@ class AwareUtcClock:
 
 registry = (
     job_registry()
-    .engine(engine)
+    .data_source(jobs_data_source)
     .with_job(job)
     .customize_scheduler(lambda scheduler: scheduler.clock(AwareUtcClock()))
     .build()

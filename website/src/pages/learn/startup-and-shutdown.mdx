@@ -76,9 +76,10 @@ cut a job off halfway.
 
 **The lock provider** - if you use keyed locks. It holds a connection for each lock it has taken.
 
-The job registry and the lock provider each get **a small pool of their own**, made with
-`engine_for(...)` from a named entry in `ekbatan.yaml`, so they never take connections away from
-your requests. You create these pools, so you close them, with `dispose()`.
+The job registry and the lock provider each get **a small pool of their own** - a data source,
+made with `DataSource.from_config(...)` from a named entry in `ekbatan.yaml` - so they never take
+connections away from your requests. You create these pools, so you close them, with `close()`
+(`await aclose()` for an `AsyncDataSource`).
 
 In short:
 
@@ -87,7 +88,7 @@ In short:
 | database registry | `DatabaseRegistry.from_config(layout)` | `registry.close()` |
 | job registry | `job_registry()...build()`, then `jobs.start()` | `jobs.stop()` |
 | lock provider | `PostgresKeyedLockProvider.builder()...build()` | `locks.close()` |
-| their small pools | `engine_for(...)` | `engine.dispose()` |
+| their data sources | `DataSource.from_config(...)` | `data_source.close()` |
 | repositories, executor | create them | nothing to do |
 
 If an event handler is `async def`, there is one more: the `HandlerLoop` it runs on. It is covered
@@ -367,7 +368,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from ekbatan import DatabaseRegistry, engine_for
+from ekbatan import DatabaseRegistry, DataSource
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import job_registry
 from ekbatan.locks import PostgresKeyedLockProvider
@@ -386,12 +387,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup.
     await asyncio.to_thread(migrate, layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)  # opens no connection yet
-    lock_engine = engine_for(member.config_for("lockConfig"))
-    locks = PostgresKeyedLockProvider.builder().engine(lock_engine).build()
-    jobs_engine = engine_for(member.config_for("jobsConfig"))
+    lock_data_source = DataSource.from_config(member.config_for("lockConfig"))
+    locks = PostgresKeyedLockProvider.builder().data_source(lock_data_source).build()
+    jobs_data_source = DataSource.from_config(member.config_for("jobsConfig"))
     jobs = (
         job_registry()
-        .engine(jobs_engine)
+        .data_source(jobs_data_source)
         .with_jobs(your_jobs(registry))
         .with_config(config.jobs)
         .build()
@@ -406,8 +407,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Shutdown: stop taking work first, then close what the work runs on.
         await asyncio.to_thread(jobs.stop)
         locks.close()
-        lock_engine.dispose()
-        jobs_engine.dispose()
+        lock_data_source.close()
+        jobs_data_source.close()
         await asyncio.to_thread(registry.close)
 ```
 
@@ -418,7 +419,7 @@ If your endpoints are `async def` and use `ekbatan.aio`, the shape is the same, 
 differences. The endpoints get an `AsyncDatabaseRegistry`; it runs on the app's own event loop, and
 is closed there with `await registry.aclose()`. The jobs still run on background threads, so they
 keep a small sync registry of their own, `jobs_registry`, built over the jobs' pool - closing it
-also disposes that pool:
+also closes that pool:
 
 ```python
 import asyncio
@@ -428,8 +429,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from ekbatan import DatabaseRegistry, TransactionManager, engine_for
-from ekbatan.aio import AsyncDatabaseRegistry, async_engine_for
+from ekbatan import DatabaseRegistry, DataSource, TransactionManager
+from ekbatan.aio import AsyncDatabaseRegistry, AsyncDataSource
 from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import job_registry
@@ -448,17 +449,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup.
     await asyncio.to_thread(migrate, layout, MIGRATIONS)
     registry = AsyncDatabaseRegistry.from_config(layout)  # for the endpoints
-    lock_engine = async_engine_for(member.config_for("lockConfig"))
-    locks = AsyncPostgresKeyedLockProvider.builder().engine(lock_engine).build()
-    jobs_engine = engine_for(member.config_for("jobsConfig"))
+    lock_data_source = AsyncDataSource.from_config(member.config_for("lockConfig"))
+    locks = AsyncPostgresKeyedLockProvider.builder().data_source(lock_data_source).build()
+    jobs_data_source = DataSource.from_config(member.config_for("jobsConfig"))
     jobs_registry = (
         DatabaseRegistry.builder()
-        .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+        .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
         .build()
     )
     jobs = (
         job_registry()
-        .engine(jobs_engine)
+        .data_source(jobs_data_source)
         .with_jobs(your_jobs(jobs_registry))
         .with_config(config.jobs)
         .build()
@@ -472,8 +473,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Shutdown: stop taking work first, then close what the work runs on.
         await asyncio.to_thread(jobs.stop)
         locks.close()
-        await lock_engine.dispose()
-        await asyncio.to_thread(jobs_registry.close)  # disposes jobs_engine too
+        await lock_data_source.aclose()
+        await asyncio.to_thread(jobs_registry.close)  # closes jobs_data_source too
         await registry.aclose()
 ```
 
@@ -641,7 +642,7 @@ to run:
 # myapp/db.py
 from pathlib import Path
 
-from ekbatan import DatabaseRegistry, engine_for
+from ekbatan import DatabaseRegistry, DataSource
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import JobRegistry, job_registry
 
@@ -650,18 +651,20 @@ CONFIG_FILE = Path("ekbatan.yaml")
 # None at import time; start() fills them in, in each process that serves.
 registry: DatabaseRegistry | None = None
 _jobs: JobRegistry | None = None
-_jobs_engine = None
+_jobs_data_source: DataSource | None = None
 
 
 def start() -> None:
-    global registry, _jobs, _jobs_engine
+    global registry, _jobs, _jobs_data_source
     config = load_ekbatan_config(CONFIG_FILE)
     layout = config.sharding
     registry = DatabaseRegistry.from_config(layout)  # opens no connection yet
-    _jobs_engine = engine_for(layout.groups[0].members[0].config_for("jobsConfig"))
+    _jobs_data_source = DataSource.from_config(
+        layout.groups[0].members[0].config_for("jobsConfig")
+    )
     _jobs = (
         job_registry()
-        .engine(_jobs_engine)
+        .data_source(_jobs_data_source)
         .with_jobs(your_jobs(registry))
         .with_config(config.jobs)
         .build()
@@ -673,7 +676,7 @@ def stop() -> None:
     if registry is None:  # start() never ran in this process
         return
     _jobs.stop()  # running jobs finish first, up to shutdown_max_wait
-    _jobs_engine.dispose()
+    _jobs_data_source.close()
     registry.close()
 ```
 
@@ -1025,7 +1028,7 @@ import signal
 import threading
 from pathlib import Path
 
-from ekbatan import DatabaseRegistry, engine_for
+from ekbatan import DatabaseRegistry, DataSource
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import job_registry
 from ekbatan.migrations import migrate
@@ -1039,10 +1042,12 @@ def main() -> None:
     layout = config.sharding
     migrate(layout, MIGRATIONS)
     registry = DatabaseRegistry.from_config(layout)
-    jobs_engine = engine_for(layout.groups[0].members[0].config_for("jobsConfig"))
+    jobs_data_source = DataSource.from_config(
+        layout.groups[0].members[0].config_for("jobsConfig")
+    )
     jobs = (
         job_registry()
-        .engine(jobs_engine)
+        .data_source(jobs_data_source)
         .with_jobs(your_jobs(registry))
         .with_config(config.jobs)
         .build()
@@ -1055,7 +1060,7 @@ def main() -> None:
         stopping.wait()  # until SIGTERM, or Ctrl-C
     finally:
         jobs.stop()  # running jobs finish first, up to shutdown_max_wait
-        jobs_engine.dispose()
+        jobs_data_source.close()
         registry.close()
 
 
@@ -1077,7 +1082,7 @@ import signal
 import threading
 from pathlib import Path
 
-from ekbatan import DatabaseRegistry, TransactionManager, engine_for
+from ekbatan import DatabaseRegistry, DataSource, TransactionManager
 from ekbatan.aio import AsyncDatabaseRegistry
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import job_registry
@@ -1094,15 +1099,17 @@ def main() -> None:
     migrate(layout, MIGRATIONS)
     loop = HandlerLoop(name="worker-loop")
     registry = AsyncDatabaseRegistry.from_config(layout)  # used only on `loop`
-    jobs_engine = engine_for(layout.groups[0].members[0].config_for("jobsConfig"))
+    jobs_data_source = DataSource.from_config(
+        layout.groups[0].members[0].config_for("jobsConfig")
+    )
     jobs_registry = (
         DatabaseRegistry.builder()
-        .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+        .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
         .build()
     )
     jobs = (
         job_registry()
-        .engine(jobs_engine)
+        .data_source(jobs_data_source)
         .with_jobs(your_jobs(jobs_registry, registry, loop))
         .with_config(config.jobs)
         .build()
@@ -1117,7 +1124,7 @@ def main() -> None:
         jobs.stop()  # waits for the jobs' work, which is waiting on the loop
         loop.run(registry.aclose())  # closed on the loop it was used on
         loop.close()
-        jobs_registry.close()  # disposes jobs_engine too
+        jobs_registry.close()  # closes jobs_data_source too
 
 
 if __name__ == "__main__":

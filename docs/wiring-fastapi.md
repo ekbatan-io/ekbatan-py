@@ -58,9 +58,9 @@ when the server shuts down rather than leaking them.
 
 `build()`, `WalletService`, `service.start()` and `service.close()` / `service.aclose()` are the
 example's own code, not ekbatan's API: `build()` creates ekbatan's objects - the registry, the
-lock provider, the job registry and their engines - and the example's class holds them.
+lock provider, the job registry and their data sources - and the example's class holds them.
 `start()` calls `jobs.start()`; `close()` calls `jobs.stop()`, then closes the lock provider,
-disposes the engines and closes the registry. [Startup and shutdown](startup-and-shutdown.md) writes the same lifespan with
+closes the data sources and closes the registry. [Startup and shutdown](startup-and-shutdown.md) writes the same lifespan with
 those objects themselves.
 
 The lifespan is an `async def`, so it runs on the event loop's thread, where the sync API is

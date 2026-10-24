@@ -70,9 +70,9 @@ the tables the framework uses:
 
 On MySQL and MariaDB a schema is a database, and one `eventlog` database would be shared by every
 database on the server - shards and other applications would read each other's events - so there,
-as on SQLite, every connection ekbatan opens maps `eventlog` onto the connected database. An engine
-you build yourself, rather than with `engine_for`, needs the same mapping before you read these
-tables through it:
+as on SQLite, every data source maps `eventlog` onto the connected database - and so does a
+connection you open from its `sqlalchemy_engine`. An engine you build yourself with SQLAlchemy needs
+the same mapping before you read these tables through it:
 
 ```python
 from sqlalchemy import create_engine
