@@ -1,4 +1,4 @@
-# The database `make run` starts, and stops when the app stops. Written by
+# The databases `make run` starts, and stops when the app stops. Written by
 # scripts/sync-examples.py: the image the tests use, the login and database
 # ekbatan.yaml defaults to.
 services:

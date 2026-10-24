@@ -23,9 +23,10 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, overload
 from uuid import UUID
 
-from sqlalchemy import CHAR, BigInteger, Column, MetaData, Numeric, String, Table, Text
+from sqlalchemy import CHAR, BigInteger, Column, Index, MetaData, Numeric, String, Table, Text
 
 from ekbatan.schema import (
+    converted,
     notifications_table,
     outbox_table,
     scheduled_tasks_table,
@@ -33,6 +34,9 @@ from ekbatan.schema import (
     uuid_column,
 )
 from ekbatan.time import Instant
+
+from .converters import CurrencyConverter
+from .model import Currency
 
 metadata = MetaData()
 
@@ -43,11 +47,14 @@ WALLETS = Table(
     Column("version", BigInteger, nullable=False),
     Column("state", String(24), nullable=False),
     Column("owner_id", uuid_column(), nullable=False),
-    Column("currency", CHAR(3), nullable=False),
+    # Text in the file, a `Currency` in Python: the converter does both ways, as schemagen
+    # writes it for a forced type.
+    Column("currency", converted(CHAR(3), CurrencyConverter()), nullable=False),
     Column("balance", Numeric(19, 4), nullable=False),
     Column("created_date", timestamp_column(), nullable=False),
     Column("updated_date", timestamp_column(), nullable=False),
 )
+Index("idx_wallets_owner_id", WALLETS.c.owner_id)
 
 
 class WalletsRecord(dict[str, Any]):
@@ -62,7 +69,7 @@ class WalletsRecord(dict[str, Any]):
         version: int,
         state: str,
         owner_id: UUID,
-        currency: str,
+        currency: Currency,
         balance: Decimal,
         created_date: Instant,
         updated_date: Instant,
@@ -89,7 +96,7 @@ class WalletsRecord(dict[str, Any]):
         @overload
         def __getitem__(self, key: Literal["owner_id"]) -> UUID: ...
         @overload
-        def __getitem__(self, key: Literal["currency"]) -> str: ...
+        def __getitem__(self, key: Literal["currency"]) -> Currency: ...
         @overload
         def __getitem__(self, key: Literal["balance"]) -> Decimal: ...
         @overload
@@ -110,7 +117,7 @@ class WalletsRecord(dict[str, Any]):
     def column_owner_id(self) -> UUID:
         return self["owner_id"]
 
-    def column_currency(self) -> str:
+    def column_currency(self) -> Currency:
         return self["currency"]
 
     def column_balance(self) -> Decimal:
@@ -123,20 +130,22 @@ class WalletsRecord(dict[str, Any]):
         return self["updated_date"]
 
 
-ALERTS = Table(
-    "alerts",
+NOTIFICATIONS = Table(
+    "notifications",
     metadata,
     Column("id", uuid_column(), primary_key=True),
     Column("version", BigInteger, nullable=False),
     Column("state", String(24), nullable=False),
     Column("wallet_id", uuid_column(), nullable=False),
+    Column("kind", String(48), nullable=False),
     Column("recipient", String(255), nullable=False),
     Column("message", Text, nullable=False),
 )
+Index("idx_notifications_wallet_id", NOTIFICATIONS.c.wallet_id)
 
 
-class AlertsRecord(dict[str, Any]):
-    """A row of `alerts`."""
+class NotificationsRecord(dict[str, Any]):
+    """A row of `notifications`: what `to_record` writes and `from_record` reads."""
 
     __slots__ = ()
 
@@ -147,6 +156,7 @@ class AlertsRecord(dict[str, Any]):
         version: int,
         state: str,
         wallet_id: UUID,
+        kind: str,
         recipient: str,
         message: str,
     ) -> None:
@@ -155,6 +165,7 @@ class AlertsRecord(dict[str, Any]):
             version=version,
             state=state,
             wallet_id=wallet_id,
+            kind=kind,
             recipient=recipient,
             message=message,
         )
@@ -169,6 +180,8 @@ class AlertsRecord(dict[str, Any]):
         def __getitem__(self, key: Literal["state"]) -> str: ...
         @overload
         def __getitem__(self, key: Literal["wallet_id"]) -> UUID: ...
+        @overload
+        def __getitem__(self, key: Literal["kind"]) -> str: ...
         @overload
         def __getitem__(self, key: Literal["recipient"]) -> str: ...
         @overload
@@ -187,6 +200,9 @@ class AlertsRecord(dict[str, Any]):
     def column_wallet_id(self) -> UUID:
         return self["wallet_id"]
 
+    def column_kind(self) -> str:
+        return self["kind"]
+
     def column_recipient(self) -> str:
         return self["recipient"]
 
@@ -200,12 +216,12 @@ EVENT_NOTIFICATIONS = notifications_table(metadata)
 SCHEDULED_TASKS = scheduled_tasks_table(metadata)
 
 __all__ = [
-    "ALERTS",
     "EVENTS",
     "EVENT_NOTIFICATIONS",
+    "NOTIFICATIONS",
     "SCHEDULED_TASKS",
     "WALLETS",
-    "AlertsRecord",
+    "NotificationsRecord",
     "WalletsRecord",
     "metadata",
 ]

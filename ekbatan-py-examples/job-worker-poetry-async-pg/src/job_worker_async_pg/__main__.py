@@ -2,12 +2,13 @@
 
     make run
 
-The settings are in `ekbatan.yaml`, defaulted to a local Postgres. Point it elsewhere through
-the variables its placeholders read - and start two of these to see the part that only matters
-in a cluster, each slot running once:
+The settings are in `ekbatan.yaml`, defaulted to the two servers in compose.yaml. Point it
+elsewhere through the variables its placeholders read - and start two of these to see the part
+that only matters in a cluster, each slot running once:
 
-    WORKER_DATABASE_URL=postgresql+psycopg://localhost:5432/wallet \\
-    WORKER_DATABASE_USERNAME=ekbatan WORKER_DATABASE_PASSWORD=ekbatan \\
+    WALLET_GLOBAL_URL=postgresql+psycopg://localhost:5432/wallet_global \\
+    WALLET_MEXICO_URL=postgresql+psycopg://localhost:5433/wallet_mexico \\
+    WALLET_DATABASE_USERNAME=ekbatan WALLET_DATABASE_PASSWORD=ekbatan \\
       make run
 """
 
@@ -16,26 +17,13 @@ from __future__ import annotations
 import logging
 import signal
 import threading
-from decimal import Decimal
-from uuid import uuid4
 
-from .actions import OpenWalletAction, OpenWalletParams
 from .app import Worker, build
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     worker = build()
-
-    # Something for the stipend job to find, so the worker has visible work on a fresh
-    # database. A real worker would not seed anything. Awaited on the worker loop, where the
-    # executor's pool lives.
-    worker.loop.run(
-        worker.executor.execute(
-            OpenWalletAction,
-            OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal("0.00")),
-        )
-    )
 
     run(worker)
 

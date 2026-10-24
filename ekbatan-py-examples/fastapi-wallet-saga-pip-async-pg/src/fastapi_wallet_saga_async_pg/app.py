@@ -1,30 +1,20 @@
-"""The wiring.
+"""The wiring, all of it in one place.
 
-PostgreSQL, as Java's `spring-boot-wallet-saga-gradle-pg` uses - a saga is about steps that
-commit independently, and a database that serialises every writer makes that harder to see
-rather than easier.
+**Async where it waits, threads where they poll, one config file.** The HTTP requests run on
+`ekbatan.aio`: an `AsyncDatabaseRegistry`, async repositories, an `AsyncActionExecutor`, an async
+keyed lock. The saga's later steps run in the event handlers, `async def`, on dispatch's handler
+loop, with an executor of their own. What polls - db-scheduler, and the fan-out and dispatch
+jobs it runs - stays on threads, through the sync API.
 
-Every step after the first is started by the event pipeline: the fan-out and handling jobs run
-in the background, as in any service, and nobody calls them. `ekbatan.yaml` switches handling
-on - without it the saga stops after its first step.
-
-**Async where it waits, threads where they poll, one config file.** The requests run on
-`ekbatan.aio`: an `AsyncDatabaseRegistry`, async repositories, an `AsyncActionExecutor`, every
-endpoint an `async def`. The saga's later steps are run by `async def` handlers, on dispatch's
-handler loop, through an executor of their own. What polls - db-scheduler, and the fan-out and
-dispatch jobs it runs - stays on threads, through the sync API. Three pools:
-
-**Requests** get `primaryConfig`, async: step one, and every read a client makes.
-
-**The handlers** get `handlersConfig`, async, used only on the handler loop: an async pool
-belongs to the loop it is used on, so theirs is their own, and it is closed on that loop.
-
-**Jobs** get `jobsConfig`, sync: db-scheduler, and fan-out and dispatch reading the queue.
+One database, declared in `ekbatan.yaml`, with four pools: `primaryConfig` for requests,
+`handlersConfig` for the handlers - an async pool belongs to the loop it is used on, so theirs is
+their own - `lockConfig` for the deposit's keyed lock, and `jobsConfig` for the scheduler.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +31,7 @@ from ekbatan.aio import (
     AsyncDataSource,
     AsyncTransactionManager,
 )
+from ekbatan.aio.locks import AsyncKeyedLockProvider, AsyncPostgresKeyedLockProvider
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config import DataSourceConfig, ShardMemberConfig
 from ekbatan.config_files import load_ekbatan_config
@@ -51,104 +42,115 @@ from ekbatan.migrations import migrate
 from .actions import (
     CompleteTransferAction,
     InitiateTransferAction,
-    OpenWalletAction,
     RefundTransferAction,
+    WalletCloseAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
 from .handlers import TransferFailedEventHandler, TransferInitiatedEventHandler
 from .repository import TransferStepRepository, WalletRepository
 
-#: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
-#: rather than from `create_all`, which is the difference between an example and something you
-#: could deploy: `create_all` has no answer for a column that changed.
+#: Where the migration files live - `V<version>__<description>.sql`.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
-#: The service's Ekbatan settings - the database, the namespace and the event handling switch -
-#: in the same keys as the Java examples' `application.yml`.
+#: The service's Ekbatan settings - the database, the namespace, event handling.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
 @dataclass(frozen=True, slots=True)
-class SagaService:
+class Settings:
+    """What the service needs from its environment beyond `ekbatan.yaml`."""
+
+    config_file: Path = Path(os.environ.get("WALLET_CONFIG_FILE", CONFIG_FILE))
+    job_workers: int = int(os.environ.get("WALLET_JOB_WORKERS", "3"))
+    run_migrations: bool = os.environ.get("WALLET_MIGRATE", "1") != "0"
+
+
+@dataclass(frozen=True, slots=True)
+class WalletService:
+    """Everything wired together, and the only object the HTTP layer is handed."""
+
     #: The request side, on `ekbatan.aio`.
-    registry: AsyncDatabaseRegistry
-    wallets: WalletRepository
-    steps: TransferStepRepository
+    database_registry: AsyncDatabaseRegistry
+    wallet_repository: WalletRepository
+    transfer_step_repository: TransferStepRepository
     executor: AsyncActionExecutor
-    #: The handler side: its own async registry and executor, used only on `handler_loop`.
+    lock_provider: AsyncKeyedLockProvider
+    lock_data_source: AsyncDataSource
+    #: The handler side: steps two and three, on `handler_loop` only.
     handler_loop: HandlerLoop
     handler_registry: AsyncDatabaseRegistry
     handler_executor: AsyncActionExecutor
-    #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over `events_registry`.
+    #: What polls, sync, on threads.
     events_registry: DatabaseRegistry
-    jobs: JobRegistry
-    #: Built from the member's `jobsConfig`. `events_registry` closes it: its manager was given
-    #: it, and a manager closes the data sources it was given. The job registry, which polls it,
-    #: does not.
+    job_registry: JobRegistry
+    #: Built from `jobsConfig`. `events_registry` closes it: its manager was given it, and a
+    #: manager closes the data sources it was given. The job registry, which polls it, does not.
     jobs_data_source: DataSource
 
     def start(self) -> None:
-        """Begin polling. Fan-out and handling are two of the jobs, so this is what lets the saga
-        move past its first step - on their own threads, off the event loop."""
-        self.jobs.start()
+        self.job_registry.start()
 
     async def aclose(self) -> None:
         # Order matters: stop taking work before closing what the work runs on. Stopping the
         # jobs waits for a dispatch in flight, so it runs on a thread, off this loop.
-        await asyncio.to_thread(self.jobs.stop)
+        await asyncio.to_thread(self.job_registry.stop)
         # The handlers' pool belongs to the handler loop: closed there, then the loop.
         await asyncio.to_thread(self.handler_loop.run, self.handler_registry.aclose())
         self.handler_loop.close()
         self.events_registry.close()
-        await self.registry.aclose()
+        self.lock_provider.close()
+        await self.lock_data_source.aclose()
+        await self.database_registry.aclose()
 
 
-def build(
-    *,
-    config_file: Path = CONFIG_FILE,
-    clock: Clock | None = None,
-) -> SagaService:
-    """Wire the service on `config_file`; its `${...}` placeholders are read from the process
-    environment. Nothing here awaits: building a pool opens no connection."""
-    running = clock or SystemClock()
-    # `ekbatan.yaml`'s `${...}` placeholders - the url and the login - are read from the
-    # process environment as the file is loaded, each by its name.
-    ekbatan = load_ekbatan_config(config_file)
+def build(settings: Settings | None = None, *, clock: Clock | None = None) -> WalletService:
+    """Wire the service. Nothing here awaits: building a pool opens no connection."""
+    settings = settings or Settings()
+    clock = clock or SystemClock()
+    ekbatan = load_ekbatan_config(settings.config_file)
     layout = ekbatan.sharding
-    # Sync, once, before any pool is opened against a schema that might not be there yet.
-    migrate(layout, MIGRATIONS)
+
+    if settings.run_migrations:
+        # Sync, once, before any pool is opened against a schema that might not be there yet.
+        migrate(layout, MIGRATIONS)
 
     # -- the request side ---------------------------------------------------------------------
-    registry = AsyncDatabaseRegistry.from_config(layout)
-    wallets = WalletRepository(registry, clock=running)
-    steps = TransferStepRepository(registry, clock=running)
+    database_registry = AsyncDatabaseRegistry.from_config(layout)
+    wallet_repository = WalletRepository(database_registry)
+    transfer_step_repository = TransferStepRepository(database_registry)
     executor = (
         AsyncActionExecutor.builder()
         .namespace(ekbatan.namespace)
-        .database_registry(registry)
+        .database_registry(database_registry)
         .repository_registry(
             RepositoryRegistry.builder()
-            .with_model_repository(wallets)
-            .with_entity_repository(steps)
+            .with_model_repository(wallet_repository)
+            .with_entity_repository(transfer_step_repository)
             .build()
         )
         .action_registry(
             ActionRegistry.builder()
-            .with_action(OpenWalletAction(running))
-            .with_action(InitiateTransferAction(wallets, running))
+            .with_action(WalletCreateAction(clock))
+            .with_action(WalletDepositMoneyAction(clock, wallet_repository))
+            .with_action(WalletCloseAction(clock, wallet_repository))
+            .with_action(InitiateTransferAction(clock, wallet_repository))
             # Steps two and three run on the handler loop; they are here too so a replay tool,
             # or a test, can run one by hand.
-            .with_action(CompleteTransferAction(wallets, running))
-            .with_action(RefundTransferAction(wallets, running))
+            .with_action(CompleteTransferAction(clock, wallet_repository, transfer_step_repository))
+            .with_action(RefundTransferAction(clock, wallet_repository, transfer_step_repository))
             .build()
         )
-        .clock(running)
+        .clock(clock)
         .build()
     )
+    member = layout.groups[0].members[0]
+    lock_data_source = AsyncDataSource.from_config(_required(member, "lockConfig"))
+    lock_provider = AsyncPostgresKeyedLockProvider.builder().data_source(lock_data_source).build()
 
     # -- the handler side ---------------------------------------------------------------------
     # Steps two and three, async, on dispatch's handler loop: an async pool belongs to the loop
     # it is used on, so the handlers' registry, repositories and actions are their own.
-    member = layout.groups[0].members[0]
     handler_loop = HandlerLoop()
     handler_registry = (
         AsyncDatabaseRegistry.builder()
@@ -160,24 +162,33 @@ def build(
         )
         .build()
     )
-    handler_wallets = WalletRepository(handler_registry, clock=running)
+    handler_wallet_repository = WalletRepository(handler_registry)
+    handler_transfer_step_repository = TransferStepRepository(handler_registry)
     handler_executor = (
         AsyncActionExecutor.builder()
         .namespace(ekbatan.namespace)
         .database_registry(handler_registry)
         .repository_registry(
             RepositoryRegistry.builder()
-            .with_model_repository(handler_wallets)
-            .with_entity_repository(TransferStepRepository(handler_registry, clock=running))
+            .with_model_repository(handler_wallet_repository)
+            .with_entity_repository(handler_transfer_step_repository)
             .build()
         )
         .action_registry(
             ActionRegistry.builder()
-            .with_action(CompleteTransferAction(handler_wallets, running))
-            .with_action(RefundTransferAction(handler_wallets, running))
+            .with_action(
+                CompleteTransferAction(
+                    clock, handler_wallet_repository, handler_transfer_step_repository
+                )
+            )
+            .with_action(
+                RefundTransferAction(
+                    clock, handler_wallet_repository, handler_transfer_step_repository
+                )
+            )
             .build()
         )
-        .clock(running)
+        .clock(clock)
         .build()
     )
     handlers = (
@@ -196,17 +207,19 @@ def build(
     )
     events_config = ekbatan.local_event_handler
 
-    return SagaService(
-        registry=registry,
-        wallets=wallets,
-        steps=steps,
+    return WalletService(
+        database_registry=database_registry,
+        wallet_repository=wallet_repository,
+        transfer_step_repository=transfer_step_repository,
         executor=executor,
+        lock_provider=lock_provider,
+        lock_data_source=lock_data_source,
         handler_loop=handler_loop,
         handler_registry=handler_registry,
         handler_executor=handler_executor,
         events_registry=events_registry,
         jobs_data_source=jobs_data_source,
-        jobs=(
+        job_registry=(
             job_registry()
             .data_source(jobs_data_source)
             .with_jobs(
@@ -215,7 +228,7 @@ def build(
                     .registry(events_registry)
                     .handlers(handlers)
                     .config(events_config)
-                    .clock(running)
+                    .clock(clock)
                     .build(),
                     EventHandlingJob.builder()
                     .registry(events_registry)
@@ -224,13 +237,14 @@ def build(
                     # pool on it first.
                     .handler_loop(handler_loop)
                     .config(events_config)
-                    # Java's DI makes this job only if `handling.enabled`; this is that check.
+                    # Off unless `handling.enabled` is set in `ekbatan.yaml`.
                     .enabled(events_config.handling.enabled)
-                    .clock(running)
+                    .clock(clock)
                     .build(),
                 ]
             )
             .with_config(ekbatan.jobs)
+            .workers(settings.job_workers)
             .build()
         ),
     )

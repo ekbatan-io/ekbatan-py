@@ -1,187 +1,202 @@
-"""The three steps, and the two ordinary actions around them - on `ekbatan.aio`.
+"""Units of work, on `ekbatan.aio`: a wallet's own, and the transfer saga's three steps.
 
-Each step is one unit of work on one aggregate, and each commits on its own. Read them in the
-order the saga runs them: `InitiateTransferAction`, then `CompleteTransferAction`, then -
-only when the second could not finish - `RefundTransferAction`. The one difference from a sync
-action is that `perform` is a coroutine and awaits its reads.
+Each action's parameters are its nested `Params`, written to the outbox as JSON when it runs.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from ekbatan import Clock
 from ekbatan.aio import AsyncAction
-from ekbatan.ids import ShardedId
+from ekbatan.ids import Id
 
-from .model import (
-    Currency,
-    StepName,
-    TransferFailedEvent,
-    TransferInitiatedEvent,
-    TransferStep,
-    Wallet,
-)
-from .repository import WalletRepository
+from .model import Currency, TransferStep, TransferStepName, Wallet, WalletState
+from .repository import TransferStepRepository, WalletRepository
 
 
-@dataclass(frozen=True, kw_only=True)
-class OpenWalletParams:
-    owner_id: UUID
-    #: Plain text, as are all parameters: they are written to the outbox as JSON. The action
-    #: turns it into a `Currency`, which refuses anything but three capital letters.
-    currency: str
-    opening_balance: Decimal
+class WalletCreateAction(AsyncAction["WalletCreateAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        owner_id: UUID
+        #: Plain text, as the outbox's JSON writes it: "EUR". The action turns it into a
+        #: `Currency`, which refuses anything but three capital letters.
+        currency: str
+        initial_balance: Decimal
+
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = Wallet.create_wallet(
+            params.owner_id, Currency(params.currency), params.initial_balance, self.clock.instant()
+        ).build()
+        return self.plan.add(wallet)
 
 
-@dataclass(frozen=True, kw_only=True)
-class TransferParams:
-    from_wallet_id: ShardedId[Wallet]
-    to_wallet_id: ShardedId[Wallet]
-    amount: Decimal
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    """A single wallet's deposit - kept for top-ups outside the transfer saga."""
+
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: Id[Wallet]
+        amount: Decimal
+
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
+        super().__init__(clock)
+        self.wallet_repository = wallet_repository
+
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
+        updated = wallet.deposit(params.amount)
+        return self.plan.update(updated)
 
 
-@dataclass(frozen=True, kw_only=True)
-class CompleteTransferParams:
-    """What the handler read off the event, handed back as parameters.
+class WalletCloseAction(AsyncAction["WalletCloseAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: Id[Wallet]
 
-    The event itself is not passed around: an action takes parameters, and keeping it that way
-    is what lets the same action be invoked from a test, a REST endpoint or a replay tool
-    without any of them holding an `EventEnvelope`.
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
+        super().__init__(clock)
+        self.wallet_repository = wallet_repository
+
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
+        closed = wallet.close()
+        return self.plan.update(closed)
+
+
+class InitiateTransferAction(
+    AsyncAction["InitiateTransferAction.Params", "InitiateTransferAction.Result"]
+):
+    """Saga step one: debits the source wallet and emits a `TransferInitiatedEvent`.
+
+    The transfer's id is made here; it ties every later event of the saga together. One
+    transaction: the source's row and the event commit together, and the in-process fan-out then
+    drives step two through `TransferInitiatedEventHandler`.
     """
 
-    transfer_id: UUID
-    from_wallet_id: ShardedId[Wallet]
-    to_wallet_id: ShardedId[Wallet]
-    amount: Decimal
-    currency: str
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        from_wallet_id: Id[Wallet]
+        to_wallet_id: Id[Wallet]
+        amount: Decimal
+
+    @dataclass(frozen=True, kw_only=True)
+    class Result:
+        transfer_id: UUID
+        source_wallet: Wallet
+
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
+        super().__init__(clock)
+        self.wallet_repository = wallet_repository
+
+    async def perform(self, principal: str | None, params: Params) -> Result:
+        transfer_id = uuid4()
+        source = await self.wallet_repository.get(params.from_wallet_id)
+        debited = source.initiate_transfer_out(transfer_id, params.to_wallet_id, params.amount)
+        self.plan.update(debited)
+        return InitiateTransferAction.Result(transfer_id=transfer_id, source_wallet=debited)
 
 
-@dataclass(frozen=True, kw_only=True)
-class RefundTransferParams:
-    transfer_id: UUID
-    from_wallet_id: ShardedId[Wallet]
-    to_wallet_id: ShardedId[Wallet]
-    amount: Decimal
-    reason: str
+class CompleteTransferAction(AsyncAction["CompleteTransferAction.Params", Wallet]):
+    """Saga step two: tries to credit the destination wallet, and emits one of two events -
+    `TransferCompletedEvent` on the destination when it can, or `TransferFailedEvent` on the
+    *source* when the destination is missing, closed, or in another currency, which starts the
+    refund through `TransferFailedEventHandler`.
 
+    The step marker makes a replayed delivery of the same event a no-op rather than a second
+    credit.
+    """
 
-@dataclass(frozen=True, kw_only=True)
-class TransferResult:
-    transfer_id: UUID
-    source: Wallet
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        transfer_id: UUID
+        from_wallet_id: Id[Wallet]
+        to_wallet_id: Id[Wallet]
+        amount: Decimal
 
+    def __init__(
+        self,
+        clock: Clock,
+        wallet_repository: WalletRepository,
+        transfer_step_repository: TransferStepRepository,
+    ) -> None:
+        super().__init__(clock)
+        self.wallet_repository = wallet_repository
+        self.transfer_step_repository = transfer_step_repository
 
-class OpenWalletAction(AsyncAction[OpenWalletParams, Wallet]):
-    async def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
-        return self.plan.add(
-            Wallet.open(
-                owner_id=params.owner_id,
-                currency=Currency(params.currency),
-                balance=params.opening_balance,
-                created_date=self.clock.instant(),
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        if await self.transfer_step_repository.exists_step(
+            params.transfer_id, TransferStepName.COMPLETE_TRANSFER
+        ):
+            return await self.wallet_repository.get(params.from_wallet_id)
+        self.plan.add(
+            TransferStep.create(params.transfer_id, TransferStepName.COMPLETE_TRANSFER).build()
+        )
+
+        destination = await self.wallet_repository.find(params.to_wallet_id)
+        if destination is None:
+            return await self._fail_on_source(params, "destination wallet not found")
+        if destination.state is not WalletState.OPENED:
+            return await self._fail_on_source(
+                params, f"destination wallet is {destination.state.name}"
             )
+        source = await self.wallet_repository.get(params.from_wallet_id)
+        if destination.currency != source.currency:
+            return await self._fail_on_source(
+                params,
+                f"currency mismatch: source={source.currency.code} "
+                f"destination={destination.currency.code}",
+            )
+
+        credited = destination.complete_transfer_in(
+            params.transfer_id, params.from_wallet_id, params.amount
         )
+        return self.plan.update(credited)
+
+    async def _fail_on_source(self, params: Params, reason: str) -> Wallet:
+        source = await self.wallet_repository.get(params.from_wallet_id)
+        marked = source.mark_transfer_failed(
+            params.transfer_id, params.to_wallet_id, params.amount, reason
+        )
+        return self.plan.update(marked)
 
 
-class InitiateTransferAction(AsyncAction[TransferParams, TransferResult]):
-    """Step one: debit the source and say so. One aggregate, one transaction.
+class RefundTransferAction(AsyncAction["RefundTransferAction.Params", Wallet]):
+    """The compensation: credits the source wallet back after a failed transfer, and emits a
+    `TransferRefundedEvent` that closes the saga, leaving the whole story on the source:
+    initiated, failed, refunded.
 
-    Note what it does *not* do: touch the destination. That is the whole point - the two
-    wallets may be on different databases tomorrow, and a step that reached for both would have
-    to be rewritten when they are.
+    Forward-only compensation, not a rollback: the debit committed long ago, and this adds the
+    money back. The step marker makes a replayed failure event a no-op rather than a second
+    refund.
     """
 
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        transfer_id: UUID
+        from_wallet_id: Id[Wallet]
+        amount: Decimal
+
+    def __init__(
+        self,
+        clock: Clock,
+        wallet_repository: WalletRepository,
+        transfer_step_repository: TransferStepRepository,
+    ) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
+        self.transfer_step_repository = transfer_step_repository
 
-    async def perform(self, principal: str | None, params: TransferParams) -> TransferResult:
-        source = await self.wallets.get(params.from_wallet_id)
-        debited, transfer_id = source.initiate_transfer_out(
-            to=params.to_wallet_id, amount=params.amount
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        if await self.transfer_step_repository.exists_step(
+            params.transfer_id, TransferStepName.REFUND_TRANSFER
+        ):
+            return await self.wallet_repository.get(params.from_wallet_id)
+        self.plan.add(
+            TransferStep.create(params.transfer_id, TransferStepName.REFUND_TRANSFER).build()
         )
-        return TransferResult(transfer_id=transfer_id, source=self.plan.update(debited))
-
-
-class CompleteTransferAction(AsyncAction[CompleteTransferParams, Wallet | None]):
-    """Step two: credit the destination, or fail the transfer on the source's trail.
-
-    Both outcomes are ordinary units of work. "Failed" here is a business outcome, not an
-    exception: raising would make the handler retry, and retrying a transfer into a closed
-    wallet will never start working.
-    """
-
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
-        super().__init__(clock)
-        self.wallets = wallets
-
-    async def perform(self, principal: str | None, params: CompleteTransferParams) -> Wallet | None:
-        # Staged *before* the credit, so the unique constraint decides whether this delivery is
-        # the first one. A replay stages the same marker, the insert is refused, and the credit
-        # beside it is rolled back with it - which is why the money cannot arrive twice.
-        self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
-
-        arriving = TransferInitiatedEvent(
-            model_id=str(params.from_wallet_id),
-            transfer_id=params.transfer_id,
-            from_wallet_id=params.from_wallet_id.value,
-            to_wallet_id=params.to_wallet_id.value,
-            amount=params.amount,
-            currency=params.currency,
-        )
-
-        destination = await self.wallets.find(params.to_wallet_id)
-        refusal = "destination wallet does not exist" if destination is None else None
-        if destination is not None:
-            refusal = destination.can_receive(arriving)
-
-        if refusal is not None:
-            source = await self.wallets.get(params.from_wallet_id)
-            self.plan.update(source.mark_transfer_failed(arriving, refusal))
-            return None
-
-        assert destination is not None  # narrowed by `refusal is None`
-        return self.plan.update(destination.complete_transfer_in(arriving))
-
-
-class RefundTransferAction(AsyncAction[RefundTransferParams, Wallet]):
-    """Step three: put the money back.
-
-    A new change with its own commit and its own event, not a rollback of step one - step one
-    committed long ago. Forward-only compensation is the only kind available once a
-    transaction has ended, and the outbox is what makes it as durable as the debit was.
-    """
-
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
-        super().__init__(clock)
-        self.wallets = wallets
-
-    async def perform(self, principal: str | None, params: RefundTransferParams) -> Wallet:
-        self.plan.add(TransferStep.of(params.transfer_id, StepName.REFUND))
-
-        source = await self.wallets.get(params.from_wallet_id)
-        failure = TransferFailedEvent(
-            model_id=str(params.from_wallet_id),
-            transfer_id=params.transfer_id,
-            from_wallet_id=params.from_wallet_id.value,
-            to_wallet_id=params.to_wallet_id.value,
-            amount=params.amount,
-            reason=params.reason,
-        )
-        return self.plan.update(source.refund_transfer(failure))
-
-
-__all__ = [
-    "CompleteTransferAction",
-    "CompleteTransferParams",
-    "InitiateTransferAction",
-    "OpenWalletAction",
-    "OpenWalletParams",
-    "RefundTransferAction",
-    "RefundTransferParams",
-    "TransferParams",
-    "TransferResult",
-]
+        source = await self.wallet_repository.get(params.from_wallet_id)
+        refunded = source.refund_transfer(params.transfer_id, params.amount)
+        return self.plan.update(refunded)

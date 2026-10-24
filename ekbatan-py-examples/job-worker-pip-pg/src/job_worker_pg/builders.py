@@ -13,10 +13,16 @@ from uuid import UUID
 from ekbatan.domain import EntityBuilder, ModelBuilder
 
 if TYPE_CHECKING:
-    from ekbatan.domain import GenericState  # noqa: F401
     from ekbatan.ids import Id, ShardedId  # noqa: F401
 
-    from .model import Alert, Currency, EmailAddress, Wallet, WalletState  # noqa: F401
+    from .model import (  # noqa: F401
+        Currency,
+        Notification,
+        NotificationKind,
+        NotificationState,
+        Wallet,
+        WalletState,
+    )
 
 
 class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
@@ -44,26 +50,29 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
     return made.copy_base(source) if source is not None else made
 
 
-class AlertBuilder(EntityBuilder["Alert", "Id[Alert]", "GenericState"]):
-    """Builds an Alert, with the field types a checker can see.
+class NotificationBuilder(EntityBuilder["Notification", "Id[Notification]", "NotificationState"]):
+    """Builds a Notification, with the field types a checker can see.
 
     id, state and version come from EntityBuilder, typed by the
-    parameters above, so only the fields Alert added are declared here.
+    parameters above, so only the fields Notification added are declared here.
     """
 
-    builds_ref = "job_worker_pg.model:Alert"
+    builds_ref = "job_worker_pg.model:Notification"
 
-    def wallet_id(self, value: ShardedId[Wallet]) -> Self:
+    def wallet_id(self, value: UUID) -> Self:
         return self.set(wallet_id=value)
 
-    def recipient(self, value: EmailAddress) -> Self:
+    def kind(self, value: NotificationKind) -> Self:
+        return self.set(kind=value)
+
+    def recipient(self, value: str) -> Self:
         return self.set(recipient=value)
 
     def message(self, value: str) -> Self:
         return self.set(message=value)
 
 
-def alert(source: Alert | None = None) -> AlertBuilder:
-    """A fresh AlertBuilder, optionally pre-loaded from an existing Alert."""
-    made = AlertBuilder()
+def notification(source: Notification | None = None) -> NotificationBuilder:
+    """A fresh NotificationBuilder, optionally pre-loaded from an existing Notification."""
+    made = NotificationBuilder()
     return made.copy_base(source) if source is not None else made

@@ -1,27 +1,27 @@
-"""The wiring, all of it in one place.
+"""The wiring, all of it in one place - and the only file that knows how many databases there
+are.
 
-Which database, which pools, which handlers, which jobs. Nothing above this file knows any of
-it, and nothing below it does either - `api.py` is handed a built `WalletService` and asks it
-for work.
+Two shards, `global` and `mexico`, each its own database, declared in `ekbatan.yaml`. Add a shard
+by adding a group or a member there: the repository already routes by id, and the actions never
+name a database.
 
-Three separate pools, which is the part worth copying into a real deployment:
+Three separate pools per member, which is the part worth copying into a real deployment:
 
-**Requests** get the main pool. Sized for how many requests you serve at once.
+**Requests** get the main pool, `primaryConfig`. Sized for how many requests you serve at once.
 
-**Jobs** get their own. db-scheduler polls continuously and writes a heartbeat from a
-housekeeping thread; sharing the request pool means a burst of traffic can starve that
+**Jobs** get their own, `jobsConfig`. db-scheduler polls continuously and writes a heartbeat from
+a housekeeping thread; sharing the request pool means a burst of traffic can starve that
 heartbeat, and an execution whose heartbeat stops is declared dead and run again somewhere
-else. A pool of its own costs a handful of connections and removes the failure mode.
+else. One scheduler runs for the whole layout, on the default member's `jobsConfig`; the
+fan-out and handling jobs it runs read and write every shard through the registry.
 
-**Locks** get a third. A keyed lock holds its connection for as long as the lease is held - that
-is what the lock *is* - so a lease taken during a request would otherwise sit on a request
-connection for the duration. Size it for the maximum number of leases held at once, not for
-traffic.
+**Locks** get a third, `lockConfig`. A keyed lock holds its connection for as long as the lease
+is held - that is what the lock *is*. One database holds every key: a lock is about a wallet's
+key, not its rows, so the deposit takes it on the default member whichever shard the wallet is
+on.
 
-All three are declared on the shard member in `ekbatan.yaml`: `primaryConfig` for requests, and
-`jobsConfig` and `lockConfig` beside it. The registry builds the first; the other two are this
-file's to build with `DataSource.from_config`, and this file's to close. The same file holds the
-namespace and turns the event handling job on.
+The registry builds the request pools; the other two are this file's to build with
+`DataSource.from_config`, and this file's to close.
 """
 
 from __future__ import annotations
@@ -45,18 +45,20 @@ from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJo
 from ekbatan.locks import KeyedLockProvider, PostgresKeyedLockProvider
 from ekbatan.migrations import migrate
 
-from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, RaiseAlertAction
-from .handlers import MoneyDepositedEventHandler
-from .jobs import PayStipendJob
-from .repository import AlertRepository, WalletRepository
+from .actions import (
+    CreateNotificationAction,
+    WalletCloseAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
+)
+from .handlers import WalletMoneyDepositedEventHandler
+from .repository import NotificationRepository, WalletRepository
 
-#: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
-#: rather than from `create_all`, which is the difference between an example and something you
-#: could deploy: `create_all` has no answer for a column that changed.
+#: Where the migration files live - `V<version>__<description>.sql`. Every shard gets them all.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
-#: The service's Ekbatan settings - database layout, namespace, event handling - in one file,
-#: so changing a pool or adding a shard is an edit here and not in the code.
+#: The service's Ekbatan settings - the shard layout, the namespace, event handling - in the same
+#: keys as Java's `application.yml`.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
@@ -65,7 +67,7 @@ class Settings:
     """What the service needs from its environment beyond `ekbatan.yaml`.
 
     Read from the environment so the same image runs in every environment, and defaulted so
-    that running the module works against a local server with no setup.
+    that running the module works against local servers with no setup.
     """
 
     config_file: Path = Path(os.environ.get("WALLET_CONFIG_FILE", CONFIG_FILE))
@@ -79,118 +81,117 @@ class Settings:
 class WalletService:
     """Everything wired together, and the only object the HTTP layer is handed."""
 
-    registry: DatabaseRegistry
-    wallets: WalletRepository
-    alerts: AlertRepository
+    database_registry: DatabaseRegistry
+    wallet_repository: WalletRepository
+    notification_repository: NotificationRepository
     executor: ActionExecutor
-    locks: KeyedLockProvider
-    jobs: JobRegistry
-    #: The pools built from `lockConfig` and `jobsConfig`. The registry owns only the ones it
+    lock_provider: KeyedLockProvider
+    job_registry: JobRegistry
+    #: The pools built from `lockConfig` and `jobsConfig`. The registry closes only the pools it
     #: built, so these two are closed here.
     lock_data_source: DataSource
     jobs_data_source: DataSource
 
     def start(self) -> None:
-        """Begin polling for jobs. Fan-out and dispatch are two of them, so this is also what
-        starts the event pipeline."""
-        self.jobs.start()
+        """Begin polling for jobs. Fan-out and handling are two of them, so this is also what
+        starts the event pipeline - across every shard, from one scheduler."""
+        self.job_registry.start()
 
     def close(self) -> None:
         # Order matters: stop taking work before closing what the work runs on.
-        self.jobs.stop()
-        self.locks.close()
+        self.job_registry.stop()
+        self.lock_provider.close()
         self.lock_data_source.close()
         self.jobs_data_source.close()
-        self.registry.close()
+        self.database_registry.close()
 
 
 def build(settings: Settings | None = None, *, clock: Clock | None = None) -> WalletService:
     """Wire the service. Nothing here is specific to HTTP."""
-    config = settings or Settings()
-    running = clock or SystemClock()
+    settings = settings or Settings()
+    clock = clock or SystemClock()
 
-    # `ekbatan.yaml`'s `${...}` placeholders - the url and the login - are read from the
+    # `ekbatan.yaml`'s `${...}` placeholders - the urls and the login - are read from the
     # process environment as the file is loaded, each by its name.
-    ekbatan = load_ekbatan_config(config.config_file)
+    ekbatan = load_ekbatan_config(settings.config_file)
     layout = ekbatan.sharding
 
-    if config.run_migrations:
+    if settings.run_migrations:
         # Every shard, one at a time, fail-fast - and refused outright if a revision that was
         # already applied has since been edited. Run before anything opens a pool against a
         # schema that might not be there yet.
         migrate(layout, MIGRATIONS)
 
-    registry = DatabaseRegistry.from_config(layout)
+    database_registry = DatabaseRegistry.from_config(layout)
 
-    wallets = WalletRepository(registry, clock=running)
-    alerts = AlertRepository(registry, clock=running)
-
-    repositories = (
-        RepositoryRegistry.builder()
-        .with_model_repository(wallets)
-        .with_entity_repository(alerts)
-        .build()
-    )
+    wallet_repository = WalletRepository(database_registry)
+    notification_repository = NotificationRepository(database_registry)
 
     executor = (
         ActionExecutor.builder()
         .namespace(ekbatan.namespace)
-        .database_registry(registry)
-        .repository_registry(repositories)
-        .action_registry(
-            ActionRegistry.builder()
-            .with_action(OpenWalletAction(running))
-            .with_action(DepositMoneyAction(wallets, running))
-            .with_action(CloseWalletAction(wallets, running))
-            .with_action(RaiseAlertAction(running))
+        .database_registry(database_registry)
+        .repository_registry(
+            RepositoryRegistry.builder()
+            .with_model_repository(wallet_repository)
+            .with_entity_repository(notification_repository)
             .build()
         )
-        .clock(running)
+        .action_registry(
+            ActionRegistry.builder()
+            .with_action(WalletCreateAction(clock))
+            .with_action(WalletDepositMoneyAction(clock, wallet_repository))
+            .with_action(WalletCloseAction(clock, wallet_repository))
+            .with_action(CreateNotificationAction(clock))
+            .build()
+        )
+        .clock(clock)
         .build()
     )
 
-    # The one shard member's pools, as `ekbatan.yaml` declares them.
-    member = layout.groups[0].members[0]
-    lock_data_source = DataSource.from_config(_required(member, "lockConfig"))
-    jobs_data_source = DataSource.from_config(_required(member, "jobsConfig"))
+    # The default member's other two pools, as `ekbatan.yaml` declares them.
+    default_member = layout.groups[0].members[0]
+    lock_data_source = DataSource.from_config(_required(default_member, "lockConfig"))
+    jobs_data_source = DataSource.from_config(_required(default_member, "jobsConfig"))
 
     handlers = (
-        EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
+        EventHandlerRegistry.builder()
+        .with_handler(WalletMoneyDepositedEventHandler(executor))
+        .build()
     )
     events_config = ekbatan.local_event_handler
 
     return WalletService(
-        registry=registry,
-        wallets=wallets,
-        alerts=alerts,
+        database_registry=database_registry,
+        wallet_repository=wallet_repository,
+        notification_repository=notification_repository,
         executor=executor,
-        locks=PostgresKeyedLockProvider.builder().data_source(lock_data_source).build(),
+        lock_provider=PostgresKeyedLockProvider.builder().data_source(lock_data_source).build(),
         lock_data_source=lock_data_source,
         jobs_data_source=jobs_data_source,
-        jobs=(
+        job_registry=(
             job_registry()
             .data_source(jobs_data_source)
             .with_jobs(
                 [
                     EventFanoutJob.builder()
-                    .registry(registry)
+                    .registry(database_registry)
                     .handlers(handlers)
                     .config(events_config)
-                    .clock(running)
+                    .clock(clock)
                     .build(),
                     EventHandlingJob.builder()
-                    .registry(registry)
+                    .registry(database_registry)
                     .handlers(handlers)
                     .config(events_config)
                     # Off unless `handling.enabled` is set in `ekbatan.yaml`.
                     .enabled(events_config.handling.enabled)
-                    .clock(running)
+                    .clock(clock)
                     .build(),
-                    PayStipendJob(executor, wallets),
                 ]
             )
             .with_config(ekbatan.jobs)
-            .workers(config.job_workers)
+            .workers(settings.job_workers)
             .build()
         ),
     )

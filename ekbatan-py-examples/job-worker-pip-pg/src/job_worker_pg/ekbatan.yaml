@@ -1,10 +1,12 @@
-# The worker's Ekbatan settings - the same keys, in the same places, as the Java job worker's
-# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+# The worker's Ekbatan settings: the shard layout, the namespace, the jobs and the event
+# handling. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
 #
-# `${NAME:default}` is an environment variable with a default, so the file runs as it is against
-# a local server; the test fills them from its container.
+# Two shards, global and mexico, each its own database on its own server. `${NAME:default}` is an
+# environment variable with a default, so the file runs as it is against the servers in
+# compose.yaml and the same file runs anywhere else with the variables set. The tests fill them
+# from their containers.
 ekbatan:
-  namespace: example.job_worker_pg
+  namespace: example.wallet.worker
   sharding:
     defaultShard:
       group: 0
@@ -16,27 +18,82 @@ ekbatan:
           - member: 0
             name: global
             configs:
+              # The work: the jobs' bodies and the event handler.
               primaryConfig:
-                # Every session in UTC, as the columns hold UTC wall-clock time.
+                # Extra driver settings, each name exactly as the driver spells it; handed to the
+                # driver beside the url, never printed.
+                # Postgres shows application_name in pg_stat_activity; options puts every session
+                # on UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
-                  application_name: wallet-worker
+                  application_name: wallet-service
                   options: -c TimeZone=UTC
-                url: ${WORKER_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/wallet_global}
                 # The login lives here, never in the url - a url is logged and repeated.
-                username: ${WORKER_DATABASE_USERNAME:ekbatan}
-                password: ${WORKER_DATABASE_PASSWORD:ekbatan}
-              # The scheduler's own pool, at least twice the worker threads: a job body holding
-              # the last connection would starve the heartbeat. See app.py's docstring.
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+                poolTimeout: 5
+              # The scheduler. At least twice the job worker threads: a job body holding the last
+              # connection would starve the heartbeat. Warned at startup if short.
               jobsConfig:
                 # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   options: -c TimeZone=UTC
-                url: ${WORKER_DATABASE_URL:postgresql+psycopg://localhost:5432/wallet}
-                username: ${WORKER_DATABASE_USERNAME:ekbatan}
-                password: ${WORKER_DATABASE_PASSWORD:ekbatan}
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/wallet_global}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 8
+              # Held lock leases. One connection per lease that can be held at once.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/wallet_global}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
+      - group: 1
+        name: mexico
+        members:
+          - member: 0
+            name: mexico
+            configs:
+              # The work: the jobs' bodies and the event handler.
+              primaryConfig:
+                # Extra driver settings, each name exactly as the driver spells it; handed to the
+                # driver beside the url, never printed.
+                # Postgres shows application_name in pg_stat_activity; options puts every session
+                # on UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  application_name: wallet-service
+                  options: -c TimeZone=UTC
+                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5433/wallet_mexico}
+                # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+                poolTimeout: 5
+              # The scheduler. At least twice the job worker threads: a job body holding the last
+              # connection would starve the heartbeat. Warned at startup if short.
+              jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
+                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5433/wallet_mexico}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 8
+              # Held lock leases. One connection per lease that can be held at once.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
+                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5433/wallet_mexico}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
 
-  # ISO-8601, as Java's Duration.parse reads it: PT10S. A bare number or "10s" is refused.
+  # ISO-8601 durations. The test tightens this one; ten seconds is a worker's pace.
   jobs:
     pollingInterval: PT10S
 

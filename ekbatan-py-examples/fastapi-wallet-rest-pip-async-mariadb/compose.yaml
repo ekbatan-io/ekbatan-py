@@ -1,8 +1,8 @@
-# The database `make run` starts, and stops when the app stops. Written by
+# The databases `make run` starts, and stops when the app stops. Written by
 # scripts/sync-examples.py: the image the tests use, the login and database
 # ekbatan.yaml defaults to.
 services:
-  mariadb:
+  mariadb-global:
     image: mariadb:11.4
     environment:
       MARIADB_ROOT_PASSWORD: ekbatan
@@ -10,6 +10,19 @@ services:
       TZ: UTC
     ports:
       - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+  mariadb-mexico:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: ekbatan
+      MARIADB_DATABASE: wallet
+      TZ: UTC
+    ports:
+      - "3307:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 1s

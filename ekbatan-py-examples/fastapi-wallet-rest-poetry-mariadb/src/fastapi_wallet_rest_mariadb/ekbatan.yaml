@@ -1,11 +1,12 @@
-# The service's Ekbatan settings: the database layout, the namespace, the jobs and the event
+# The service's Ekbatan settings: the shard layout, the namespace, the jobs and the event
 # handling. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
 #
-# `${NAME:default}` is an environment variable with a default, so the file runs as it is against
-# a local server and the same file runs anywhere else with the variables set. The test fills them
-# from its container.
+# Two shards, global and mexico, each its own database on its own server. `${NAME:default}` is an
+# environment variable with a default, so the file runs as it is against the servers in
+# compose.yaml and the same file runs anywhere else with the variables set. The tests fill them
+# from their containers.
 ekbatan:
-  namespace: example.fastapi_wallet_rest_mariadb
+  namespace: example.wallet
   sharding:
     defaultShard:
       group: 0
@@ -18,29 +19,28 @@ ekbatan:
             name: global
             configs:
               # Requests. Sized for how many requests are served at once.
-              # Past poolSize they queue, for at most poolTimeout seconds, then fail with a 503.
+              # Past poolSize they queue, for at most poolTimeout seconds, then fail.
               primaryConfig:
                 # Extra driver settings, each name exactly as the driver spells it; handed to the
                 # driver beside the url, never printed.
-                # init_command runs once on each new connection; time_zone puts the session on UTC,
-                # as the columns hold UTC wall-clock time.
+                # init_command runs once on each new connection: a lock wait gives up after ten
+                # seconds, and time_zone puts the session on UTC, as the columns hold UTC
+                # wall-clock time.
                 dataSourceProperties:
                   init_command: SET SESSION innodb_lock_wait_timeout=10, time_zone = '+00:00'
-                url: ${WALLET_DATABASE_URL:mariadb+pymysql://localhost:3306/wallet}
+                url: ${WALLET_GLOBAL_URL:mariadb+pymysql://localhost:3306/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:root}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 10
                 poolTimeout: 5
               # The scheduler. At least twice the job worker threads: a job body holding the last
-              # connection would starve the heartbeat, and an execution whose heartbeat stops is
-              # declared dead and run again elsewhere. Warned at startup if short.
+              # connection would starve the heartbeat. Warned at startup if short.
               jobsConfig:
                 # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   init_command: SET time_zone = '+00:00'
-                url: ${WALLET_DATABASE_URL:mariadb+pymysql://localhost:3306/wallet}
-                # The login lives here, never in the url - a url is logged and repeated.
+                url: ${WALLET_GLOBAL_URL:mariadb+pymysql://localhost:3306/wallet}
                 username: ${WALLET_DATABASE_USERNAME:root}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 8
@@ -49,8 +49,48 @@ ekbatan:
                 # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   init_command: SET time_zone = '+00:00'
-                url: ${WALLET_DATABASE_URL:mariadb+pymysql://localhost:3306/wallet}
+                url: ${WALLET_GLOBAL_URL:mariadb+pymysql://localhost:3306/wallet}
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
+      - group: 1
+        name: mexico
+        members:
+          - member: 0
+            name: mexico
+            configs:
+              # Requests. Sized for how many requests are served at once.
+              # Past poolSize they queue, for at most poolTimeout seconds, then fail.
+              primaryConfig:
+                # Extra driver settings, each name exactly as the driver spells it; handed to the
+                # driver beside the url, never printed.
+                # init_command runs once on each new connection: a lock wait gives up after ten
+                # seconds, and time_zone puts the session on UTC, as the columns hold UTC
+                # wall-clock time.
+                dataSourceProperties:
+                  init_command: SET SESSION innodb_lock_wait_timeout=10, time_zone = '+00:00'
+                url: ${WALLET_MEXICO_URL:mariadb+pymysql://localhost:3307/wallet}
                 # The login lives here, never in the url - a url is logged and repeated.
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 10
+                poolTimeout: 5
+              # The scheduler. At least twice the job worker threads: a job body holding the last
+              # connection would starve the heartbeat. Warned at startup if short.
+              jobsConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
+                url: ${WALLET_MEXICO_URL:mariadb+pymysql://localhost:3307/wallet}
+                username: ${WALLET_DATABASE_USERNAME:root}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 8
+              # Held lock leases. One connection per lease that can be held at once.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  init_command: SET time_zone = '+00:00'
+                url: ${WALLET_MEXICO_URL:mariadb+pymysql://localhost:3307/wallet}
                 username: ${WALLET_DATABASE_USERNAME:root}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 5

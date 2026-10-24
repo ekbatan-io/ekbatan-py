@@ -138,8 +138,8 @@ columns by their type, the other one column by its name:
 
 | example | picked by type | picked by name |
 |---|---|---|
-| REST (all eight), job worker (both) | every `CHAR(3)` column becomes a `Currency` | `alerts.recipient` becomes an `EmailAddress` |
-| saga (both) | every `CHAR(3)` column becomes a `Currency` | `transfer_steps.step` becomes the `StepName` enum |
+| REST (all eight), job worker (both), SQLite (both) | every `CHAR(3)` column becomes a `Currency` | - |
+| saga (both) | every `CHAR(3)` column becomes a `Currency` | `transfer_steps.step` becomes the `TransferStepName` enum |
 
 Each example's README shows the rules and the `schema.py` lines they produce. The rules are the
 same in all three builds of an example, so `scripts/sync-examples.py` writes them into every

@@ -30,11 +30,6 @@ include-expression = ".*\\.id|.*_id"
 converter = "fastapi_wallet_rest_async_mariadb.converters.CurrencyConverter"
 include-types = "CHAR\\(3\\)"
 
-# One column, picked by its name.
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "fastapi_wallet_rest_async_mariadb.converters.EmailAddressConverter"
-include-expression = "alerts\\.recipient"
-
 [tool.pytest.ini_options]
 addopts = "-q"
 

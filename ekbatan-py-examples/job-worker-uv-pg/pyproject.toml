@@ -24,11 +24,6 @@ image = "postgres:17-alpine"
 converter = "job_worker_pg.converters.CurrencyConverter"
 include-types = "CHAR\\(3\\)"
 
-# One column, picked by its name.
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "job_worker_pg.converters.EmailAddressConverter"
-include-expression = "alerts\\.recipient"
-
 [tool.pytest.ini_options]
 addopts = "-q"
 

@@ -1,157 +1,85 @@
 # fastapi-wallet-rest-poetry-async-sharded-pg
 
-The sharded REST wallet service, over **two databases**, with its request path on **native
-asyncio**, `ekbatan.aio`: every endpoint an `async def` that awaits an `AsyncActionExecutor` and
-async repositories, on asyncpg, and the deposit under an async keyed lock. The event handler is
-async too. The same service as [`fastapi-wallet-rest-uv-sharded-pg`](../fastapi-wallet-rest-uv-sharded-pg)
-otherwise - the same model, events, converters and migrations, the same routing, the same tests.
+A wallet service over HTTP on **PostgreSQL** on native asyncio: every endpoint is `async def` and awaits `ekbatan.aio`. Two shards, `global` and `mexico`, each on
+a server of its own; migrations from files; three pools per member; a keyed lock around the
+deposit; and an in-process event handler that reacts to every deposit.
+
+It is the Python counterpart of the Java wallet-rest example: the same model, actions, event
+handler, endpoints and test cases, under the same names. What differs is what the language asks
+for - FastAPI for the controller, plain classes and builders instead of DI annotations, pytest,
+the yoyo migrator, a generated `schema.py` instead of jOOQ - and each is built three ways, with
+uv, pip and Poetry. See [`../README.md`](../README.md).
 
 <!-- build: written by scripts/sync-examples.py -->
 ```
 make            # generate what is out of date, then test the built wheel, installed
-make run        # start the database, run it, stop the database
+make run        # start the databases, run it, stop the databases
 ```
 
-`make run` needs only Docker: it starts the database `compose.yaml` describes - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the database when the app stops. `docker compose down` throws the database away.
+`make run` needs only Docker: it starts the two databases `compose.yaml` describes, one server per shard - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the databases when the app stops. `docker compose down` throws the databases away.
 
 Built with **Poetry**. The same project with [uv](../fastapi-wallet-rest-uv-async-sharded-pg) and [pip and setuptools](../fastapi-wallet-rest-pip-async-sharded-pg) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 
 Needs `poetry` 2 on the path.
 <!-- /build -->
 
-## The claim, through HTTP
+## What it does
 
-The only line in the whole application that knows there is more than one database is the
-country code on `POST /wallets`:
-
-```
-POST /wallets            {"country": "MX", ...}   -> id carries shard 1:0
-GET  /wallets/{id}                                -> routed by the id, no hint
-POST /wallets/{id}/deposits                       -> names no database; under a keyed lock
-POST /wallets/{id}/transfers  (same shard)        -> 200
-POST /wallets/{id}/transfers  (across shards)     -> 422, and says to use a saga
-GET  /shards                                      -> one query per database, all at once
-GET  /wallets/{id}/alerts                         -> what the deposit handler wrote
-```
-
-## The whole idea, in one line
-
-The shard is packed into the identifier. `WalletId.generate(MEXICO)` mints an id that carries
-its coordinate, and every read and write afterwards follows it — no tenant column, no lookup
-table, no argument saying where to look.
-
-Which means `DepositMoneyAction` mentions no shard at all:
-
-```python
-async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-    wallet = await self.wallets.get(params.wallet_id)  # routed by the id
-    return self.plan.update(wallet.deposit(params.amount))
-```
-
-That is the property worth protecting. Business logic that named a database would have to be
-edited every time the layout changed.
-
-## What is async, and what is not
-
-| | here |
+| Endpoint | What runs |
 | --- | --- |
-| the endpoints | `async def`, awaiting the service - nothing blocks the event loop |
-| the request path | `AsyncDatabaseRegistry` over both shards, `WalletRepository` and `AlertRepository` on the async bases, `AsyncAction`s, an `AsyncActionExecutor` |
-| reads across shards | **at the same time**: `find_all_by_owner` (`find_where`) asks both databases at once, as `ekbatan.aio` does for every read that names no shard; `total_per_shard` asks each replica in a `TaskGroup` |
-| the keyed lock | async: `ekbatan.aio.locks`, taken around `await executor.execute(...)` on the deposit. One database holds every key - a lock is about a wallet's key, not its rows |
-| the event handler | async: `MoneyDepositedEventHandler.handle` is `async def` and awaits `RaiseAlertAction` through its own `AsyncActionExecutor`, on dispatch's handler loop - after the deposit has committed |
-| the jobs | sync: one db-scheduler, and fan-out and dispatch over every shard, on its threads |
-| migrations, `schemagen` | sync, through psycopg, every shard one at a time |
+| `POST /wallets` `{countryCode, ownerId, currency, initialBalance}` | `WalletCreateAction` - "MX" puts the wallet on the Mexico shard, anything else on the global one; the id carries the shard from then on. 201 |
+| `POST /wallets/{id}/deposits` `{amount, recipient}` | `WalletDepositMoneyAction`, under the keyed lock `wallet:{id}`; emits `WalletMoneyDepositedEvent` |
+| `POST /wallets/{id}/close` | `WalletCloseAction`; emits `WalletClosedEvent` |
+| `GET /wallets/{id}` | the wallet, or 404 |
 
-## The pools
+JSON names are camelCase on the wire and snake_case in the code; `balance` is written as text,
+which keeps every digit of the `Decimal`.
 
-`ekbatan.yaml` names the sync driver, `postgresql+psycopg://`. The sync pools connect with
-psycopg; the async registries read the same urls and connect through asyncpg. Every pool puts
-its sessions on UTC with `options: -c TimeZone=UTC`, which both drivers read.
-
-| pool | member | used by | driver |
-| --- | --- | --- | --- |
-| `primaryConfig` | each shard | the requests | asyncpg |
-| `lockConfig` | global | the deposit's keyed lock | asyncpg |
-| `handlersConfig` | global | the event handler, on the handler loop; alerts all live on the default shard | asyncpg |
-| `jobsConfig` | each shard | db-scheduler (global), and fan-out and dispatch on every shard | psycopg |
-
-## Two forced types
-
-`pyproject.toml` tells schemagen to turn two plain text columns into small classes of this
-app's own:
-
-```toml
-# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "fastapi_wallet_rest_async_sharded_pg.converters.CurrencyConverter"
-include-types = "CHAR\\(3\\)"
-
-# One column, picked by its name.
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "fastapi_wallet_rest_async_sharded_pg.converters.EmailAddressConverter"
-include-expression = "alerts\\.recipient"
-```
-
-and schemagen writes these two lines into `schema.py`:
-
-```python
-Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
-Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
-```
-
-and, in the records beside the tables, the converters' own types - so a repository's
-`to_record` that hands the table a plain string where a `Currency` belongs is a mypy error:
-
-```python
-class AlertsRecord(dict[str, Any]):
-    ...
-
-    def column_recipient(self) -> EmailAddress: ...
-
-
-class WalletsRecord(dict[str, Any]):
-    ...
-
-    def column_currency(self) -> Currency: ...
-```
-
-- **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A
-  wallet's `currency` is a `Currency`, which takes only three capital letters: `"eur"` is
-  refused.
-- **Picked by name.** `alerts.recipient` is an `EmailAddress`. A bad address is refused when
-  the deposit is made (a 400), rather than later in the handler that writes the alert, where it
-  would fail on every retry.
-
-The two classes are in `model.py` and the converters in `converters.py`; neither knows
-SQLAlchemy. The repository hands the table a `Currency` and gets one back, and the column holds
-`EUR`. Action parameters and events keep the plain text, `"currency": "EUR"`, because they are
-written to the outbox as JSON for other services to read. The test checks each value in Python,
-in the table, and through the API.
+Each deposit's event reaches `WalletMoneyDepositedEventHandler` in the same process: fan-out turns
+the committed event into a delivery and dispatch runs the handler, which starts
+`CreateNotificationAction` - a row in `notifications`, on the default shard whichever shard the
+wallet is on. The recipient is not part of the event; the handler reads it from the parameters
+of the action that produced it.
 
 ## What to look at
 
-| File | What it shows |
-|---|---|
-| `actions.py` | `OpenWalletAction` — the **one** place a shard is chosen, from a country code |
-| `model.py` | `WalletId(ShardedId)`, and nothing else about sharding |
-| `schema.py` | no shard column anywhere; every database holds the same tables |
-| `repository.py` | one async repository over every shard, and what a query without an id costs - asked of every shard at once |
-| `ekbatan.yaml` | the only file that knows how many databases there are, in the keys of Java's `application.yml`; every pool on UTC (`options: -c TimeZone=UTC`) |
-| `app.py` | the wiring, reading the layout from `ekbatan.yaml` |
-| `api.py` | `async def` endpoints; the deposit under an async keyed lock - one database, the global member, holds every key, whichever shard the wallet is on; a request that waits out the pool is a 503 |
+- **`model.py`** - `Wallet` and its three events, and `Notification`, an entity: writing one
+  emits nothing, and the unit of work that wrote it is still recorded.
+- **`actions.py`** - each action's parameters are its nested `Params`. `WalletCreateAction` is
+  the only place a shard is chosen; every other action is routed by the wallet's id.
+- **`handlers.py`** - the listen-to-yourself handler.
+- **`repository.py`** - the queries the app asks: `find_all_by_owner_id`, `exists_on_shard`,
+  `find_open_with_balance_below`, and the typed mapping to and from the table's record.
+- **`app.py`** - the wiring, and the only file that knows how many databases there are.
+- **`api.py`** - the HTTP layer, and nothing else.
+- **`ekbatan.yaml`** - the shard layout, in the same keys as Java's `application.yml`: per member,
+  `primaryConfig` for requests, `jobsConfig` for the scheduler and `lockConfig` for the lock, and `handlersConfig` for the async handler. The
+  urls and the login are `${NAME:default}` placeholders, so the file runs as it is against the
+  servers in `compose.yaml`.
 
-## Three things the tests pin
+## What is async, and what is not
 
-**Isolation is checked from the outside.** A Mexican wallet is on the Mexican database and not
-on the other one, asserted by asking each database directly.
+The requests run on `ekbatan.aio`: an `AsyncDatabaseRegistry` over both shards, async
+repositories, an `AsyncActionExecutor`, an async keyed lock. The handler is `async def` and
+awaits an executor of its own, on dispatch's handler loop - an async pool belongs to the loop it
+is used on, so its registry is its own, over `handlersConfig`. What polls - db-scheduler, and the
+fan-out and dispatch jobs it runs - stays on threads, through a sync registry over every shard's
+`jobsConfig`. The urls name the sync driver; the async side reads the same urls and connects
+through the database's async default.
 
-**A query without an id asks every shard** - at the same time, here, but still one query per
-database. A question you ask often should be answerable from one shard.
+## How the schema gets there
 
-**Reaching a second shard is refused, not half-committed.** The framework raises
-`CrossShardError` and names the two that disagreed; the API answers 422 and points at the saga,
-[`fastapi-wallet-saga-uv-async-pg`](../fastapi-wallet-saga-uv-async-pg).
+`schema.py` is generated, not written: `make` runs `python -m ekbatan.schemagen`, which starts a
+PostgreSQL container, applies the migrations in `migrations/` to it, and reflects the result - so the
+Python and the database cannot drift. The module records a fingerprint of the migrations it came
+from and checks it on import, so a stale one refuses to load rather than quietly disagreeing with
+the database.
+
+One forced type in `pyproject.toml`: every `CHAR(3)` column is a currency code, whatever it is
+called, and reads as the app's own `Currency` - the wallet's `java.util.Currency`, which Python
+does not have. `CurrencyConverter`, in `converters.py`, turns the text into a `Currency` and back,
+so the repository never sees the text. Action parameters and events keep the plain code,
+`"currency": "EUR"`, because they are written to the outbox as JSON for other services to read.
 
 ## Its test
 
@@ -159,20 +87,8 @@ database. A question you ask often should be answerable from one shard.
 make
 ```
 
-Twenty-three cases against two databases on one PostgreSQL in Testcontainers - the sync twin's
-twenty-two, and one more. A test that drives the service directly awaits on a loop of its own (a
-`HandlerLoop`); one through HTTP awaits on the app's loop, through `client.portal`. The extra one
-says what this example is for: the requests, the lock and the handler really run on asyncpg
-while the jobs run on psycopg.
-
-## Two databases, one server
-
-The tests create `shard_global` and `shard_mexico` on one Postgres container. The framework
-opens a pool per url and cannot tell that one process is behind both, so the routing is
-genuinely exercised.
-
-## Ids that name a shard you have not configured
-
-`default_shard` is where those land, rather than being refused. That is what lets one
-environment read another's ids — a staging deployment with one database can read a production
-id minted for shard 3 instead of throwing at it.
+Against two PostgreSQL servers in Testcontainers, one per shard, it asks what the Java example's
+test asks: separate wallets route to their own shards, a deposit's event reaches the handler and
+leaves a notification, closing a wallet closes it, and the driver settings in `ekbatan.yaml` reach
+the database. Two checks are its own: no object of the service shows the database password, and
+the migration files pass the checks a deploy runs.

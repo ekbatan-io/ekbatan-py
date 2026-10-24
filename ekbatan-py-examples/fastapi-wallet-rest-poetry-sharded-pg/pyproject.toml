@@ -49,10 +49,5 @@ image = "postgres:17-alpine"
 converter = "fastapi_wallet_rest_sharded_pg.converters.CurrencyConverter"
 include-types = "CHAR\\(3\\)"
 
-# One column, picked by its name.
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "fastapi_wallet_rest_sharded_pg.converters.EmailAddressConverter"
-include-expression = "alerts\\.recipient"
-
 [tool.pytest.ini_options]
 addopts = "-q"

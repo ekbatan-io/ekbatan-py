@@ -8,23 +8,19 @@ handful of questions this application actually asks.
 `from_record`, and the base refuses to create one until both exist. Both are typed by the
 table's record - `WalletsRecord`, which schemagen writes into `schema.py` beside `WALLETS` - so
 mypy says so when a column is left out, misspelt, or given the wrong type.
-
-Where the names line up - which is the usual case, because a dataclass already knows its own
-fields - that is two lines saying so. It was the default until `EKB-0217`, and being the default
-is what made it magic: rename a column without renaming the field and the mapping silently
-stopped matching.
 """
 
 from __future__ import annotations
 
-from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository
-from ekbatan.clock import Clock
-from ekbatan.domain import GenericState
+from decimal import Decimal
+from uuid import UUID
+
+from ekbatan import DatabaseRegistry, EntityRepository, ModelRepository, ShardIdentifier
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
-from .model import Alert, Wallet, WalletState
-from .schema import ALERTS, WALLETS, AlertsRecord, WalletsRecord
+from .model import Notification, NotificationKind, NotificationState, Wallet, WalletState
+from .schema import NOTIFICATIONS, WALLETS, NotificationsRecord, WalletsRecord
 
 
 class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
@@ -34,21 +30,32 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
     framework check that this table can hold the timestamps a model carries.
     """
 
-    def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
+    def __init__(self, database_registry: DatabaseRegistry) -> None:
         super().__init__(
-            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+            Wallet, WALLETS, database_registry, sharding=EmbeddedBitsShardingStrategy()
+        )
+
+    def find_all_by_owner_id(self, owner_id: UUID) -> list[Wallet]:
+        """Every shard's replica, asked in turn: an owner's wallets can be on any of them."""
+        return self.find_where(WALLETS.c.owner_id == owner_id)
+
+    def find_all_on_shard(self, shard: ShardIdentifier) -> list[Wallet]:
+        return self.all(shard=shard)
+
+    def exists_on_shard(self, shard: ShardIdentifier, wallet_id: UUID) -> bool:
+        return self.exists_where(WALLETS.c.id == wallet_id, shard=shard)
+
+    def find_open_with_balance_below(self, threshold: Decimal) -> list[Wallet]:
+        return self.find_where(
+            WALLETS.c.balance < threshold, WALLETS.c.state == WalletState.OPENED.name
         )
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
         """Every column, named - the model as one row.
 
-        Two of the eight are conversions rather than copies, and each is a decision about how
-        the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
-        than its value. The timestamps go in exactly as they are - the clock gives UTC with no
-        zone attached, and that is what the column holds.
-
-        `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
-        turns it into text, and turns the text back into a `Currency` on every read.
+        A typed id goes in as its `uuid` and an enum as its `name`. `currency` goes in as the
+        `Currency` it is: the column's converter in `schema.py` turns it into text, and the text
+        back into a `Currency` on every read.
         """
         return WalletsRecord(
             id=wallet.id.value,
@@ -65,11 +72,6 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
         )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
-        """And back - one row as the model.
-
-        The framework hands it the row read by column name - or, where an insert has no
-        `RETURNING`, the record `to_record` just wrote.
-        """
         return Wallet(
             id=ShardedId[Wallet](record.column_id()),
             version=record.column_version(),
@@ -82,37 +84,38 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
         )
 
 
-class AlertRepository(EntityRepository[Alert, AlertsRecord, Id[Alert]]):
-    """Alerts. Not sharded - they are looked up by wallet, not by their own id.
+class NotificationRepository(EntityRepository[Notification, NotificationsRecord, Id[Notification]]):
+    """Notifications, on the default shard: no sharding strategy, so every one is written there
+    and read from there, whichever shard its wallet is on.
 
     An EntityRepository, because writing one is not news: no events, and no timestamps for the
     table to hold.
     """
 
-    def to_record(self, alert: Alert) -> AlertsRecord:
-        """Six columns, and no timestamps - an entity carries none. `recipient` is an
-        `EmailAddress` both ways; its converter in `schema.py` does the text."""
-        return AlertsRecord(
-            id=alert.id.value,
-            version=alert.version,
-            state=alert.state.name,
-            wallet_id=alert.wallet_id.value,
-            recipient=alert.recipient,
-            message=alert.message,
+    def __init__(self, database_registry: DatabaseRegistry) -> None:
+        super().__init__(Notification, NOTIFICATIONS, database_registry)
+
+    def find_all_by_wallet_id(self, wallet_id: UUID) -> list[Notification]:
+        return self.find_where(NOTIFICATIONS.c.wallet_id == wallet_id)
+
+    def to_record(self, notification: Notification) -> NotificationsRecord:
+        return NotificationsRecord(
+            id=notification.id.value,
+            version=notification.version,
+            state=notification.state.name,
+            wallet_id=notification.wallet_id,
+            kind=notification.kind.name,
+            recipient=notification.recipient,
+            message=notification.message,
         )
 
-    def from_record(self, record: AlertsRecord) -> Alert:
-        return Alert(
-            id=Id[Alert](record.column_id()),
+    def from_record(self, record: NotificationsRecord) -> Notification:
+        return Notification(
+            id=Id[Notification](record.column_id()),
             version=record.column_version(),
-            state=GenericState[record.column_state()],
-            wallet_id=ShardedId[Wallet](record.column_wallet_id()),
+            state=NotificationState[record.column_state()],
+            wallet_id=record.column_wallet_id(),
+            kind=NotificationKind[record.column_kind()],
             recipient=record.column_recipient(),
             message=record.column_message(),
         )
-
-    def __init__(self, registry: DatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(Alert, ALERTS, registry, clock=clock)
-
-    def find_for_wallet(self, wallet_id: ShardedId[Wallet]) -> list[Alert]:
-        return self.find_where(ALERTS.c.wallet_id == wallet_id.value)

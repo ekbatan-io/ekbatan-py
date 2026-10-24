@@ -1,14 +1,9 @@
-"""The HTTP layer, and the one endpoint a saga changes the shape of.
+"""The HTTP layer, and nothing else.
 
-`POST /wallets/{id}/transfers` returns **202 Accepted**, not 200, and that is the whole point.
-The transfer is not done when the response is written - step one has committed, the money has
-left the source, and the rest happens as events are delivered. A 200 would be a lie about a
-thing that is still in flight.
-
-So the reply carries a `transfer_id` and a status endpoint to poll. That is what a saga costs a
-client, and pretending otherwise is how people end up surprised by it in production.
-
-Java's `spring-boot-wallet-saga-gradle-pg` adds the same endpoint to the same wallet controller.
+A transfer is answered with 202 once its first step has committed: the source is debited, and
+the rest of the saga runs in the background. The endpoints are plain `def`: the framework is
+synchronous, so FastAPI runs each on a worker thread. JSON field names are camelCase on the
+wire and snake_case in the code.
 """
 
 from __future__ import annotations
@@ -16,48 +11,58 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from fastapi import Depends, FastAPI, HTTPException, Request
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
-from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
-from ekbatan.ids import ShardedId
+from ekbatan.ids import Id
 
 from .actions import (
     InitiateTransferAction,
-    OpenWalletAction,
-    OpenWalletParams,
-    TransferParams,
-    TransferResult,
+    WalletCloseAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
-from .app import SagaService, build
-from .model import StepName, Wallet
-
-MONEY = Decimal("0.01")
+from .app import Settings, WalletService, build
+from .model import Wallet
 
 
-class OpenWalletRequest(BaseModel):
+class _Json(BaseModel):
+    """camelCase names on the wire, as the Java service writes them."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class CreateRequest(_Json):
     owner_id: UUID
-    currency: str = Field(min_length=3, max_length=3)
-    opening_balance: Decimal = Field(ge=0)
+    currency: str
+    initial_balance: Decimal
 
 
-class TransferRequest(BaseModel):
+class DepositRequest(_Json):
+    amount: Decimal
+
+
+class TransferRequest(_Json):
+    from_wallet_id: UUID
     to_wallet_id: UUID
-    amount: Decimal = Field(gt=0)
+    amount: Decimal
 
 
-class WalletResponse(BaseModel):
+class WalletResponse(_Json):
     id: UUID
     owner_id: UUID
     currency: str
+    #: Written as text, "75.0000": a `Decimal` keeps every digit that way, where a JSON number
+    #: would go through a float.
     balance: Decimal
     state: str
+    version: int
 
     @classmethod
     def of(cls, wallet: Wallet) -> WalletResponse:
@@ -65,45 +70,36 @@ class WalletResponse(BaseModel):
             id=wallet.id.value,
             owner_id=wallet.owner_id,
             currency=wallet.currency.code,
-            balance=wallet.balance.quantize(MONEY),
+            balance=wallet.balance,
             state=wallet.state.name,
+            version=wallet.version,
         )
 
 
-class TransferAccepted(BaseModel):
-    """What a client gets back from something that has only started."""
-
+class TransferResponse(_Json):
     transfer_id: UUID
-    #: The source, as it is *now* - already debited. The destination has not been credited yet.
-    source: WalletResponse
-    status_url: str
+    from_wallet: WalletResponse
 
 
-class TransferStatus(BaseModel):
-    transfer_id: UUID
-    #: Which steps have run. Empty until fan-out delivers step one's event.
-    steps: list[str]
-    #: Derived from the steps, for a client that does not want to know what a step is.
-    state: str
-
-
-def service_of(request: Request) -> SagaService:
-    service: SagaService = request.app.state.service
+def service_of(request: Request) -> WalletService:
+    """The wired service, built once at startup and shared by every request."""
+    service: WalletService = request.app.state.service
     return service
 
 
-Service = Annotated[SagaService, Depends(service_of)]
+Service = Annotated[WalletService, Depends(service_of)]
 
 
-def create_app() -> FastAPI:
-    """The app on `ekbatan.yaml`; its placeholders are read from the process environment."""
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """The app, and the service it runs on. A factory, so a test can build one with settings of
+    its own, against a throwaway database."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Built and started on a worker thread: `build` runs the migrations and starting
-        # registers the jobs, both sync and both waiting on the database - and the sync API
-        # is refused on the event loop's own thread.
-        service = await asyncio.to_thread(build)
+        # registers the jobs, both sync - and the sync API is refused on the event loop's own
+        # thread.
+        service = await asyncio.to_thread(build, settings)
         await asyncio.to_thread(service.start)
         app.state.service = service
         try:
@@ -111,85 +107,58 @@ def create_app() -> FastAPI:
         finally:
             await asyncio.to_thread(service.close)
 
-    app = FastAPI(title="Wallet transfers", lifespan=lifespan)
-
-    @app.exception_handler(EntityNotFoundError)
-    async def _missing(request: Request, error: Exception) -> JSONResponse:
-        return JSONResponse(status_code=404, content={"detail": str(error)})
-
-    @app.exception_handler(ValidationError)
-    async def _rejected(request: Request, error: Exception) -> JSONResponse:
-        return JSONResponse(status_code=400, content={"detail": str(error)})
-
-    @app.exception_handler(StaleRecordError)
-    async def _lost_a_race(request: Request, error: Exception) -> JSONResponse:
-        return JSONResponse(status_code=409, content={"detail": "the wallet changed; retry"})
-
-    @app.exception_handler(PoolTimeoutError)
-    async def _too_busy(request: Request, error: Exception) -> JSONResponse:
-        # Waited `pool_timeout` for a database connection and got none: the service is past
-        # what its pool can serve. A 503 with Retry-After tells the caller to come back.
-        return JSONResponse(
-            status_code=503, content={"detail": "too busy; retry"}, headers={"Retry-After": "1"}
-        )
+    app = FastAPI(title="Wallet saga", lifespan=lifespan)
 
     @app.post("/wallets", response_model=WalletResponse, status_code=201)
-    def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
-        return WalletResponse.of(
-            service.executor.execute(
-                OpenWalletAction,
-                OpenWalletParams(
-                    owner_id=body.owner_id,
-                    currency=body.currency,
-                    opening_balance=body.opening_balance,
-                ),
-            )
+    def create(body: CreateRequest, service: Service) -> WalletResponse:
+        wallet = service.executor.execute(
+            WalletCreateAction,
+            WalletCreateAction.Params(
+                owner_id=body.owner_id, currency=body.currency, initial_balance=body.initial_balance
+            ),
+            principal="rest-user",
         )
+        return WalletResponse.of(wallet)
 
-    @app.get("/wallets/{wallet_id}", response_model=WalletResponse)
-    def read_wallet(wallet_id: UUID, service: Service) -> WalletResponse:
-        return WalletResponse.of(service.wallets.get(ShardedId[Wallet](wallet_id)))
+    @app.post("/wallets/{id}/deposits", response_model=WalletResponse)
+    def deposit(id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
+        with service.lock_provider.acquire(f"wallet:{id}", timedelta(seconds=10)):
+            updated = service.executor.execute(
+                WalletDepositMoneyAction,
+                WalletDepositMoneyAction.Params(wallet_id=Id[Wallet].of(id), amount=body.amount),
+                principal="rest-user",
+            )
+            return WalletResponse.of(updated)
 
-    @app.post("/wallets/{wallet_id}/transfers", response_model=TransferAccepted, status_code=202)
-    def transfer(wallet_id: UUID, body: TransferRequest, service: Service) -> TransferAccepted:
-        """**202**, because only step one has committed when this returns.
-
-        The source is debited and `TransferInitiatedEvent` is in the outbox. Whether the
-        destination is credited, or the transfer fails and is refunded, is decided later by
-        handlers - so the honest answer here is "accepted", with somewhere to look.
-        """
-        result: TransferResult = service.executor.execute(
+    @app.post("/wallets/transfers", response_model=TransferResponse, status_code=202)
+    def transfer(body: TransferRequest, service: Service) -> TransferResponse:
+        result = service.executor.execute(
             InitiateTransferAction,
-            TransferParams(
-                from_wallet_id=ShardedId[Wallet](wallet_id),
-                to_wallet_id=ShardedId[Wallet](body.to_wallet_id),
+            InitiateTransferAction.Params(
+                from_wallet_id=Id[Wallet].of(body.from_wallet_id),
+                to_wallet_id=Id[Wallet].of(body.to_wallet_id),
                 amount=body.amount,
             ),
+            principal="rest-user",
         )
-        return TransferAccepted(
-            transfer_id=result.transfer_id,
-            source=WalletResponse.of(result.source),
-            status_url=f"/transfers/{result.transfer_id}",
+        return TransferResponse(
+            transfer_id=result.transfer_id, from_wallet=WalletResponse.of(result.source_wallet)
         )
 
-    @app.get("/transfers/{transfer_id}", response_model=TransferStatus)
-    def transfer_status(transfer_id: UUID, service: Service) -> TransferStatus:
-        """Where a saga's state actually lives: the steps that have run.
+    @app.post("/wallets/{id}/close", response_model=WalletResponse)
+    def close(id: UUID, service: Service) -> WalletResponse:
+        closed = service.executor.execute(
+            WalletCloseAction,
+            WalletCloseAction.Params(wallet_id=Id[Wallet].of(id)),
+            principal="rest-user",
+        )
+        return WalletResponse.of(closed)
 
-        There is no saga table and no coordinator to ask - the markers each step writes *are*
-        the state, which is what choreography means.
-        """
-        steps = service.steps.steps_of(transfer_id)
-        if StepName.REFUND in steps:
-            state = "REFUNDED"
-        elif StepName.CREDIT in steps:
-            state = "COMPLETED"
-        else:
-            state = "IN_FLIGHT"
-        return TransferStatus(transfer_id=transfer_id, steps=[s.name for s in steps], state=state)
-
-    @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    @app.get("/wallets/{id}", response_model=WalletResponse)
+    def get(id: UUID, service: Service) -> WalletResponse:
+        wallet = service.wallet_repository.find(Id[Wallet].of(id))
+        if wallet is None:
+            raise HTTPException(status_code=404)
+        return WalletResponse.of(wallet)
 
     return app

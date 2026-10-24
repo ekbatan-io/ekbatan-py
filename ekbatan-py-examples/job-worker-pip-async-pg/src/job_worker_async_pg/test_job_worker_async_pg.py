@@ -1,508 +1,208 @@
-"""The worker, its two jobs, and the claim that makes a cluster safe - with the work async.
+"""The worker's own test, on `ekbatan.aio`, against two real Postgres servers - the global
+shard and the Mexico shard, as the worker runs in production.
 
     make
 
-Java's `WalletJobsIntegrationTest` covers the same ground. This runs with the scheduler's clock
-in the test's hands, so the slots happen where the assertions are rather than whenever a timer
-fired.
+It asks what the Java example's test asks: the stipend job tops up the under-funded wallet on
+each shard and its deposits leave notifications, and the driver settings in `ekbatan.yaml`
+reach the database. Two checks are its own: no object of the worker shows the database
+password, and the migration files pass the checks a deploy runs.
 
-The jobs are sync, as every distributed job is; their work runs on the worker loop, awaited. A
-test reads the tables through the sync registry and awaits the async side on that same loop,
-with `worker.run(...)`.
+The worker's work runs on its loop; a test that reaches into it awaits there, through
+`worker.loop.run(...)`.
 """
 
 from __future__ import annotations
 
-import asyncio
-import threading
-from collections.abc import Awaitable, Iterator
-from datetime import UTC, datetime, timedelta
+import time
+from collections.abc import Callable, Iterator
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pytest
-from db_scheduler.clock import SettableClock
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import text
+from testcontainers.community.postgres import PostgresContainer
 
-from ekbatan import ActionRegistry, DatabaseRegistry, RepositoryRegistry
-from ekbatan.aio import (
-    AsyncActionExecutor,
-    AsyncDatabaseRegistry,
-)
-from ekbatan.clock import SystemClock
+from ekbatan import ShardIdentifier
 from ekbatan.config import split_login
-from ekbatan.config_files import load_ekbatan_config
-from ekbatan.distributedjobs import job_registry
-from ekbatan.errors import ValidationError
-from ekbatan.events import (
-    EventFanoutJob,
-    EventHandlerRegistry,
-    EventHandlingJob,
-    HandlerLoop,
-)
-from ekbatan.migrations import migrate_registry, validate_scripts
-from ekbatan.time import Instant
+from ekbatan.migrations import validate_scripts
 
-from .actions import (
-    CloseWalletAction,
-    DepositMoneyAction,
-    OpenWalletAction,
-    OpenWalletParams,
-    RaiseAlertAction,
-)
-from .app import CONFIG_FILE, MIGRATIONS, build
-from .handlers import MoneyDepositedEventHandler
-from .jobs import PayStipendJob, WalletReportJob
-from .model import Currency, EmailAddress, Wallet
-from .repository import AlertRepository, WalletRepository
-from .schema import EVENTS, SCHEDULED_TASKS, metadata
+from .actions import WalletCreateAction
+from .app import CONFIG_FILE, MIGRATIONS, Worker, build
+from .model import NotificationKind, Wallet
 
-EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
-
-
-#: The database's real password: a marker, so a test can prove nothing shows it.
+GLOBAL_SHARD = WalletCreateAction.GLOBAL_SHARD
+MEXICO_SHARD = WalletCreateAction.MEXICO_SHARD
+#: The containers' password: a marker no object of the worker may show.
 SECRET = "Mk-7f3a-SECRET"
 
 
-def point_at(patch: pytest.MonkeyPatch, url: str) -> None:
-    """Fill `ekbatan.yaml`'s placeholders as a deployment does, in the environment: the
-    container's url, its login kept apart. `patch` puts the old values back afterwards."""
-    plain, username, password = split_login(url)
-    patch.setenv("WORKER_DATABASE_URL", plain)
-    patch.setenv("WORKER_DATABASE_USERNAME", username or "")
-    patch.setenv("WORKER_DATABASE_PASSWORD", password or "")
-
-
-class Harness:
-    """The worker, with the scheduler's threads and clock taken out.
-
-    `build()` in `app.py` returns the real thing - a scheduler with a thread pool, polling on a
-    timer - which is what you want in production and not what you want in a test. This is the
-    same wiring through `build_manual`, so a test says when a slot runs: the work on the worker
-    loop over an async registry, the tables and the scheduler over a sync one.
-    """
-
-    def __init__(self) -> None:
-        running = SystemClock()
-        # The same `ekbatan.yaml` the worker reads, its placeholders filled from the environment
-        # the test points at the container.
-        ekbatan = load_ekbatan_config(CONFIG_FILE)
-        # Sync, on psycopg: the tables, the scheduler, fan-out and dispatch.
-        self.registry = DatabaseRegistry.from_config(ekbatan.sharding)
-        migrate_registry(self.registry, metadata)
-
-        # Async, on asyncpg, used only on the worker loop.
-        self.loop = HandlerLoop(name="worker-loop")
-        self.async_registry = AsyncDatabaseRegistry.from_config(ekbatan.sharding)
-        self.wallets = WalletRepository(self.async_registry, clock=running)
-        self.alerts = AlertRepository(self.async_registry, clock=running)
-        self.executor = (
-            AsyncActionExecutor.builder()
-            .namespace(ekbatan.namespace)
-            .database_registry(self.async_registry)
-            .repository_registry(
-                RepositoryRegistry.builder()
-                .with_model_repository(self.wallets)
-                .with_entity_repository(self.alerts)
-                .build()
-            )
-            .action_registry(
-                ActionRegistry.builder()
-                .with_action(OpenWalletAction(running))
-                .with_action(DepositMoneyAction(self.wallets, running))
-                .with_action(CloseWalletAction(self.wallets, running))
-                .with_action(RaiseAlertAction(running))
-                .build()
-            )
-            .clock(running)
-            .build()
-        )
-        handlers = (
-            EventHandlerRegistry.builder()
-            .with_handler(MoneyDepositedEventHandler(self.executor))
-            .build()
-        )
-        config = ekbatan.local_event_handler
-
-        self.stipend = PayStipendJob(self.loop, self.executor, self.wallets)
-        self.report = WalletReportJob(self.loop, self.wallets)
-        self.clock = SettableClock(EPOCH)
-        self.fanout_job = (
-            EventFanoutJob.builder()
-            .registry(self.registry)
-            .handlers(handlers)
-            .config(config)
-            .clock(running)
-            .build()
-        )
-        self.handling_job = (
-            EventHandlingJob.builder()
-            .registry(self.registry)
-            .handlers(handlers)
-            .handler_loop(self.loop)
-            .config(config)
-            .clock(running)
-            .build()
-        )
-
-        # The two event jobs are built but **not scheduled**, which is how Java's own
-        # integration tests use them: `fanoutJob.drainOneRound()`, never a scheduler. Each is
-        # one execution that runs for the life of the process, so scheduling one here would
-        # never return - the manual scheduler runs everything on the calling thread. In the
-        # worker itself they are registered like any other job and loop on their own threads.
-        self.jobs = (
-            job_registry()
-            .data_source(self.registry.default.primary)
-            .with_jobs([self.stipend, self.report])
-            .build_manual(self.clock)
-        )
-
-    def tick(self, seconds: int = 3) -> None:
-        """Move the scheduler's clock on, run whatever that made due, then drain the events.
-
-        The event pipeline is drained directly rather than scheduled, for the reason given
-        where the two registries are built: each event job is one execution that never returns.
-        In the running worker they loop on their own threads and none of this applies.
-        """
-        self.clock.set(self.clock.now() + timedelta(seconds=seconds))
-        self.jobs.scheduler.run_any_due_executions()
-        self.fanout_job.fanout.drain_once()
-        self.handling_job.dispatch.drain_once()
-
-    def run[T](self, work: Awaitable[T]) -> T:
-        """Await `work` on the worker loop, where the async side's pool lives."""
-        return self.loop.run(work)
-
-    def close(self) -> None:
-        self.run(self.async_registry.aclose())
-        self.loop.close()
-        self.registry.close()
-
-
 @pytest.fixture(scope="module")
-def database() -> Iterator[str]:
-    from testcontainers.community.postgres import PostgresContainer
+def databases() -> Iterator[dict[str, str]]:
+    """Two servers, one per shard, and what fills `ekbatan.yaml`'s placeholders from them."""
+    with (
+        PostgresContainer(
+            "postgres:17-alpine", driver="psycopg", password=SECRET, dbname="wallet_global"
+        ) as global_server,
+        PostgresContainer(
+            "postgres:17-alpine", driver="psycopg", password=SECRET, dbname="wallet_mexico"
+        ) as mexico_server,
+    ):
+        global_url, username, password = split_login(global_server.get_connection_url())
+        mexico_url, _, _ = split_login(mexico_server.get_connection_url())
+        yield {
+            "WALLET_GLOBAL_URL": global_url,
+            "WALLET_MEXICO_URL": mexico_url,
+            "WALLET_DATABASE_USERNAME": username or "",
+            "WALLET_DATABASE_PASSWORD": password or "",
+        }
 
-    # PostgreSQL, because the directory says so. Java's counterpart is `-pg` too, and the
-    # reason is the same: running once per slot across a cluster is the thing this shows, and
-    # a cluster does not share a SQLite file.
-    with PostgresContainer("postgres:17-alpine", driver="psycopg", password=SECRET) as container:
-        yield container.get_connection_url()
+
+def use(monkeypatch: pytest.MonkeyPatch, databases: dict[str, str]) -> None:
+    for name, value in databases.items():
+        monkeypatch.setenv(name, value)
+
+
+def fast_config(directory: Path) -> Path:
+    """`ekbatan.yaml` with the polling tightened, as Java's test sets durations of its own, so
+    the chain converges in a second rather than in ten."""
+    text_ = CONFIG_FILE.read_text().replace("pollingInterval: PT10S", "pollingInterval: PT0.2S")
+    text_ = text_.replace(
+        "  local-event-handler:\n",
+        "  local-event-handler:\n    fanoutPollDelay: PT0.2S\n    handlingPollDelay: PT0.2S\n",
+    )
+    path = directory / "ekbatan.yaml"
+    path.write_text(text_)
+    return path
 
 
 @pytest.fixture
-def worker(database: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Harness]:
-    point_at(monkeypatch, database)
-    built = Harness()
-    # One container for the module, so every test starts from an empty database rather than
-    # from whatever the last one left. `scheduled_tasks` goes too: each test builds its own
-    # registry and `start()` writes the rows again, and a row left behind from the previous
-    # test carries its `execution_time` with it.
-    with built.registry.default.connection() as conn:
-        for table in (
-            "eventlog.event_notifications",
-            "eventlog.events",
-            "alerts",
-            "wallets",
-            "scheduled_tasks",
-        ):
-            conn.execute(text(f"TRUNCATE TABLE {table}"))
+def worker(
+    databases: dict[str, str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> Iterator[Worker]:
+    use(monkeypatch, databases)
+    built = build(config_file=fast_config(tmp_path))
+    built.start()
     try:
-        built.jobs.start()
         yield built
     finally:
         built.close()
 
 
-def a_wallet(worker: Harness, balance: str = "0.00") -> Wallet:
-    return worker.run(
+def eventually(check: Callable[[], bool], within: float = 20.0) -> bool:
+    """Polled: the stipend job, fan-out and dispatch are real jobs on a real schedule."""
+    deadline = time.monotonic() + within
+    while not check():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.3)
+    return True
+
+
+def a_wallet(worker: Worker, country_code: str, currency: str) -> Wallet:
+    return worker.loop.run(
         worker.executor.execute(
-            OpenWalletAction,
-            OpenWalletParams(owner_id=uuid4(), currency="EUR", opening_balance=Decimal(balance)),
+            WalletCreateAction,
+            WalletCreateAction.Params(
+                country_code=country_code,
+                owner_id=uuid4(),
+                currency=currency,
+                initial_balance=Decimal("0"),
+            ),
+            principal="test-user",
         )
     )
 
 
-def balance_of(worker: Harness, wallet: Wallet) -> Decimal:
-    return worker.run(worker.wallets.get(wallet.id)).balance
+def test_stipend_job_tops_up_underfunded_wallets_on_each_shard_and_triggers_notifications(
+    worker: Worker,
+) -> None:
+    global_wallet = a_wallet(worker, "US", "USD")
+    mexico_wallet = a_wallet(worker, "MX", "MXN")
 
+    wallet_repository = worker.wallet_repository
+    run = worker.loop.run
+    assert run(wallet_repository.exists_on_shard(GLOBAL_SHARD, global_wallet.id.value))
+    assert not run(wallet_repository.exists_on_shard(MEXICO_SHARD, global_wallet.id.value))
+    assert run(wallet_repository.exists_on_shard(MEXICO_SHARD, mexico_wallet.id.value))
+    assert not run(wallet_repository.exists_on_shard(GLOBAL_SHARD, mexico_wallet.id.value))
 
-def test_every_job_has_exactly_one_row_however_many_workers_run(worker: Harness) -> None:
-    """The whole basis of running once per slot across a cluster: one row per job, and a second
-    worker registering the same jobs adds none.
-
-    Two here, not the worker's four: this harness schedules the stipend and the report, and
-    drains the two event jobs directly, as Java's integration tests do. `app.build()` registers
-    all four, and `test_the_worker_registers_all_four_jobs` is where that is asserted."""
-    with worker.registry.default.connection(readonly=True) as conn:
-        rows = conn.execute(select(func.count()).select_from(SCHEDULED_TASKS)).scalar_one()
-
-    assert rows == 2, "stipend and report"
-
-
-def test_the_worker_registers_all_four_jobs(worker: Harness) -> None:
-    """What the running worker does: the event jobs are scheduled like any other, and claimed
-    from the same table as the stipend. Registered and not ticked - each is one execution that
-    runs for the life of the process, so there is nothing here that would return."""
-    all_four = (
-        job_registry()
-        .data_source(worker.registry.default.primary)
-        .with_jobs([worker.fanout_job, worker.handling_job, worker.stipend, worker.report])
-        .build_manual(SettableClock(EPOCH))
-    )
-    all_four.start()
-
-    with worker.registry.default.connection(readonly=True) as conn:
-        names = {r[0] for r in conn.execute(select(SCHEDULED_TASKS.c.task_name))}
-
-    assert len(names) == 4, f"four jobs, four rows - got {sorted(names)}"
-
-
-def test_the_stipend_job_tops_up_a_low_wallet(worker: Harness) -> None:
-    wallet = a_wallet(worker, "0.00")
-
-    worker.tick()
-
-    assert balance_of(worker, wallet) == Decimal("10.0000")
-
-
-def test_and_stops_once_the_wallet_is_above_the_threshold(worker: Harness) -> None:
-    """Idempotent by construction: the query selects wallets *below* the threshold, so a repeat
-    of the slot finds nothing to do. A job that deposited unconditionally would double-pay on
-    the replay that at-least-once delivery makes inevitable."""
-    wallet = a_wallet(worker, "95.00")
-
-    worker.tick()
-    first = balance_of(worker, wallet)
-    for _ in range(3):
-        worker.tick()
-
-    assert first == Decimal("105.0000")
-    assert balance_of(worker, wallet) == first, "already above the threshold"
-
-
-def test_a_job_is_an_ordinary_caller_and_the_audit_cannot_tell(worker: Harness) -> None:
-    """The point of routing a job's work through an action: the outbox row it produces is
-    indistinguishable from one a request produced."""
-    a_wallet(worker, "0.00")
-
-    worker.tick()
-
-    with worker.registry.default.connection(readonly=True) as conn:
-        deposits = conn.execute(
-            select(EVENTS.c.action_name, EVENTS.c.namespace).where(
-                EVENTS.c.event_type == "MoneyDepositedEvent"
+    def topped_up_and_notified() -> bool:
+        for wallet in (global_wallet, mexico_wallet):
+            if run(wallet_repository.get(wallet.id)).balance < Decimal("10.00"):
+                return False
+            notifications = run(
+                worker.notification_repository.find_all_by_wallet_id(wallet.id.value)
             )
-        ).all()
+            if not notifications:
+                return False
+            assert all(n.kind is NotificationKind.MONEY_DEPOSITED for n in notifications)
+        return True
 
-    assert len(deposits) == 1
-    assert deposits[0].action_name == "DepositMoneyAction"
-    assert deposits[0].namespace == "example.job_worker_async_pg"
-
-
-def test_the_job_to_handler_chain_runs_inside_one_worker(worker: Harness) -> None:
-    """Job -> action -> outbox -> fan-out -> handler -> another action, with no HTTP anywhere
-    and no second process. The fan-out and handling jobs are claimed from the same table as the
-    stipend, so this is four scheduled slots cooperating."""
-    wallet = a_wallet(worker, "0.00")
-
-    for _ in range(4):
-        worker.tick()
-
-    alerts = worker.run(worker.alerts.find_for_wallet(wallet.id))
-    assert alerts, "the deposit event reached the handler, which wrote an alert"
-    assert alerts[0].recipient == EmailAddress("stipend@example.com"), "off the job's parameters"
-    with worker.registry.default.connection(readonly=True) as conn:
-        stored = conn.execute(text("SELECT DISTINCT recipient FROM alerts")).scalar_one()
-    assert stored == "stipend@example.com", "an EmailAddress in Python, plain text in the table"
+    assert eventually(topped_up_and_notified), "the stipend never reached both wallets"
 
 
-def test_the_currency_is_a_currency_in_python_and_text_in_the_database(worker: Harness) -> None:
-    """The forced type that picks every `CHAR(3)` column by its type."""
-    wallet = a_wallet(worker)
+def test_driver_settings_from_the_configuration_reach_the_database(worker: Worker) -> None:
+    """`ekbatan.yaml` gives every primaryConfig a dataSourceProperties entry; each shard's
+    primary pool must have handed it to the driver."""
 
-    assert worker.run(worker.wallets.get(wallet.id)).currency == Currency("EUR")
-    with worker.registry.default.connection(readonly=True) as conn:
-        stored = conn.execute(text("SELECT currency FROM wallets")).scalar_one()
-        opened_at = conn.execute(
-            text(
-                "SELECT payload->>'openedAt' FROM eventlog.events"
-                " WHERE event_type = 'WalletOpenedEvent'"
-            )
-        ).scalar_one()
-    assert stored == "EUR"
-    assert opened_at.endswith("Z"), "the event's Instant: UTC digits with Java's Z"
+    async def application_name(shard: ShardIdentifier) -> Any:
+        async with worker.database_registry.manager(shard).connection() as connection:
+            name = await connection.execute(text("SELECT current_setting('application_name')"))
+            return name.scalar()
 
-    with pytest.raises(ValidationError, match="three capital letters"):
-        worker.run(
-            worker.executor.execute(
-                OpenWalletAction,
-                OpenWalletParams(owner_id=uuid4(), currency="eur", opening_balance=Decimal("1.00")),
-            )
-        )
+    for shard in (GLOBAL_SHARD, MEXICO_SHARD):
+        assert worker.loop.run(application_name(shard)) == "wallet-service", shard
 
 
-def test_the_read_only_job_writes_nothing(worker: Harness) -> None:
-    """The other shape a job comes in. It invokes no action, so it produces no outbox row -
-    which is correct, because nothing happened."""
-    a_wallet(worker, "500.00")
+def test_no_worker_object_shows_the_password(
+    databases: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The containers' password is the marker `SECRET`. The worker is built from the
+    environment and really connects with it - and not one object it holds shows it."""
+    use(monkeypatch, databases)
+    built = build()
 
-    with worker.registry.default.connection(readonly=True) as conn:
-        before = conn.execute(select(func.count()).select_from(EVENTS)).scalar_one()
+    async def connect() -> Any:
+        async with built.database_registry.default.connection() as connection:
+            return (await connection.execute(text("SELECT 1"))).scalar()
 
-    worker.tick(10)
+    try:
+        assert built.loop.run(connect()) == 1, "connected with it"
+        sources: list[Any] = [
+            *(
+                built.database_registry.manager(shard).primary
+                for shard in built.database_registry.shards
+            ),
+            built.lock_data_source,
+            *built.jobs_data_sources,
+        ]
+        shown = [
+            built,
+            built.database_registry,
+            built.executor,
+            built.lock_provider,
+            built.job_registry,
+            built.events_registry,
+            *sources,
+            *(source.sqlalchemy_engine for source in sources),
+            *(source.sqlalchemy_engine.pool for source in sources),
+        ]
+        for thing in shown:
+            assert SECRET not in repr(thing), type(thing).__name__
+            assert SECRET not in str(thing), type(thing).__name__
+    finally:
+        built.close()
 
-    assert worker.report.last is not None, "the report ran"
-    count, total = worker.report.last
-    assert count == 1
-    assert total == Decimal("500.0000")
 
-    with worker.registry.default.connection(readonly=True) as conn:
-        after = conn.execute(select(func.count()).select_from(EVENTS)).scalar_one()
-    assert after == before, "a read-only job writes no events"
-
-
-def test_the_migration_files_pass_the_checks_a_deploy_runs():
+def test_the_migration_files_pass_the_checks_a_deploy_runs() -> None:
     """No database needed, so CI catches it: two files with one version, a file whose name would
     be skipped without a word, a rollback file. Each is refused here rather than at startup."""
-    assert [script.script for script in validate_scripts(MIGRATIONS)] == ["V0001__schema.sql"]
-
-
-def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(
-    database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`app.build()` itself, unstarted: everything Java's job worker keeps in `application.yml`
-    comes from `ekbatan.yaml` - the namespace, the scheduler's pool, the polling interval, the
-    handling job switched on, and a driver setting reaching the server.
-
-    A database of its own: the harness builds its tables without migration history, and
-    `build()` migrates from the files, so it refuses one the harness has touched."""
-    admin = create_engine(database, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            conn.execute(text("DROP DATABASE IF EXISTS worker_build"))
-            conn.execute(text("CREATE DATABASE worker_build"))
-    finally:
-        admin.dispose()
-    head, _, _ = database.rpartition("/")
-    # The shipped `PT10S` is also db-scheduler's default, so it cannot show the file was read; a
-    # copy with another interval can.
-    shipped = CONFIG_FILE.read_text()
-    assert "pollingInterval: PT10S" in shipped, "the interval Java's job worker ships with"
-    config_file = tmp_path / "ekbatan.yaml"
-    config_file.write_text(shipped.replace("pollingInterval: PT10S", "pollingInterval: PT7S"))
-    point_at(monkeypatch, f"{head}/worker_build")
-    worker = build(config_file=config_file)
-    try:
-        assert worker.executor.namespace == "example.job_worker_async_pg"
-        assert worker.jobs_data_source.sqlalchemy_engine.pool.size() == 8
-        assert worker.registry.default.primary.sqlalchemy_engine.sync_engine.pool.size() == 10  # type: ignore[attr-defined]
-        # db-scheduler keeps the interval on the waiter it polls with; nothing public reads it.
-        assert worker.jobs.scheduler._execute_due_waiter.duration == timedelta(seconds=7)
-        # A switched-off job is registered but never scheduled, so it is left out of the jobs
-        # that must have a row once started.
-        assert "ekbatan-event-handling" in worker.jobs._names_requiring_registration
-
-        async def settings() -> tuple[Any, Any]:
-            async with worker.registry.default.primary.sqlalchemy_engine.connect() as conn:
-                name = await conn.execute(text("SELECT current_setting('application_name')"))
-                zone = await conn.execute(text("SELECT current_setting('TimeZone')"))
-                return name.scalar(), zone.scalar()
-
-        # `options: -c TimeZone=UTC` on both pools: every session on UTC, whatever the server's
-        # default - on asyncpg, on the worker loop, and on psycopg.
-        assert worker.loop.run(settings()) == ("wallet-worker", "UTC")
-        with worker.jobs_data_source.sqlalchemy_engine.connect() as conn:
-            assert conn.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
-        # One url in `ekbatan.yaml`, two drivers: the work on asyncpg, what polls on psycopg.
-        assert worker.registry.default.primary.url.get_driver_name() == "asyncpg"
-        assert worker.events_registry.default.primary.url.get_driver_name() == "psycopg"
-    finally:
-        worker.close()
-
-
-def test_a_job_s_work_runs_on_the_worker_loop(worker: Harness) -> None:
-    """The job is sync - db-scheduler calls `execute` on its own thread, here the test's - and
-    its work is a coroutine run on the worker loop, the thread `HandlerLoop` keeps. Recorded
-    from inside the coroutine itself."""
-    a_wallet(worker, "0.00")
-    seen: list[tuple[str, bool]] = []
-    pay = worker.stipend.pay
-
-    async def recorded() -> None:
-        seen.append((threading.current_thread().name, asyncio.get_running_loop().is_running()))
-        await pay()
-
-    worker.stipend.pay = recorded  # type: ignore[method-assign]
-    worker.tick()
-
-    assert seen == [("worker-loop", True)], "the stipend's work ran on the worker loop"
-    assert threading.current_thread().name != "worker-loop"
-
-
-def test_what_the_work_raises_reaches_the_job(worker: Harness) -> None:
-    """Whatever the coroutine raises, `execute` raises on the job's thread - so a failure, and
-    db-scheduler's retry of it, are exactly as for a sync job."""
-
-    async def broken() -> None:
-        raise RuntimeError("the database went away")
-
-    worker.stipend.pay = broken  # type: ignore[method-assign]
-    with pytest.raises(RuntimeError, match="went away"):
-        worker.stipend.execute(None)  # type: ignore[arg-type]
-
-
-def test_no_service_object_shows_the_password(
-    database: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The database's real password is a marker, set in the environment as a deployment sets
-    it. Nothing the service builds shows it in its repr or str."""
-    admin = create_engine(database, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            conn.execute(text("DROP DATABASE IF EXISTS worker_secret"))
-            conn.execute(text("CREATE DATABASE worker_secret"))
-    finally:
-        admin.dispose()
-    head, _, _ = database.rpartition("/")
-    point_at(monkeypatch, f"{head}/worker_secret")
-    assert SECRET in database, "the control: the container's own url carries it"
-
-    worker = build()
-    try:
-
-        async def one() -> Any:
-            async with worker.registry.default.primary.sqlalchemy_engine.connect() as conn:
-                return (await conn.execute(text("SELECT 1"))).scalar()
-
-        assert worker.loop.run(one()) == 1, "it really logged in"
-        with worker.events_registry.default.primary.sqlalchemy_engine.connect() as conn:
-            assert conn.execute(text("SELECT 1")).scalar() == 1
-        sources = [
-            worker.registry.default.primary,
-            worker.events_registry.default.primary,
-            worker.jobs_data_source,
-        ]
-        engines = [source.sqlalchemy_engine for source in sources]
-        pools: list[object] = [*sources, *engines, *(engine.pool for engine in engines)]
-        shown = [worker, worker.registry, worker.executor, worker.jobs, *pools]
-        shown += [getattr(worker, name) for name in worker.__dataclass_fields__]
-        for thing in shown:
-            assert SECRET not in repr(thing), type(thing)
-            assert SECRET not in str(thing), type(thing)
-    finally:
-        worker.close()
-
-
-def test_a_wallet_never_holds_a_negative_balance() -> None:
-    """`Wallet.validate()` is the wallet's one place for its own rules, and ekbatan runs it
-    every time a wallet is made - here, opened with less than nothing."""
-    with pytest.raises(ValidationError, match="balance cannot be negative"):
-        Wallet.open(
-            owner_id=uuid4(),
-            currency=Currency("EUR"),
-            balance=Decimal("-0.01"),
-            created_date=Instant(datetime(2026, 1, 1, 12, 0)),
-        )
+    assert [script.script for script in validate_scripts(MIGRATIONS)] == [
+        "V0001__eventlog.sql",
+        "V0002__scheduled_tasks.sql",
+        "V0003__wallets.sql",
+        "V0004__notifications.sql",
+    ]

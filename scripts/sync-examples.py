@@ -45,21 +45,14 @@ class Forced:
         return "\n".join(lines) + "\n\n"
 
 
-#: The wallet's two: every CHAR(3) column is a currency code, picked by type; the alert's
-#: recipient is an email address, picked by name. Both turn text into a class of the app's own.
+#: The wallet's one: every CHAR(3) column is a currency code, picked by its type, and read as the
+#: app's own `Currency` - the wallet's `java.util.Currency`, which Python does not have.
 WALLET_FORCED = (
     Forced(
         "Every CHAR(3) column is a currency code, so the rule picks columns by their type.",
         (
             ("converter", "{package}.converters.CurrencyConverter"),
             ("include-types", r"CHAR\(3\)"),
-        ),
-    ),
-    Forced(
-        "One column, picked by its name.",
-        (
-            ("converter", "{package}.converters.EmailAddressConverter"),
-            ("include-expression", r"alerts\.recipient"),
         ),
     ),
 )
@@ -77,14 +70,14 @@ UUID_IDS = Forced(
 )
 
 
-#: The saga's two: the same currency rule, and the step marker's name read as the `StepName`
-#: enum, picked by name.
+#: The saga's two: the same currency rule, and the step marker's name read as the
+#: `TransferStepName` enum, picked by name.
 SAGA_FORCED = (
     WALLET_FORCED[0],
     Forced(
-        "One column, picked by its name: the saga's step, as the StepName enum.",
+        "One column, picked by its name: the saga's step, as the TransferStepName enum.",
         (
-            ("converter", "{package}.converters.StepNameConverter"),
+            ("converter", "{package}.converters.TransferStepNameConverter"),
             ("include-expression", r"transfer_steps\.step"),
         ),
     ),
@@ -103,6 +96,9 @@ class Example:
     image: str | None = "postgres:17-alpine"  # None: schema.py is hand-written, no container
     containers: str | None = "postgres"  # the testcontainers extra, if the test starts one
     forced: tuple[Forced, ...] = WALLET_FORCED  # schemagen's forced types, when it has an image
+    #: Two shards, global and Mexico, each on a server of its own - Java's layout for every
+    #: example but the saga.
+    two_shards: bool = True
 
     def directory(self, build: str) -> Path:
         parts = [self.app, build, *([self.variant] if self.variant else []), self.db]
@@ -191,18 +187,20 @@ MATRIX = (
         "fastapi-wallet-saga",
         "pg",
         "fastapi_wallet_saga_pg",
-        "A transfer across two databases, as a saga",
+        "A transfer between two wallets, as a saga",
         ("postgres", "migrations"),
         forced=SAGA_FORCED,
+        two_shards=False,
     ),
     Example(
         "fastapi-wallet-saga",
         "pg",
         "fastapi_wallet_saga_async_pg",
-        "A transfer across two databases, as a saga, on native asyncio",
+        "A transfer between two wallets, as a saga, on native asyncio",
         ("postgres", "postgres-async", "migrations"),
         variant="async",
         forced=SAGA_FORCED,
+        two_shards=False,
     ),
     Example(
         "job-worker",
@@ -471,10 +469,6 @@ def has_db(e: Example) -> bool:
     return e.db != "sqlite"
 
 
-#: The sharded examples' second database; `POSTGRES_DB` makes the first. Run once, on the first
-#: start, by the image's entrypoint.
-SHARDED_INIT = "CREATE DATABASE shard_mexico;\n"
-
 #: What each kind of server needs on top of the image: its environment, its port, and a check
 #: that it is ready - over TCP, because on its first start each image runs a server on its
 #: socket only while it sets itself up.
@@ -501,37 +495,42 @@ SERVERS = {
 
 
 def compose(e: Example) -> str:
-    """The database `make run` starts - as each of Java's examples declares its own in a
-    `compose.yaml`. The image is the one the example's tests start; the login and the database
-    are its `ekbatan.yaml`'s defaults."""
+    """The databases `make run` starts - as each of Java's examples declares its own in a
+    `compose.yaml`. The image is the one the example's tests start; the logins and the databases
+    are its `ekbatan.yaml`'s defaults. Two shards are two servers, global on the usual port and
+    Mexico on the next one, as in Java's examples."""
     service, environment, port, check = SERVERS[e.db]
-    db = "shard_global" if "sharded" in e.variant else "wallet"
+    if e.two_shards:
+        global_db, mexico_db = (
+            ("wallet_global", "wallet_mexico") if e.db == "pg" else ("wallet",) * 2
+        )
+        servers = [
+            (f"{service}-global", global_db, port),
+            (f"{service}-mexico", mexico_db, str(int(port) + 1)),
+        ]
+    else:
+        servers = [(service, "wallet", port)]
     lines = [
-        "# The database `make run` starts, and stops when the app stops. Written by",
+        "# The databases `make run` starts, and stops when the app stops. Written by",
         "# scripts/sync-examples.py: the image the tests use, the login and database",
         "# ekbatan.yaml defaults to.",
         "services:",
-        f"  {service}:",
-        f"    image: {e.image}",
-        "    environment:",
-        *[f"      {line.format(db=db)}" for line in environment],
-        "    ports:",
-        f'      - "{port}:{port}"',
     ]
-    if e.db == "pg" and "sharded" in e.variant:
+    for name, db, host_port in servers:
         lines += [
-            "    volumes:",
-            '      - "./compose-init.sql:/docker-entrypoint-initdb.d/compose-init.sql:ro"',
+            f"  {name}:",
+            f"    image: {e.image}",
+            "    environment:",
+            *[f"      {line.format(db=db)}" for line in environment],
+            "    ports:",
+            f'      - "{host_port}:{port}"',
+            "    healthcheck:",
+            f"      test: {check.format(db=db)}",
+            "      interval: 1s",
+            "      timeout: 5s",
+            "      retries: 60",
         ]
-    lines += [
-        "    healthcheck:",
-        f"      test: {check.format(db=db)}",
-        "      interval: 1s",
-        "      timeout: 5s",
-        "      retries: 60",
-        "",
-    ]
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 def gitignore(e: Example, build: str) -> str:
@@ -548,17 +547,23 @@ def gitignore(e: Example, build: str) -> str:
 def build_section(e: Example, build: str) -> str:
     others = [b for b in BUILDS if b != build]
     links = " and ".join(f"[{BUILD_NAMES[b]}](../{e.directory(b).name})" for b in others)
+    servers = "databases" if e.two_shards else "database"
     commands = (
         "make            # generate what is out of date, then test the built wheel, installed\n"
-        "make run        # start the database, run it, stop the database"
+        f"make run        # start the {servers}, run it, stop the {servers}"
     )
     if not e.image:
         commands = "make run        # run it\nmake            # test the built wheel, installed"
+    described = (
+        "the two databases `compose.yaml` describes, one server per shard"
+        if e.two_shards
+        else "the database `compose.yaml` describes"
+    )
     database = (
-        "\n\n`make run` needs only Docker: it starts the database `compose.yaml` describes - the "
-        "image the tests use, with the login and database `ekbatan.yaml` defaults to - waits "
-        "until it is ready, runs the app, and stops the database when the app stops. "
-        "`docker compose down` throws the database away."
+        f"\n\n`make run` needs only Docker: it starts {described} - the image the tests use, "
+        "with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs "
+        f"the app, and stops the {servers} when the app stops. `docker compose down` throws the "
+        f"{servers} away."
         if has_db(e)
         else ""
     )
@@ -603,8 +608,6 @@ def wanted(e: Example) -> dict[Path, str | Path]:
         files[target / "README.md"] = readme(e, build)
         if has_db(e):
             files[target / "compose.yaml"] = compose(e)
-            if e.db == "pg" and "sharded" in e.variant:
-                files[target / "compose-init.sql"] = SHARDED_INIT
         if build == "poetry":
             files[target / "poetry.toml"] = poetry_toml()
         if build != "uv":

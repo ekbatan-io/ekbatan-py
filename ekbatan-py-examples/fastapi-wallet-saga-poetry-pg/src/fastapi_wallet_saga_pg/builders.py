@@ -14,12 +14,12 @@ from ekbatan.domain import EntityBuilder, ModelBuilder
 
 if TYPE_CHECKING:
     from ekbatan.domain import GenericState  # noqa: F401
-    from ekbatan.ids import Id, ShardedId  # noqa: F401
+    from ekbatan.ids import Id  # noqa: F401
 
-    from .model import Currency, StepName, TransferStep, Wallet, WalletState  # noqa: F401
+    from .model import Currency, TransferStep, TransferStepName, Wallet, WalletState  # noqa: F401
 
 
-class WalletBuilder(ModelBuilder["Wallet", "ShardedId[Wallet]", "WalletState"]):
+class WalletBuilder(ModelBuilder["Wallet", "Id[Wallet]", "WalletState"]):
     """Builds a Wallet, with the field types a checker can see.
 
     id, state, version and the timestamps come from ModelBuilder, typed by the
@@ -56,7 +56,7 @@ class TransferStepBuilder(EntityBuilder["TransferStep", "Id[TransferStep]", "Gen
     def transfer_id(self, value: UUID) -> Self:
         return self.set(transfer_id=value)
 
-    def step(self, value: StepName) -> Self:
+    def step(self, value: TransferStepName) -> Self:
         return self.set(step=value)
 
 

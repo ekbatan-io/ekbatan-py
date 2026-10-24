@@ -2,32 +2,27 @@
 
 The wiring is the same as any other service's minus the web layer - which is the point. A
 deployment usually runs both shapes from one image: the API replicas serve requests, the worker
-replicas run this, and the jobs claim their rows against the same database either way.
+replicas run this, and the jobs claim their rows against the same databases either way.
 
 **Jobs on threads, their work on a loop.** Distributed jobs are sync: db-scheduler claims a
 job's row and calls `execute` on one of its worker threads. Here each job hands its work to the
 **worker loop** - a `HandlerLoop`, one event loop on a thread of its own - with `loop.run(...)`
-and waits for it, so the work awaits an `AsyncActionExecutor` and async repositories, on
-asyncpg. The event handler is `async def` and runs on the same loop: dispatch is handed it.
-Everything that awaits was built for that loop and is closed on it, last.
+and waits for it, so the work awaits an `AsyncActionExecutor`, async repositories and an async
+keyed lock. The event handler is `async def` and runs on the same loop. Everything that awaits
+was built for that loop and is closed on it, last.
 
-Two pools:
+Two shards, `global` and `mexico`, each its own database, declared in `ekbatan.yaml`. The pools:
 
-**The work** gets `primaryConfig`, async, used only on the worker loop - by the jobs' bodies and
-the event handler.
+**The work** gets each shard's `primaryConfig`, async, used only on the worker loop.
 
-**The scheduler** gets `jobsConfig`, sync, sized above the worker count: db-scheduler, and the
-fan-out and dispatch jobs' reads and writes of the queue. db-scheduler writes heartbeats from a
-housekeeping thread; a job body holding the last connection starves it, and an execution whose
-heartbeat stops is declared dead and run again somewhere else. The framework warns at startup
-when the two are mismatched - listen to it.
+**Locks** get the default member's `lockConfig`, async, on the worker loop too.
+
+**The scheduler** gets each shard's `jobsConfig`, sync: one scheduler on the default one, and
+fan-out and dispatch reading and writing every shard's `events` and `event_notifications`.
 
 **SIGTERM is the one exit that needs catching.** A started registry drains on any normal exit
-and on Ctrl-C by default - it registers with `atexit`, which is additive, like Java's hook. But
-CPython kills the process on SIGTERM without running `atexit`, so a container stop would end
-it with executions still picked and their rows waiting out the dead-execution window.
-`__main__.run()` catches the signal and calls `close()`, which is what makes a rolling deploy
-clean rather than merely survivable.
+and on Ctrl-C by default - it registers with `atexit`. But CPython kills the process on SIGTERM
+without running `atexit`; `__main__.run()` catches the signal and calls `close()`.
 """
 
 from __future__ import annotations
@@ -40,35 +35,32 @@ from ekbatan import (
     DatabaseRegistry,
     DataSource,
     RepositoryRegistry,
+    ShardIdentifier,
     TransactionManager,
 )
-from ekbatan.aio import (
-    AsyncActionExecutor,
-    AsyncDatabaseRegistry,
-)
+from ekbatan.aio import AsyncActionExecutor, AsyncDatabaseRegistry, AsyncDataSource
+from ekbatan.aio.locks import AsyncKeyedLockProvider, AsyncPostgresKeyedLockProvider
 from ekbatan.clock import Clock, SystemClock
+from ekbatan.config import DataSourceConfig, ShardMemberConfig
 from ekbatan.config_files import load_ekbatan_config
 from ekbatan.distributedjobs import JobRegistry, job_registry
 from ekbatan.events import EventFanoutJob, EventHandlerRegistry, EventHandlingJob, HandlerLoop
 from ekbatan.migrations import migrate
 
 from .actions import (
-    CloseWalletAction,
-    DepositMoneyAction,
-    OpenWalletAction,
-    RaiseAlertAction,
+    CreateNotificationAction,
+    WalletCloseAction,
+    WalletCreateAction,
+    WalletDepositMoneyAction,
 )
-from .handlers import MoneyDepositedEventHandler
-from .jobs import PayStipendJob, WalletReportJob
-from .repository import AlertRepository, WalletRepository
+from .handlers import WalletMoneyDepositedEventHandler
+from .jobs import WalletReportJob, WalletStipendJob
+from .repository import NotificationRepository, WalletRepository
 
-#: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
-#: rather than from `create_all`, which is the difference between an example and something you
-#: could deploy: `create_all` has no answer for a column that changed.
+#: Where the migration files live - `V<version>__<description>.sql`. Every shard gets them all.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 
-#: The worker's Ekbatan settings - database layout, namespace, polling interval, event handling -
-#: in the same keys as the Java job worker's `application.yml`.
+#: The worker's Ekbatan settings - the shard layout, the namespace, the jobs, event handling.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 
 
@@ -76,28 +68,29 @@ CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
 class Worker:
     #: The loop the jobs' work and the event handler run on, and what they await on it.
     loop: HandlerLoop
-    registry: AsyncDatabaseRegistry
-    wallets: WalletRepository
-    alerts: AlertRepository
+    database_registry: AsyncDatabaseRegistry
+    wallet_repository: WalletRepository
+    notification_repository: NotificationRepository
     executor: AsyncActionExecutor
-    report: WalletReportJob
-    #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over
-    #: `events_registry`.
+    lock_provider: AsyncKeyedLockProvider
+    lock_data_source: AsyncDataSource
+    #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over every shard.
     events_registry: DatabaseRegistry
-    jobs: JobRegistry
-    #: Built from the member's `jobsConfig`. `events_registry` closes it: its manager was given
-    #: it, and a manager closes the data sources it was given. The job registry, which polls it,
-    #: does not.
-    jobs_data_source: DataSource
+    job_registry: JobRegistry
+    #: Each shard's `jobsConfig` pool. `events_registry` closes them: its managers were given
+    #: them, and a manager closes the data sources it was given. The job registry does not.
+    jobs_data_sources: tuple[DataSource, ...]
 
     def start(self) -> None:
-        self.jobs.start()
+        self.job_registry.start()
 
     def close(self) -> None:
         # Stop taking work first: this waits for the job bodies in flight, which are waiting on
         # the loop. Then what they awaited, closed on the loop it belongs to; then the loop.
-        self.jobs.stop()
-        self.loop.run(self.registry.aclose())
+        self.job_registry.stop()
+        self.lock_provider.close()
+        self.loop.run(self.lock_data_source.aclose())
+        self.loop.run(self.database_registry.aclose())
         self.loop.close()
         self.events_registry.close()
 
@@ -108,72 +101,82 @@ def build(
     clock: Clock | None = None,
     workers: int = 4,
 ) -> Worker:
-    """Wire the worker on `config_file`. `workers` has no key in Java, whose job bodies run on
+    """Wire the worker on `config_file`. Its `${...}` placeholders are read from the process
+    environment. `workers` - the job threads - has no key in Java, whose job bodies run on
     virtual threads."""
-    running = clock or SystemClock()
-    # `ekbatan.yaml`'s `${...}` placeholders - the url and the login - are read from the
-    # process environment as the file is loaded, each by its name.
+    clock = clock or SystemClock()
     ekbatan = load_ekbatan_config(config_file)
     layout = ekbatan.sharding
+    # Every shard, one at a time, before the scheduler can start a job against a schema that
+    # might not be there yet.
     migrate(layout, MIGRATIONS)
 
     # -- the work, on the worker loop -----------------------------------------------------------
     # Built here, used only there: an async pool belongs to the loop it is used on. Building it
     # opens no connection; the loop's first use does.
     loop = HandlerLoop(name="worker-loop")
-    registry = AsyncDatabaseRegistry.from_config(layout)
-    wallets = WalletRepository(registry, clock=running)
-    alerts = AlertRepository(registry, clock=running)
+    database_registry = AsyncDatabaseRegistry.from_config(layout)
+    wallet_repository = WalletRepository(database_registry)
+    notification_repository = NotificationRepository(database_registry)
     executor = (
         AsyncActionExecutor.builder()
         .namespace(ekbatan.namespace)
-        .database_registry(registry)
+        .database_registry(database_registry)
         .repository_registry(
             RepositoryRegistry.builder()
-            .with_model_repository(wallets)
-            .with_entity_repository(alerts)
+            .with_model_repository(wallet_repository)
+            .with_entity_repository(notification_repository)
             .build()
         )
         .action_registry(
             ActionRegistry.builder()
-            .with_action(OpenWalletAction(running))
-            .with_action(DepositMoneyAction(wallets, running))
-            .with_action(CloseWalletAction(wallets, running))
-            .with_action(RaiseAlertAction(running))
+            .with_action(WalletCreateAction(clock))
+            .with_action(WalletDepositMoneyAction(clock, wallet_repository))
+            .with_action(WalletCloseAction(clock, wallet_repository))
+            .with_action(CreateNotificationAction(clock))
             .build()
         )
-        .clock(running)
+        .clock(clock)
         .build()
     )
+    default_member = layout.groups[0].members[0]
+    lock_data_source = AsyncDataSource.from_config(_required(default_member, "lockConfig"))
+    lock_provider = AsyncPostgresKeyedLockProvider.builder().data_source(lock_data_source).build()
     handlers = (
-        EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
+        EventHandlerRegistry.builder()
+        .with_handler(WalletMoneyDepositedEventHandler(executor))
+        .build()
     )
-    report = WalletReportJob(loop, wallets)
 
     # -- what polls, on threads -----------------------------------------------------------------
-    jobs_config = layout.groups[0].members[0].config_for("jobsConfig")
-    if jobs_config is None:
-        raise ValueError("groups[0].members[0].configs.jobsConfig is required")
-    jobs_data_source = DataSource.from_config(jobs_config)
-    events_registry = (
-        DatabaseRegistry.builder()
-        .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
-        .build()
-    )
+    # A sync registry over every shard, on each member's `jobsConfig`: an event commits on its
+    # wallet's shard, so fan-out and dispatch must reach every one.
+    jobs_data_sources: dict[ShardIdentifier, DataSource] = {}
+    events_builder = DatabaseRegistry.builder()
+    for shard, member in layout.members():
+        source = DataSource.from_config(_required(member, "jobsConfig"))
+        jobs_data_sources[shard] = source
+        manager = TransactionManager(shard, source)
+        if shard == layout.default_shard:
+            events_builder.with_default_database(manager)
+        else:
+            events_builder.with_database(manager)
+    events_registry = events_builder.build()
     events_config = ekbatan.local_event_handler
 
     return Worker(
         loop=loop,
-        registry=registry,
-        wallets=wallets,
-        alerts=alerts,
+        database_registry=database_registry,
+        wallet_repository=wallet_repository,
+        notification_repository=notification_repository,
         executor=executor,
-        report=report,
+        lock_provider=lock_provider,
+        lock_data_source=lock_data_source,
         events_registry=events_registry,
-        jobs_data_source=jobs_data_source,
-        jobs=(
+        jobs_data_sources=tuple(jobs_data_sources.values()),
+        job_registry=(
             job_registry()
-            .data_source(jobs_data_source)
+            .data_source(jobs_data_sources[layout.default_shard])
             .with_jobs(
                 [
                     # The event pipeline is two jobs like any other, claimed through the same
@@ -183,7 +186,7 @@ def build(
                     .registry(events_registry)
                     .handlers(handlers)
                     .config(events_config)
-                    .clock(running)
+                    .clock(clock)
                     .build(),
                     EventHandlingJob.builder()
                     .registry(events_registry)
@@ -192,12 +195,12 @@ def build(
                     # executor it awaits was built for that loop.
                     .handler_loop(loop)
                     .config(events_config)
-                    # Java's DI makes this job only if `handling.enabled`; this is that check.
+                    # Off unless `handling.enabled` is set in `ekbatan.yaml`.
                     .enabled(events_config.handling.enabled)
-                    .clock(running)
+                    .clock(clock)
                     .build(),
-                    PayStipendJob(loop, executor, wallets),
-                    report,
+                    WalletStipendJob(loop, executor, lock_provider, wallet_repository),
+                    WalletReportJob(loop, wallet_repository),
                 ]
             )
             .with_config(ekbatan.jobs)
@@ -205,3 +208,11 @@ def build(
             .build()
         ),
     )
+
+
+def _required(member: ShardMemberConfig, name: str) -> DataSourceConfig:
+    """The named pool's settings, or an error naming where the setting goes."""
+    found = member.config_for(name)
+    if found is None:
+        raise ValueError(f"{member.name or 'member'}.configs.{name} is required")
+    return found

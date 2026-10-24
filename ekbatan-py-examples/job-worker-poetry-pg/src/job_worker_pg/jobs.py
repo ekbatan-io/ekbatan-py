@@ -1,14 +1,8 @@
-"""Two jobs, and the two shapes a job comes in.
+"""Work on a schedule, once across the cluster.
 
-`PayStipendJob` writes, through the same actions an HTTP request would use. `WalletReportJob`
-only reads. Both run **at most once per slot across the whole cluster** - three replicas of this
-worker share one row in `scheduled_tasks`, and the row is what makes that true. Nothing in
-either class arranges it.
-
-The rule every job body has to obey is at the bottom of `execute`: **a slot can run twice.** If
-an instance stops writing heartbeats - because it died, or stalled, or briefly lost the
-database - another treats the execution as dead and runs it again, while the first may still be
-part-way through. The claim protects the row, not your method.
+Three worker processes running this app share one `scheduled_tasks` row per job, so each job
+runs once per slot, not three times. Coordination is in the database rather than in each
+process.
 """
 
 from __future__ import annotations
@@ -22,89 +16,88 @@ from db_scheduler.task.schedule import FixedDelay, Schedule
 
 from ekbatan import ActionExecutor
 from ekbatan.distributedjobs import DistributedJob
+from ekbatan.locks import KeyedLockProvider
 
-from .actions import DepositMoneyAction, DepositParams
-from .model import WalletState
+from .actions import WalletDepositMoneyAction
 from .repository import WalletRepository
 
-LOG = logging.getLogger("examples.job_worker_pg")
+LOG = logging.getLogger(__name__)
 
 
-class PayStipendJob(DistributedJob):
-    """Tops up every wallet running low, by invoking an ordinary action.
+class WalletStipendJob(DistributedJob):
+    """Tops up under-funded wallets - a job invoking an action.
 
-    Nothing about being a job makes the work special. It goes through `DepositMoneyAction` like
-    any other caller, so the outbox row it writes is indistinguishable from one a request
-    produced - `action_name` says `DepositMoneyAction` either way, and a consumer downstream
-    cannot tell and does not need to.
+    Every slot it reads the open wallets below `THRESHOLD` and, for each, runs
+    `WalletDepositMoneyAction` through the executor: the action opens its own transaction,
+    applies the deposit, writes a `WalletMoneyDepositedEvent` to the outbox and commits. The
+    event handler then picks each event up - `WalletMoneyDepositedEventHandler`, then
+    `CreateNotificationAction`, a row in `notifications` - the same chain a request drives.
+
+    A failed deposit is logged and skipped, so one bad row does not halt the pass.
     """
+
+    #: Wallets below this balance get a top-up on each run.
+    THRESHOLD = Decimal("100.00")
+    #: What each such wallet is given per run.
+    STIPEND = Decimal("10.00")
 
     def __init__(
         self,
         executor: ActionExecutor,
-        wallets: WalletRepository,
-        *,
-        threshold: Decimal = Decimal("100.00"),
-        amount: Decimal = Decimal("10.00"),
-        every: timedelta = timedelta(seconds=2),
+        lock_provider: KeyedLockProvider,
+        wallet_repository: WalletRepository,
     ) -> None:
         self.executor = executor
-        self.wallets = wallets
-        self.threshold = threshold
-        self.amount = amount
-        self.every = every
+        self.lock_provider = lock_provider
+        self.wallet_repository = wallet_repository
 
     def name(self) -> str:
-        """The primary key of this job's row, and how every instance recognises it as the same
-        job. It must be **stable across restarts**: a name built from a uuid or today's date
-        writes a fresh row every boot, orphans the old one, and the job never actually recurs.
-        """
+        # Cluster-wide unique: the primary key of this job's row in scheduled_tasks, and how
+        # every instance recognises it as the same job.
         return "wallet-stipend"
 
     def schedule(self) -> Schedule:
-        return FixedDelay(self.every)
+        return FixedDelay.of_seconds(2)
 
     def execute(self, ctx: ExecutionContext) -> None:
-        # Idempotent by construction rather than by promise: the query selects wallets *below*
-        # the threshold, so a repeat of this slot finds the ones it already topped up are no
-        # longer below it. A job that deposited unconditionally would double-pay on a replay.
-        low = self.wallets.find_open_below(self.threshold)
-        for wallet in low:
-            if wallet.state is not WalletState.OPENED:
-                continue
-            self.executor.execute(
-                DepositMoneyAction,
-                DepositParams(
-                    wallet_id=wallet.id,
-                    amount=self.amount,
-                    recipient="stipend@example.com",
-                ),
-            )
-        LOG.info("stipend paid into %d wallet(s)", len(low))
+        under_funded = self.wallet_repository.find_open_with_balance_below(self.THRESHOLD)
+        if not under_funded:
+            return
+        LOG.info("WalletStipendJob: depositing %s to %d wallet(s)", self.STIPEND, len(under_funded))
+        for wallet in under_funded:
+            try:
+                with self.lock_provider.acquire(f"wallet:{wallet.id.value}", timedelta(seconds=10)):
+                    self.executor.execute(
+                        WalletDepositMoneyAction,
+                        WalletDepositMoneyAction.Params(
+                            wallet_id=wallet.id,
+                            amount=self.STIPEND,
+                            recipient="stipend@system.local",
+                        ),
+                        principal="wallet-stipend-job",
+                    )
+            except Exception:
+                LOG.warning(
+                    "WalletStipendJob: deposit failed for wallet %s - skipping",
+                    wallet.id.value,
+                    exc_info=True,
+                )
 
 
 class WalletReportJob(DistributedJob):
-    """A scheduled query: counts and sums, writes nothing.
+    """A read-only report: counts the wallets and sums their balances, and logs it. No action,
+    no writes - the scheduled query an ops dashboard or a metrics exporter is."""
 
-    The other shape a job comes in, and the more common one - an ops dashboard, a metrics
-    exporter, a freshness probe. It invokes no action and so produces no outbox row, which is
-    correct: nothing happened.
-    """
-
-    def __init__(self, wallets: WalletRepository, *, every: timedelta = timedelta(seconds=5)):
-        self.wallets = wallets
-        self.every = every
-        #: What the last run saw. Here so a test can assert the job ran without reading a log.
-        self.last: tuple[int, Decimal] | None = None
+    def __init__(self, wallet_repository: WalletRepository) -> None:
+        self.wallet_repository = wallet_repository
 
     def name(self) -> str:
         return "wallet-report"
 
     def schedule(self) -> Schedule:
-        return FixedDelay(self.every)
+        return FixedDelay.of_seconds(5)
 
     def execute(self, ctx: ExecutionContext) -> None:
-        wallets = self.wallets.all()
-        total = sum((w.balance for w in wallets), Decimal(0))
-        self.last = (len(wallets), total)
-        LOG.info("report: %d wallets, total balance %s", len(wallets), total)
+        wallets = self.wallet_repository.all()
+        total = sum((wallet.balance for wallet in wallets), Decimal(0))
+        LOG.info("WalletReportJob: %d wallets, total balance = %s", len(wallets), total)

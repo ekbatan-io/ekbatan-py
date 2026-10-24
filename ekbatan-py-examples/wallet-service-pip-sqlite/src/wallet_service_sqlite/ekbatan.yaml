@@ -1,10 +1,11 @@
-# The service's Ekbatan settings: the database, the namespace and the handling switch. Read by
+# The service's Ekbatan settings: the two files, the namespace and the handling switch. Read by
 # `app.build` through `ekbatan.config_files.load_ekbatan_config`.
 #
-# `${WALLET_DATABASE_URL:...}` is an environment variable with a default; the script and the
-# test each point it at a file in a temporary directory. SQLite has no login, so none is given.
+# Two shards, global and mexico, each a SQLite file of its own. `${NAME:default}` is an
+# environment variable with a default; the script and the test each point them at files in a
+# temporary directory. SQLite has no login, so none is given.
 ekbatan:
-  namespace: example.wallet_service_sqlite
+  namespace: example.wallet
   sharding:
     defaultShard:
       group: 0
@@ -17,9 +18,16 @@ ekbatan:
             name: global
             configs:
               primaryConfig:
-                url: ${WALLET_DATABASE_URL:sqlite:///wallet.db}
+                url: ${WALLET_GLOBAL_URL:sqlite:///wallet_global.db}
+      - group: 1
+        name: mexico
+        members:
+          - member: 0
+            name: mexico
+            configs:
+              primaryConfig:
+                url: ${WALLET_MEXICO_URL:sqlite:///wallet_mexico.db}
 
-  # Handling is off by default; a deployment draining through Kafka would leave it so.
   local-event-handler:
     handling:
       enabled: true

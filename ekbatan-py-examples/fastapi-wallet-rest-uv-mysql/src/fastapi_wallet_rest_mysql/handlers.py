@@ -3,39 +3,55 @@
 No broker, no connector, no second runtime. The unit of work commits, fan-out turns each
 committed event into work, and dispatch runs it - at least once, which is the only guarantee
 anything on this side of a database can honestly make.
-
-A handler reads its envelope and nothing else. That is what would let this one move into a
-broker consumer later without its body changing.
 """
 
 from __future__ import annotations
 
+import logging
+from uuid import UUID
+
 from ekbatan import ActionExecutor
 from ekbatan.events import EventEnvelope
-from ekbatan.ids import ShardedId
 
-from .actions import RaiseAlertAction, RaiseAlertParams
-from .model import MoneyDepositedEvent, Wallet
+from .actions import CreateNotificationAction
+from .model import NotificationKind, WalletMoneyDepositedEvent
+
+LOG = logging.getLogger(__name__)
 
 
-class MoneyDepositedEventHandler:
-    """Tells the owner money arrived, by starting another unit of work."""
+class WalletMoneyDepositedEventHandler:
+    """Reacts to a committed `WalletMoneyDepositedEvent` by creating a notification row.
 
-    name = "wallet-deposit-alert"
-    event_type = MoneyDepositedEvent
+    The handler runs in-process after the deposit commits, then starts another action. The
+    recipient is not part of the event - that would put notification routing inside a domain
+    event - so it is read back from the envelope's `action_params`, the parameters of the
+    action that produced the event.
+    """
+
+    #: Cluster-stable; stored in `event_notifications.handler_name`.
+    name = "wallet-money-deposited-notification"
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
 
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
+        wallet_id = UUID(envelope.event.model_id)
+        recipient = str(envelope.action_params["recipient"])
+        message = (
+            f"Deposit of {envelope.event.amount} received. "
+            f"New balance: {envelope.event.new_balance}."
+        )
+
+        LOG.info("Creating notification for wallet=%s recipient=%s", wallet_id, recipient)
+
         self.executor.execute(
-            RaiseAlertAction,
-            RaiseAlertParams(
-                wallet_id=ShardedId[Wallet].of(envelope.model_id or ""),
-                # Off the producing action's parameters, not the event. The event says what
-                # happened to the wallet; where to send a message about it is this handler's
-                # business and nobody else's.
-                recipient=str(envelope.action_params.get("recipient", "")),
-                message=f"{envelope.event.amount} received, balance {envelope.event.new_balance}",
+            CreateNotificationAction,
+            CreateNotificationAction.Params(
+                wallet_id=wallet_id,
+                kind=NotificationKind.MONEY_DEPOSITED,
+                recipient=recipient,
+                message=message,
             ),
+            principal="wallet-handler",
         )

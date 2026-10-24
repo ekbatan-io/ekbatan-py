@@ -1,7 +1,7 @@
 [project]
 name = "fastapi-wallet-saga-async-pg"
 version = "0.1.0"
-description = "A transfer across two databases, as a saga, on native asyncio, built with Poetry."
+description = "A transfer between two wallets, as a saga, on native asyncio, built with Poetry."
 requires-python = ">=3.13"
 dependencies = [
     "ekbatan[postgres,postgres-async,migrations]",
@@ -49,9 +49,9 @@ image = "postgres:17-alpine"
 converter = "fastapi_wallet_saga_async_pg.converters.CurrencyConverter"
 include-types = "CHAR\\(3\\)"
 
-# One column, picked by its name: the saga's step, as the StepName enum.
+# One column, picked by its name: the saga's step, as the TransferStepName enum.
 [[tool.ekbatan.schemagen.forced-types]]
-converter = "fastapi_wallet_saga_async_pg.converters.StepNameConverter"
+converter = "fastapi_wallet_saga_async_pg.converters.TransferStepNameConverter"
 include-expression = "transfer_steps\\.step"
 
 [tool.pytest.ini_options]

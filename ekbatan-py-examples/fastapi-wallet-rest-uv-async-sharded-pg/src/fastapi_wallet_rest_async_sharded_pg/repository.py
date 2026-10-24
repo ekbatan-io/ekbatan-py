@@ -1,52 +1,62 @@
-"""One repository over every shard, awaited.
+"""Repositories, on `ekbatan.aio`: every read awaits.
 
-`EmbeddedBitsShardingStrategy` is the whole configuration: it reads the coordinate out of the
-id. Everything else - which connection, which database, which outbox - follows from that, and
-no method below mentions a shard unless it is deliberately asking about one.
+A repository is where a query that means something to the business lives. The framework's own
+reads - by id, by predicate, counting, existence - are inherited, so what is left here is the
+handful of questions this application actually asks.
 
-**All async.** Every read and write is awaited. A read that names no shard asks every shard
-**at the same time** - `find_where`, `all`, `count` - so it costs about one shard's round trip
-rather than one per shard. `to_record` and `from_record` stay plain functions - mapping waits on
-nothing.
+**The mapping is written, and typed.** Every repository implements `to_record` and
+`from_record`, and the base refuses to create one until both exist. Both are typed by the
+table's record - `WalletsRecord`, which schemagen writes into `schema.py` beside `WALLETS` - so
+mypy says so when a column is left out, misspelt, or given the wrong type.
 """
 
 from __future__ import annotations
 
-import asyncio
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
-
 from ekbatan import ShardIdentifier
 from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
-from ekbatan.clock import Clock
-from ekbatan.domain import GenericState
 from ekbatan.ids import Id, ShardedId
 from ekbatan.sharding import EmbeddedBitsShardingStrategy
 
-from .model import Alert, Wallet, WalletState
-from .schema import ALERTS, WALLETS, AlertsRecord, WalletsRecord
+from .model import Notification, NotificationKind, NotificationState, Wallet, WalletState
+from .schema import NOTIFICATIONS, WALLETS, NotificationsRecord, WalletsRecord
 
 
 class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
-    """Wallets, awaited, routed by the shard packed into each id."""
+    """Wallets, routed by the shard packed into each id.
 
-    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
+    A ModelRepository, because a wallet's changes are events. Saying so is what lets the
+    framework check that this table can hold the timestamps a model carries.
+    """
+
+    def __init__(self, database_registry: AsyncDatabaseRegistry) -> None:
         super().__init__(
-            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
+            Wallet, WALLETS, database_registry, sharding=EmbeddedBitsShardingStrategy()
+        )
+
+    async def find_all_by_owner_id(self, owner_id: UUID) -> list[Wallet]:
+        """Every shard's replica, asked in turn: an owner's wallets can be on any of them."""
+        return await self.find_where(WALLETS.c.owner_id == owner_id)
+
+    async def find_all_on_shard(self, shard: ShardIdentifier) -> list[Wallet]:
+        return await self.all(shard=shard)
+
+    async def exists_on_shard(self, shard: ShardIdentifier, wallet_id: UUID) -> bool:
+        return await self.exists_where(WALLETS.c.id == wallet_id, shard=shard)
+
+    async def find_open_with_balance_below(self, threshold: Decimal) -> list[Wallet]:
+        return await self.find_where(
+            WALLETS.c.balance < threshold, WALLETS.c.state == WalletState.OPENED.name
         )
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
-        """Every column, named - the counterpart to Java's `toRecord`, typed by the table's record.
+        """Every column, named - the model as one row.
 
-        Two of the eight are conversions rather than copies, and each is a decision about how
-        the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
-        than its value. The timestamps go in exactly as they are - the clock gives UTC with no
-        zone attached, and that is what the column holds.
-
-        `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
-        turns it into text, and turns the text back into a `Currency` on every read.
+        A typed id goes in as its `uuid` and an enum as its `name`. `currency` goes in as the
+        `Currency` it is: the column's converter in `schema.py` turns it into text, and the text
+        back into a `Currency` on every read.
         """
         return WalletsRecord(
             id=wallet.id.value,
@@ -63,11 +73,6 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
-        """And back - the counterpart to Java's `fromRecord`.
-
-        The framework hands it the row read by column name - or, where an insert has no
-        `RETURNING`, the record `to_record` just wrote.
-        """
         return Wallet(
             id=ShardedId[Wallet](record.column_id()),
             version=record.column_version(),
@@ -79,71 +84,41 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
             updated_date=record.column_updated_date(),
         )
 
-    async def find_all_by_owner(self, owner_id: UUID) -> list[Wallet]:
-        """A predicate says nothing about where its rows are, so this asks every shard - all at
-        once, on `ekbatan.aio`.
 
-        Still one query per database: a question you ask often should be answerable from one
-        shard - which usually means choosing the shard key so that it is.
-        """
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
+class NotificationRepository(
+    AsyncEntityRepository[Notification, NotificationsRecord, Id[Notification]]
+):
+    """Notifications, on the default shard: no sharding strategy, so every one is written there
+    and read from there, whichever shard its wallet is on.
 
-    async def on_shard(self, shard: ShardIdentifier) -> list[Wallet]:
-        """Everything on one database - for a per-region report, or a rebalance."""
-        return await self.all(shard=shard)
+    An EntityRepository, because writing one is not news: no events, and no timestamps for the
+    table to hold.
+    """
 
-    async def total_per_shard(self) -> dict[ShardIdentifier, Decimal]:
-        """What each database holds. Drops to SQL, because the inherited reads answer
-        questions about rows rather than about databases.
+    def __init__(self, database_registry: AsyncDatabaseRegistry) -> None:
+        super().__init__(Notification, NOTIFICATIONS, database_registry)
 
-        Each shard's replica is asked at the same time, in a `TaskGroup`, as the inherited
-        reads ask theirs: `readonly_dbs()` would visit them one after another. All or nothing:
-        if one shard fails, the others are cancelled and its error is raised.
+    async def find_all_by_wallet_id(self, wallet_id: UUID) -> list[Notification]:
+        return await self.find_where(NOTIFICATIONS.c.wallet_id == wallet_id)
 
-        No `state != DELETED` filter here, because this application's `WalletState` declares no
-        DELETED and no row can ever be in it. A statement you write yourself carries exactly
-        what you put in it - the inherited reads apply that filter for you, and this one does
-        not apply it for you either.
-        """
-        query = select(func.coalesce(func.sum(WALLETS.c.balance), 0))
-
-        async def total(shard: ShardIdentifier) -> Decimal:
-            async with self.readonly_db(shard=shard) as conn:
-                return Decimal(str((await conn.execute(query)).scalar_one()))
-
-        async with asyncio.TaskGroup() as group:
-            asked = {shard: group.create_task(total(shard)) for shard in self.registry.shards}
-        return {shard: task.result() for shard, task in asked.items()}
-
-
-class AlertRepository(AsyncEntityRepository[Alert, AlertsRecord, Id[Alert]]):
-    """Alerts. Their ids carry no shard, so they are all on the default shard, and are looked up
-    by wallet."""
-
-    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(Alert, ALERTS, registry, clock=clock)
-
-    def to_record(self, alert: Alert) -> AlertsRecord:
-        """`recipient` is an `EmailAddress` both ways; its converter in `schema.py` does the
-        text."""
-        return AlertsRecord(
-            id=alert.id.value,
-            version=alert.version,
-            state=alert.state.name,
-            wallet_id=alert.wallet_id.value,
-            recipient=alert.recipient,
-            message=alert.message,
+    def to_record(self, notification: Notification) -> NotificationsRecord:
+        return NotificationsRecord(
+            id=notification.id.value,
+            version=notification.version,
+            state=notification.state.name,
+            wallet_id=notification.wallet_id,
+            kind=notification.kind.name,
+            recipient=notification.recipient,
+            message=notification.message,
         )
 
-    def from_record(self, record: AlertsRecord) -> Alert:
-        return Alert(
-            id=Id[Alert](record.column_id()),
+    def from_record(self, record: NotificationsRecord) -> Notification:
+        return Notification(
+            id=Id[Notification](record.column_id()),
             version=record.column_version(),
-            state=GenericState[record.column_state()],
-            wallet_id=ShardedId[Wallet](record.column_wallet_id()),
+            state=NotificationState[record.column_state()],
+            wallet_id=record.column_wallet_id(),
+            kind=NotificationKind[record.column_kind()],
             recipient=record.column_recipient(),
             message=record.column_message(),
         )
-
-    async def find_for_wallet(self, wallet_id: ShardedId[Wallet]) -> list[Alert]:
-        return await self.find_where(ALERTS.c.wallet_id == wallet_id.value)

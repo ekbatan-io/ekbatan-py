@@ -1,46 +1,31 @@
-"""Repositories, awaited. Small here, because the saga's interesting parts are elsewhere.
+"""Repositories, on `ekbatan.aio`: every read awaits.
 
-**All async.** The requests and the handlers both run on `ekbatan.aio`, so every repository here
-is an async one: every read and write is awaited. The handlers' wallets and steps go through the
-same classes, built over the handlers' own registry. `to_record` and `from_record` stay plain
-functions - mapping waits on nothing.
+A repository is where a query that means something to the business lives. The framework's own
+reads - by id, by predicate, counting, existence - are inherited, so what is left here is the
+handful of questions this application actually asks. The mapping is written, and typed by the
+table's record, which schemagen writes into `schema.py`.
 """
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
-
 from ekbatan.aio import AsyncDatabaseRegistry, AsyncEntityRepository, AsyncModelRepository
-from ekbatan.clock import Clock
 from ekbatan.domain import GenericState
-from ekbatan.ids import Id, ShardedId
-from ekbatan.sharding import EmbeddedBitsShardingStrategy
+from ekbatan.ids import Id
 
-from .model import StepName, TransferStep, Wallet, WalletState
+from .model import TransferStep, TransferStepName, Wallet, WalletState
 from .schema import TRANSFER_STEPS, WALLETS, TransferStepsRecord, WalletsRecord
 
 
-class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]):
-    """Wallets, awaited, routed by the shard packed into each id."""
+class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
+    def __init__(self, database_registry: AsyncDatabaseRegistry) -> None:
+        super().__init__(Wallet, WALLETS, database_registry)
 
-    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(
-            Wallet, WALLETS, registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
-        )
+    async def find_all_by_owner_id(self, owner_id: UUID) -> list[Wallet]:
+        return await self.find_where(WALLETS.c.owner_id == owner_id)
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
-        """Every column, named - the counterpart to Java's `toRecord`, typed by the table's record.
-
-        Two of the eight are conversions rather than copies, and each is a decision about how
-        the value is stored: a typed id goes in as its `uuid`, and an enum as its `name` rather
-        than its value. The timestamps go in exactly as they are - the clock gives UTC with no
-        zone attached, and that is what the column holds.
-
-        `currency` goes in as the `Currency` it is. The column's converter in `schema.py`
-        turns it into text, and turns the text back into a `Currency` on every read.
-        """
         return WalletsRecord(
             id=wallet.id.value,
             version=wallet.version,
@@ -49,20 +34,14 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
             currency=wallet.currency,
             balance=wallet.balance,
             created_date=wallet.created_date,
-            # `Model.__post_init__` falls this back to `created_date`, so it is never None on a
-            # constructed model - the declared type keeps the `| None` because a builder may
-            # leave it unset. The column is NOT NULL.
+            # Never None on a constructed model - `Model.__post_init__` falls it back to
+            # `created_date` - while the column is NOT NULL.
             updated_date=wallet.updated_date or wallet.created_date,
         )
 
     def from_record(self, record: WalletsRecord) -> Wallet:
-        """And back - the counterpart to Java's `fromRecord`.
-
-        The framework hands it the row read by column name - or, where an insert has no
-        `RETURNING`, the record `to_record` just wrote.
-        """
         return Wallet(
-            id=ShardedId[Wallet](record.column_id()),
+            id=Id[Wallet](record.column_id()),
             version=record.column_version(),
             state=WalletState[record.column_state()],
             owner_id=record.column_owner_id(),
@@ -76,17 +55,15 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
 class TransferStepRepository(
     AsyncEntityRepository[TransferStep, TransferStepsRecord, Id[TransferStep]]
 ):
-    """The idempotency markers.
+    def __init__(self, database_registry: AsyncDatabaseRegistry) -> None:
+        super().__init__(TransferStep, TRANSFER_STEPS, database_registry)
 
-    Nothing in the saga reads these - the unique constraint does the work, and a read would
-    lose the race it exists to win. They are queryable so an operator can ask what happened to
-    a transfer, and so the tests can show that a replay wrote nothing.
-    """
+    async def exists_step(self, transfer_id: UUID, step: TransferStepName) -> bool:
+        return await self.exists_where(
+            TRANSFER_STEPS.c.transfer_id == transfer_id, TRANSFER_STEPS.c.step == step
+        )
 
     def to_record(self, step: TransferStep) -> TransferStepsRecord:
-        """Five columns. `step` goes in as the `StepName` it is: the column's converter in
-        `schema.py` writes its name, and reads a `StepName` back. `state` is still written by
-        hand, because the framework reads that column as text."""
         return TransferStepsRecord(
             id=step.id.value,
             version=step.version,
@@ -103,21 +80,3 @@ class TransferStepRepository(
             transfer_id=record.column_transfer_id(),
             step=record.column_step(),
         )
-
-    def __init__(self, registry: AsyncDatabaseRegistry, *, clock: Clock | None = None) -> None:
-        super().__init__(TransferStep, TRANSFER_STEPS, registry, clock=clock)
-
-    async def steps_of(self, transfer_id: UUID) -> list[StepName]:
-        """Which steps of this transfer have run, in the order they were written.
-
-        `db()`, not `readonly_db()`: this backs `GET /transfers/{id}`, which a client polls
-        immediately after the 202 - so a replica's lag would report a step as not-yet-run when
-        it has committed, which is exactly the lie the 202 exists to avoid telling.
-
-        `conn.rows(...)` rather than `conn.execute(...)`, because these rows become objects.
-        The mapper is a lambda rather than `from_record`: this takes one column, not a whole row
-        into a `TransferStep` - and the column's converter has already made it a `StepName`.
-        """
-        statement = select(TRANSFER_STEPS.c.step).where(TRANSFER_STEPS.c.transfer_id == transfer_id)
-        async with self.db() as conn:
-            return (await conn.rows(statement)).fetch(lambda row: row["step"])

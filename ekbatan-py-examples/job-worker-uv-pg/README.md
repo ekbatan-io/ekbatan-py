@@ -1,141 +1,64 @@
 # job-worker-uv-pg
 
-A worker process: jobs, no HTTP. The Python counterpart to Java's
-`spring-boot-job-worker-gradle-pg`. Its async twin, [`job-worker-uv-async-pg`](../job-worker-uv-async-pg),
-keeps the jobs on threads and runs their work on a loop, awaited.
+A worker process - distributed jobs, no HTTP - on **PostgreSQL**. Two shards, `global`
+and `mexico`, each on a server of its own.
+
+It is the Python counterpart of the Java job-worker example: the same model, actions, event
+handler, jobs and test cases, under the same names, built three ways - uv, pip and Poetry.
 
 <!-- build: written by scripts/sync-examples.py -->
 ```
 make            # generate what is out of date, then test the built wheel, installed
-make run        # start the database, run it, stop the database
+make run        # start the databases, run it, stop the databases
 ```
 
-`make run` needs only Docker: it starts the database `compose.yaml` describes - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the database when the app stops. `docker compose down` throws the database away.
+`make run` needs only Docker: it starts the two databases `compose.yaml` describes, one server per shard - the image the tests use, with the login and database `ekbatan.yaml` defaults to - waits until it is ready, runs the app, and stops the databases when the app stops. `docker compose down` throws the databases away.
 
 Built with **uv**. The same project with [pip and setuptools](../job-worker-pip-pg) and [Poetry](../job-worker-poetry-pg) differs only in `pyproject.toml`, `Makefile` and `.gitignore`.
 <!-- /build -->
 
-The settings are in `ekbatan.yaml`, in the same keys as Java's `application.yml`: the layout
-with the scheduler's own `jobsConfig` pool, the namespace, `jobs.pollingInterval: PT10S` and
-`local-event-handler.handling.enabled`. Durations are ISO-8601, as Java's `Duration.parse` reads
-them. Each pool puts its sessions on UTC with `options: -c TimeZone=UTC`, whatever the server's
-default.
-
 ## What it shows
 
-**Two jobs, and the two shapes a job comes in.** `PayStipendJob` writes, through the same
-actions an HTTP request would use. `WalletReportJob` only reads — a scheduled query, which is
-the more common kind: ops dashboards, metrics exporters, freshness probes. It invokes no action
-and so produces no outbox row, which is correct — nothing happened.
+- **`WalletStipendJob`** - every two seconds, each open wallet below 100.00 gets 10.00, through
+  `WalletDepositMoneyAction` under the wallet's keyed lock. A failed deposit is logged and
+  skipped, so one bad row does not halt the pass.
+- **`WalletReportJob`** - every five seconds, counts the wallets and sums their balances, and logs
+  it. No action, no writes.
+- **The listen-to-yourself chain, job-driven.** Each stipend deposit's event reaches
+  `WalletMoneyDepositedEventHandler`, which starts `CreateNotificationAction`: a row in
+  `notifications`, the same chain a request drives in the REST examples.
+- **Once across the cluster.** Every worker process running this shares one `scheduled_tasks`
+  row per job, so each job runs once per slot however many workers there are. The fan-out and
+  handling jobs are claimed the same way.
 
-**Once per slot, across the cluster.** Three replicas of this worker share one row per job in
-`scheduled_tasks`, and the row is what makes that true. Nothing in either job class arranges it.
+## SIGTERM
 
-**A job is an ordinary caller.** The stipend goes through `DepositMoneyAction`, so the outbox row
-it writes is indistinguishable from one a request produced — `action_name` says
-`DepositMoneyAction` either way. A consumer downstream cannot tell, and does not need to.
+A started registry drains on any normal exit and on Ctrl-C - it registers with `atexit`. CPython
+kills the process on SIGTERM without running `atexit`, so `__main__.run()` catches the signal and
+calls `close()`: a container stop then lets the jobs in flight finish.
 
-**The whole chain in one process.** Job → action → outbox → fan-out → handler → another action,
-with no HTTP anywhere and no second runtime. The fan-out and handling jobs are `DistributedJob`s
-themselves, claimed from the same table as the stipend — so a cluster fans out once rather than
-once per replica.
+## How the schema gets there
 
-## The two things worth copying
+`schema.py` is generated, not written: `make` runs `python -m ekbatan.schemagen`, which starts a
+PostgreSQL container, applies the migrations in `migrations/` to it, and reflects the result - so the
+Python and the database cannot drift. The module records a fingerprint of the migrations it came
+from and checks it on import, so a stale one refuses to load rather than quietly disagreeing with
+the database.
 
-**Idempotency by construction, not by promise.** A slot *can* run twice: if an instance stops
-writing heartbeats — because it died, stalled, or briefly lost the database — another treats the
-execution as dead and runs it again, while the first may still be part-way through. The claim
-protects the row, not your method.
+One forced type in `pyproject.toml`: every `CHAR(3)` column is a currency code, whatever it is
+called, and reads as the app's own `Currency` - the wallet's `java.util.Currency`, which Python
+does not have. `CurrencyConverter`, in `converters.py`, turns the text into a `Currency` and back,
+so the repository never sees the text. Action parameters and events keep the plain code,
+`"currency": "EUR"`, because they are written to the outbox as JSON for other services to read.
 
-`PayStipendJob` handles that by selecting wallets *below* a threshold, so a repeat finds the ones
-it already topped up are no longer below it. A job that deposited unconditionally would
-double-pay on the replay that at-least-once delivery makes inevitable.
-
-**SIGTERM is yours to arrange, or the framework's if you ask.** A started registry drains on a
-normal exit and on Ctrl-C by default, through `atexit`. SIGTERM does not run `atexit` in
-CPython, and by default no signal handler is installed, so a container stop would end the
-process with executions still picked and their rows waiting out the dead-execution window - 60
-seconds on framework defaults. `__main__.py` catches
-the signal and calls `close()`, which is what makes a rolling deploy clean rather than merely
-survivable.
-
-`register_shutdown_hook()` on the builder does the same thing for you. It is off by default
-because CPython has **one** handler slot per signal, and a library that installed one uninvited
-would be taking the application's SIGTERM away from it - where a JVM shutdown hook is additive,
-which is why Java's `JobRegistry` can turn its own on without asking. Either way, keep whatever
-handler was already there and call it: dropping it is harmless in a `__main__` and silently
-wrong inside a gunicorn or uvicorn worker.
-
-## Two forced types
-
-`pyproject.toml` tells schemagen to turn two plain text columns into small classes of this
-app's own:
-
-```toml
-# Every CHAR(3) column is a currency code, so the rule picks columns by their type.
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "job_worker_pg.converters.CurrencyConverter"
-include-types = "CHAR\\(3\\)"
-
-# One column, picked by its name.
-[[tool.ekbatan.schemagen.forced-types]]
-converter = "job_worker_pg.converters.EmailAddressConverter"
-include-expression = "alerts\\.recipient"
-```
-
-and schemagen writes these two lines into `schema.py`:
-
-```python
-Column("currency", converted(CHAR(length=3), CurrencyConverter()), nullable=False)
-Column("recipient", converted(VARCHAR(length=255), EmailAddressConverter()), nullable=False)
-```
-
-and, in the records beside the tables, the converters' own types - so a repository's
-`to_record` that hands the table a plain string where a `Currency` belongs is a mypy error:
-
-```python
-class AlertsRecord(dict[str, Any]):
-    ...
-
-    def column_recipient(self) -> EmailAddress: ...
-
-
-class WalletsRecord(dict[str, Any]):
-    ...
-
-    def column_currency(self) -> Currency: ...
-```
-
-- **Picked by type.** Every `CHAR(3)` column is a currency code, whatever it is called. A
-  wallet's `currency` is a `Currency`, which takes only three capital letters: `"eur"` is
-  refused.
-- **Picked by name.** `alerts.recipient` is an `EmailAddress`. The stipend job's alerts go to
-  `stipend@example.com`; `DepositMoneyAction` checks the address before it moves any money, so
-  a bad one never reaches the handler.
-
-The two classes are in `model.py` and the converters in `converters.py`; neither knows
-SQLAlchemy. The repository hands the table a `Currency` and gets one back, and the column holds
-`EUR`. Action parameters and events keep the plain text, `"currency": "EUR"`, because they are
-written to the outbox as JSON for other services to read. The test checks each value in Python
-and in the table.
-
-## The pools
-
-The scheduler gets **its own pool**, sized above the worker count. db-scheduler writes
-heartbeats from a housekeeping thread; a job body holding the last connection starves it, and an
-execution whose heartbeat stops is declared dead and run again somewhere else. The framework
-warns at startup when the two are mismatched — listen to it.
-
-`workers(n)` sets how many threads run job bodies. Java needs no such setting: it hands
-db-scheduler an unbounded virtual-thread executor. Here they are real OS threads, so the number
-is chosen rather than assumed.
-
-## Seeing the cluster behaviour
-
-Start two of these against the same database and watch each slot run once rather than twice:
+## Its test
 
 ```
-WORKER_DATABASE_URL=postgresql+psycopg://localhost:5432/wallet \
-WORKER_DATABASE_USERNAME=ekbatan WORKER_DATABASE_PASSWORD=ekbatan \
-  make run
+make
 ```
+
+Against two PostgreSQL servers in Testcontainers, one per shard, it asks what the Java example's
+test asks: the stipend job tops up the under-funded wallet on each shard and its deposits leave
+notifications, and the driver settings in `ekbatan.yaml` reach the database. Two checks are its
+own: no object of the worker shows the database password, and the migration files pass the checks
+a deploy runs.

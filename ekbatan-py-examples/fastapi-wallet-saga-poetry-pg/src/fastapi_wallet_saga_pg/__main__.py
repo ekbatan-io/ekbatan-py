@@ -4,10 +4,9 @@
 
 Open two wallets, transfer between them, and watch the saga advance:
 
-    curl -XPOST localhost:8000/wallets/<a>/transfers -H 'content-type: application/json' \
-      -d '{"to_wallet_id": "<b>", "amount": "30.00"}'      # 202, with a status_url
-    curl localhost:8000/transfers/<id>                     # IN_FLIGHT, for a moment
-    curl localhost:8000/transfers/<id>                     # COMPLETED, or REFUNDED
+    curl -XPOST localhost:8000/wallets/transfers -H 'content-type: application/json' \
+      -d '{"fromWalletId": "<a>", "toWalletId": "<b>", "amount": "25.00"}'   # 202
+    curl localhost:8000/wallets/<b>                     # credited once step two has run
 """
 
 from __future__ import annotations

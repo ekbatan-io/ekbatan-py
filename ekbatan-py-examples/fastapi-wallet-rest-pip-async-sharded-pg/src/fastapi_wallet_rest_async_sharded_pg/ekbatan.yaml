@@ -1,17 +1,13 @@
-# The service's Ekbatan settings - the same keys, in the same places, as the Java examples'
-# application.yml. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
+# The service's Ekbatan settings: the shard layout, the namespace, the jobs and the event
+# handling. Read by `app.build` through `ekbatan.config_files.load_ekbatan_config`.
 #
-# The whole layout is here: add a shard by adding a member to a group, or a group, and nothing in
-# the code changes. `${NAME:default}` is an environment variable with a default; the test fills
-# them from its container.
-#
-# The urls name the sync driver, psycopg. The sync pools connect with it; the async registries
-# read the same url as "this PostgreSQL" and connect with asyncpg, the async default.
+# Two shards, global and mexico, each its own database on its own server. `${NAME:default}` is an
+# environment variable with a default, so the file runs as it is against the servers in
+# compose.yaml and the same file runs anywhere else with the variables set. The tests fill them
+# from their containers.
 ekbatan:
-  namespace: example.fastapi_wallet_rest_async_sharded_pg
+  namespace: example.wallet
   sharding:
-    # Where a row goes when its id names a shard this deployment has not configured - which is
-    # what lets one environment read another's ids instead of refusing them.
     defaultShard:
       group: 0
       member: 0
@@ -22,78 +18,91 @@ ekbatan:
           - member: 0
             name: global
             configs:
-              # Requests, on ekbatan.aio. Past poolSize they queue, for at most poolTimeout
-              # seconds, then fail with a 503.
+              # Requests. Sized for how many requests are served at once.
+              # Past poolSize they queue, for at most poolTimeout seconds, then fail.
               primaryConfig:
-                # Extra driver settings, handed to the driver beside the url, never printed.
-                # Written as libpq spells them; asyncpg gets them as its own server_settings.
-                # Every session runs in UTC, as the columns hold UTC wall-clock time.
+                # Extra driver settings, each name exactly as the driver spells it; handed to the
+                # driver beside the url, never printed.
+                # Postgres shows application_name in pg_stat_activity; options puts every session
+                # on UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   application_name: wallet-service
                   options: -c TimeZone=UTC
-                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/wallet_global}
                 # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 10
                 poolTimeout: 5
-              # Held lock leases, async: one connection per lease that can be held at once. A
-              # lock is about a wallet's key, not its rows, so one database holds every key.
-              lockConfig:
-                # Every session in UTC, as the columns hold UTC wall-clock time.
-                dataSourceProperties:
-                  options: -c TimeZone=UTC
-                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
-                username: ${WALLET_DATABASE_USERNAME:ekbatan}
-                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
-                poolSize: 5
-              # The event handler's units of work, async, on dispatch's handler loop. Alerts have
-              # plain ids, so they all live here, on the default shard.
+              # The event handler's, async, on dispatch's handler loop and nowhere else.
               handlersConfig:
                 dataSourceProperties:
                   application_name: wallet-handlers
                   options: -c TimeZone=UTC
-                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/wallet_global}
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 5
-              # The scheduler, and fan-out and dispatch on this shard, sync. One scheduler serves
-              # every shard, polling this database. At least the job worker threads plus three: a
-              # job body holding the last connection would starve the heartbeat.
+              # The scheduler. At least twice the job worker threads: a job body holding the last
+              # connection would starve the heartbeat. Warned at startup if short.
               jobsConfig:
                 # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   options: -c TimeZone=UTC
-                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/shard_global}
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/wallet_global}
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 8
+              # Held lock leases. One connection per lease that can be held at once.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
+                url: ${WALLET_GLOBAL_URL:postgresql+psycopg://localhost:5432/wallet_global}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
       - group: 1
         name: mexico
         members:
           - member: 0
             name: mexico
             configs:
+              # Requests. Sized for how many requests are served at once.
+              # Past poolSize they queue, for at most poolTimeout seconds, then fail.
               primaryConfig:
-                # Every session in UTC, as the columns hold UTC wall-clock time.
+                # Extra driver settings, each name exactly as the driver spells it; handed to the
+                # driver beside the url, never printed.
+                # Postgres shows application_name in pg_stat_activity; options puts every session
+                # on UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   application_name: wallet-service
                   options: -c TimeZone=UTC
-                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5432/shard_mexico}
+                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5433/wallet_mexico}
+                # The login lives here, never in the url - a url is logged and repeated.
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
                 poolSize: 10
                 poolTimeout: 5
-              # Fan-out and dispatch on this shard, sync: they read and write this shard's
-              # events and event_notifications.
+              # The scheduler. At least twice the job worker threads: a job body holding the last
+              # connection would starve the heartbeat. Warned at startup if short.
               jobsConfig:
                 # Every session in UTC, as the columns hold UTC wall-clock time.
                 dataSourceProperties:
                   options: -c TimeZone=UTC
-                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5432/shard_mexico}
+                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5433/wallet_mexico}
                 username: ${WALLET_DATABASE_USERNAME:ekbatan}
                 password: ${WALLET_DATABASE_PASSWORD:ekbatan}
-                poolSize: 4
+                poolSize: 8
+              # Held lock leases. One connection per lease that can be held at once.
+              lockConfig:
+                # Every session in UTC, as the columns hold UTC wall-clock time.
+                dataSourceProperties:
+                  options: -c TimeZone=UTC
+                url: ${WALLET_MEXICO_URL:postgresql+psycopg://localhost:5433/wallet_mexico}
+                username: ${WALLET_DATABASE_USERNAME:ekbatan}
+                password: ${WALLET_DATABASE_PASSWORD:ekbatan}
+                poolSize: 5
 
   local-event-handler:
     handling:
