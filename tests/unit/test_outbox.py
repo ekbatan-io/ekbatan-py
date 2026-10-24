@@ -28,12 +28,13 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import MetaData, create_engine, select
+from sqlalchemy import MetaData, select
 
 from ekbatan.action.outbox import EventEntity, SingleTableJsonEventPersister
+from ekbatan.config import DataSourceConfig
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import ValidationError
-from ekbatan.persistence import DatabaseRegistry, TransactionManager
+from ekbatan.persistence import DatabaseRegistry, DataSource, TransactionManager
 from ekbatan.schema import eventlog_translation, outbox_table
 from ekbatan.sharding import DEFAULT_SHARD
 
@@ -45,20 +46,16 @@ class TestEvent(ModelEvent["Model"]):
     amount: int = 1
 
 
-def sqlite_engine():
-    """An in-memory database, its connections mapping `eventlog` onto it - on SQLite the event
-    tables live in the database itself (ekbatan.schema.eventlog_translation)."""
-    return create_engine(
-        "sqlite://", execution_options={"schema_translate_map": eventlog_translation("sqlite")}
-    )
+def in_memory() -> DataSource:
+    """An in-memory database. Its pool maps `eventlog` onto it, as every data source does on
+    SQLite: the event tables live in the database itself (ekbatan.schema.eventlog_translation)."""
+    return DataSource.from_config(DataSourceConfig(url="sqlite://"))
 
 
-def persist(engine, *events: ModelEvent) -> None:
+def persist(source: DataSource, *events: ModelEvent) -> None:
     """One unit of work's events, written inside a transaction as the executor writes them."""
     registry = (
-        DatabaseRegistry.builder()
-        .with_database(TransactionManager(DEFAULT_SHARD, engine, dialect="sqlite"))
-        .build()
+        DatabaseRegistry.builder().with_database(TransactionManager(DEFAULT_SHARD, source)).build()
     )
     now = datetime.now(UTC).replace(tzinfo=None)
     with registry.default.transaction():
@@ -72,12 +69,12 @@ def written():
     """Persist a record and hand back the rows it wrote."""
     metadata = MetaData()
     table = outbox_table(metadata)
-    engine = sqlite_engine()
-    metadata.create_all(engine)
+    source = in_memory()
+    metadata.create_all(source.sqlalchemy_engine)
 
     def write(*events: ModelEvent):
-        persist(engine, *events)
-        with engine.connect() as conn:
+        persist(source, *events)
+        with source.sqlalchemy_engine.connect() as conn:
             return [row._mapping for row in conn.execute(select(table))]
 
     return write
@@ -122,14 +119,14 @@ def test_the_flag_is_still_settable_for_the_fanout_that_owns_it(written) -> None
     fan-out doing so for real is `tests/integration/test_events.py`."""
     metadata = MetaData()
     table = outbox_table(metadata)
-    engine = sqlite_engine()
-    metadata.create_all(engine)
+    source = in_memory()
+    metadata.create_all(source.sqlalchemy_engine)
 
-    persist(engine, TestEvent(model_id="model-1"))
-    with engine.begin() as conn:
+    persist(source, TestEvent(model_id="model-1"))
+    with source.sqlalchemy_engine.begin() as conn:
         conn.execute(table.update().values(delivered=True))
 
-    with engine.connect() as conn:
+    with source.sqlalchemy_engine.connect() as conn:
         assert conn.execute(select(table.c.delivered)).scalar() is True
 
 

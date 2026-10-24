@@ -276,28 +276,23 @@ def _config(url: str) -> DataSourceConfig:
 
 
 def _read_back(url: str, table: Any, pk: int, row: dict[str, Any]) -> tuple[Any, Any]:
-    """Write the row through the framework's sync engine, and read it back through that and
-    through its async one."""
-    from ekbatan.aio.persistence import async_engine_for
-    from ekbatan.persistence import engine_for
+    """Write the row through the framework's sync data source, and read it back through that
+    and through its async one."""
+    from ekbatan.aio.persistence import AsyncDataSource
+    from ekbatan.persistence import DataSource
 
     config = _config(url)
-    sync = engine_for(config)
-    try:
-        with sync.begin() as connection:
-            connection.execute(insert(table).values({"pk": pk, **row}))
-            through_sync = connection.execute(select(table).where(table.c.pk == pk)).one()
-    finally:
-        sync.dispose()
+    with DataSource.from_config(config) as sync, sync.sqlalchemy_engine.begin() as connection:
+        connection.execute(insert(table).values({"pk": pk, **row}))
+        through_sync = connection.execute(select(table).where(table.c.pk == pk)).one()
 
     async def read() -> Any:
-        engine = async_engine_for(config)
-        try:
-            async with engine.connect() as connection:
-                found = await connection.execute(select(table).where(table.c.pk == pk))
-                return found.one()
-        finally:
-            await engine.dispose()
+        async with (
+            AsyncDataSource.from_config(config) as source,
+            source.sqlalchemy_engine.connect() as connection,
+        ):
+            found = await connection.execute(select(table).where(table.c.pk == pk))
+            return found.one()
 
     return through_sync._mapping, asyncio.run(read())._mapping
 
@@ -362,11 +357,11 @@ def test_an_array_of_a_domain_is_written_whole_and_its_record_says_what_both_dri
     assert any("t_arr.dd is an array of the domain posint" in n for n in said), said
 
     sync, async_ = _read_back(url, module.T_ARR, 1, {"dd": [5, 6]})
-    from ekbatan.aio.persistence import async_engine_for
+    from ekbatan.aio.persistence import AsyncDataSource
 
-    async_engine = async_engine_for(_config(url))
-    driver = async_engine.dialect.driver
-    asyncio.run(async_engine.dispose())
+    async_source = AsyncDataSource.from_config(_config(url))
+    driver = async_source.sqlalchemy_engine.dialect.driver
+    asyncio.run(async_source.aclose())
     # asyncpg reads a list; psycopg's async mode, like its sync one, the text in characters.
     assert async_["dd"] == ([5, 6] if driver == "asyncpg" else list("{5,6}")), driver
     assert sync["dd"] == list("{5,6}"), "psycopg learned the type: the record can say list[int]"

@@ -90,10 +90,21 @@ class Backend(ABC):
             self.MIGRATIONS / self.MIGRATION_DIRECTORIES[self.dialect],
         )
 
+    def data_source(self, name: str, **settings: Any) -> Any:
+        """A sync `DataSource` on one logical database, built from its config as an application
+        builds one. Its owner closes it. A test that runs in both modes builds its own with
+        `DataSource.from_config(data_source(url))` instead, so the harness swaps in the async
+        class - this method is not rebound."""
+        from ekbatan.persistence import DataSource
+        from fixtures.logins import data_source
+
+        return DataSource.from_config(data_source(self.url(name), **settings))
+
     def engine(self, name: str, **kwargs: Any) -> Any:
-        """A hand-built engine on one logical database that maps `eventlog` onto it where it is
-        not a schema, as `engine_for` does (ekbatan.schema.eventlog_translation) - so a test
-        reads the event tables where the framework writes them."""
+        """SQLAlchemy's own engine on one logical database, for a test's own statements. It maps
+        `eventlog` onto that database where it is not a schema, as a data source's engine does
+        (ekbatan.schema.eventlog_translation) - so a test reads the event tables where the
+        framework writes them."""
         from ekbatan.schema import eventlog_translation
 
         translation = eventlog_translation(self.dialect)

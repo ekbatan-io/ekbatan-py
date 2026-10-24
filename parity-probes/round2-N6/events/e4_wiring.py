@@ -41,7 +41,7 @@ events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
 jobs = (
     job_registry()
-    .engine(engine)
+    .data_source(engine)
     .with_jobs([
         EventFanoutJob(registry, handlers, events=EVENTS,
                        notifications=EVENT_NOTIFICATIONS, config=events_config, clock=clock),

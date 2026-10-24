@@ -154,7 +154,7 @@ class Harness:
         # worker itself they are registered like any other job and loop on their own threads.
         self.jobs = (
             job_registry()
-            .engine(self.registry.default.primary)
+            .data_source(self.registry.default.primary)
             .with_jobs([self.stipend, self.report])
             .build_manual(self.clock)
         )
@@ -248,7 +248,7 @@ def test_the_worker_registers_all_four_jobs(worker: Harness) -> None:
     runs for the life of the process, so there is nothing here that would return."""
     all_four = (
         job_registry()
-        .engine(worker.registry.default.primary)
+        .data_source(worker.registry.default.primary)
         .with_jobs([worker.fanout_job, worker.handling_job, worker.stipend, worker.report])
         .build_manual(SettableClock(EPOCH))
     )
@@ -397,8 +397,8 @@ def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(
     worker = build(config_file=config_file)
     try:
         assert worker.executor.namespace == "example.job_worker_async_pg"
-        assert worker.jobs_engine.pool.size() == 8
-        assert worker.registry.default.primary.sync_engine.pool.size() == 10  # type: ignore[attr-defined]
+        assert worker.jobs_data_source.sqlalchemy_engine.pool.size() == 8
+        assert worker.registry.default.primary.sqlalchemy_engine.sync_engine.pool.size() == 10  # type: ignore[attr-defined]
         # db-scheduler keeps the interval on the waiter it polls with; nothing public reads it.
         assert worker.jobs.scheduler._execute_due_waiter.duration == timedelta(seconds=7)
         # A switched-off job is registered but never scheduled, so it is left out of the jobs
@@ -406,7 +406,7 @@ def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(
         assert "ekbatan-event-handling" in worker.jobs._names_requiring_registration
 
         async def settings() -> tuple[Any, Any]:
-            async with worker.registry.default.primary.connect() as conn:
+            async with worker.registry.default.primary.sqlalchemy_engine.connect() as conn:
                 name = await conn.execute(text("SELECT current_setting('application_name')"))
                 zone = await conn.execute(text("SELECT current_setting('TimeZone')"))
                 return name.scalar(), zone.scalar()
@@ -414,7 +414,7 @@ def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(
         # `options: -c TimeZone=UTC` on both pools: every session on UTC, whatever the server's
         # default - on asyncpg, on the worker loop, and on psycopg.
         assert worker.loop.run(settings()) == ("wallet-worker", "UTC")
-        with worker.jobs_engine.connect() as conn:
+        with worker.jobs_data_source.sqlalchemy_engine.connect() as conn:
             assert conn.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
         # One url in `ekbatan.yaml`, two drivers: the work on asyncpg, what polls on psycopg.
         assert worker.registry.default.primary.url.get_driver_name() == "asyncpg"
@@ -474,18 +474,19 @@ def test_no_service_object_shows_the_password(
     try:
 
         async def one() -> Any:
-            async with worker.registry.default.primary.connect() as conn:
+            async with worker.registry.default.primary.sqlalchemy_engine.connect() as conn:
                 return (await conn.execute(text("SELECT 1"))).scalar()
 
         assert worker.loop.run(one()) == 1, "it really logged in"
-        with worker.events_registry.default.primary.connect() as conn:
+        with worker.events_registry.default.primary.sqlalchemy_engine.connect() as conn:
             assert conn.execute(text("SELECT 1")).scalar() == 1
-        pools: list[object] = [
+        sources = [
             worker.registry.default.primary,
             worker.events_registry.default.primary,
-            worker.jobs_engine,
+            worker.jobs_data_source,
         ]
-        pools += [getattr(pool, "pool", None) for pool in pools]
+        engines = [source.sqlalchemy_engine for source in sources]
+        pools: list[object] = [*sources, *engines, *(engine.pool for engine in engines)]
         shown = [worker, worker.registry, worker.executor, worker.jobs, *pools]
         shown += [getattr(worker, name) for name in worker.__dataclass_fields__]
         for thing in shown:

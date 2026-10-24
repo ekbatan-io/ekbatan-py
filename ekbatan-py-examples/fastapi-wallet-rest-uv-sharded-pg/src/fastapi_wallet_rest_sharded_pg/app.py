@@ -15,14 +15,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-
 from ekbatan import (
     ActionExecutor,
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
-    engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
@@ -62,9 +60,9 @@ class ShardedWallets:
     locks: KeyedLockProvider
     jobs: JobRegistry
     #: Built from the global member's `lockConfig` and the default shard's `jobsConfig`. The
-    #: registry owns only the pools it built, so these two are disposed here.
-    lock_engine: Engine
-    jobs_engine: Engine
+    #: registry owns only the pools it built, so these two are closed here.
+    lock_data_source: DataSource
+    jobs_data_source: DataSource
 
     def start(self) -> None:
         """Begin polling. Fan-out and handling are two of the jobs, so this is what starts the
@@ -75,8 +73,8 @@ class ShardedWallets:
         # Stop taking work before closing what the work runs on.
         self.jobs.stop()
         self.locks.close()
-        self.lock_engine.dispose()
-        self.jobs_engine.dispose()
+        self.lock_data_source.close()
+        self.jobs_data_source.close()
         self.registry.close()
 
 
@@ -129,11 +127,11 @@ def build(
     jobs_config = default.config_for("jobsConfig")
     if jobs_config is None:
         raise ValueError("groups[0].members[0].configs.jobsConfig is required")
-    jobs_engine = engine_for(jobs_config)
+    jobs_data_source = DataSource.from_config(jobs_config)
     lock_config = default.config_for("lockConfig")
     if lock_config is None:
         raise ValueError("groups[0].members[0].configs.lockConfig is required")
-    lock_engine = engine_for(lock_config)
+    lock_data_source = DataSource.from_config(lock_config)
     handlers = (
         EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
     )
@@ -144,12 +142,12 @@ def build(
         wallets=wallets,
         alerts=alerts,
         executor=executor,
-        locks=PostgresKeyedLockProvider.builder().engine(lock_engine).build(),
-        lock_engine=lock_engine,
-        jobs_engine=jobs_engine,
+        locks=PostgresKeyedLockProvider.builder().data_source(lock_data_source).build(),
+        lock_data_source=lock_data_source,
+        jobs_data_source=jobs_data_source,
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     EventFanoutJob.builder()

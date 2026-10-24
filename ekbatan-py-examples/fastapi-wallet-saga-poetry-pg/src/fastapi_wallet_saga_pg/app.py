@@ -14,14 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-
 from ekbatan import (
     ActionExecutor,
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
-    engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
@@ -56,8 +54,8 @@ class SagaService:
     executor: ActionExecutor
     jobs: JobRegistry
     #: Built from the member's `jobsConfig`. The registry owns only the pools it built, so this
-    #: one is disposed here.
-    jobs_engine: Engine
+    #: one is closed here.
+    jobs_data_source: DataSource
 
     def start(self) -> None:
         """Begin polling. Fan-out and handling are two of the jobs, so this is what lets the saga
@@ -67,7 +65,7 @@ class SagaService:
     def close(self) -> None:
         # Stop taking work before closing what the work runs on.
         self.jobs.stop()
-        self.jobs_engine.dispose()
+        self.jobs_data_source.close()
         self.registry.close()
 
 
@@ -121,7 +119,7 @@ def build(
     jobs_config = layout.groups[0].members[0].config_for("jobsConfig")
     if jobs_config is None:
         raise ValueError("groups[0].members[0].configs.jobsConfig is required")
-    jobs_engine = engine_for(jobs_config)
+    jobs_data_source = DataSource.from_config(jobs_config)
     events_config = ekbatan.local_event_handler
 
     return SagaService(
@@ -129,10 +127,10 @@ def build(
         wallets=wallets,
         steps=steps,
         executor=executor,
-        jobs_engine=jobs_engine,
+        jobs_data_source=jobs_data_source,
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     EventFanoutJob.builder()

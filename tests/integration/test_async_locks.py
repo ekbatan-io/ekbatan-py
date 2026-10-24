@@ -73,7 +73,11 @@ def run_redis(redis_client: Any, scenario: Any) -> None:
 
 
 def in_use(registry: AsyncDatabaseRegistry | None) -> int:
-    return 0 if registry is None else registry.default.primary.sync_engine.pool.checkedout()
+    return (
+        0
+        if registry is None
+        else registry.default.primary.sqlalchemy_engine.sync_engine.pool.checkedout()
+    )
 
 
 # ------------------------------------------------------------------------- the scenarios

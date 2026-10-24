@@ -21,10 +21,11 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Self
 
-from sqlalchemy import Connection, Engine
+from sqlalchemy import Connection
 
 from .._guards import refuse_if_forked
 from ..errors import LockAcquisitionError, ValidationError
+from ..persistence import DataSource, _taken
 from ._holder import KeyedReentrantHolder, ReleaseReason
 from .base import Lease, check, lock_key_hash
 
@@ -48,8 +49,8 @@ class SqlKeyedLockProvider(ABC):
     #: Each backend logs under its Java class's name, as Java's do; this is only the default.
     _log = logging.getLogger("io.ekbatan.core.concurrent")
 
-    def __init__(self, engine: Engine) -> None:
-        self._engine = engine
+    def __init__(self, data_source: DataSource) -> None:
+        self._data_source = _taken(data_source, DataSource, type(self).__name__)
         self._holder = KeyedReentrantHolder()
         #: The process that built it: its holds, its watchdog and its pool belong to that one.
         self._created_in = os.getpid()
@@ -101,7 +102,8 @@ class SqlKeyedLockProvider(ABC):
 
     def close(self) -> None:  # noqa: B027 - deliberately empty, as Java's default
         """Does nothing, as Java's ``close()`` does nothing. Leases still open stay held until
-        they are released or their ``max_hold`` passes; release them before disposing the engine."""
+        they are released or their ``max_hold`` passes; release them before closing the data
+        source."""
 
     # ---------------------------------------------------------------- internals
 
@@ -112,8 +114,9 @@ class SqlKeyedLockProvider(ABC):
         # every later statement on the connection until it is rolled back, which is how a
         # timed-out `try_acquire` came to report itself as a backend failure. An advisory lock
         # is session-scoped in both Postgres and MySQL, so there is no transaction to want.
+        engine = self._data_source.sqlalchemy_engine  # refused after fork(), and said so
         try:
-            conn = self._engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+            conn = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
         except Exception as exc:
             # Drawing the connection is part of taking the lock, so an unreachable database is a
             # LockAcquisitionError like any other backend failure, as in Java. Nothing to give
@@ -362,20 +365,21 @@ class SqlKeyedLockProviderBuilder[P: SqlKeyedLockProvider]:
     """Fluent builder for the SQL lock providers. Obtain via ``PostgresKeyedLockProvider.builder()``
     or the MySQL / MariaDB one.
 
-    ``engine`` is Java's ``connectionProvider``: the pool the locks' sessions are borrowed from.
+    ``data_source`` is Java's ``connectionProvider``: the pool the locks' sessions are borrowed
+    from.
     """
 
-    __slots__ = ("_engine", "_provider")
+    __slots__ = ("_data_source", "_provider")
 
     def __init__(self, provider: type[P]) -> None:
         self._provider = provider
-        self._engine: Engine | None = None
+        self._data_source: DataSource | None = None
 
-    def engine(self, engine: Engine) -> Self:
-        self._engine = engine
+    def data_source(self, data_source: DataSource) -> Self:
+        self._data_source = _taken(data_source, DataSource, self._provider.__name__)
         return self
 
     def build(self) -> P:
-        if self._engine is None:
-            raise ValidationError("engine is required")
-        return self._provider(self._engine)
+        if self._data_source is None:
+            raise ValidationError("data_source is required")
+        return self._provider(self._data_source)

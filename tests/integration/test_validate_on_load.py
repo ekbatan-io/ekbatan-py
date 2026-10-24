@@ -49,7 +49,7 @@ def a_wallet(balance: str = "10") -> Wallet:
 
 def spoil(registry, statement) -> None:
     """Write behind the repository's back, as another program would."""
-    engine = registry.default.primary
+    engine = registry.default.primary.sqlalchemy_engine
     with engine.begin() as conn:
         conn.execute(statement)
 

@@ -111,13 +111,13 @@ def open_wallet(client: TestClient, balance: str = "100.00") -> str:
     return wallet_id
 
 
-def stipend_has_run(jobs_engine: Any, within: float = 15.0) -> None:
+def stipend_has_run(jobs_data_source: Any, within: float = 15.0) -> None:
     """Wait for the stipend's run at startup: a `FixedDelay` job is due the moment it is
     registered, and its row records the run once it is over."""
     deadline = time.monotonic() + within
     query = text("SELECT last_success FROM scheduled_tasks WHERE task_name = 'wallet-stipend'")
     while True:
-        with jobs_engine.connect() as connection:
+        with jobs_data_source.sqlalchemy_engine.connect() as connection:
             if connection.execute(query).scalar_one_or_none() is not None:
                 return
         if time.monotonic() > deadline:
@@ -316,7 +316,7 @@ def test_requests_and_the_handler_run_on_aiomysql_and_the_jobs_on_pymysql(
 
     assert running.registry.dialect == "mariadb"
     assert running.registry.default.primary.url.get_driver_name() == "aiomysql"
-    assert running.lock_engine.url.get_driver_name() == "aiomysql"
+    assert running.lock_data_source.url.get_driver_name() == "aiomysql"
     assert running.handler_registry.default.primary.url.get_driver_name() == "aiomysql"
     assert running.events_registry.default.primary.url.get_driver_name() == "pymysql"
     assert type(running.locks).__name__ == "AsyncMariaDBKeyedLockProvider"
@@ -327,25 +327,30 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     including the setting that puts each session on UTC, on every pool and both drivers. The
     handler's pool is asked on the handler loop, where it lives."""
     running = service(client)
-    requests = running.registry.default.primary.sync_engine.pool
-    locks = running.lock_engine.sync_engine.pool
-    handlers = running.handler_registry.default.primary.sync_engine.pool
+    requests = running.registry.default.primary.sqlalchemy_engine.sync_engine.pool
+    locks = running.lock_data_source.sqlalchemy_engine.sync_engine.pool
+    handlers = running.handler_registry.default.primary.sqlalchemy_engine.sync_engine.pool
 
     assert running.executor.namespace == "example.fastapi_wallet_rest_async_mariadb"
-    sizes = (requests.size(), locks.size(), handlers.size(), running.jobs_engine.pool.size())  # type: ignore[attr-defined]
+    sizes = (
+        requests.size(),
+        locks.size(),
+        handlers.size(),
+        running.jobs_data_source.sqlalchemy_engine.pool.size(),
+    )  # type: ignore[attr-defined]
     assert sizes == (10, 5, 5, 8)
     assert scalar(client, text("SELECT @@session.time_zone")) == "+00:00"
     # `init_command` under `dataSourceProperties`, reaching the server through aiomysql.
     assert scalar(client, text("SELECT @@SESSION.innodb_lock_wait_timeout")) == 10
 
-    async def zone_on(engine: Any) -> Any:
-        async with engine.connect() as connection:
+    async def zone_on(source: Any) -> Any:
+        async with source.sqlalchemy_engine.connect() as connection:
             return (await connection.execute(text("SELECT @@session.time_zone"))).scalar()
 
-    assert on_the_app_loop(client, lambda: zone_on(running.lock_engine)) == "+00:00"
-    handler_engine = running.handler_registry.default.primary
-    assert running.handler_loop.run(zone_on(handler_engine)) == "+00:00"
-    with running.jobs_engine.connect() as connection:
+    assert on_the_app_loop(client, lambda: zone_on(running.lock_data_source)) == "+00:00"
+    handler_source = running.handler_registry.default.primary
+    assert running.handler_loop.run(zone_on(handler_source)) == "+00:00"
+    with running.jobs_data_source.sqlalchemy_engine.connect() as connection:
         assert connection.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
 
 
@@ -363,7 +368,7 @@ def test_the_stipend_job_pays_every_open_wallet(client: TestClient) -> None:
     from .jobs import PayStipendJob
 
     running = service(client)
-    stipend_has_run(running.jobs_engine)
+    stipend_has_run(running.jobs_data_source)
     wallet_id = open_wallet(client, "0.00")
 
     job = PayStipendJob(running.handler_loop, running.handler_executor, running.handler_wallets)
@@ -377,7 +382,10 @@ def test_the_stipend_job_pays_every_open_wallet(client: TestClient) -> None:
     job.pay = recorded  # type: ignore[method-assign]
     a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
-        job_registry().engine(running.jobs_engine).with_jobs([job]).build_manual(a_day_later)
+        job_registry()
+        .data_source(running.jobs_data_source)
+        .with_jobs([job])
+        .build_manual(a_day_later)
     )
     stipend_only.start()
 
@@ -398,12 +406,12 @@ def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(
     the handler's on aiomysql, the jobs' on PyMySQL."""
     from .app import build
 
-    async def zone_on(engine: Any) -> Any:
-        async with engine.connect() as connection:
+    async def zone_on(source: Any) -> Any:
+        async with source.sqlalchemy_engine.connect() as connection:
             return (await connection.execute(text("SELECT @@session.time_zone"))).scalar()
 
-    def sync_zone_on(engine: Any) -> Any:
-        with engine.connect() as connection:
+    def sync_zone_on(source: Any) -> Any:
+        with source.sqlalchemy_engine.connect() as connection:
             return connection.execute(text("SELECT @@session.time_zone")).scalar()
 
     async def every_pool(service: WalletService) -> list[Any]:
@@ -412,11 +420,11 @@ def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(
         try:
             return [
                 await zone_on(service.registry.default.primary),
-                await zone_on(service.lock_engine),
+                await zone_on(service.lock_data_source),
                 await asyncio.to_thread(
                     service.handler_loop.run, zone_on(service.handler_registry.default.primary)
                 ),
-                await asyncio.to_thread(sync_zone_on, service.jobs_engine),
+                await asyncio.to_thread(sync_zone_on, service.jobs_data_source),
             ]
         finally:
             await service.aclose()
@@ -444,7 +452,7 @@ def test_a_request_that_waits_out_the_pool_is_a_503(client: TestClient) -> None:
     queue for a connection, and one that waits longer than `poolTimeout` (five seconds in
     `ekbatan.yaml`) is a 503 with `Retry-After`, not a 500. Every connection is held first, on
     the app's loop."""
-    primary = client.app.state.service.registry.default.primary
+    primary = client.app.state.service.registry.default.primary.sqlalchemy_engine
     assert client.portal is not None
     portal = client.portal
 
@@ -471,7 +479,7 @@ def test_no_service_object_shows_the_password(
 ) -> None:
     """The container's password is the marker `SECRET`. The service is built from the
     environment and really connects with it - and not one object it holds shows it: not the
-    settings, the service, its registries, its executors, nor any engine or pool."""
+    settings, the service, its registries, its executors, nor any data source, engine or pool."""
     from .app import build
 
     use_database(monkeypatch, database)
@@ -486,12 +494,12 @@ def test_no_service_object_shows_the_password(
             await service.aclose()
 
     assert asyncio.run(connect()) == 1, "connected with it"
-    engines = [
+    sources = [
         service.registry.default.primary,
-        service.lock_engine,
+        service.lock_data_source,
         service.handler_registry.default.primary,
         service.events_registry.default.primary,
-        service.jobs_engine,
+        service.jobs_data_source,
     ]
     shown = [
         settings,
@@ -503,8 +511,9 @@ def test_no_service_object_shows_the_password(
         service.events_registry,
         service.locks,
         service.jobs,
-        *engines,
-        *(engine.pool for engine in engines),
+        *sources,
+        *(source.sqlalchemy_engine for source in sources),
+        *(source.sqlalchemy_engine.pool for source in sources),
     ]
     for thing in shown:
         assert SECRET not in repr(thing), type(thing).__name__

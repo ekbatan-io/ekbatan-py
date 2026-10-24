@@ -35,14 +35,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-
 from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
     TransactionManager,
-    engine_for,
 )
 from ekbatan.aio import (
     AsyncActionExecutor,
@@ -87,9 +85,10 @@ class Worker:
     #: `events_registry`.
     events_registry: DatabaseRegistry
     jobs: JobRegistry
-    #: Built from the member's `jobsConfig`. The registries own only what they built, so this
-    #: one is disposed here.
-    jobs_engine: Engine
+    #: Built from the member's `jobsConfig`. `events_registry` closes it: its manager was given
+    #: it, and a manager closes the data sources it was given. The job registry, which polls it,
+    #: does not.
+    jobs_data_source: DataSource
 
     def start(self) -> None:
         self.jobs.start()
@@ -101,7 +100,6 @@ class Worker:
         self.loop.run(self.registry.aclose())
         self.loop.close()
         self.events_registry.close()
-        self.jobs_engine.dispose()
 
 
 def build(
@@ -156,10 +154,10 @@ def build(
     jobs_config = layout.groups[0].members[0].config_for("jobsConfig")
     if jobs_config is None:
         raise ValueError("groups[0].members[0].configs.jobsConfig is required")
-    jobs_engine = engine_for(jobs_config)
+    jobs_data_source = DataSource.from_config(jobs_config)
     events_registry = (
         DatabaseRegistry.builder()
-        .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+        .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
         .build()
     )
     events_config = ekbatan.local_event_handler
@@ -172,10 +170,10 @@ def build(
         executor=executor,
         report=report,
         events_registry=events_registry,
-        jobs_engine=jobs_engine,
+        jobs_data_source=jobs_data_source,
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     # The event pipeline is two jobs like any other, claimed through the same

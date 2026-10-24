@@ -46,7 +46,9 @@ def test_state_and_events_commit_together(executor, wallets, outbox, registry):
     wallet = a_wallet(executor, "100.00")
 
     commits: list[str] = []
-    event.listen(registry.default.primary, "commit", lambda conn: commits.append("commit"))
+    event.listen(
+        registry.default.primary.sqlalchemy_engine, "commit", lambda conn: commits.append("commit")
+    )
 
     run(
         executor,
@@ -320,5 +322,5 @@ def test_decimals_are_json_numbers_and_keep_their_scale_except_on_mysql(
     row = next(r for r in outbox() if r["event_type"] == "WalletMoneyDepositedEvent")
     amount, param = row["payload"]["amount"], row["action_params"]["amount"]
     assert type(amount) is Decimal and type(param) is Decimal
-    expected = "50.0" if registry.default.primary.dialect.name == "mysql" else "50.00"
+    expected = "50.0" if registry.default.primary.dialect == "mysql" else "50.00"
     assert (str(amount), str(param)) == (expected, expected)

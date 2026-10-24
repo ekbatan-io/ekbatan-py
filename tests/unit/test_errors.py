@@ -36,6 +36,7 @@ from ekbatan.events.handler import EventHandlerRegistry
 from ekbatan.events.jobs import _valid_name
 from ekbatan.locks.base import check as check_lock_args
 from ekbatan.locks.redis import RedisKeyedLockProvider
+from ekbatan.persistence import DataSource
 from ekbatan.sharding import MAX_GROUP, MAX_MEMBER, MIN_GROUP, MIN_MEMBER, ShardIdentifier
 
 BLANK = ["", " ", "   \t\n"]
@@ -107,8 +108,11 @@ class TestEveryBlankCheckAgrees:
 
             def execute(self, ctx: object) -> None: ...
 
-        with pytest.raises(ValidationError, match="blank name"):
-            job_registry().engine(object()).with_job(Blank()).build()  # type: ignore[arg-type]
+        with (
+            DataSource.from_config(DataSourceConfig(url="sqlite://")) as source,
+            pytest.raises(ValidationError, match="blank name"),
+        ):
+            job_registry().data_source(source).with_job(Blank()).build()
 
     def test_the_model_id_an_event_is_constructed_with(self, blank: str) -> None:
         with pytest.raises(ValidationError, match="model_id cannot be None or blank"):
@@ -149,8 +153,11 @@ class TestInclusiveBetween:
 
 
 def test_not_empty_refuses_a_registry_with_no_jobs() -> None:
-    with pytest.raises(ValidationError, match="at least one DistributedJob"):
-        job_registry().engine(object()).build()  # type: ignore[arg-type]
+    with (
+        DataSource.from_config(DataSourceConfig(url="sqlite://")) as source,
+        pytest.raises(ValidationError, match="at least one DistributedJob"),
+    ):
+        job_registry().data_source(source).build()
 
 
 def test_every_refusal_is_one_kind_of_error() -> None:

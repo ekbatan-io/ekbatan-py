@@ -29,8 +29,8 @@ from ekbatan import ActionRegistry, DatabaseRegistry, RepositoryRegistry
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
+    AsyncDataSource,
     AsyncTransactionManager,
-    async_engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
@@ -123,7 +123,7 @@ def build(
     # Development only. A real deployment migrates from files - `ekbatan.migrations.migrate`,
     # which is sync too - because create_all has no answer for a column that changed.
     for shard in events_registry.shards:
-        metadata.create_all(events_registry.manager(shard).primary)
+        metadata.create_all(events_registry.manager(shard).primary.sqlalchemy_engine)
 
     # -- the units of work, async ---------------------------------------------------------------
     registry = AsyncDatabaseRegistry.from_config(layout)
@@ -164,7 +164,7 @@ def build(
     handler_registry = (
         AsyncDatabaseRegistry.builder()
         .with_default_database(
-            AsyncTransactionManager(layout.default_shard, async_engine_for(primary))
+            AsyncTransactionManager(layout.default_shard, AsyncDataSource.from_config(primary))
         )
         .build()
     )
@@ -234,7 +234,7 @@ def build(
         # body holding the last connection would starve the heartbeat.
         jobs=(
             job_registry()
-            .engine(events_registry.default.primary)
+            .data_source(events_registry.default.primary)
             .with_jobs(
                 [fanout, dispatch, PayStipendJob(handler_loop, handler_executor, handler_wallets)]
             )

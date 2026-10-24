@@ -14,10 +14,15 @@ from datetime import timedelta
 from db_scheduler.task.schedule import DisabledSchedule, FixedDelay
 from sqlalchemy import create_engine, text
 
+from ekbatan import DataSource
+from ekbatan.config import DataSourceConfig
 from ekbatan.distributedjobs import DistributedJob, JobsConfig, job_registry
 
 PW = os.environ.get("PARITY_PW", "test")
 ENGINE = create_engine(f"postgresql+psycopg://test:{PW}@localhost:56432/testdb", pool_size=10)
+SOURCE = DataSource.from_config(
+    DataSourceConfig(url="postgresql+psycopg://localhost:56432/testdb", username="test", password=PW, pool_size=10)
+)
 DDL = (
     "create table scheduled_tasks (task_name text not null, task_instance text not null,"
     " task_data bytea, execution_time timestamp with time zone not null, picked BOOLEAN not null,"
@@ -85,7 +90,7 @@ def ms(n: int) -> timedelta:
 
 
 def base():
-    return job_registry().engine(ENGINE).stop_on_exit(False).poll_interval(ms(100))
+    return job_registry().data_source(SOURCE).stop_on_exit(False).poll_interval(ms(100))
 
 
 def main() -> None:
@@ -96,7 +101,7 @@ def main() -> None:
     noop = Job("v", FixedDelay.of(ms(200)), lambda ctx: None)
 
     # J1 validation
-    p("validate.no_jobs", refused(lambda: job_registry().engine(ENGINE).build()))
+    p("validate.no_jobs", refused(lambda: job_registry().data_source(SOURCE).build()))
     p("validate.no_connection", refused(lambda: job_registry().with_job(noop).build()))
     p("validate.null_job", refused(lambda: job_registry().with_job(None)))
     p("validate.null_in_jobs", refused(lambda: job_registry().with_jobs([noop, None])))
@@ -304,7 +309,7 @@ def main() -> None:
         if len(starts) == 1:
             time.sleep(12.5)
 
-    reg = job_registry().engine(ENGINE).stop_on_exit(False).with_job(Job("j11-defaults", FixedDelay.of(timedelta(seconds=1)), d11)).build()
+    reg = job_registry().data_source(SOURCE).stop_on_exit(False).with_job(Job("j11-defaults", FixedDelay.of(timedelta(seconds=1)), d11)).build()
     reg.start()
     time.sleep(1.5)
     h1 = query1("select last_heartbeat from scheduled_tasks where task_name = 'j11-defaults'")

@@ -16,9 +16,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Column, Integer, MetaData, Table, select
 
-import ekbatan.persistence as sync_persistence
 from ekbatan.schema import json_column
-from fixtures.logins import data_source
 
 MODES = ("sync", "async")
 
@@ -34,15 +32,16 @@ NOTES = Table(
 
 @pytest.fixture
 def notes(registry: Any, backend: Any) -> Iterator[Table]:
-    # Through the module: an async run rebinds this module's own names to their twins.
-    engine = sync_persistence.engine_for(data_source(backend.url("ekbatan_main")))
+    # Through the backend: an async run rebinds this module's own names to their twins, and
+    # this table is made with a sync pool in both runs.
+    source = backend.data_source("ekbatan_main")
     try:
-        NOTES.metadata.create_all(engine)
-        with engine.begin() as conn:
+        NOTES.metadata.create_all(source.sqlalchemy_engine)
+        with source.sqlalchemy_engine.begin() as conn:
             conn.execute(NOTES.delete())
         yield NOTES
     finally:
-        engine.dispose()
+        source.close()
 
 
 def test_a_datetime_in_a_dict_is_written_as_it_is_given(registry, notes):

@@ -6,7 +6,7 @@ replicas run this, and the jobs claim their rows against the same database eithe
 
 Two things here are worth copying into a real worker.
 
-**The scheduler gets its own engine**, sized above the worker count. db-scheduler writes
+**The scheduler gets its own pool**, sized above the worker count. db-scheduler writes
 heartbeats from a housekeeping thread; a job body holding the last connection starves it, and an
 execution whose heartbeat stops is declared dead and run again somewhere else. The framework
 warns at startup when the two are mismatched - listen to it.
@@ -29,14 +29,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-
 from ekbatan import (
     ActionExecutor,
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
-    engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
@@ -73,15 +71,15 @@ class Worker:
     report: WalletReportJob
     jobs: JobRegistry
     #: Built from the member's `jobsConfig`. The registry owns only the pools it built, so this
-    #: one is disposed here.
-    jobs_engine: Engine
+    #: one is closed here.
+    jobs_data_source: DataSource
 
     def start(self) -> None:
         self.jobs.start()
 
     def close(self) -> None:
         self.jobs.stop()
-        self.jobs_engine.dispose()
+        self.jobs_data_source.close()
         self.registry.close()
 
 
@@ -136,7 +134,7 @@ def build(
     jobs_config = layout.groups[0].members[0].config_for("jobsConfig")
     if jobs_config is None:
         raise ValueError("groups[0].members[0].configs.jobsConfig is required")
-    jobs_engine = engine_for(jobs_config)
+    jobs_data_source = DataSource.from_config(jobs_config)
 
     return Worker(
         registry=registry,
@@ -144,10 +142,10 @@ def build(
         alerts=alerts,
         executor=executor,
         report=report,
-        jobs_engine=jobs_engine,
+        jobs_data_source=jobs_data_source,
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     # The event pipeline is two jobs like any other, claimed through the same

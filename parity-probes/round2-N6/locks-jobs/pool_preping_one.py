@@ -3,7 +3,7 @@ connection? ekbatan's pool against plain SQLAlchemy QueuePool, n6b-pg on 58720."
 import time
 from sqlalchemy import create_engine, text
 from ekbatan.config import DataSourceConfig
-from ekbatan.persistence import engine_for
+from ekbatan.persistence import DataSource
 PW = "pw"; P = lambda k, v: print(f"PROBE {k}: {v}", flush=True)
 admin = create_engine(f"postgresql+psycopg://postgres:{PW}@127.0.0.1:58720/postgres", pool_size=1)
 def kill_all(app):
@@ -21,7 +21,7 @@ def trial(label, e, app):
         except Exception as ex: err = type(ex).__name__ + ": " + str(ex).splitlines()[0][:80]
     P(f"{label}: killed {n} backends, 3 checkouts ok", f"{ok}/3 {err or ''}")
     e.dispose()
-trial("ekbatan engine_for (pool_size=3, pre_ping)", engine_for(DataSourceConfig(url="postgresql+psycopg://127.0.0.1:58720/postgres",
-      username="postgres", password=PW, pool_size=3, data_source_properties={"application_name": "n6pp1"})), "n6pp1")
+trial("ekbatan engine_for (pool_size=3, pre_ping)", DataSource.from_config(DataSourceConfig(url="postgresql+psycopg://127.0.0.1:58720/postgres",
+      username="postgres", password=PW, pool_size=3, data_source_properties={"application_name": "n6pp1"})).sqlalchemy_engine, "n6pp1")
 trial("plain create_engine(pool_pre_ping=True)", create_engine(f"postgresql+psycopg://postgres:{PW}@127.0.0.1:58720/postgres",
       pool_size=3, max_overflow=0, pool_pre_ping=True, connect_args={"application_name": "n6pp2"}), "n6pp2")

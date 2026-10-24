@@ -38,7 +38,7 @@ def _flat(parameters: Any) -> list[Any]:
 
 
 def _watch(registry: Any) -> tuple[list[tuple[str, Any, Any]], Any]:
-    engine = registry.manager(registry.default_shard).primary
+    engine = registry.manager(registry.default_shard).primary.sqlalchemy_engine
     seen: list[tuple[str, Any, Any]] = []
 
     def hook(conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, many: bool):

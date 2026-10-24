@@ -1,7 +1,7 @@
 """Locks held by the database, for code on an event loop.
 
 The sync providers' rules, statements and log lines (``ekbatan.locks.sql``), on an
-``AsyncEngine``: a session-scoped lock, so each hold keeps a connection of its own for as long
+``AsyncDataSource``: a session-scoped lock, so each hold keeps a connection of its own for as long
 as it lasts; waiting in bounded segments; AUTOCOMMIT; a connection whose release failed, or whose
 settings could not be put back, closed rather than returned. Only the awaits are new - and one
 rule the sync side has no use for: **a wait that is cancelled closes its connection**, because
@@ -19,7 +19,7 @@ from datetime import timedelta
 from typing import Any, Self
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from ..._guards import refuse_if_forked
 from ...errors import LockAcquisitionError, ValidationError
@@ -47,6 +47,8 @@ from ...locks.sql import (
     pg_lock_timeout,
     segments,
 )
+from ...persistence import _taken
+from ..persistence import AsyncDataSource
 from .base import Acquiring, AsyncKeyedReentrantHolder, AsyncLease
 
 __all__ = [
@@ -68,8 +70,8 @@ class AsyncSqlKeyedLockProvider(ABC):
     _log = logging.getLogger("io.ekbatan.core.concurrent")
     _release_failed = "Failed to release the lock for key %s; evicting connection"
 
-    def __init__(self, engine: AsyncEngine) -> None:
-        self._engine = engine
+    def __init__(self, data_source: AsyncDataSource) -> None:
+        self._data_source = _taken(data_source, AsyncDataSource, type(self).__name__)
         self._holder = AsyncKeyedReentrantHolder()
         #: The process that built it: its pool's connections belong to that one.
         self._created_in = os.getpid()
@@ -121,14 +123,15 @@ class AsyncSqlKeyedLockProvider(ABC):
 
     def close(self) -> None:  # noqa: B027 - deliberately empty, as the sync one
         """Does nothing, as the sync ``close()``. Leases still open stay held until they are
-        released or their ``max_hold`` passes; release them before disposing the engine."""
+        released or their ``max_hold`` passes; release them before closing the data source."""
 
     # ---------------------------------------------------------------- internals
 
     async def _attempt(self, key: str, wait: timedelta, max_hold: timedelta) -> AsyncLease | None:
         hashed = lock_key_hash(key)
+        engine = self._data_source.sqlalchemy_engine  # refused after fork(), and said so
         try:
-            conn = await self._engine.connect()
+            conn = await engine.connect()
             await conn.execution_options(isolation_level="AUTOCOMMIT")
         except Exception as exc:
             raise LockAcquisitionError(key, NO_CONNECTION) from exc
@@ -258,20 +261,20 @@ class AsyncSqlKeyedLockProviderBuilder[P: AsyncSqlKeyedLockProvider]:
     """Fluent builder for the async SQL lock providers. Obtain via
     ``AsyncPostgresKeyedLockProvider.builder()`` or the MySQL / MariaDB one.
 
-    ``engine`` is the async pool the locks' sessions are borrowed from.
+    ``data_source`` is the async pool the locks' sessions are borrowed from.
     """
 
-    __slots__ = ("_engine", "_provider")
+    __slots__ = ("_data_source", "_provider")
 
     def __init__(self, provider: type[P]) -> None:
         self._provider = provider
-        self._engine: AsyncEngine | None = None
+        self._data_source: AsyncDataSource | None = None
 
-    def engine(self, engine: AsyncEngine) -> Self:
-        self._engine = engine
+    def data_source(self, data_source: AsyncDataSource) -> Self:
+        self._data_source = _taken(data_source, AsyncDataSource, self._provider.__name__)
         return self
 
     def build(self) -> P:
-        if self._engine is None:
-            raise ValidationError("engine is required")
-        return self._provider(self._engine)
+        if self._data_source is None:
+            raise ValidationError("data_source is required")
+        return self._provider(self._data_source)

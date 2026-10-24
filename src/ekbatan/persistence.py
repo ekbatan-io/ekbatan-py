@@ -24,12 +24,13 @@ from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal, Protocol, Self
+from typing import TYPE_CHECKING, Any, Literal, Protocol, Self
 
 from sqlalchemy import Connection, Engine, Table, create_engine, insert
 
 from ._guards import refuse_if_forked, refuse_on_an_event_loop
 from ._logtext import java_list, java_shard, java_shard_pair
+from ._redact import redact_url
 from ._tracing import Span, span
 from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from .config import _unknown_shard_policy as _policy
@@ -38,7 +39,11 @@ from .fetching import Db, FetchResult
 from .schema import eventlog_translation
 from .sharding import ShardIdentifier
 
+if TYPE_CHECKING:
+    from sqlalchemy.engine import URL
+
 __all__ = [
+    "DataSource",
     "DatabaseRegistry",
     "DatabaseRegistryBuilder",
     "Transaction",
@@ -192,6 +197,127 @@ class Transaction:
         return f"Transaction(shard={self.shard}, {self.dialect})"
 
 
+class _Pool(Protocol):
+    """What a data source asks of the SQLAlchemy engine it holds - true of a sync and an async
+    one alike."""
+
+    @property
+    def url(self) -> URL: ...
+
+
+class _DataSourceCore[E: _Pool]:
+    """One database's pool, and what a sync and an async data source say alike: how one is
+    built, which database it is, how it prints, and the fork refusal. Each adds only its engine's
+    type and how it closes."""
+
+    __slots__ = ("_created_in", "_dialect", "_engine")
+
+    _engine: E
+    _dialect: str
+    _created_in: int
+
+    def __init__(self, *_: object, **__: object) -> None:
+        # Java's constructor is private: `hikariConnectionProvider(config)` is the only way to a
+        # provider, so every pool is configured from a DataSourceConfig. Python has no private
+        # constructor, so calling the class is refused, saying what to call instead.
+        name = type(self).__name__
+        raise TypeError(f"build a {name} with {name}.from_config(config)")
+
+    @classmethod
+    def _of(cls, engine: E, dialect: str) -> Self:
+        """What ``from_config`` hands back, built around the refused constructor."""
+        made = object.__new__(cls)
+        made._engine = engine
+        made._dialect = dialect
+        #: The process that built it: its pool's connections are this process's sockets.
+        made._created_in = os.getpid()
+        return made
+
+    @property
+    def sqlalchemy_engine(self) -> E:
+        """SQLAlchemy's own object behind the pool, for what ekbatan does not do for you: a
+        statement of your own, an event listener, a library that wants an engine.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this data source
+        was copied into by ``fork()``: its connections are the parent's sockets.
+        """
+        refuse_if_forked(self._created_in, repr(self))
+        return self._engine
+
+    @property
+    def url(self) -> URL:
+        """Where it connects: SQLAlchemy's ``URL``, which prints its password as ``***``."""
+        return self._engine.url
+
+    @property
+    def dialect(self) -> str:
+        """Which database it is, as a layout names it: ``postgres``, ``mysql``, ``mariadb`` or
+        ``sqlite``."""
+        return self._dialect
+
+    def __repr__(self) -> str:
+        # Every credential hidden: the password, and a query parameter that names one.
+        return f"{type(self).__name__}({redact_url(self._engine.url.render_as_string())})"
+
+
+class DataSource(_DataSourceCore[Engine]):
+    """One database's connection pool - Java's ``ConnectionProvider``.
+
+    Built from a :class:`~ekbatan.config.DataSourceConfig` with :meth:`from_config`, and in no
+    other way. The registry builds one per shard member, and an application builds one for each
+    other named config on a member - a ``"jobsConfig"`` for the scheduler, a ``"lockConfig"``
+    for the locks::
+
+        member = layout.groups[0].members[0]
+        jobs_data_source = DataSource.from_config(member.config_for("jobsConfig"))
+        ...
+        jobs_data_source.close()
+
+    What takes a pool - :class:`TransactionManager`, the SQL lock providers, ``job_registry()``
+    - takes one of these. :attr:`sqlalchemy_engine` is SQLAlchemy's own object behind it.
+    """
+
+    __slots__ = ()
+
+    @classmethod
+    def from_config(cls, config: DataSourceConfig) -> Self:
+        """A pool configured from ``config`` - Java's
+        ``ConnectionProvider.hikariConnectionProvider(config)``. Building it opens no
+        connection. The caller owns it: close it when done."""
+        return cls._of(
+            create_engine(config.sqlalchemy_url(), **_engine_kwargs(config)), config.dialect
+        )
+
+    def close(self) -> None:
+        """Close the pool. Closing twice is harmless, as Java's ``close()`` is.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this data source
+        was copied into by ``fork()``: its connections are the parent's, and closing them would
+        end the parent's sessions.
+        """
+        refuse_if_forked(self._created_in, repr(self))
+        self._engine.dispose()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+def _taken[D](given: object, kind: type[D], taker: str) -> D:
+    """``given``, if it is a ``kind``; refused otherwise, saying what to pass. Only the type of
+    what was given is named: an engine's printed form carries its url."""
+    if isinstance(given, kind):
+        return given
+    name = kind.__name__
+    article = "an" if name[0] in "AEIOU" else "a"
+    raise ValidationError(
+        f"{taker} takes {article} {name}, and was given {type(given).__name__}. "
+        f"Build one with {name}.from_config(config)."
+    )
+
+
 class TransactionManager:
     """One shard's databases, and the transaction boundary around them."""
 
@@ -200,22 +326,24 @@ class TransactionManager:
     def __init__(
         self,
         shard: ShardIdentifier,
-        primary: Engine,
-        replica: Engine | None = None,
+        primary: DataSource,
+        replica: DataSource | None = None,
         *,
         dialect: str = "",
         label: str = "",
     ) -> None:
         self.shard = shard
-        self.primary = primary
-        # Falling back to the primary *engine*, never to its configuration. Identical settings
-        # do not produce the same pool - they produce a second one against the same database,
-        # with its own connections and its own housekeeping. A member with no replica would
-        # then quietly hold twice the configured maximum, and nothing would look wrong because
-        # both pools are healthy.
-        self.replica = replica if replica is not None else primary
+        self.primary = _taken(primary, DataSource, "TransactionManager")
+        # Falling back to the primary *data source*, never to its configuration. Identical
+        # settings do not produce the same pool - they produce a second one against the same
+        # database, with its own connections and its own housekeeping. A member with no replica
+        # would then quietly hold twice the configured maximum, and nothing would look wrong
+        # because both pools are healthy.
+        self.replica = (
+            self.primary if replica is None else _taken(replica, DataSource, "TransactionManager")
+        )
         self._owns_replica = replica is not None
-        self.dialect = dialect or primary.dialect.name
+        self.dialect = dialect or self.primary.dialect
         self.label = label or str(shard)
         #: The process that built it: its pools are this process's sockets.
         self._created_in = os.getpid()
@@ -234,7 +362,7 @@ class TransactionManager:
         """The pool for a connection outside any transaction - the replica if ``readonly`` -
         through the door. What a repository's ``db()`` and ``readonly_db()`` connect with."""
         self._door()
-        return self.replica if readonly else self.primary
+        return (self.replica if readonly else self.primary).sqlalchemy_engine
 
     @contextmanager
     def transaction(self) -> Iterator[Transaction]:
@@ -261,7 +389,8 @@ class TransactionManager:
         into by ``fork()``.
         """
         self._door()
-        with _transaction_span(self.shard), Db(self.primary) as conn:
+        engine = self.primary.sqlalchemy_engine
+        with _transaction_span(self.shard), Db(engine) as conn:
             token = _join(self, _Owned(conn, threading.get_ident()))
             # Begin, commit and roll back by hand rather than through `with conn.begin()`. The
             # context manager rolls back for us, but it has nowhere to say that the rollback
@@ -335,21 +464,22 @@ class TransactionManager:
             yield existing
             return
 
-        engine = self.replica if readonly else self.primary
+        engine = (self.replica if readonly else self.primary).sqlalchemy_engine
         with Db(engine).execution_options(isolation_level="AUTOCOMMIT") as conn:
             yield conn
 
     def close(self) -> None:
-        """Dispose this shard's pools.
+        """Close this shard's data sources - the ones it was given, as Java's ``close()``
+        closes both of its providers.
 
         Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this manager was
         copied into by ``fork()``: the pools hold the parent's connections, and closing them
         would end the parent's sessions.
         """
         refuse_if_forked(self._created_in, repr(self))
-        self.primary.dispose()
+        self.primary.close()
         if self._owns_replica:
-            self.replica.dispose()
+            self.replica.close()
 
     def __repr__(self) -> str:
         return f"TransactionManager({self.label}, {self.dialect})"
@@ -415,7 +545,7 @@ class _ShardRegistry[TM: _ShardManager]:
     @classmethod
     def from_config(cls, config: ShardingConfig) -> Self:
         """Build the registry. ``ShardingConfig`` has already refused a default shard that
-        names nothing, so no engine is created for a layout that cannot work."""
+        names nothing, so no pool is built for a layout that cannot work."""
         managers = {
             shard: cls._manager(shard, member, config.dialect) for shard, member in config.members()
         }
@@ -505,15 +635,15 @@ class DatabaseRegistry(_ShardRegistry[TransactionManager]):
     ) -> TransactionManager:
         """Java's loop body in ``fromConfig``: the primary's pool, and the secondary's if the
         member has one. Any other named config on the member is the application's to build."""
-        primary = engine_for(member.primary_config())
+        primary = DataSource.from_config(member.primary_config())
         secondary = member.secondary_config()
-        replica = engine_for(secondary) if secondary is not None else None
+        replica = DataSource.from_config(secondary) if secondary is not None else None
         return TransactionManager(
             shard, primary, replica, dialect=dialect, label=member.name or str(shard)
         )
 
     def close(self) -> None:
-        """Dispose every pool. One failing shard does not strand the rest.
+        """Close every pool. One failing shard does not strand the rest.
 
         Refused with :class:`~ekbatan.errors.ForkedProcessError`, before any pool is touched, in
         a process this registry was copied into by ``fork()``: the pools hold the parent's
@@ -537,25 +667,10 @@ class DatabaseRegistry(_ShardRegistry[TransactionManager]):
         self.close()
 
 
-def engine_for(config: DataSourceConfig) -> Engine:
-    """A pool for one :class:`~ekbatan.config.DataSourceConfig` - Java's
-    ``ConnectionProvider.hikariConnectionProvider(config)``.
-
-    What the registry builds a shard's pools with, and what an application builds any other
-    named config on a member with - a ``"jobsConfig"`` for the scheduler, a ``"lockConfig"`` for
-    the locks::
-
-        member = layout.groups[0].members[0]
-        jobs_engine = engine_for(member.config_for("jobsConfig"))
-
-    The engine is the caller's: dispose it when you are done with it.
-    """
-    return create_engine(config.sqlalchemy_url(), **_engine_kwargs(config))
-
-
 def _engine_kwargs(config: DataSourceConfig) -> dict[str, Any]:
-    """Everything but the url an engine is built with - one answer for a sync engine and for
-    ``ekbatan.aio``'s async one, so the two pools cannot be configured differently."""
+    """Everything but the url SQLAlchemy's engine is built with - one answer for a
+    :class:`DataSource` and for ``ekbatan.aio``'s ``AsyncDataSource``, so the two pools cannot be
+    configured differently."""
     from ._json import column_dumps, loads
 
     kwargs: dict[str, Any] = {

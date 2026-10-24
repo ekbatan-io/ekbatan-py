@@ -283,14 +283,14 @@ def test_an_unreachable_database_is_a_lock_acquisition_error(provider, url):
     """Java wraps a failed connection as `LockAcquisitionException` ("could not obtain a
     connection"), so a caller's `except` for the documented type catches the most likely
     failure of all. The password is in no message along the way."""
-    from sqlalchemy import create_engine
-
+    from ekbatan import DataSource
     from ekbatan.errors import LockAcquisitionError
     from ekbatan.locks import sql
+    from fixtures.logins import data_source
 
     marker = "Marker-Pw-5f3a9"
-    engine = create_engine(url.format(pw=marker), pool_size=1, max_overflow=0)
-    locks = getattr(sql, provider)(engine)
+    source = DataSource.from_config(data_source(url.format(pw=marker), pool_size=1, max_overflow=0))
+    locks = getattr(sql, provider)(source)
     try:
         for attempt in (
             lambda: locks.try_acquire("k", timedelta(0), HOLD),
@@ -302,4 +302,4 @@ def test_an_unreachable_database_is_a_lock_acquisition_error(provider, url):
             chain = [e.value, e.value.__cause__]
             assert all(marker not in str(x) and marker not in repr(x) for x in chain)
     finally:
-        engine.dispose()
+        source.close()

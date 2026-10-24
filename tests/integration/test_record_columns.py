@@ -271,7 +271,7 @@ def class_of(record: OddsRecord) -> str:
 
 def _prepare(registry: Any) -> None:
     for shard in registry.shards:
-        engine = registry.manager(shard).primary
+        engine = registry.manager(shard).primary.sqlalchemy_engine
         with engine.begin() as conn:
             if hasattr(conn, "run_sync"):
                 conn.run_sync(metadata.create_all)
@@ -332,7 +332,7 @@ def _sent(multiparams: Any, params: Any) -> list[Any]:
 
 
 def _engine(repo: Any, shard: ShardIdentifier = GLOBAL) -> Any:
-    engine = repo.registry.manager(shard).primary
+    engine = repo.registry.manager(shard).primary.sqlalchemy_engine
     return getattr(engine, "sync_engine", engine)
 
 

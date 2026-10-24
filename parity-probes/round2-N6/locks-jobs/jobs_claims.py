@@ -4,6 +4,8 @@ from datetime import timedelta
 from sqlalchemy import MetaData, create_engine, inspect as sa_inspect
 from db_scheduler.task.schedule import FixedDelay
 from db_scheduler import builder as dbs_builder
+from ekbatan import DataSource
+from ekbatan.config import DataSourceConfig
 from ekbatan.distributedjobs import DistributedJob, job_registry, EKBATAN_HEARTBEAT_INTERVAL
 from ekbatan.schema import scheduled_tasks_table
 
@@ -12,6 +14,7 @@ h = logging.StreamHandler(buf); h.setFormatter(logging.Formatter("%(levelname)s 
 logging.getLogger().addHandler(h); logging.getLogger().setLevel(logging.INFO)
 
 engine = create_engine("sqlite:///" + __file__.replace(".py", ".db"))
+source = DataSource.from_config(DataSourceConfig(url="sqlite:///" + __file__.replace(".py", ".db")))
 md = MetaData(); t = scheduled_tasks_table(md); md.drop_all(engine); md.create_all(engine)
 print("PROBE scheduled_tasks.execution_time type:", sa_inspect(engine).get_columns("scheduled_tasks")[[c["name"] for c in sa_inspect(engine).get_columns("scheduled_tasks")].index("execution_time")]["type"])
 print("PROBE schema execution_time sqlalchemy type:", repr(t.c.execution_time.type))
@@ -23,7 +26,7 @@ class DocShapeJob(DistributedJob):
     def schedule(self): return FixedDelay(timedelta(hours=24))
     def execute(self, context): pass
 try:
-    job_registry().engine(engine).with_jobs([DocShapeJob()]).build()
+    job_registry().data_source(source).with_jobs([DocShapeJob()]).build()
     print("PROBE doc snippet `name = \"pay-stipend\"`: builds")
 except Exception as e:
     print("PROBE doc snippet `name = \"pay-stipend\"`:", type(e).__name__, e)
@@ -43,7 +46,7 @@ class Other(DistributedJob):
     def execute(self, context): pass
 
 # defaults, per the knob table
-b = job_registry().engine(engine).with_jobs([SlowJob(), Other()])
+b = job_registry().data_source(source).with_jobs([SlowJob(), Other()])
 print("PROBE default poll_interval:", b._poll_interval)
 print("PROBE default heartbeat_interval:", b._heartbeat_interval, "(db-scheduler's own:", dbs_builder.DEFAULT_HEARTBEAT_INTERVAL, ")")
 print("PROBE default shutdown_max_wait (db-scheduler):", dbs_builder.SHUTDOWN_MAX_WAIT)
@@ -51,7 +54,7 @@ print("PROBE default missed_heartbeats_limit:", dbs_builder.DEFAULT_MISSED_HEART
 seen_builder = {}
 b.customize_scheduler(lambda sb: seen_builder.update(threads=sb.executor_threads))
 try:
-    job_registry().engine(engine).with_jobs([Other()]).customize_scheduler(lambda sb: sb.missed_heartbeats_limit(3)).build()
+    job_registry().data_source(source).with_jobs([Other()]).customize_scheduler(lambda sb: sb.missed_heartbeats_limit(3)).build()
     print("PROBE missed_heartbeats_limit(3): accepted")
 except Exception as e:
     print("PROBE missed_heartbeats_limit(3):", type(e).__name__, e)
@@ -73,7 +76,7 @@ for line in buf.getvalue().splitlines():
 out = {}
 def off_main():
     try:
-        r = job_registry().engine(engine).with_jobs([Other()]).register_shutdown_hook().build(); r.start(); r.stop(); out["r"] = "no error"
+        r = job_registry().data_source(source).with_jobs([Other()]).register_shutdown_hook().build(); r.start(); r.stop(); out["r"] = "no error"
     except Exception as e:
         out["r"] = f"{type(e).__name__}: {e}"
 th = threading.Thread(target=off_main); th.start(); th.join()

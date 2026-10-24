@@ -5,15 +5,16 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 
 from ekbatan.clock import VirtualClock
 from ekbatan.errors import EntityNotFoundError, StaleRecordError, ValidationError
 from ekbatan.ids import Id, ShardedId
-from ekbatan.persistence import DatabaseRegistry, TransactionManager
+from ekbatan.persistence import DatabaseRegistry, DataSource, TransactionManager
 from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Notification, Wallet, WalletState
+from fixtures.logins import data_source
 from fixtures.repositories import (
     NotificationEntityRepository,
     NotificationModelRepository,
@@ -144,7 +145,7 @@ def test_a_stale_batch_update_raises_and_keeps_what_it_matched(wallets):
 def test_a_batch_is_one_statement(wallets, registry):
     seen: list[tuple[str, bool]] = []
 
-    @event.listens_for(registry.default.primary, "before_cursor_execute")
+    @event.listens_for(registry.default.primary.sqlalchemy_engine, "before_cursor_execute")
     def record(conn, cursor, statement, parameters, context, executemany):
         seen.append((statement.split()[0].upper(), executemany))
 
@@ -355,7 +356,9 @@ def test_reads_are_served_by_the_primary_not_a_replica(backend, clock):
 
     shard = ShardIdentifier(0, 0)
     manager = TransactionManager(
-        shard, create_engine(backend.url(written)), create_engine(backend.url(lagging))
+        shard,
+        DataSource.from_config(data_source(backend.url(written))),
+        DataSource.from_config(data_source(backend.url(lagging))),
     )
     with DatabaseRegistry({shard: manager}, shard) as reg:
         wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
@@ -395,7 +398,9 @@ def test_readonly_db_does_not_join_an_open_transaction(backend, clock):
 
     shard = ShardIdentifier(0, 0)
     manager = TransactionManager(
-        shard, create_engine(backend.url(written)), create_engine(backend.url(lagging))
+        shard,
+        DataSource.from_config(data_source(backend.url(written))),
+        DataSource.from_config(data_source(backend.url(lagging))),
     )
     with DatabaseRegistry({shard: manager}, shard) as reg:
         wallets = WalletRepository(Wallet, WALLETS, reg, clock=clock)
@@ -428,8 +433,12 @@ def test_an_unsharded_repository_does_not_scatter_across_a_sharded_registry(back
 
     default, other = ShardIdentifier(0, 0), ShardIdentifier(1, 0)
     managers = {
-        default: TransactionManager(default, create_engine(backend.url(here))),
-        other: TransactionManager(other, create_engine(backend.url(elsewhere))),
+        default: TransactionManager(
+            default, DataSource.from_config(data_source(backend.url(here)))
+        ),
+        other: TransactionManager(
+            other, DataSource.from_config(data_source(backend.url(elsewhere)))
+        ),
     }
     with DatabaseRegistry(managers, default) as reg:
         wallets = WalletRepository(
@@ -486,7 +495,7 @@ def test_an_updated_row_comes_back_without_the_events_that_changed_it(wallets):
 def test_a_write_hands_back_the_same_shape_on_every_dialect(wallets, registry):
     """A raw uuid passed where a typed id belongs comes back typed, whether or not the
     database can RETURNING. Java cannot be handed one at all; here it has to be normalised."""
-    engine = registry.default.primary
+    engine = registry.default.primary.sqlalchemy_engine
     with engine.connect():
         pass
 

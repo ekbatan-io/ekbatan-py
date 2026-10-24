@@ -11,8 +11,8 @@ How a test body written against the sync API reaches the async one:
 
 - **names**. For the async run, each name in the test module (and in the support modules listed
   in ``SUPPORT_MODULES``) that has an async twin is rebound to it: ``WalletRepository`` becomes
-  the async wallet repository, ``Action`` becomes ``AsyncAction``, ``engine_for`` becomes
-  ``async_engine_for``. A test module adds twins of its own with :func:`twin`.
+  the async wallet repository, ``Action`` becomes ``AsyncAction``, ``DataSource`` becomes
+  ``AsyncDataSource``. A test module adds twins of its own with :func:`twin`.
 - **calls**. What an async object hands back is made blocking: a coroutine is awaited on the
   loop, an ``async with`` block becomes a ``with`` block, an async iterator a plain one, and
   another async object is wrapped the same way. Rows, models and results come back as they are.
@@ -131,13 +131,13 @@ def _register_framework_twins() -> None:
         AsyncChangePersister,
         AsyncDatabaseRegistry,
         AsyncDatabaseRegistryBuilder,
+        AsyncDataSource,
         AsyncDb,
         AsyncEntityRepository,
         AsyncModelRepository,
         AsyncSingleTableJsonEventPersister,
         AsyncTransaction,
         AsyncTransactionManager,
-        async_engine_for,
         async_run_action,
     )
     from ekbatan.aio.outbox import AsyncEventEntityRepository
@@ -145,9 +145,9 @@ def _register_framework_twins() -> None:
     from ekbatan.persistence import (
         DatabaseRegistry,
         DatabaseRegistryBuilder,
+        DataSource,
         Transaction,
         TransactionManager,
-        engine_for,
     )
     from ekbatan.repository import (
         AbstractRepository,
@@ -176,7 +176,7 @@ def _register_framework_twins() -> None:
             SingleTableJsonEventPersister: AsyncSingleTableJsonEventPersister,
             EventEntityRepository: AsyncEventEntityRepository,
             ChangePersister: AsyncChangePersister,
-            engine_for: async_engine_for,
+            DataSource: AsyncDataSource,
             testing.ActionSpec: AsyncActionSpec,
             testing.run_action: async_run_action,
         }

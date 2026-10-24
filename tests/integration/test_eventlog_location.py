@@ -12,16 +12,11 @@ no ``schema_translate_map`` touches - where the rows are.
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
-import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from ekbatan import DEFAULT_SHARD, DatabaseRegistry, TransactionManager
-from ekbatan.action.outbox import SingleTableJsonEventPersister
 from fixtures.actions import CreateWalletAction, CreateWalletParams
 from fixtures.domain import WalletCreatedEvent
 from fixtures.executing import run
@@ -77,26 +72,3 @@ def test_fanned_out_notifications_are_beside_the_events(executor, pipeline, regi
         else "event_notifications"
     )
     assert count(registry, f"SELECT count(*) FROM {table}") == 1
-
-
-def test_a_registry_on_an_engine_built_by_hand_finds_them_too(backend, registry):
-    """An engine `engine_for` did not build carries no mapping; every connection ekbatan opens
-    adds it, so a registry over such an engine still writes where the framework reads."""
-    if backend.dialect == "postgres":
-        pytest.skip("eventlog is a schema of its own on PostgreSQL: there is nothing to map")
-    raw = create_engine(backend.url("ekbatan_main"))  # no execution options: built by hand
-    try:
-        hand = (
-            DatabaseRegistry.builder()
-            .with_default_database(TransactionManager(DEFAULT_SHARD, raw))
-            .build()
-        )
-        now = datetime(2026, 10, 24, 12, 0)
-        with hand.default.transaction():
-            SingleTableJsonEventPersister(hand).persist_action_events(
-                "test.eventlog", "HandBuilt", now, now, {}, [], DEFAULT_SHARD, uuid.uuid4()
-            )
-        with raw.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM events")).scalar() == 1
-    finally:
-        raw.dispose()

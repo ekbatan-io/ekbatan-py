@@ -28,20 +28,18 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-
 from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
     TransactionManager,
-    engine_for,
 )
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
+    AsyncDataSource,
     AsyncTransactionManager,
-    async_engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config import DataSourceConfig, ShardMemberConfig
@@ -83,9 +81,10 @@ class SagaService:
     #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over `events_registry`.
     events_registry: DatabaseRegistry
     jobs: JobRegistry
-    #: Built from the member's `jobsConfig`. The registries own only what they built, so this
-    #: one is disposed here.
-    jobs_engine: Engine
+    #: Built from the member's `jobsConfig`. `events_registry` closes it: its manager was given
+    #: it, and a manager closes the data sources it was given. The job registry, which polls it,
+    #: does not.
+    jobs_data_source: DataSource
 
     def start(self) -> None:
         """Begin polling. Fan-out and handling are two of the jobs, so this is what lets the saga
@@ -100,7 +99,6 @@ class SagaService:
         await asyncio.to_thread(self.handler_loop.run, self.handler_registry.aclose())
         self.handler_loop.close()
         self.events_registry.close()
-        self.jobs_engine.dispose()
         await self.registry.aclose()
 
 
@@ -156,7 +154,8 @@ def build(
         AsyncDatabaseRegistry.builder()
         .with_default_database(
             AsyncTransactionManager(
-                layout.default_shard, async_engine_for(_required(member, "handlersConfig"))
+                layout.default_shard,
+                AsyncDataSource.from_config(_required(member, "handlersConfig")),
             )
         )
         .build()
@@ -189,10 +188,10 @@ def build(
     )
 
     # -- what polls, on threads -----------------------------------------------------------------
-    jobs_engine = engine_for(_required(member, "jobsConfig"))
+    jobs_data_source = DataSource.from_config(_required(member, "jobsConfig"))
     events_registry = (
         DatabaseRegistry.builder()
-        .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+        .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
         .build()
     )
     events_config = ekbatan.local_event_handler
@@ -206,10 +205,10 @@ def build(
         handler_registry=handler_registry,
         handler_executor=handler_executor,
         events_registry=events_registry,
-        jobs_engine=jobs_engine,
+        jobs_data_source=jobs_data_source,
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     EventFanoutJob.builder()

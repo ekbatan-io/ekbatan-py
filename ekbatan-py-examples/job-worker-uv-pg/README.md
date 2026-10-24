@@ -121,7 +121,7 @@ and in the table.
 
 ## The pools
 
-The scheduler gets **its own engine**, sized above the worker count. db-scheduler writes
+The scheduler gets **its own pool**, sized above the worker count. db-scheduler writes
 heartbeats from a housekeeping thread; a job body holding the last connection starves it, and an
 execution whose heartbeat stops is declared dead and run again somewhere else. The framework
 warns at startup when the two are mismatched — listen to it.

@@ -23,7 +23,7 @@ from common import (  # noqa: E402
     WidgetCreatedEvent,
     WidgetRepository,
     cfg,
-    engine_for,
+    DataSource,
     executor_for,
     p,
     quiet,
@@ -54,8 +54,8 @@ def counts(table: str) -> str:
 
 
 def sharded(policy, clock):
-    tm0 = TransactionManager(DEFAULT_SHARD, engine_for(cfg("pg", "testdb", pool=3)))
-    tm1 = TransactionManager(S1, engine_for(cfg("pg", "shard1", pool=3)))
+    tm0 = TransactionManager(DEFAULT_SHARD, DataSource.from_config(cfg("pg", "testdb", pool=3)))
+    tm1 = TransactionManager(S1, DataSource.from_config(cfg("pg", "shard1", pool=3)))
     b = DatabaseRegistry.builder().with_database(tm0).with_database(tm1).with_default_database(tm0)
     if policy is not None:
         b = b.with_unknown_shard_policy(policy)

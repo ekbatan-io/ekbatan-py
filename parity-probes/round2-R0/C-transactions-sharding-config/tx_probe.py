@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig  # noqa: E402
 from ekbatan.ids import ShardedId  # noqa: E402
-from ekbatan.persistence import DatabaseRegistry, TransactionManager, engine_for  # noqa: E402
+from ekbatan.persistence import DatabaseRegistry, TransactionManager, DataSource  # noqa: E402
 from ekbatan.sharding import DEFAULT_SHARD, EmbeddedBitsShardingStrategy, ShardIdentifier  # noqa: E402
 from tests.fixtures.domain import Wallet  # noqa: E402
 from tests.fixtures.repositories import WalletRepository  # noqa: E402
@@ -81,7 +81,7 @@ def cfg(db: str, pool: int, app: str) -> DataSourceConfig:
 
 
 def tm(db: str, pool: int, app: str) -> TransactionManager:
-    return TransactionManager(DEFAULT_SHARD, engine_for(cfg(db, pool, app)))
+    return TransactionManager(DEFAULT_SHARD, DataSource.from_config(cfg(db, pool, app)))
 
 
 def side() -> psycopg.Connection:
@@ -445,7 +445,7 @@ def redaction() -> None:
     ok.close()
 
     bad_cfg = DataSourceConfig(url=url("testdb"), username="probe", password=MARKER + "-wrong", pool_size=1)
-    bad = TransactionManager(DEFAULT_SHARD, engine_for(bad_cfg))
+    bad = TransactionManager(DEFAULT_SHARD, DataSource.from_config(bad_cfg))
     start = time.time()
     t_text = ""
     try:
@@ -461,7 +461,7 @@ def redaction() -> None:
     bad.close()
 
     no_user = DataSourceConfig(url=url("testdb"), password=MARKER)
-    engine = engine_for(no_user)
+    engine = DataSource.from_config(no_user).sqlalchemy_engine
     try:
         with engine.connect():
             t2 = "connected"

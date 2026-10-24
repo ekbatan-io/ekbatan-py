@@ -611,7 +611,8 @@ def test_a_cancelled_task_rolls_its_transaction_back(mode, backend, clock):
                 await task
 
             assert manager.current() is None
-            assert manager.primary.sync_engine.pool.checkedout() == 0, "the connection went back"
+            pool = manager.primary.sqlalchemy_engine.sync_engine.pool
+            assert pool.checkedout() == 0, "the connection went back"
             # And it went back clean: the next transaction on the pool sees nothing.
             async with manager.transaction() as tx:
                 rows = await tx.execute(select(func.count()).select_from(WALLETS))
@@ -634,13 +635,20 @@ def test_an_async_registry_never_shows_its_password(mode, backend, dialect):
     config = type(plain)(url=plain.url, username=plain.username, password=marker, pool_size=1)
 
     async def scenario() -> list[str]:
-        from ekbatan.aio import async_engine_for
+        from ekbatan.aio import AsyncDataSource
         from ekbatan.aio.persistence import AsyncTransactionManager
 
-        engine = async_engine_for(config)
-        manager = AsyncTransactionManager(GLOBAL, engine)
+        source = AsyncDataSource.from_config(config)
+        manager = AsyncTransactionManager(GLOBAL, source)
         registry = AsyncDatabaseRegistry({GLOBAL: manager})
-        shown = [repr(config), repr(engine), str(engine.url), repr(manager), repr(registry)]
+        shown = [
+            repr(config),
+            repr(source),
+            repr(source.sqlalchemy_engine),
+            str(source.url),
+            repr(manager),
+            repr(registry),
+        ]
         try:
             async with manager.transaction() as tx:
                 await tx.execute(select(1))
@@ -653,6 +661,6 @@ def test_an_async_registry_never_shows_its_password(mode, backend, dialect):
         return shown
 
     shown = asyncio.run(scenario())
-    assert len(shown) == 8
+    assert len(shown) == 9
     leaked = [text for text in shown if marker in text]
     assert leaked == []

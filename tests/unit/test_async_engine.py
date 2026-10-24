@@ -19,8 +19,8 @@ from ekbatan.aio import (
     AsyncActionSpec,
     AsyncDatabaseRegistry,
     AsyncDatabaseRegistryBuilder,
+    AsyncDataSource,
     AsyncTransactionManager,
-    async_engine_for,
     async_url,
 )
 from ekbatan.aio.locks import (
@@ -84,10 +84,17 @@ def test_each_database_has_a_default():
 def test_the_login_is_set_on_the_async_url_and_never_printed():
     config = DataSourceConfig(url="postgresql+psycopg://db/w", username="app", password=MARKER)
     url = async_url(config)
-    engine = async_engine_for(config)
+    source = AsyncDataSource.from_config(config)
 
     assert (url.username, url.password) == ("app", MARKER)
-    for shown in (str(url), repr(url), repr(engine), str(engine.url), repr(config)):
+    for shown in (
+        str(url),
+        repr(url),
+        repr(source),
+        repr(source.sqlalchemy_engine),
+        str(source.url),
+        repr(config),
+    ):
         assert MARKER not in shown
 
 
@@ -100,7 +107,7 @@ def test_an_async_pool_is_sized_and_timed_as_a_sync_one():
     config = DataSourceConfig(
         url="postgresql+psycopg://db/w", pool_size=3, max_overflow=2, pool_timeout=0.75
     )
-    pool = async_engine_for(config).sync_engine.pool
+    pool = AsyncDataSource.from_config(config).sqlalchemy_engine.sync_engine.pool
 
     assert pool.size() == 3  # type: ignore[attr-defined]
     assert pool._max_overflow == 2  # type: ignore[attr-defined]
@@ -162,8 +169,8 @@ def test_the_translation_is_only_for_asyncpg():
     """aiomysql takes PyMySQL's names, and psycopg's async mode takes libpq's, as given."""
     for url in ("mysql+pymysql://db/w", "postgresql+psycopg_async://db/w"):
         config = DataSourceConfig(url=url, data_source_properties={"options": "-c x=1"})
-        engine = async_engine_for(config)
-        assert engine.url.get_driver_name() != "asyncpg"
+        source = AsyncDataSource.from_config(config)
+        assert source.url.get_driver_name() != "asyncpg"
 
 
 # -- one public surface for both hierarchies ---------------------------------------------------
@@ -183,6 +190,7 @@ def public(cls: type) -> set[str]:
         ("ekbatan.persistence.DatabaseRegistry", AsyncDatabaseRegistry, {"close", "aclose"}),
         ("ekbatan.persistence.DatabaseRegistryBuilder", AsyncDatabaseRegistryBuilder, set()),
         ("ekbatan.persistence.TransactionManager", AsyncTransactionManager, {"close", "aclose"}),
+        ("ekbatan.persistence.DataSource", AsyncDataSource, {"close", "aclose"}),
         ("ekbatan.testing.ActionSpec", AsyncActionSpec, set()),
         ("ekbatan.locks.base.Lease", AsyncLease, set()),
         ("ekbatan.locks.sql.SqlKeyedLockProvider", AsyncSqlKeyedLockProvider, set()),

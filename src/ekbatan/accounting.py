@@ -67,11 +67,15 @@ def count_statements(registry: _ShardRegistry[Any]) -> Iterator[StatementCount]:
     ``AsyncDatabaseRegistry``; the block may hold awaited work.
     """
     counted = StatementCount()
-    engines = {registry.manager(shard).primary for shard in registry.shards}
-    engines |= {registry.manager(shard).replica for shard in registry.shards}
-    # An `ekbatan.aio` registry's engines are async; SQLAlchemy fires their events on the sync
-    # engine each wraps, so the listeners go there and the block counts awaited work the same.
-    engines = {getattr(engine, "sync_engine", engine) for engine in engines}
+    sources = {registry.manager(shard).primary for shard in registry.shards}
+    sources |= {registry.manager(shard).replica for shard in registry.shards}
+    # An `ekbatan.aio` registry's data sources are async; SQLAlchemy fires their events on the
+    # sync engine each async one wraps, so the listeners go there and the block counts awaited
+    # work the same.
+    engines = {
+        getattr(source.sqlalchemy_engine, "sync_engine", source.sqlalchemy_engine)
+        for source in sources
+    }
 
     def before(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
         counted.round_trips += 1

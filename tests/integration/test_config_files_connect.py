@@ -124,7 +124,7 @@ def test_a_layout_from_a_file_logs_in_migrates_and_connects(backend, request, tm
     migrate(layout, migrations)
     registry = DatabaseRegistry.from_config(layout)
     try:
-        with registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+        with registry.manager(DEFAULT_SHARD).primary.sqlalchemy_engine.connect() as connection:
             reported = connection.execute(text(read_back)).scalar()
             assert connection.execute(text("SELECT count(*) FROM seen")).scalar() == 0
     finally:

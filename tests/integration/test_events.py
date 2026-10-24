@@ -284,7 +284,7 @@ def test_a_handler_may_start_another_unit_of_work(
     assert written[0].recipient == "ada@example.com"
     # MySQL's JSON column keeps a number with a fraction as a double, so the scale goes there -
     # for a Java service too, which writes the same text.
-    if executor.registry.default.primary.dialect.name == "mysql":
+    if executor.registry.default.primary.dialect == "mysql":
         assert written[0].message == "deposited 12.5, balance 112.5"
     else:
         assert written[0].message == "deposited 12.50, balance 112.5000"
@@ -618,7 +618,7 @@ def test_a_batch_of_outcomes_is_one_update_per_bucket_not_one_per_row(
         if statement.lstrip().upper().startswith("UPDATE"):
             updates.append(statement)
 
-    engine = registry.manager(registry.default_shard).primary
+    engine = registry.manager(registry.default_shard).primary.sqlalchemy_engine
     event.listen(engine, "before_cursor_execute", count)
     try:
         dispatch.drain_once()
@@ -645,7 +645,7 @@ def test_outcomes_that_differ_get_their_own_statement(
         if statement.lstrip().upper().startswith("UPDATE"):
             updates.append(statement)
 
-    engine = registry.manager(registry.default_shard).primary
+    engine = registry.manager(registry.default_shard).primary.sqlalchemy_engine
     event.listen(engine, "before_cursor_execute", count)
     try:
         dispatch.drain_once()

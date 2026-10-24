@@ -31,7 +31,7 @@ def sql(registry):
     """Every statement the primary sends, in order."""
     seen: list[tuple[str, bool, int]] = []
 
-    @event.listens_for(registry.default.primary, "before_cursor_execute")
+    @event.listens_for(registry.default.primary.sqlalchemy_engine, "before_cursor_execute")
     def record(conn, cursor, statement, parameters, context, executemany):
         seen.append((statement, executemany, len(parameters) if executemany else 1))
 
@@ -169,7 +169,7 @@ def test_reads_do_not_touch_a_shard_they_have_no_business_on(sharded_registry, c
 
     touched: list[str] = []
     for shard in sharded_registry.shards:
-        engine = sharded_registry.manager(shard).primary
+        engine = sharded_registry.manager(shard).primary.sqlalchemy_engine
         event.listen(
             engine,
             "before_cursor_execute",
@@ -242,7 +242,7 @@ def test_a_reading_write_asks_for_returning_and_a_no_result_one_does_not(wallets
     every database is the half that is a promise: the no-result variants never put the rows on
     the wire.
     """
-    engine = registry.default.primary
+    engine = registry.default.primary.sqlalchemy_engine
     # After a connection, not before: SQLAlchemy's MySQL dialect only learns whether it is
     # talking to MariaDB - and so whether RETURNING exists - in `initialize()`, on first
     # connect. Read cold, both flags are the conservative class default and MariaDB looks like

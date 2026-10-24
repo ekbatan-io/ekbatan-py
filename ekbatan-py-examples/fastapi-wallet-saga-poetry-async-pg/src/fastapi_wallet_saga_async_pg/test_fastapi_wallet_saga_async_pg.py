@@ -518,7 +518,7 @@ def test_the_saga_s_later_steps_run_on_the_handler_loop(service: SagaService, ru
 
     assert balance_of(service, run, destination.id) == Decimal("30.0000")
     assert service.handler_loop.running, "an async handler started the handler loop"
-    with service.jobs_engine.connect() as conn:
+    with service.jobs_data_source.sqlalchemy_engine.connect() as conn:
         handlers = conn.execute(
             text(
                 "SELECT count(*) FROM pg_stat_activity "
@@ -534,8 +534,8 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service: SagaService, 
     handlers' pool is asked on the handler loop, where it lives."""
     assert service.executor.namespace == "example.fastapi_wallet_saga_async_pg"
 
-    async def settings_on(engine: Any) -> tuple[Any, Any]:
-        async with engine.connect() as conn:
+    async def settings_on(source: Any) -> tuple[Any, Any]:
+        async with source.sqlalchemy_engine.connect() as conn:
             name = (await conn.execute(text("SELECT current_setting('application_name')"))).scalar()
             zone = (await conn.execute(text("SELECT current_setting('TimeZone')"))).scalar()
             return name, zone
@@ -543,15 +543,15 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service: SagaService, 
     requests = service.registry.manager(DEFAULT_SHARD).primary
     handlers = service.handler_registry.default.primary
     sizes = (
-        requests.sync_engine.pool.size(),  # type: ignore[attr-defined]
-        handlers.sync_engine.pool.size(),  # type: ignore[attr-defined]
-        service.jobs_engine.pool.size(),  # type: ignore[attr-defined]
+        requests.sqlalchemy_engine.sync_engine.pool.size(),  # type: ignore[attr-defined]
+        handlers.sqlalchemy_engine.sync_engine.pool.size(),  # type: ignore[attr-defined]
+        service.jobs_data_source.sqlalchemy_engine.pool.size(),  # type: ignore[attr-defined]
     )
     assert sizes == (10, 5, 8)
     # `options: -c TimeZone=UTC`: every session on UTC, whatever the server's default.
     assert run(lambda: settings_on(requests)) == ("wallet-service", "UTC")
     assert service.handler_loop.run(settings_on(handlers)) == ("wallet-handlers", "UTC")
-    with service.jobs_engine.connect() as conn:
+    with service.jobs_data_source.sqlalchemy_engine.connect() as conn:
         assert conn.execute(text("SELECT current_setting('TimeZone')")).scalar() == "UTC"
 
 
@@ -570,7 +570,7 @@ def test_a_request_that_waits_out_the_pool_is_a_503(client) -> None:
     queue for a connection, and one that waits longer than `poolTimeout` (five seconds in
     `ekbatan.yaml`) is a 503 with `Retry-After`, not a 500. Every connection is held first, on
     the app's loop."""
-    primary = client.app.state.service.registry.default.primary
+    primary = client.app.state.service.registry.default.primary.sqlalchemy_engine
     assert client.portal is not None
     portal = client.portal
 
@@ -612,6 +612,7 @@ def test_no_service_object_shows_the_password(service: SagaService) -> None:
         for shard in registry.shards:
             manager = registry.manager(shard)
             shown += [manager, manager.primary, manager.replica]
+    shown += [o.sqlalchemy_engine for o in shown if hasattr(o, "sqlalchemy_engine")]
     shown += [o.pool for o in shown if hasattr(o, "pool")]
     for thing in shown:
         assert SECRET not in repr(thing), type(thing).__name__

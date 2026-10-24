@@ -14,7 +14,6 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 
 from ekbatan.action import ActionExecutor, ExecutionConfiguration, RetryConfig
 from ekbatan.config import DataSourceConfig, ShardGroupConfig, ShardingConfig, ShardMemberConfig
@@ -32,7 +31,7 @@ from ekbatan.locks import (
 )
 from ekbatan.locks.redis import DEFAULT_NAMESPACE, RedisKeyedLockProvider
 from ekbatan.migrations import YoyoMigrator
-from ekbatan.persistence import DatabaseRegistry, TransactionManager
+from ekbatan.persistence import DatabaseRegistry, DataSource, TransactionManager
 from ekbatan.sharding import ShardIdentifier
 from ekbatan.streaming import ActionEvent
 from fixtures.domain import WalletMoneyDepositedEvent
@@ -233,8 +232,11 @@ def test_allow_cross_shard_is_off_unless_set():
 # -- DatabaseRegistry ---------------------------------------------------------------------------
 
 
+MEMORY = DataSourceConfig(url="sqlite://")
+
+
 def a_manager(shard: ShardIdentifier) -> TransactionManager:
-    return TransactionManager(shard, create_engine("sqlite://"), dialect="sqlite")
+    return TransactionManager(shard, DataSource.from_config(MEMORY))
 
 
 def test_with_default_database_registers_it_and_makes_it_the_default():
@@ -280,9 +282,9 @@ def test_an_executor_without_an_event_persister_gets_the_default_one():
     from fixtures.repositories import WalletRepository
     from fixtures.schema import WALLETS
 
-    engine = create_engine("sqlite://")
+    source = DataSource.from_config(MEMORY)
     registry = DatabaseRegistry(
-        {ShardIdentifier(0, 0): TransactionManager(ShardIdentifier(0, 0), engine)}
+        {ShardIdentifier(0, 0): TransactionManager(ShardIdentifier(0, 0), source)}
     )
     executor = (
         ActionExecutor.builder()
@@ -293,7 +295,7 @@ def test_an_executor_without_an_event_persister_gets_the_default_one():
     )
     assert isinstance(executor.outbox, SingleTableJsonEventPersister)
     assert executor.outbox._event_repository._table.name == "events"
-    engine.dispose()
+    source.close()
 
 
 def test_an_executor_without_a_database_registry_is_refused_by_name():
@@ -310,16 +312,15 @@ def test_an_executor_without_a_database_registry_is_refused_by_name():
     "provider", [PostgresKeyedLockProvider, MySQLKeyedLockProvider, MariaDBKeyedLockProvider]
 )
 def test_each_sql_lock_provider_builds_its_own_class(provider):
-    engine = create_engine("sqlite://")
+    with DataSource.from_config(MEMORY) as source:
+        built = provider.builder().data_source(source).build()
 
-    built = provider.builder().engine(engine).build()
-
-    assert type(built) is provider
-    assert built._engine is engine
+        assert type(built) is provider
+        assert built._data_source is source
 
 
-def test_a_sql_lock_provider_without_an_engine_is_refused():
-    with pytest.raises(ValidationError, match="engine is required"):
+def test_a_sql_lock_provider_without_a_data_source_is_refused():
+    with pytest.raises(ValidationError, match=r"^data_source is required$"):
         PostgresKeyedLockProvider.builder().build()
 
 

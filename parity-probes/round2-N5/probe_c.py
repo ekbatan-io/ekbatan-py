@@ -31,7 +31,7 @@ from common import (  # noqa: E402
     WidgetRepository,
     WidgetState,
     cfg,
-    engine_for,
+    DataSource,
     executor_for,
     p,
     quiet,
@@ -139,7 +139,7 @@ def ts_text(col: str) -> str:
 
 
 def build(clock):
-    tm = TransactionManager(DEFAULT_SHARD, engine_for(cfg(D, pool=3)))
+    tm = TransactionManager(DEFAULT_SHARD, DataSource.from_config(cfg(D, pool=3)))
     reg = DatabaseRegistry({DEFAULT_SHARD: tm})
     repo = WidgetRepository(reg)
     return reg, repo, executor_for(reg, repo, clock, PriceAction(clock))

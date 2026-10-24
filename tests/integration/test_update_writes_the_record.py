@@ -176,7 +176,7 @@ def _prepare(registry: Any) -> None:
     """This module brings its own table, so it creates and empties it on every shard itself.
     `run_sync` on an async connection, as SQLAlchemy's asyncio API says: DDL helpers are sync."""
     for shard in registry.shards:
-        engine = registry.manager(shard).primary
+        engine = registry.manager(shard).primary.sqlalchemy_engine
         with engine.begin() as conn:
             if hasattr(conn, "run_sync"):
                 conn.run_sync(metadata.create_all)

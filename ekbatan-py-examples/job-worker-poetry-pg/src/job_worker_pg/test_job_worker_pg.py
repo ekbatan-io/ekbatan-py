@@ -141,7 +141,7 @@ class Harness:
         # worker itself they are registered like any other job and loop on their own threads.
         self.jobs = (
             job_registry()
-            .engine(self.registry.default.primary)
+            .data_source(self.registry.default.primary)
             .with_jobs([self.stipend, self.report])
             .build_manual(self.clock)
         )
@@ -223,7 +223,7 @@ def test_the_worker_registers_all_four_jobs(worker: Harness) -> None:
     runs for the life of the process, so there is nothing here that would return."""
     all_four = (
         job_registry()
-        .engine(worker.registry.default.primary)
+        .data_source(worker.registry.default.primary)
         .with_jobs([worker.fanout_job, worker.handling_job, worker.stipend, worker.report])
         .build_manual(SettableClock(EPOCH))
     )
@@ -370,19 +370,19 @@ def test_the_worker_runs_on_the_settings_in_ekbatan_yaml(
     worker = build(config_file=config_file)
     try:
         assert worker.executor.namespace == "example.job_worker_pg"
-        assert worker.jobs_engine.pool.size() == 8
+        assert worker.jobs_data_source.sqlalchemy_engine.pool.size() == 8
         # db-scheduler keeps the interval on the waiter it polls with; nothing public reads it.
         assert worker.jobs.scheduler._execute_due_waiter.duration == timedelta(seconds=7)
         # A switched-off job is registered but never scheduled, so it is left out of the jobs
         # that must have a row once started.
         assert "ekbatan-event-handling" in worker.jobs._names_requiring_registration
-        with worker.registry.default.primary.connect() as conn:
+        with worker.registry.default.primary.sqlalchemy_engine.connect() as conn:
             reported = conn.execute(text("SELECT current_setting('application_name')"))
             assert reported.scalar() == "wallet-worker"
         # `options: -c TimeZone=UTC` on both pools: every session on UTC, whatever the server's
         # default.
-        for pool in (worker.registry.default.primary, worker.jobs_engine):
-            with pool.connect() as conn:
+        for source in (worker.registry.default.primary, worker.jobs_data_source):
+            with source.sqlalchemy_engine.connect() as conn:
                 zone = conn.execute(text("SELECT current_setting('TimeZone')")).scalar()
                 assert zone == "UTC"
     finally:
@@ -407,10 +407,11 @@ def test_no_service_object_shows_the_password(
 
     worker = build()
     try:
-        with worker.registry.default.primary.connect() as conn:
+        with worker.registry.default.primary.sqlalchemy_engine.connect() as conn:
             assert conn.execute(text("SELECT 1")).scalar() == 1, "it really logged in"
-        pools: list[object] = [worker.registry.default.primary, worker.jobs_engine]
-        pools += [getattr(pool, "pool", None) for pool in pools]
+        sources = [worker.registry.default.primary, worker.jobs_data_source]
+        engines = [source.sqlalchemy_engine for source in sources]
+        pools: list[object] = [*sources, *engines, *(engine.pool for engine in engines)]
         shown = [worker, worker.registry, worker.executor, worker.jobs, *pools]
         shown += [getattr(worker, name) for name in worker.__dataclass_fields__]
         for thing in shown:

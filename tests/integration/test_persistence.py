@@ -220,9 +220,9 @@ def test_two_managers_for_one_shard_do_not_share_a_transaction(sharded_registry)
         assert second.current() is None
         with second.connection() as conn:
             assert conn is not outer.connection
-            assert conn.engine is other_database
+            assert conn.engine is other_database.sqlalchemy_engine
         with second.transaction() as inner:
             assert inner.connection is not outer.connection
-            assert inner.connection.engine is other_database
+            assert inner.connection.engine is other_database.sqlalchemy_engine
             assert second.current() is inner.connection
         assert first.current() is outer.connection

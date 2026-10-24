@@ -28,10 +28,10 @@ from .persistence import (
     ASYNC_DEFAULT_DRIVERS,
     AsyncDatabaseRegistry,
     AsyncDatabaseRegistryBuilder,
+    AsyncDataSource,
     AsyncDb,
     AsyncTransaction,
     AsyncTransactionManager,
-    async_engine_for,
     async_url,
 )
 from .persister import AsyncChangePersister
@@ -51,6 +51,7 @@ __all__ = [
     "AsyncActionExecutorBuilder",
     "AsyncActionSpec",
     "AsyncChangePersister",
+    "AsyncDataSource",
     "AsyncDatabaseRegistry",
     "AsyncDatabaseRegistryBuilder",
     "AsyncDb",
@@ -67,7 +68,6 @@ __all__ = [
     "AsyncSqlKeyedLockProviderBuilder",
     "AsyncTransaction",
     "AsyncTransactionManager",
-    "async_engine_for",
     "async_run_action",
     "async_url",
 ]

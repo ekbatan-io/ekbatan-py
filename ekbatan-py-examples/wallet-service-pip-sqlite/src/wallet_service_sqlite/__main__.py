@@ -84,7 +84,7 @@ def run(service: WalletService) -> None:
     a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
-        .engine(service.registry.default.primary)
+        .data_source(service.registry.default.primary)
         .with_jobs([PayStipendJob(service.executor, service.wallets)])
         .build_manual(a_day_later)
     )

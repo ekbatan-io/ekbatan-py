@@ -3,7 +3,7 @@ Java's Hikari pool does') and DIVERGENCE.md's pool table, against n6b-pg on 5872
 import io, logging, time
 from sqlalchemy import create_engine, text
 from ekbatan.config import DataSourceConfig
-from ekbatan.persistence import engine_for
+from ekbatan.persistence import DataSource
 
 PW = "pw"; MARKER = "N6-SECRET-MARKER-xyzzy"
 P = lambda k, v: print(f"PROBE {k}: {v}", flush=True)
@@ -19,7 +19,7 @@ P("defaults pool_size/max_overflow/pool_timeout/pool_recycle/pool_pre_ping/echo"
 
 cfg = DataSourceConfig(url="postgresql+psycopg://127.0.0.1:58720/postgres", username="postgres", password=PW,
                        pool_size=3, data_source_properties={"application_name": "n6pool"})
-eng = engine_for(cfg); time.sleep(1.5)
+eng = DataSource.from_config(cfg).sqlalchemy_engine; time.sleep(1.5)
 P("pool_size=3: open connections 1.5 s after build, no query", count("n6pool"))
 with eng.connect() as c:
     c.connection.invalidate()
@@ -28,7 +28,7 @@ P("after one connection thrown away, open connections", count("n6pool"))
 eng.dispose()
 
 bad = DataSourceConfig(url="postgresql+psycopg://127.0.0.1:58720/postgres", username="postgres", password=MARKER, pool_timeout=3)
-e2 = engine_for(bad); t0 = time.monotonic()
+e2 = DataSource.from_config(bad).sqlalchemy_engine; t0 = time.monotonic()
 try:
     with e2.connect(): pass
     P("wrong password", "connected?!")

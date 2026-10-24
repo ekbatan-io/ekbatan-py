@@ -91,7 +91,7 @@ def build(
     # Development only. A real deployment migrates from files - `ekbatan.migrations.migrate` -
     # because create_all has no answer for a column that changed.
     for shard in registry.shards:
-        metadata.create_all(registry.manager(shard).primary)
+        metadata.create_all(registry.manager(shard).primary.sqlalchemy_engine)
 
     wallets = WalletRepository(registry, clock=running)
     alerts = AlertRepository(registry, clock=running)
@@ -164,13 +164,13 @@ def build(
         # of the service coordinates through one row per job rather than each running the
         # stipend.
         #
-        # A real deployment would give this a *dedicated* engine, separate from the one serving
-        # requests: db-scheduler polls continuously, and a task body holding the last connection
-        # would starve the heartbeat and get its own execution declared dead. One engine here
-        # keeps the example a single readable script.
+        # A real deployment would give this a *dedicated* data source, separate from the one
+        # serving requests: db-scheduler polls continuously, and a task body holding the last
+        # connection would starve the heartbeat and get its own execution declared dead. One pool
+        # here keeps the example a single readable script.
         jobs=(
             job_registry()
-            .engine(registry.default.primary)
+            .data_source(registry.default.primary)
             .with_jobs([fanout, dispatch, PayStipendJob(executor, wallets)])
             .with_config(ekbatan.jobs)
             .build()

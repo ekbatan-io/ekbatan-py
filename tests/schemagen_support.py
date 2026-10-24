@@ -141,9 +141,9 @@ def notes() -> Iterator[list[str]]:
 
 
 def engine(url: str) -> Any:
-    """An engine on a test database that maps `eventlog` onto it where it is not a schema, as
-    `engine_for` does - so `create_all` puts the event tables where the framework reads them
-    (ekbatan.schema.eventlog_translation)."""
+    """SQLAlchemy's engine on a test database that maps `eventlog` onto it where it is not a
+    schema, as a data source's engine does - so `create_all` puts the event tables where the
+    framework reads them (ekbatan.schema.eventlog_translation)."""
     from sqlalchemy.engine import make_url
 
     from ekbatan.schema import eventlog_translation

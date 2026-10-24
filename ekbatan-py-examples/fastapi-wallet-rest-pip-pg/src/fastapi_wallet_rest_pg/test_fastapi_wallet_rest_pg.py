@@ -88,13 +88,13 @@ def open_wallet(client: TestClient, balance: str = "100.00") -> str:
     return wallet_id
 
 
-def stipend_has_run(jobs_engine: Any, within: float = 15.0) -> None:
+def stipend_has_run(jobs_data_source: Any, within: float = 15.0) -> None:
     """Wait for the stipend's run at startup: a `FixedDelay` job is due the moment it is
     registered, and its row records the run once it is over."""
     deadline = time.monotonic() + within
     query = text("SELECT last_success FROM scheduled_tasks WHERE task_name = 'wallet-stipend'")
     while True:
-        with jobs_engine.connect() as connection:
+        with jobs_data_source.sqlalchemy_engine.connect() as connection:
             if connection.execute(query).scalar_one_or_none() is not None:
                 return
         if time.monotonic() > deadline:
@@ -170,7 +170,7 @@ def test_the_currency_is_a_currency_in_python_and_text_in_the_database(
 
     wallet = service.wallets.get(ShardedId[Wallet](UUID(wallet_id)))
     assert wallet.currency == Currency("EUR"), "read back through CurrencyConverter"
-    with service.registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+    with service.registry.manager(DEFAULT_SHARD).primary.sqlalchemy_engine.connect() as connection:
         stored = connection.execute(
             text("SELECT currency FROM wallets WHERE id = :id"), {"id": wallet_id}
         ).scalar_one()
@@ -213,7 +213,7 @@ def test_the_recipient_is_an_email_address_in_python_and_text_in_the_database(
 
     assert alerts, "the handler never ran"
     assert alerts[0].recipient == EmailAddress("ada@example.com"), "read back as an EmailAddress"
-    with service.registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+    with service.registry.manager(DEFAULT_SHARD).primary.sqlalchemy_engine.connect() as connection:
         stored = connection.execute(
             text("SELECT recipient FROM alerts WHERE wallet_id = :id"), {"id": wallet_id}
         ).scalar_one()
@@ -326,9 +326,12 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(client: TestClient) ->
     primary = service.registry.manager(DEFAULT_SHARD).primary
 
     assert service.executor.namespace == "example.fastapi_wallet_rest_pg"
-    assert (primary.pool.size(), service.jobs_engine.pool.size()) == (10, 8)
-    assert service.lock_engine.pool.size() == 5
-    with primary.connect() as connection:
+    assert (
+        primary.sqlalchemy_engine.pool.size(),
+        service.jobs_data_source.sqlalchemy_engine.pool.size(),
+    ) == (10, 8)
+    assert service.lock_data_source.sqlalchemy_engine.pool.size() == 5
+    with primary.sqlalchemy_engine.connect() as connection:
         # `application_name` under `dataSourceProperties`, reaching the server.
         reported = connection.execute(text("SELECT current_setting('application_name')"))
         assert reported.scalar() == "wallet-service"
@@ -347,13 +350,13 @@ def test_the_stipend_job_pays_every_open_wallet(client: TestClient) -> None:
     from .jobs import PayStipendJob
 
     service = client.app.state.service
-    stipend_has_run(service.jobs_engine)
+    stipend_has_run(service.jobs_data_source)
     wallet_id = open_wallet(client, "0.00")
 
     a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
-        .engine(service.jobs_engine)
+        .data_source(service.jobs_data_source)
         .with_jobs([PayStipendJob(service.executor, service.wallets)])
         .build_manual(a_day_later)
     )
@@ -386,15 +389,15 @@ def test_every_pool_runs_in_utc_even_on_a_server_that_does_not(
         use_database(monkeypatch, database)
         service = build(Settings())
         try:
-            pools = [
+            sources = [
                 service.registry.manager(DEFAULT_SHARD).primary,
-                service.jobs_engine,
-                service.lock_engine,
+                service.jobs_data_source,
+                service.lock_data_source,
             ]
-            for pool in pools:
-                with pool.connect() as connection:
+            for source in sources:
+                with source.sqlalchemy_engine.connect() as connection:
                     zone = connection.execute(text("SELECT current_setting('TimeZone')")).scalar()
-                    assert zone == "UTC", pool
+                    assert zone == "UTC", source
         finally:
             service.close()
     finally:
@@ -407,7 +410,7 @@ def test_a_request_that_waits_out_the_pool_is_a_503(client: TestClient) -> None:
     """The request pool is the cap on requests waiting on the database: past `poolSize` they
     queue for a connection, and one that waits longer than `poolTimeout` (five seconds in
     `ekbatan.yaml`) is a 503 with `Retry-After`, not a 500. Every connection is held first."""
-    primary = client.app.state.service.registry.default.primary
+    primary = client.app.state.service.registry.default.primary.sqlalchemy_engine
     held = [primary.connect() for _ in range(primary.pool.size())]
     try:
         refused = client.get(f"/wallets/{uuid4()}")
@@ -425,7 +428,7 @@ def test_no_service_object_shows_the_password(
 ) -> None:
     """The container's password is the marker `SECRET`. The service is built from the
     environment and really connects with it - and not one object it holds shows it: not the
-    settings, the service, its registry, its executor, nor any engine or pool."""
+    settings, the service, its registry, its executor, nor any data source, engine or pool."""
     from .app import build
 
     use_database(monkeypatch, database)
@@ -434,7 +437,11 @@ def test_no_service_object_shows_the_password(
     try:
         with service.registry.default.connection() as connection:
             assert connection.execute(text("SELECT 1")).scalar() == 1, "connected with it"
-        engines = [service.registry.default.primary, service.lock_engine, service.jobs_engine]
+        sources = [
+            service.registry.default.primary,
+            service.lock_data_source,
+            service.jobs_data_source,
+        ]
         shown = [
             settings,
             service,
@@ -442,8 +449,9 @@ def test_no_service_object_shows_the_password(
             service.executor,
             service.locks,
             service.jobs,
-            *engines,
-            *(engine.pool for engine in engines),
+            *sources,
+            *(source.sqlalchemy_engine for source in sources),
+            *(source.sqlalchemy_engine.pool for source in sources),
         ]
         for thing in shown:
             assert SECRET not in repr(thing), type(thing).__name__

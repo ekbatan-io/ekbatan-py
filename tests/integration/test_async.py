@@ -59,7 +59,10 @@ def a_wallet(shard: Any = GLOBAL, balance: str = "10") -> Wallet:
 
 
 def checked_out(registry: AsyncDatabaseRegistry) -> int:
-    return sum(registry.manager(s).primary.sync_engine.pool.checkedout() for s in registry.shards)
+    return sum(
+        registry.manager(s).primary.sqlalchemy_engine.sync_engine.pool.checkedout()
+        for s in registry.shards
+    )
 
 
 def one_database(backend: Any, name: str, **settings: Any) -> AsyncDatabaseRegistry:
@@ -169,7 +172,7 @@ def test_requests_beyond_the_pool_wait_their_turn_and_all_commit(backend, dialec
             nonlocal out
             out -= 1
 
-        pool = registry.default.primary.sync_engine.pool
+        pool = registry.default.primary.sqlalchemy_engine.sync_engine.pool
         event.listen(pool, "checkout", checkout)
         event.listen(pool, "checkin", checkin)
         try:
@@ -349,7 +352,7 @@ def test_dbs_is_one_shard_at_a_time_and_opens_only_what_is_asked_for(backend, cl
             opened: list[Any] = []
             for shard in registry.shards:
                 event.listen(
-                    registry.manager(shard).primary.sync_engine,
+                    registry.manager(shard).primary.sqlalchemy_engine.sync_engine,
                     "connect",
                     lambda *_, shard=shard: opened.append(shard),
                 )
@@ -514,7 +517,7 @@ class ReadsTwoAtOnceAction(TwinAction[tuple[str, str], tuple[Wallet, Wallet]]):
 @contextmanager
 def connections_out(registry: AsyncDatabaseRegistry, seen: dict[str, int]) -> Iterator[None]:
     """The most connections out of the default pool at once, while the block runs."""
-    pool = registry.default.primary.sync_engine.pool
+    pool = registry.default.primary.sqlalchemy_engine.sync_engine.pool
     seen.update(out=0, most=0)
 
     def checkout(*_: Any) -> None:
@@ -600,7 +603,7 @@ def test_the_async_runs_connect_through_the_driver_this_run_asked_for(backend, d
         try:
             async with registry.default.connection() as conn:
                 await conn.execute(text("SELECT 1"))
-                engine = registry.default.primary
+                engine = registry.default.primary.sqlalchemy_engine
                 assert engine.dialect.is_async, "and the dialect is SQLAlchemy's async one"
                 return engine.url.get_driver_name()
         finally:

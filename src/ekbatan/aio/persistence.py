@@ -9,11 +9,11 @@ sync module's, imported:
   ``ContextVar`` is per task, so two concurrent requests never see each other's transaction;
 - which shards exist, which is the default and where an unknown one goes are answered by the
   same registry code;
-- an engine is configured from a :class:`~ekbatan.config.DataSourceConfig` with the same pool
-  settings and JSON serialiser as a sync one.
+- an :class:`AsyncDataSource` is configured from a :class:`~ekbatan.config.DataSourceConfig`
+  with the same pool settings and JSON serialiser as a sync one.
 
 What is here is only what has to await: opening a connection, beginning, committing and rolling
-back, and disposing of a pool.
+back, and closing a pool.
 """
 
 from __future__ import annotations
@@ -31,8 +31,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_en
 from .._guards import refuse_if_forked
 from ..config import DataSourceConfig, ShardMemberConfig
 from ..errors import ValidationError
-from ..fetching import FetchResult, _translate_eventlog
+from ..fetching import FetchResult
 from ..persistence import (
+    _DataSourceCore,
     _engine_kwargs,
     _join,
     _leave,
@@ -43,6 +44,7 @@ from ..persistence import (
     _open,
     _ShardRegistry,
     _ShardRegistryBuilder,
+    _taken,
     _transaction_span,
 )
 from ..sharding import ShardIdentifier
@@ -53,12 +55,12 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ASYNC_DEFAULT_DRIVERS",
+    "AsyncDataSource",
     "AsyncDatabaseRegistry",
     "AsyncDatabaseRegistryBuilder",
     "AsyncDb",
     "AsyncTransaction",
     "AsyncTransactionManager",
-    "async_engine_for",
     "async_url",
 ]
 
@@ -75,11 +77,8 @@ class AsyncDb(AsyncConnection):
     __slots__ = ()
 
     async def __aenter__(self) -> Self:
-        """The base class promises an ``AsyncConnection``; this promises the subclass - and the
-        event tables are found where they are, as on the sync :class:`~ekbatan.fetching.Db`."""
+        """The base class promises an ``AsyncConnection``; this promises the subclass."""
         await self.start(is_ctxmanager=True)
-        assert self.sync_connection is not None  # set by start()
-        _translate_eventlog(self.sync_connection)
         return self
 
     async def execution_options(self, **opt: Any) -> Self:
@@ -120,12 +119,62 @@ class AsyncTransaction:
         return f"AsyncTransaction(shard={self.shard}, {self.dialect})"
 
 
+class AsyncDataSource(_DataSourceCore[AsyncEngine]):
+    """One database's async connection pool - the async :class:`~ekbatan.DataSource`.
+
+    Built from a :class:`~ekbatan.config.DataSourceConfig` with :meth:`from_config`, and in no
+    other way, with the same pool settings as a sync one. What takes an async pool - an
+    :class:`AsyncTransactionManager`, the async SQL lock providers - takes one of these;
+    :attr:`sqlalchemy_engine` is SQLAlchemy's own ``AsyncEngine`` behind it. Close it with
+    ``await data_source.aclose()`` or ``async with``.
+    """
+
+    __slots__ = ()
+
+    @classmethod
+    def from_config(cls, config: DataSourceConfig) -> Self:
+        """An async pool configured from ``config``, with the same settings as a sync one.
+
+        The same ``pool_size``, ``max_overflow``, ``pool_timeout``, ``pool_recycle`` and
+        pre-ping as a sync pool: the pool is what caps the requests waiting on this database,
+        and a request that waits longer than ``pool_timeout`` for a connection fails with
+        SQLAlchemy's ``TimeoutError`` rather than queueing for ever.
+
+        The driver is :func:`async_url`'s. ``data_source_properties`` reach it as given, except
+        that libpq's own spellings are made asyncpg's (see :func:`_asyncpg_connect_args`): above
+        all ``options``, whose ``-c name=value`` settings become asyncpg's ``server_settings`` -
+        which is what keeps the documented UTC setup, ``options: -c TimeZone=UTC``, working.
+
+        Building it opens no connection. The caller owns it: close it when done.
+        """
+        url = async_url(config)
+        kwargs = _engine_kwargs(config)
+        if url.get_driver_name() == "asyncpg":
+            kwargs["connect_args"] = _asyncpg_connect_args(kwargs["connect_args"])
+        return cls._of(create_async_engine(url, **kwargs), config.dialect)
+
+    async def aclose(self) -> None:
+        """Close the pool. Closing twice is harmless, as the sync ``close()``.
+
+        Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this data source
+        was copied into by ``fork()``, as the sync ``close()``.
+        """
+        refuse_if_forked(self._created_in, repr(self))
+        await self._engine.dispose()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
+
+
 class AsyncTransactionManager:
     """One shard's async databases, and the transaction boundary around them.
 
     The counterpart to :class:`~ekbatan.persistence.TransactionManager`, and the same rules:
     every :meth:`transaction` is a new one, even inside another; the replica falls back to the
-    primary's *engine*; a read inside a transaction joins it.
+    primary's *data source*; a read inside a transaction joins it.
     """
 
     __slots__ = ("_created_in", "_owns_replica", "dialect", "label", "primary", "replica", "shard")
@@ -133,17 +182,21 @@ class AsyncTransactionManager:
     def __init__(
         self,
         shard: ShardIdentifier,
-        primary: AsyncEngine,
-        replica: AsyncEngine | None = None,
+        primary: AsyncDataSource,
+        replica: AsyncDataSource | None = None,
         *,
         dialect: str = "",
         label: str = "",
     ) -> None:
         self.shard = shard
-        self.primary = primary
-        self.replica = replica if replica is not None else primary
+        self.primary = _taken(primary, AsyncDataSource, "AsyncTransactionManager")
+        self.replica = (
+            self.primary
+            if replica is None
+            else _taken(replica, AsyncDataSource, "AsyncTransactionManager")
+        )
         self._owns_replica = replica is not None
-        self.dialect = dialect or primary.dialect.name
+        self.dialect = dialect or self.primary.dialect
         self.label = label or str(shard)
         #: The process that built it: its pools are this process's sockets.
         self._created_in = os.getpid()
@@ -156,7 +209,7 @@ class AsyncTransactionManager:
         """The pool for a connection outside any transaction - the replica if ``readonly`` -
         refused in a process this manager was copied into by ``fork()``."""
         refuse_if_forked(self._created_in, repr(self))
-        return self.replica if readonly else self.primary
+        return (self.replica if readonly else self.primary).sqlalchemy_engine
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[AsyncTransaction]:
@@ -173,8 +226,9 @@ class AsyncTransactionManager:
         copied into by ``fork()``.
         """
         refuse_if_forked(self._created_in, repr(self))
+        engine = self.primary.sqlalchemy_engine
         with _transaction_span(self.shard):
-            async with AsyncDb(self.primary) as conn:
+            async with AsyncDb(engine) as conn:
                 token = _join(self, conn)
                 tx = await conn.begin()
                 try:
@@ -214,15 +268,16 @@ class AsyncTransactionManager:
             yield conn
 
     async def aclose(self) -> None:
-        """Dispose this shard's pools.
+        """Close this shard's data sources - the ones it was given, as the sync manager's
+        ``close()``.
 
         Refused with :class:`~ekbatan.errors.ForkedProcessError` in a process this manager was
         copied into by ``fork()``, as the sync manager's ``close()``.
         """
         refuse_if_forked(self._created_in, repr(self))
-        await self.primary.dispose()
+        await self.primary.aclose()
         if self._owns_replica:
-            await self.replica.dispose()
+            await self.replica.aclose()
 
     def __repr__(self) -> str:
         return f"AsyncTransactionManager({self.label}, {self.dialect})"
@@ -245,15 +300,15 @@ class AsyncDatabaseRegistry(_ShardRegistry[AsyncTransactionManager]):
     def _manager(
         shard: ShardIdentifier, member: ShardMemberConfig, dialect: str
     ) -> AsyncTransactionManager:
-        primary = async_engine_for(member.primary_config())
+        primary = AsyncDataSource.from_config(member.primary_config())
         secondary = member.secondary_config()
-        replica = async_engine_for(secondary) if secondary is not None else None
+        replica = AsyncDataSource.from_config(secondary) if secondary is not None else None
         return AsyncTransactionManager(
             shard, primary, replica, dialect=dialect, label=member.name or str(shard)
         )
 
     async def aclose(self) -> None:
-        """Dispose every pool. One failing shard does not strand the rest.
+        """Close every pool. One failing shard does not strand the rest.
 
         Refused with :class:`~ekbatan.errors.ForkedProcessError`, before any pool is touched, in
         a process this registry was copied into by ``fork()``, as the sync registry's
@@ -317,27 +372,6 @@ def async_url(config: DataSourceConfig) -> URL:
     if driver.lower() in _SYNC_DRIVERS:
         url = url.set(drivername=f"{backend}+{ASYNC_DEFAULT_DRIVERS[config.dialect]}")
     return url
-
-
-def async_engine_for(config: DataSourceConfig) -> AsyncEngine:
-    """An async pool for one :class:`~ekbatan.config.DataSourceConfig` - the async
-    :func:`~ekbatan.persistence.engine_for`, built with the same settings.
-
-    The same ``pool_size``, ``max_overflow``, ``pool_timeout``, ``pool_recycle`` and pre-ping
-    as a sync pool: the pool is what caps the requests waiting on this database, and a request
-    that waits longer than ``pool_timeout`` for a connection fails with SQLAlchemy's
-    ``TimeoutError`` rather than queueing for ever.
-
-    The driver is :func:`async_url`'s. ``data_source_properties`` reach it as given, except
-    that libpq's own spellings are made asyncpg's (see :func:`_asyncpg_connect_args`): above
-    all ``options``, whose ``-c name=value`` settings become asyncpg's ``server_settings`` -
-    which is what keeps the documented UTC setup, ``options: -c TimeZone=UTC``, working.
-    """
-    url = async_url(config)
-    kwargs = _engine_kwargs(config)
-    if url.get_driver_name() == "asyncpg":
-        kwargs["connect_args"] = _asyncpg_connect_args(kwargs["connect_args"])
-    return create_async_engine(url, **kwargs)
 
 
 #: libpq settings that asyncpg spells another way, and the asyncpg argument each becomes.

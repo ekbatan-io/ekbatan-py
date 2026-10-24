@@ -23,10 +23,12 @@ from db_scheduler.jdbc.customization import (
     PostgreSqlJdbcCustomization,
 )
 from db_scheduler.task.schedule import FixedDelay
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 
+from ekbatan.config import DataSourceConfig
 from ekbatan.distributedjobs import DistributedJob, JobsConfig, job_registry
 from ekbatan.errors import ValidationError
+from ekbatan.persistence import DataSource
 
 PG = "postgresql+psycopg://nowhere-9e3f:5432/db"
 MYSQL = "mysql+pymysql://nowhere-9e3f:3306/db"
@@ -48,8 +50,8 @@ class NoOpJob(DistributedJob):
     def execute(self, ctx: object) -> None: ...
 
 
-def an_engine(url: str = PG):
-    return create_engine(url)
+def a_data_source(url: str = PG) -> DataSource:
+    return DataSource.from_config(DataSourceConfig(url=url))
 
 
 # -- the builder's own arguments ---------------------------------------------------------------
@@ -64,7 +66,9 @@ class TestJobRegistryBuilder:
 
     def test_build_succeeds_when_the_schedule_is_present(self) -> None:
         """The null-schedule check must not reject a legitimate one."""
-        registry = job_registry().engine(an_engine()).with_job(NoOpJob("daily-report")).build()
+        registry = (
+            job_registry().data_source(a_data_source()).with_job(NoOpJob("daily-report")).build()
+        )
 
         assert registry is not None
         assert registry.job_names == ("daily-report",)
@@ -93,7 +97,7 @@ class TestJobRegistryBuilder:
 
             def execute(self, ctx: object) -> None: ...
 
-        registry = job_registry().engine(an_engine()).with_job(Unstable()).build()
+        registry = job_registry().data_source(a_data_source()).with_job(Unstable()).build()
 
         assert calls == 1, "name() must be consulted exactly once per job during build()"
         assert registry.job_names == ("unstable-1",)
@@ -124,7 +128,7 @@ class TestJobRegistryDialectPinning:
     def test_the_customization_is_set_before_the_scheduler_is_created(
         self, url: str, expected: type
     ) -> None:
-        registry = job_registry().engine(an_engine(url)).with_job(NoOpJob()).build()
+        registry = job_registry().data_source(a_data_source(url)).with_job(NoOpJob()).build()
 
         customization = registry.scheduler.scheduler_task_repository.customization
         assert isinstance(customization._delegate, expected)  # type: ignore[attr-defined]
@@ -144,7 +148,9 @@ class TestJobRegistryDialectPinning:
         from sqlalchemy import MetaData
 
         table = scheduled_tasks_table(MetaData())
-        compiled = str(select(table).limit(10).compile(dialect=an_engine(url).dialect))
+        compiled = str(
+            select(table).limit(10).compile(dialect=a_data_source(url).sqlalchemy_engine.dialect)
+        )
 
         assert "LIMIT" in compiled
         assert "FETCH FIRST" not in compiled
@@ -236,7 +242,7 @@ class TestSizingTheWorkerPool:
         """A recurring task is a single row, so a job has at most one execution in flight."""
         built = (
             job_registry()
-            .engine(an_engine())
+            .data_source(a_data_source())
             .with_jobs([NoOpJob("a"), NoOpJob("b"), NoOpJob("c")])
             .build()
         )
@@ -244,7 +250,7 @@ class TestSizingTheWorkerPool:
         assert built.scheduler.threadpool_size == 3
 
     def test_it_can_be_raised_for_jobs_that_overlap_themselves(self) -> None:
-        built = job_registry().engine(an_engine()).with_job(NoOpJob()).workers(12).build()
+        built = job_registry().data_source(a_data_source()).with_job(NoOpJob()).workers(12).build()
 
         assert built.scheduler.threadpool_size == 12
 
@@ -253,7 +259,7 @@ class TestSizingTheWorkerPool:
         hold a connection open per job."""
         built = (
             job_registry()
-            .engine(an_engine())
+            .data_source(a_data_source())
             .with_jobs([NoOpJob("a"), NoOpJob("b"), NoOpJob("c")])
             .workers(1)
             .build()
@@ -264,7 +270,7 @@ class TestSizingTheWorkerPool:
     @pytest.mark.parametrize("bad", [0, -1])
     def test_a_pool_that_cannot_run_anything_is_refused(self, bad: int) -> None:
         with pytest.raises(ValidationError, match="workers must be at least 1"):
-            job_registry().engine(an_engine()).with_job(NoOpJob()).workers(bad)
+            job_registry().data_source(a_data_source()).with_job(NoOpJob()).workers(bad)
 
     def test_the_manual_builder_sizes_the_same_way(self) -> None:
         """So a test and production do not differ on the one number this controls."""
@@ -272,7 +278,7 @@ class TestSizingTheWorkerPool:
 
         built = (
             job_registry()
-            .engine(an_engine())
+            .data_source(a_data_source())
             .with_job(NoOpJob())
             .workers(4)
             .build_manual(SettableClock())

@@ -33,7 +33,7 @@ from ekbatan import (  # noqa: E402
     ModelRepository,
     RepositoryRegistry,
     SingleTableJsonEventPersister,
-    engine_for,
+    DataSource,
 )
 from ekbatan.config import DataSourceConfig  # noqa: E402
 from ekbatan.domain import Model, ModelBuilder, ModelEvent  # noqa: E402
@@ -281,4 +281,4 @@ def quiet() -> None:
 
 
 __all__ = [n for n in dir() if not n.startswith("__")]
-_ = (dataclasses, UTC, DEFAULT_SHARD, TransactionManager, engine_for)
+_ = (dataclasses, UTC, DEFAULT_SHARD, TransactionManager, DataSource)

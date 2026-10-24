@@ -29,9 +29,9 @@ def refuse_if_forked(created_in: int, what: str) -> None:
             f"{what} was created in another process and copied into this one by fork() - "
             f"gunicorn --preload, uwsgi, Celery prefork, RQ and multiprocessing all fork. Its "
             f"connections and threads belong to the process that created it. Create ekbatan's "
-            f"objects - the database registry, the job registry, lock providers - in your app's "
-            f"startup code (the FastAPI lifespan, or the top of the worker's main()), not at "
-            f"import time."
+            f"objects - data sources, the database registry, the job registry, lock providers - "
+            f"in your app's startup code (the FastAPI lifespan, or the top of the worker's "
+            f"main()), not at import time."
         )
 
 

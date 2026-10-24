@@ -114,9 +114,9 @@ from .migrations import (
 from .persistence import (
     DatabaseRegistry,
     DatabaseRegistryBuilder,
+    DataSource,
     Transaction,
     TransactionManager,
-    engine_for,
 )
 from .repository import (
     AbstractRepository,
@@ -158,6 +158,7 @@ __all__ = [
     "Clock",
     "ConnectivityError",
     "CrossShardError",
+    "DataSource",
     "DataSourceConfig",
     "DataSourceConfigBuilder",
     "DatabaseRegistry",
@@ -244,7 +245,6 @@ __all__ = [
     "count_statements",
     "current_plan",
     "emit_ddl",
-    "engine_for",
     "job_registry",
     "migrate",
     "migrate_registry",

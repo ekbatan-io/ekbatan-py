@@ -17,9 +17,10 @@ from sqlalchemy import create_engine, event, func, select
 
 from ekbatan import Transaction
 from ekbatan.action import Action, ActionExecutor
+from ekbatan.config import DataSourceConfig
 from ekbatan.errors import CrossShardError, UnsupportedError, ValidationError
 from ekbatan.ids import ShardedId
-from ekbatan.persistence import DatabaseRegistry, TransactionManager
+from ekbatan.persistence import DatabaseRegistry, DataSource, TransactionManager
 from ekbatan.repository import AbstractRepository
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, NoShardingStrategy, ShardIdentifier
 from fixtures.domain import NOW, Wallet, WalletState
@@ -386,7 +387,11 @@ def test_a_scatter_read_stops_at_the_first_shard_that_answers(sharded_registry, 
         return listener
 
     for shard in sharded_registry.shards:
-        event.listen(sharded_registry.manager(shard).primary, "before_cursor_execute", watch(shard))
+        event.listen(
+            sharded_registry.manager(shard).primary.sqlalchemy_engine,
+            "before_cursor_execute",
+            watch(shard),
+        )
 
     later = {0} if mode == "sync" else {0, 1}
     assert repo.find_one_where(WALLETS.c.currency == "SEK") is not None
@@ -480,7 +485,7 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
     """Java's repository never opens one: inside a transaction it joins, outside one each
     statement commits itself. Opening one here would decide what is atomic on the caller's
     behalf, which is theirs to decide."""
-    engine = registry.default.primary
+    engine = registry.default.primary.sqlalchemy_engine
     seen = _statements(engine)
 
     wallet = Wallet.open(
@@ -504,7 +509,7 @@ def test_a_write_outside_a_unit_of_work_opens_no_transaction(registry, wallets):
 def test_a_batch_is_one_statement_however_many_rows(registry, wallets):
     """Nothing is chunked. Splitting a batch past the server's bind-parameter ceiling is the
     caller's, because only they know what the pieces mean if one of them fails."""
-    seen = _statements(registry.default.primary)
+    seen = _statements(registry.default.primary.sqlalchemy_engine)
 
     many = [
         Wallet.open(
@@ -559,7 +564,10 @@ def test_a_manager_filed_under_the_wrong_shard_is_refused(registry):
     """Two answers to 'which shard is this?' - the key routing uses, and the one every
     transaction stamps on its outbox row. Nothing downstream could tell them apart."""
     with pytest.raises(ValidationError, match="registered under the wrong key"):
-        DatabaseRegistry({GLOBAL: TransactionManager(MEXICO, create_engine("sqlite://"))}, GLOBAL)
+        misfiled = TransactionManager(
+            MEXICO, DataSource.from_config(DataSourceConfig(url="sqlite://"))
+        )
+        DatabaseRegistry({GLOBAL: misfiled}, GLOBAL)
 
 
 # -- the two shard-strategy details that had drifted from Java ---------------------------------
@@ -690,7 +698,7 @@ def strict_wallets(clock, mode, portal):
         )
     )
     for shard in (GLOBAL, MEXICO):
-        with registry.manager(shard).primary.begin() as connection:
+        with registry.manager(shard).primary.sqlalchemy_engine.begin() as connection:
             if mode == "sync":
                 metadata.create_all(connection)
             else:

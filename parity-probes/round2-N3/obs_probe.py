@@ -354,9 +354,9 @@ def main() -> None:
         )
 
         # Locks (PostgreSQL advisory)
-        lock_engine = create_engine(f"postgresql+psycopg://probe:{MARK}@{host}:{port}/global_db", pool_size=6)
+        lock_data_source = create_engine(f"postgresql+psycopg://probe:{MARK}@{host}:{port}/global_db", pool_size=6)
         other_engine = create_engine(f"postgresql+psycopg://probe:{MARK}@{host}:{port}/global_db", pool_size=6)
-        locks = PostgresKeyedLockProvider(lock_engine)
+        locks = PostgresKeyedLockProvider(lock_data_source)
         other = PostgresKeyedLockProvider(other_engine)
 
         def l1():

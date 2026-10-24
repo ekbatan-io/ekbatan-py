@@ -40,7 +40,7 @@ TEHRAN = datetime(2026, 1, 1, 13, 30, 0, 654321, tzinfo=timezone(timedelta(hours
 @contextmanager
 def captured(registry: Any) -> Iterator[list[tuple[Any, Any]]]:
     """Every statement's parameters as handed to SQLAlchemy, and as handed to the driver."""
-    engine = registry.default.primary
+    engine = registry.default.primary.sqlalchemy_engine
     sync = getattr(engine, "sync_engine", engine)
     seen: list[tuple[Any, Any]] = []
 

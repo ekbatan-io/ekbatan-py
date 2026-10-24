@@ -40,8 +40,10 @@ signal.signal(signal.SIGINT, signal.default_int_handler)  # what an interactive 
 
 from datetime import timedelta
 from pathlib import Path
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import MetaData
 from db_scheduler.task.schedule import FixedDelay
+from ekbatan import DataSource
+from ekbatan.config import DataSourceConfig
 from ekbatan.distributedjobs import DistributedJob, job_registry
 from ekbatan.schema import scheduled_tasks_table
 
@@ -56,10 +58,10 @@ def note(line):
     with open(log, "a") as f:
         f.write(line + "\n")
 
-engine = create_engine(f"sqlite:///{db}")
+source = DataSource.from_config(DataSourceConfig(url=f"sqlite:///{db}"))
 metadata = MetaData()
 scheduled_tasks_table(metadata)
-metadata.create_all(engine)
+metadata.create_all(source.sqlalchemy_engine)
 
 class Slow(DistributedJob):
     def name(self): return "slow"
@@ -69,7 +71,8 @@ class Slow(DistributedJob):
         time.sleep(2)
         note("finished")
 
-builder = job_registry().engine(engine).with_job(Slow()).poll_interval(timedelta(milliseconds=100))
+builder = job_registry().data_source(source).with_job(Slow())
+builder = builder.poll_interval(timedelta(milliseconds=100))
 builder = builder.stop_on_exit(stop_on_exit)
 if hooked:
     builder = builder.register_shutdown_hook()
@@ -183,7 +186,7 @@ class NeverDue(DistributedJob):
 
 
 @pytest.fixture
-def engine(registry):
+def source(registry):
     return registry.default.primary
 
 
@@ -211,11 +214,11 @@ def exit_hooks(monkeypatch):
     return lambda: len(live)
 
 
-def test_starting_adds_one_entry_and_stopping_takes_it_off(engine, exit_hooks):
+def test_starting_adds_one_entry_and_stopping_takes_it_off(source, exit_hooks):
     before = exit_hooks()
     jobs = (
         job_registry()
-        .engine(engine)
+        .data_source(source)
         .with_job(NeverDue())
         .poll_interval(timedelta(seconds=1))
         .build()
@@ -228,20 +231,20 @@ def test_starting_adds_one_entry_and_stopping_takes_it_off(engine, exit_hooks):
     assert exit_hooks() == before, "a stopped registry was left on the list"
 
 
-def test_building_alone_adds_nothing(engine, exit_hooks):
+def test_building_alone_adds_nothing(source, exit_hooks):
     """Only a started registry has anything to drain."""
     before = exit_hooks()
 
-    job_registry().engine(engine).with_job(NeverDue()).build()
+    job_registry().data_source(source).with_job(NeverDue()).build()
 
     assert exit_hooks() == before
 
 
-def test_turned_off_it_is_never_on_the_list(engine, exit_hooks):
+def test_turned_off_it_is_never_on_the_list(source, exit_hooks):
     before = exit_hooks()
     jobs = (
         job_registry()
-        .engine(engine)
+        .data_source(source)
         .with_job(NeverDue())
         .poll_interval(timedelta(seconds=1))
         .stop_on_exit(False)
@@ -254,11 +257,11 @@ def test_turned_off_it_is_never_on_the_list(engine, exit_hooks):
         jobs.stop()
 
 
-def test_a_manual_registry_is_never_on_the_list(engine, exit_hooks):
+def test_a_manual_registry_is_never_on_the_list(source, exit_hooks):
     """A test that starts one and forgets it must not have it drained, against a database the
     suite has already torn down, as the interpreter exits."""
     before = exit_hooks()
-    jobs = job_registry().engine(engine).with_job(NeverDue()).build_manual()
+    jobs = job_registry().data_source(source).with_job(NeverDue()).build_manual()
     jobs.start()
     try:
         assert exit_hooks() == before

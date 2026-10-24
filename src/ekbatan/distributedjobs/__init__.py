@@ -30,11 +30,11 @@ from db_scheduler.scheduler import Scheduler
 from db_scheduler.task import ExecutionContext
 from db_scheduler.task.helper import Tasks
 from db_scheduler.task.schedule import Schedule
-from sqlalchemy import Engine
 
 from .._guards import refuse_if_forked
 from .._logtext import java_list
 from ..errors import ValidationError
+from ..persistence import DataSource, _taken
 from ._shutdown import ShutdownHook
 from .config import JobsConfig, JobsConfigBuilder
 
@@ -130,8 +130,8 @@ class JobRegistry:
 
     Each registered job becomes a recurring task, started on :meth:`start`.
 
-    The engine should typically be a *dedicated* one, separate from the application's, since
-    db-scheduler polls continuously - and because a task body holding the last connection
+    Its data source should typically be a *dedicated* one, separate from the application's,
+    since db-scheduler polls continuously - and because a task body holding the last connection
     would starve the heartbeat and get its own execution declared dead.
     """
 
@@ -214,8 +214,8 @@ class JobRegistry:
         Registering a job means writing a row to `scheduled_tasks`; the scheduler finds work only
         by reading that table. db-scheduler performs those writes inside `start()`, which catches
         whatever each one throws, logs it and continues - so `start()` returns normally whether
-        every row was written or none were. A missing table, a database that is down, or an
-        engine without write permission all end the same way: the application boots, health
+        every row was written or none were. A missing table, a database that is down, or a jobs
+        pool without write permission all end the same way: the application boots, health
         checks pass, the scheduler polls an empty table, and no job ever runs. Not late - never.
         """
         try:
@@ -240,7 +240,7 @@ class JobRegistry:
                 f"JobRegistry.start() completed but {len(missing)} of "
                 f"{len(self._names_requiring_registration)} job(s) were not registered: "
                 f"{missing}. db-scheduler logs the cause at ERROR during startup - usually a "
-                f"missing scheduled_tasks table, or a database the jobs engine cannot write to. "
+                f"missing scheduled_tasks table, or a database the jobs pool cannot write to. "
                 f"Those jobs would never run."
             )
 
@@ -253,7 +253,7 @@ class JobRegistry:
         """
         if self._stop_on_exit:
             # A stopped registry has nothing left to drain, and the entry would otherwise keep
-            # it - and its engine - alive until the interpreter exits.
+            # it - and its pool - alive until the interpreter exits.
             atexit.unregister(self._stop_at_exit)
         self._drain()
 
@@ -361,7 +361,7 @@ class JobRegistryBuilder:
     """Fluent builder for :class:`JobRegistry`. Obtain via :func:`job_registry`."""
 
     __slots__ = (
-        "_engine",
+        "_data_source",
         "_heartbeat_interval",
         "_jobs",
         "_poll_interval",
@@ -373,7 +373,7 @@ class JobRegistryBuilder:
     )
 
     def __init__(self) -> None:
-        self._engine: Engine | None = None
+        self._data_source: DataSource | None = None
         self._jobs: list[DistributedJob] = []
         self._poll_interval: timedelta = DEFAULT_POLLING_INTERVAL
         self._heartbeat_interval: timedelta = EKBATAN_HEARTBEAT_INTERVAL
@@ -383,14 +383,14 @@ class JobRegistryBuilder:
         self._shutdown_hook = False
         self._stop_on_exit = True
 
-    def engine(self, engine: Engine) -> Self:
-        """The database db-scheduler will poll. Required.
+    def data_source(self, data_source: DataSource) -> Self:
+        """The database db-scheduler will poll - Java's ``connectionProvider``. Required.
 
-        Where Java takes a `ConnectionProvider` wrapping a DataSource, this takes the
-        SQLAlchemy equivalent. Should typically be a *dedicated* engine, isolated from
-        application traffic. Caller retains ownership.
+        Should typically be a *dedicated* data source, isolated from application traffic. The
+        caller keeps ownership: the registry never closes it, so close it after
+        :meth:`JobRegistry.stop`.
         """
-        self._engine = engine
+        self._data_source = _taken(data_source, DataSource, "JobRegistry")
         return self
 
     def with_job(self, job: DistributedJob) -> Self:
@@ -568,7 +568,7 @@ class JobRegistryBuilder:
         is that, wrapped so a test gets the same :class:`JobRegistry` it would in production.
         Nothing runs until asked::
 
-            registry = job_registry().engine(engine).with_job(job).build_manual(clock)
+            registry = job_registry().data_source(data_source).with_job(job).build_manual(clock)
             registry.start()
             registry.scheduler.run_any_due_executions()   # runs on this thread, and has finished
             registry.scheduler.tick(timedelta(days=1))    # a day of waiting, in microseconds
@@ -577,9 +577,9 @@ class JobRegistryBuilder:
         from db_scheduler.testhelper import create_manual_scheduler
 
         names, tasks, requiring = self._prepare()
-        assert self._engine is not None  # _prepare refuses otherwise
+        assert self._data_source is not None  # _prepare refuses otherwise
         builder = (
-            create_manual_scheduler(self._engine)
+            create_manual_scheduler(self._data_source.sqlalchemy_engine)
             .clock(clock or _SettableClock())
             .add_start_tasks(tasks)
             .threads(self._workers or len(self._jobs))
@@ -595,8 +595,8 @@ class JobRegistryBuilder:
 
     def _prepare(self) -> tuple[list[str], list[Any], list[str]]:
         """Validate the jobs and turn them into recurring tasks. Shared by both build paths."""
-        if self._engine is None:
-            raise ValidationError("engine is required")
+        if self._data_source is None:
+            raise ValidationError("data_source is required")
         if not self._jobs:
             raise ValidationError("at least one DistributedJob must be registered")
 
@@ -659,7 +659,7 @@ class JobRegistryBuilder:
     def build(self) -> JobRegistry:
         """A configured registry; raises if required fields are unset or job names collide."""
         names, tasks, names_requiring_registration = self._prepare()
-        assert self._engine is not None  # _prepare refuses otherwise
+        assert self._data_source is not None  # _prepare refuses otherwise
 
         # No `jdbcCustomizationFor(url)` counterpart. Java has to pin the SQL dialect by hand,
         # because db-scheduler detects it by opening a connection and reading DatabaseMetaData -
@@ -668,7 +668,7 @@ class JobRegistryBuilder:
         # MariaDB cannot parse. SQLAlchemy resolves the dialect from the URL when the Engine is
         # created, with no I/O, so there is no race to lose and nothing to pin.
         builder = (
-            create(self._engine)
+            create(self._data_source.sqlalchemy_engine)
             .add_start_tasks(tasks)
             .threads(self._workers or len(self._jobs))
             .heartbeat_interval(self._heartbeat_interval)

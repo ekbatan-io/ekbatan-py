@@ -6,7 +6,7 @@ for work.
 
 Three separate pools, which is the part worth copying into a real deployment:
 
-**Requests** get the main engine. Sized for how many requests you serve at once.
+**Requests** get the main pool. Sized for how many requests you serve at once.
 
 **Jobs** get their own. db-scheduler polls continuously and writes a heartbeat from a
 housekeeping thread; sharing the request pool means a burst of traffic can starve that
@@ -20,8 +20,8 @@ traffic.
 
 All three are declared on the shard member in `ekbatan.yaml`: `primaryConfig` for requests, and
 `jobsConfig` and `lockConfig` beside it. The registry builds the first; the other two are this
-file's to build with `engine_for`, and this file's to dispose. The same file holds the namespace
-and turns the event handling job on.
+file's to build with `DataSource.from_config`, and this file's to close. The same file holds the
+namespace and turns the event handling job on.
 """
 
 from __future__ import annotations
@@ -30,14 +30,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-
 from ekbatan import (
     ActionExecutor,
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
-    engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config import DataSourceConfig, ShardMemberConfig
@@ -88,9 +86,9 @@ class WalletService:
     locks: KeyedLockProvider
     jobs: JobRegistry
     #: The pools built from `lockConfig` and `jobsConfig`. The registry owns only the ones it
-    #: built, so these two are disposed here.
-    lock_engine: Engine
-    jobs_engine: Engine
+    #: built, so these two are closed here.
+    lock_data_source: DataSource
+    jobs_data_source: DataSource
 
     def start(self) -> None:
         """Begin polling for jobs. Fan-out and dispatch are two of them, so this is also what
@@ -101,8 +99,8 @@ class WalletService:
         # Order matters: stop taking work before closing what the work runs on.
         self.jobs.stop()
         self.locks.close()
-        self.lock_engine.dispose()
-        self.jobs_engine.dispose()
+        self.lock_data_source.close()
+        self.jobs_data_source.close()
         self.registry.close()
 
 
@@ -153,8 +151,8 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
 
     # The one shard member's pools, as `ekbatan.yaml` declares them.
     member = layout.groups[0].members[0]
-    lock_engine = engine_for(_required(member, "lockConfig"))
-    jobs_engine = engine_for(_required(member, "jobsConfig"))
+    lock_data_source = DataSource.from_config(_required(member, "lockConfig"))
+    jobs_data_source = DataSource.from_config(_required(member, "jobsConfig"))
 
     handlers = (
         EventHandlerRegistry.builder().with_handler(MoneyDepositedEventHandler(executor)).build()
@@ -166,12 +164,12 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         wallets=wallets,
         alerts=alerts,
         executor=executor,
-        locks=MySQLKeyedLockProvider.builder().engine(lock_engine).build(),
-        lock_engine=lock_engine,
-        jobs_engine=jobs_engine,
+        locks=MySQLKeyedLockProvider.builder().data_source(lock_data_source).build(),
+        lock_data_source=lock_data_source,
+        jobs_data_source=jobs_data_source,
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     EventFanoutJob.builder()

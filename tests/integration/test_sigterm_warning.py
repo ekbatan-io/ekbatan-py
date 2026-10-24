@@ -22,8 +22,10 @@ WARNING = "Nothing in this process handles SIGTERM."
 JOBS = r"""
 import logging, sys
 from datetime import timedelta
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import MetaData
 from db_scheduler.task.schedule import FixedDelay
+from ekbatan import DataSource
+from ekbatan.config import DataSourceConfig
 from ekbatan.distributedjobs import DistributedJob, job_registry
 from ekbatan.schema import scheduled_tasks_table
 
@@ -36,11 +38,11 @@ class Idle(DistributedJob):
     def execute(self, ctx): pass
 
 def build(db, hooked=False):
-    engine = create_engine(f"sqlite:///{db}")
+    source = DataSource.from_config(DataSourceConfig(url=f"sqlite:///{db}"))
     metadata = MetaData()
     scheduled_tasks_table(metadata)
-    metadata.create_all(engine)
-    builder = job_registry().engine(engine).with_job(Idle())
+    metadata.create_all(source.sqlalchemy_engine)
+    builder = job_registry().data_source(source).with_job(Idle())
     if hooked:
         builder = builder.register_shutdown_hook()
     return builder.build()

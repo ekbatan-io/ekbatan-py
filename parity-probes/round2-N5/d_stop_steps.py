@@ -11,8 +11,8 @@ try:
     bad.jobs.start()
 except Exception:
     pass
-for name, step in (("jobs.stop", bad.jobs.stop), ("jobs_engine.dispose", bad.jobs_engine.dispose),
-                   ("locks.close", bad.locks.close), ("lock_engine.dispose", bad.lock_engine.dispose),
+for name, step in (("jobs.stop", bad.jobs.stop), ("jobs_data_source.dispose", bad.jobs_data_source.dispose),
+                   ("locks.close", bad.locks.close), ("lock_data_source.dispose", bad.lock_data_source.dispose),
                    ("reg.close", bad.reg.close)):
     t = time.monotonic(); step(); p("d3.step." + name, probe_d.secs(time.monotonic() - t))
 p("d3.threads_after", sorted(t.name for t in threading.enumerate()))

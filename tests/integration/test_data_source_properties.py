@@ -52,7 +52,7 @@ def test_driver_settings_reach_the_pool_and_the_migrator(backend, request, tmp_p
     migrate(layout, migrations)
     registry = DatabaseRegistry.from_config(layout)
     try:
-        with registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+        with registry.manager(DEFAULT_SHARD).primary.sqlalchemy_engine.connect() as connection:
             in_the_pool = connection.execute(text(read_back)).scalar()
     finally:
         registry.close() if mode == "sync" else registry.aclose()
@@ -75,7 +75,7 @@ def test_without_the_settings_neither_sees_the_probe(backend, request, tmp_path,
     migrate(layout, migrations)
     registry = DatabaseRegistry.from_config(layout)
     try:
-        with registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+        with registry.manager(DEFAULT_SHARD).primary.sqlalchemy_engine.connect() as connection:
             in_the_pool = connection.execute(text(read_back)).scalar()
     finally:
         registry.close() if mode == "sync" else registry.aclose()

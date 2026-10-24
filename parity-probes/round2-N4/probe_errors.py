@@ -33,10 +33,15 @@ from ekbatan.action import (  # noqa: E402
 )
 from ekbatan.action.action import Action  # noqa: E402
 from ekbatan.clock import SystemClock, VirtualClock  # noqa: E402
-from ekbatan.config import ShardGroupConfig, ShardingConfig, ShardMemberConfig  # noqa: E402
+from ekbatan.config import (  # noqa: E402
+    DataSourceConfig,
+    ShardGroupConfig,
+    ShardingConfig,
+    ShardMemberConfig,
+)
 from ekbatan.ids import ShardedId  # noqa: E402
 from ekbatan.locks import PostgresKeyedLockProvider  # noqa: E402
-from ekbatan.persistence import DatabaseRegistry  # noqa: E402
+from ekbatan.persistence import DatabaseRegistry, DataSource  # noqa: E402
 from ekbatan.schema import outbox_table  # noqa: E402
 from ekbatan.sharding import EmbeddedBitsShardingStrategy, ShardIdentifier  # noqa: E402
 from ekbatan.testing import ActionSpec  # noqa: E402
@@ -334,7 +339,8 @@ def probe(urls) -> None:
     dead_registry.close()
 
     # e8 lock backend unreachable
-    lock = PostgresKeyedLockProvider.builder().engine(create_engine(DEAD_URL)).build()
+    dead = DataSource.from_config(DataSourceConfig(url="postgresql+psycopg://127.0.0.1:58599/nowhere", username="test", password="test"))
+    lock = PostgresKeyedLockProvider.builder().data_source(dead).build()
     t8 = catching(lambda: lock.try_acquire("wallet:1", timedelta(0), timedelta(seconds=5)))
     report("e8.lock_unreachable", t8)
     p("e8.lock_unreachable.key_field", getattr(t8, "key", "none"))

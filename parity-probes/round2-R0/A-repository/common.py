@@ -35,7 +35,7 @@ from sqlalchemy import (  # noqa: E402
 
 from backends import start  # noqa: E402
 from ekbatan.ids import ShardedId  # noqa: E402
-from ekbatan.persistence import DatabaseRegistry, TransactionManager, engine_for  # noqa: E402
+from ekbatan.persistence import DatabaseRegistry, TransactionManager, DataSource  # noqa: E402
 from ekbatan.schema import json_column, uuid_column  # noqa: E402
 from fixtures.domain import Wallet  # noqa: E402
 from fixtures.logins import data_source  # noqa: E402
@@ -149,7 +149,7 @@ def database(backend: Any, name: str) -> str:
 
 
 def manager(shard: Any, url: str) -> TransactionManager:
-    return TransactionManager(shard, engine_for(data_source(url, pool_size=10)))
+    return TransactionManager(shard, DataSource.from_config(data_source(url, pool_size=10)))
 
 
 def single_registry(url: str) -> DatabaseRegistry:

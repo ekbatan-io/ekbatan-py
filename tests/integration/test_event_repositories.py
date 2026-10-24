@@ -250,8 +250,6 @@ def test_find_due_does_not_join_an_open_transaction(registry, notifications):
 @pytest.fixture
 def lagging_replica(backend):
     """A shard whose replica has seen nothing: the primary and the replica are two databases."""
-    from sqlalchemy import create_engine
-
     from ekbatan.persistence import DatabaseRegistry, TransactionManager
     from fixtures.schema import metadata
 
@@ -260,7 +258,7 @@ def lagging_replica(backend):
         backend.prepare(name, metadata)
         backend.truncate(name, metadata)
     manager = TransactionManager(
-        DEFAULT_SHARD, create_engine(backend.url(written)), create_engine(backend.url(lagging))
+        DEFAULT_SHARD, backend.data_source(written), backend.data_source(lagging)
     )
     with DatabaseRegistry({DEFAULT_SHARD: manager}, DEFAULT_SHARD) as reg:
         yield reg

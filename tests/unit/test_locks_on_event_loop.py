@@ -14,8 +14,9 @@ import sys
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine
 
+from ekbatan import DataSource
+from ekbatan.config import DataSourceConfig
 from ekbatan.errors import ValidationError
 from ekbatan.locks import (
     MariaDBKeyedLockProvider,
@@ -45,8 +46,8 @@ def test_taking_a_lock_on_the_loop_is_refused() -> None:
     "provider", [PostgresKeyedLockProvider, MySQLKeyedLockProvider, MariaDBKeyedLockProvider]
 )
 def test_every_provider_refuses_before_touching_its_database(provider: type) -> None:
-    """The engine points nowhere a lock could be taken; the refusal comes first."""
-    locks = provider(create_engine("sqlite://"))
+    """The data source points nowhere a lock could be taken; the refusal comes first."""
+    locks = provider(DataSource.from_config(DataSourceConfig(url="sqlite://")))
     with pytest.raises(ValidationError, match="asyncio event loop"):
         on_the_loop(lambda: locks.acquire("wallet:1", HOLD))
     with pytest.raises(ValidationError, match="asyncio event loop"):

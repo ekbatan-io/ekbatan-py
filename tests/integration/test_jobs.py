@@ -49,7 +49,7 @@ def a_registry(registry, clock, jobs) -> JobRegistry:
     """
     return (
         job_registry()
-        .engine(registry.default.primary)
+        .data_source(registry.default.primary)
         .with_jobs(jobs)
         .poll_interval(timedelta(seconds=1))
         .build_manual(SettableClock(SCHEDULER_EPOCH))
@@ -244,12 +244,12 @@ class TestVerifyingRegistration:
         jobs = a_registry(registry, clock, [PayStipendJob(executor, wallets)])
         jobs.start()
 
-        SCHEDULED_TASKS.drop(registry.default.primary)
+        SCHEDULED_TASKS.drop(registry.default.primary.sqlalchemy_engine)
         try:
             with pytest.raises(ValidationError, match="could not verify"):
                 jobs.start()
         finally:
-            SCHEDULED_TASKS.create(registry.default.primary)
+            SCHEDULED_TASKS.create(registry.default.primary.sqlalchemy_engine)
 
     def test_a_healthy_start_says_nothing(self, registry, executor, wallets, clock, wallet):
         a_registry(registry, clock, [PayStipendJob(executor, wallets)]).start()  # must not raise
@@ -299,8 +299,8 @@ class TestRefusingARegistryThatCannotWork:
         with pytest.raises(ValidationError, match="at least one"):
             a_registry(registry, clock, [])
 
-    def test_a_registry_with_no_engine_is_refused(self, executor, wallets):
-        with pytest.raises(ValidationError, match="engine is required"):
+    def test_a_registry_with_no_data_source_is_refused(self, executor, wallets):
+        with pytest.raises(ValidationError, match=r"^data_source is required$"):
             job_registry().with_job(PayStipendJob(executor, wallets)).build()
 
     def test_a_none_job_is_refused_where_it_was_passed(self, registry, clock):
@@ -317,7 +317,7 @@ class TestRefusingARegistryThatCannotWork:
         tight loop - around ten thousand queries a second, measured."""
         builder = (
             job_registry()
-            .engine(registry.default.primary)
+            .data_source(registry.default.primary)
             .with_job(PayStipendJob(executor, wallets))
         )
         with pytest.raises(ValidationError, match="poll_interval must be positive"):
@@ -407,7 +407,7 @@ class TestCustomizingTheScheduler:
 
         built = (
             job_registry()
-            .engine(registry.default.primary)
+            .data_source(registry.default.primary)
             .with_job(CountingJob(f"customize-{uuid4()}", FixedDelay(timedelta(seconds=60))))
             .poll_interval(timedelta(seconds=10))
             .heartbeat_interval(timedelta(seconds=1))
@@ -429,7 +429,7 @@ class TestCustomizingTheScheduler:
         """The other half: the override is what changed it, not the plumbing."""
         built = (
             job_registry()
-            .engine(registry.default.primary)
+            .data_source(registry.default.primary)
             .with_job(CountingJob(f"plain-{uuid4()}", FixedDelay(timedelta(seconds=60))))
             .poll_interval(timedelta(seconds=10))
             .build()
@@ -458,7 +458,7 @@ class TestShutdownHook:
 
         builder = (
             job_registry()
-            .engine(registry.default.primary)
+            .data_source(registry.default.primary)
             .with_jobs([NeverDue()])
             .poll_interval(timedelta(seconds=1))
         )

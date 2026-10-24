@@ -239,7 +239,7 @@ def test_the_stipend_job_pays_every_open_wallet(tmp_path: Path) -> None:
         a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
         stipend_only = (
             job_registry()
-            .engine(service.events_registry.default.primary)
+            .data_source(service.events_registry.default.primary)
             .with_jobs([job])
             .build_manual(a_day_later)
         )
@@ -467,9 +467,10 @@ def test_no_service_object_shows_the_password(
             async with built.registry.default.connection(readonly=True) as conn:
                 found = await conn.execute(select(func.count()).select_from(WALLETS))
                 assert found.scalar_one() == 0
-            engine = built.registry.default.primary
-            shown: list[object] = [built, built.registry, built.executor, built.jobs, engine]
-            shown += [engine.sync_engine.pool, built.events_registry.default.primary]
+            source = built.registry.default.primary
+            engine = source.sqlalchemy_engine
+            shown: list[object] = [built, built.registry, built.executor, built.jobs, source]
+            shown += [engine, engine.sync_engine.pool, built.events_registry.default.primary]
             shown += [getattr(built, name) for name in built.__dataclass_fields__]
             for thing in shown:
                 assert SECRET not in repr(thing), type(thing)

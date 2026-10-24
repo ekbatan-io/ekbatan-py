@@ -77,7 +77,7 @@ from ekbatan.config import (  # noqa: E402
 from ekbatan.distributedjobs import DistributedJob, job_registry  # noqa: E402
 from ekbatan.domain import ModelEvent  # noqa: E402
 from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry  # noqa: E402
-from ekbatan.persistence import DatabaseRegistry  # noqa: E402
+from ekbatan.persistence import DatabaseRegistry, DataSource  # noqa: E402
 from ekbatan.sharding import ShardIdentifier  # noqa: E402
 from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS, metadata  # noqa: E402
 
@@ -136,6 +136,7 @@ def ts(d: datetime) -> str:
 
 
 ENGINE: Any = None
+SOURCE: Any = None
 
 
 def ex(sql: str) -> None:
@@ -231,7 +232,7 @@ def boom() -> None:
 
 
 def main() -> None:
-    global ENGINE
+    global ENGINE, SOURCE
     container = PostgresContainer(
         "postgres:17-alpine", username="probe", password=MARK, dbname="events_db", driver="psycopg"
     )
@@ -239,6 +240,9 @@ def main() -> None:
     try:
         host, port = container.get_container_host_ip(), container.get_exposed_port(5432)
         ENGINE = create_engine(f"postgresql+psycopg://probe:{MARK}@{host}:{port}/events_db", pool_size=8)
+        SOURCE = DataSource.from_config(DataSourceConfig(
+            url=f"postgresql+psycopg://{host}:{port}/events_db", username="probe", password=MARK, pool_size=8
+        ))
         metadata.create_all(ENGINE)
         config = (
             ShardingConfig.builder()
@@ -312,7 +316,7 @@ def main() -> None:
         )
         jobs = (
             job_registry()
-            .engine(ENGINE)
+            .data_source(SOURCE)
             .stop_on_exit(False)
             .poll_interval(timedelta(milliseconds=100))
             .with_job(Job("ok-job", FixedDelay.of(timedelta(hours=1)), lambda: None))

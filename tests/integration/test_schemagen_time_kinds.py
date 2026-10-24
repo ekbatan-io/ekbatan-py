@@ -114,27 +114,25 @@ def _config(url: str) -> DataSourceConfig:
 def test_values_read_back_are_of_their_kind_s_sort(
     generated: tuple[str, Path, Any], dialect: str
 ) -> None:
-    from ekbatan.aio.persistence import async_engine_for
-    from ekbatan.persistence import engine_for
+    from ekbatan.aio.persistence import AsyncDataSource
+    from ekbatan.persistence import DataSource
 
     url, _, module = generated
     table = module.REMINDERS
     row = {name: value for name, _, _, value in COLUMNS[dialect]}
-    sync = engine_for(_config(url))
-    try:
-        with sync.begin() as connection:
-            connection.execute(insert(table).values({"pk": 1, **row}))
-            through_sync = dict(connection.execute(select(table)).one()._mapping)
-    finally:
-        sync.dispose()
+    with (
+        DataSource.from_config(_config(url)) as sync,
+        sync.sqlalchemy_engine.begin() as connection,
+    ):
+        connection.execute(insert(table).values({"pk": 1, **row}))
+        through_sync = dict(connection.execute(select(table)).one()._mapping)
 
     async def read() -> dict[str, Any]:
-        engine = async_engine_for(_config(url))
-        try:
-            async with engine.connect() as connection:
-                return dict((await connection.execute(select(table))).one()._mapping)
-        finally:
-            await engine.dispose()
+        async with (
+            AsyncDataSource.from_config(_config(url)) as source,
+            source.sqlalchemy_engine.connect() as connection,
+        ):
+            return dict((await connection.execute(select(table))).one()._mapping)
 
     through_async = asyncio.run(read())
     for mode, back in (("sync", through_sync), ("async", through_async)):

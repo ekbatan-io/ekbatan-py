@@ -40,9 +40,11 @@ from ekbatan import (
     DEFAULT_SHARD,
     BlockingCallError,
     DatabaseRegistry,
+    DataSource,
     ForkedProcessError,
+    TransactionManager,
 )
-from ekbatan.aio import AsyncDatabaseRegistry
+from ekbatan.aio import AsyncDatabaseRegistry, AsyncDataSource, AsyncTransactionManager
 from ekbatan.distributedjobs import DistributedJob, job_registry
 from ekbatan.events import HandlerLoop
 from ekbatan.ids import ShardedId
@@ -58,9 +60,9 @@ from fixtures.schema import WALLETS
 FORKED = (
     "was created in another process and copied into this one by fork() - gunicorn --preload, "
     "uwsgi, Celery prefork, RQ and multiprocessing all fork. Its connections and threads belong "
-    "to the process that created it. Create ekbatan's objects - the database registry, the job "
-    "registry, lock providers - in your app's startup code (the FastAPI lifespan, or the top of "
-    "the worker's main()), not at import time."
+    "to the process that created it. Create ekbatan's objects - data sources, the database "
+    "registry, the job registry, lock providers - in your app's startup code (the FastAPI "
+    "lifespan, or the top of the worker's main()), not at import time."
 )
 
 #: What every BlockingCallError says, whatever it was raised for.
@@ -391,6 +393,101 @@ def test_closing_an_async_registry_in_the_child_is_refused_and_leaves_the_parent
     assert len(said) == 2
 
 
+# ------------------------------------------------------------ a data source, used or closed
+
+
+def test_a_data_source_built_before_fork_is_refused_in_the_child_and_its_close_too(
+    backend, fork_db
+):
+    """A data source owns connections, so the copy refuses it - its engine, its close() - and a
+    manager the child builds on it is refused at its first use: what it would draw on are the
+    parent's sockets. One the child builds itself works, and the parent's is untouched."""
+    config = single(backend.url(fork_db[DEFAULT_SHARD])).groups[0].members[0].primary_config()
+    source = DataSource.from_config(config)
+    try:
+        dialect = source.dialect
+        with source.sqlalchemy_engine.connect() as conn:  # a live connection in the pool to copy
+            before = session(conn, dialect)
+
+        def child() -> list[str]:
+            said: list[str] = []
+            for attempt in (
+                lambda: source.sqlalchemy_engine,
+                source.close,
+                lambda: TransactionManager(DEFAULT_SHARD, source).connection().__enter__(),
+            ):
+                try:
+                    attempt()
+                except BaseException as error:
+                    said.append(f"{type(error).__name__}: {error}")
+                else:
+                    said.append("let through")
+            with DataSource.from_config(config) as own, own.sqlalchemy_engine.connect() as conn:
+                said.append(f"own: {conn.execute(text('select 1')).scalar_one()}")
+            return said
+
+        said = in_a_child(child)
+        refused(said[:3])
+        assert said[0].startswith(f"ForkedProcessError: {source!r} was created")
+        assert said[3] == "own: 1"
+        with source.sqlalchemy_engine.connect() as conn:
+            assert session(conn, dialect) == before, "the child closed the parent's connection"
+    finally:
+        source.close()
+
+
+def test_an_async_data_source_built_before_fork_is_refused_in_the_child_and_its_aclose_too(
+    backend, fork_db
+):
+    if under_gevent():
+        pytest.skip(NOT_UNDER_GEVENT)
+    config = single(backend.url(fork_db[DEFAULT_SHARD])).groups[0].members[0].primary_config()
+
+    async def scenario() -> list[str]:
+        source = AsyncDataSource.from_config(config)
+        try:
+            dialect = source.dialect
+            async with source.sqlalchemy_engine.connect() as conn:
+                before = await async_session(conn, dialect)
+
+            async def engine() -> object:
+                return source.sqlalchemy_engine
+
+            async def child() -> list[str]:
+                said: list[str] = []
+                for attempt in (
+                    engine,
+                    source.aclose,
+                    lambda: (
+                        AsyncTransactionManager(DEFAULT_SHARD, source).connection().__aenter__()
+                    ),
+                ):
+                    try:
+                        await attempt()
+                    except BaseException as error:
+                        said.append(f"{type(error).__name__}: {error}")
+                    else:
+                        said.append("let through")
+                async with (
+                    AsyncDataSource.from_config(config) as own,
+                    own.sqlalchemy_engine.connect() as conn,
+                ):
+                    said.append(f"own: {(await conn.execute(text('select 1'))).scalar_one()}")
+                return said
+
+            said = in_a_child(lambda: asyncio.run(child()))
+            async with source.sqlalchemy_engine.connect() as conn:
+                assert await async_session(conn, dialect) == before, "the child closed it"
+            assert said[0].startswith(f"ForkedProcessError: {source!r} was created")
+            return said
+        finally:
+            await source.aclose()
+
+    said = asyncio.run(scenario())
+    refused(said[:3])
+    assert said[3] == "own: 1"
+
+
 #: The SQL lock providers, per dialect: sync, then async.
 def _providers(dialect: str) -> tuple[Any, Any]:
     from ekbatan.aio.locks import (
@@ -417,13 +514,11 @@ HOLD = timedelta(seconds=30)
 def test_a_sync_lock_provider_built_before_fork_is_refused_in_the_child(backend, fork_db, dialect):
     if dialect == "sqlite":
         pytest.skip("SQLite has no keyed lock provider")
-    from ekbatan.persistence import engine_for
-
     sync_provider, _ = _providers(dialect)
     config = single(backend.url(fork_db[DEFAULT_SHARD])).groups[0].members[0].primary_config()
-    engine = engine_for(config)
+    source = DataSource.from_config(config)
     try:
-        locks = sync_provider(engine)
+        locks = sync_provider(source)
         with locks.acquire("fork:parent", HOLD):  # a live connection in the pool to copy
             pass
 
@@ -440,14 +535,11 @@ def test_a_sync_lock_provider_built_before_fork_is_refused_in_the_child(backend,
                 else:
                     said.append("let through")
             # One built here works.
-            own = engine_for(config)
-            try:
+            with DataSource.from_config(config) as own:
                 lease = sync_provider(own).try_acquire("fork:child", timedelta(0), HOLD)
                 held = lease is not None and lease.held
                 if lease is not None:
                     lease.release()
-            finally:
-                own.dispose()
             return [*said, f"own provider held: {held}"]
 
         said = in_a_child(child)
@@ -459,7 +551,7 @@ def test_a_sync_lock_provider_built_before_fork_is_refused_in_the_child(backend,
         assert lease is not None and lease.held
         lease.release()
     finally:
-        engine.dispose()
+        source.close()
 
 
 def test_an_async_lock_provider_built_before_fork_is_refused_in_the_child(
@@ -469,15 +561,13 @@ def test_an_async_lock_provider_built_before_fork_is_refused_in_the_child(
         pytest.skip("SQLite has no keyed lock provider")
     if under_gevent():
         pytest.skip(NOT_UNDER_GEVENT)
-    from ekbatan.aio import async_engine_for
-
     _, async_provider = _providers(dialect)
     config = single(backend.url(fork_db[DEFAULT_SHARD])).groups[0].members[0].primary_config()
 
     async def scenario() -> list[str]:
-        engine = async_engine_for(config)
+        source = AsyncDataSource.from_config(config)
         try:
-            locks = async_provider(engine)
+            locks = async_provider(source)
             async with locks.acquire("fork:parent", HOLD):
                 pass
 
@@ -493,14 +583,11 @@ def test_an_async_lock_provider_built_before_fork_is_refused_in_the_child(
                         said.append(f"{type(error).__name__}: {error}")
                     else:
                         said.append("let through")
-                own = async_engine_for(config)
-                try:
+                async with AsyncDataSource.from_config(config) as own:
                     lease = await async_provider(own).try_acquire("fork:child", timedelta(0), HOLD)
                     held = lease is not None and lease.held
                     if lease is not None:
                         await lease.release()
-                finally:
-                    await own.dispose()
                 return [*said, f"own provider held: {held}"]
 
             said = in_a_child(lambda: asyncio.run(child()))
@@ -509,7 +596,7 @@ def test_an_async_lock_provider_built_before_fork_is_refused_in_the_child(
             await lease.release()
             return said
         finally:
-            await engine.dispose()
+            await source.aclose()
 
     said = asyncio.run(scenario())
     refused(said[:2])
@@ -532,10 +619,8 @@ class Dormant(DistributedJob):
 def test_a_job_registry_built_before_fork_is_refused_in_the_child(registry, backend):
     """db-scheduler's own worker pool refuses work in a forked child too (unchanged); this is
     the framework's word for it, at `start()`."""
-    from ekbatan.persistence import engine_for
-
-    built = job_registry().engine(registry.default.primary).with_job(Dormant()).build()
-    manual = job_registry().engine(registry.default.primary).with_job(Dormant()).build_manual()
+    built = job_registry().data_source(registry.default.primary).with_job(Dormant()).build()
+    manual = job_registry().data_source(registry.default.primary).with_job(Dormant()).build_manual()
     config = single(backend.url("ekbatan_main")).groups[0].members[0].primary_config()
 
     def child() -> list[str]:
@@ -547,15 +632,12 @@ def test_a_job_registry_built_before_fork_is_refused_in_the_child(registry, back
                 said.append(f"{type(error).__name__}: {error}")
             else:
                 said.append("started")
-        # One built here, on an engine built here, starts.
-        engine = engine_for(config)
-        try:
-            own = job_registry().engine(engine).with_job(Dormant()).build_manual()
+        # One built here, on a data source built here, starts.
+        with DataSource.from_config(config) as source:
+            own = job_registry().data_source(source).with_job(Dormant()).build_manual()
             own.start()
             own.stop()
             said.append("own: started")
-        finally:
-            engine.dispose()
         return said
 
     said = in_a_child(child)

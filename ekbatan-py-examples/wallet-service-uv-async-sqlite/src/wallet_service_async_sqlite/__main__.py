@@ -90,7 +90,7 @@ async def run(service: WalletService) -> None:
     a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
-        .engine(service.events_registry.default.primary)
+        .data_source(service.events_registry.default.primary)
         .with_jobs(
             [PayStipendJob(service.handler_loop, service.handler_executor, service.handler_wallets)]
         )

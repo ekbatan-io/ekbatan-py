@@ -452,7 +452,7 @@ def test_the_service_runs_on_the_settings_in_ekbatan_yaml(service: SagaService) 
     """`ekbatan.yaml` is the service's Ekbatan config, as `application.yml` is in Java: the
     namespace and the driver setting reaching the server come from it."""
     assert service.executor.namespace == "example.fastapi_wallet_saga_pg"
-    with service.registry.manager(DEFAULT_SHARD).primary.connect() as conn:
+    with service.registry.manager(DEFAULT_SHARD).primary.sqlalchemy_engine.connect() as conn:
         reported = conn.execute(text("SELECT current_setting('application_name')"))
         assert reported.scalar() == "wallet-service"
         # `options: -c TimeZone=UTC`: every session on UTC, whatever the server's default.
@@ -463,7 +463,7 @@ def test_a_request_that_waits_out_the_pool_is_a_503(client) -> None:
     """The request pool is the cap on requests waiting on the database: past `poolSize` they
     queue for a connection, and one that waits longer than `poolTimeout` (five seconds in
     `ekbatan.yaml`) is a 503 with `Retry-After`, not a 500. Every connection is held first."""
-    primary = client.app.state.service.registry.default.primary
+    primary = client.app.state.service.registry.default.primary.sqlalchemy_engine
     held = [primary.connect() for _ in range(primary.pool.size())]
     try:
         refused = client.get(f"/wallets/{uuid4()}")
@@ -496,6 +496,7 @@ def test_no_service_object_shows_the_password(service: SagaService) -> None:
         for shard in registry.shards:
             manager = registry.manager(shard)
             shown += [manager, manager.primary, manager.replica]
+    shown += [o.sqlalchemy_engine for o in shown if hasattr(o, "sqlalchemy_engine")]
     shown += [o.pool for o in shown if hasattr(o, "pool")]
     for thing in shown:
         assert SECRET not in repr(thing), type(thing).__name__

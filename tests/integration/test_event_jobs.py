@@ -173,7 +173,7 @@ def a_job_registry(registry, jobs):
     """The two event jobs on a manual scheduler, so a test says when a round happens."""
     return (
         job_registry()
-        .engine(registry.default.primary)
+        .data_source(registry.default.primary)
         .with_jobs(jobs)
         .build_manual(SettableClock(datetime(2026, 1, 1, 12, 0)))
     )

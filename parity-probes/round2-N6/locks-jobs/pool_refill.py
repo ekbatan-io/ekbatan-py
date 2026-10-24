@@ -3,15 +3,15 @@ connection is thrown away')? Three ways to throw one away, against n6b-pg on 587
 import time
 from sqlalchemy import create_engine, text
 from ekbatan.config import DataSourceConfig
-from ekbatan.persistence import engine_for
+from ekbatan.persistence import DataSource
 PW = "pw"; P = lambda k, v: print(f"PROBE {k}: {v}", flush=True)
 admin = create_engine(f"postgresql+psycopg://postgres:{PW}@127.0.0.1:58720/postgres", pool_size=1)
 def count(app):
     with admin.connect() as c:
         return c.execute(text("SELECT count(*) FROM pg_stat_activity WHERE application_name=:a"), {"a": app}).scalar()
 def eng(app):
-    e = engine_for(DataSourceConfig(url="postgresql+psycopg://127.0.0.1:58720/postgres", username="postgres", password=PW,
-                                    pool_size=3, data_source_properties={"application_name": app}))
+    e = DataSource.from_config(DataSourceConfig(url="postgresql+psycopg://127.0.0.1:58720/postgres", username="postgres", password=PW,
+                                    pool_size=3, data_source_properties={"application_name": app})).sqlalchemy_engine
     time.sleep(1.5); return e
 e = eng("n6r1")
 with e.connect() as c: c.invalidate()

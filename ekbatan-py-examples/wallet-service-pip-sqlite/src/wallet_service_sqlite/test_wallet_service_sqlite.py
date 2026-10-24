@@ -187,7 +187,7 @@ def test_the_stipend_job_pays_every_open_wallet(service):
     a_day_later = SettableClock(SystemClock().instant() + timedelta(days=1, seconds=1))
     stipend_only = (
         job_registry()
-        .engine(service.registry.default.primary)
+        .data_source(service.registry.default.primary)
         .with_jobs([PayStipendJob(service.executor, service.wallets)])
         .build_manual(a_day_later)
     )
@@ -417,8 +417,9 @@ def test_no_service_object_shows_the_password(tmp_path: Path, monkeypatch: pytes
     try:
         with built.registry.default.connection(readonly=True) as conn:
             assert conn.execute(select(func.count()).select_from(WALLETS)).scalar_one() == 0
-        engine = built.registry.default.primary
-        shown = [built, built.registry, built.executor, built.jobs, engine, engine.pool]
+        source = built.registry.default.primary
+        engine = source.sqlalchemy_engine
+        shown = [built, built.registry, built.executor, built.jobs, source, engine, engine.pool]
         shown += [getattr(built, name) for name in built.__dataclass_fields__]
         for thing in shown:
             assert SECRET not in repr(thing), type(thing)

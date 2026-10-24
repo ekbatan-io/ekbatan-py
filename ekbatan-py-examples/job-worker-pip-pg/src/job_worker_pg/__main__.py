@@ -48,7 +48,7 @@ def run(worker: Worker) -> None:
 
     A worker process like this one is the case it was written for, and the two ways are equal:
 
-        job_registry().engine(...).with_jobs(...).register_shutdown_hook().build()
+        job_registry().data_source(...).with_jobs(...).register_shutdown_hook().build()
 
     would do all of the below, and correctly. It is spelled out here instead because an example
     that hides the mechanism teaches nothing about it.

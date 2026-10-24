@@ -101,7 +101,7 @@ def jobs() -> None:
     from db_scheduler.task.schedule import FixedDelay
 
     from ekbatan.distributedjobs import DistributedJob, job_registry
-    from jobs_probe import DDL, ENGINE
+    from jobs_probe import DDL, ENGINE, SOURCE
 
     with ENGINE.begin() as c:
         c.execute(text("drop table if exists scheduled_tasks"))
@@ -135,7 +135,7 @@ def jobs() -> None:
 
     reg = (
         job_registry()
-        .engine(ENGINE)
+        .data_source(SOURCE)
         .stop_on_exit(False)
         .poll_interval(timedelta(milliseconds=100))
         .with_job(Shared())

@@ -24,9 +24,10 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from conftest import of_mode
+from ekbatan import DataSource
 from ekbatan.locks.sql import (
     MariaDBKeyedLockProvider,
     MySQLKeyedLockProvider,
@@ -39,6 +40,7 @@ from fixtures.actions import (
     DepositParams,
 )
 from fixtures.executing import run
+from fixtures.logins import data_source
 
 MODES = ("sync", "async")
 
@@ -54,8 +56,8 @@ PROVIDERS = {
 
 @pytest.fixture
 def locks(registry, dialect, mode):
-    """The provider this dialect implements, over the shard's own engine - the async provider
-    over the async engine in an async run."""
+    """The provider this dialect implements, over the shard's own data source - the async
+    provider over the async data source in an async run."""
     if dialect not in PROVIDERS:
         pytest.skip(f"{dialect} has no advisory lock; the SQL providers are for the real three")
     made = of_mode(mode, PROVIDERS[dialect])(registry.default.primary)
@@ -68,7 +70,7 @@ def key(request) -> str:
 
 
 def pool_in_use(registry) -> int:
-    return registry.default.primary.pool.checkedout()
+    return registry.default.primary.sqlalchemy_engine.pool.checkedout()
 
 
 # -- mutual exclusion ---------------------------------------------------------------------------
@@ -368,7 +370,7 @@ def test_the_server_sees_the_lock_under_the_name_java_uses(locks, registry, dial
     java_name = "813e4046e5b48a46"
 
     def holder() -> object:
-        with registry.default.primary.connect() as conn:
+        with registry.default.primary.sqlalchemy_engine.connect() as conn:
             return conn.execute(text("SELECT IS_USED_LOCK(:name)"), {"name": java_name}).scalar()
 
     assert holder() is None, "free before"
@@ -389,8 +391,8 @@ def test_a_timed_out_wait_leaves_no_lock_timeout_on_the_pooled_connection(
     if dialect != "postgres":
         pytest.skip("only Postgres waits with a session lock_timeout")
     k = key(request)
-    one = create_engine(registry.default.primary.url, pool_size=1, max_overflow=0)
-    try:
+    url = registry.default.primary.url.render_as_string(hide_password=False)
+    with DataSource.from_config(data_source(url, pool_size=1, max_overflow=0)) as one:
         waiter = PostgresKeyedLockProvider(one)
         with locks.acquire(k, HOLD):
             outcome: list[object] = []
@@ -402,10 +404,8 @@ def test_a_timed_out_wait_leaves_no_lock_timeout_on_the_pooled_connection(
             thread.start()
             thread.join(20)
             assert outcome == [None]
-        with one.connect() as conn:
+        with one.sqlalchemy_engine.connect() as conn:
             assert conn.exec_driver_sql("SHOW lock_timeout").scalar() == "0"
-    finally:
-        one.dispose()
 
 
 def test_what_a_sub_second_wait_actually_does_on_each_server(locks, dialect, request):

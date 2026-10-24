@@ -25,7 +25,7 @@ from ekbatan.locks import (
     PostgresKeyedLockProvider,
 )
 from ekbatan.migrations import MigrationError, info, migrate, repair
-from ekbatan.persistence import DatabaseRegistry, engine_for
+from ekbatan.persistence import DatabaseRegistry, DataSource
 from ekbatan.sharding import DEFAULT_SHARD
 from fixtures.migrating import fresh, query
 
@@ -78,7 +78,7 @@ def test_a_real_password_never_reaches_a_log_a_result_or_an_error(
 
     registry = DatabaseRegistry.from_config(layout)
     try:
-        with registry.manager(DEFAULT_SHARD).primary.connect() as connection:
+        with registry.manager(DEFAULT_SHARD).primary.sqlalchemy_engine.connect() as connection:
             written.append(repr(connection.execute(text("SELECT name FROM runs")).all()))
         written.append(repr(registry))
     finally:
@@ -119,10 +119,14 @@ def test_a_keyed_lock_on_that_login_prints_no_password(
     url = with_secret_user(fresh(backend, request), backend.dialect)
     caplog.set_level(logging.DEBUG)
     provider = of_mode(mode, LOCKS[backend.dialect])
-    right = engine_for(DataSourceConfig(url=url, username=USER, password=SECRET, echo=True))
-    wrong = engine_for(DataSourceConfig(url=url, username=USER, password=WRONG))
+    right_login = DataSourceConfig(url=url, username=USER, password=SECRET, echo=True)
+    wrong_login = DataSourceConfig(url=url, username=USER, password=WRONG)
     written: list[str] = []
-    try:
+    with (
+        DataSource.from_config(right_login) as right,
+        DataSource.from_config(wrong_login) as wrong,
+    ):
+        written += [repr(right), str(right), repr(wrong)]
         locks = provider(right)
         with locks.acquire("wallet:secret", timedelta(seconds=10)) as lease:
             written += [repr(locks), repr(lease), str(lease)]
@@ -133,9 +137,6 @@ def test_a_keyed_lock_on_that_login_prints_no_password(
             repr(refused.value),
             "".join(traceback.format_exception(refused.value)),
         ]
-    finally:
-        for engine in (right, wrong):
-            engine.dispose()
 
     printed = capsys.readouterr()
     everything = "\n".join([caplog.text, printed.out, printed.err, *written])

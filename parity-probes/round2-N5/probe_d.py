@@ -28,7 +28,7 @@ from common import (  # noqa: E402
     WidgetCreatedEvent,
     WidgetRepository,
     executor_for,
-    engine_for,
+    DataSource,
     p,
     quiet,
     raw_engine,
@@ -69,13 +69,13 @@ class Whole:
             return DataSourceConfig(url=url("pg"), username="test", password=password, pool_size=pool)
 
         clock = SystemClock()
-        self.tm = TransactionManager(DEFAULT_SHARD, engine_for(c(5)))
+        self.tm = TransactionManager(DEFAULT_SHARD, DataSource.from_config(c(5)))
         self.reg = DatabaseRegistry({DEFAULT_SHARD: self.tm})
         repo = WidgetRepository(self.reg)
         self.ex = executor_for(self.reg, repo, clock)
-        self.lock_engine = engine_for(c(3))
-        self.locks = PostgresKeyedLockProvider.builder().engine(self.lock_engine).build()
-        self.jobs_engine = engine_for(c(3))
+        self.lock_data_source = DataSource.from_config(c(3))
+        self.locks = PostgresKeyedLockProvider.builder().data_source(self.lock_data_source).build()
+        self.jobs_data_source = DataSource.from_config(c(3))
 
         class Handler:
             name = "n5-life-handler"
@@ -93,7 +93,7 @@ class Whole:
         )
         self.jobs = (
             job_registry()
-            .engine(self.jobs_engine)
+            .data_source(self.jobs_data_source)
             .poll_interval(timedelta(milliseconds=200))
             .stop_on_exit(False)
             .with_job(EventFanoutJob.builder().registry(self.reg).handlers(handlers).events(EVENTS).notifications(NOTIFS).config(conf).clock(clock).build())
@@ -103,9 +103,9 @@ class Whole:
 
     def stop(self) -> None:
         self.jobs.stop()
-        self.jobs_engine.dispose()
+        self.jobs_data_source.close()
         self.locks.close()
-        self.lock_engine.dispose()
+        self.lock_data_source.close()
         self.reg.close()
 
 

@@ -33,22 +33,19 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-from sqlalchemy.ext.asyncio import AsyncEngine
-
 from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
     ShardIdentifier,
     TransactionManager,
-    engine_for,
 )
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
+    AsyncDataSource,
     AsyncTransactionManager,
-    async_engine_for,
 )
 from ekbatan.aio.locks import AsyncKeyedLockProvider, AsyncPostgresKeyedLockProvider
 from ekbatan.clock import Clock, SystemClock
@@ -88,7 +85,7 @@ class ShardedWallets:
     executor: AsyncActionExecutor
     #: The deposit's keyed lock, async, over the global member's `lockConfig`.
     locks: AsyncKeyedLockProvider
-    lock_engine: AsyncEngine
+    lock_data_source: AsyncDataSource
     #: The handler side: its own async registry and executor, used only on `handler_loop`.
     handler_loop: HandlerLoop
     handler_registry: AsyncDatabaseRegistry
@@ -96,9 +93,10 @@ class ShardedWallets:
     #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over every shard.
     events_registry: DatabaseRegistry
     jobs: JobRegistry
-    #: Each shard's `jobsConfig` pool. The registries own only what they built, so these are
-    #: disposed here.
-    jobs_engines: tuple[Engine, ...]
+    #: Each shard's `jobsConfig` pool. `events_registry` closes them: its managers were given
+    #: them, and a manager closes the data sources it was given. The job registry, which polls
+    #: the default shard's, does not.
+    jobs_data_sources: tuple[DataSource, ...]
 
     def start(self) -> None:
         """Begin polling. Fan-out and handling are two of the jobs, so this is what starts the
@@ -113,10 +111,8 @@ class ShardedWallets:
         await asyncio.to_thread(self.handler_loop.run, self.handler_registry.aclose())
         self.handler_loop.close()
         self.events_registry.close()
-        for engine in self.jobs_engines:
-            engine.dispose()
         self.locks.close()
-        await self.lock_engine.dispose()
+        await self.lock_data_source.aclose()
         await self.registry.aclose()
 
 
@@ -164,8 +160,10 @@ def build(
     )
 
     default = layout.groups[0].members[0]
-    lock_engine = async_engine_for(_required(default, "groups[0].members[0]", "lockConfig"))
-    locks = AsyncPostgresKeyedLockProvider.builder().engine(lock_engine).build()
+    lock_data_source = AsyncDataSource.from_config(
+        _required(default, "groups[0].members[0]", "lockConfig")
+    )
+    locks = AsyncPostgresKeyedLockProvider.builder().data_source(lock_data_source).build()
 
     # -- the handler side ---------------------------------------------------------------------
     # Async, on dispatch's handler loop: an async pool belongs to the loop it is used on, so the
@@ -177,7 +175,9 @@ def build(
         .with_default_database(
             AsyncTransactionManager(
                 layout.default_shard,
-                async_engine_for(_required(default, "groups[0].members[0]", "handlersConfig")),
+                AsyncDataSource.from_config(
+                    _required(default, "groups[0].members[0]", "handlersConfig")
+                ),
             )
         )
         .build()
@@ -205,18 +205,18 @@ def build(
     # A sync registry over every shard, on each member's `jobsConfig`: an event commits on its
     # wallet's shard, so fan-out and dispatch must reach every one. One scheduler for the whole
     # layout, on the default shard's pool - one job each, not one per shard.
-    jobs_engines: dict[ShardIdentifier, Engine] = {}
+    jobs_data_sources: dict[ShardIdentifier, DataSource] = {}
     events_builder = DatabaseRegistry.builder()
     for shard, member in layout.members():
-        engine = engine_for(_required(member, f"shard {shard}", "jobsConfig"))
-        jobs_engines[shard] = engine
-        manager = TransactionManager(shard, engine)
+        source = DataSource.from_config(_required(member, f"shard {shard}", "jobsConfig"))
+        jobs_data_sources[shard] = source
+        manager = TransactionManager(shard, source)
         if shard == layout.default_shard:
             events_builder.with_default_database(manager)
         else:
             events_builder.with_database(manager)
     events_registry = events_builder.build()
-    jobs_engine = jobs_engines[layout.default_shard]
+    jobs_data_source = jobs_data_sources[layout.default_shard]
     events_config = ekbatan.local_event_handler
 
     return ShardedWallets(
@@ -225,15 +225,15 @@ def build(
         alerts=alerts,
         executor=executor,
         locks=locks,
-        lock_engine=lock_engine,
+        lock_data_source=lock_data_source,
         handler_loop=handler_loop,
         handler_registry=handler_registry,
         handler_executor=handler_executor,
         events_registry=events_registry,
-        jobs_engines=tuple(jobs_engines.values()),
+        jobs_data_sources=tuple(jobs_data_sources.values()),
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     EventFanoutJob.builder()

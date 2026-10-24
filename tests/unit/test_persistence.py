@@ -22,7 +22,7 @@ from sqlalchemy.exc import NoSuchModuleError
 
 from ekbatan.config import DataSourceConfig, ShardingConfig
 from ekbatan.errors import ValidationError
-from ekbatan.persistence import DatabaseRegistry
+from ekbatan.persistence import DatabaseRegistry, DataSource
 from ekbatan.sharding import ShardIdentifier
 from fixtures.config import group, member
 
@@ -279,54 +279,41 @@ def test_unknown_shard_policy_fail_raises_instead_of_routing_somewhere_else():
 # -- the other named configs on a member are the application's --------------------------------
 
 
-def test_the_registry_builds_pools_for_the_primary_and_secondary_only():
+def test_the_registry_builds_pools_for_the_primary_and_secondary_only(monkeypatch):
     """Java's `fromConfig` reads `primaryConfig()` and `secondaryConfig()` and nothing else. A
     `jobsConfig` or `lockConfig` beside them is there for the application to build - the
     scheduler and the lock provider own those pools, not the registry."""
-    from ekbatan.persistence import engine_for
-
     jobs = DataSourceConfig(url="sqlite://", pool_size=3)
     layout = ShardingConfig(
         default_shard=FIRST,
         groups=(group(0, "g0", member(0, DataSourceConfig(url="sqlite://"), jobsConfig=jobs)),),
     )
     created: list[DataSourceConfig] = []
+    real = DataSource.from_config.__func__
 
-    import ekbatan.persistence as persistence
-
-    real = persistence.engine_for
-
-    def recording(config: DataSourceConfig):  # type: ignore[no-untyped-def]
+    def recording(cls, config: DataSourceConfig):  # type: ignore[no-untyped-def]
         created.append(config)
-        return real(config)
+        return real(cls, config)
 
-    persistence.engine_for = recording  # type: ignore[assignment]
-    try:
+    with monkeypatch.context() as patched:
+        patched.setattr(DataSource, "from_config", classmethod(recording))
         with DatabaseRegistry.from_config(layout):
             pass
-    finally:
-        persistence.engine_for = real  # type: ignore[assignment]
 
     assert jobs not in created, "the registry built a pool for the application's jobsConfig"
     assert created == [layout.member(FIRST).primary_config()]
 
-    # And the application builds it with the same function the registry uses.
-    engine = engine_for(layout.member(FIRST).config_for("jobsConfig"))  # type: ignore[arg-type]
-    try:
-        assert str(engine.url) == "sqlite://"
-    finally:
-        engine.dispose()
+    # And the application builds it the way the registry does.
+    jobs_config = layout.member(FIRST).config_for("jobsConfig")
+    assert jobs_config is not None
+    with DataSource.from_config(jobs_config) as source:
+        assert str(source.url) == "sqlite://"
 
 
-def test_engine_for_honours_the_pool_it_is_given():
+def test_a_data_source_has_the_pool_its_config_describes():
     """Java's `hikariConnectionProvider(config)`: the settings on the config are the pool's."""
-    from ekbatan.persistence import engine_for
-
-    engine = engine_for(
-        DataSourceConfig(url="postgresql+psycopg://h-9e3f/db", pool_size=7, max_overflow=2)
-    )
-    try:
-        assert engine.pool.size() == 7  # type: ignore[attr-defined]
-        assert engine.pool._max_overflow == 2  # type: ignore[attr-defined]
-    finally:
-        engine.dispose()
+    config = DataSourceConfig(url="postgresql+psycopg://h-9e3f/db", pool_size=7, max_overflow=2)
+    with DataSource.from_config(config) as source:
+        pool = source.sqlalchemy_engine.pool
+        assert pool.size() == 7  # type: ignore[attr-defined]
+        assert pool._max_overflow == 2  # type: ignore[attr-defined]

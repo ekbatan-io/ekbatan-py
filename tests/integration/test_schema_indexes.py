@@ -54,7 +54,7 @@ def test_the_migration_builds_the_index_this_dialect_can_have(registry):
 
     Measured on 500,000 rows with a 1% backlog: 56 kB partial against 3,528 kB composite.
     """
-    engine = registry.default.primary
+    engine = registry.default.primary.sqlalchemy_engine
     names = {i["name"] for i in inspect(engine).get_indexes("events", eventlog_of(engine))}
 
     assert "ix_events_undelivered" in names, f"the migration built none: {sorted(names)}"
@@ -70,7 +70,7 @@ def test_the_migration_builds_the_index_this_dialect_can_have(registry):
 
 def test_the_notifications_index_skips_what_dispatch_never_asks_for(registry):
     """SUCCEEDED and EXPIRED rows pile up for the retention window and are never selected."""
-    engine = registry.default.primary
+    engine = registry.default.primary.sqlalchemy_engine
     names = {
         i["name"] for i in inspect(engine).get_indexes("event_notifications", eventlog_of(engine))
     }

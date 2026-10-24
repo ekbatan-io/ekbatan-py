@@ -26,7 +26,7 @@ from common import (  # noqa: E402
     WidgetRenameAction,
     WidgetRepository,
     cfg,
-    engine_for,
+    DataSource,
     executor_for,
     p,
     quiet,
@@ -72,7 +72,7 @@ def wid(w) -> str:
 
 def build(pool: int = 5, clock=None):
     clock = clock or SystemClock()
-    tm = TransactionManager(DEFAULT_SHARD, engine_for(cfg(D, pool=pool)))
+    tm = TransactionManager(DEFAULT_SHARD, DataSource.from_config(cfg(D, pool=pool)))
     reg = DatabaseRegistry({DEFAULT_SHARD: tm})
     widgets = WidgetRepository(reg)
     return tm, reg, widgets, executor_for(reg, widgets, clock), clock
@@ -234,13 +234,13 @@ def a7(tm, ex) -> None:
             finally:
                 done.set()
 
-    jobs_engine = engine_for(cfg(D, pool=3))
-    jobs = job_registry().engine(jobs_engine).stop_on_exit(False).poll_interval(timedelta(milliseconds=200)).with_job(TxJob()).build()
+    jobs_data_source = DataSource.from_config(cfg(D, pool=3))
+    jobs = job_registry().data_source(jobs_data_source).stop_on_exit(False).poll_interval(timedelta(milliseconds=200)).with_job(TxJob()).build()
     jobs.start()
     p("a7.job_ran", yn(done.wait(20)))
     time.sleep(0.5)
     jobs.stop()
-    jobs_engine.dispose()
+    jobs_data_source.close()
     p("a7.job_saw_ambient_tx", yn(seen.get("ambient") is not None))
     p("a7.job_side_row", side(700))
     p("a7.job_action_widget", widget_count("name = 'a7-from-job'"))
@@ -248,9 +248,9 @@ def a7(tm, ex) -> None:
 
 
 def a8(tm, ex) -> None:
-    lock_engine = engine_for(cfg(D, pool=3))
+    lock_data_source = DataSource.from_config(cfg(D, pool=3))
     cls = {"pg": PostgresKeyedLockProvider, "mysql": MySQLKeyedLockProvider, "mariadb": MariaDBKeyedLockProvider}[D]
-    locks = cls.builder().engine(lock_engine).build()
+    locks = cls.builder().data_source(lock_data_source).build()
     other = {}
 
     def try_other(tag: str) -> None:
@@ -278,7 +278,7 @@ def a8(tm, ex) -> None:
     lease.release()
     try_other("after_release")
     p("a8.other_thread_after_release", yn(other["after_release"]))
-    lock_engine.dispose()
+    lock_data_source.close()
 
 
 def main() -> None:

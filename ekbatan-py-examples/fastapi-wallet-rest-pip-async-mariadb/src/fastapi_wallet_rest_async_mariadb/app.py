@@ -39,21 +39,18 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine
-from sqlalchemy.ext.asyncio import AsyncEngine
-
 from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
+    DataSource,
     RepositoryRegistry,
     TransactionManager,
-    engine_for,
 )
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
+    AsyncDataSource,
     AsyncTransactionManager,
-    async_engine_for,
 )
 from ekbatan.aio.locks import AsyncKeyedLockProvider, AsyncMariaDBKeyedLockProvider
 from ekbatan.clock import Clock, SystemClock
@@ -96,7 +93,7 @@ class WalletService:
     executor: AsyncActionExecutor
     #: The deposit's keyed lock, async, over `lockConfig`.
     locks: AsyncKeyedLockProvider
-    lock_engine: AsyncEngine
+    lock_data_source: AsyncDataSource
     #: The handler side: its own async registry and executor, used only on `handler_loop` -
     #: by the event handler and by the stipend job's work.
     handler_loop: HandlerLoop
@@ -106,9 +103,9 @@ class WalletService:
     #: What polls, sync, on threads: the scheduler, and fan-out and dispatch over `events_registry`.
     events_registry: DatabaseRegistry
     jobs: JobRegistry
-    #: Built from `jobsConfig`; the registries own only what they built, so this is disposed
-    #: here.
-    jobs_engine: Engine
+    #: Built from `jobsConfig`. `events_registry` closes it: its manager was given it, and a
+    #: manager closes the data sources it was given. The job registry, which polls it, does not.
+    jobs_data_source: DataSource
 
     def start(self) -> None:
         """Begin polling for jobs. Fan-out and dispatch are two of them, so this is also what
@@ -123,9 +120,8 @@ class WalletService:
         await asyncio.to_thread(self.handler_loop.run, self.handler_registry.aclose())
         self.handler_loop.close()
         self.events_registry.close()
-        self.jobs_engine.dispose()
         self.locks.close()
-        await self.lock_engine.dispose()
+        await self.lock_data_source.aclose()
         await self.registry.aclose()
 
 
@@ -171,8 +167,8 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
     )
 
     member = layout.groups[0].members[0]
-    lock_engine = async_engine_for(_required(member, "lockConfig"))
-    locks = AsyncMariaDBKeyedLockProvider.builder().engine(lock_engine).build()
+    lock_data_source = AsyncDataSource.from_config(_required(member, "lockConfig"))
+    locks = AsyncMariaDBKeyedLockProvider.builder().data_source(lock_data_source).build()
 
     # -- the handler side ---------------------------------------------------------------------
     # Async, on dispatch's handler loop: an async pool belongs to the loop it is used on, so the
@@ -183,7 +179,8 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         AsyncDatabaseRegistry.builder()
         .with_default_database(
             AsyncTransactionManager(
-                layout.default_shard, async_engine_for(_required(member, "handlersConfig"))
+                layout.default_shard,
+                AsyncDataSource.from_config(_required(member, "handlersConfig")),
             )
         )
         .build()
@@ -215,10 +212,10 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
     )
 
     # -- what polls, on threads -----------------------------------------------------------------
-    jobs_engine = engine_for(_required(member, "jobsConfig"))
+    jobs_data_source = DataSource.from_config(_required(member, "jobsConfig"))
     events_registry = (
         DatabaseRegistry.builder()
-        .with_default_database(TransactionManager(layout.default_shard, jobs_engine))
+        .with_default_database(TransactionManager(layout.default_shard, jobs_data_source))
         .build()
     )
     events_config = ekbatan.local_event_handler
@@ -229,16 +226,16 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
         alerts=alerts,
         executor=executor,
         locks=locks,
-        lock_engine=lock_engine,
+        lock_data_source=lock_data_source,
         handler_loop=handler_loop,
         handler_registry=handler_registry,
         handler_wallets=handler_wallets,
         handler_executor=handler_executor,
         events_registry=events_registry,
-        jobs_engine=jobs_engine,
+        jobs_data_source=jobs_data_source,
         jobs=(
             job_registry()
-            .engine(jobs_engine)
+            .data_source(jobs_data_source)
             .with_jobs(
                 [
                     EventFanoutJob.builder()
