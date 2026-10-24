@@ -54,7 +54,7 @@ def deposit(self, amount: Decimal) -> Wallet:
     new_balance = self.balance + amount
     return (
         self.copy()
-        .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
+        .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
         .balance(new_balance)
         .build()
     )

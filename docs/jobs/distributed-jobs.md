@@ -9,48 +9,50 @@ also publishes.
 **Sync**
 
 ```python
-class PayStipendJob(DistributedJob):
-    name = "pay-stipend"
-
-    def __init__(self, executor: ActionExecutor, wallets: WalletRepository) -> None:
+class WalletStipendJob(DistributedJob):
+    def __init__(self, executor: ActionExecutor, wallet_repository: WalletRepository) -> None:
         self.executor = executor
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
+
+    def name(self) -> str:
+        return "wallet-stipend"
 
     def schedule(self) -> Schedule:
-        return FixedDelay(timedelta(hours=24))
+        return FixedDelay.of_seconds(2)
 
     def execute(self, context: ExecutionContext) -> None:
-        for wallet in self.wallets.find_open_below(THRESHOLD):
-            self.executor.execute(DepositMoneyAction, DepositParams(...))
+        for wallet in self.wallet_repository.find_open_with_balance_below(THRESHOLD):
+            self.executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
 ```
 
 **Async**
 
 ```python
-class PayStipendJob(DistributedJob):
-    name = "pay-stipend"
-
+class WalletStipendJob(DistributedJob):
     def __init__(
-        self, loop: HandlerLoop, executor: AsyncActionExecutor, wallets: WalletRepository
+        self, loop: HandlerLoop, executor: AsyncActionExecutor, wallet_repository: WalletRepository
     ) -> None:
-        self.loop = loop                  # the loop `executor` and `wallets` were built for
+        self.loop = loop                  # the loop `executor` and `wallet_repository` were built for
         self.executor = executor
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
+
+    def name(self) -> str:
+        return "wallet-stipend"
 
     def schedule(self) -> Schedule:
-        return FixedDelay(timedelta(hours=24))
+        return FixedDelay.of_seconds(2)
 
     def execute(self, context: ExecutionContext) -> None:
         self.loop.run(self.pay())         # still on the scheduler's thread: run it there, wait
 
     async def pay(self) -> None:
-        for wallet in await self.wallets.find_open_below(THRESHOLD):
-            await self.executor.execute(DepositMoneyAction, DepositParams(...))
+        for wallet in await self.wallet_repository.find_open_with_balance_below(THRESHOLD):
+            await self.executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
 ```
 
 Nothing about being a job makes the work special. It goes through an ordinary action, so the
 outbox row it writes is indistinguishable from one a request produced - `action_name` says
-`DepositMoneyAction` either way, and nothing downstream can tell or needs to.
+`WalletDepositMoneyAction` either way, and nothing downstream can tell or needs to.
 
 **In an async service the job is still sync.** `execute` is a plain `def`, run on the
 scheduler's threads, in both modes. A job can take a sync executor and sync repositories, built
@@ -122,7 +124,7 @@ jobs_data_source = DataSource.from_config(DataSourceConfig(url=url, pool_size=8)
 jobs = (
     job_registry()
     .data_source(jobs_data_source)
-    .with_jobs([PayStipendJob(executor, wallets), WalletReportJob(wallets)])
+    .with_jobs([WalletStipendJob(executor, wallet_repository), WalletReportJob(wallet_repository)])
     .workers(3)
     .build()
 )

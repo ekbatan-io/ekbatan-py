@@ -325,7 +325,7 @@ Endpoints reach what the lifespan created through `app.state` (in an endpoint,
 ```python
 @app.get("/wallets/{wallet_id}")
 def read_wallet(wallet_id: str, request: Request):
-    wallets = WalletRepository(request.app.state.registry)  # your repository class
+    wallet_repository = WalletRepository(request.app.state.registry)  # your repository class
     ...
 ```
 
@@ -682,7 +682,7 @@ from myapp import db
 
 @app.get("/wallets/<wallet_id>")
 def read_wallet(wallet_id: str):
-    wallets = WalletRepository(db.registry)  # your repository class
+    wallet_repository = WalletRepository(db.registry)  # your repository class
     ...
 
 
@@ -691,7 +691,7 @@ from myapp import db
 
 
 def read_wallet(request, wallet_id: str):
-    wallets = WalletRepository(db.registry)
+    wallet_repository = WalletRepository(db.registry)
     ...
 ```
 
@@ -1170,8 +1170,8 @@ def read_wallet(wallet_id: str, request: Request):
 
 # 3. Keep async def, and send the sync call to a thread yourself.
 async def read_wallet(wallet_id: str, request: Request):
-    wallets = WalletRepository(request.app.state.registry)
-    return await asyncio.to_thread(wallets.get, ...)
+    wallet_repository = WalletRepository(request.app.state.registry)
+    return await asyncio.to_thread(wallet_repository.get, ...)
 ```
 
 ### Using an object in a process it was copied into: `ForkedProcessError`

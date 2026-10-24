@@ -28,7 +28,7 @@ class Wallet(Model[UUID, WalletState]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
+            .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -37,20 +37,20 @@ class Wallet(Model[UUID, WalletState]):
 **An action stages changes on a plan instead of writing them.**
 
 ```python
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
 **The executor opens one transaction, writes the rows and their events, and commits.**
 
 ```python
-executor.execute(deposit_money_action, DepositParams(wallet_id=..., amount=Decimal("50.00"), ...))
+executor.execute(deposit_money_action, WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), ...))
 ```
 
 That is the whole surface for the common case. There is no transaction to open, nothing to
@@ -249,20 +249,20 @@ An action's business logic needs no database. `ActionSpec` runs one against a ba
 `ActionSpec` / `ActionAssert`, method for method:
 
 ```python
-(ActionSpec.of(DepositMoneyAction(wallets))
-    .execute(DepositParams(amount=Decimal("50.00"), ...))
+(ActionSpec.of(WalletDepositMoneyAction(wallet_repository))
+    .execute(WalletDepositMoneyAction.Params(amount=Decimal("50.00"), ...))
     .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-    .assert_emitted(MoneyDepositedEvent, 1)
+    .assert_emitted(WalletMoneyDepositedEvent, 1)
     .assert_no_additions())
 ```
 
 Or, as plain data, with `run_action`:
 
 ```python
-staged = run_action(DepositMoneyAction(wallets), DepositParams(amount=Decimal("50.00"), ...))
+staged = run_action(WalletDepositMoneyAction(wallet_repository), WalletDepositMoneyAction.Params(amount=Decimal("50.00"), ...))
 
 assert staged.result.balance == Decimal("150.00")
-assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
 assert staged.updated(Wallet) == [staged.result]
 ```
 

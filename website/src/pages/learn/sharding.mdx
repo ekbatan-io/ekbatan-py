@@ -76,8 +76,13 @@ factory takes a `ShardIdentifier` and hands it to `generate`:
 
 ```python
 @staticmethod
-def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
-         opening_balance: Decimal) -> "Wallet":
+def create_wallet(
+    shard: ShardIdentifier,
+    owner_id: UUID,
+    currency: str,
+    initial_balance: Decimal,
+    created_date: Instant,
+) -> WalletBuilder:
     wallet_id = ShardedId[Wallet].generate(shard)       # the shard bits live in the id forever
     return (
         WalletBuilder()
@@ -85,10 +90,11 @@ def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
         .state(WalletState.OPENED)
         .owner_id(owner_id)
         .currency(currency)
-        .balance(opening_balance)
-        .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
-                                      currency=currency, opening_balance=opening_balance))
-        .build()
+        .balance(initial_balance)
+        .created_date(created_date)
+        .with_initial_version()
+        .with_event(WalletCreatedEvent(model_id=str(wallet_id), owner_id=owner_id,
+                                      currency=currency, initial_balance=initial_balance))
     )
 ```
 
@@ -98,34 +104,26 @@ Then the action decides *which* shard, from business properties:
 <div slot="sync">
 
 ```python
-class OpenWalletAction(Action[OpenWalletParams, Wallet]):
-    def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
-        shard = MEXICO if params.country == "MX" else GLOBAL
-        return self.plan.add(
-            Wallet.open(
-                shard=shard,
-                owner_id=params.owner_id,
-                currency=params.currency,
-                opening_balance=params.opening_balance,
-            )
-        )
+class WalletCreateAction(Action["WalletCreateAction.Params", Wallet]):
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        shard = MEXICO_SHARD if params.country_code == "MX" else GLOBAL_SHARD
+        wallet = Wallet.create_wallet(
+            shard, params.owner_id, params.currency, params.initial_balance, self.clock.instant()
+        ).build()
+        return self.plan.add(wallet)
 ```
 
 </div>
 <div slot="async">
 
 ```python
-class OpenWalletAction(AsyncAction[OpenWalletParams, Wallet]):
-    async def perform(self, principal: str | None, params: OpenWalletParams) -> Wallet:
-        shard = MEXICO if params.country == "MX" else GLOBAL
-        return self.plan.add(
-            Wallet.open(
-                shard=shard,
-                owner_id=params.owner_id,
-                currency=params.currency,
-                opening_balance=params.opening_balance,
-            )
-        )
+class WalletCreateAction(AsyncAction["WalletCreateAction.Params", Wallet]):
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        shard = MEXICO_SHARD if params.country_code == "MX" else GLOBAL_SHARD
+        wallet = Wallet.create_wallet(
+            shard, params.owner_id, params.currency, params.initial_balance, self.clock.instant()
+        ).build()
+        return self.plan.add(wallet)
 ```
 
 </div>
@@ -136,7 +134,7 @@ database.** Every other action, every endpoint, and every test that does not ass
 is unchanged.
 
 It is also irreversible. A row cannot move between shards, because moving it would change its
-id, and its id is what everything else refers to it by. Choosing on `country` means a customer
+id, and its id is what everything else refers to it by. Choosing on `country_code` means a customer
 who relocates keeps their original shard — which is usually right, since the reason the shard
 existed was where the data is allowed to live at the time it was created. If it is not right for
 you, that is a decision to make here rather than a migration to plan later.
@@ -146,8 +144,8 @@ you, that is a decision to make here rather than a migration to plan later.
 ```python
 from ekbatan.sharding import ShardIdentifier
 
-GLOBAL = ShardIdentifier(0, 0)      # prints as "0:0"
-MEXICO = ShardIdentifier(1, 0)
+GLOBAL_SHARD = ShardIdentifier(0, 0)      # prints as "0:0"
+MEXICO_SHARD = ShardIdentifier(1, 0)
 ```
 
 A `(group, member)` pair. Group is the **policy** axis - where data is *allowed* to live. Member
@@ -156,7 +154,7 @@ is the **capacity** axis - how many writes one database can take. See
 
 ```python
 layout = ShardingConfig(
-    default_shard=GLOBAL,
+    default_shard=GLOBAL_SHARD,
     groups=(
         ShardGroupConfig(group=0, name="global", members=(
             ShardMemberConfig(member=0, configs={"primaryConfig": DataSourceConfig(url=global_url)}),
@@ -182,11 +180,11 @@ shares the first one's connections, WAL and CPU.
 services:
   wallets-global:
     image: postgres:17
-    environment: { POSTGRES_DB: wallets, POSTGRES_PASSWORD: dev }
+    environment: { POSTGRES_DB: wallet_repository, POSTGRES_PASSWORD: dev }
     ports: ["5432:5432"]
   wallets-mexico:
     image: postgres:17
-    environment: { POSTGRES_DB: wallets, POSTGRES_PASSWORD: dev }
+    environment: { POSTGRES_DB: wallet_repository, POSTGRES_PASSWORD: dev }
     ports: ["5433:5432"]
 ```
 
@@ -201,8 +199,8 @@ carries its own outbox, and an event is written to the database whose row it des
 
 ```python
 mx = service.executor.execute(
-    OpenWalletAction,
-    OpenWalletParams(owner_id=uuid4(), currency="MXN", country="MX", opening_balance=Decimal(0)),
+    WalletCreateAction,
+    WalletCreateAction.Params(owner_id=uuid4(), currency="MXN", country_code="MX", initial_balance=Decimal(0)),
 )
 print(mx.id.shard)          # 1:0 - the bits are in the id
 ```
@@ -212,8 +210,8 @@ print(mx.id.shard)          # 1:0 - the bits are in the id
 
 ```python
 mx = await service.executor.execute(
-    OpenWalletAction,
-    OpenWalletParams(owner_id=uuid4(), currency="MXN", country="MX", opening_balance=Decimal(0)),
+    WalletCreateAction,
+    WalletCreateAction.Params(owner_id=uuid4(), currency="MXN", country_code="MX", initial_balance=Decimal(0)),
 )
 print(mx.id.shard)          # 1:0 - the bits are in the id
 ```
@@ -229,8 +227,8 @@ psql -p 5432 wallets -c "SELECT count(*) FROM wallets"   # 0
 psql -p 5433 wallets -c "SELECT count(*) FROM eventlog.events"    # 1
 ```
 
-`wallets.get(mx.id)` finds it with no lookup table and no extra query: the shard was read out of
-the id. `wallets.find_where(...)` has no id to read, so it asks both.
+`wallet_repository.get(mx.id)` finds it with no lookup table and no extra query: the shard was read out of
+the id. `wallet_repository.find_where(...)` has no id to read, so it asks both.
 
 ## 6. (Optional) Cross-shard transfer
 
@@ -297,8 +295,8 @@ taken.
 
 ## What just happened
 
-- `wallets.get(wallet_id)` — routes by the id's bits.
-- `wallets.find_where(...)` — has no id to route by, so it **scatters** across every shard.
+- `wallet_repository.get(wallet_id)` — routes by the id's bits.
+- `wallet_repository.find_where(...)` — has no id to route by, so it **scatters** across every shard.
 - Every action body. Every endpoint. Every test that does not assert on placement.
 
 **A predicate read hits every shard.** In sync mode the shards are visited one at a time, so

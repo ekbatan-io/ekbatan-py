@@ -15,7 +15,7 @@ You rarely construct one. Reach through the registry:
 
 ```python
 tm = registry.default                      # the default shard
-tm = registry.manager(MEXICO)              # a specific one
+tm = registry.manager(MEXICO_SHARD)              # a specific one
 ```
 
 Each one owns four things, for exactly one shard:
@@ -141,16 +141,16 @@ write inside the block uses it:
 
 ```python
 with tm.transaction():
-    wallet = wallets.get(wallet_id)          # a primary read, by design
-    wallets.update(wallet.close())           # joins this transaction
+    wallet = wallet_repository.get(wallet_id)          # a primary read, by design
+    wallet_repository.update(wallet.close())           # joins this transaction
 ```
 
 **Async**
 
 ```python
 async with tm.transaction():
-    wallet = await wallets.get(wallet_id)    # a primary read, by design
-    await wallets.update(wallet.close())     # joins this transaction
+    wallet = await wallet_repository.get(wallet_id)    # a primary read, by design
+    await wallet_repository.update(wallet.close())     # joins this transaction
 ```
 
 Reads are a choice. Inherited reads see committed state on the primary; if a read must see this
@@ -171,7 +171,7 @@ Nothing is threaded through arguments, and no repository takes a connection para
 
 Two consequences follow, and both are the point rather than side effects:
 
-- **A repository method written once works in both places.** The same `wallets.update(...)` is
+- **A repository method written once works in both places.** The same `wallet_repository.update(...)` is
   part of your transaction inside the block and a standalone write outside it.
 - **The binding does not propagate to a thread pool.** Work handed to a pool
   (`ThreadPoolExecutor.submit`) from inside a transaction does not inherit it, which is correct:
@@ -191,7 +191,7 @@ Two consequences follow, and both are the point rather than side effects:
 
   ```python
   with tm.transaction():
-      asyncio.run(asyncio.to_thread(wallets.update, wallet))   # TransactionThreadError
+      asyncio.run(asyncio.to_thread(wallet_repository.update, wallet))   # TransactionThreadError
   ```
 
   Do that work in the thread that opened the transaction, or outside it. `loop.run_in_executor`
@@ -260,16 +260,16 @@ this framework.
 **Sync**
 
 ```python
-with registry.manager(GLOBAL).transaction(): ...   # work A
-with registry.manager(MEXICO).transaction(): ...   # work B
+with registry.manager(GLOBAL_SHARD).transaction(): ...   # work A
+with registry.manager(MEXICO_SHARD).transaction(): ...   # work B
 # if B fails, A is already committed.
 ```
 
 **Async**
 
 ```python
-async with registry.manager(GLOBAL).transaction(): ...   # work A
-async with registry.manager(MEXICO).transaction(): ...   # work B
+async with registry.manager(GLOBAL_SHARD).transaction(): ...   # work A
+async with registry.manager(MEXICO_SHARD).transaction(): ...   # work B
 # if B fails, A is already committed.
 ```
 

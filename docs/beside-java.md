@@ -79,7 +79,7 @@ and the other way round.
   `newBalance`.
 - **`modelId` and `modelName` come first.** The Java handler builds the event straight from the
   payload and refuses one without them.
-- **`event_type` is the event class's bare name**, `MoneyDepositedEvent`. A consumer routes on
+- **`event_type` is the event class's bare name**, `WalletMoneyDepositedEvent`. A consumer routes on
   it, so give an event the same class name on both sides.
 - **Each value is written in the form the matching Java type uses**:
 

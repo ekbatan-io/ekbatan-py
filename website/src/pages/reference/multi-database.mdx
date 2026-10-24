@@ -111,8 +111,8 @@ moved - not in models, repositories, the outbox, notifications, event JSON or
 from ekbatan import SystemClock
 
 now = SystemClock().instant()          # datetime(2026, 10, 19, 8, 30, 0, 123456) - UTC, no zone
-wallet = wallets.add(Wallet.open(..., created_date=now))
-wallets.get(wallet.id).created_date == now   # True: the same value, to the microsecond
+wallet = wallet_repository.add(Wallet.create_wallet(..., now).build())
+wallet_repository.get(wallet.id).created_date == now   # True: the same value, to the microsecond
 ```
 
 The default clock gives the current **UTC time with no zone attached**. That is exactly what a

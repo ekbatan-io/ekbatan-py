@@ -61,7 +61,7 @@ framework backfills afterwards. Pass `self.clock.instant()` from the action, so 
 clock gets a fixed date:
 
 ```python
-Wallet.open(owner_id=..., currency="EUR", balance=..., created_date=self.clock.instant())
+Wallet.create_wallet(shard, owner_id, currency, initial_balance, self.clock.instant())
 ```
 
 `updated_date` falls back to `created_date` — a row that has never changed was last updated when
@@ -77,7 +77,7 @@ write. Move it on the changes where it means something:
 def deposit(self, amount: Decimal, at: datetime) -> Wallet:
     return (
         self.copy()
-        .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=self.balance + amount))
+        .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=self.balance + amount))
         .balance(self.balance + amount)
         .updated_date(at)
         .build()
@@ -159,7 +159,7 @@ def deposit(self, amount: Decimal) -> Wallet:
     new_balance = self.balance + amount
     return (
         self.copy()
-        .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
+        .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
         .balance(new_balance)
         .build()
     )

@@ -55,7 +55,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         return total
 ```
 
-The handler writes alerts through the same `AlertRepository`, built over its own registry.
+The handler writes notifications through the same `NotificationRepository`, built over its own registry.
 
 Every inherited read and write - `get`, `find_where`, `add`, `update`, `count` - is now a
 coroutine, and a read across shards asks them all at once.
@@ -65,14 +65,13 @@ coroutine, and a read across shards asks them all at once.
 One line changes in each: `perform` is a coroutine, and it awaits its reads.
 
 ```python
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        EmailAddress(params.recipient)
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -92,8 +91,8 @@ executor = (
     AsyncActionExecutor.builder()
     .namespace(ekbatan.namespace)
     .database_registry(registry)
-    .repository_registry(RepositoryRegistry([wallets, alerts]))
-    .action_registry(ActionRegistry([OpenWalletAction(clock), DepositMoneyAction(wallets, clock)]))
+    .repository_registry(RepositoryRegistry([wallet_repository, notification_repository]))
+    .action_registry(ActionRegistry([WalletCreateAction(clock), WalletDepositMoneyAction(clock, wallet_repository)]))
     .clock(clock)
     .build()
 )
@@ -120,7 +119,7 @@ events_registry = (
 ```
 
 The handler's executor is an `AsyncActionExecutor` over `handler_registry`, with an async
-`RaiseAlertAction`; the handling job is given `handler_loop`, and fan-out and dispatch are built
+`CreateNotificationAction`; the handling job is given `handler_loop`, and fan-out and dispatch are built
 over `events_registry`. At shutdown: stop the jobs, close the handler's registry on its loop
 (`handler_loop.run(handler_registry.aclose())`), close the loop, close `events_registry` - its
 manager closes the jobs pool it was given - then the locks and `await lock_data_source.aclose()`,
@@ -165,8 +164,8 @@ in both modes, so the 503 handler is unchanged.
 async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         await service.executor.execute(
-            DepositMoneyAction,
-            DepositParams(wallet_id=ShardedId[Wallet](wallet_id), amount=body.amount,
+            WalletDepositMoneyAction,
+            WalletDepositMoneyAction.Params(wallet_id=ShardedId[Wallet](wallet_id), amount=body.amount,
                           recipient=body.recipient),
         )
     )
@@ -185,7 +184,7 @@ if lease is None:
     raise HTTPException(status_code=503, detail="that wallet is busy; retry",
                         headers={"Retry-After": "1"})
 async with lease:
-    return WalletResponse.of(await service.executor.execute(DepositMoneyAction, params))
+    return WalletResponse.of(await service.executor.execute(WalletDepositMoneyAction, params))
 ```
 
 A second deposit on the same wallet waits its turn on the event loop, without blocking it, and
@@ -198,15 +197,15 @@ threads - and it may be `async def`. Dispatch runs it on the handler loop, where
 own executor:
 
 ```python
-class MoneyDepositedEventHandler:
-    name = "wallet-deposit-alert"
-    event_type = MoneyDepositedEvent
+class WalletMoneyDepositedEventHandler:
+    name = "wallet-money-deposited-notification"
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
 
-    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
+    async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
+        await self.executor.execute(CreateNotificationAction, CreateNotificationAction.Params(...))
 ```
 
 ## 8. Run it, with the same cap at the door
@@ -226,13 +225,13 @@ The example's test drives the endpoints with FastAPI's `TestClient`, unchanged. 
 HTTP into the service, await on the loop the app runs on:
 
 ```python
-wallet = client.portal.call(lambda: service.wallets.get(wallet_id))
+wallet = client.portal.call(lambda: service.wallet_repository.get(wallet_id))
 ```
 
 And an action on its own, without a database:
 
 ```python
-checked = await AsyncActionSpec.of(DepositMoneyAction(wallets, clock)).execute(params)
+checked = await AsyncActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository)).execute(params)
 checked.assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
 ```
 

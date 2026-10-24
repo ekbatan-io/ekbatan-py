@@ -102,18 +102,28 @@ config. The root Makefile's `lint` target deliberately does not reach into it.
 
 ### Naming - the same as Java's
 
-A reader moving between the two ports should recognise what they are looking at.
+A reader moving between the two ports should recognise what they are looking at. **Copy Java's
+names exactly** - there is no word-order rule to apply, because Java itself mixes them: the
+wallet's actions put the model first (`WalletCreateAction`), the saga's steps the verb
+(`InitiateTransferAction`).
 
 | | |
 | --- | --- |
-| Actions | `OpenWalletAction`, `DepositMoneyAction`, `InitiateTransferAction` |
-| Events | `WalletOpenedEvent`, `MoneyDepositedEvent`, `TransferFailedEvent` |
-| Handlers | `MoneyDepositedEventHandler`, `TransferInitiatedEventHandler` |
-| Jobs | `PayStipendJob`, `WalletReportJob` |
-| Repositories | `WalletRepository` |
+| Actions | `WalletCreateAction`, `WalletDepositMoneyAction`, `WalletCloseAction`, `CreateNotificationAction`, `InitiateTransferAction` |
+| Action parameters | the action's nested `Params`, as Java's `WalletCreateAction.Params`: `class WalletCreateAction(Action["WalletCreateAction.Params", Wallet])` |
+| Events | `WalletCreatedEvent`, `WalletMoneyDepositedEvent`, `WalletClosedEvent`, `TransferFailedEvent` |
+| Handlers | `WalletMoneyDepositedEventHandler`, `TransferInitiatedEventHandler` |
+| Jobs | `WalletStipendJob`, `WalletReportJob` |
+| Models and entities | `Wallet`, `Notification`, `TransferStep` |
+| Repositories | `WalletRepository`, `NotificationRepository` |
+| Repository variables | Java's field name in snake_case: `wallet_repository`, `notification_repository` - never `wallets`. Other wiring objects likewise: `database_registry`, `lock_provider`, `job_registry` |
 | Python | `snake_case` functions and fields, `PascalCase` classes |
-| SQL | `snake_case` |
+| SQL | `snake_case`; table names as Java's (`wallets`, `notifications`) |
 | Commits | one `EKB-XXXX` subject line, no body |
+
+Only what the language asks for may differ: snake_case, builders instead of DI annotations,
+`def` / `async def`, pytest, yoyo, schemagen. The examples follow the matching Java example
+piece for piece; see `docs/JAVA-MODEL-LEDGER.md`.
 
 ### The mapping is typed by the table's record
 

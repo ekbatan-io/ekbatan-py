@@ -80,7 +80,7 @@ and an outbox whose only ordering key is a second-resolution timestamp orders ba
 | `id` | no | this row. For a cross-shard action, every shard receives rows with the same ids, so each holds a self-contained picture |
 | `namespace` | no | the producing service. Dot-separated identifiers, validated at startup |
 | `action_id` | no | one uuid per execution. Every row from one action shares it |
-| `action_name` | no | the action class's name, e.g. `DepositMoneyAction` |
+| `action_name` | no | the action class's name, e.g. `WalletDepositMoneyAction` |
 | `action_params` | no | the parameters, as JSON. A consumer can understand the command without joining to your tables - and can read a value the event deliberately does not carry |
 | `started_date` | no | when `perform()` began, UTC |
 | `completion_date` | no | when the persist phase finished, UTC |

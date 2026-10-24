@@ -12,7 +12,7 @@ Your application
    │  one transaction per action
    ▼
  ┌──────────────────────────────────────────────┐
- │  wallets, orders, …  +  events               │  committed atomically,
+ │  wallet_repository, orders, …  +  events               │  committed atomically,
  └──────────────────────────────────────────────┘  delivered = FALSE
    │
    ▼
@@ -51,14 +51,14 @@ its execution revived elsewhere, and both jobs are written to be safe under a re
 <div slot="sync">
 
 ```python
-class MoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler:
     name = "money-deposited"
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
 
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
         ...
 ```
@@ -67,14 +67,14 @@ class MoneyDepositedEventHandler:
 <div slot="async">
 
 ```python
-class MoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler:
     name = "money-deposited"
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
 
-    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
         ...
 ```
@@ -144,7 +144,7 @@ The way through is `aliases`:
 class MoneyDepositedWelcomeHandler:
     name = "money-deposited-welcome"
     aliases = ("money-deposited",)          # what it used to be
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 ```
 
 **Aliases are lookup-only.** Dispatch resolves an old-name row through them; fan-out keeps
@@ -193,7 +193,7 @@ does not create rows or consume work.
 <div slot="sync">
 
 ```python
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
 jobs = (
@@ -216,7 +216,7 @@ jobs.start()
 ```python
 # The handler awaits an async executor of its own, used only on the handler loop.
 handler_loop = HandlerLoop()
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(handler_executor)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(handler_executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
 # Fan-out and dispatch are jobs: sync, on threads, over a sync `registry` built from the same
@@ -428,14 +428,14 @@ publish from inside `handle(...)` with your own client:
 ```python
 class WalletEventPublisher:
     name = "wallet-kafka-publisher"
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, producer: KafkaProducer) -> None:
         self.producer = producer
 
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.producer.send(
-            "wallets.deposits",
+            "wallet_repository.deposits",
             key=envelope.model_id.encode(),
             value=json.dumps({"amount": str(envelope.event.amount)}).encode(),
         ).get(timeout=10)
@@ -462,14 +462,14 @@ row, post to an external API. The shape is the same as any handler; the only dif
 the constructor takes:
 
 ```python
-class MoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler:
     name = "money-deposited-notification"
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, notifications: NotificationService) -> None:
         self.notifications = notifications
 
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         self.notifications.deposit_received(
             envelope.model_id, envelope.event.amount, envelope.event.new_balance
         )

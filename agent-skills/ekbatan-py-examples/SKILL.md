@@ -55,13 +55,14 @@ all three REST databases' uv projects; those are not generated from one another.
 
 ## Conventions
 
-- Actions are `OpenWalletAction`, `DepositMoneyAction` - imperative, verb first, `Action` suffix.
-  Events are `WalletOpenedEvent`, `MoneyDepositedEvent` - past tense, `Event` suffix. Handlers
+- Actions are named exactly as Java names them: `WalletCreateAction`, `WalletDepositMoneyAction`, `WalletCloseAction`, `CreateNotificationAction`, `InitiateTransferAction` - no word-order rule, Java mixes model-first and verb-first. Each action's parameters are its nested `Params`.
+  Events are `WalletCreatedEvent`, `WalletMoneyDepositedEvent` - past tense, `Event` suffix. Handlers
   end `EventHandler`, jobs end `Job`.
 - In a sync example, endpoints are plain `def`, never `async def`. FastAPI runs a plain `def` in
   a threadpool; an `async def` calling into the synchronous framework blocks the whole event
   loop. In an async twin every endpoint is `async def` and awaits `ekbatan.aio`.
-- Three pools - requests, jobs, locks - and the jobs pool is at least twice the worker count.
+- Three pools per member - requests, jobs, locks - and the jobs pool is at least twice the worker
+  count.
 - A keyed lock lease must span `executor.execute(...)`, not just the read.
 - Generated `schema.py` is gitignored. Never commit one, and never edit one.
 - Forced types are set in `scripts/sync-examples.py` (`WALLET_FORCED`, `SAGA_FORCED`), which
@@ -72,14 +73,15 @@ all three REST databases' uv projects; those are not generated from one another.
   (`self.clock.instant()`, `clock.instant()`), never `datetime.now()`; its migrations use `TIMESTAMP` (PostgreSQL)
   or `DATETIME(6)` (MySQL, MariaDB), never `TIMESTAMPTZ`; its database runs in UTC. See
   `docs/database/multi-database.md#always-utc`.
-- **Every model and entity defines `validate()`**: `Wallet.validate()` refuses a negative
-  balance ("balance cannot be negative"), `Alert.validate()` a blank message, `TransferStep`
-  has `pass` with a one-line reason. Each example's test checks a negative opening balance is
-  refused.
+- **Every model and entity defines `validate()`**: `Wallet.validate()` has `pass` with a one-line
+  reason (nothing beyond its types, as Java's constructor checks only for null),
+  `Notification.validate()` refuses a blank recipient or message, `TransferStep` has `pass`.
 - **Time kinds**: an event's time field is declared `Instant` (or `LocalDateTime` /
   `OffsetDateTime`) from `ekbatan.time` - a plain `datetime` field is refused when the action
-  runs. Each example's `WalletOpenedEvent` carries `opened_at: Instant`, and a test checks the
-  outbox JSON writes it with `Z`.
+  runs. The examples' events carry no time field, as Java's do not.
+- **Repository variables** are Java's field names in snake_case - `wallet_repository`,
+  `notification_repository`, never `wallets` - and so are the other wiring objects:
+  `database_registry`, `lock_provider`, `job_registry`.
 
 ## Workflow
 

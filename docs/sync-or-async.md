@@ -58,25 +58,25 @@ A deposit, both ways:
 **Sync**
 
 ```python
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
-wallet = executor.execute(DepositMoneyAction, params)
+wallet = executor.execute(WalletDepositMoneyAction, params)
 ```
 
 **Async**
 
 ```python
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
-wallet = await executor.execute(DepositMoneyAction, params)
+wallet = await executor.execute(WalletDepositMoneyAction, params)
 ```
 
 ## What always runs on threads

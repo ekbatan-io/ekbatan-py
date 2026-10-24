@@ -32,8 +32,8 @@ which jobs; nothing below it does either.
 @dataclass(frozen=True, slots=True)
 class WalletService:
     registry: DatabaseRegistry
-    wallets: WalletRepository
-    alerts: AlertRepository
+    wallet_repository: WalletRepository
+    notification_repository: NotificationRepository
     executor: ActionExecutor
     locks: KeyedLockProvider
     jobs: JobRegistry
@@ -54,8 +54,8 @@ class WalletService:
 @dataclass(frozen=True, slots=True)
 class WalletService:
     registry: AsyncDatabaseRegistry          # the requests, on ekbatan.aio
-    wallets: WalletRepository
-    alerts: AlertRepository
+    wallet_repository: WalletRepository
+    notification_repository: NotificationRepository
     executor: AsyncActionExecutor
     locks: AsyncKeyedLockProvider
     handler_loop: HandlerLoop                # the loop the async handler runs on
@@ -106,13 +106,13 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
         super().__init__(Wallet, WALLETS, registry)
 
 
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        return self.plan.update(self.wallets.get(params.wallet_id).deposit(params.amount))
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        return self.plan.update(self.wallet_repository.get(params.wallet_id).deposit(params.amount))
 ```
 
 **Async**
@@ -136,13 +136,13 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         super().__init__(Wallet, WALLETS, registry)
 
 
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -330,13 +330,13 @@ database and connects through its async driver.
 ## 5. Repositories
 
 ```python
-wallets = WalletRepository(registry, clock=running)
-alerts = AlertRepository(registry, clock=running)
+wallet_repository = WalletRepository(registry, clock=running)
+notification_repository = NotificationRepository(registry, clock=running)
 
 repositories = (
     RepositoryRegistry.builder()
-    .with_model_repository(wallets)
-    .with_entity_repository(alerts)
+    .with_model_repository(wallet_repository)
+    .with_entity_repository(notification_repository)
     .build()
 )
 ```
@@ -357,10 +357,10 @@ executor = ActionExecutor(
     repositories=repositories,
     actions=(
         ActionRegistry.builder()
-        .with_action(OpenWalletAction(clock))
-        .with_action(DepositMoneyAction(wallets, clock))
-        .with_action(CloseWalletAction(wallets, clock))
-        .with_action(RaiseAlertAction(clock))
+        .with_action(WalletCreateAction(clock))
+        .with_action(WalletDepositMoneyAction(clock, wallet_repository))
+        .with_action(WalletCloseAction(clock, wallet_repository))
+        .with_action(CreateNotificationAction(clock))
         .build()
     ),
     clock=running,
@@ -376,9 +376,9 @@ executor = AsyncActionExecutor(
     repositories=repositories,
     actions=(
         ActionRegistry.builder()
-        .with_action(OpenWalletAction(clock))
-        .with_action(DepositMoneyAction(wallets, clock))
-        .with_action(CloseWalletAction(wallets, clock))
+        .with_action(WalletCreateAction(clock))
+        .with_action(WalletDepositMoneyAction(clock, wallet_repository))
+        .with_action(WalletCloseAction(clock, wallet_repository))
         .build()
     ),
     clock=running,
@@ -400,7 +400,7 @@ example does.
 **Sync**
 
 ```python
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(executor)])
 events_config = ekbatan.local_event_handler  # `local-event-handler` in the file
 ```
 
@@ -416,15 +416,15 @@ handler_registry = (
     .with_default_database(AsyncTransactionManager(layout.default_shard, handler_data_source))
     .build()
 )
-handler_wallets = WalletRepository(handler_registry, clock=running)
+handler_wallet_repository = WalletRepository(handler_registry, clock=running)
 handler_executor = AsyncActionExecutor(
     namespace=ekbatan.namespace,
     registry=handler_registry,
-    repositories=[handler_wallets, AlertRepository(handler_registry, clock=running)],
-    actions=[DepositMoneyAction(handler_wallets, clock), RaiseAlertAction(clock)],
+    repositories=[handler_wallet_repository, NotificationRepository(handler_registry, clock=running)],
+    actions=[WalletDepositMoneyAction(clock, handler_wallet_repository), CreateNotificationAction(clock)],
     clock=running,
 )
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(handler_executor)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(handler_executor)])
 events_config = ekbatan.local_event_handler  # `local-event-handler` in the file
 ```
 
@@ -453,7 +453,7 @@ jobs = (
                          config=events_config, clock=running,
                          # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled),
-        PayStipendJob(executor, wallets),
+        WalletStipendJob(executor, wallet_repository),
     ])
     .with_config(ekbatan.jobs)  # `jobs` in the file, if any
     .workers(config.job_workers)
@@ -476,7 +476,7 @@ jobs = (
                          # Registered either way; scheduled only when the switch is on.
                          enabled=events_config.handling.enabled,
                          handler_loop=handler_loop),
-        PayStipendJob(handler_loop, handler_executor, handler_wallets),
+        WalletStipendJob(handler_loop, handler_executor, handler_wallet_repository),
     ])
     .with_config(ekbatan.jobs)  # `jobs` in the file, if any
     .workers(config.job_workers)
@@ -491,7 +491,7 @@ and `jobs.start()` runs the pipeline. Leave them out and events accumulate unrea
 
 Jobs are sync in both modes: `DistributedJob.execute` is a plain `def`, run on a worker thread.
 An async service registers them on a sync registry, as above. A job's *work* can still be
-awaited: in the async block, `PayStipendJob.execute` hands a coroutine to the handler loop with
+awaited: in the async block, `WalletStipendJob.execute` hands a coroutine to the handler loop with
 `handler_loop.run(...)` and waits for it, so the work awaits the handler's executor and
 repositories; a failure and its retry stay db-scheduler's.
 

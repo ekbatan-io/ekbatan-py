@@ -116,7 +116,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
+            .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -145,9 +145,9 @@ temporary list of objects the executor should persist after `perform()` finishes
 <div slot="sync">
 
 ```python
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -155,9 +155,9 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
 <div slot="async">
 
 ```python
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -192,8 +192,8 @@ The caller invokes the action through the executor:
 
 ```python
 wallet = executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
@@ -202,8 +202,8 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
@@ -220,7 +220,7 @@ executor.execute(...)
 Action.perform(...)
   - read wallet
   - build updated wallet
-  - attach MoneyDepositedEvent
+  - attach WalletMoneyDepositedEvent
   - plan.update(updated)
         |
         v
@@ -248,8 +248,8 @@ SELECT action_name, model_type, event_type, delivered FROM eventlog.events ORDER
 
 | action_name | model_type | event_type | delivered |
 | --- | --- | --- | --- |
-| `OpenWalletAction` | `Wallet` | `WalletOpenedEvent` | false |
-| `DepositMoneyAction` | `Wallet` | `MoneyDepositedEvent` | false |
+| `WalletCreateAction` | `Wallet` | `WalletCreatedEvent` | false |
+| `WalletDepositMoneyAction` | `Wallet` | `WalletMoneyDepositedEvent` | false |
 
 ```text
 events

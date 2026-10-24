@@ -28,7 +28,7 @@ Both are your code - here, the example's: `build()` creates ekbatan's objects, a
 @dataclass(frozen=True, slots=True)
 class WalletService:
     registry: DatabaseRegistry
-    wallets: WalletRepository
+    wallet_repository: WalletRepository
     executor: ActionExecutor
     locks: KeyedLockProvider
     jobs: JobRegistry
@@ -50,7 +50,7 @@ class WalletService:
 @dataclass(frozen=True, slots=True)
 class WalletService:
     registry: AsyncDatabaseRegistry      # the requests, awaited
-    wallets: WalletRepository
+    wallet_repository: WalletRepository
     executor: AsyncActionExecutor
     locks: AsyncKeyedLockProvider
     events_registry: DatabaseRegistry    # sync: fan-out, dispatch and the jobs
@@ -114,11 +114,11 @@ safe: each database is locked while it is migrated, one process migrates and the
 executor = ActionExecutor(
     namespace="com.example.wallets",
     registry=registry,
-    repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
+    repositories=RepositoryRegistry.builder().with_model_repository(wallet_repository).build(),
     actions=(
         ActionRegistry.builder()
-        .with_action(OpenWalletAction(clock))
-        .with_action(DepositMoneyAction(wallets, clock))
+        .with_action(WalletCreateAction(clock))
+        .with_action(WalletDepositMoneyAction(clock, wallet_repository))
         .build()
     ),
 )
@@ -131,11 +131,11 @@ executor = ActionExecutor(
 executor = AsyncActionExecutor(
     namespace="com.example.wallets",
     registry=registry,
-    repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
+    repositories=RepositoryRegistry.builder().with_model_repository(wallet_repository).build(),
     actions=(
         ActionRegistry.builder()
-        .with_action(OpenWalletAction(clock))
-        .with_action(DepositMoneyAction(wallets, clock))
+        .with_action(WalletCreateAction(clock))
+        .with_action(WalletDepositMoneyAction(clock, wallet_repository))
         .build()
     ),
 )

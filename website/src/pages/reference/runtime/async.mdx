@@ -65,27 +65,27 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, ShardedId[Wal
         return await self.find_where(WALLETS.c.owner_id == owner_id)
 
 
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 
 
 registry = AsyncDatabaseRegistry.from_config(load_sharding_config("ekbatan.yaml"))
-wallets = WalletRepository(Wallet, WALLETS, registry, clock=clock)
+wallet_repository = WalletRepository(Wallet, WALLETS, registry, clock=clock)
 executor = AsyncActionExecutor(
     namespace="example.wallet",
     registry=registry,
-    repositories=[wallets],
-    actions=[DepositMoneyAction(wallets, clock)],
+    repositories=[wallet_repository],
+    actions=[WalletDepositMoneyAction(clock, wallet_repository)],
     clock=clock,
 )
 
-wallet = await executor.execute(DepositMoneyAction, params)
+wallet = await executor.execute(WalletDepositMoneyAction, params)
 await registry.aclose()                     # or: async with registry: ...
 ```
 
@@ -231,7 +231,7 @@ from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
 locks = AsyncPostgresKeyedLockProvider.builder().data_source(AsyncDataSource.from_config(lock_config)).build()
 
 async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
-    wallet = await executor.execute(DepositMoneyAction, params)
+    wallet = await executor.execute(WalletDepositMoneyAction, params)
 
 lease = await locks.try_acquire(key, max_wait=timedelta(seconds=5), max_hold=timedelta(seconds=30))
 if lease is None:
@@ -266,15 +266,15 @@ time. That is the same whatever kind the request path is.
 A handler's `handle` may be `async def`, to await an `AsyncActionExecutor`:
 
 ```python
-class MoneyDepositedEventHandler:
-    name = "wallet-deposit-alert"
-    event_type = MoneyDepositedEvent
+class WalletMoneyDepositedEventHandler:
+    name = "wallet-money-deposited-notification"
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
 
-    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
-        await self.executor.execute(RaiseAlertAction, RaiseAlertParams(...))
+    async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
+        await self.executor.execute(CreateNotificationAction, CreateNotificationAction.Params(...))
 ```
 
 Dispatch runs an async handler on its **handler loop** - one event loop on a thread of its own,
@@ -318,23 +318,23 @@ one of its threads, and heartbeats it from another. The *work* inside it can sti
 kind dispatch runs async handlers on - with `loop.run(...)`, and waits for it:
 
 ```python
-class PayStipendJob(DistributedJob):
-    def __init__(self, loop: HandlerLoop, executor: AsyncActionExecutor, wallets: WalletRepository):
+class WalletStipendJob(DistributedJob):
+    def __init__(self, loop: HandlerLoop, executor: AsyncActionExecutor, wallet_repository: WalletRepository):
         self.loop = loop                  # the loop `executor` and `wallets` were built for
         self.executor = executor
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
     def execute(self, ctx: ExecutionContext) -> None:
         self.loop.run(self.pay())         # on the scheduler's thread: run it there, and wait
 
     async def pay(self) -> None:
-        for wallet in await self.wallets.find_open_below(Decimal("100.00")):
-            await self.executor.execute(DepositMoneyAction, DepositParams(...))
+        for wallet in await self.wallet_repository.find_open_below(Decimal("100.00")):
+            await self.executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))
 
 
 loop = HandlerLoop(name="worker-loop")
 registry = AsyncDatabaseRegistry.from_config(layout)    # used only on `loop`
-# ... the async repositories and executor over it, PayStipendJob(loop, executor, wallets)
+# ... the async repositories and executor over it, WalletStipendJob(loop, executor, wallet_repository)
 # at shutdown: jobs.stop(), then loop.run(registry.aclose()), then loop.close()
 ```
 
@@ -357,10 +357,10 @@ two pools, and **one transaction cannot span them**. Never call the sync API fro
 ## Testing an async action
 
 ```python
-staged = await async_run_action(DepositMoneyAction(wallets, clock), params)
+staged = await async_run_action(WalletDepositMoneyAction(clock, wallet_repository), params)
 assert staged.updated(Wallet)[0].balance == Decimal("150.00")
 
-checked = await AsyncActionSpec.of(DepositMoneyAction(wallets, clock)).execute(params)
+checked = await AsyncActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository)).execute(params)
 checked.assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
 ```
 

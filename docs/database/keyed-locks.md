@@ -91,14 +91,14 @@ wrongly under pressure:
 
 ```python
 with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
-    service.executor.execute(DepositMoneyAction, params)
+    service.executor.execute(WalletDepositMoneyAction, params)
 ```
 
 **Async**
 
 ```python
 async with service.locks.acquire(f"wallet:{wallet_id}", LOCK_HOLD):
-    await service.executor.execute(DepositMoneyAction, params)
+    await service.executor.execute(WalletDepositMoneyAction, params)
 ```
 
 The lease wraps **both** `perform()` and the executor's commit. A concurrent acquirer cannot
@@ -192,7 +192,7 @@ from ekbatan.aio.locks import AsyncPostgresKeyedLockProvider
 locks = AsyncPostgresKeyedLockProvider.builder().data_source(AsyncDataSource.from_config(lock_config)).build()
 
 async with locks.acquire(f"wallet:{wallet_id}", timedelta(seconds=30)):
-    wallet = await executor.execute(DepositMoneyAction, params)
+    wallet = await executor.execute(WalletDepositMoneyAction, params)
 ```
 
 | sync | async (`ekbatan.aio.locks`) |

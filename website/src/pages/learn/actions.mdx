@@ -16,7 +16,7 @@ single transaction, flush every staged change, write the outbox rows and commit.
 ## The two-phase lifecycle
 
 ```
-        executor.execute(DepositMoneyAction, params)
+        executor.execute(WalletDepositMoneyAction, params)
                               │
    ┌─── Phase 1 - perform()   (no transaction yet) ─────────────┐
    │   read from repositories                                   │
@@ -65,19 +65,18 @@ until `perform()` returns.
 <div slot="sync">
 
 ```python
-@dataclass(frozen=True, kw_only=True)
-class DepositParams:
-    wallet_id: ShardedId[Wallet]
-    amount: Decimal
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        amount: Decimal
 
-
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -85,19 +84,18 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
 <div slot="async">
 
 ```python
-@dataclass(frozen=True, kw_only=True)
-class DepositParams:
-    wallet_id: ShardedId[Wallet]
-    amount: Decimal
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        amount: Decimal
 
-
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -111,7 +109,7 @@ Typed parameters in, a domain object out. The action reads through a repository,
 immutable wallet with an event already attached — that happened inside `wallet.deposit(...)` —
 and stages it. **No database write happens in `perform()`.**
 
-The generic parameters are what a checker holds you to: `Action[DepositParams, Wallet]` means
+The generic parameters are what a checker holds you to: `Action[WalletDepositMoneyAction.Params, Wallet]` means
 `execute` on this action takes those params and returns a wallet, at the call site, without a
 cast.
 
@@ -122,8 +120,8 @@ Calling it:
 
 ```python
 wallet = executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
@@ -132,8 +130,8 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
@@ -141,7 +139,7 @@ wallet = await executor.execute(
 </ModeTabs>
 
 The executor opens one transaction, writes the wallet row with its incremented version, writes
-the `MoneyDepositedEvent` row into `events`, and commits. If anything raises, both roll back
+the `WalletMoneyDepositedEvent` row into `events`, and commits. If anything raises, both roll back
 together.
 
 An action with no parameters passes `None`. What it may not pass is a bare scalar — a string or
@@ -239,7 +237,7 @@ a real problem.
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-executor.execute(DepositMoneyAction, params, config=config)
+executor.execute(WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>
@@ -249,7 +247,7 @@ executor.execute(DepositMoneyAction, params, config=config)
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-await executor.execute(DepositMoneyAction, params, config=config)
+await executor.execute(WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>

@@ -553,8 +553,8 @@ wiring, where you can see them:
 ```python
 repositories = (
     RepositoryRegistry.builder()
-    .with_model_repository(wallets)
-    .with_entity_repository(alerts)
+    .with_model_repository(wallet_repository)
+    .with_entity_repository(notification_repository)
     .build()
 )
 ```

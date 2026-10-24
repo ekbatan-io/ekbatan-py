@@ -35,29 +35,35 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         if self.balance < 0:
             raise ValidationError("balance cannot be negative")
 
-    @classmethod
-    def open(cls, *, owner_id: UUID, currency: str, balance: Decimal) -> Wallet:
-        wallet_id = ShardedId[Wallet].random()
+    @staticmethod
+    def create_wallet(
+        shard: ShardIdentifier,
+        owner_id: UUID,
+        currency: str,
+        initial_balance: Decimal,
+        created_date: Instant,
+    ) -> WalletBuilder:
+        wallet_id = ShardedId[Wallet].generate(shard)
         return (
             WalletBuilder()
             .id(wallet_id)
             .state(WalletState.OPENED)
             .owner_id(owner_id)
             .currency(currency)
-            .balance(balance)
+            .balance(initial_balance)
+            .created_date(created_date)
             .with_initial_version()
-            .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
-                                          currency=currency, opening_balance=balance))
-            .build()
+            .with_event(WalletCreatedEvent(model_id=str(wallet_id), owner_id=owner_id,
+                                          currency=currency, initial_balance=initial_balance))
         )
 
     def deposit(self, amount: Decimal) -> Wallet:
         if amount <= 0:
-            raise ValidationError(f"deposit amount must be positive, got {amount}")
+            raise ValidationError("Deposit amount must be positive")
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
+            .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -164,13 +170,13 @@ is no `session.commit()` working out what changed; you say what changed, through
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent["Wallet"]):
+class WalletMoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
 
 The class line names the model the event is about, and the constructor takes that model's id —
-`MoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`. Those two fill the
+`WalletMoneyDepositedEvent(model_id=str(self.id), amount=..., new_balance=...)`. Those two fill the
 outbox's `model_id` and `model_type` columns.
 A blank id is refused when the event is made, not when it is written.
 
@@ -309,7 +315,7 @@ def wallet(source: Wallet | None = None) -> WalletBuilder:
 - Validation. `validate()`, and `deposit()` raising on a non-positive amount, are business
   logic, not boilerplate.
 - Business methods, and the events they attach.
-- Factory methods like `Wallet.open(...)` that set up a fresh aggregate and its first event.
+- Factory methods like `Wallet.create_wallet(...)` that set up a fresh aggregate and its first event.
 - The one place your model names it — its own class line. The generator writes a separate file
   and never edits your model:
 
@@ -354,7 +360,7 @@ then name it on Wallet's class line, which is the whole of the wiring.
 There is no compile step to catch a missing builder, so the refusal is **per route and at the
 call** — a model that only ever calls
 `copy()` needs only that override, and an entity built solely through a factory like
-`Alert.create(...)` and never copied needs neither.
+`Notification.create_notification(...)` and never copied needs neither.
 
 **Generated or hand-written makes no difference** — what is required is a builder a checker can
 read, and writing one by hand is better where a setter needs a conditional default or a computed
@@ -420,12 +426,12 @@ what they are looking at.
 - **State enum** — `<Model>State`, values in `UPPER_SNAKE`: `WalletState.OPENED`,
   `OrderState.SHIPPED`. `GenericState` (`ACTIVE` / `DELETED`) is fine for an entity, or a model
   with no real state machine.
-- **Event** — `<Model><Verb>ed` + `Event`: `WalletOpenedEvent`, `MoneyDepositedEvent`,
+- **Event** — `<Model><Verb>ed` + `Event`: `WalletCreatedEvent`, `WalletMoneyDepositedEvent`,
   `OrderShippedEvent`. Past tense: an event describes something that already happened.
-- **Action** — `<Verb><Model>Action`: `OpenWalletAction`, `DepositMoneyAction`,
+- **Action** — `<Verb><Model>Action`: `WalletCreateAction`, `WalletDepositMoneyAction`,
   `ShipOrderAction`. Imperative: an action describes intent.
 - **Id** — no class of its own: `ShardedId[Wallet]` for a model whose rows are routed by id,
-  `Id[Alert]` otherwise. A type checker keeps two models' ids apart; at runtime they compare by
+  `Id[Notification]` otherwise. A type checker keeps two models' ids apart; at runtime they compare by
   uuid.
 
 <LearnPager current="models-and-entities" />

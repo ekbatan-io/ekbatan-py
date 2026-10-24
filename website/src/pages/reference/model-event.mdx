@@ -9,7 +9,7 @@ lead: "A domain event emitted by a model. Subclasses describe transitions worth 
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent["Wallet"]):
+class WalletMoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
@@ -17,7 +17,7 @@ class MoneyDepositedEvent(ModelEvent["Wallet"]):
 The class line names the model the event is about; the constructor takes that model's id:
 
 ```python
-MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance)
+WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance)
 ```
 
 The type argument fixes `model_name` once per event class, so no call site passes it. It is a
@@ -50,10 +50,10 @@ Put in it what a consumer needs to act, and nothing else:
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class WalletOpenedEvent(ModelEvent["Wallet"]):
+class WalletCreatedEvent(ModelEvent["Wallet"]):
     owner_id: UUID
     currency: str
-    opening_balance: Decimal
+    initial_balance: Decimal
 ```
 
 A delivery address, a request id, a feature flag — those belong to the invocation, not to the
@@ -88,7 +88,7 @@ A Java service built on Ekbatan reads and writes this same JSON - see
 ## Attaching one
 
 ```python
-return self.copy().with_event(MoneyDepositedEvent(...)).balance(new_balance).build()
+return self.copy().with_event(WalletMoneyDepositedEvent(...)).balance(new_balance).build()
 ```
 
 Inside the model's own method, always — that is the whole discipline. Events are produced in the

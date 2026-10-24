@@ -52,8 +52,8 @@ Every new action has to remember. Every review has to check. The day somebody fo
 a silent dual write, and it will not be noticed until a downstream system is measurably wrong.
 
 This framework makes forgetting impossible. The executor writes the outbox row for every action,
-at every commit. Concretely: your code stages a `DepositMoneyAction`; the executor opens the
-transaction, writes the `wallets` row, writes the matching `MoneyDepositedEvent` to `events`, and
+at every commit. Concretely: your code stages a `WalletDepositMoneyAction`; the executor opens the
+transaction, writes the `wallets` row, writes the matching `WalletMoneyDepositedEvent` to `events`, and
 commits. **There is no second table to remember, because you never write to it.**
 
 That is the whole pitch, and the rest of this section is how the pieces make the guarantee

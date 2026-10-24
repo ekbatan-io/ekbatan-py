@@ -1,6 +1,6 @@
 # Actions
 
-An **action** is one unit of business work - `DepositMoneyAction`, `ShipOrderAction`,
+An **action** is one unit of business work - `WalletDepositMoneyAction`, `ShipOrderAction`,
 `RenewSubscriptionAction`. It does **not** write to the database. It stages new and updated
 domain objects on its plan. Only after `perform()` returns does the executor open a single
 transaction, flush every staged change, write the outbox rows and commit.
@@ -11,7 +11,7 @@ by the framework, never by your code.
 ## The two-phase lifecycle
 
 ```
-        executor.execute(DepositMoneyAction, params)
+        executor.execute(WalletDepositMoneyAction, params)
                               │
    ┌─── Phase 1 - perform()   (no transaction yet) ─────────────┐
    │   read from repositories                                   │
@@ -62,26 +62,26 @@ below that differs shows both.
 **Sync**
 
 ```python
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
 **Async**
 
 ```python
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -95,8 +95,8 @@ Calling it:
 
 ```python
 wallet = executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
@@ -104,13 +104,13 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
 The executor opens one transaction, writes the wallet row with its incremented version, writes
-the `MoneyDepositedEvent` row, commits. If anything raises, both roll back.
+the `WalletMoneyDepositedEvent` row, commits. If anything raises, both roll back.
 
 ## ActionPlan
 
@@ -193,7 +193,7 @@ a real problem. Tune it per call:
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-executor.execute(DepositMoneyAction, params, config=config)
+executor.execute(WalletDepositMoneyAction, params, config=config)
 ```
 
 **Async**
@@ -202,7 +202,7 @@ executor.execute(DepositMoneyAction, params, config=config)
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-await executor.execute(DepositMoneyAction, params, config=config)
+await executor.execute(WalletDepositMoneyAction, params, config=config)
 ```
 
 `ExecutionConfiguration.no_retry()` is the other end: a failure reaches the caller unchanged, for

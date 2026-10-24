@@ -132,9 +132,9 @@ See [The transaction manager](database/transaction-manager.md#repository-writes-
 def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         service.executor.execute(
-            OpenWalletAction,
-            OpenWalletParams(owner_id=body.owner_id, currency=body.currency,
-                             opening_balance=body.opening_balance),
+            WalletCreateAction,
+            WalletCreateAction.Params(owner_id=body.owner_id, currency=body.currency,
+                             initial_balance=body.initial_balance),
         )
     )
 ```
@@ -146,9 +146,9 @@ def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
 async def open_wallet(body: OpenWalletRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         await service.executor.execute(
-            OpenWalletAction,
-            OpenWalletParams(owner_id=body.owner_id, currency=body.currency,
-                             opening_balance=body.opening_balance),
+            WalletCreateAction,
+            WalletCreateAction.Params(owner_id=body.owner_id, currency=body.currency,
+                             initial_balance=body.initial_balance),
         )
     )
 ```
@@ -169,7 +169,7 @@ genuinely awaits - then hand the framework call to a thread, or build the servic
 `ekbatan.aio` instead (next section):
 
 ```python
-wallet = await run_in_threadpool(service.wallets.get, wallet_id)
+wallet = await run_in_threadpool(service.wallet_repository.get, wallet_id)
 ```
 
 The example service is written with plain `def` throughout, which is why it needs no
@@ -252,7 +252,7 @@ if lease is None:
     raise HTTPException(status_code=503, detail="that wallet is busy; retry",
                         headers={"Retry-After": "1"})
 with lease:
-    return WalletResponse.of(service.executor.execute(DepositMoneyAction, params))
+    return WalletResponse.of(service.executor.execute(WalletDepositMoneyAction, params))
 ```
 
 **Async**
@@ -263,7 +263,7 @@ if lease is None:
     raise HTTPException(status_code=503, detail="that wallet is busy; retry",
                         headers={"Retry-After": "1"})
 async with lease:
-    return WalletResponse.of(await service.executor.execute(DepositMoneyAction, params))
+    return WalletResponse.of(await service.executor.execute(WalletDepositMoneyAction, params))
 ```
 
 Three things here.

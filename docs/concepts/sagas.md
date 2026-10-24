@@ -115,7 +115,7 @@ The runnable example uses in-process handlers, because every step lives in one a
 class TransferInitiatedEventHandler:
     """Step one committed; run step two."""
 
-    name = "transfer-initiated"
+    name = "transfer-initiated-handler"
     event_type = TransferInitiatedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
@@ -141,7 +141,7 @@ class TransferInitiatedEventHandler:
 class TransferInitiatedEventHandler:
     """Step one committed; run step two - awaited, on dispatch's handler loop."""
 
-    name = "transfer-initiated"
+    name = "transfer-initiated-handler"
     event_type = TransferInitiatedEvent
 
     def __init__(self, executor: AsyncActionExecutor) -> None:
@@ -187,7 +187,7 @@ def perform(self, principal: str | None, params: CompleteTransferParams) -> Wall
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.
-    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    self.plan.add(TransferStep.of(params.transfer_id, TransferStepName.CREDIT))
     ...
 ```
 
@@ -198,7 +198,7 @@ async def perform(self, principal: str | None, params: CompleteTransferParams) -
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.
-    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    self.plan.add(TransferStep.of(params.transfer_id, TransferStepName.CREDIT))
     ...
 ```
 

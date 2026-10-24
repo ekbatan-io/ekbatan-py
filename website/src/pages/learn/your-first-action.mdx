@@ -9,7 +9,7 @@ import LearnPager from "../../components/LearnPager.astro";
 import ModeTabs from "../../components/ModeTabs.astro";
 
 This lesson builds on [Getting started](/learn/getting-started/). We write actual domain code: a
-`Wallet` that emits a `MoneyDepositedEvent`, and a `DepositMoneyAction` that moves the balance.
+`Wallet` that emits a `WalletMoneyDepositedEvent`, and a `WalletDepositMoneyAction` that moves the balance.
 
 The event and the model are the same in both modes; the repository, the action and the endpoint
 are shown both ways - the switch above each sample picks sync or async, and the choice is
@@ -27,13 +27,13 @@ The shape of the surface, before we type a line:
               deposit(wallet_id, body)
                         ▼
             executor.execute(
-                DepositMoneyAction,
-                DepositParams(wallet_id, amount, recipient))
+                WalletDepositMoneyAction,
+                WalletDepositMoneyAction.Params(wallet_id, amount, recipient))
                         ▼
         ┌─── Phase 1 — perform() ──────────────────┐
-        │  self.wallets.get(wallet_id)             │
+        │  self.wallet_repository.get(wallet_id)             │
         │  wallet.deposit(amount)                  │
-        │      ↳ attaches MoneyDepositedEvent      │
+        │      ↳ attaches WalletMoneyDepositedEvent      │
         │  self.plan.update(updated)               │
         └──────────────────────────────────────────┘
                         ▼
@@ -52,14 +52,14 @@ nothing else:
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class MoneyDepositedEvent(ModelEvent["Wallet"]):
+class WalletMoneyDepositedEvent(ModelEvent["Wallet"]):
     amount: Decimal
     new_balance: Decimal
 ```
 
 The event says which model it is about. `ModelEvent["Wallet"]` on the class line fixes the
 model's name once for every event of this class, and the wallet's id is passed when the event is
-made - `MoneyDepositedEvent(model_id=str(self.id), ...)`. Those two go into the outbox's `model_id` and `model_type`
+made - `WalletMoneyDepositedEvent(model_id=str(self.id), ...)`. Those two go into the outbox's `model_id` and `model_type`
 columns, so a consumer correlates without opening the payload.
 
 Notice what is *not* in it. The deposit endpoint also takes a `recipient`, and it is absent
@@ -88,7 +88,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
+            .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -195,20 +195,19 @@ here** — the executor opens the transaction *after* `perform()` returns.
 <div slot="sync">
 
 ```python
-@dataclass(frozen=True, kw_only=True)
-class DepositParams:
-    wallet_id: ShardedId[Wallet]
-    amount: Decimal
-    recipient: str
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        amount: Decimal
+        recipient: str
 
-
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -216,20 +215,19 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
 <div slot="async">
 
 ```python
-@dataclass(frozen=True, kw_only=True)
-class DepositParams:
-    wallet_id: ShardedId[Wallet]
-    amount: Decimal
-    recipient: str
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        amount: Decimal
+        recipient: str
 
-
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -258,8 +256,8 @@ class DepositRequest(BaseModel):
 def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         service.executor.execute(
-            DepositMoneyAction,
-            DepositParams(
+            WalletDepositMoneyAction,
+            WalletDepositMoneyAction.Params(
                 wallet_id=ShardedId[Wallet](wallet_id),
                 amount=body.amount,
                 recipient=body.recipient,
@@ -281,8 +279,8 @@ class DepositRequest(BaseModel):
 async def deposit(wallet_id: UUID, body: DepositRequest, service: Service) -> WalletResponse:
     return WalletResponse.of(
         await service.executor.execute(
-            DepositMoneyAction,
-            DepositParams(
+            WalletDepositMoneyAction,
+            WalletDepositMoneyAction.Params(
                 wallet_id=ShardedId[Wallet](wallet_id),
                 amount=body.amount,
                 recipient=body.recipient,
@@ -323,7 +321,7 @@ ORDER BY event_date DESC
 LIMIT 5;
 ```
 
-One row, with `event_type = 'MoneyDepositedEvent'`, `model_type = 'Wallet'` and a payload of
+One row, with `event_type = 'WalletMoneyDepositedEvent'`, `model_type = 'Wallet'` and a payload of
 `{"modelId": "...", "modelName": "Wallet", "amount": 10.00, "newBalance": ...}`. The `wallets` row shows the new balance and
 `version + 1`. Both changed inside **one** transaction — see
 [`events`](/reference/tables/events/) for what every column means.
@@ -355,11 +353,11 @@ An action's logic needs none. `ActionSpec` (`AsyncActionSpec` in async mode, fro
 <div slot="sync">
 
 ```python
-(ActionSpec.of(DepositMoneyAction(wallets, clock))
+(ActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
     .with_principal("alice")
-    .execute(DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"))
+    .execute(WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"))
     .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-    .assert_emitted(MoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
+    .assert_emitted(WalletMoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
     .assert_no_additions())
 ```
 
@@ -368,13 +366,13 @@ An action's logic needs none. `ActionSpec` (`AsyncActionSpec` in async mode, fro
 
 ```python
 checked = await (
-    AsyncActionSpec.of(DepositMoneyAction(wallets, clock))
+    AsyncActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
     .with_principal("alice")
-    .execute(DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"))
+    .execute(WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"))
 )
 (checked
     .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-    .assert_emitted(MoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
+    .assert_emitted(WalletMoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
     .assert_no_additions())
 ```
 
@@ -390,12 +388,12 @@ falsy verdict fails, so a `lambda` cannot pass by accident. When plain `assert` 
 
 ```python
 staged = run_action(
-    DepositMoneyAction(wallets, clock),
-    DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
+    WalletDepositMoneyAction(clock, wallet_repository),
+    WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
 )
 
 assert staged.result.balance == Decimal("150.00")
-assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
 ```
 
 </div>
@@ -403,12 +401,12 @@ assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
 
 ```python
 staged = await async_run_action(
-    DepositMoneyAction(wallets, clock),
-    DepositParams(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
+    WalletDepositMoneyAction(clock, wallet_repository),
+    WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00"), recipient="ada@example.com"),
 )
 
 assert staged.result.balance == Decimal("150.00")
-assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
 ```
 
 </div>

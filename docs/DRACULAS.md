@@ -82,7 +82,7 @@ whatever is decided about the rest.
 | 26 | One package holds everything, test helpers included; `db_scheduler` always installed | choice | partly | L | E |
 | 27 | Tracing needs a package you add; there is no extra | choice | yes | L | E |
 | 28 | The framework's INFO logs are invisible unless the app configures logging | convention | partly | L | E |
-| 29 | The example HTTP APIs differ from Java's: snake_case JSON, `/closure`, 503 on a busy lock, mapped errors | choice | yes | L | E |
+| 29 | ~~The example HTTP APIs differ from Java's: snake_case JSON, `/closure`, 503 on a busy lock, mapped errors~~ **matched** (`EKB-0530`, the user's decision 2026-10-24): every example follows its Java twin - the same endpoints (`/wallets`, `/{id}/deposits`, `/{id}/close`, `/wallets/transfers`), status codes, camelCase JSON, and the same model, action, handler and job names. What stays Python's: `balance` is written as text, which keeps every digit of a `Decimal`, and a malformed body is FastAPI's 422 | choice | yes | L | E |
 | 30 | SQLite example and one web stack here; Quarkus/Micronaut, Maven and native images there | choice + forced | partly | L | E |
 
 ### Concurrency and process life

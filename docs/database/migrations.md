@@ -23,7 +23,7 @@ uv add "ekbatan[migrations]"
 from ekbatan.migrations import migrate
 
 migrate(layout, "migrations")                     # every shard, in order, one at a time
-migrate(layout, MIGRATIONS, shards=[MEXICO])      # some
+migrate(layout, MIGRATIONS, shards=[MEXICO_SHARD])      # some
 ```
 
 Each shard's `primaryConfig` is migrated - the replica follows it, and any other named config on

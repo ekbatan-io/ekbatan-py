@@ -68,11 +68,11 @@ clock to both if you want a frozen test to freeze both.
 > **parity** - the executor takes a type and runs the instance registered for it; an instance is refused. Brought to parity in `EKB-0224`; until then an instance was accepted too.
 
 ```java
-executor.execute(principal, DepositMoneyAction.class, params);
+executor.execute(principal, WalletDepositMoneyAction.class, params);
 ```
 
 ```python
-executor.execute(DepositMoneyAction, DepositParams(...), principal="alice")
+executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...), principal="alice")
 ```
 
 The registry is the only way in, in both ports: a caller holding the executor runs an action
@@ -286,7 +286,7 @@ The subscript does what Java's class argument does, and no more: it tells the ch
 the id is for. Java keeps nothing - `ShardedId.of(Wallet.class, u)` null-checks the class and
 discards it - so at runtime two models' ids holding one uuid are **equal**, measured on Java's own
 classes through `jshell`. They are here too. What keeps them apart is the checker: mypy refuses
-`ShardedId[Alert]` where `ShardedId[Wallet]` is expected, as javac refuses it, and a bare `UUID`
+`ShardedId[Notification]` where `ShardedId[Wallet]` is expected, as javac refuses it, and a bare `UUID`
 likewise.
 
 A named subclass per model (`class WalletId(ShardedId["Wallet"])`) was this port's convention.
@@ -1066,20 +1066,20 @@ a sentinel row and looks like success.
 > **parity** - `ActionSpec` and `ActionAssert` are ported method for method, with Java's failure messages word for word. Brought to parity in `EKB-0219`; until then only `run_action` existed.
 
 ```java
-ActionSpec.of(new DepositMoneyAction(wallets, clock))
+ActionSpec.of(new WalletDepositMoneyAction(clock, wallet_repository))
     .withPrincipal(alice)
-    .execute(new DepositParams(walletId, amount))
+    .execute(new WalletDepositMoneyAction.Params(walletId, amount))
     .assertUpdated(Wallet.class, w -> assertThat(w.balance).isEqualTo("150.00"))
-    .assertEmitted(MoneyDepositedEvent.class, 1)
+    .assertEmitted(WalletMoneyDepositedEvent.class, 1)
     .assertNoAdditions();
 ```
 
 ```python
-(ActionSpec.of(DepositMoneyAction(wallets, clock))
+(ActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
     .with_principal("alice")
-    .execute(DepositParams(wallet_id=wallet_id, amount=amount))
+    .execute(WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=amount))
     .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-    .assert_emitted(MoneyDepositedEvent, 1)
+    .assert_emitted(WalletMoneyDepositedEvent, 1)
     .assert_no_additions())
 ```
 
@@ -1392,7 +1392,7 @@ hand the lock with it.
 > **parity** - Both ports refuse a scalar in the params column, with the same reasoning.
 
 `action_params` is a JSON object column, and both ports refuse to write a scalar or a list into
-it: `Action[DepositParams, Wallet]`, never `Action[str, Wallet]`. Java's message says the same -
+it: `Action[WalletDepositMoneyAction.Params, Wallet]`, never `Action[str, Wallet]`. Java's message says the same -
 "use a record/class params object". A bare `"MXN"` in that column is a row no typed consumer can
 read, and `ActionEvent.action_params` is a mapping in both ports.
 
@@ -1536,9 +1536,9 @@ stalled for the duration.
 So under FastAPI, Litestar or any ASGI server, a repository or executor call belongs in a
 worker thread::
 
-    wallet = await asyncio.to_thread(wallets.get, wallet_id)
+    wallet = await asyncio.to_thread(wallet_repository.get, wallet_id)
     # or, in Starlette/FastAPI
-    wallet = await run_in_threadpool(wallets.get, wallet_id)
+    wallet = await run_in_threadpool(wallet_repository.get, wallet_id)
 
 Two things make this less painful than it sounds. A plain `def` endpoint in FastAPI is already
 run in a threadpool by the framework, so the ordinary way of writing one is safe without any of

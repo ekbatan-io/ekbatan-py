@@ -19,8 +19,8 @@ questions:
 ```python
 from ekbatan.sharding import DEFAULT_SHARD, ShardIdentifier
 
-GLOBAL = ShardIdentifier(0, 0)      # prints as "0:0"; DEFAULT_SHARD is this
-MEXICO = ShardIdentifier(1, 0)
+GLOBAL_SHARD = ShardIdentifier(0, 0)      # prints as "0:0"; DEFAULT_SHARD is this
+MEXICO_SHARD = ShardIdentifier(1, 0)
 MEXICO_2 = ShardIdentifier(1, 1)    # a second database for the same policy boundary
 ```
 
@@ -44,7 +44,7 @@ datasources.
 
 ```python
 layout = ShardingConfig(
-    default_shard=GLOBAL,
+    default_shard=GLOBAL_SHARD,
     groups=(
         ShardGroupConfig(group=0, name="global", members=(
             ShardMemberConfig(member=0, name="global-eu-1", configs={
@@ -157,19 +157,25 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
     balance: Decimal
 
     @staticmethod
-    def open(*, shard: ShardIdentifier, owner_id: UUID, currency: str,
-             opening_balance: Decimal) -> "Wallet":
-        wallet_id = ShardedId[Wallet].generate(shard)        # the shard bits go into the UUID here
+    def create_wallet(
+        shard: ShardIdentifier,
+        owner_id: UUID,
+        currency: str,
+        initial_balance: Decimal,
+        created_date: Instant,
+    ) -> WalletBuilder:
+        wallet_id = ShardedId[Wallet].generate(shard)       # the shard bits go into the UUID here
         return (
             WalletBuilder()
             .id(wallet_id)
             .state(WalletState.OPENED)
             .owner_id(owner_id)
             .currency(currency)
-            .balance(opening_balance)
-            .with_event(WalletOpenedEvent(model_id=str(wallet_id), owner_id=owner_id,
-                                          currency=currency, opening_balance=opening_balance))
-            .build()
+            .balance(initial_balance)
+            .created_date(created_date)
+            .with_initial_version()
+            .with_event(WalletCreatedEvent(model_id=str(wallet_id), owner_id=owner_id,
+                                          currency=currency, initial_balance=initial_balance))
         )
 ```
 
@@ -189,7 +195,7 @@ outbox is sharded by construction rather than by configuration.
 ### Reaching a specific shard
 
 ```python
-registry.manager(MEXICO)          # the transaction manager for one shard
+registry.manager(MEXICO_SHARD)          # the transaction manager for one shard
 registry.default                  # the default shard's
 registry.effective_shard(key)     # where this key lives
 registry.shards                   # every configured identifier
@@ -310,7 +316,7 @@ in this one's events - see [Running beside a Java service](../beside-java.md#ids
 Minting and reading:
 
 ```python
-wallet_id = ShardedId[Wallet].generate(MEXICO)      # bonded to that shard for the row's life
+wallet_id = ShardedId[Wallet].generate(MEXICO_SHARD)      # bonded to that shard for the row's life
 wallet_id.shard                            # -> ShardIdentifier(1, 0)
 wallet_id.minted_at                        # -> datetime, from the v7 timestamp
 ```
@@ -385,7 +391,7 @@ can only be a bug:
 
 ```python
 ShardingConfig(
-    default_shard=GLOBAL,
+    default_shard=GLOBAL_SHARD,
     groups=(...),
     unknown_shard_policy="fail",   # omitted -> "use_default_shard": fall back, and warn
 )
@@ -455,7 +461,7 @@ partial failure without a human.
 
 ```python
 migrate(layout, MIGRATIONS)                        # all of them
-migrate(layout, MIGRATIONS, shards=[MEXICO])       # one
+migrate(layout, MIGRATIONS, shards=[MEXICO_SHARD])       # one
 ```
 
 Ordered by the configuration rather than by the argument, and an unknown identifier is refused

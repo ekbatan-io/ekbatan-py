@@ -170,7 +170,7 @@ executor = ActionExecutor(
     clock=clock,
 )
 
-wallet = executor.execute(DepositMoneyAction, params)
+wallet = executor.execute(WalletDepositMoneyAction, params)
 ```
 
 </div>
@@ -185,7 +185,7 @@ executor = AsyncActionExecutor(
     clock=clock,
 )
 
-wallet = await executor.execute(DepositMoneyAction, params)
+wallet = await executor.execute(WalletDepositMoneyAction, params)
 ```
 
 </div>

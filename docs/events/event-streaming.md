@@ -140,7 +140,7 @@ With `namespace = "com.example.finance"`:
 ```
 ekbatan.com.example.finance
 ekbatan.com.example.finance.model.Wallet
-ekbatan.com.example.finance.event.WalletOpenedEvent
+ekbatan.com.example.finance.event.WalletCreatedEvent
 ```
 
 Three levels for three consumption patterns: *everything from this service*, *everything about
@@ -179,7 +179,7 @@ ekbatan.com.example.finance
         │
         ├─ Kafka Streams / ksqlDB / Flink / a small consumer-producer
         │
-        ├─ ekbatan.com.example.finance.event.MoneyDepositedEvent
+        ├─ ekbatan.com.example.finance.event.WalletMoneyDepositedEvent
         ├─ ekbatan.com.example.finance.model.Wallet
         └─ billing.wallet-deposits-by-owner
 ```
@@ -262,7 +262,7 @@ The transform class names are
 The mapping key is the schema's **own fully-qualified name**, built from three things:
 
 ```
-com.example.finance . avro . MoneyDepositedEvent
+com.example.finance . avro . WalletMoneyDepositedEvent
 └──── namespace ───┘  └fmt┘  └─── event_type ───┘
 ```
 
@@ -281,8 +281,8 @@ transforms=outbox
 transforms.outbox.type=io.ekbatan.events.streaming.debeziumsmt.avro.OutboxToAvroTransform
 transforms.outbox.action.event.schema=/kafka/schemas/ActionEvent.avsc
 transforms.outbox.payload.schemas=\
-  com.example.finance.avro.WalletOpenedEvent:/kafka/schemas/WalletOpenedEvent.avsc,\
-  com.example.finance.avro.MoneyDepositedEvent:/kafka/schemas/MoneyDepositedEvent.avsc
+  com.example.finance.avro.WalletCreatedEvent:/kafka/schemas/WalletCreatedEvent.avsc,\
+  com.example.finance.avro.WalletMoneyDepositedEvent:/kafka/schemas/WalletMoneyDepositedEvent.avsc
 
 # Mandatory. The SMT emits bytes; every other converter rejects them.
 value.converter=org.apache.kafka.connect.converters.ByteArrayConverter
@@ -469,7 +469,7 @@ from ekbatan.streaming import ActionEvent
 
 for message in consumer:
     event = ActionEvent.from_row(message.value)
-    if event.event_type == "MoneyDepositedEvent":
+    if event.event_type == "WalletMoneyDepositedEvent":
         credit(event.model_id, event.payload["amount"])
 ```
 

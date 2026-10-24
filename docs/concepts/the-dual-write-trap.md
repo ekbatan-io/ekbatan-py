@@ -63,8 +63,8 @@ new action has to remember. Every review has to check. The day somebody forgets,
 silent dual write, and it will not be noticed until a downstream system is measurably wrong.
 
 This framework makes forgetting impossible. The executor writes the outbox row for every action,
-at every commit. Your code stages a `DepositMoneyAction`; the executor opens the transaction,
-writes the wallet row, writes the matching `MoneyDepositedEvent`, commits. There is no second
+at every commit. Your code stages a `WalletDepositMoneyAction`; the executor opens the transaction,
+writes the wallet row, writes the matching `WalletMoneyDepositedEvent`, commits. There is no second
 table to remember, because you never write to it.
 
 That is the whole pitch. The rest of [Concepts](README.md) is how the pieces make that

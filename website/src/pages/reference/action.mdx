@@ -37,7 +37,7 @@ plan, the clock and everything below are the same. An executor runs one kind onl
 refuses an `AsyncAction`, and the async one refuses an `Action`.
 
 `P` is the parameter type, `R` what the action returns. Both are held to at the call site:
-`executor.execute(DepositMoneyAction, DepositParams(...))` returns a `Wallet` with no cast, and
+`executor.execute(WalletDepositMoneyAction, WalletDepositMoneyAction.Params(...))` returns a `Wallet` with no cast, and
 passing the wrong parameter object is a type error rather than a runtime one.
 
 There is no abstract base to satisfy beyond `perform`. No decorator, no registration marker,
@@ -49,19 +49,18 @@ nothing scans for it.
 <div slot="sync">
 
 ```python
-@dataclass(frozen=True, kw_only=True)
-class DepositParams:
-    wallet_id: ShardedId[Wallet]
-    amount: Decimal
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        amount: Decimal
 
-
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -69,19 +68,18 @@ class DepositMoneyAction(Action[DepositParams, Wallet]):
 <div slot="async">
 
 ```python
-@dataclass(frozen=True, kw_only=True)
-class DepositParams:
-    wallet_id: ShardedId[Wallet]
-    amount: Decimal
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    @dataclass(frozen=True, kw_only=True)
+    class Params:
+        wallet_id: ShardedId[Wallet]
+        amount: Decimal
 
-
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -98,13 +96,13 @@ unreadable six months later.
 ```python
 actions = (
     ActionRegistry.builder()
-    .with_action(OpenWalletAction(wallets, clock))
-    .with_action(DepositMoneyAction(wallets, clock))
+    .with_action(WalletCreateAction(clock, wallet_repository))
+    .with_action(WalletDepositMoneyAction(clock, wallet_repository))
     .build()
 )
 ```
 
-That is what lets `executor.execute(DepositMoneyAction, params)` take the **class** — the
+That is what lets `executor.execute(WalletDepositMoneyAction, params)` take the **class** — the
 registry is the map from class to constructed instance. Pass an instance directly and no registry
 is needed, which is the form a test usually wants.
 
@@ -116,7 +114,7 @@ on where it was declared.
 ## The two-phase lifecycle
 
 ```
-executor.execute(DepositMoneyAction, params)
+executor.execute(WalletDepositMoneyAction, params)
          │
          ▼
 ┌─ Phase 1 — perform() — no transaction ───────────────────┐
@@ -206,7 +204,7 @@ The default is one retry after 100 ms, on `StaleRecordError`.
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-executor.execute(DepositMoneyAction, params, config=config)
+executor.execute(WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>
@@ -216,7 +214,7 @@ executor.execute(DepositMoneyAction, params, config=config)
 config = ExecutionConfiguration(
     retry_configs=(RetryConfig(on=StaleRecordError, max_retries=3, delay=0.05),)
 )
-await executor.execute(DepositMoneyAction, params, config=config)
+await executor.execute(WalletDepositMoneyAction, params, config=config)
 ```
 
 </div>

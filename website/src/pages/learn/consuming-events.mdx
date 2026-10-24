@@ -60,7 +60,7 @@ events → dispatch job → your handler → Kafka / Pulsar / RabbitMQ / SQS
 
 Think of the handler as a small publisher worker. Choose this when publishing is not a simple
 "copy each row to one topic": because you publish in application code, you decide the topic,
-key, headers, schema, partitioning and destination. One `MoneyDepositedEvent` could publish to
+key, headers, schema, partitioning and destination. One `WalletMoneyDepositedEvent` could publish to
 `wallet.deposits`, also to `risk.large-deposits`, and nothing at all to billing when the action
 params say the deposit was internal.
 
@@ -117,7 +117,7 @@ wiring reads to decide whether to register the job; once registered, the job run
 <div slot="sync">
 
 ```python
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(executor)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 ```
 
@@ -126,7 +126,7 @@ events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 
 ```python
 # The async handler gets an executor of its own, used only on dispatch's handler loop.
-handlers = EventHandlerRegistry([MoneyDepositedEventHandler(handler_executor)])
+handlers = EventHandlerRegistry([WalletMoneyDepositedEventHandler(handler_executor)])
 events_config = LocalEventHandlerConfig(handling=HandlingConfig(enabled=True))
 ```
 
@@ -147,14 +147,14 @@ away before the handler ran.
 <div slot="sync">
 
 ```python
-class MoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler:
     name = "money-deposited"
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, executor: ActionExecutor) -> None:
         self.executor = executor
 
-    def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
         print(f"deposited {event.amount}, new balance {event.new_balance}")
 ```
@@ -163,14 +163,14 @@ class MoneyDepositedEventHandler:
 <div slot="async">
 
 ```python
-class MoneyDepositedEventHandler:
+class WalletMoneyDepositedEventHandler:
     name = "money-deposited"
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 
     def __init__(self, executor: AsyncActionExecutor) -> None:
         self.executor = executor
 
-    async def handle(self, envelope: EventEnvelope[MoneyDepositedEvent]) -> None:
+    async def handle(self, envelope: EventEnvelope[WalletMoneyDepositedEvent]) -> None:
         event = envelope.event
         print(f"deposited {event.amount}, new balance {event.new_balance}")
 ```
@@ -198,7 +198,7 @@ the handler and sit there until they expire. The way through is `aliases`:
 class MoneyDepositedWelcomeHandler:
     name = "money-deposited-welcome"
     aliases = ("money-deposited",)     # what it used to be
-    event_type = MoneyDepositedEvent
+    event_type = WalletMoneyDepositedEvent
 ```
 
 Aliases are lookup-only: dispatch resolves old rows through them, fan-out keeps writing the
@@ -262,7 +262,7 @@ Capture only the outbox:
     "transforms": "encodeAvro",
     "transforms.encodeAvro.type": "io.ekbatan.events.streaming.debeziumsmt.avro.OutboxToAvroTransform",
     "transforms.encodeAvro.action.event.schema": "/schemas/ActionEvent.avsc",
-    "transforms.encodeAvro.payload.schemas": "com.example.finance.MoneyDepositedEvent:/schemas/MoneyDepositedEvent.avsc",
+    "transforms.encodeAvro.payload.schemas": "com.example.finance.WalletMoneyDepositedEvent:/schemas/WalletMoneyDepositedEvent.avsc",
 
     "errors.tolerance": "all",
     "errors.log.enable": "true"
@@ -335,7 +335,7 @@ ekbatan.com.example.finance
         │
         ├─ Kafka Streams / ksqlDB / Flink / a small router
         │
-        ├─ ekbatan.com.example.finance.event.MoneyDepositedEvent
+        ├─ ekbatan.com.example.finance.event.WalletMoneyDepositedEvent
         ├─ ekbatan.com.example.finance.model.Wallet
         └─ billing.wallet-deposits-by-owner
 ```
@@ -371,7 +371,7 @@ def perform(self, principal: str | None, params: CompleteTransferParams) -> Wall
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.
-    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    self.plan.add(TransferStep.of(params.transfer_id, TransferStepName.CREDIT))
     ...
 ```
 
@@ -383,7 +383,7 @@ async def perform(self, principal: str | None, params: CompleteTransferParams) -
     # Staged *before* the credit, so the unique constraint decides whether this delivery is
     # the first one. A replay stages the same marker, the insert is refused, and the credit
     # beside it is rolled back with it - which is why the money cannot arrive twice.
-    self.plan.add(TransferStep.of(params.transfer_id, StepName.CREDIT))
+    self.plan.add(TransferStep.of(params.transfer_id, TransferStepName.CREDIT))
     ...
 ```
 

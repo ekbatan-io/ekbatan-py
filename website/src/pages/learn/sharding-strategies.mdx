@@ -98,7 +98,7 @@ persistence operation, before the transaction opens.
 > time-window routing, hot-key detection.
 
 The cost is that **the id stops being self-describing.** Any read that starts from an id alone —
-`wallets.get(wallet_id)` — needs the strategy to find the row before it knows which database to
+`wallet_repository.get(wallet_id)` — needs the strategy to find the row before it knows which database to
 look in, and that is a round trip you pay implicitly on every lookup. Use embedded bits if you
 can; reach for this when you cannot.
 

@@ -9,18 +9,21 @@ lead: "A persistent aggregate that does NOT emit events. Use an entity when you 
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class Alert(Entity[Id["Alert"], GenericState, AlertBuilder]):
-    wallet_id: ShardedId[Wallet]
+class Notification(Entity[Id["Notification"], NotificationState, NotificationBuilder]):
+    wallet_id: UUID
+    kind: NotificationKind
     recipient: str
     message: str
 
     def validate(self) -> None:
+        if not self.recipient.strip():
+            raise ValidationError("recipient cannot be blank")
         if not self.message.strip():
             raise ValidationError("message cannot be blank")
 ```
 
-`Entity[ID, S]` takes the id type and, optionally, a state enum. `S` **defaults** —
-`Entity[Id[Alert]]` is `Entity[Id[Alert], GenericState]`, and `GenericState` is `ACTIVE` /
+`Entity[ID, S]` takes the id type and, optionally, a state enum - `NotificationState` here. `S` **defaults** —
+`Entity[Id[Notification]]` is `Entity[Id[Notification], GenericState]`, and `GenericState` is `ACTIVE` /
 `DELETED`, which is usually all an entity needs. A model has no such default, because a model
 with no lifecycle of its own is nearly always a model nobody has thought about yet.
 
@@ -65,7 +68,7 @@ events.
 Ask whether a change is **news**. If something downstream should learn that this row changed,
 it is a model. If nobody outside this service would subscribe to it, it is an entity.
 
-Good entities: idempotency markers, lookup and reference tables, per-row settings, alerts
+Good entities: idempotency markers, lookup and reference tables, per-row settings, notifications
 already described by the event that caused them.
 
 ## Differences from Model
@@ -118,7 +121,7 @@ The same builder shape as a model, minus the event and timestamp methods:
 
 ```python
 @classmethod
-def of(cls, transfer_id: UUID, step: StepName) -> TransferStep:
+def of(cls, transfer_id: UUID, step: TransferStepName) -> TransferStep:
     return cls(
         id=Id[TransferStep].random(),
         state=GenericState.ACTIVE,
@@ -148,13 +151,13 @@ Name the builder on the class line, the same as on a
 to a checker, and there is no compile step here to make that an error:
 
 ```python
-class Alert(Entity[Id["Alert"], GenericState, AlertBuilder]):
+class Notification(Entity[Id["Notification"], NotificationState, NotificationBuilder]):
     message: str
 ```
 
 `copy()` and `builder()` refuse without it. The refusal is at the call, so an entity only ever
-built through a factory like `Alert.create(...)` and never copied can leave it out.
-`EntityBuilder(Alert)` stays reachable by name.
+built through a factory like `Notification.create_notification(...)` and never copied can leave it
+out. `EntityBuilder(Notification)` stays reachable by name.
 
 ## See also
 

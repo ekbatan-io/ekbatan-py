@@ -156,7 +156,7 @@ class Wallet(Model[ShardedId["Wallet"], WalletState, WalletBuilder]):
         new_balance = self.balance + amount
         return (
             self.copy()
-            .with_event(MoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
+            .with_event(WalletMoneyDepositedEvent(model_id=str(self.id), amount=amount, new_balance=new_balance))
             .balance(new_balance)
             .build()
         )
@@ -237,26 +237,26 @@ What you add here are the questions your application actually asks:
 **Sync**
 
 ```python
-class DepositMoneyAction(Action[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(Action["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = self.wallets.get(params.wallet_id)
+    def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
 **Async**
 
 ```python
-class DepositMoneyAction(AsyncAction[DepositParams, Wallet]):
-    def __init__(self, wallets: WalletRepository, clock: Clock) -> None:
+class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wallet]):
+    def __init__(self, clock: Clock, wallet_repository: WalletRepository) -> None:
         super().__init__(clock)
-        self.wallets = wallets
+        self.wallet_repository = wallet_repository
 
-    async def perform(self, principal: str | None, params: DepositParams) -> Wallet:
-        wallet = await self.wallets.get(params.wallet_id)
+    async def perform(self, principal: str | None, params: Params) -> Wallet:
+        wallet = await self.wallet_repository.get(params.wallet_id)
         return self.plan.update(wallet.deposit(params.amount))
 ```
 
@@ -271,13 +271,13 @@ See [Wiring](wiring.md) for the whole of it. The short version:
 
 ```python
 registry = DatabaseRegistry.from_config(layout)
-wallets = WalletRepository(registry)
+wallet_repository = WalletRepository(registry)
 
 executor = ActionExecutor(
     namespace="com.example.wallets",
     registry=registry,
-    repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
-    actions=ActionRegistry.builder().with_action(DepositMoneyAction(wallets, clock)).build(),
+    repositories=RepositoryRegistry.builder().with_model_repository(wallet_repository).build(),
+    actions=ActionRegistry.builder().with_action(WalletDepositMoneyAction(clock, wallet_repository)).build(),
 )
 ```
 
@@ -285,13 +285,13 @@ executor = ActionExecutor(
 
 ```python
 registry = AsyncDatabaseRegistry.from_config(layout)
-wallets = WalletRepository(registry)
+wallet_repository = WalletRepository(registry)
 
 executor = AsyncActionExecutor(
     namespace="com.example.wallets",
     registry=registry,
-    repositories=RepositoryRegistry.builder().with_model_repository(wallets).build(),
-    actions=ActionRegistry.builder().with_action(DepositMoneyAction(wallets, clock)).build(),
+    repositories=RepositoryRegistry.builder().with_model_repository(wallet_repository).build(),
+    actions=ActionRegistry.builder().with_action(WalletDepositMoneyAction(clock, wallet_repository)).build(),
 )
 ```
 
@@ -301,8 +301,8 @@ executor = AsyncActionExecutor(
 
 ```python
 wallet = executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
@@ -310,8 +310,8 @@ wallet = executor.execute(
 
 ```python
 wallet = await executor.execute(
-    DepositMoneyAction,
-    DepositParams(wallet_id=wallet_id, amount=Decimal("25.50")),
+    WalletDepositMoneyAction,
+    WalletDepositMoneyAction.Params(wallet_id=wallet_id, amount=Decimal("25.50")),
 )
 ```
 
@@ -325,11 +325,11 @@ An action's logic needs no database at all. `ActionSpec` (`AsyncActionSpec` in a
 **Sync**
 
 ```python
-(ActionSpec.of(DepositMoneyAction(wallets, clock))
+(ActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
     .with_principal("alice")
-    .execute(DepositParams(wallet_id=..., amount=Decimal("50.00")))
+    .execute(WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
     .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-    .assert_emitted(MoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
+    .assert_emitted(WalletMoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
     .assert_no_additions())
 ```
 
@@ -337,13 +337,13 @@ An action's logic needs no database at all. `ActionSpec` (`AsyncActionSpec` in a
 
 ```python
 checked = await (
-    AsyncActionSpec.of(DepositMoneyAction(wallets, clock))
+    AsyncActionSpec.of(WalletDepositMoneyAction(clock, wallet_repository))
     .with_principal("alice")
-    .execute(DepositParams(wallet_id=..., amount=Decimal("50.00")))
+    .execute(WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
 )
 (checked
     .assert_updated(Wallet, lambda w: w.balance == Decimal("150.00"))
-    .assert_emitted(MoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
+    .assert_emitted(WalletMoneyDepositedEvent, lambda e: e.amount == Decimal("50.00"))
     .assert_no_additions())
 ```
 
@@ -354,19 +354,19 @@ falsy verdict fails, so neither can pass by accident. When plain `assert` reads 
 **Sync**
 
 ```python
-staged = run_action(DepositMoneyAction(wallets, clock), DepositParams(wallet_id=..., amount=Decimal("50.00")))
+staged = run_action(WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
 
 assert staged.result.balance == Decimal("150.00")
-assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
 ```
 
 **Async**
 
 ```python
-staged = await async_run_action(DepositMoneyAction(wallets, clock), DepositParams(wallet_id=..., amount=Decimal("50.00")))
+staged = await async_run_action(WalletDepositMoneyAction(clock, wallet_repository), WalletDepositMoneyAction.Params(wallet_id=..., amount=Decimal("50.00")))
 
 assert staged.result.balance == Decimal("150.00")
-assert staged.emitted(MoneyDepositedEvent)[0].amount == Decimal("50.00")
+assert staged.emitted(WalletMoneyDepositedEvent)[0].amount == Decimal("50.00")
 ```
 
 Both bind the plan through the same mechanism the executor uses, so `self.plan`,
