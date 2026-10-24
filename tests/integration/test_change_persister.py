@@ -30,9 +30,7 @@ NOW = datetime(2026, 1, 1, 10, 0, 0)
 
 @pytest.fixture
 def persister(registry, wallets):
-    return ChangePersister(
-        RepositoryRegistry([wallets]), SingleTableJsonEventPersister(registry, EVENTS)
-    )
+    return ChangePersister(RepositoryRegistry([wallets]), SingleTableJsonEventPersister(registry))
 
 
 def a_wallet(balance: str = "100.00") -> Wallet:
@@ -106,7 +104,7 @@ def test_it_opens_no_transaction_of_its_own(persister, registry, wallets):
 
 def test_an_entity_is_written_and_emits_nothing(registry, notifications):
     persister = ChangePersister(
-        RepositoryRegistry([notifications]), SingleTableJsonEventPersister(registry, EVENTS)
+        RepositoryRegistry([notifications]), SingleTableJsonEventPersister(registry)
     )
     note = Notification.create(
         wallet_id=ShardedId[Wallet].random(),
@@ -147,4 +145,4 @@ def test_it_names_the_type_it_has_no_repository_for(persister, registry):
 
 def test_it_refuses_to_be_built_with_no_repositories(registry):
     with pytest.raises(ValidationError, match="at least one repository"):
-        ChangePersister(RepositoryRegistry(), SingleTableJsonEventPersister(registry, EVENTS))
+        ChangePersister(RepositoryRegistry(), SingleTableJsonEventPersister(registry))

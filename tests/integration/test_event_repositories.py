@@ -18,7 +18,7 @@ from ekbatan.action.outbox import EventEntityRepository as OutboxRepository
 from ekbatan.events.notification import EventNotification, EventNotificationState
 from ekbatan.events.repository import EventEntityRepository, EventNotificationRepository
 from ekbatan.sharding import DEFAULT_SHARD
-from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS
+from fixtures.schema import EVENT_NOTIFICATIONS
 
 NOW = datetime(2026, 3, 1, 12, 0)
 
@@ -71,12 +71,12 @@ def a_notification(
 
 @pytest.fixture
 def events(registry):
-    return EventEntityRepository(registry, EVENTS)
+    return EventEntityRepository(registry)
 
 
 @pytest.fixture
 def notifications(registry):
-    return EventNotificationRepository(registry, EVENT_NOTIFICATIONS)
+    return EventNotificationRepository(registry)
 
 
 def stored(registry, notification: EventNotification):
@@ -95,7 +95,7 @@ def test_find_undelivered_takes_handled_types_oldest_first_and_skips_the_rest(re
     earlier = an_event(minutes=1)
     unhandled = an_event("NobodyListens")
     sentinel = an_event(None)
-    OutboxRepository(registry, EVENTS).add_all_no_result(
+    OutboxRepository(registry).add_all_no_result(
         [later, earlier, unhandled, sentinel], DEFAULT_SHARD
     )
 
@@ -105,20 +105,20 @@ def test_find_undelivered_takes_handled_types_oldest_first_and_skips_the_rest(re
 
 
 def test_find_undelivered_honours_the_limit(registry, events):
-    OutboxRepository(registry, EVENTS).add_all_no_result(
+    OutboxRepository(registry).add_all_no_result(
         [an_event(minutes=m) for m in range(3)], DEFAULT_SHARD
     )
     assert len(events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 2)) == 2
 
 
 def test_find_undelivered_with_no_handled_types_reads_nothing(registry, events):
-    OutboxRepository(registry, EVENTS).add_all_no_result([an_event()], DEFAULT_SHARD)
+    OutboxRepository(registry).add_all_no_result([an_event()], DEFAULT_SHARD)
     assert events.find_undelivered(DEFAULT_SHARD, [], 10) == []
 
 
 def test_mark_delivered_takes_exactly_those_rows_out(registry, events):
     first, second = an_event(minutes=1), an_event(minutes=2)
-    OutboxRepository(registry, EVENTS).add_all_no_result([first, second], DEFAULT_SHARD)
+    OutboxRepository(registry).add_all_no_result([first, second], DEFAULT_SHARD)
 
     events.mark_delivered([first.id], DEFAULT_SHARD)
 
@@ -232,7 +232,7 @@ def test_find_undelivered_does_not_join_an_open_transaction(registry, events):
     """Java's `findUndelivered` reads on a connection of its own, so inside an open transaction
     it does not see that transaction's uncommitted rows."""
     with registry.default.transaction():
-        OutboxRepository(registry, EVENTS).add_all_no_result([an_event()], DEFAULT_SHARD)
+        OutboxRepository(registry).add_all_no_result([an_event()], DEFAULT_SHARD)
         inside = events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)
     assert inside == [], "find_undelivered joined the open transaction; Java's does not"
     assert len(events.find_undelivered(DEFAULT_SHARD, ["WalletCreatedEvent"], 10)) == 1
@@ -269,17 +269,15 @@ def lagging_replica(backend):
 def test_fan_out_reads_the_replica_and_handling_reads_the_primary(lagging_replica):
     """Java's `findUndelivered` reads `readonlyDb()`, its `findDue` reads `db()`. With a
     lagging replica fan-out runs late; handling never sees a stale row."""
-    OutboxRepository(lagging_replica, EVENTS).add_all_no_result([an_event()], DEFAULT_SHARD)
-    EventNotificationRepository(lagging_replica, EVENT_NOTIFICATIONS).add_all_no_result(
+    OutboxRepository(lagging_replica).add_all_no_result([an_event()], DEFAULT_SHARD)
+    EventNotificationRepository(lagging_replica).add_all_no_result(
         [a_notification()], DEFAULT_SHARD
     )
 
-    undelivered = EventEntityRepository(lagging_replica, EVENTS).find_undelivered(
+    undelivered = EventEntityRepository(lagging_replica).find_undelivered(
         DEFAULT_SHARD, ["WalletCreatedEvent"], 10
     )
-    due = EventNotificationRepository(lagging_replica, EVENT_NOTIFICATIONS).find_due(
-        DEFAULT_SHARD, 10, NOW
-    )
+    due = EventNotificationRepository(lagging_replica).find_due(DEFAULT_SHARD, 10, NOW)
 
     assert undelivered == [], "find_undelivered read the primary; Java's reads the replica"
     assert len(due) == 1, "find_due read the replica; Java's reads the primary"

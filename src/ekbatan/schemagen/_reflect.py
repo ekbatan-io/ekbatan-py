@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy import Engine, MetaData, Table, inspect, text
 from sqlalchemy.exc import SAWarning
 
+from ..schema import EVENTLOG_SCHEMA
 from ._config import SchemagenConfig
 
 #: Tables this framework owns. Emitted as calls to `ekbatan.schema` rather than reflected,
@@ -31,6 +32,11 @@ FRAMEWORK_TABLES = {
     "event_notifications": "notifications_table",
     "scheduled_tasks": "scheduled_tasks_table",
 }
+
+#: The two event tables - in ``eventlog`` on PostgreSQL, in the database itself elsewhere (see
+#: `ekbatan.schema.eventlog_translation`) - and written either way as `outbox_table(metadata)` and
+#: `notifications_table(metadata)`, whose schema is fixed.
+EVENT_TABLES = frozenset({"events", "event_notifications"})
 
 #: Tables that belong to the migration machinery and to nobody else - this framework's history,
 #: and Flyway's, for a database the Java port migrated. Always left out, as Java's builds leave
@@ -224,6 +230,16 @@ def reflect(engine: Engine, config: SchemagenConfig) -> Reflected:
     for name in config.schemas:
         if name != default and name not in wanted:
             wanted.append(name)
+    # On PostgreSQL the event tables are in `eventlog`: read them from there - and nothing else of
+    # that schema, unless `schemas` names it.
+    eventlog_only = False
+    if (
+        engine.dialect.name == "postgresql"
+        and EVENTLOG_SCHEMA not in wanted
+        and EVENTLOG_SCHEMA in inspector.get_schema_names()
+    ):
+        wanted.append(EVENTLOG_SCHEMA)
+        eventlog_only = True
 
     for schema in wanted:
         metadata = MetaData()
@@ -250,6 +266,8 @@ def reflect(engine: Engine, config: SchemagenConfig) -> Reflected:
         schema_name = schema if schema is not None else default
         for table in sorted(metadata.tables.values(), key=lambda t: t.name):
             if table.schema != schema:
+                continue
+            if eventlog_only and schema == EVENTLOG_SCHEMA and table.name not in EVENT_TABLES:
                 continue
             if table.name in BOOKKEEPING or not _included(table.name, schema_name, config):
                 continue
@@ -399,6 +417,8 @@ def _note_unread_schemas(inspector: object, default: str | None, result: Reflect
     for name in sorted(names):
         if name == default or name in SYSTEM_SCHEMAS or name.startswith("pg_"):
             continue
+        if name == EVENTLOG_SCHEMA and result.dialect_name == "postgresql":
+            continue  # read already, for its event tables
         tables = inspector.get_table_names(schema=name)  # type: ignore[attr-defined]
         if tables:
             result.notes.append(

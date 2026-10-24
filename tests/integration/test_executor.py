@@ -256,10 +256,8 @@ def _action_ids(registry) -> set:
 def test_a_namespace_must_be_spellable_downstream(registry, wallets):
     for bad in ("my-service", "", "9lives", "a..b"):
         with pytest.raises(ValidationError, match="namespace"):
-            ActionExecutor(namespace=bad, registry=registry, repositories=[wallets], events=EVENTS)
-    ok = ActionExecutor(
-        namespace="my_service.wallets", registry=registry, repositories=[wallets], events=EVENTS
-    )
+            ActionExecutor(namespace=bad, registry=registry, repositories=[wallets])
+    ok = ActionExecutor(namespace="my_service.wallets", registry=registry, repositories=[wallets])
     assert ok.namespace == "my_service.wallets"
 
 
@@ -299,7 +297,6 @@ def test_staging_a_model_with_no_repository_says_so(registry, wallets, clock):
         namespace="example.wallet",
         registry=registry,
         repositories=[wallets],
-        events=EVENTS,
         clock=clock,
     )
 

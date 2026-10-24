@@ -128,7 +128,6 @@ def test_an_action_holding_a_different_clock_is_accepted_as_in_java(executor, cl
     """Java's executor never compares the two clocks: the action reads its own, and the rows are
     stamped from the executor's. Python refused the executor at build (Dracula 12)."""
     from ekbatan import ActionRegistry, VirtualClock
-    from fixtures.schema import EVENTS
 
     elsewhere = VirtualClock(datetime(1999, 1, 1))
     other = ActionExecutor(
@@ -136,7 +135,6 @@ def test_an_action_holding_a_different_clock_is_accepted_as_in_java(executor, cl
         registry=executor.registry,
         repositories=executor.changes.repositories,
         actions=ActionRegistry([ReadsTheClockAction(elsewhere)]),
-        events=EVENTS,
         clock=clock,
     )
 

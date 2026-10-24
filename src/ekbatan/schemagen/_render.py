@@ -33,6 +33,7 @@ from sqlalchemy.engine import Dialect
 from sqlalchemy.sql.elements import TextClause
 
 from ..errors import ValidationError
+from ..schema import EVENTLOG_SCHEMA
 from ._config import ForcedType, SchemagenConfig
 from ._records import (
     Field,
@@ -43,7 +44,7 @@ from ._records import (
     spelled_type,
 )
 from ._records import render as render_record
-from ._reflect import FRAMEWORK_TABLES, Reflected, Relation
+from ._reflect import EVENT_TABLES, FRAMEWORK_TABLES, Reflected, Relation
 from ._types import MODULES, Emitted, emit_type, lit, modules_used, resolve, type_names
 
 log = logging.getLogger("io.ekbatan.schemagen")
@@ -86,6 +87,16 @@ def constant(name: str) -> str:
 def q(value: str) -> str:
     """A string literal, double-quoted as the rest of the module is."""
     return lit(value)
+
+
+def _base_name(relation: Relation) -> str:
+    """The name a relation's constant and record are made from: the table's own, qualified by its
+    schema when it has one - except the event tables in ``eventlog``, which are ``EVENTS`` and
+    ``EVENT_NOTIFICATIONS`` on every database, as the framework names them."""
+    name = relation.table.name
+    if relation.schema is None or (relation.schema == EVENTLOG_SCHEMA and name in EVENT_TABLES):
+        return name
+    return f"{relation.schema}_{name}"
 
 
 @dataclass
@@ -922,12 +933,7 @@ class _Writer:
         return options
 
     def record_of(self, relation: Relation) -> str:
-        base = (
-            relation.table.name
-            if relation.schema is None
-            else f"{relation.schema}_{relation.table.name}"
-        )
-        return record_name(base)
+        return record_name(_base_name(relation))
 
     def _rowid_alias(self, relation: Relation, column: Column[Any]) -> bool:
         """Whether the column is SQLite's ``INTEGER PRIMARY KEY``: the rowid under another name,
@@ -1227,12 +1233,7 @@ class _Writer:
         return None
 
     def name_of(self, relation: Relation) -> str:
-        base = (
-            relation.table.name
-            if relation.schema is None
-            else f"{relation.schema}_{relation.table.name}"
-        )
-        return constant(base)
+        return constant(_base_name(relation))
 
     # -- the framework's tables ---------------------------------------------------------------
 
@@ -1240,7 +1241,9 @@ class _Writer:
         helper = FRAMEWORK_TABLES[relation.table.name]
         self.helpers.add(helper)
         name = self.name_of(relation)
-        schema = f", schema={q(relation.schema)}" if relation.schema is not None else ""
+        # The event tables' schema is fixed in the helper; only db-scheduler's table takes one.
+        takes_schema = relation.table.name not in EVENT_TABLES
+        schema = f", schema={q(relation.schema)}" if takes_schema and relation.schema else ""
         lines = [f"{name} = {helper}(metadata{schema})"]
 
         from sqlalchemy import MetaData

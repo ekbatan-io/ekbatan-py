@@ -201,7 +201,7 @@ def test_the_sentinels_payload_is_sql_null_not_json_null(executor, registry):
     SQL can tell them apart - and a consumer's ``WHERE payload IS NULL`` is SQL."""
     from sqlalchemy import func, select, text
 
-    from fixtures.schema import EVENTS
+    from fixtures.schema import EVENTS, in_sql
 
     run(
         executor,
@@ -212,7 +212,7 @@ def test_the_sentinels_payload_is_sql_null_not_json_null(executor, registry):
     )
     with registry.default.connection(readonly=True) as conn:
         assert conn.execute(select(func.count()).select_from(EVENTS)).scalar() == 1
-        table = EVENTS.fullname
+        table = in_sql(EVENTS, registry.default.dialect)
         assert (
             conn.execute(text(f"SELECT count(*) FROM {table} WHERE payload IS NULL")).scalar() == 1
         )

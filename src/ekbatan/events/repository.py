@@ -1,10 +1,8 @@
 """The two tables the local event handler reads and writes, one repository each.
 
 Java's ``EventEntityRepository`` and ``EventNotificationRepository`` in the local event handler
-module, method for method. Each takes its table, where Java's names ``eventlog.events`` and
-``eventlog.event_notifications`` itself: the schema is not the same on every database here -
-SQLite has none - so the application declares each table once and hands the same one to
-everything that touches it.
+module, method for method. Each names its table itself, as Java's do - ``eventlog.events`` and
+``eventlog.event_notifications``; see :mod:`ekbatan.schema` for where that is on each database.
 
 The writes go through the shard's open transaction when there is one, as Java's
 ``txDbElseDb`` does. The two reads do not, as Java's do not: ``find_undelivered`` and
@@ -20,22 +18,16 @@ from contextlib import contextmanager
 
 from sqlalchemy import Connection, Table, select, update
 
-from ..action.outbox import OUTBOX_COLUMNS, EventEntity
+from ..action.outbox import EventEntity
 from ..errors import ValidationError
 from ..fetching import Db
 from ..persistence import DatabaseRegistry, insert_ignoring_duplicates
+from ..schema import _EVENT_NOTIFICATIONS, _EVENTS
 from ..sharding import ShardIdentifier
 from ..time import Instant
-from .notification import NOTIFICATION_COLUMNS, EventNotification, EventNotificationState
+from .notification import EventNotification, EventNotificationState
 
 __all__ = ["EventEntityRepository", "EventNotificationRepository"]
-
-
-def _require_columns(table: Table, columns: tuple[str, ...], what: str) -> Table:
-    missing = [c for c in columns if c not in table.c]
-    if missing:
-        raise ValidationError(f"{table.name} is missing {what} column(s): {missing}")
-    return table
 
 
 class _ShardRepository:
@@ -78,8 +70,8 @@ class EventEntityRepository(_ShardRepository):
 
     __slots__ = ()
 
-    def __init__(self, database_registry: DatabaseRegistry, table: Table) -> None:
-        super().__init__(database_registry, _require_columns(table, OUTBOX_COLUMNS, "outbox"))
+    def __init__(self, database_registry: DatabaseRegistry) -> None:
+        super().__init__(database_registry, _EVENTS)
 
     def find_undelivered(
         self, shard: ShardIdentifier, handled_event_types: Collection[str], limit: int
@@ -122,10 +114,8 @@ class EventNotificationRepository(_ShardRepository):
 
     __slots__ = ()
 
-    def __init__(self, database_registry: DatabaseRegistry, table: Table) -> None:
-        super().__init__(
-            database_registry, _require_columns(table, NOTIFICATION_COLUMNS, "notification")
-        )
+    def __init__(self, database_registry: DatabaseRegistry) -> None:
+        super().__init__(database_registry, _EVENT_NOTIFICATIONS)
 
     def add_all_no_result(
         self, notifications: Collection[EventNotification], shard: ShardIdentifier

@@ -13,7 +13,19 @@ from __future__ import annotations
 
 from sqlalchemy import MetaData, inspect
 
-from ekbatan.schema import notifications_table, outbox_table, scheduled_tasks_table
+from ekbatan.schema import (
+    EVENTLOG_SCHEMA,
+    eventlog_translation,
+    notifications_table,
+    outbox_table,
+    scheduled_tasks_table,
+)
+
+
+def eventlog_of(engine) -> str | None:
+    """Where the event tables are, for an inspector - which applies no schema_translate_map:
+    the `eventlog` schema on PostgreSQL, the database itself elsewhere."""
+    return None if eventlog_translation(engine.dialect.name) else EVENTLOG_SCHEMA
 
 
 def test_the_framework_declares_no_indexes_of_its_own():
@@ -43,7 +55,7 @@ def test_the_migration_builds_the_index_this_dialect_can_have(registry):
     Measured on 500,000 rows with a 1% backlog: 56 kB partial against 3,528 kB composite.
     """
     engine = registry.default.primary
-    names = {i["name"] for i in inspect(engine).get_indexes("events")}
+    names = {i["name"] for i in inspect(engine).get_indexes("events", eventlog_of(engine))}
 
     assert "ix_events_undelivered" in names, f"the migration built none: {sorted(names)}"
     assert "ix_events_action_id" in names
@@ -59,7 +71,9 @@ def test_the_migration_builds_the_index_this_dialect_can_have(registry):
 def test_the_notifications_index_skips_what_dispatch_never_asks_for(registry):
     """SUCCEEDED and EXPIRED rows pile up for the retention window and are never selected."""
     engine = registry.default.primary
-    names = {i["name"] for i in inspect(engine).get_indexes("event_notifications")}
+    names = {
+        i["name"] for i in inspect(engine).get_indexes("event_notifications", eventlog_of(engine))
+    }
 
     assert "ix_event_notifications_due" in names
 

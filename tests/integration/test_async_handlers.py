@@ -44,7 +44,7 @@ from fixtures.domain import Notification, Wallet, WalletMoneyDepositedEvent
 from fixtures.executing import run
 from fixtures.handlers import succeeding
 from fixtures.repositories import AsyncNotificationRepository
-from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS, NOTIFICATIONS
+from fixtures.schema import NOTIFICATIONS
 
 pytestmark = pytest.mark.skipif(under_gevent(), reason=NOT_UNDER_GEVENT)
 
@@ -64,12 +64,8 @@ def a_deposit(executor: Any, wallets: Any) -> None:
 
 def wired(registry: Any, clock: Any, *handlers: Any, **options: Any) -> tuple[Any, Any]:
     subscriptions = EventHandlerRegistry(handlers)
-    fanout = EventFanout(
-        registry, subscriptions, events=EVENTS, notifications=EVENT_NOTIFICATIONS, clock=clock
-    )
-    dispatch = EventDispatch(
-        registry, subscriptions, notifications=EVENT_NOTIFICATIONS, clock=clock, **options
-    )
+    fanout = EventFanout(registry, subscriptions, clock=clock)
+    dispatch = EventDispatch(registry, subscriptions, clock=clock, **options)
     return fanout, dispatch
 
 
@@ -110,7 +106,6 @@ def test_an_async_handler_awaits_an_async_executor_on_the_handler_loop(
         registry=handler_registry,
         repositories=[notifications],
         actions=[AsyncNotifyAction(clock)],
-        events=EVENTS,
         clock=clock,
     )
     fanout, dispatch = wired(registry, clock, NotifyingHandler(handler_executor), handler_loop=loop)

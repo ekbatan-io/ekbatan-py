@@ -331,7 +331,6 @@ def executor(
         NotifyAction,
         TransferMoneyAction,
     )
-    from fixtures.schema import EVENTS
 
     # The suite's application actions, registered as an application's build() registers its
     # own: the executor runs an action by type, as Java's does, so the fixture handler and job
@@ -360,7 +359,7 @@ def executor(
             .with_action(of(NotifyAction)(clock))
             .build()
         )
-        .event_persister(of(SingleTableJsonEventPersister)(registry, EVENTS))
+        .event_persister(of(SingleTableJsonEventPersister)(registry))
         .clock(clock)
         .build()
     )
@@ -372,7 +371,7 @@ def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock, mode: str) 
     from ekbatan.action import ActionExecutor
     from ekbatan.sharding import EmbeddedBitsShardingStrategy
     from fixtures.domain import Wallet
-    from fixtures.schema import EVENTS, WALLETS
+    from fixtures.schema import WALLETS
 
     repo = of_mode(mode, WalletRepository)(
         Wallet, WALLETS, sharded_registry, sharding=EmbeddedBitsShardingStrategy(), clock=clock
@@ -381,7 +380,6 @@ def sharded(sharded_registry: DatabaseRegistry, clock: VirtualClock, mode: str) 
         namespace="example.wallet",
         registry=sharded_registry,
         repositories=[repo],
-        events=EVENTS,
         clock=clock,
     )
     return executor, repo
@@ -429,7 +427,6 @@ def pipeline(registry: DatabaseRegistry, clock: VirtualClock, handler_kind: str)
     made async first in the async half of a module with ``HANDLER_KINDS``."""
     from ekbatan.events import EventDispatch, EventFanout, EventHandlerRegistry
     from fixtures.handlers import of_kind
-    from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS
 
     built: list[Any] = []
 
@@ -438,14 +435,11 @@ def pipeline(registry: DatabaseRegistry, clock: VirtualClock, handler_kind: str)
         fanout = EventFanout(
             registry,
             subscriptions,
-            events=EVENTS,
-            notifications=EVENT_NOTIFICATIONS,
             clock=clock,
         )
         dispatch = EventDispatch(
             registry,
             subscriptions,
-            notifications=EVENT_NOTIFICATIONS,
             clock=clock,
             **dispatch_options,
         )

@@ -17,6 +17,15 @@ everywhere - measured at 3,528 kB against Java's 56 kB on 500,000 rows with a 1%
 Indexes belong to whoever creates the table, which is the application's migrations, where Java
 puts them too: `V0001__eventlog.sql`.
 
+**Where the two event tables live is fixed, as Java's, and nothing passes them.** They are
+``eventlog.events`` and ``eventlog.event_notifications``: the executor's default persister, the
+fan-out job and the handling job all name them themselves. On PostgreSQL ``eventlog`` is a
+schema of its own, in every database - exactly Java's. On MySQL and MariaDB a schema *is* a
+database, and one ``eventlog`` database would be shared by every database on the server, so
+shards and other applications would read each other's events; there, as on SQLite (which has no
+schemas), the two tables live in the application's own database, and every connection ekbatan
+opens maps ``eventlog`` onto it - :func:`eventlog_translation`.
+
 Two rules that outlive any one dialect:
 
 - **Timestamp columns carry no zone**, and hold exactly the value written: the framework
@@ -36,6 +45,7 @@ from typing import Any, Final, Protocol
 
 from sqlalchemy import (
     CHAR,
+    DDL,
     JSON,
     Boolean,
     Column,
@@ -46,16 +56,19 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     Uuid,
+    event,
 )
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator, TypeEngine, UserDefinedType
 
 __all__ = [
+    "EVENTLOG_SCHEMA",
     "UNSET",
     "Converter",
     "JsonValue",
     "Unset",
     "converted",
+    "eventlog_translation",
     "json_column",
     "notifications_table",
     "outbox_table",
@@ -64,6 +77,25 @@ __all__ = [
     "timestamp_column",
     "uuid_column",
 ]
+
+
+#: The schema the two event tables are declared in - Java's ``eventlog``. See the module notes for
+#: where it is on each database.
+EVENTLOG_SCHEMA: Final = "eventlog"
+
+
+def eventlog_translation(dialect: str) -> dict[str, str | None] | None:
+    """The ``schema_translate_map`` a connection to ``dialect`` runs with, or ``None``.
+
+    ``None`` on PostgreSQL, where ``eventlog`` is a real schema in each database. Everywhere else
+    ``eventlog`` is mapped onto the connection's own database: on MySQL and MariaDB because a
+    separate ``eventlog`` database would be shared by every database on the server, on SQLite
+    because it has no schemas. ``dialect`` is a SQLAlchemy dialect name (``postgresql``) or this
+    framework's (``postgres``).
+    """
+    if dialect in ("postgresql", "postgres"):
+        return None
+    return {EVENTLOG_SCHEMA: None}
 
 
 #: What a JSON column reads back: an object, an array, text, a number, a boolean or ``None``.
@@ -293,38 +325,58 @@ def sql_type(spelling: str) -> TypeEngine[Any]:
     return _SqlType(spelling)
 
 
-def outbox_table(metadata: MetaData, *, name: str = "events", schema: str | None = None) -> Table:
+def _creates_eventlog(table: Table) -> Table:
+    """``create_all`` makes the ``eventlog`` schema on PostgreSQL before the table - it creates no
+    schema by itself. Elsewhere ``eventlog`` is the database, and there is nothing to make."""
+    event.listen(
+        table,
+        "before_create",
+        # SQLAlchemy's DDL() carries no annotations.
+        DDL(f"CREATE SCHEMA IF NOT EXISTS {EVENTLOG_SCHEMA}").execute_if(  # type: ignore[no-untyped-call]
+            dialect="postgresql"
+        ),
+    )
+    return table
+
+
+def outbox_table(metadata: MetaData) -> Table:
     """``eventlog.events``: one row per emitted event, plus one per unit of work that emitted
-    none."""
-    return Table(
-        name,
-        metadata,
-        Column("id", uuid_column(), primary_key=True),
-        Column("namespace", String(255), nullable=False),
-        Column("action_id", uuid_column(), nullable=False),
-        Column("action_name", String(255), nullable=False),
-        # Not null: every row carries the full input of the unit of work that produced it, so
-        # one row is a complete audit record without a join - and so a consumer can read a
-        # value the domain event deliberately does not carry.
-        Column("action_params", json_column(), nullable=False),
-        Column("started_date", timestamp_column(), nullable=False),
-        Column("completion_date", timestamp_column(), nullable=False),
-        Column("model_id", String(255)),
-        Column("model_type", String(255)),
-        Column("event_type", String(255)),
-        Column("payload", json_column()),
-        Column("event_date", timestamp_column(), nullable=False),
-        # The outbox's only mutable column, and it belongs to the consumer. A producer that
-        # flips it loses the event for every consumer that had not yet read it.
-        Column("delivered", Boolean, nullable=False),
-        schema=schema,
+    none.
+
+    The name and the schema are fixed, as Java's are: the framework reads and writes exactly this
+    table, so it takes no other. On MySQL, MariaDB and SQLite ``eventlog`` is the application's
+    own database - see :func:`eventlog_translation`.
+    """
+    return _creates_eventlog(
+        Table(
+            "events",
+            metadata,
+            Column("id", uuid_column(), primary_key=True),
+            Column("namespace", String(255), nullable=False),
+            Column("action_id", uuid_column(), nullable=False),
+            Column("action_name", String(255), nullable=False),
+            # Not null: every row carries the full input of the unit of work that produced it, so
+            # one row is a complete audit record without a join - and so a consumer can read a
+            # value the domain event deliberately does not carry.
+            Column("action_params", json_column(), nullable=False),
+            Column("started_date", timestamp_column(), nullable=False),
+            Column("completion_date", timestamp_column(), nullable=False),
+            Column("model_id", String(255)),
+            Column("model_type", String(255)),
+            Column("event_type", String(255)),
+            Column("payload", json_column()),
+            Column("event_date", timestamp_column(), nullable=False),
+            # The outbox's only mutable column, and it belongs to the consumer. A producer that
+            # flips it loses the event for every consumer that had not yet read it.
+            Column("delivered", Boolean, nullable=False),
+            schema=EVENTLOG_SCHEMA,
+        )
     )
 
 
-def notifications_table(
-    metadata: MetaData, *, name: str = "event_notifications", schema: str | None = None
-) -> Table:
-    """``eventlog.event_notifications``: one row per (event, subscriber).
+def notifications_table(metadata: MetaData) -> Table:
+    """``eventlog.event_notifications``: one row per (event, subscriber). Fixed, as
+    :func:`outbox_table`.
 
     The event's context is denormalised onto it so that dispatch never has to read the events
     table again - and so a handler's envelope is one row.
@@ -334,30 +386,34 @@ def notifications_table(
     constraint is what stops that from doubling the work, and it belongs in the schema rather
     than in a fan-out that tries to remember.
     """
-    return Table(
-        name,
-        metadata,
-        Column("id", uuid_column(), primary_key=True),
-        Column("event_id", uuid_column(), nullable=False),
-        Column("handler_name", String(255), nullable=False),
-        Column("namespace", String(255), nullable=False),
-        Column("action_id", uuid_column(), nullable=False),
-        Column("action_name", String(255), nullable=False),
-        Column("action_params", json_column(), nullable=False),
-        Column("started_date", timestamp_column(), nullable=False),
-        Column("completion_date", timestamp_column(), nullable=False),
-        Column("model_id", String(255)),
-        Column("model_type", String(255)),
-        Column("event_type", String(255), nullable=False),
-        Column("payload", json_column()),
-        Column("event_date", timestamp_column(), nullable=False),
-        Column("state", String(24), nullable=False),
-        Column("attempts", Integer, nullable=False, default=0),
-        Column("next_retry_at", timestamp_column(), nullable=False),
-        Column("created_date", timestamp_column(), nullable=False),
-        Column("updated_date", timestamp_column(), nullable=False),
-        UniqueConstraint("event_id", "handler_name", name=f"uq_{name}_event_handler"),
-        schema=schema,
+    return _creates_eventlog(
+        Table(
+            "event_notifications",
+            metadata,
+            Column("id", uuid_column(), primary_key=True),
+            Column("event_id", uuid_column(), nullable=False),
+            Column("handler_name", String(255), nullable=False),
+            Column("namespace", String(255), nullable=False),
+            Column("action_id", uuid_column(), nullable=False),
+            Column("action_name", String(255), nullable=False),
+            Column("action_params", json_column(), nullable=False),
+            Column("started_date", timestamp_column(), nullable=False),
+            Column("completion_date", timestamp_column(), nullable=False),
+            Column("model_id", String(255)),
+            Column("model_type", String(255)),
+            Column("event_type", String(255), nullable=False),
+            Column("payload", json_column()),
+            Column("event_date", timestamp_column(), nullable=False),
+            Column("state", String(24), nullable=False),
+            Column("attempts", Integer, nullable=False, default=0),
+            Column("next_retry_at", timestamp_column(), nullable=False),
+            Column("created_date", timestamp_column(), nullable=False),
+            Column("updated_date", timestamp_column(), nullable=False),
+            UniqueConstraint(
+                "event_id", "handler_name", name="uq_event_notifications_event_handler"
+            ),
+            schema=EVENTLOG_SCHEMA,
+        )
     )
 
 
@@ -383,3 +439,11 @@ def scheduled_tasks_table(
     if schema is not None:
         table.schema = schema
     return table
+
+
+#: The two event tables as the framework itself reads and writes them, on a metadata of their own,
+#: so that no application has to declare them for the framework to work - Java's repositories
+#: name ``eventlog.events`` and ``eventlog.event_notifications`` the same way.
+_FRAMEWORK_METADATA = MetaData()
+_EVENTS: Final = outbox_table(_FRAMEWORK_METADATA)
+_EVENT_NOTIFICATIONS: Final = notifications_table(_FRAMEWORK_METADATA)

@@ -37,7 +37,9 @@ class StatementCount:
 
     rollbacks: int = 0
 
-    #: Write statements per table.
+    #: Write statements per table, by its name without a schema: ``writes["events"]`` on every
+    #: database, though the statement says ``eventlog.events`` on PostgreSQL and the database's
+    #: own name before it elsewhere (``main.events`` on SQLite).
     writes: Counter[str] = field(default_factory=Counter)
 
     statements: list[str] = field(default_factory=list)
@@ -76,7 +78,7 @@ def count_statements(registry: _ShardRegistry[Any]) -> Iterator[StatementCount]:
         counted.statements.append(statement)
         match = _WRITE.match(statement)
         if match:
-            counted.writes[match.group(2).strip('`"[]')] += 1
+            counted.writes[match.group(2).strip('`"[]').rsplit(".", 1)[-1]] += 1
 
     def committed(conn):  # type: ignore[no-untyped-def]
         counted.transactions += 1

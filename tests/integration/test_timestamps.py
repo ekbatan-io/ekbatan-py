@@ -26,7 +26,7 @@ from fixtures.actions import CreateWalletAction, CreateWalletParams
 from fixtures.domain import Wallet
 from fixtures.executing import run
 from fixtures.repositories import WalletRepository
-from fixtures.schema import EVENTS, WALLETS
+from fixtures.schema import EVENTS, WALLETS, in_sql
 
 #: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
 MODES = ("sync", "async")
@@ -166,7 +166,8 @@ def test_the_outbox_columns_round_trip_a_naive_time_to_the_microsecond(registry)
     assert _handed(seen, PRECISE)[0]
     with registry.default.connection(readonly=True) as conn:
         read = conn.execute(select(EVENTS.c.started_date)).scalar_one()
-        stored = conn.execute(text(f"SELECT started_date FROM {EVENTS.fullname}")).scalar_one()
+        events = in_sql(EVENTS, registry.default.dialect)
+        stored = conn.execute(text(f"SELECT started_date FROM {events}")).scalar_one()
 
     if isinstance(stored, str):  # SQLite keeps text
         stored = datetime.fromisoformat(stored)

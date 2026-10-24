@@ -17,8 +17,6 @@ import uuid
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sqlalchemy import MetaData, Table
-
 from .._tracing import span
 from ..action.action import _Binding
 from ..action.executor import DEFAULT, ExecutionConfiguration, _ExecutorBuilder, _ExecutorCore
@@ -26,7 +24,6 @@ from ..action.plan import ActionPlan, PersistableChanges
 from ..action.registry import ActionRegistry
 from ..clock import Clock
 from ..repository import RepositoryRegistry
-from ..schema import outbox_table
 from ..sharding import ShardIdentifier
 from .action import AsyncAction
 from .outbox import AsyncEventPersister, AsyncSingleTableJsonEventPersister
@@ -60,18 +57,12 @@ class AsyncActionExecutor(_ExecutorCore):
         registry: AsyncDatabaseRegistry,
         repositories: RepositoryRegistry | Iterable[AsyncRepository[Any]],
         actions: ActionRegistry | Iterable[AsyncAction[Any, Any]] = (),
-        events: Table | None = None,
         outbox: AsyncEventPersister | None = None,
         clock: Clock | None = None,
         config: ExecutionConfiguration = DEFAULT,
     ) -> None:
         self._setup(namespace, registry, repositories, actions, clock, config)
-        if outbox is not None:
-            self.outbox = outbox
-        else:
-            self.outbox = AsyncSingleTableJsonEventPersister(
-                registry, events if events is not None else outbox_table(MetaData())
-            )
+        self.outbox = outbox if outbox is not None else AsyncSingleTableJsonEventPersister(registry)
         # The one RepositoryRegistry: a map from model type to repository that never calls
         # one, so it holds an async repository as well as a sync one.
         self.changes = AsyncChangePersister(

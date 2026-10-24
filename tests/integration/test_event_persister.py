@@ -56,7 +56,7 @@ class ScalarPayload(ModelEvent["Item"]):
 
 @pytest.fixture
 def persister(registry):
-    return SingleTableJsonEventPersister(registry, EVENTS)
+    return SingleTableJsonEventPersister(registry)
 
 
 @dataclass(frozen=True)
@@ -204,9 +204,7 @@ def test_the_rows_of_one_invocation_can_be_found_by_its_action_id(write, registr
     )
     write(ItemCreated(model_id=an_id(), description="unrelated"))
 
-    theirs = EventEntityRepository(registry, EVENTS).find_by_action_id(
-        first.action_id, DEFAULT_SHARD
-    )
+    theirs = EventEntityRepository(registry).find_by_action_id(first.action_id, DEFAULT_SHARD)
 
     assert len(theirs) == 2
     assert {e.action_id for e in theirs} == {first.action_id}
@@ -219,7 +217,7 @@ def test_the_repository_reads_back_every_row_the_persister_wrote(write, registry
     write(ItemCreated(model_id=an_id(), description="a"))
     write()
 
-    repository = EventEntityRepository(registry, EVENTS)
+    repository = EventEntityRepository(registry)
 
     assert repository.count(DEFAULT_SHARD) == 2
     assert sorted(e.event_type or "sentinel" for e in repository.find_all(DEFAULT_SHARD)) == [
@@ -295,14 +293,3 @@ def test_two_event_classes_with_one_name_are_refused(write):
 
     with pytest.raises(ValidationError, match="event type name collision"):
         write(other(model_id=an_id()), Colliding(model_id=an_id()))
-
-
-def test_a_table_missing_an_outbox_column_is_refused_at_construction(registry):
-    """Not a Java case - its persister takes a jOOQ table it declares itself. Here the table is
-    supplied, so it is checked once at construction rather than at the first write."""
-    from sqlalchemy import Column, Integer, MetaData, Table
-
-    incomplete = Table("nearly", MetaData(), Column("id", Integer, primary_key=True))
-
-    with pytest.raises(ValidationError, match="missing outbox column"):
-        SingleTableJsonEventPersister(registry, incomplete)

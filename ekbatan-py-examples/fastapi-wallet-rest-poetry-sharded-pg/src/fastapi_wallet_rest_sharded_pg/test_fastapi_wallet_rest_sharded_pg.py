@@ -87,7 +87,12 @@ def service(variables: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> Itera
     try:
         for shard in built.registry.shards:
             with built.registry.manager(shard).connection() as conn:
-                for table in ("wallets", "events", "event_notifications", "alerts"):
+                for table in (
+                    "wallets",
+                    "eventlog.events",
+                    "eventlog.event_notifications",
+                    "alerts",
+                ):
                     conn.execute(text(f"DELETE FROM {table}"))
         yield built
     finally:
@@ -177,12 +182,14 @@ def test_each_shard_keeps_its_own_outbox(service: ShardedWallets) -> None:
     counts = {}
     for shard in service.registry.shards:
         with service.registry.manager(shard).connection(readonly=True) as conn:
-            counts[shard] = conn.execute(text("SELECT count(*) FROM events")).scalar_one()
+            counts[shard] = conn.execute(text("SELECT count(*) FROM eventlog.events")).scalar_one()
 
     assert counts[MEXICO] == 1
     assert counts[GLOBAL] == 0
     with service.registry.manager(MEXICO).connection(readonly=True) as conn:
-        opened_at = conn.execute(text("SELECT payload->>'openedAt' FROM events")).scalar_one()
+        opened_at = conn.execute(
+            text("SELECT payload->>'openedAt' FROM eventlog.events")
+        ).scalar_one()
     assert opened_at.endswith("Z"), "the event's Instant: UTC digits with Java's Z"
 
 
@@ -270,7 +277,12 @@ def client(variables: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> Iterat
     with TestClient(create_app()) as running:
         for shard in running.app.state.service.registry.shards:
             with running.app.state.service.registry.manager(shard).connection() as conn:
-                for table in ("wallets", "events", "event_notifications", "alerts"):
+                for table in (
+                    "wallets",
+                    "eventlog.events",
+                    "eventlog.event_notifications",
+                    "alerts",
+                ):
                     conn.execute(text(f"DELETE FROM {table}"))
         yield running
 

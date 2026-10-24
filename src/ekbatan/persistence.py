@@ -35,6 +35,7 @@ from .config import DataSourceConfig, ShardingConfig, ShardMemberConfig
 from .config import _unknown_shard_policy as _policy
 from .errors import TransactionContextError, TransactionThreadError, ValidationError
 from .fetching import Db, FetchResult
+from .schema import eventlog_translation
 from .sharding import ShardIdentifier
 
 __all__ = [
@@ -568,6 +569,11 @@ def _engine_kwargs(config: DataSourceConfig) -> dict[str, Any]:
         "json_serializer": column_dumps,
         "json_deserializer": loads,
     }
+    # Where the event tables are: `eventlog` is a schema on PostgreSQL and the connection's own
+    # database everywhere else. See ekbatan.schema.eventlog_translation.
+    translation = eventlog_translation(config.dialect)
+    if translation is not None:
+        kwargs["execution_options"] = {"schema_translate_map": translation}
     if config.dialect != "sqlite":
         kwargs |= {
             "pool_size": config.pool_size,

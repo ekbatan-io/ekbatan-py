@@ -31,7 +31,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, func, insert, select
+from sqlalchemy import func, insert, select
 
 from conftest import GLOBAL, MEXICO, NOT_UNDER_GEVENT, _registry, under_gevent
 from ekbatan import Action
@@ -255,7 +255,6 @@ async def service(
         registry=registry,
         repositories=[wallets],
         actions=actions,
-        events=EVENTS,
         outbox=outbox(registry) if outbox is not None else None,
         clock=clock,
     )
@@ -267,7 +266,7 @@ async def service(
 
 def committed(backend: Any, name: str = MAIN) -> tuple[dict[Any, Decimal], list[dict[str, Any]]]:
     """What is committed, read by a sync connection that is part of neither run."""
-    engine = create_engine(backend.url(name))
+    engine = backend.engine(name)
     try:
         with engine.connect() as conn:
             balances = {r.id: r.balance for r in conn.execute(select(WALLETS))}
@@ -445,7 +444,6 @@ def test_each_mode_refuses_the_other_kind_of_action(mode, backend, clock):
                     registry=svc.registry,
                     repositories=[svc.wallets],
                     actions=[other],
-                    events=EVENTS,
                     clock=clock,
                 )
 

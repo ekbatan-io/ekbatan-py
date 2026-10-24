@@ -34,7 +34,7 @@ from ekbatan.action.outbox import EventEntity, SingleTableJsonEventPersister
 from ekbatan.domain import ModelEvent
 from ekbatan.errors import ValidationError
 from ekbatan.persistence import DatabaseRegistry, TransactionManager
-from ekbatan.schema import outbox_table
+from ekbatan.schema import eventlog_translation, outbox_table
 from ekbatan.sharding import DEFAULT_SHARD
 
 
@@ -45,7 +45,15 @@ class TestEvent(ModelEvent["Model"]):
     amount: int = 1
 
 
-def persist(engine, table, *events: ModelEvent) -> None:
+def sqlite_engine():
+    """An in-memory database, its connections mapping `eventlog` onto it - on SQLite the event
+    tables live in the database itself (ekbatan.schema.eventlog_translation)."""
+    return create_engine(
+        "sqlite://", execution_options={"schema_translate_map": eventlog_translation("sqlite")}
+    )
+
+
+def persist(engine, *events: ModelEvent) -> None:
     """One unit of work's events, written inside a transaction as the executor writes them."""
     registry = (
         DatabaseRegistry.builder()
@@ -54,7 +62,7 @@ def persist(engine, table, *events: ModelEvent) -> None:
     )
     now = datetime.now(UTC).replace(tzinfo=None)
     with registry.default.transaction():
-        SingleTableJsonEventPersister(registry, table).persist_action_events(
+        SingleTableJsonEventPersister(registry).persist_action_events(
             "test_namespace", "TestAction", now, now, {}, list(events), DEFAULT_SHARD, uuid.uuid4()
         )
 
@@ -64,11 +72,11 @@ def written():
     """Persist a record and hand back the rows it wrote."""
     metadata = MetaData()
     table = outbox_table(metadata)
-    engine = create_engine("sqlite://")
+    engine = sqlite_engine()
     metadata.create_all(engine)
 
     def write(*events: ModelEvent):
-        persist(engine, table, *events)
+        persist(engine, *events)
         with engine.connect() as conn:
             return [row._mapping for row in conn.execute(select(table))]
 
@@ -114,10 +122,10 @@ def test_the_flag_is_still_settable_for_the_fanout_that_owns_it(written) -> None
     fan-out doing so for real is `tests/integration/test_events.py`."""
     metadata = MetaData()
     table = outbox_table(metadata)
-    engine = create_engine("sqlite://")
+    engine = sqlite_engine()
     metadata.create_all(engine)
 
-    persist(engine, table, TestEvent(model_id="model-1"))
+    persist(engine, TestEvent(model_id="model-1"))
     with engine.begin() as conn:
         conn.execute(table.update().values(delivered=True))
 
@@ -178,3 +186,40 @@ def test_an_event_entity_names_what_it_is_missing() -> None:
 def test_an_event_entity_round_trips_through_its_row() -> None:
     entity = a_new_entity().build()
     assert EventEntity.from_row(SimpleNamespace(**entity.to_row())).to_row() == entity.to_row()
+
+
+# -- where the two tables are: fixed, as Java's (Dracula 14) ------------------------------------
+
+
+def test_the_event_tables_are_named_as_java_names_them() -> None:
+    from ekbatan.schema import notifications_table
+
+    metadata = MetaData()
+    assert outbox_table(metadata).fullname == "eventlog.events"
+    assert notifications_table(metadata).fullname == "eventlog.event_notifications"
+
+
+def test_eventlog_is_a_schema_on_postgresql_and_the_database_itself_elsewhere() -> None:
+    assert eventlog_translation("postgres") is None
+    assert eventlog_translation("postgresql") is None
+    for dialect in ("mysql", "mariadb", "sqlite"):
+        assert eventlog_translation(dialect) == {"eventlog": None}, dialect
+
+
+def test_emit_ddl_creates_the_schema_on_postgresql_and_no_schema_elsewhere() -> None:
+    from ekbatan.migrations import emit_ddl
+    from ekbatan.schema import notifications_table
+
+    metadata = MetaData()
+    outbox_table(metadata)
+    notifications_table(metadata)
+
+    postgres = emit_ddl(metadata, "postgres")
+    assert postgres.startswith("CREATE SCHEMA IF NOT EXISTS eventlog;\n")
+    assert "CREATE TABLE eventlog.events (" in postgres
+    assert "CREATE TABLE eventlog.event_notifications (" in postgres
+    for dialect in ("mysql", "mariadb", "sqlite"):
+        other = emit_ddl(metadata, dialect)
+        assert "eventlog" not in other, dialect
+        assert "CREATE TABLE events (" in other, dialect
+    assert metadata.tables["eventlog.events"].schema == "eventlog", "the caller's metadata is kept"

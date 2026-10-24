@@ -303,7 +303,6 @@ def _executor_over(registry, repo, clock):
         namespace="example.wallet",
         registry=registry,
         repositories=[repo],
-        events=EVENTS,
         clock=clock,
     )
 

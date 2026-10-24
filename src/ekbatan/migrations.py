@@ -73,7 +73,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, Self
+from typing import TYPE_CHECKING, Any, NamedTuple, Self, cast
 
 from sqlalchemy import Boolean, Column, Index, Integer, MetaData, String, Table
 from sqlalchemy.schema import CreateIndex, CreateTable
@@ -1768,9 +1768,25 @@ def migrate_registry(registry: DatabaseRegistry, metadata: MetaData) -> None:
 
     For development and tests. Real deployments migrate from files, because ``create_all`` has
     no answer for a column that changed.
+
+    The event tables land where the framework reads them: in a schema called ``eventlog`` on
+    PostgreSQL, created here first, and in the database itself everywhere else
+    (:func:`~ekbatan.schema.eventlog_translation`).
     """
+    from sqlalchemy import text
+
+    from .schema import EVENTLOG_SCHEMA, eventlog_translation
+
+    in_eventlog = any(table.schema == EVENTLOG_SCHEMA for table in metadata.tables.values())
     for shard in registry.shards:
-        metadata.create_all(registry.manager(shard)._engine())
+        engine = registry.manager(shard)._engine()
+        translation = eventlog_translation(engine.dialect.name)
+        if translation is not None:
+            engine = engine.execution_options(schema_translate_map=translation)
+        elif in_eventlog:
+            with engine.begin() as conn:
+                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {EVENTLOG_SCHEMA}"))
+        metadata.create_all(engine)
 
 
 def emit_ddl(metadata: MetaData, dialect: str) -> str:
@@ -1778,10 +1794,27 @@ def emit_ddl(metadata: MetaData, dialect: str) -> str:
 
     A starting point for the first migration - run it, read it, commit it as a file. Generated
     once and then owned by you, rather than regenerated behind your back on every deploy.
+
+    The event tables are written where the framework reads them: on PostgreSQL in a schema
+    called ``eventlog``, created first, and everywhere else in the database itself
+    (:func:`~ekbatan.schema.eventlog_translation`).
     """
+    from .schema import EVENTLOG_SCHEMA, eventlog_translation
+
     target_dialect = _dialect(dialect)
+    translation = eventlog_translation(target_dialect.name) or {}
     statements: list[str] = []
-    for table in metadata.sorted_tables:
+    schema_created = False
+    for original in metadata.sorted_tables:
+        table = original
+        if original.schema in translation:
+            # Copied rather than altered: the caller's metadata keeps the table as declared.
+            # `None` is SQLAlchemy's documented "the target metadata's schema", which its type
+            # stub leaves out.
+            table = original.to_metadata(MetaData(), schema=cast(Any, translation[original.schema]))
+        elif original.schema == EVENTLOG_SCHEMA and not schema_created:
+            statements.append(f"CREATE SCHEMA IF NOT EXISTS {EVENTLOG_SCHEMA};")
+            schema_created = True
         statements.append(str(CreateTable(table).compile(dialect=target_dialect)).strip() + ";")
         # By name: `table.indexes` is a set, so its order changes from one process to the next,
         # and output that is committed as a file has to be the same every time it is generated.

@@ -90,13 +90,23 @@ class Backend(ABC):
             self.MIGRATIONS / self.MIGRATION_DIRECTORIES[self.dialect],
         )
 
+    def engine(self, name: str, **kwargs: Any) -> Any:
+        """A hand-built engine on one logical database that maps `eventlog` onto it where it is
+        not a schema, as `engine_for` does (ekbatan.schema.eventlog_translation) - so a test
+        reads the event tables where the framework writes them."""
+        from ekbatan.schema import eventlog_translation
+
+        translation = eventlog_translation(self.dialect)
+        options = {"schema_translate_map": translation} if translation else {}
+        return create_engine(self.url(name), execution_options=options, **kwargs)
+
     def truncate(self, name: str, metadata: MetaData) -> None:
         """Empty every table, leaving the schema alone.
 
         Between tests rather than recreating: DDL is the slow part on a real server, and a
         suite that pays it 125 times per dialect is a suite nobody waits for.
         """
-        engine = create_engine(self.url(name))
+        engine = self.engine(name)
         try:
             with engine.begin() as conn:
                 self._disable_constraints(conn)

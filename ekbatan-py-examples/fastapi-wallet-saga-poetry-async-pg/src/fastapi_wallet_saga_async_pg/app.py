@@ -40,7 +40,6 @@ from ekbatan import (
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
-    AsyncSingleTableJsonEventPersister,
     AsyncTransactionManager,
     async_engine_for,
 )
@@ -59,7 +58,6 @@ from .actions import (
 )
 from .handlers import TransferFailedEventHandler, TransferInitiatedEventHandler
 from .repository import TransferStepRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS
 
 #: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
 #: rather than from `create_all`, which is the difference between an example and something you
@@ -145,7 +143,6 @@ def build(
             .with_action(RefundTransferAction(wallets, running))
             .build()
         )
-        .event_persister(AsyncSingleTableJsonEventPersister(registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -181,7 +178,6 @@ def build(
             .with_action(RefundTransferAction(handler_wallets, running))
             .build()
         )
-        .event_persister(AsyncSingleTableJsonEventPersister(handler_registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -219,8 +215,6 @@ def build(
                     EventFanoutJob.builder()
                     .registry(events_registry)
                     .handlers(handlers)
-                    .events(EVENTS)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     .clock(running)
                     .build(),
@@ -230,7 +224,6 @@ def build(
                     # The loop the async handlers run on - ours, so `aclose` can close their
                     # pool on it first.
                     .handler_loop(handler_loop)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     # Java's DI makes this job only if `handling.enabled`; this is that check.
                     .enabled(events_config.handling.enabled)

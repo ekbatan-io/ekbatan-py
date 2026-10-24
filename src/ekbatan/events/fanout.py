@@ -18,8 +18,6 @@ import logging
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import Table
-
 from .._metrics import counter
 from ..clock import Clock, SystemClock
 from ..persistence import DatabaseRegistry
@@ -64,15 +62,13 @@ class EventFanout:
         registry: DatabaseRegistry,
         handlers: EventHandlerRegistry,
         *,
-        events: Table,
-        notifications: Table,
         clock: Clock | None = None,
         batch_size: int = 200,
     ) -> None:
         self._registry = registry
         self._handlers = handlers
-        self._event_repository = EventEntityRepository(registry, events)
-        self._notification_repository = EventNotificationRepository(registry, notifications)
+        self._event_repository = EventEntityRepository(registry)
+        self._notification_repository = EventNotificationRepository(registry)
         self._clock = clock or SystemClock()
         self._batch = batch_size
         self._shards = Concurrently(len(registry.shards), name="ekbatan-fanout-shard", log=LOG)

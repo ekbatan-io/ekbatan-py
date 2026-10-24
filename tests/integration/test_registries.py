@@ -26,7 +26,6 @@ from fixtures.actions import (
 )
 from fixtures.domain import Notification, Wallet
 from fixtures.repositories import WalletRepository
-from fixtures.schema import EVENTS
 
 #: Each test runs on the sync API and on `ekbatan.aio` - see tests/modes.py.
 MODES = ("sync", "async")
@@ -99,7 +98,6 @@ def test_an_action_can_be_run_by_type(registry, clock, wallets, notifications):
         .with_action(CreateWalletAction(clock))
         .with_action(DepositMoneyAction(wallets, clock))
         .build(),
-        events=EVENTS,
         clock=clock,
     )
 
@@ -144,7 +142,6 @@ def test_an_action_with_another_clock_reaches_the_executor_as_in_java(
         registry=registry,
         repositories=[wallets, notifications],
         actions=[CreateWalletAction(elsewhere)],
-        events=EVENTS,
         clock=executor_clock,
     )
     assert built.clock is executor_clock
@@ -201,17 +198,17 @@ def test_the_executor_names_the_argument_it_was_not_given(registry, wallets):
     """
     from ekbatan import ActionExecutor
     from ekbatan.errors import ValidationError
-    from fixtures.schema import EVENTS
 
     with pytest.raises(ValidationError, match="registry is required"):
-        ActionExecutor(namespace="x.y", registry=None, repositories=[wallets], events=EVENTS)
+        ActionExecutor(namespace="x.y", registry=None, repositories=[wallets])
 
     with pytest.raises(ValidationError, match="repositories is required"):
-        ActionExecutor(namespace="x.y", registry=registry, repositories=None, events=EVENTS)
+        ActionExecutor(namespace="x.y", registry=registry, repositories=None)
 
-    # Neither events= nor outbox=: the default persister, as Java's builder makes one.
+    # No outbox=: the default persister, over `eventlog.events`, as Java's builder makes one.
     built = ActionExecutor(namespace="x.y", registry=registry, repositories=[wallets])
-    assert built.outbox._event_repository._table.name == "events"  # type: ignore[attr-defined]
+    table = built.outbox._event_repository._table  # type: ignore[attr-defined]
+    assert table.fullname == "eventlog.events"
 
 
 def test_running_nothing_says_so(executor):

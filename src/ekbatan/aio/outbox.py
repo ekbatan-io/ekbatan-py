@@ -12,11 +12,12 @@ import uuid
 from collections.abc import Collection, Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from sqlalchemy import Table, func, insert, select
+from sqlalchemy import func, insert, select
 
-from ..action.outbox import EventEntity, _require_outbox_columns, _SingleTableJson
+from ..action.outbox import EventEntity, _SingleTableJson
 from ..domain import ModelEvent
 from ..errors import ValidationError
+from ..schema import _EVENTS
 from ..sharding import ShardIdentifier
 from ..time import Instant
 from .persistence import AsyncDatabaseRegistry
@@ -35,11 +36,11 @@ class AsyncEventEntityRepository:
 
     __slots__ = ("_registry", "_table")
 
-    def __init__(self, database_registry: AsyncDatabaseRegistry, table: Table) -> None:
+    def __init__(self, database_registry: AsyncDatabaseRegistry) -> None:
         if database_registry is None:
             raise ValidationError("database_registry cannot be None")
         self._registry = database_registry
-        self._table = _require_outbox_columns(table)
+        self._table = _EVENTS
 
     async def count(self, shard: ShardIdentifier) -> int:
         async with self._registry.manager(shard).connection() as conn:
@@ -91,9 +92,9 @@ class AsyncSingleTableJsonEventPersister(_SingleTableJson):
 
     __slots__ = ("_event_repository",)
 
-    def __init__(self, database_registry: AsyncDatabaseRegistry, table: Table) -> None:
+    def __init__(self, database_registry: AsyncDatabaseRegistry) -> None:
         super().__init__()
-        self._event_repository = AsyncEventEntityRepository(database_registry, table)
+        self._event_repository = AsyncEventEntityRepository(database_registry)
 
     async def persist_action_events(
         self,

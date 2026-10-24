@@ -75,7 +75,6 @@ def executor_over(registry: AsyncDatabaseRegistry, wallets: Any, clock: Any) -> 
         registry=registry,
         repositories=[wallets],
         actions=[AsyncCreateWalletAction(clock), AsyncDepositMoneyAction(wallets, clock)],
-        events=EVENTS,
         clock=clock,
     )
 
@@ -401,7 +400,6 @@ def test_a_timeout_around_a_unit_of_work_commits_nothing(backend, clock, where):
                     AsyncDepositMoneyAction(wallets, clock),
                 ],
                 outbox=SlowOutbox() if where == "inside the transaction" else None,
-                events=EVENTS,
                 clock=clock,
             )
             action = SlowDepositAction if where == "in perform" else AsyncDepositMoneyAction
@@ -546,7 +544,6 @@ def test_reads_gathered_in_perform_each_take_a_connection(backend, clock):
                 registry=registry,
                 repositories=[wallets],
                 actions=[ReadsTwoAtOnceAction(wallets, clock)],
-                events=EVENTS,
                 clock=clock,
             )
             seen: dict[str, Any] = {}

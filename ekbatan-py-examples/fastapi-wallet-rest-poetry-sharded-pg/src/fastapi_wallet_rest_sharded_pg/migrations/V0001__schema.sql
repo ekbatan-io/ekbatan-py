@@ -5,7 +5,10 @@
 -- To change the schema, edit schema.py, regenerate, and put the difference in the next
 -- file - V0002__<what_it_does>.sql. An applied migration is never edited.
 
-CREATE TABLE events (
+-- The two event tables live in a schema of their own, `eventlog`, as Java's do.
+CREATE SCHEMA IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.events (
     id UUID NOT NULL,
     namespace VARCHAR(255) NOT NULL,
     action_id UUID NOT NULL,
@@ -22,9 +25,9 @@ CREATE TABLE events (
     PRIMARY KEY (id)
 );
 
-CREATE INDEX ix_events_action_id ON events (action_id);
+CREATE INDEX ix_events_action_id ON eventlog.events (action_id);
 
-CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
+CREATE INDEX ix_events_undelivered ON eventlog.events (event_type, event_date)
     WHERE delivered = FALSE;
 
 CREATE TABLE wallets (

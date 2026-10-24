@@ -52,7 +52,6 @@ from ekbatan import (
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
-    AsyncSingleTableJsonEventPersister,
     AsyncTransactionManager,
     async_engine_for,
 )
@@ -68,7 +67,6 @@ from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, Ra
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS
 
 #: Where the migration files live - `V<version>__<description>.sql`.
 MIGRATIONS = Path(__file__).resolve().parent / "migrations"
@@ -168,7 +166,6 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
             .with_action(CloseWalletAction(wallets, running))
             .build()
         )
-        .event_persister(AsyncSingleTableJsonEventPersister(registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -208,7 +205,6 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
             .with_action(RaiseAlertAction(running))
             .build()
         )
-        .event_persister(AsyncSingleTableJsonEventPersister(handler_registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -248,8 +244,6 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                     EventFanoutJob.builder()
                     .registry(events_registry)
                     .handlers(handlers)
-                    .events(EVENTS)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     .clock(running)
                     .build(),
@@ -259,7 +253,6 @@ def build(settings: Settings | None = None, *, clock: Clock | None = None) -> Wa
                     # The loop the async handler runs on - ours, so `aclose` can close the
                     # handler's pool on it first.
                     .handler_loop(handler_loop)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     # Off unless `handling.enabled` is set in `ekbatan.yaml`.
                     .enabled(events_config.handling.enabled)

@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any, Self, cast
 from sqlalchemy import Connection
 
 if TYPE_CHECKING:
-    from sqlalchemy import Executable
+    from sqlalchemy import Engine, Executable
     from sqlalchemy.engine import Result
 
 __all__ = ["Db", "FetchResult"]
@@ -231,6 +231,19 @@ class FetchResult:
         return self
 
 
+def _translate_eventlog(connection: Connection) -> None:
+    """Map ``eventlog`` onto the connection's own database where it is not a schema - unless
+    the engine already maps it, as one :func:`~ekbatan.persistence.engine_for` built does."""
+    from .schema import EVENTLOG_SCHEMA, eventlog_translation
+
+    translation = eventlog_translation(connection.dialect.name)
+    if translation is None:
+        return
+    current = connection.get_execution_options().get("schema_translate_map") or {}
+    if EVENTLOG_SCHEMA not in current:
+        Connection.execution_options(connection, schema_translate_map={**current, **translation})
+
+
 class Db(Connection):
     """A SQLAlchemy connection, with one method added.
 
@@ -246,6 +259,16 @@ class Db(Connection):
     """
 
     __slots__ = ()
+
+    def __init__(self, engine: Engine, *args: Any, **kwargs: Any) -> None:
+        """As SQLAlchemy's, and then the event tables are found where they are.
+
+        ``eventlog`` is a schema on PostgreSQL and the connection's own database everywhere else
+        (:func:`~ekbatan.schema.eventlog_translation`). An engine built by :func:`engine_for`
+        already says so; this covers one built by hand and handed to a registry.
+        """
+        super().__init__(engine, *args, **kwargs)
+        _translate_eventlog(self)
 
     def __enter__(self) -> Self:
         """The base class promises a ``Connection``; this promises the subclass.

@@ -24,7 +24,6 @@ from typing import Self
 
 from db_scheduler.task import ExecutionContext
 from db_scheduler.task.schedule import DisabledSchedule, FixedDelay, Schedule
-from sqlalchemy import Table
 
 from ..clock import Clock, SystemClock
 from ..distributedjobs import DistributedJob
@@ -109,8 +108,6 @@ class EventFanoutJob(DistributedJob):
         registry: DatabaseRegistry,
         handlers: EventHandlerRegistry,
         *,
-        events: Table,
-        notifications: Table,
         config: LocalEventHandlerConfig | None = None,
         clock: Clock | None = None,
         name: str = FANOUT_JOB_NAME,
@@ -123,8 +120,6 @@ class EventFanoutJob(DistributedJob):
         self._fanout = EventFanout(
             registry,
             handlers,
-            events=events,
-            notifications=notifications,
             clock=clock or SystemClock(),
             batch_size=tuning.fanout_batch_size or DEFAULT_FANOUT_BATCH_SIZE,
         )
@@ -178,7 +173,6 @@ class EventHandlingJob(DistributedJob):
         registry: DatabaseRegistry,
         handlers: EventHandlerRegistry,
         *,
-        notifications: Table,
         config: LocalEventHandlerConfig | None = None,
         clock: Clock | None = None,
         name: str = HANDLING_JOB_NAME,
@@ -192,7 +186,6 @@ class EventHandlingJob(DistributedJob):
         self._dispatch = EventDispatch(
             registry,
             handlers,
-            notifications=notifications,
             clock=clock or SystemClock(),
             batch_size=tuning.handling_batch_size or DEFAULT_HANDLING_BATCH_SIZE,
             retention=tuning.handling_retention_window or DEFAULT_RETENTION,
@@ -234,14 +227,12 @@ class _JobBuilder:
         "_enabled",
         "_handlers",
         "_name",
-        "_notifications",
         "_registry",
     )
 
     def __init__(self) -> None:
         self._registry: DatabaseRegistry | None = None
         self._handlers: EventHandlerRegistry | None = None
-        self._notifications: Table | None = None
         self._config: LocalEventHandlerConfig | None = None
         self._clock: Clock | None = None
         self._name: str | None = None
@@ -255,10 +246,6 @@ class _JobBuilder:
         self._handlers = handlers
         return self
 
-    def notifications(self, table: Table) -> Self:
-        self._notifications = table
-        return self
-
     def config(self, config: LocalEventHandlerConfig) -> Self:
         self._config = config
         return self
@@ -268,8 +255,8 @@ class _JobBuilder:
         return self
 
     def name(self, name: str) -> Self:
-        """Override the cluster-wide name. Only for running two of these against different
-        tables in one cluster; two jobs sharing a name would each steal the other's slots."""
+        """Override the cluster-wide name, as Java's builder can. Two jobs sharing a name
+        would each steal the other's slots."""
         self._name = name
         return self
 
@@ -289,32 +276,15 @@ class _JobBuilder:
 class EventFanoutJobBuilder(_JobBuilder):
     """Obtain via :meth:`EventFanoutJob.builder`."""
 
-    __slots__ = ("_events",)
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._events: Table | None = None
-
-    def events(self, table: Table) -> Self:
-        self._events = table
-        return self
+    __slots__ = ()
 
     def build(self) -> EventFanoutJob:
-        self._required(
-            registry=self._registry,
-            handlers=self._handlers,
-            events=self._events,
-            notifications=self._notifications,
-        )
+        self._required(registry=self._registry, handlers=self._handlers)
         assert self._registry is not None
         assert self._handlers is not None
-        assert self._events is not None
-        assert self._notifications is not None
         return EventFanoutJob(
             self._registry,
             self._handlers,
-            events=self._events,
-            notifications=self._notifications,
             config=self._config,
             clock=self._clock,
             name=self._name if self._name is not None else FANOUT_JOB_NAME,
@@ -338,18 +308,12 @@ class EventHandlingJobBuilder(_JobBuilder):
         return self
 
     def build(self) -> EventHandlingJob:
-        self._required(
-            registry=self._registry,
-            handlers=self._handlers,
-            notifications=self._notifications,
-        )
+        self._required(registry=self._registry, handlers=self._handlers)
         assert self._registry is not None
         assert self._handlers is not None
-        assert self._notifications is not None
         return EventHandlingJob(
             self._registry,
             self._handlers,
-            notifications=self._notifications,
             config=self._config,
             clock=self._clock,
             name=self._name if self._name is not None else HANDLING_JOB_NAME,

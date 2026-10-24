@@ -30,7 +30,7 @@ from ekbatan.events.jobs import (
 from fixtures.actions import CreateWalletAction, CreateWalletParams
 from fixtures.executing import run
 from fixtures.handlers import RecordingHandler
-from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS
+from fixtures.schema import EVENT_NOTIFICATIONS, SCHEDULED_TASKS
 
 
 @pytest.fixture
@@ -51,17 +51,13 @@ def a_fanout(registry, handlers, clock, **kwargs):
     return EventFanoutJob(
         registry,
         handlers,
-        events=EVENTS,
-        notifications=EVENT_NOTIFICATIONS,
         clock=clock,
         **kwargs,
     )
 
 
 def a_handling(registry, handlers, clock, **kwargs):
-    return EventHandlingJob(
-        registry, handlers, notifications=EVENT_NOTIFICATIONS, clock=clock, **kwargs
-    )
+    return EventHandlingJob(registry, handlers, clock=clock, **kwargs)
 
 
 # ------------------------------------------------------------------ what they are
@@ -95,7 +91,6 @@ def test_a_handling_job_built_by_hand_runs_as_java_s_does(registry, handlers, cl
         EventHandlingJob.builder()
         .registry(registry)
         .handlers(handlers)
-        .notifications(EVENT_NOTIFICATIONS)
         .config(off)
         .clock(clock)
         .build(),
@@ -156,8 +151,6 @@ def test_the_builder_reaches_the_same_place(registry, handlers, clock):
         EventFanoutJob.builder()
         .registry(registry)
         .handlers(handlers)
-        .events(EVENTS)
-        .notifications(EVENT_NOTIFICATIONS)
         .config(LocalEventHandlerConfig(fanout_batch_size=7))
         .clock(clock)
         .build()
@@ -168,7 +161,8 @@ def test_the_builder_reaches_the_same_place(registry, handlers, clock):
 
 
 def test_the_builder_says_what_it_is_missing(registry):
-    with pytest.raises(ValidationError, match=r"needs \['events', 'handlers', 'notifications'\]"):
+    """Only its collaborators: the tables are its own, as Java's builder takes none."""
+    with pytest.raises(ValidationError, match=r"needs \['handlers'\] - "):
         EventFanoutJob.builder().registry(registry).build()
 
 
@@ -276,13 +270,9 @@ def test_the_metrics_are_the_ones_the_java_implementation_emits(
         fanned = fanout_module.EventFanout(
             registry,
             handlers,
-            events=EVENTS,
-            notifications=EVENT_NOTIFICATIONS,
             clock=clock,
         ).drain_once()
-        handled = dispatch_module.EventDispatch(
-            registry, handlers, notifications=EVENT_NOTIFICATIONS, clock=clock
-        ).drain_once()
+        handled = dispatch_module.EventDispatch(registry, handlers, clock=clock).drain_once()
 
         # Collected before the provider is swapped back; a reader detached from its provider
         # has nothing to report.

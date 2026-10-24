@@ -373,7 +373,12 @@ def client(database: str, monkeypatch: pytest.MonkeyPatch):
     use(monkeypatch, database)
     with TestClient(create_app()) as running:
         with running.app.state.service.registry.default.connection() as conn:
-            for table in ("event_notifications", "events", "transfer_steps", "wallets"):
+            for table in (
+                "eventlog.event_notifications",
+                "eventlog.events",
+                "transfer_steps",
+                "wallets",
+            ):
                 conn.execute(text(f"TRUNCATE TABLE {table}"))
         yield running
 

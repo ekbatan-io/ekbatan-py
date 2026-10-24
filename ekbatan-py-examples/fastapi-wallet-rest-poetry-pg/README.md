@@ -48,8 +48,8 @@ becomes `CHAR(32)`, the hex with its hyphens stripped, which no Java service can
 Both silent. Reflected types are mapped back onto the framework's helpers, which is precisely
 Java's `forcedTypes` block.
 
-**It refuses to reflect the framework's own tables.** `events`, `event_notifications` and
-`scheduled_tasks` are emitted as calls to `ekbatan.schema`, because their shape is a contract a
+**It refuses to reflect the framework's own tables.** `eventlog.events`, `eventlog.event_notifications`
+and `scheduled_tasks` are emitted as calls to `ekbatan.schema`, because their shape is a contract a
 CDC connector and other ports bind to. Java does the same with `includeFlywayTable(false)`.
 
 And one thing Java gets for free that this had to add: the generated module records a fingerprint

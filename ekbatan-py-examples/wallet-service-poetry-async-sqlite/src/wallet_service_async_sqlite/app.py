@@ -29,7 +29,6 @@ from ekbatan import ActionRegistry, DatabaseRegistry, RepositoryRegistry
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
-    AsyncSingleTableJsonEventPersister,
     AsyncTransactionManager,
     async_engine_for,
 )
@@ -42,7 +41,7 @@ from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, Ra
 from .handlers import MoneyDepositedEventHandler
 from .jobs import STIPEND_JOB_NAME, PayStipendJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
+from .schema import SCHEDULED_TASKS, metadata
 
 #: The service's Ekbatan settings, read once at startup.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
@@ -151,7 +150,6 @@ def build(
             .with_action(CloseWalletAction(wallets, running))
             .build()
         )
-        .event_persister(AsyncSingleTableJsonEventPersister(registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -187,7 +185,6 @@ def build(
             .with_action(RaiseAlertAction(running))
             .build()
         )
-        .event_persister(AsyncSingleTableJsonEventPersister(handler_registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -205,8 +202,6 @@ def build(
         EventFanoutJob.builder()
         .registry(events_registry)
         .handlers(handlers)
-        .events(EVENTS)
-        .notifications(EVENT_NOTIFICATIONS)
         .config(events_config)
         .clock(running)
         .build()
@@ -218,7 +213,6 @@ def build(
         # The loop the async handler runs on - ours, so `aclose` can close the handler's pool
         # on it first.
         .handler_loop(handler_loop)
-        .notifications(EVENT_NOTIFICATIONS)
         .config(events_config)
         .enabled(events_config.handling.enabled)
         .clock(running)

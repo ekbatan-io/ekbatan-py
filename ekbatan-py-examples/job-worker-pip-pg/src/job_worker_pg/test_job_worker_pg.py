@@ -24,7 +24,6 @@ from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    SingleTableJsonEventPersister,
 )
 from ekbatan.clock import SystemClock
 from ekbatan.config import split_login
@@ -51,7 +50,7 @@ from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob, WalletReportJob
 from .model import Currency, EmailAddress, Wallet
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
+from .schema import EVENTS, SCHEDULED_TASKS, metadata
 
 EPOCH = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
@@ -105,7 +104,6 @@ class Harness:
                 .with_action(RaiseAlertAction(running))
                 .build()
             )
-            .event_persister(SingleTableJsonEventPersister(self.registry, EVENTS))
             .clock(running)
             .build()
         )
@@ -123,8 +121,6 @@ class Harness:
             EventFanoutJob.builder()
             .registry(self.registry)
             .handlers(handlers)
-            .events(EVENTS)
-            .notifications(EVENT_NOTIFICATIONS)
             .config(config)
             .clock(running)
             .build()
@@ -133,7 +129,6 @@ class Harness:
             EventHandlingJob.builder()
             .registry(self.registry)
             .handlers(handlers)
-            .notifications(EVENT_NOTIFICATIONS)
             .config(config)
             .clock(running)
             .build()
@@ -187,7 +182,13 @@ def worker(database: str, monkeypatch: pytest.MonkeyPatch) -> Iterator[Harness]:
     # registry and `start()` writes the rows again, and a row left behind from the previous
     # test carries its `execution_time` with it.
     with built.registry.default.connection() as conn:
-        for table in ("event_notifications", "events", "alerts", "wallets", "scheduled_tasks"):
+        for table in (
+            "eventlog.event_notifications",
+            "eventlog.events",
+            "alerts",
+            "wallets",
+            "scheduled_tasks",
+        ):
             conn.execute(text(f"TRUNCATE TABLE {table}"))
     try:
         built.jobs.start()
@@ -301,7 +302,10 @@ def test_the_currency_is_a_currency_in_python_and_text_in_the_database(worker: H
     with worker.registry.default.connection(readonly=True) as conn:
         stored = conn.execute(text("SELECT currency FROM wallets")).scalar_one()
         opened_at = conn.execute(
-            text("SELECT payload->>'openedAt' FROM events WHERE event_type = 'WalletOpenedEvent'")
+            text(
+                "SELECT payload->>'openedAt' FROM eventlog.events"
+                " WHERE event_type = 'WalletOpenedEvent'"
+            )
         ).scalar_one()
     assert stored == "EUR"
     assert opened_at.endswith("Z"), "the event's Instant: UTC digits with Java's Z"

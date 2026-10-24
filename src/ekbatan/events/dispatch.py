@@ -23,8 +23,6 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Table
-
 from .._json import decode
 from .._logtext import java_duration
 from .._metrics import counter, histogram
@@ -138,7 +136,6 @@ class EventDispatch:
         registry: DatabaseRegistry,
         handlers: EventHandlerRegistry,
         *,
-        notifications: Table,
         clock: Clock | None = None,
         batch_size: int = 100,
         retention: timedelta = DEFAULT_RETENTION,
@@ -149,7 +146,7 @@ class EventDispatch:
         self._owns_loop = handler_loop is None
         self._handler_loop = handler_loop or HandlerLoop()
         self._handlers = handlers
-        self._notification_repository = EventNotificationRepository(registry, notifications)
+        self._notification_repository = EventNotificationRepository(registry)
         self._clock = clock or SystemClock()
         self._batch = batch_size
         self._retention = retention

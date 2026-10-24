@@ -18,7 +18,6 @@ from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    SingleTableJsonEventPersister,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
@@ -29,7 +28,7 @@ from .actions import CloseWalletAction, DepositMoneyAction, OpenWalletAction, Ra
 from .handlers import MoneyDepositedEventHandler
 from .jobs import STIPEND_JOB_NAME, PayStipendJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS, SCHEDULED_TASKS, metadata
+from .schema import SCHEDULED_TASKS, metadata
 
 #: The service's Ekbatan settings, read once at startup.
 CONFIG_FILE = Path(__file__).resolve().parent / "ekbatan.yaml"
@@ -125,7 +124,6 @@ def build(
         .database_registry(registry)
         .repository_registry(repositories)
         .action_registry(actions)
-        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -142,8 +140,6 @@ def build(
         EventFanoutJob.builder()
         .registry(registry)
         .handlers(handlers)
-        .events(EVENTS)
-        .notifications(EVENT_NOTIFICATIONS)
         .config(events_config)
         .clock(running)
         .build()
@@ -152,7 +148,6 @@ def build(
         EventHandlingJob.builder()
         .registry(registry)
         .handlers(handlers)
-        .notifications(EVENT_NOTIFICATIONS)
         .config(events_config)
         # Off unless `handling.enabled` is set in `ekbatan.yaml`.
         .enabled(events_config.handling.enabled)

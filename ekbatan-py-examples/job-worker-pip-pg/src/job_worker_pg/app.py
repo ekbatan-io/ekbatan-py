@@ -36,7 +36,6 @@ from ekbatan import (
     ActionRegistry,
     DatabaseRegistry,
     RepositoryRegistry,
-    SingleTableJsonEventPersister,
     engine_for,
 )
 from ekbatan.clock import Clock, SystemClock
@@ -54,7 +53,6 @@ from .actions import (
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob, WalletReportJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS
 
 #: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
 #: rather than from `create_all`, which is the difference between an example and something you
@@ -126,7 +124,6 @@ def build(
             .with_action(RaiseAlertAction(running))
             .build()
         )
-        .event_persister(SingleTableJsonEventPersister(registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -159,15 +156,12 @@ def build(
                     EventFanoutJob.builder()
                     .registry(registry)
                     .handlers(handlers)
-                    .events(EVENTS)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     .clock(running)
                     .build(),
                     EventHandlingJob.builder()
                     .registry(registry)
                     .handlers(handlers)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     # Java's DI makes this job only if `handling.enabled`; this is that check.
                     .enabled(events_config.handling.enabled)

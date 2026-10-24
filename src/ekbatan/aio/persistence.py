@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_en
 from .._guards import refuse_if_forked
 from ..config import DataSourceConfig, ShardMemberConfig
 from ..errors import ValidationError
-from ..fetching import FetchResult
+from ..fetching import FetchResult, _translate_eventlog
 from ..persistence import (
     _engine_kwargs,
     _join,
@@ -75,8 +75,11 @@ class AsyncDb(AsyncConnection):
     __slots__ = ()
 
     async def __aenter__(self) -> Self:
-        """The base class promises an ``AsyncConnection``; this promises the subclass."""
+        """The base class promises an ``AsyncConnection``; this promises the subclass - and the
+        event tables are found where they are, as on the sync :class:`~ekbatan.fetching.Db`."""
         await self.start(is_ctxmanager=True)
+        assert self.sync_connection is not None  # set by start()
+        _translate_eventlog(self.sync_connection)
         return self
 
     async def execution_options(self, **opt: Any) -> Self:

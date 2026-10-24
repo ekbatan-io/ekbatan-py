@@ -47,7 +47,6 @@ from ekbatan import (
 from ekbatan.aio import (
     AsyncActionExecutor,
     AsyncDatabaseRegistry,
-    AsyncSingleTableJsonEventPersister,
 )
 from ekbatan.clock import Clock, SystemClock
 from ekbatan.config_files import load_ekbatan_config
@@ -64,7 +63,6 @@ from .actions import (
 from .handlers import MoneyDepositedEventHandler
 from .jobs import PayStipendJob, WalletReportJob
 from .repository import AlertRepository, WalletRepository
-from .schema import EVENT_NOTIFICATIONS, EVENTS
 
 #: Where the migration files live - `V<version>__<description>.sql`. Migrations run from files
 #: rather than from `create_all`, which is the difference between an example and something you
@@ -146,7 +144,6 @@ def build(
             .with_action(RaiseAlertAction(running))
             .build()
         )
-        .event_persister(AsyncSingleTableJsonEventPersister(registry, EVENTS))
         .clock(running)
         .build()
     )
@@ -187,8 +184,6 @@ def build(
                     EventFanoutJob.builder()
                     .registry(events_registry)
                     .handlers(handlers)
-                    .events(EVENTS)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     .clock(running)
                     .build(),
@@ -198,7 +193,6 @@ def build(
                     # The async handler runs on the worker loop, beside the jobs' work: the
                     # executor it awaits was built for that loop.
                     .handler_loop(loop)
-                    .notifications(EVENT_NOTIFICATIONS)
                     .config(events_config)
                     # Java's DI makes this job only if `handling.enabled`; this is that check.
                     .enabled(events_config.handling.enabled)

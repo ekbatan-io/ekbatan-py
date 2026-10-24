@@ -18,7 +18,7 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol, Self, runtime_checkable
 
-from sqlalchemy import Connection, Table, func, insert, select
+from sqlalchemy import Connection, func, insert, select
 
 from .._builder import FieldBuilder
 from .._json import canonical, canonical_event
@@ -26,6 +26,7 @@ from .._tracing import Span, span
 from ..domain import ModelEvent
 from ..errors import ValidationError
 from ..persistence import DatabaseRegistry
+from ..schema import _EVENTS
 from ..sharding import ShardIdentifier
 from ..time import Instant
 
@@ -209,29 +210,21 @@ class EventEntityBuilder(FieldBuilder[EventEntity]):
         return self._set("delivered", delivered)
 
 
-def _require_outbox_columns(table: Table) -> Table:
-    missing = [c for c in OUTBOX_COLUMNS if c not in table.c]
-    if missing:
-        raise ValidationError(f"{table.name} is missing outbox column(s): {missing}")
-    return table
-
-
 class EventEntityRepository:
     """The outbox table's reads and writes for the persister - Java's package-private
     ``EventEntityRepository`` in the single-table-JSON package.
 
-    Takes the table, where Java's names ``eventlog.events`` itself: the schema is not the same
-    on every database here - SQLite has none - so the application declares the table once and
-    everything that touches it is handed the same one.
+    Names ``eventlog.events`` itself, as Java's does - see :mod:`ekbatan.schema` for where that
+    is on each database.
     """
 
     __slots__ = ("_registry", "_table")
 
-    def __init__(self, database_registry: DatabaseRegistry, table: Table) -> None:
+    def __init__(self, database_registry: DatabaseRegistry) -> None:
         if database_registry is None:
             raise ValidationError("database_registry cannot be None")
         self._registry = database_registry
-        self._table = _require_outbox_columns(table)
+        self._table = _EVENTS
 
     @contextmanager
     def _tx_db_else_db(self, shard: ShardIdentifier) -> Iterator[Connection]:
@@ -393,15 +386,15 @@ class SingleTableJsonEventPersister(_SingleTableJson):
     that emits none, into one table with a JSON payload - Java's
     ``SingleTableJsonEventPersister``.
 
-    Java takes the registry and a Jackson mapper; here the registry and the table, for the
-    reason :class:`EventEntityRepository` takes one.
+    Java takes the registry and a Jackson mapper; here the registry - the JSON is the one Java's
+    default mapper writes. The table is ``eventlog.events``, named by the repository itself.
     """
 
     __slots__ = ("_event_repository",)
 
-    def __init__(self, database_registry: DatabaseRegistry, table: Table) -> None:
+    def __init__(self, database_registry: DatabaseRegistry) -> None:
         super().__init__()
-        self._event_repository = EventEntityRepository(database_registry, table)
+        self._event_repository = EventEntityRepository(database_registry)
 
     def persist_action_events(
         self,

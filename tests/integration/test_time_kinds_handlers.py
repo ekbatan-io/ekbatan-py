@@ -31,7 +31,6 @@ from fixtures.domain import Wallet
 from fixtures.executing import run
 from fixtures.handlers import RecordingHandler, of_kind
 from fixtures.logins import data_source
-from fixtures.schema import EVENT_NOTIFICATIONS, EVENTS
 from modes import stager_twin
 
 MODES = ("sync", "async")
@@ -122,13 +121,9 @@ def test_each_kind_reaches_the_handler_as_it_was_written(
     fanout = EventFanout(
         sync_registry,
         subscriptions,
-        events=EVENTS,
-        notifications=EVENT_NOTIFICATIONS,
         clock=clock,
     )
-    dispatch = EventDispatch(
-        sync_registry, subscriptions, notifications=EVENT_NOTIFICATIONS, clock=clock
-    )
+    dispatch = EventDispatch(sync_registry, subscriptions, clock=clock)
     try:
         assert fanout.drain_once() == 1
         dispatch.drain_once()

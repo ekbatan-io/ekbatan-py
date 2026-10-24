@@ -234,3 +234,13 @@ class NotificationsRecord(dict[str, Any]):
 EVENTS = outbox_table(metadata)
 EVENT_NOTIFICATIONS = notifications_table(metadata)
 SCHEDULED_TASKS = scheduled_tasks_table(metadata)
+
+
+def in_sql(table: Table, dialect: str) -> str:
+    """The table's name as hand-written SQL has to spell it on ``dialect``. A ``text()``
+    statement gets no ``schema_translate_map``, so the event tables are ``eventlog.events`` on
+    PostgreSQL and plain ``events`` everywhere else (ekbatan.schema.eventlog_translation)."""
+    from ekbatan.schema import eventlog_translation
+
+    translation = eventlog_translation(dialect) or {}
+    return table.name if table.schema in translation else table.fullname

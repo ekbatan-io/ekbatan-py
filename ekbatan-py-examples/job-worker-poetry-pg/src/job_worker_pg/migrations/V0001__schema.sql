@@ -15,7 +15,10 @@ CREATE TABLE alerts (
     PRIMARY KEY (id)
 );
 
-CREATE TABLE event_notifications (
+-- The two event tables live in a schema of their own, `eventlog`, as Java's do.
+CREATE SCHEMA IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.event_notifications (
     id UUID NOT NULL,
     event_id UUID NOT NULL,
     handler_name VARCHAR(255) NOT NULL,
@@ -39,10 +42,10 @@ CREATE TABLE event_notifications (
     CONSTRAINT uq_event_notifications_event_handler UNIQUE (event_id, handler_name)
 );
 
-CREATE INDEX ix_event_notifications_due ON event_notifications (next_retry_at)
+CREATE INDEX ix_event_notifications_due ON eventlog.event_notifications (next_retry_at)
     WHERE state IN ('PENDING', 'FAILED');
 
-CREATE TABLE events (
+CREATE TABLE eventlog.events (
     id UUID NOT NULL,
     namespace VARCHAR(255) NOT NULL,
     action_id UUID NOT NULL,
@@ -59,10 +62,10 @@ CREATE TABLE events (
     PRIMARY KEY (id)
 );
 
-CREATE INDEX ix_events_undelivered ON events (event_type, event_date)
+CREATE INDEX ix_events_undelivered ON eventlog.events (event_type, event_date)
     WHERE delivered = FALSE;
 
-CREATE INDEX ix_events_action_id ON events (action_id);
+CREATE INDEX ix_events_action_id ON eventlog.events (action_id);
 
 CREATE TABLE scheduled_tasks (
     task_name VARCHAR(100) NOT NULL,

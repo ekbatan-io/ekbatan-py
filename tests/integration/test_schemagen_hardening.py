@@ -965,10 +965,12 @@ def test_a_framework_table_s_own_indexes_are_kept_and_an_expression_one_is_said(
     """The helpers declare no indexes; the migrations choose them, and `create_all` builds the
     ones on the helper's columns. One on an expression cannot be tied to the helper's table."""
     family = _family(dialect)
+    # Where emit_ddl put it: the `eventlog` schema on PostgreSQL, the database itself elsewhere.
+    events, where = ("eventlog.events", "eventlog") if dialect == "postgres" else ("events", None)
     # PostgreSQL only: SQLite's reflection skips an expression index with a warning of its own,
     # and MariaDB has none (ledger, docs gaps).
     expression = (
-        "CREATE INDEX ix_events_lower ON events (lower(action_name));\n"
+        f"CREATE INDEX ix_events_lower ON {events} (lower(action_name));\n"
         if dialect == "postgres"
         else ""
     )
@@ -976,7 +978,7 @@ def test_a_framework_table_s_own_indexes_are_kept_and_an_expression_one_is_said(
         tmp_path / "migrations",
         "CREATE TABLE apps (id INTEGER PRIMARY KEY);\n",
         _framework_ddl(dialect)
-        + "\nCREATE INDEX ix_events_action ON events (action_name, event_date);\n"
+        + f"\nCREATE INDEX ix_events_action ON {events} (action_name, event_date);\n"
         + expression,
     )
     out = tmp_path / "app" / "schema.py"
@@ -989,12 +991,12 @@ def test_a_framework_table_s_own_indexes_are_kept_and_an_expression_one_is_said(
         in written
     ), written
     if expression:
-        assert "events: index ix_events_lower is on an expression; left out" in said
+        assert f"{events}: index ix_events_lower is on an expression; left out" in said
     _clean(written)
     rebuilt = _rebuild(backend, load(out))
     db = engine(rebuilt)
     try:
-        names = {i["name"] for i in inspect(db).get_indexes("events")}
+        names = {i["name"] for i in inspect(db).get_indexes("events", where)}
     finally:
         db.dispose()
     assert "ix_events_action" in names

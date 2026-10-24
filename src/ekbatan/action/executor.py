@@ -17,8 +17,6 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any, Self
 
-from sqlalchemy import MetaData, Table
-
 from .._guards import refuse_on_an_event_loop
 from .._logtext import java_list, java_shard
 from .._tracing import Span, span
@@ -26,7 +24,6 @@ from ..clock import Clock, SystemClock
 from ..errors import CrossShardError, StaleRecordError, ValidationError
 from ..persistence import DatabaseRegistry
 from ..repository import Repository, RepositoryRegistry
-from ..schema import outbox_table
 from ..sharding import ShardIdentifier
 from .action import Action, _Binding
 from .outbox import EventPersister, SingleTableJsonEventPersister
@@ -468,21 +465,15 @@ class ActionExecutor(_ExecutorCore):
         registry: DatabaseRegistry,
         repositories: RepositoryRegistry | Iterable[Repository[Any]],
         actions: ActionRegistry | Iterable[Action[Any, Any]] = (),
-        events: Table | None = None,
         outbox: EventPersister | None = None,
         clock: Clock | None = None,
         config: ExecutionConfiguration = DEFAULT,
     ) -> None:
         self._setup(namespace, registry, repositories, actions, clock, config)
 
-        # Neither given: the default single-table persister over the framework's own events
-        # table, as Java's builder makes one when no persister is set.
-        if outbox is not None:
-            self.outbox = outbox
-        else:
-            self.outbox = SingleTableJsonEventPersister(
-                registry, events if events is not None else outbox_table(MetaData())
-            )
+        # None given: the default single-table persister, over `eventlog.events`, as Java's
+        # builder makes one when no persister is set.
+        self.outbox = outbox if outbox is not None else SingleTableJsonEventPersister(registry)
 
         self.changes = ChangePersister(
             repositories

@@ -52,7 +52,7 @@ from .actions import (
 from .app import MIGRATIONS, ShardedWallets, build
 from .model import Currency, EmailAddress, Wallet
 
-TABLES = ("wallets", "events", "event_notifications", "alerts")
+TABLES = ("wallets", "eventlog.events", "eventlog.event_notifications", "alerts")
 
 
 #: The database's password: a marker, so a test can look for it where it must not be.
@@ -221,13 +221,13 @@ def test_each_shard_keeps_its_own_outbox(service: ShardedWallets, run: Run) -> N
         for shard in service.registry.shards:
             async with service.registry.manager(shard).connection(readonly=True) as conn:
                 found[shard] = (
-                    await conn.execute(text("SELECT count(*) FROM events"))
+                    await conn.execute(text("SELECT count(*) FROM eventlog.events"))
                 ).scalar_one()
         return found
 
     async def opened_at() -> str:
         async with service.registry.manager(MEXICO).connection(readonly=True) as conn:
-            found = await conn.execute(text("SELECT payload->>'openedAt' FROM events"))
+            found = await conn.execute(text("SELECT payload->>'openedAt' FROM eventlog.events"))
             return str(found.scalar_one())
 
     counted = run(counts)
