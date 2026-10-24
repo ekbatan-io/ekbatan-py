@@ -97,10 +97,10 @@ whatever is decided about the rest.
 | 36 | A waiting `acquire` cannot be interrupted. **Kept as a limit** (`EKB-0268`): Python has no thread interrupt; the docs say to use `try_acquire` with a bounded wait where stopping matters | forced | partly | M | D |
 | 37 | ~~A lock provider's `close()` releases every thread's held locks; Java's does nothing~~ **fixed** (`EKB-0266`): `close()` does nothing, as Java's; open leases stay held | choice | yes | M | D |
 | 38 | Build the scheduler after `fork()` (gunicorn `--preload`). **Addressed: refused with a clear message** (`EKB-0500`): every object that owns connections or threads - registries, lock providers, the job registry, the handler loop - raises `ForkedProcessError` when used in a process `fork()` copied it into, saying to build it in the lifespan or at the top of `main()`; nothing is reset. Closing is refused too (`EKB-0514`, the user's decision 2026-10-24): `close()` / `aclose()` in a copy had ended the parent's database sessions, and `HandlerLoop.close()` waited 10 s for a thread that is not there. Per-server recipes: `docs/startup-and-shutdown.md` | forced | no | M | D, E |
-| 39 | Each server process has its own pools and scheduler | forced | no | M | E |
-| 40 | Handlers run on real OS threads, one batch wide per shard | forced | partly | L | B |
+| 39 | Each server process has its own pools and scheduler. **Settled by the user (2026-10-25)**: kept, a Python limitation - a process cannot share its connections with another, so each worker builds its own; the docs cover sizing the pools for it | forced | no | M | E |
+| 40 | Handlers run on real OS threads, one batch wide per shard. **Settled by the user (2026-10-25)**: kept, a Python limitation - CPython has no virtual threads; under gevent the handlers run on green threads instead | forced | partly | L | B |
 | 41 | ~~Redis `acquire` polls every 50 ms instead of being woken~~ **fixed** (`EKB-0267`): waiters subscribe to Redisson's unlock channel, and a bounded wait ends on time | forced | partly | L | D |
-| 42 | CPU-heavy jobs share one core (GIL) | forced | no | L | D |
+| 42 | CPU-heavy jobs share one core (GIL). **Settled by the user (2026-10-25)**: kept, a Python limitation - one thread runs Python code at a time; using several cores would take processes, a different design | forced | no | L | D |
 
 ### Models, repositories, transactions
 
@@ -142,7 +142,7 @@ whatever is decided about the rest.
 | 71 | A handler is any object with `name`, `event_type`, `handle`, as class attributes | convention | partly | L | B |
 | 72 | Retry delay is float seconds; `RetryConfig()` with no arguments means "one retry after 100 ms" | choice | yes | L | B |
 | 73 | A missing handler is not counted as a failed attempt | choice | yes | L | B |
-| 74 | `ActionSpec` verifiers fail on a falsy return value | forced | no | L | B |
+| 74 | `ActionSpec` verifiers fail on a falsy return value. **Settled by the user (2026-10-25)**: kept, a Python limitation - a lambda cannot hold an `assert`, so the value it returns is what gets checked | forced | no | L | B |
 | 75 | Parameterless actions take `None`, stored as `{}` | choice | yes | L | B |
 | 76 | `EventEnvelope` has an `attempt` field | choice | yes | L | B |
 | 77 | Event jobs take the config object; `EventFanout` / `EventDispatch` are public | choice | partly | L | B |

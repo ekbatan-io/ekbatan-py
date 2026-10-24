@@ -192,7 +192,8 @@ marked unverified.
 - **Could match Java?** partly. Small helpers for FastAPI and Django are possible.
 - **Surprise:** low
 
-### CPU-heavy jobs do not run in parallel (GIL)
+### CPU-heavy jobs do not run in parallel (GIL) - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept, a limitation of Python itself - nothing in ekbatan could change it.
 - **What:** job bodies, the poll loop and the heartbeat thread all share one interpreter lock. Two CPU-heavy jobs take turns on one core, where Java would use two cores. Unverified: a C extension that holds the lock for a long time could delay heartbeats past the 60-second dead window and cause a second run elsewhere.
 - **Python:** `db-scheduler/src/db_scheduler/pool.py` (threads); `distributedjobs/__init__.py:370-371` (heartbeat on a housekeeping thread).
 - **Java:** `JobRegistry.java:422` (virtual threads on all cores).

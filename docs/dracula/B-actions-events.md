@@ -205,7 +205,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. It could move to `ekbatan.testing`. The constructor meaning was chosen on purpose.
 - **Surprise:** low
 
-### `ActionSpec` verifiers fail on a falsy return value
+### `ActionSpec` verifiers fail on a falsy return value - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept, a limitation of Python itself - nothing in ekbatan could change it.
 - **What:** Java's verifier is a `Consumer` that asserts inside itself. Here a verifier that
   *returns* something fails when the value is falsy (`False`, `0`, `""`, `[]`), so
   `lambda w: w.balance == x` works. A verifier that happens to return `0` or an empty list fails
@@ -268,7 +269,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. Plain-value builder methods could be added next to `config(...)`.
 - **Surprise:** low
 
-### Handlers run on real OS threads, up to one batch wide per shard
+### Handlers run on real OS threads, up to one batch wide per shard - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept, a limitation of Python itself - nothing in ekbatan could change it.
 - **What:** dispatch runs a batch's handlers in a thread pool as wide as the batch (default 100)
   per shard. These are OS threads, not virtual threads. Handlers must be thread-safe, as in Java,
   but a large `handling_batch_size` now means that many real threads.

@@ -180,7 +180,8 @@ follow the guide and run the project. Area F merges the two.
   guide's Makefile.
 - **Surprise:** medium
 
-### Each server process has its own pools and its own scheduler
+### Each server process has its own pools and its own scheduler - settled by the user (2026-10-25)
+- **Settled by the user (2026-10-25)**: kept, a limitation of Python itself - nothing in ekbatan could change it.
 - **What:** Python services scale by running several processes (`uvicorn --workers 4`,
   gunicorn). Each one builds every pool and runs the job scheduler, so the database sees four
   times the connections. One JVM has one set.
