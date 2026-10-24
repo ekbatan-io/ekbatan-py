@@ -226,7 +226,7 @@ The row is only on that database, and so is its event:
 ```bash
 psql -p 5433 wallets -c "SELECT count(*) FROM wallets"   # 1
 psql -p 5432 wallets -c "SELECT count(*) FROM wallets"   # 0
-psql -p 5433 wallets -c "SELECT count(*) FROM events"    # 1
+psql -p 5433 wallets -c "SELECT count(*) FROM eventlog.events"    # 1
 ```
 
 `wallets.get(mx.id)` finds it with no lookup table and no extra query: the shard was read out of

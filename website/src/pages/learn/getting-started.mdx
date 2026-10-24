@@ -243,7 +243,7 @@ For the API details, read [ActionExecutor](/reference/action-executor/).
 After commit, `events` contains a durable row. From there, you choose how to use it.
 
 ```sql
-SELECT action_name, model_type, event_type, delivered FROM events ORDER BY event_date;
+SELECT action_name, model_type, event_type, delivered FROM eventlog.events ORDER BY event_date;
 ```
 
 | action_name | model_type | event_type | delivered |

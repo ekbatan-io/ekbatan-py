@@ -8,9 +8,9 @@ lead: "Optional. Needed only when the in-process event handler is installed. It 
 **Needed when:** you handle events in-process.
 **Written by:** the fan-out job creates rows; the dispatch job updates them.
 **Built by:** `ekbatan.schema.notifications_table(metadata)`.
-**Where:** `eventlog.event_notifications` on PostgreSQL - a schema of its own, in each database; `event_notifications` in
-the connected database on MySQL, MariaDB and SQLite. Fixed, as the framework names it itself -
-see [Framework tables](/reference/tables/).
+**Where:** `eventlog.event_notifications` - in a schema of its own in each database on
+PostgreSQL, in a database of its own, one per server, on MySQL and MariaDB; `event_notifications`
+in the file on SQLite. Fixed, as the framework names it itself - see [Framework tables](/reference/tables/).
 
 Like `events`, this is an internal row shape rather than a `Model` or `Entity`. The dispatch job
 updates rows directly as delivery state changes.
@@ -58,7 +58,9 @@ Generated from the same table definition, so the shape is identical and only the
 `CHAR(36)` for uuids, `DATETIME(6)` for the timestamps, `JSON` for the payloads:
 
 ```sql
-CREATE TABLE event_notifications (
+CREATE DATABASE IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.event_notifications (
     id               CHAR(36)     NOT NULL,
     event_id         CHAR(36)     NOT NULL,
     handler_name     VARCHAR(255) NOT NULL,

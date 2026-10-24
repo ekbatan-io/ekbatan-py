@@ -816,8 +816,9 @@ MariaDB column-level check, built as a table check of the same name; and a Postg
 
 `events`, `event_notifications` and `scheduled_tasks` are written as `outbox_table(metadata)`,
 `notifications_table(metadata)` and `scheduled_tasks_table(metadata)`, with their indexes from the
-migrations. On PostgreSQL the two event tables are read from the `eventlog` schema - only those
-two, unless `schemas` names it - and are still `EVENTS` and `EVENT_NOTIFICATIONS`. They are not read column by column, because other services read these tables and
+migrations. The two event tables are read from `eventlog` - the schema on PostgreSQL, the database
+on MySQL and MariaDB - only those two, unless `schemas` names it - and are still `EVENTS` and
+`EVENT_NOTIFICATIONS`. They are not read column by column, because other services read these tables and
 their shape is fixed. If your migrations differ from the helper, a note says how. Each gets its
 record like any table - `EventsRecord`, `EventNotificationsRecord`, `ScheduledTasksRecord` - typed
 from the helper's columns.

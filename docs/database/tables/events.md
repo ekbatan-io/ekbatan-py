@@ -7,9 +7,9 @@ commit.
 **Needed when:** you use the default persister, which is the normal setup.
 **Written by:** the executor, inside the action's transaction.
 **Built by:** `ekbatan.schema.outbox_table(metadata)`.
-**Where:** `eventlog.events` on PostgreSQL - a schema of its own, in each database; `events` in
-the connected database on MySQL, MariaDB and SQLite. Fixed, as the framework names it itself -
-see [Framework tables](../tables.md).
+**Where:** `eventlog.events` - in a schema of its own in each database on PostgreSQL, in a
+database of its own, one per server, on MySQL and MariaDB; `events` in the file on SQLite. Fixed,
+as the framework names it itself - see [Framework tables](../tables.md).
 
 It is not a `Model` or an `Entity`. It has no version and no soft-delete state - nothing updates
 a committed event row except the `delivered` flag, and that belongs to the consumer.
@@ -50,7 +50,9 @@ CREATE INDEX ix_events_undelivered ON eventlog.events (event_type, event_date)
 ### MySQL and MariaDB
 
 ```sql
-CREATE TABLE events (
+CREATE DATABASE IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.events (
     id              CHAR(36)     NOT NULL,
     namespace       VARCHAR(255) NOT NULL,
     action_id       CHAR(36)     NOT NULL,
@@ -129,7 +131,8 @@ table created with the native type works too - a uuid written to it reads back t
 `CAST(id AS CHAR)` gives the usual hyphenated text - so if your migration says `UUID`, nothing
 in your service changes.
 
-A Java service never shares this table - it has its own, in its own database - but the Java
+A Java service never shares this table with a Python one - each keeps its own, and on MySQL and
+MariaDB, where `eventlog` is the server's, that means a server each - but the Java
 Debezium transforms read this one, so its columns line up with Java's; what differs is on
 [Running beside a Java service](../../beside-java.md#the-events-table).
 
@@ -152,7 +155,7 @@ CREATE INDEX ix_events_undelivered ON eventlog.events (event_type, event_date)
 MySQL and MariaDB have no partial indexes, so their migrations use a composite one:
 
 ```sql
-CREATE INDEX ix_events_undelivered ON events (delivered, event_type, event_date);
+CREATE INDEX ix_events_undelivered ON eventlog.events (delivered, event_type, event_date);
 ```
 
 The difference in size is large. Measured on PostgreSQL 17, 500,000 rows with a 1% backlog - a

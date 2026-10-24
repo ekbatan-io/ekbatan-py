@@ -350,8 +350,10 @@ print(emit_ddl(metadata, "postgresql"))
 Run it, read it, save it as `V0001__schema.sql`, **commit it**. Generated once and then owned by
 you, rather than regenerated behind your back on every deploy - which is the difference between a
 migration and a `create_all`. On PostgreSQL it starts with `CREATE SCHEMA IF NOT EXISTS eventlog;`
-and puts the two event tables in that schema; on MySQL, MariaDB and SQLite it writes them into the
-database itself - where the framework reads them on each. The output is the same every time it is generated, so a diff of it
+and puts the two event tables in that schema; on MySQL and MariaDB it starts with
+`CREATE DATABASE IF NOT EXISTS eventlog;` - save that line as a file of its own, `V0000`, before
+the tables - and puts them in that database; on SQLite it writes them into the file itself - where
+the framework reads them on each. The output is the same every time it is generated, so a diff of it
 means something.
 
 `create_all` has no answer for a column that changed, which is why the examples migrate from

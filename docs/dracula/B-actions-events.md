@@ -55,7 +55,8 @@ sides. Ordered by surprise, highest first.
 - **Surprise:** high
 
 ### ~~You declare the outbox and notification tables yourself, pass them in three places, and by default they are not in `eventlog`~~ fixed (`EKB-0520`)
-- **Fixed** (`EKB-0520`, the user's decision 2026-10-24): the tables are fixed, as Java's, and nothing passes them - `eventlog.events` / `eventlog.event_notifications` on PostgreSQL; on MySQL and MariaDB the connected database (a separate `eventlog` database would be shared by every database on the server); SQLite has no schemas. See `docs/EVENTLOG-LEDGER.md`.
+- **Fixed** (`EKB-0520`, the user's decision 2026-10-24): the tables are fixed, as Java's, and nothing passes them - `eventlog.events` / `eventlog.event_notifications` on PostgreSQL; SQLite has no schemas. See `docs/EVENTLOG-LEDGER.md`.
+- **Matched on MySQL and MariaDB too** (`EKB-0526`, the user's decision 2026-10-24, reversing option 2 there): `eventlog` is a database of its own, created by the first migration (`CREATE DATABASE IF NOT EXISTS eventlog;`, Java's `V0000__create_eventlog_database.sql`), one per server and shared by every database on it. See `docs/EVENTLOG-JAVA-WAY-LEDGER.md`.
 - **What:** Java writes to a fixed `eventlog.events` / `eventlog.event_notifications`. Here the
   application builds `outbox_table(metadata)` / `notifications_table(metadata)` and hands them to
   the executor (`events=` or a hand-built `SingleTableJsonEventPersister(registry, EVENTS)`), the

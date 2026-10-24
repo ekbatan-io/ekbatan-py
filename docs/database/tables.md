@@ -62,29 +62,34 @@ the tables the framework uses:
 | database | the two event tables |
 | --- | --- |
 | PostgreSQL | `eventlog.events`, `eventlog.event_notifications` - a schema of their own, in each database |
-| MySQL, MariaDB | `events`, `event_notifications` - in the connected database |
+| MySQL, MariaDB | `eventlog.events`, `eventlog.event_notifications` - a database of their own, one per server |
 | SQLite | `events`, `event_notifications` - in the file |
 
-On MySQL and MariaDB a schema is a database, and one `eventlog` database would be shared by every
-database on the server - shards and other applications would read each other's events - so there,
-as on SQLite, every data source maps `eventlog` onto the connected database - and so does a
-connection you open from its `sqlalchemy_engine`. An engine you build yourself with SQLAlchemy needs
-the same mapping before you read these tables through it:
+On MySQL and MariaDB a schema *is* a database, so `eventlog` is a database of its own beside
+yours. Your first migration creates it - `CREATE DATABASE IF NOT EXISTS eventlog;` - and the login
+needs the right to create it and to use it. There is one per server, shared by every database on
+it: two shards, or two applications, on one server write into the same two tables. A shard on a
+server of its own has an `eventlog` of its own.
+
+SQLite has no schemas, so there every data source maps `eventlog` onto the file - and so does a
+connection you open from its `sqlalchemy_engine`. An engine you build yourself with SQLAlchemy
+needs the same mapping before you read these tables through it:
 
 ```python
 from sqlalchemy import create_engine
 from ekbatan.schema import eventlog_translation
 
-engine = create_engine(url, execution_options={"schema_translate_map": eventlog_translation("mysql")})
+engine = create_engine(url, execution_options={"schema_translate_map": eventlog_translation("sqlite")})
 ```
 
 In practice you do not write the tables by hand at all - `schemagen` emits them alongside your
 own tables, and `migrate()` creates them from your migration files. See [schemagen](schemagen.md)
-and [Migrations](migrations.md). On PostgreSQL, `create_all` makes the `eventlog` schema before
-the two tables.
+and [Migrations](migrations.md). `create_all` makes `eventlog` before the two tables: the schema
+on PostgreSQL, the database on MySQL and MariaDB.
 
-In a sharded application every shard gets its own copy of all three. `migrate()` applies the same
-migration files to each.
+In a sharded application every shard gets its own copy of all three - except that on MySQL and
+MariaDB, shards on one server share its `eventlog`. `migrate()` applies the same migration files
+to each.
 
 ### Tables already in PostgreSQL's default schema
 
@@ -97,7 +102,17 @@ ALTER TABLE events SET SCHEMA eventlog;
 ALTER TABLE event_notifications SET SCHEMA eventlog;
 ```
 
-Nothing to move on MySQL, MariaDB or SQLite: there they stay in the database itself.
+### Tables already in your own database on MySQL and MariaDB
+
+A MySQL or MariaDB database whose migrations put the two event tables beside its own moves them
+into `eventlog` in its next migration. Rows and indexes go with each table:
+
+```sql
+CREATE DATABASE IF NOT EXISTS eventlog;
+RENAME TABLE events TO eventlog.events, event_notifications TO eventlog.event_notifications;
+```
+
+Nothing to move on SQLite.
 
 ## See also
 

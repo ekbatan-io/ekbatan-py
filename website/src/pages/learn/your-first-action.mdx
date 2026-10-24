@@ -318,7 +318,7 @@ curl -X POST http://localhost:8000/wallets/<wallet_id>/deposits \
 
 ```sql
 SELECT action_name, model_type, event_type, payload
-FROM events
+FROM eventlog.events
 ORDER BY event_date DESC
 LIMIT 5;
 ```

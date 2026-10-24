@@ -83,19 +83,31 @@ MariaDB suite" was exercising the MySQL code path.
 
 ## Migration order
 
-The framework's two event tables go in the connected database itself, beside your own:
-`events` and `event_notifications`. On PostgreSQL ekbatan keeps them in a schema of their own,
-`eventlog` - but on MariaDB a schema *is* a database, and one `eventlog` database would be shared by
-every database on the server, so shards and other applications on it would read each
-other's events. So there is no `eventlog` database to create, no init script and no cross-database
-grant: ekbatan maps `eventlog` onto the connected database by itself.
+The framework's two event tables go in a database of their own, `eventlog`, beside yours: on
+MariaDB a schema *is* a database. Your first migration creates it, and the next puts the tables in
+it:
 
 ```
 migrations/
-  V0001__eventlog.sql           # events + event_notifications + their indexes
-  V0002__scheduled_tasks.sql    # only if you run distributed jobs or in-process handlers
-  V0003__wallets.sql            # your domain tables
+  V0000__create_eventlog_database.sql   # CREATE DATABASE IF NOT EXISTS eventlog;
+  V0001__eventlog.sql                   # eventlog.events + eventlog.event_notifications + indexes
+  V0002__scheduled_tasks.sql            # only if you run distributed jobs or in-process handlers
+  V0003__wallets.sql                    # your domain tables
 ```
+
+The migrations run on your database's connection, so the login needs the right to create
+`eventlog` and to use it. Root has it. A login of its own needs one grant, given once by root -
+it works before the database exists:
+
+```sql
+GRANT ALL PRIVILEGES ON eventlog.* TO 'wallet'@'%';
+```
+
+There is one `eventlog` per server, shared by every database on it. Two shards, or two
+applications, on one server write into the same two tables - and the fan-out job picks
+undelivered rows by event type alone, so where two applications use one event name, each one's
+handlers get the other's events. A shard or an application on a server of its own has an
+`eventlog` of its own.
 
 ## MariaDB-specific gotchas
 

@@ -90,8 +90,9 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   check can only ever happen at runtime (or in a type checker).
 - **Surprise:** high
 
-### 5. ~~The outbox table is not in an `eventlog` schema by default~~ matched on PostgreSQL (`EKB-0520`)
-- **Fixed** (`EKB-0520`, the user's decision 2026-10-24): the tables are fixed, as Java's, and nothing passes them - `eventlog.events` / `eventlog.event_notifications` on PostgreSQL; on MySQL and MariaDB the connected database (a separate `eventlog` database would be shared by every database on the server); SQLite has no schemas. See `docs/EVENTLOG-LEDGER.md`.
+### 5. ~~The outbox table is not in an `eventlog` schema by default~~ matched (`EKB-0520`, `EKB-0526`)
+- **Fixed** (`EKB-0520`, the user's decision 2026-10-24): the tables are fixed, as Java's, and nothing passes them - `eventlog.events` / `eventlog.event_notifications` on PostgreSQL; SQLite has no schemas. See `docs/EVENTLOG-LEDGER.md`.
+- **Matched on MySQL and MariaDB too** (`EKB-0526`, the user's decision 2026-10-24, reversing option 2 there): `eventlog` is a database of its own, created by the first migration (`CREATE DATABASE IF NOT EXISTS eventlog;`, Java's `V0000__create_eventlog_database.sql`), one per server and shared by every database on it. See `docs/EVENTLOG-JAVA-WAY-LEDGER.md`.
 - **What:** `outbox_table(metadata)` makes a table called `events` in the default schema (for
   example `public.events`), and the examples use it that way. Java always reads and writes
   `eventlog.events`. A Java developer will look for `eventlog.events` and not find it, and a Java

@@ -270,9 +270,10 @@ Capture only the outbox:
 }
 ```
 
-`table.include.list` is `eventlog.events` because on PostgreSQL the framework keeps its two event
-tables in a schema of their own, `eventlog`, in each database. (On MySQL and MariaDB they are in
-the connected database itself, so there the connector lists `<your database>.events`.)
+`table.include.list` is `eventlog.events` because the framework keeps its two event tables in
+`eventlog` - a schema of its own in each database on PostgreSQL, and on MySQL and MariaDB a
+database of its own, so there the connector lists `eventlog.events` too. (On MySQL and MariaDB that
+database is the server's: the connector sees the events of every database on it.)
 
 The transform **drops UPDATE rows** — including fan-out's `delivered` flip — **skips sentinel
 rows** where `event_type` is null, and encodes the row as Avro using the schemas you mount into

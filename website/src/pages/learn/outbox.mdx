@@ -68,7 +68,9 @@ And this is the table they land in. Pick your dialect above; the DDL follows.
 <div data-db="pg">
 
 ```sql
-CREATE TABLE events (
+CREATE SCHEMA IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.events (
     id              UUID         NOT NULL,
     namespace       VARCHAR(255) NOT NULL,
     action_id       UUID         NOT NULL,
@@ -94,7 +96,9 @@ stored text and compares by bytes, so two payloads differing only in key order w
 <div data-db="mysql">
 
 ```sql
-CREATE TABLE events (
+CREATE DATABASE IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.events (
     id              CHAR(36)     NOT NULL,
     namespace       VARCHAR(255) NOT NULL,
     action_id       CHAR(36)     NOT NULL,
@@ -122,7 +126,9 @@ dialects store.
 <div data-db="mariadb">
 
 ```sql
-CREATE TABLE events (
+CREATE DATABASE IF NOT EXISTS eventlog;
+
+CREATE TABLE eventlog.events (
     id              CHAR(36)     NOT NULL,
     namespace       VARCHAR(255) NOT NULL,
     action_id       CHAR(36)     NOT NULL,

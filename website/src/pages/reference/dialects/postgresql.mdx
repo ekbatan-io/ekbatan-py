@@ -94,9 +94,10 @@ compares by value; `JSON` is stored text and compares by bytes, so two payloads 
 in key order are unequal.
 
 **Schema, not database.** `eventlog` is a schema inside the connected database:
-`CREATE SCHEMA IF NOT EXISTS eventlog;` in your first migration, and no init script - the
-connecting user normally has the right. Each database has its own, so shards that are databases on
-one server never share event tables. Hand-written SQL names them `eventlog.events` and
+`CREATE SCHEMA IF NOT EXISTS eventlog;` in your first migration, and no grant - the connecting
+user normally has the right. Each database has its own, so shards that are databases on one server
+never share event tables - unlike MySQL and MariaDB, where `eventlog` is a database, one per
+server. Hand-written SQL names them `eventlog.events` and
 `eventlog.event_notifications`.
 
 **Plain `TIMESTAMP`, never `TIMESTAMPTZ`.** Run the server with `TZ=UTC`. CI runs this suite a

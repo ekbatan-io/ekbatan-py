@@ -74,8 +74,9 @@ every dialect, column by column.
 ## Where the table is
 
 Nothing passes the table to the framework: the executor's default event writer names it itself,
-and so do the event jobs that read it. It is `eventlog.events` on PostgreSQL - a schema of its own,
-in each database - and plain `events` in the connected database on MySQL, MariaDB and SQLite; see
+and so do the event jobs that read it. It is `eventlog.events` - in a schema of its own in each
+database on PostgreSQL, in a database of its own, one per server, on MySQL and MariaDB - and plain
+`events` in the file on SQLite; see
 [Schema vs database](../database/multi-database.md#schema-vs-database) for why. The generated
 schema module declares the same table as `EVENTS`, so a test can read it back.
 

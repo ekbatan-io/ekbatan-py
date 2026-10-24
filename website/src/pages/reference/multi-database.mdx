@@ -262,11 +262,22 @@ On PostgreSQL a schema is a namespace **inside** the connected database, so the 
 your first migration is all it takes, the connecting user normally has the right to do it, and
 every database - every shard - has its own.
 
-On MySQL and MariaDB "schema" and "database" are the same thing, so an `eventlog` schema would be
-a **separate database** - one for the whole server, shared by every database on it. Shards and
-other applications on that server would read each other's events. So there the two tables live in
-the connected database itself, as plain `events` and `event_notifications`, and ekbatan maps
-`eventlog` onto it by itself. SQLite, which has no schemas, does the same.
+On MySQL and MariaDB "schema" and "database" are the same thing, so `eventlog` is a **separate
+database** beside yours, and the tables are `eventlog.events` and `eventlog.event_notifications`
+there too. Two consequences:
+
+1. Your first migration creates it: `CREATE DATABASE IF NOT EXISTS eventlog;`, in a file of its
+   own before the tables (`V0000__create_eventlog_database.sql`). It runs on your database's
+   connection, so the login needs the right to create `eventlog` and to use it - root has it, and
+   a login of its own gets it from root, once, with
+   `GRANT ALL PRIVILEGES ON eventlog.* TO 'wallet'@'%';`.
+2. There is one `eventlog` for the whole server, shared by every database on it. Two shards, or two
+   applications, on one server write into the same two tables, and the fan-out job picks rows by
+   event type alone - so where two applications use one event name, each one's handlers get the
+   other's events. Give each shard a server of its own to keep them apart.
+
+SQLite has no schemas, so there the two tables are plain `events` and `event_notifications` in the
+file, and ekbatan maps `eventlog` onto it by itself.
 
 Nothing passes the tables to the framework on any database: the executor's default event writer,
 the fan-out job and the handling job name them themselves - see [Framework tables](/reference/tables/).

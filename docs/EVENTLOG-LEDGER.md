@@ -14,6 +14,11 @@ user chose **option 2** for where they live:
 - **SQLite:** the same two tables, in its one file (no schemas).
 
 Judgement calls go in `DECISIONS-TO-REVIEW.md` under "Event tables fixed (EKB-0520-)".
+
+**Later the same day the user reversed option 2 for MySQL and MariaDB** ("switch to java way"):
+there `eventlog` is now a database of its own, as Java's. That change has its own ledger,
+[EVENTLOG-JAVA-WAY-LEDGER.md](EVENTLOG-JAVA-WAY-LEDGER.md); the MySQL and MariaDB rows below
+describe option 2 as it was built.
 Status: `todo` / `done` / `n/a`. A row is `done` only when a run shows it.
 
 ## Design
