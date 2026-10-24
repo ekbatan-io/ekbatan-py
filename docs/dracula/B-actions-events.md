@@ -97,7 +97,8 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** yes. Port Java's three checks into `add`.
 - **Surprise:** medium
 
-### The framework is synchronous, so under asyncio you must push every call to a thread
+### The framework is synchronous, so under asyncio you must push every call to a thread - settled by the user (2026-10-24)
+- **Settled by the user (2026-10-24)**: the refusal, with `ekbatan.aio` for async code, is the answer; nothing more to do.
 - **What:** `perform`, `execute`, handlers and repositories are plain blocking functions. Java
   can block for free on virtual threads. In an `async def` FastAPI endpoint, a direct
   `executor.execute(...)` stops the whole event loop. You need `await asyncio.to_thread(...)`
@@ -188,11 +189,12 @@ sides. Ordered by surprise, highest first.
 - **Could match Java?** partly. The types could be `TypeError`/`ValueError`/`RuntimeError`, but there is no exact match.
 - **Surprise:** low
 
-### `VirtualClock` ships in the main package, and `VirtualClock(instant)` starts frozen
+### `VirtualClock` ships in the main package, and `VirtualClock(instant)` starts frozen - settled by the user (2026-10-24)
+- **Settled by the user (2026-10-24)**: kept as it is.
 - **What:** Java's `VirtualClock` is in the separate `ekbatan-test-support` artifact, extends
   `java.time.Clock` (so it fits anywhere a `Clock` does), and `new VirtualClock(realClock)`
   starts running. Python's is exported from `ekbatan` itself and implements ekbatan's own
-  one-method `Clock` protocol (`now()` returning `datetime`). `VirtualClock(instant)` starts
+  one-method `Clock` protocol (`instant()` since `EKB-0419`, `now()` before it). `VirtualClock(instant)` starts
   *frozen* at that instant.
 - **Python:** `src/ekbatan/clock.py:21-24,39-67`, exported in `src/ekbatan/__init__.py`
 - **Java:** `ekbatan-test-support/.../time/VirtualClock.java:25,31-58`

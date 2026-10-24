@@ -89,7 +89,7 @@ whatever is decided about the rest.
 
 | # | Dracula | Why | Match Java? | Surprise | Area |
 |---|---|---|---|---|---|
-| 31 | The framework is blocking; an `async def` FastAPI endpoint that calls it stalls the server. **Now refused, not silent** (`EKB-0500`): the sync API on an event loop's thread raises `BlockingCallError`, naming `ekbatan.aio`, a plain `def` endpoint and `asyncio.to_thread` | forced | partly (gevent) | H | B, E |
+| 31 | The framework is blocking; an `async def` FastAPI endpoint that calls it stalls the server. **Now refused, not silent** (`EKB-0500`): the sync API on an event loop's thread raises `BlockingCallError`, naming `ekbatan.aio`, a plain `def` endpoint and `asyncio.to_thread`. **Settled by the user (2026-10-24)**: the refusal, with `ekbatan.aio` for async code, is the answer; nothing more to do | forced | partly (gevent) | H | B, E |
 | 32 | SIGTERM does not let running jobs finish unless you turn it on (main thread only). **Addressed: warns at startup** (`EKB-0498`): a registry started where nothing in the process handles SIGTERM logs one warning naming the two fixes, `register_shutdown_hook()` or `stop()` in your own shutdown; under uvicorn it stays quiet | forced | partly | H | D, E |
 | 33 | Drain-at-exit is a second switch, `stop_on_exit`, on `atexit`. It does not cover SIGTERM, so turning it on or off does not change #32's startup warning; only a SIGTERM handler does | forced | partly | M | D |
 | 34 | `workers(n)`: job threads have a ceiling, one per job by default | forced | no | M | D |
@@ -122,7 +122,7 @@ whatever is decided about the rest.
 | 56 | ~~Two events with the same fields are equal, even about different models~~ **fixed** (`EKB-0496`): `model_id` and `model_name` are part of an event's equality and hash, so events about different models are never equal | convention + choice | yes | M | A16 |
 | 57 | Exceptions end in `Error`, share `EkbatanError`; `ValidationError` stands for NPE / IAE / ISE | convention | partly | M | A17, B |
 | 58 | `unknown_shard_policy` is a string, not an enum | choice | yes | M | A18, C |
-| 59 | The clock is the framework's own (`now()`); `VirtualClock` is in the main package and starts frozen | forced + choice | partly | M | A19, B |
+| 59 | The clock is the framework's own - its one method is `instant()`, as Java's, since `EKB-0419`; `VirtualClock` is in the main package and starts frozen. **Settled by the user (2026-10-24)**: kept as it is | forced + choice | partly | M | A19, B |
 | 60 | `ShardedId.shard` refuses a non-v7 UUID | choice | yes | L | A20 |
 | 61 | Registries have public constructors; the repository and action registries refuse duplicates Java replaces | choice | yes | L | A21, B |
 | 62 | Database wiring takes SQLAlchemy engines; `manager()`, `default`, `shards` | forced + choice | partly | L | A22 |

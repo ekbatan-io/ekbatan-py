@@ -291,9 +291,11 @@ counter shows one run with it). The text below is the finding as it was.
   strings).
 - **Surprise:** medium
 
-### 19. The clock is the framework's own, with `now()`, and `VirtualClock` lives in the core package
-- **What:** `Clock` is a small interface with `now()` returning an aware datetime; Java uses the
-  JDK's `java.time.Clock` and `clock.instant()`. `VirtualClock` is exported from `ekbatan` itself
+### 19. The clock is the framework's own, and `VirtualClock` lives in the core package - settled by the user (2026-10-24)
+- **Settled by the user (2026-10-24)**: kept as it is.
+- **What:** `Clock` is a small interface whose one method is `instant()` (since `EKB-0419`; it
+  was `now()`), giving UTC as a datetime with no zone attached; Java uses the JDK's
+  `java.time.Clock` and `clock.instant()`. `VirtualClock` is exported from `ekbatan` itself
   (Java: `ekbatan-test-support`). `VirtualClock(instant)` starts *frozen* at that instant; Java's
   one-argument constructor takes another `Clock` (or zone) and starts in real time. `advance()` on
   a running clock raises `EkbatanError` (Java: `IllegalStateException`).
@@ -301,7 +303,7 @@ counter shows one run with it). The text below is the finding as it was.
 - **Java:** `ekbatan-test-support/src/main/java/io/ekbatan/testsupport/time/VirtualClock.java:31-60,
   97`; `action/ActionExecutor.java:411` (`Clock.systemUTC()`).
 - **Why:** Python forces part of it (there is no standard clock object); the rest is a choice.
-- **Could match Java?** partly - the method could be called `instant()` and the constructor could
+- **Could match Java?** partly - the method name matches since `EKB-0419`; the constructor could
   match; there is no standard clock type to reuse.
 - **Surprise:** medium
 

@@ -110,7 +110,8 @@ follow the guide and run the project. Area F merges the two.
 - **Surprise:** high
 - **Fixed** (`EKB-0256`): built a wheel with each tool the guide uses. `uv_build` keeps everything; poetry-core drops a gitignored `schema.py` (fixed with `[[tool.poetry.include]]`); setuptools keeps `schema.py` but drops `ekbatan.yaml` and the migrations even with nothing ignored (fixed with `[tool.setuptools.package-data]`); hatchling drops `schema.py` (`artifacts`). The guide carries the lines and a packaging step; `scripts/check-setup-guide.py` builds the wheel and imports it installed in a fresh venv.
 
-### The framework is blocking, the web framework is async: an `async def` endpoint stalls the server
+### The framework is blocking, the web framework is async: an `async def` endpoint stalls the server - settled by the user (2026-10-24)
+- **Settled by the user (2026-10-24)**: the refusal, with `ekbatan.aio` for async code, is the answer; nothing more to do.
 - **What:** Every example is FastAPI, which is built on an event loop. The framework only has
   blocking calls. A plain `def` endpoint is fine (FastAPI runs it in a thread pool), but an
   `async def` endpoint that calls the executor stops every other request in that process for the
