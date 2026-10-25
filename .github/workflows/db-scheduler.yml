@@ -11,6 +11,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Pinned as in ci.yml: left to the runner, uv takes the newest Python it has, for which
+  # psycopg-binary may have no build yet.
+  UV_PYTHON: "3.14"
+  # Runners are disposable VMs; don't fail before tests start if Docker Hub cannot serve the
+  # optional Testcontainers Ryuk reaper image.
+  TESTCONTAINERS_RYUK_DISABLED: "true"
+
 defaults:
   run:
     working-directory: db-scheduler
@@ -19,6 +27,7 @@ jobs:
   static:
     name: types and lint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -30,6 +39,7 @@ jobs:
   fast:
     name: tests (sqlite)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -48,6 +58,7 @@ jobs:
     # either would otherwise be invisible.
     name: compatibility (${{ matrix.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -10,7 +10,8 @@ Test planning and execution in this repository.
 ## First reads
 
 - `references/test-matrix.md`.
-- `.github/workflows/ci.yml` for what CI actually runs.
+- `.github/workflows/ci.yml` for what CI runs on every push, and `heavy-verification.yml` for
+  what runs nightly - the examples and the setup guide.
 - `Makefile` - every command this repository has, in one place.
 
 ## Default strategy

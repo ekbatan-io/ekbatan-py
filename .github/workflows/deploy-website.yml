@@ -1,8 +1,10 @@
-# Builds website/ and publishes it as this repository's GitHub Page.
+# Builds website/ and publishes it as this repository's GitHub Page, at
+#     https://ekbatan-io.github.io/ekbatan-py/
 #
 # Deliberately its own workflow rather than a job in ci.yml: the site is the only part of this
 # repository that needs Node, and putting that in the main pipeline would make every test run
-# install a toolchain none of them use.
+# install a toolchain none of them use. CI skips a push that only changes website/**, so the
+# Python checks that read the site run here too.
 #
 # The site is a project page, so it is served from /ekbatan-py/ rather than the root - hence
 # BASE. Astro's `base` and the two remark plugins between them prefix every internal link, so
@@ -19,19 +21,27 @@ on:
       - "website/**"
       - "docs/**"
       - ".github/workflows/deploy-website.yml"
+  # Lets you trigger a deploy manually from the Actions tab without pushing.
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Don't cancel in-flight runs - a half-deployed Pages site is worse than waiting for the previous
+# one to finish first.
 concurrency:
-  group: website
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE: /ekbatan-py/
+      # Pinned as in ci.yml: the runner's newest Python has no psycopg-binary build yet.
+      UV_PYTHON: "3.14"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,14 +55,20 @@ jobs:
         working-directory: website
       - run: npm run build
         working-directory: website
-        env:
-          BASE: /ekbatan-py/
       # Three checks the build itself cannot make: that every utility class resolves against
       # the frozen bundle, that every internal link points at a page that was built, and that
       # the parity ledger still counts. The first two have each already caught a real break.
+      # The link check reads BASE too: every link in the built site starts with it.
       - run: npm run check
         working-directory: website
-      - uses: actions/configure-pages@v5
+      # The Python half, which `make lint` runs in CI: the docs' own links, the API every
+      # snippet on both trees claims, and that no page was written into one tree only.
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv sync --all-extras
+      - run: uv run python scripts/links.py
+      - run: uv run python scripts/check-api.py
+      - run: uv run python scripts/docs-website-sync.py
       - uses: actions/upload-pages-artifact@v3
         with:
           path: website/dist
@@ -61,6 +77,7 @@ jobs:
     name: deploy
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

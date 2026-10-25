@@ -3,16 +3,40 @@ name: CI
 on:
   push:
     branches: [main]
+    # Skip CI when a push only changes `website/**`: those go through deploy-website.yml, which
+    # runs the website's own checks and the Python ones that read it. GitHub skips the workflow
+    # only if EVERY changed path matches; a push that also touches the framework still runs CI.
+    paths-ignore:
+      - "website/**"
   pull_request:
+    branches: [main]
+    paths-ignore:
+      - "website/**"
+  # The "Run workflow" button in the Actions tab (and `gh workflow run ci.yml`).
+  workflow_dispatch:
 
+# Cancel in-progress runs when a new commit is pushed to the same branch or PR.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # The Python every job runs on, pinned as Java's CI pins JDK 25. Left to the runner, uv took the
+  # newest one it had - 3.15, for which psycopg-binary has no build yet - and every job failed
+  # installing.
+  UV_PYTHON: "3.14"
+  # GitHub-hosted runners are disposable VMs, so runner teardown cleans up test containers. Avoid
+  # failing CI before tests start if Docker Hub cannot serve the optional Ryuk reaper image.
+  TESTCONTAINERS_RYUK_DISABLED: "true"
+
+# The examples are not here: like Java's, they run in heavy-verification.yml, nightly, on the
+# commit's own build.
 
 jobs:
   static:
     name: types and lint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -25,6 +49,7 @@ jobs:
   fast:
     name: tests (unit, then sqlite)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -38,6 +63,7 @@ jobs:
   gevent:
     name: tests (under gevent monkey-patching)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -49,31 +75,13 @@ jobs:
       # rechecked. The whole suite runs, container tests included.
       - run: make test-gevent
 
-  examples:
-    name: examples
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with: { enable-cache: true }
-      # Each example is a project of its own - fourteen, built three ways each - with its own
-      # environment, so nothing is synced here. The pip ones need a Python of 3.13 or later, which
-      # uv provides; the Poetry ones need `poetry`.
-      - run: uv python install 3.13
-      - run: uv tool install poetry
-      # An example nobody runs is an example that rots - and one did. The payload assertion in
-      # `wallet_service_sqlite` went stale at EKB-0129 and stayed that way, because this repository
-      # has no remote and so this file has never actually run. When it does, it catches that.
-      # `make` builds each one's generated schema first, tests each as its built wheel installed,
-      # and cannot drift from the Makefile.
-      - run: make examples
-
   tracing:
     # The span names are a cross-language contract - an operator filtering a trace on
     # `ekbatan.action.name` is filtering across both implementations. Only this job installs
     # OpenTelemetry; every other one proves the framework runs without it.
     name: tests (with a tracing stack)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -86,6 +94,7 @@ jobs:
     # the inner loop fast; it is not a supported dialect and proves nothing on its own.
     name: tests (${{ matrix.dialect }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -107,6 +116,7 @@ jobs:
     # (`postgresql+psycopg_async://`) with the same scenarios.
     name: tests (postgres, ekbatan.aio on psycopg async)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -121,6 +131,7 @@ jobs:
     # run. This is the job that would have caught a driver inferring a zoned type.
     name: tests (postgres, non-UTC process)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

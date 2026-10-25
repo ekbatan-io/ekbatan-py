@@ -26,6 +26,11 @@ const targets = new Set();
 // looked for them.
 const escaping = [];
 const selfLinks = [];
+// The site is built for BASE - `/ekbatan-py/` on GitHub Pages - and every internal link in it
+// starts with that, while dist/ does not. So a link is checked with the base taken off, and one
+// without the base would leave the site once deployed, so it counts as broken.
+const BASE = (process.env.BASE || "/").replace(/\/*$/, "/");
+const outsideBase = [];
 
 for (const file of walk("dist")) {
     if (!file.endsWith(".html")) continue;
@@ -43,11 +48,16 @@ for (const file of walk("dist")) {
         if (/\.(css|js|woff2?|png|svg|ico)$/.test(target)) continue;
 
         if (target.startsWith("/")) {
-            if (!target.startsWith("/_astro")) targets.add(target);
+            if (!target.startsWith(BASE)) {
+                outsideBase.push(`${relative("dist", file)} -> ${href}`);
+                continue;
+            }
+            const route = "/" + target.slice(BASE.length);
+            if (!route.startsWith("/_astro")) targets.add(route);
             // A `See also` entry pointing at the page it sits on is a dead end wearing a link.
             if (
                 !href.includes("#") &&
-                target.replace(/\/$/, "") === pageRoute &&
+                route.replace(/\/$/, "") === pageRoute &&
                 prose.includes(`href="${href}"`)
             ) {
                 selfLinks.push(`${relative("dist", file)} -> ${href}`);
@@ -69,9 +79,12 @@ const broken = [...targets].sort().filter((t) => {
 console.log(
     `${targets.size} distinct internal targets, ${broken.length} broken` +
         (escaping.length ? `, ${escaping.length} relative links resolving outside the site` : "") +
-        (selfLinks.length ? `, ${selfLinks.length} self-links` : ""),
+        (selfLinks.length ? `, ${selfLinks.length} self-links` : "") +
+        (outsideBase.length ? `, ${outsideBase.length} links missing the base ${BASE}` : ""),
 );
 for (const b of broken) console.log(`  BROKEN  ${b}`);
 for (const e of [...new Set(escaping)].sort()) console.log(`  ESCAPES  ${e}`);
 for (const s of [...new Set(selfLinks)].sort()) console.log(`  SELF     ${s}`);
-process.exitCode = broken.length + escaping.length + selfLinks.length ? 1 : 0;
+for (const o of [...new Set(outsideBase)].sort()) console.log(`  NO BASE  ${o}`);
+process.exitCode =
+    broken.length + escaping.length + selfLinks.length + outsideBase.length ? 1 : 0;

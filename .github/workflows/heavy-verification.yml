@@ -1,0 +1,128 @@
+# The slow checks, nightly - Java's heavy-verification.yml, without the native images, which
+# Python does not have.
+#
+# Both jobs install ekbatan the way an application does, from this commit rather than from an
+# index: each example builds its wheel from this checkout and tests it installed, and the setup
+# guide is followed as written in an empty folder, with `ekbatan` installed from this checkout.
+
+name: Heavy Verification
+
+on:
+  schedule:
+    # Run shortly after midnight UTC, but only continue if main changed during the previous UTC
+    # day.
+    - cron: "17 0 * * *"
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: "Manual run mode"
+        required: true
+        type: choice
+        default: respect-recent-activity
+        options:
+          - respect-recent-activity
+          - force
+
+permissions:
+  contents: read
+
+concurrency:
+  group: heavy-verification-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # GitHub-hosted runners are disposable VMs, so runner teardown cleans up test containers. Avoid
+  # failing heavy verification before tests start if Docker Hub cannot serve the optional
+  # Testcontainers Ryuk reaper image.
+  TESTCONTAINERS_RYUK_DISABLED: "true"
+
+jobs:
+  activity:
+    name: Check Recent Activity
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.activity.outputs.should_run }}
+      reason: ${{ steps.activity.outputs.reason }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide Whether To Run
+        id: activity
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.run_mode }}" == "force" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=manual force run" >> "$GITHUB_OUTPUT"
+            echo "Heavy verification was manually triggered with run_mode=force." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Manual run requested run_mode=respect-recent-activity; applying the recent-activity gate." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+
+          since="$(date -u -d 'yesterday 00:00' '+%Y-%m-%dT%H:%M:%SZ')"
+          until="$(date -u -d 'today 00:00' '+%Y-%m-%dT%H:%M:%SZ')"
+          commit="$(git log --since="$since" --until="$until" --max-count=1 --format=%H origin/main --)"
+
+          if [[ -n "$commit" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=main changed between $since and $until" >> "$GITHUB_OUTPUT"
+            echo "Found commits on main between $since and $until." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=no commits on main between $since and $until" >> "$GITHUB_OUTPUT"
+            echo "No commits on main between $since and $until. Skipping heavy verification." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Every example - fourteen, each built with uv, pip and Poetry - and the two SQLite ones run end
+  # to end. Each is a project of its own with its own environment, so nothing is synced here.
+  examples:
+    name: Examples
+    needs: activity
+    if: needs.activity.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      # The pip ones need a Python of 3.13 or later, which uv provides; the Poetry ones need
+      # `poetry`.
+      - run: uv python install 3.13
+      - run: uv tool install poetry
+      # `make` builds each one's generated schema first, tests each as its built wheel installed,
+      # and cannot drift from the Makefile.
+      - name: Run The Examples
+        run: make examples
+
+  # The complete-project-setup page, followed as written in an empty folder: every installer and
+  # both modes, one database per runner.
+  setup-guide:
+    name: Setup Guide / ${{ matrix.db }}
+    needs: activity
+    if: needs.activity.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [pg, mysql, mariadb, sqlite]
+    env:
+      # Pinned as in ci.yml: the runner's newest Python has no psycopg-binary build yet.
+      UV_PYTHON: "3.14"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { enable-cache: true }
+      - run: uv python install
+      - run: uv tool install poetry
+      - name: Follow The Setup Guide
+        run: uv run python scripts/check-setup-guide.py --db ${{ matrix.db }}

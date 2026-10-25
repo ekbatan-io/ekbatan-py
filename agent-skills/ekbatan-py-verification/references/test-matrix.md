@@ -50,12 +50,19 @@ SQLite passing is necessary and not sufficient.
 
 ## CI
 
-Six jobs on every push: lint and types, the fast suite, the examples, a tracing pass that asserts
-the span names, the three real dialects in a matrix, and PostgreSQL again under
-`TZ=America/New_York` - which is the job that would catch a driver inferring a zoned type.
+Three workflows on GitHub (`ekbatan-io/ekbatan-py`), each modelled on its Java twin:
+
+- **CI** (`ci.yml`) on every push and pull request to main, except a push that only touches
+  `website/**`: lint and types, the fast suite, the whole suite under gevent, a tracing pass that
+  asserts the span names, the three real dialects in a matrix, PostgreSQL with `ekbatan.aio` on
+  psycopg's async mode, and PostgreSQL again under `TZ=America/New_York` - which is the job that
+  would catch a driver inferring a zoned type. Python is pinned to 3.14.
+- **Website** (`deploy-website.yml`) on a push that touches `website/**` or `docs/**`: builds the
+  site for `/ekbatan-py/`, runs its checks and the Python ones that read it, and deploys it to
+  GitHub Pages.
+- **Heavy Verification** (`heavy-verification.yml`) nightly, after midnight UTC, if main changed
+  the day before - or by hand, where `force` skips that test: every example, and the setup guide
+  followed as written for every database, installer and mode.
 
 The tracing job is the only one that installs the OpenTelemetry SDK. Every other job proves the
 framework runs without it.
-
-**This repository has no git remote, so none of it has ever executed.** That is how an example
-test stayed red for several commits. Treat CI as written and unproven.
