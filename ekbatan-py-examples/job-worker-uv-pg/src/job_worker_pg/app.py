@@ -8,11 +8,9 @@ Two shards, `global` and `mexico`, each its own database, declared in `ekbatan.y
 per member: `primaryConfig` for the work, `jobsConfig` for the scheduler - one scheduler for the
 whole layout, on the default member's - and `lockConfig` for the stipend job's per-wallet lock.
 
-**SIGTERM is the one exit that needs catching.** A started registry drains on any normal exit
-and on Ctrl-C by default - it registers with `atexit`, which is additive, like Java's hook. But
-CPython kills the process on SIGTERM without running `atexit`, so a container stop would end
-it with executions still picked and their rows waiting out the dead-execution window.
-`__main__.run()` catches the signal and calls `close()`.
+**Stopping.** As in Java, the job registry lets its running jobs finish however the process
+stops - a normal exit, Ctrl-C, or SIGTERM from a container stop - because
+`register_shutdown_hook` is on by default. `__main__.run()` has no signal handling of its own.
 """
 
 from __future__ import annotations

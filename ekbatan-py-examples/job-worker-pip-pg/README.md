@@ -35,9 +35,10 @@ The venv is made with `python3`, which must be 3.13 or later - `make PYTHON=pyth
 
 ## SIGTERM
 
-A started registry drains on any normal exit and on Ctrl-C - it registers with `atexit`. CPython
-kills the process on SIGTERM without running `atexit`, so `__main__.run()` catches the signal and
-calls `close()`: a container stop then lets the jobs in flight finish.
+Nothing in `__main__.run()` catches it: the job registry does, as Java's does, because
+`register_shutdown_hook` is on by default and nothing else in this process handles SIGTERM. A
+container stop then lets the jobs in flight finish before the process stops. A normal exit and
+Ctrl-C stop the registry too.
 
 ## How the schema gets there
 

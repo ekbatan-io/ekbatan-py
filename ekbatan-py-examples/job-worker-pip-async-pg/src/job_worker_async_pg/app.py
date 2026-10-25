@@ -20,9 +20,9 @@ Two shards, `global` and `mexico`, each its own database, declared in `ekbatan.y
 **The scheduler** gets each shard's `jobsConfig`, sync: one scheduler on the default one, and
 fan-out and dispatch reading and writing every shard's `events` and `event_notifications`.
 
-**SIGTERM is the one exit that needs catching.** A started registry drains on any normal exit
-and on Ctrl-C by default - it registers with `atexit`. But CPython kills the process on SIGTERM
-without running `atexit`; `__main__.run()` catches the signal and calls `close()`.
+**Stopping.** As in Java, the job registry lets its running jobs finish however the process
+stops - a normal exit, Ctrl-C, or SIGTERM from a container stop - because
+`register_shutdown_hook` is on by default. `__main__.run()` has no signal handling of its own.
 """
 
 from __future__ import annotations
