@@ -99,7 +99,7 @@ class Whole:
             job_registry()
             .data_source(self.jobs_data_source)
             .poll_interval(timedelta(milliseconds=200))
-            .stop_on_exit(False)
+            .register_shutdown_hook(False)
             .with_job(EventFanoutJob.builder().registry(self.reg).handlers(handlers).events(EVENTS).notifications(NOTIFS).config(conf).clock(clock).build())
             .with_job(EventHandlingJob.builder().registry(self.reg).handlers(handlers).notifications(NOTIFS).config(conf).clock(clock).build())
             .build()

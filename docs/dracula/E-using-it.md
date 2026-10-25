@@ -148,7 +148,8 @@ follow the guide and run the project. Area F merges the two.
   depends on `ekbatan[...]`.
 - **Surprise:** high
 
-### A worker process must catch SIGTERM itself, or its jobs are not drained on a container stop
+### A worker process must catch SIGTERM itself, or its jobs are not drained on a container stop - matched (2026-10-25)
+- **Matched (`EKB-0562`, the user's decision 2026-10-25, with #33):** it need not. `register_shutdown_hook` is on by default and takes SIGTERM where nothing else handles it, so a bare worker's running jobs finish on a container stop; the job-worker examples have no signal code now, as Java's worker has none. The rest of a worker's shutdown code still runs only if the worker catches SIGTERM itself.
 - **What:** A Java service stops cleanly on SIGTERM: Spring closes its context and the job
   registry's `stop` runs. In Python, `atexit` does not run on SIGTERM, so a `docker stop` kills the
   job registry mid-work unless you install a signal handler or call

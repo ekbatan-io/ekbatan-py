@@ -316,7 +316,7 @@ def main() -> None:
         jobs = (
             job_registry()
             .data_source(SOURCE)
-            .stop_on_exit(False)
+            .register_shutdown_hook(False)
             .poll_interval(timedelta(milliseconds=100))
             .with_job(Job("ok-job", FixedDelay.of(timedelta(hours=1)), lambda: None))
             .with_job(Job("failing-job", FixedDelay.of(timedelta(hours=1)), boom))

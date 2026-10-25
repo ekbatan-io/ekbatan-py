@@ -237,10 +237,10 @@ your shutdown code: the end of the lifespan, or the server's own shutdown hook.
 
 **Your own `main()` has to catch it itself.** In a worker you run yourself, or a server you start
 from your own code such as waitress, nothing catches SIGTERM unless you do. Python's default is
-to end the process on the spot: your shutdown code never runs, and running jobs are cut off. (The
-job registry does stop itself when Python exits normally or on Ctrl-C - but a SIGTERM that nothing
-catches ends Python before that can happen.) The sections for those programs show how to catch
-it.
+to end the process on the spot: your shutdown code never runs. (The job registry is the one
+exception: where nothing else catches SIGTERM, it does, by default, and lets its running jobs
+finish before the process ends - but only those; the rest of your shutdown code still never
+runs.) The sections for those programs show how to catch it.
 
 ### Stopping has a time limit
 
@@ -816,9 +816,9 @@ is copied. Your own `main()` calls `serve(app, ...)`, which runs until the proce
 
 **Where it can bite.**
 
-- **SIGTERM.** Nothing catches it by default, so a container stop ends the process at once,
-  before your code after `serve()` runs - and running jobs are cut off. (The job registry logs a
-  warning about this when it starts.)
+- **SIGTERM.** Nothing catches it by default but the job registry, so a container stop ends the
+  process at once, before your code after `serve()` runs. The registry lets its own running jobs
+  finish first, and nothing else.
 - **More threads than connections.** With more threads than the pool has connections, requests
   wait for one.
 
@@ -1120,11 +1120,13 @@ if __name__ == "__main__":
 [`job-worker-uv-async-pg`](../ekbatan-py-examples/job-worker-uv-async-pg) the async one - again
 with everything gathered into the example's own `Worker` class and `build()` function.
 
-If you'd rather not handle SIGTERM yourself, call `.register_shutdown_hook()` on the job registry
-builder instead of the `signal.signal(...)` line: SIGTERM and Ctrl-C then stop the jobs for you.
-After a SIGTERM the process then ends as it would have, without the rest of your shutdown code -
-the connections are simply dropped. If neither is done, the job registry logs one warning when it
-starts, saying that running jobs would be cut off by a container stop.
+The examples leave the `signal.signal(...)` line out, as Java's worker has no signal code: the
+job registry then catches SIGTERM itself - `register_shutdown_hook` is on by default - and lets
+its running jobs finish. After a SIGTERM the process ends as it would have, without the rest of
+the shutdown code - the connections are simply dropped. With the line in, as above, the registry
+leaves SIGTERM to it, and the `finally` runs. If nothing catches SIGTERM - the hook turned off, or
+the registry started off the main thread - the registry logs one warning when it starts, saying
+that running jobs would be cut off by a container stop.
 
 ### Where it can bite
 

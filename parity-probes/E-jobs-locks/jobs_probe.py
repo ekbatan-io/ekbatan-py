@@ -90,7 +90,7 @@ def ms(n: int) -> timedelta:
 
 
 def base():
-    return job_registry().data_source(SOURCE).stop_on_exit(False).poll_interval(ms(100))
+    return job_registry().data_source(SOURCE).register_shutdown_hook(False).poll_interval(ms(100))
 
 
 def main() -> None:
@@ -309,7 +309,7 @@ def main() -> None:
         if len(starts) == 1:
             time.sleep(12.5)
 
-    reg = job_registry().data_source(SOURCE).stop_on_exit(False).with_job(Job("j11-defaults", FixedDelay.of(timedelta(seconds=1)), d11)).build()
+    reg = job_registry().data_source(SOURCE).register_shutdown_hook(False).with_job(Job("j11-defaults", FixedDelay.of(timedelta(seconds=1)), d11)).build()
     reg.start()
     time.sleep(1.5)
     h1 = query1("select last_heartbeat from scheduled_tasks where task_name = 'j11-defaults'")

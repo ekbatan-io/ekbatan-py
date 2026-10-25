@@ -111,14 +111,14 @@ once the events are gone.
 
 ## Two things to know before you deploy
 
-**SIGTERM drains only if something catches it.** A started `JobRegistry` drains on any normal
-exit and on Ctrl-C by default. SIGTERM - a container stop - is the exception:
-CPython kills the process without running exit hooks. Under uvicorn or gunicorn that is covered,
-because the server turns SIGTERM into a lifespan shutdown and the lifespan calls `jobs.stop()`,
-as the examples do. A **standalone worker** has no server, so add `.register_shutdown_hook()`;
-without it the rows wait out the dead-execution window, 60 seconds on framework defaults, before
-another instance picks them up. A registry started where nothing handles SIGTERM logs one
-warning saying so. [Details](/reference/jobs/distributed-jobs/).
+**Running jobs finish on SIGTERM - by default.** A started `JobRegistry` lets its running jobs
+finish on any normal exit, on Ctrl-C, and on SIGTERM - a container stop - as Java's does. Under
+uvicorn or gunicorn the server has SIGTERM: it turns it into a lifespan shutdown, and the
+lifespan calls `jobs.stop()`, as the examples do. A **standalone worker** has no server, so the
+registry catches SIGTERM itself. Where it cannot - the hook turned off, or the registry started
+off the main thread - it logs one warning when it starts: its running jobs would be cut off, and
+their rows would wait out the dead-execution window, 60 seconds on framework defaults, before
+another instance picks them up. [Details](/reference/jobs/distributed-jobs/).
 
 **No connection-pool leak detection.** Nothing warns you about a connection that is checked
 out and never returned. A simple detector would be worse than nothing — a handler raising on

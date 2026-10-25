@@ -215,88 +215,84 @@ that engine is created, with no I/O**. So a scheduler started before its databas
 built to allow - still sends the right query once the database is up. There is no detection step
 to fail and nothing to set by hand.
 
-## Draining at exit: on by default, and the SIGTERM half opt-in
+## Letting running jobs finish when the process stops: on by default
 
-A process that stops while a job is running should let the job finish first - **drain** it -
-rather than cut it off. That needs two things: a list of work to run on the way out, where any
-number of entries can be added without displacing each other, and a way to run that list when the
-process is sent SIGTERM, which is how a container is stopped.
+A process that stops while a job is running should let the job finish first rather than cut it
+off. Java's `registerShutdownHook` does that, and is on by default; so is `register_shutdown_hook`
+here.
 
-Python has the list and not the second part, so the hook is split in two.
+Java needs one mechanism for it, because a JVM shutdown hook runs however the process ends.
+Python has a separate one for each way, and the registry uses both, from `start()`:
 
-**The list is `atexit`, and a started registry is on it by default.** `start()` adds it and
-`stop()` takes it off, exactly as OpenTelemetry's `TracerProvider(shutdown_on_exit=True)` and
-Sentry do. It adds to whatever else is registered and displaces nothing, so it needs no asking.
-Turn it off with `.stop_on_exit(False)`.
+- **The program ends by itself** - it returns, raises, or gets Ctrl-C. The registry is on
+  `atexit`, which adds to whatever else is registered and displaces nothing. `stop()` takes it
+  off.
+- **It gets SIGTERM** - `docker stop`, a Kubernetes rollout. `atexit` does not run then: CPython
+  kills the process on the spot. So if nothing else in the process handles SIGTERM, the registry
+  does, and says so in one line:
 
-**SIGTERM does not run that list.** CPython kills the process and no `atexit` hook runs - not
-even under uvicorn, which handles SIGTERM itself and then re-raises it. Measured, with a job two
-seconds into its body when the process was ended:
+```text
+INFO io.ekbatan.distributedjobs.JobRegistry Nothing else in this process handles SIGTERM, so the
+JobRegistry does: on SIGTERM, running jobs finish, then the process stops. A SIGTERM handler set
+after this replaces it; register_shutdown_hook(False) turns it off.
+```
 
-| how the process ends | default | `.stop_on_exit(False)` | `.register_shutdown_hook()` |
-| --- | --- | --- | --- |
-| it returns, or raises | **drains** | cut off | drains |
-| Ctrl-C | **drains**, still exits 130 | cut off | drains |
-| SIGTERM - a container stop | cut off, exits 143 | cut off | **drains**, still exits 143 |
+On SIGTERM it stops every registry that asked for this - their running jobs finish, each bounded
+by `shutdown_max_wait` - and then the process dies of the signal, as it would have: `finally`
+blocks and `atexit` do not run. A second SIGTERM stops it at once. Measured, with a job two
+seconds into its body when the process was stopped:
 
-**Catching SIGTERM is the opt-in half**, because CPython has **one handler slot per signal**.
-`signal.signal()` replaces what is there, so a library that installed one on your behalf would be
-taking your process's SIGTERM away from you. Every library read while deciding this agrees:
-OpenTelemetry, Sentry and APScheduler never touch signals; gunicorn, uvicorn and the Celery, RQ,
-Dramatiq and Huey workers take them because they *are* the process. So here it is a sentence you
-write:
+| how the process stops | default | `.register_shutdown_hook(False)` |
+| --- | --- | --- |
+| it returns, or raises | **the job finishes** | cut off |
+| Ctrl-C | **the job finishes**, still exits 130 | cut off |
+| SIGTERM - a container stop | **the job finishes**, still exits 143 | cut off, exits 143 |
+| SIGTERM, with your own handler set before `start()` | your handler decides | your handler decides |
+
+**It leaves SIGTERM to whoever already has it.** CPython has **one handler per signal**, so
+taking it would silently drop theirs. uvicorn and gunicorn set their handler before your
+application starts (measured on uvicorn 0.28, 0.29, 0.32, 0.52 and 0.54, and with several
+workers), and then they own shutdown: the end of the FastAPI lifespan calls `jobs.stop()`, as the
+REST examples do. The same goes for an asyncio `loop.add_signal_handler`, a SIGTERM ignored on
+purpose, and a handler of your own set before `start()`. One set after `start()` replaces the
+registry's.
+
+**It needs the main thread** to take SIGTERM: CPython lets no other thread set a signal handler.
+A registry started elsewhere - a lifespan run in a thread pool - is on `atexit` alone.
+
+**It tells you when nothing catches SIGTERM.** If nothing handles SIGTERM once `start()` is done -
+the hook is off, or it could not take the signal off the main thread - `start()` logs one warning,
+once per process:
+
+```text
+WARNING io.ekbatan.distributedjobs.JobRegistry Nothing in this process handles SIGTERM, and the
+JobRegistry cannot: it was started off the main thread, and only the main thread can set a
+signal handler. Jobs still running when the process gets SIGTERM (a container stop or a deploy)
+are cut off, and another instance runs them again after the dead-execution window (60 seconds).
+To let them finish first, start the JobRegistry on the main thread, or call its stop() from a
+SIGTERM handler of your own.
+```
+
+With the hook off, the warning says that instead, and to turn it back on. It reads the same
+answer from any thread. A `build_manual()` registry never warns and never takes SIGTERM.
+
+**Turned off**, the registry is neither on `atexit` nor on SIGTERM - you stop it yourself:
 
 ```python
 jobs = (
     job_registry()
     .data_source(jobs_data_source)
     .with_jobs([...])
-    .register_shutdown_hook()     # the SIGTERM half; off unless you say this
+    .register_shutdown_hook(False)   # you call jobs.stop() yourself
     .build()
 )
 ```
 
-**What it does when you ask.** It drains on SIGTERM and SIGINT, then **calls the handler that
-was already there**. Where there was none, it restores the default and re-raises, so the process
-still dies of the signal - a hook that drained cleanly and left the process running would be
-worse than the gap it closes. `stop()` puts the original back, so a second Ctrl-C from an
-impatient operator reaches the default handler and exits at once. It also takes the `atexit`
-entry off, so the process is not drained twice.
+A job still running when the process ends is then cut off; its row waits out the dead-execution
+window, 60 seconds on these defaults, before another instance runs it again. Nothing is lost -
+every job body already has to tolerate running twice - but the stop is abrupt.
 
-**It needs the main thread.** CPython only allows a signal handler to be installed there, and
-this raises rather than silently doing nothing if it has not got one.
-
-**Without it**, a SIGTERM kills the process mid-execution; the rows then wait out the
-dead-execution window, 60 seconds on these defaults, before another instance picks them up.
-Nothing is lost, and every job body already has to tolerate running twice - but the shutdown is
-abrupt rather than graceful.
-
-**When to leave it off.** A service that already has somewhere to call `jobs.stop()` - a FastAPI
-lifespan, a Django shutdown - wants none of this, and the REST examples are written that way:
-uvicorn turns SIGTERM into a lifespan shutdown, and the lifespan stops the jobs. The case it
-exists for is a **standalone worker process**, which has no framework shutdown to hang off.
-
-**It tells you when nothing catches SIGTERM.** If the hook is off and nothing else in the process
-handles SIGTERM either, `start()` logs one warning, once per process:
-
-```text
-WARNING io.ekbatan.distributedjobs.JobRegistry Nothing in this process handles SIGTERM. Jobs
-still running when the process gets SIGTERM (a container stop or a deploy) are cut off, and
-another instance runs them again after the dead-execution window (60 seconds). To let them
-finish first, call register_shutdown_hook() on the job registry builder, or call stop() on the
-JobRegistry from your own shutdown code, such as a FastAPI lifespan.
-```
-
-It only reads the signal's handler; it installs and changes nothing. Any handler at all counts
-as somebody owning shutdown, so it stays quiet under uvicorn, whose handler is in place before
-your lifespan runs (measured on uvicorn 0.28, 0.29, 0.32, 0.52 and 0.54, and with several
-workers), under an asyncio `loop.add_signal_handler`, and when SIGTERM is ignored on
-purpose. It reads the same answer from any thread, so a lifespan that starts the registry in a
-thread pool is judged correctly. A `build_manual()` registry never warns. The two ways to clear
-it are the two above: `.register_shutdown_hook()` for a standalone worker, or `jobs.stop()` in
-the shutdown you already have.
-
-**If you write the handler yourself, keep what you find:**
+**If you write a SIGTERM handler yourself, keep what you find:**
 
 ```python
 previous = signal.getsignal(signal.SIGTERM)

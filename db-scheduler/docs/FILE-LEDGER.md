@@ -57,7 +57,7 @@ whole, makes completeness something you can count rather than something you hope
 | ScheduledExecution | 71 | `scheduled_execution.py` | done |
 | ScheduledExecutionsFilter | 55 | `scheduled_execution.py` | done |
 | Scheduler | 404 | `scheduler.py` | done |
-| SchedulerBuilder | 306 | `builder.py` | partial - `registerShutdownHook`, `dueExecutor`, `housekeeperExecutor` and `commitWhenAutocommitDisabled` have no counterpart. The first matters: ekbatan's `JobRegistry` turns it on by default, so this port cannot |
+| SchedulerBuilder | 306 | `builder.py` | partial - `registerShutdownHook`, `dueExecutor`, `housekeeperExecutor` and `commitWhenAutocommitDisabled` have no counterpart. The first is covered one level up: ekbatan's `JobRegistry` has its own `register_shutdown_hook`, on by default, where Java's `JobRegistry` turns this one on |
 | SchedulerClient | 365 | `client.py` | done |
 | SchedulerName | 41 | `scheduler_name.py` | done |
 | SchedulerState | 39 | `state.py` | done |

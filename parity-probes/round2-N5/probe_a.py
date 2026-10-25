@@ -239,7 +239,7 @@ def a7(tm, ex) -> None:
                 done.set()
 
     jobs_data_source = DataSource.from_config(cfg(D, pool=3))
-    jobs = job_registry().data_source(jobs_data_source).stop_on_exit(False).poll_interval(timedelta(milliseconds=200)).with_job(TxJob()).build()
+    jobs = job_registry().data_source(jobs_data_source).register_shutdown_hook(False).poll_interval(timedelta(milliseconds=200)).with_job(TxJob()).build()
     jobs.start()
     p("a7.job_ran", yn(done.wait(20)))
     time.sleep(0.5)

@@ -36,7 +36,8 @@ marked unverified.
 - **Surprise:** high
 - **Fixed** (`EKB-0246`): every QUARTZ pattern is now read the way cron-utils reads it and converted for croniter, not just the day numbers. See `db-scheduler/docs/QUARTZ-CONVERTER-LEDGER.md`.
 
-### SIGTERM does not drain running jobs unless you turn it on
+### SIGTERM does not drain running jobs unless you turn it on - matched (2026-10-25)
+- **Matched (`EKB-0562`, with the entry on `stop_on_exit` below, the user's decision 2026-10-25):** `register_shutdown_hook` is on by default, as Java's. Where nothing else in the process handles SIGTERM, `start()` takes it - one handler for every registry, announced in one log line - and on SIGTERM the running jobs finish, then the process dies of the signal, as it would have. Where SIGTERM is already handled (uvicorn, gunicorn, asyncio, the application) it is left alone. Taking it needs the main thread, which CPython forces: a registry started elsewhere is on `atexit` alone and warns once (`EKB-0498`), as does one with the hook off. Proven in real processes: `tests/integration/test_jobs_at_exit.py`.
 - **What:** in Java, an ordinary container stop (SIGTERM) runs `Scheduler.stop()` and lets running jobs finish. That is on by default. In Python, SIGTERM kills the process mid-job unless you call `register_shutdown_hook()`. That call only works on the main thread, and it throws an error from `start()` anywhere else.
 - **Python:** `src/ekbatan/distributedjobs/__init__.py:311` (`_shutdown_hook = False`), `:437-465`; `_shutdown.py:52-71` (main-thread check at `:61`).
 - **Java:** `JobRegistry.java:187` (`registerShutdownHook = true`), `:436-438`.
@@ -63,7 +64,8 @@ marked unverified.
 - **Could match Java?** no for the interrupt. Jobs have to check `ctx.scheduler_state.is_shutting_down` themselves.
 - **Surprise:** medium
 
-### Drain-at-exit is a separate `stop_on_exit` switch, built on `atexit`
+### Drain-at-exit is a separate `stop_on_exit` switch, built on `atexit` - matched (2026-10-25)
+- **Matched (`EKB-0562`, the user's decision 2026-10-25):** one switch, Java's `register_shutdown_hook(enabled)`, on by default. `start()` puts the registry on `atexit` and takes SIGTERM where nothing else handles it; turned off, it does neither. `stop_on_exit` is gone. What stays Python's: SIGTERM is taken only where nobody has it and only on the main thread, and after the jobs finish the process dies of the signal - `finally` blocks and `atexit` do not run, where the JVM would run every shutdown hook.
 - **What:** Java has one switch, `registerShutdownHook`. Python splits it in two: `stop_on_exit` (on by default; runs on normal exit, an unhandled exception and Ctrl-C) and `register_shutdown_hook` (off by default; runs on SIGTERM). A Java developer who turns off the one switch they know leaves the other one on. With a job in flight, exit can wait for up to `shutdown_max_wait` (30 min by default).
 - **Python:** `src/ekbatan/distributedjobs/__init__.py:176-179` (`atexit.register` in `start()`), `:415-435`; `build_manual` never registers it (`:515-518`).
 - **Java:** `JobRegistry.java:302-305` (one knob).

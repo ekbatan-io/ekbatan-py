@@ -136,7 +136,7 @@ def jobs() -> None:
     reg = (
         job_registry()
         .data_source(SOURCE)
-        .stop_on_exit(False)
+        .register_shutdown_hook(False)
         .poll_interval(timedelta(milliseconds=100))
         .with_job(Shared())
         .build()

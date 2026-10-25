@@ -1675,48 +1675,41 @@ away; both would have to be written. `leakDetectionThreshold` is the one worth a
 a connection leaked inside a unit of work is exactly the failure this framework's transaction
 handling exists to prevent, and Java gets a log line for it that this port does not.
 
-## The shutdown hook drains on exit by default, and catches SIGTERM only when asked
+## The shutdown hook is on by default, and takes SIGTERM only where nobody has it
 
-> **chosen** - the additive half is on by default as Java's is (`atexit`, `EKB-0221`); catching SIGTERM stays opt-in, because CPython has one handler slot per signal and does not run `atexit` on SIGTERM. The event-loop half was closed in `EKB-0214`. [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md)
+> **parity** - one switch, Java's `register_shutdown_hook`, on by default: `atexit` when the program ends by itself, and a SIGTERM handler where nothing else in the process handles SIGTERM. Brought to parity in `EKB-0562` (Dracula 33, the user's decision 2026-10-25); until then a second switch, `stop_on_exit`, held the `atexit` half and the SIGTERM half was opt-in. The event-loop half was closed in `EKB-0214`. The calls made on the way are in [DECISIONS-TO-REVIEW.md](docs/DECISIONS-TO-REVIEW.md).
 
-**What Java's hook is, in two parts.** A JVM shutdown hook is added to a list, and the JVM runs
-that list on its way out - including on SIGTERM, which it turns into an orderly exit. Python has
-the first part, `atexit`, and not the second: SIGTERM kills the process and no `atexit` hook runs.
-Measured in a real process with a job two seconds into its body:
+**What Java's hook is.** A JVM shutdown hook is added to a list, and the JVM runs that list on its
+way out - including on SIGTERM, which it turns into an orderly exit. Python has two mechanisms
+where Java has one: `atexit`, which runs when the program ends by itself, and a signal handler, of
+which there is one per signal, set from the main thread only. SIGTERM kills a Python process
+without running `atexit`. Measured in a real process with a job two seconds into its body:
 
-| how the process ends | default | `stop_on_exit(False)` | `register_shutdown_hook()` |
-| --- | --- | --- | --- |
-| returns, or raises | **drains** | cut off | drains |
-| Ctrl-C | **drains**, exits 130 | cut off | drains |
-| SIGTERM | cut off, exits 143 | cut off | **drains**, exits 143 |
+| how the process ends | default | `register_shutdown_hook(False)` |
+| --- | --- | --- |
+| returns, or raises | **the job finishes** | cut off |
+| Ctrl-C | **the job finishes**, exits 130 | cut off |
+| SIGTERM | **the job finishes**, exits 143 | cut off, exits 143 |
 
-So the first part is ported as Java has it - **on by default** since `EKB-0221`, the way
-OpenTelemetry's `shutdown_on_exit` and Sentry's flush are - and only the second is opt-in. Of the
-libraries read while deciding this, the ones that live in someone else's process (OpenTelemetry,
-Sentry, APScheduler) never touch signals, and the ones that do (gunicorn, uvicorn, the Celery, RQ,
-Dramatiq and Huey workers) are the process. None of them keeps the handler it replaced; this does.
+**How one switch covers both.** `start()` puts the registry on `atexit`, and takes SIGTERM if
+nothing else in the process handles it - one handler for every registry, announced in one log
+line. On SIGTERM it stops every registry that asked for the hook, then the process dies of the
+signal, as it would have. Where SIGTERM is already handled - uvicorn, gunicorn, asyncio's
+`add_signal_handler`, the application's own - it is left alone: they own shutdown then, and the
+application's shutdown code calls `stop()`. A handler set after `start()` replaces the registry's,
+since `signal.signal()` replaces what is there - measured, not assumed.
 
 Two halves of one gap, found by re-reading `JobRegistry.java` whole after noticing its ledger row
 had been marked `done` at ledger-creation time rather than by a porting pass.
 
-**The hook - closed in `EKB-0213`, opt-in rather than default.** db-scheduler's own
+**The hook - closed in `EKB-0213`, matched in `EKB-0562`.** db-scheduler's own
 `SchedulerBuilder.registerShutdownHook` defaults to `false`; Java's `JobRegistry.Builder`
 deliberately flips it to `true` and calls it in `build()`, so an ordinary SIGTERM runs
-`Scheduler.stop()` and in-flight executions drain. This port had no counterpart at either level,
-and now has `JobRegistryBuilder.register_shutdown_hook()`.
-
-**The SIGTERM half is off by default, and that is the divergence that remains.** Java can turn its own on without
-asking because a JVM shutdown hook is *additive*: any number can be registered, they all run,
-none displaces another. CPython has **one** handler slot per signal and `signal.signal()`
-replaces what is there - measured, not assumed - so a library installing one uninvited would be
-taking the application's SIGTERM away from it.
-
-Asked for, it behaves. The handler that was there is kept and called afterwards; where there was
-none the default is restored and the signal re-raised, so the process still dies of it - a hook
-that drained cleanly and left the process alive would be worse than the gap it closed. `stop()`
-puts the original back, so a second Ctrl-C reaches the default and exits at once. It refuses off
-the main thread, where CPython will not install a handler at all, rather than quietly failing to
-install and being discovered during an outage.
+`Scheduler.stop()` and in-flight executions drain. This port had no counterpart at either level.
+`EKB-0213` added `register_shutdown_hook()`, opt-in; `EKB-0221` split it in two - `stop_on_exit`,
+the `atexit` half, on by default, and the SIGTERM half left opt-in, because a library that takes a
+signal uninvited takes it from whoever had it. `EKB-0562` went back to Java's one switch, on by
+default: taking SIGTERM only where nobody has it takes it from no one.
 
 **The reason to have it rather than leave it to the application** was in this repository's own
 example. `job_worker_pg/__main__.py` carried the six lines an application was supposed to write,
@@ -1724,15 +1717,17 @@ with a docstring arguing the framework should not do this - and those six lines 
 previous handler**. Correct where it stood, since `__main__` had nothing before it; silently
 wrong the moment it was copied into a gunicorn or uvicorn worker. If the worked example gets the
 subtle half wrong, "leave it to the application" is not a smaller risk than doing it once,
-carefully, behind a flag. The example now chains, and says why.
+carefully. The example later chained, and since `EKB-0562` has no signal code at all, as Java's
+worker has none.
 
 `JobRegistry.stop()` and the `with` block always did the right thing - the gap was only ever
 what happens when nobody calls them, which is exactly the container-stop case.
 
-**Off, but not silent** (`EKB-0498`). Java has nothing to warn about, since its hook is on. Here
-`start()` logs one warning, once per process, when the hook is off and nothing else in the
-process handles SIGTERM, naming the two fixes. It reads the handler and changes nothing; under
-uvicorn, whose handler is installed before the lifespan runs, it is quiet.
+**Warned where it cannot help** (`EKB-0498`). Java has nothing to warn about. Here `start()` logs
+one warning, once per process, when nothing handles SIGTERM after the hook has had its chance: the
+hook is off, or the registry was started off the main thread, where CPython lets nobody set a
+handler. It reads the handler and changes nothing; under uvicorn, whose handler is installed
+before the lifespan runs, it is quiet.
 
 **The loop - closed in `EKB-0214`.** Java's `EventFanoutJob.execute` is
 `while (!shouldStop(ctx))` around `drainOneRound()`, sleeping `pollDelay` between idle rounds:

@@ -62,7 +62,7 @@ except Exception as e:
 reg = b.poll_interval(timedelta(milliseconds=200)).shutdown_max_wait(timedelta(seconds=1)).build()
 print("PROBE default workers (2 jobs):", seen_builder["threads"])
 reg.start()
-print("PROBE stop_on_exit default registered:", reg._stop_on_exit)
+print("PROBE register_shutdown_hook default:", reg._register_shutdown_hook)
 started.wait(10)
 print("PROBE fraction_dead right after start:", seen.get("fraction_dead"))
 print("PROBE ctx.scheduler_state.is_shutting_down exists:", seen.get("is_shutting_down_attr"))
@@ -76,7 +76,7 @@ for line in buf.getvalue().splitlines():
 out = {}
 def off_main():
     try:
-        r = job_registry().data_source(source).with_jobs([Other()]).register_shutdown_hook().build(); r.start(); r.stop(); out["r"] = "no error"
+        r = job_registry().data_source(source).with_jobs([Other()]).register_shutdown_hook(True).build(); r.start(); r.stop(); out["r"] = "no error"
     except Exception as e:
         out["r"] = f"{type(e).__name__}: {e}"
 th = threading.Thread(target=off_main); th.start(); th.join()
