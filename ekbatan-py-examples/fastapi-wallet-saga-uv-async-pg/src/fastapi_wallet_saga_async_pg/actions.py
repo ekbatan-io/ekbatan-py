@@ -46,7 +46,7 @@ class WalletDepositMoneyAction(AsyncAction["WalletDepositMoneyAction.Params", Wa
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         updated = wallet.deposit(params.amount)
         return self.plan.update(updated)
 
@@ -61,7 +61,7 @@ class WalletCloseAction(AsyncAction["WalletCloseAction.Params", Wallet]):
         self.wallet_repository = wallet_repository
 
     async def perform(self, principal: str | None, params: Params) -> Wallet:
-        wallet = await self.wallet_repository.get(params.wallet_id)
+        wallet = await self.wallet_repository.get_by_id(params.wallet_id)
         closed = wallet.close()
         return self.plan.update(closed)
 
@@ -93,7 +93,7 @@ class InitiateTransferAction(
 
     async def perform(self, principal: str | None, params: Params) -> Result:
         transfer_id = uuid4()
-        source = await self.wallet_repository.get(params.from_wallet_id)
+        source = await self.wallet_repository.get_by_id(params.from_wallet_id)
         debited = source.initiate_transfer_out(transfer_id, params.to_wallet_id, params.amount)
         self.plan.update(debited)
         return InitiateTransferAction.Result(transfer_id=transfer_id, source_wallet=debited)
@@ -130,19 +130,19 @@ class CompleteTransferAction(AsyncAction["CompleteTransferAction.Params", Wallet
         if await self.transfer_step_repository.exists_step(
             params.transfer_id, TransferStepName.COMPLETE_TRANSFER
         ):
-            return await self.wallet_repository.get(params.from_wallet_id)
+            return await self.wallet_repository.get_by_id(params.from_wallet_id)
         self.plan.add(
             TransferStep.create(params.transfer_id, TransferStepName.COMPLETE_TRANSFER).build()
         )
 
-        destination = await self.wallet_repository.find(params.to_wallet_id)
+        destination = await self.wallet_repository.find_by_id(params.to_wallet_id)
         if destination is None:
             return await self._fail_on_source(params, "destination wallet not found")
         if destination.state is not WalletState.OPENED:
             return await self._fail_on_source(
                 params, f"destination wallet is {destination.state.name}"
             )
-        source = await self.wallet_repository.get(params.from_wallet_id)
+        source = await self.wallet_repository.get_by_id(params.from_wallet_id)
         if destination.currency != source.currency:
             return await self._fail_on_source(
                 params,
@@ -156,7 +156,7 @@ class CompleteTransferAction(AsyncAction["CompleteTransferAction.Params", Wallet
         return self.plan.update(credited)
 
     async def _fail_on_source(self, params: Params, reason: str) -> Wallet:
-        source = await self.wallet_repository.get(params.from_wallet_id)
+        source = await self.wallet_repository.get_by_id(params.from_wallet_id)
         marked = source.mark_transfer_failed(
             params.transfer_id, params.to_wallet_id, params.amount, reason
         )
@@ -193,10 +193,10 @@ class RefundTransferAction(AsyncAction["RefundTransferAction.Params", Wallet]):
         if await self.transfer_step_repository.exists_step(
             params.transfer_id, TransferStepName.REFUND_TRANSFER
         ):
-            return await self.wallet_repository.get(params.from_wallet_id)
+            return await self.wallet_repository.get_by_id(params.from_wallet_id)
         self.plan.add(
             TransferStep.create(params.transfer_id, TransferStepName.REFUND_TRANSFER).build()
         )
-        source = await self.wallet_repository.get(params.from_wallet_id)
+        source = await self.wallet_repository.get_by_id(params.from_wallet_id)
         refunded = source.refund_transfer(params.transfer_id, params.amount)
         return self.plan.update(refunded)

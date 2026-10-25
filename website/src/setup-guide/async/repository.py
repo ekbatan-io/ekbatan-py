@@ -27,7 +27,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
         super().__init__(Wallet, WALLETS, database_registry)
 
     async def find_open_with_balance_below(self, threshold: Decimal) -> list[Wallet]:
-        return await self.find_where(
+        return await self.find_all_where(
             WALLETS.c.balance < threshold, WALLETS.c.state == WalletState.OPENED.name
         )
 
@@ -67,7 +67,7 @@ class NotificationRepository(
         super().__init__(Notification, NOTIFICATIONS, database_registry)
 
     async def find_all_by_wallet_id(self, wallet_id: UUID) -> list[Notification]:
-        return await self.find_where(NOTIFICATIONS.c.wallet_id == wallet_id)
+        return await self.find_all_where(NOTIFICATIONS.c.wallet_id == wallet_id)
 
     def to_record(self, notification: Notification) -> NotificationsRecord:
         return NotificationsRecord(

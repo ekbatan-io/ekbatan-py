@@ -23,7 +23,7 @@ class WalletRepository(AsyncModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
         super().__init__(Wallet, WALLETS, database_registry)
 
     async def find_all_by_owner_id(self, owner_id: UUID) -> list[Wallet]:
-        return await self.find_where(WALLETS.c.owner_id == owner_id)
+        return await self.find_all_where(WALLETS.c.owner_id == owner_id)
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
         return WalletsRecord(

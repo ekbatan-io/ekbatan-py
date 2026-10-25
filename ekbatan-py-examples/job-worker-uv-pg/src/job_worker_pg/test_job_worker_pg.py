@@ -123,7 +123,7 @@ def test_stipend_job_tops_up_underfunded_wallets_on_each_shard_and_triggers_noti
 
     def topped_up_and_notified() -> bool:
         for wallet in (global_wallet, mexico_wallet):
-            if wallet_repository.get(wallet.id).balance < Decimal("10.00"):
+            if wallet_repository.get_by_id(wallet.id).balance < Decimal("10.00"):
                 return False
             notifications = worker.notification_repository.find_all_by_wallet_id(wallet.id.value)
             if not notifications:

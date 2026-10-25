@@ -141,7 +141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/wallets/{id}", response_model=WalletResponse)
     async def get(id: UUID, service: Service) -> WalletResponse:
-        wallet = await service.wallet_repository.find(ShardedId[Wallet].of(id))
+        wallet = await service.wallet_repository.find_by_id(ShardedId[Wallet].of(id))
         if wallet is None:
             raise HTTPException(status_code=404)
         return WalletResponse.of(wallet)

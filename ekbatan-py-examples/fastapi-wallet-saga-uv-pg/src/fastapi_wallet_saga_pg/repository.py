@@ -23,7 +23,7 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, Id[Wallet]]):
         super().__init__(Wallet, WALLETS, database_registry)
 
     def find_all_by_owner_id(self, owner_id: UUID) -> list[Wallet]:
-        return self.find_where(WALLETS.c.owner_id == owner_id)
+        return self.find_all_where(WALLETS.c.owner_id == owner_id)
 
     def to_record(self, wallet: Wallet) -> WalletsRecord:
         return WalletsRecord(

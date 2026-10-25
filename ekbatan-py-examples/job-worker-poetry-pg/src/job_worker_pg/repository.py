@@ -37,16 +37,16 @@ class WalletRepository(ModelRepository[Wallet, WalletsRecord, ShardedId[Wallet]]
 
     def find_all_by_owner_id(self, owner_id: UUID) -> list[Wallet]:
         """Every shard's replica, asked in turn: an owner's wallets can be on any of them."""
-        return self.find_where(WALLETS.c.owner_id == owner_id)
+        return self.find_all_where(WALLETS.c.owner_id == owner_id)
 
     def find_all_on_shard(self, shard: ShardIdentifier) -> list[Wallet]:
-        return self.all(shard=shard)
+        return self.find_all(shard=shard)
 
     def exists_on_shard(self, shard: ShardIdentifier, wallet_id: UUID) -> bool:
         return self.exists_where(WALLETS.c.id == wallet_id, shard=shard)
 
     def find_open_with_balance_below(self, threshold: Decimal) -> list[Wallet]:
-        return self.find_where(
+        return self.find_all_where(
             WALLETS.c.balance < threshold, WALLETS.c.state == WalletState.OPENED.name
         )
 
@@ -96,7 +96,7 @@ class NotificationRepository(EntityRepository[Notification, NotificationsRecord,
         super().__init__(Notification, NOTIFICATIONS, database_registry)
 
     def find_all_by_wallet_id(self, wallet_id: UUID) -> list[Notification]:
-        return self.find_where(NOTIFICATIONS.c.wallet_id == wallet_id)
+        return self.find_all_where(NOTIFICATIONS.c.wallet_id == wallet_id)
 
     def to_record(self, notification: Notification) -> NotificationsRecord:
         return NotificationsRecord(

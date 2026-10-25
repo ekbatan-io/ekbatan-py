@@ -113,6 +113,6 @@ class WalletReportJob(DistributedJob):
         self.loop.run(self.report())
 
     async def report(self) -> None:
-        wallets = await self.wallet_repository.all()
+        wallets = await self.wallet_repository.find_all()
         total = sum((wallet.balance for wallet in wallets), Decimal(0))
         LOG.info("WalletReportJob: %d wallets, total balance = %s", len(wallets), total)
