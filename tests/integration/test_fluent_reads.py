@@ -85,7 +85,7 @@ class WalletRepository(AbstractRepository[Wallet, WalletsRecord, ShardedId[Walle
             .limit(1)
         )
         with self.readonly_db(shard=shard) as conn:
-            return conn.rows(statement).fetch_first(self.from_record)
+            return conn.rows(statement).fetch_any(self.from_record)
 
     def currencies_on(self, shard):
         """A projection - the mapper is whatever the caller wants, not `from_record`."""
@@ -187,10 +187,10 @@ class TestAQueryARepositoryWrites:
 
         assert wallet_repository.find_all_by_owner(owner) == []
 
-    def test_fetch_first_on_an_empty_table(self, wallet_repository):
+    def test_fetch_any_on_an_empty_table(self, wallet_repository):
         assert wallet_repository.find_richest_on(HERE) is None
 
-    def test_fetch_first_takes_the_top_row(self, wallet_repository):
+    def test_fetch_any_takes_the_top_row(self, wallet_repository):
         owner = uuid4()
         wallet_repository.add(a_wallet(owner, balance="10.00"))
         wallet_repository.add(a_wallet(owner, balance="999.00"))

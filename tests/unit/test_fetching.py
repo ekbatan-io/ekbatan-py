@@ -4,8 +4,9 @@ In-memory SQLite, no fixtures: the behaviour under test is a mapper applied to r
 only thing a real database would add here is a second of startup.
 
 The distinctions worth pinning are the ones a reader will assume they already know.
-`fetch_first` and `fetch_one_or_none` differ only in what a *second* row means, and picking the
-wrong one is invisible until the day the data has two.
+`fetch_any` and `fetch_one` differ only in what a *second* row means, and picking the wrong one
+is invisible until the day the data has two. The names are jOOQ's: `fetch_one` is `fetchOne`, at
+most one, and `fetch_single` is `fetchSingle`, exactly one.
 """
 
 from __future__ import annotations
@@ -170,9 +171,9 @@ class TestWhatTheMapperIsHanded:
             return record.column_name() + record["name"]
 
         assert db.rows(ALL).fetch(named) == ["antant", "beebee", "catcat"]
+        assert db.rows(ONE).fetch_single(named) == "catcat"
+        assert db.rows(ONE).fetch_any(named) == "catcat"
         assert db.rows(ONE).fetch_one(named) == "catcat"
-        assert db.rows(ONE).fetch_first(named) == "catcat"
-        assert db.rows(ONE).fetch_one_or_none(named) == "catcat"
         assert list(db.rows(ALL).each(named)) == ["antant", "beebee", "catcat"]
         assert list(db.rows(ALL).partitions(named, 2)) == [["antant", "beebee"], ["catcat"]]
 
@@ -205,45 +206,62 @@ class TestWhatTheMapperIsHanded:
         assert db.rows(ALL).fetch(named) == ["ant", "bee", "cat"]
 
 
-class TestFetchFirst:
+def test_the_terminals_are_named_as_jooq_names_them() -> None:
+    """`fetch`, `fetchAny`, `fetchOne`, `fetchSingle` - in snake case, and nothing else. The old
+    spellings are gone rather than kept beside them: `fetch_one` used to mean exactly one, and a
+    second name for each would leave that trap in place."""
+    assert {name for name in vars(FetchResult) if name.startswith("fetch")} == {
+        "fetch",
+        "fetch_any",
+        "fetch_one",
+        "fetch_single",
+    }
+
+
+class TestFetchAny:
+    """jOOQ's `fetchAny`."""
+
     def test_it_takes_the_first(self, db: Db) -> None:
-        assert db.rows(ALL).fetch_first(named) == "ant"
+        assert db.rows(ALL).fetch_any(named) == "ant"
 
     def test_absence_is_none_not_an_error(self, db: Db) -> None:
-        assert db.rows(NONE).fetch_first(named) is None
+        assert db.rows(NONE).fetch_any(named) is None
 
     def test_a_second_row_is_ignored(self, db: Db) -> None:
-        """The whole difference from `fetch_one_or_none`, and the reason both exist."""
-        assert db.rows(ALL.where(ANIMALS.c.legs == 6)).fetch_first(named) == "ant"
+        """The whole difference from `fetch_one`, and the reason both exist."""
+        assert db.rows(ALL.where(ANIMALS.c.legs == 6)).fetch_any(named) == "ant"
 
 
 class TestFetchOne:
-    def test_exactly_one(self, db: Db) -> None:
+    """jOOQ's `fetchOne`: at most one."""
+
+    def test_one(self, db: Db) -> None:
         assert db.rows(ONE).fetch_one(named) == "cat"
 
-    def test_none_raises(self, db: Db) -> None:
-        with pytest.raises(NoResultFound):
-            db.rows(NONE).fetch_one(named)
+    def test_none_is_none(self, db: Db) -> None:
+        """As jOOQ's `fetchOne` returns null - the trap the old exactly-one `fetch_one` set."""
+        assert db.rows(NONE).fetch_one(named) is None
 
     def test_two_raises(self, db: Db) -> None:
-        """`fetch_one` means one. jOOQ's `fetchOne` means *at most* one, which is why these
-        names are not copied from it."""
+        """Two rows here means an invariant is broken, and saying so is the point of choosing
+        this over `fetch_any`."""
         with pytest.raises(MultipleResultsFound):
             db.rows(ALL.where(ANIMALS.c.legs == 6)).fetch_one(named)
 
 
-class TestFetchOneOrNone:
-    def test_one(self, db: Db) -> None:
-        assert db.rows(ONE).fetch_one_or_none(named) == "cat"
+class TestFetchSingle:
+    """jOOQ's `fetchSingle`: exactly one."""
 
-    def test_none_is_none(self, db: Db) -> None:
-        assert db.rows(NONE).fetch_one_or_none(named) is None
+    def test_exactly_one(self, db: Db) -> None:
+        assert db.rows(ONE).fetch_single(named) == "cat"
+
+    def test_none_raises(self, db: Db) -> None:
+        with pytest.raises(NoResultFound):
+            db.rows(NONE).fetch_single(named)
 
     def test_two_raises(self, db: Db) -> None:
-        """Two rows here means an invariant is broken, and saying so is the point of choosing
-        this over `fetch_first`."""
         with pytest.raises(MultipleResultsFound):
-            db.rows(ALL.where(ANIMALS.c.legs == 6)).fetch_one_or_none(named)
+            db.rows(ALL.where(ANIMALS.c.legs == 6)).fetch_single(named)
 
 
 class TestEach:

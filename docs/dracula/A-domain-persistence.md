@@ -190,7 +190,8 @@ Checked by running (2026-10-12, scratch scripts, SQLite file database): findings
   in Python anyway.
 - **Surprise:** medium
 
-### 11. `fetch_one` does not mean what jOOQ's `fetchOne` means
+### 11. `fetch_one` does not mean what jOOQ's `fetchOne` means - matched (2026-10-25)
+- **Matched (`EKB-0551`, the user's decision 2026-10-25):** the terminals take jOOQ's names in snake case - `fetch_any` (`fetchAny`), `fetch_one` (`fetchOne`: at most one, `None` if none, an error on two) and `fetch_single` (`fetchSingle`: exactly one). `fetch_first` and `fetch_one_or_none` are removed, with no aliases. The entry below is what it was.
 - **What:** On `conn.rows(stmt)`, `fetch_one` means *exactly one row, error if none or two*;
   jOOQ's `fetchOne` means *at most one* (null if none). jOOQ's `fetchAny` is `fetch_first` here, and
   jOOQ's `fetchOne` is `fetch_one_or_none`.

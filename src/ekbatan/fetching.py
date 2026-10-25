@@ -136,10 +136,9 @@ class FetchResult:
     against a type before it runs. A lambda's row is a ``Mapping`` to a type checker, so
     ``row.currency`` is a type error.
 
-    The names do **not** follow jOOQ's, and that is the one place this deliberately parts from
-    it. There, ``fetchOne`` means *at most one, raise if there are two* and ``fetchAny`` means
-    *the first*. A ``fetch_one`` that did not mean "fetch one" is a trap worth more than the
-    familiarity of the spelling, so these say what they do.
+    The names are jOOQ's, so a query reads the same in both ports: :meth:`fetch` every row,
+    :meth:`fetch_any` the first or ``None``, :meth:`fetch_one` at most one - ``None`` if there
+    is none, an error if there are two - and :meth:`fetch_single` exactly one.
     """
 
     __slots__ = ("_result",)
@@ -165,28 +164,31 @@ class FetchResult:
         """Every row, mapped. A ``list``, not a ``Sequence``: it is yours to mutate."""
         return self._mapped(mapper, self._result)
 
-    def fetch_first[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T | None:
-        """The first row, or ``None``. The read that treats absence as ordinary."""
+    def fetch_any[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T | None:
+        """The first row, or ``None``; any rows after it are ignored - jOOQ's ``fetchAny``.
+        The read that treats absence as ordinary."""
         row = self._result.first()
         return self._one_mapped(mapper, row) if row is not None else None
 
-    def fetch_one[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T:
-        """Exactly one row, or raise.
+    def fetch_one[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T | None:
+        """At most one row, or ``None`` - jOOQ's ``fetchOne``.
 
-        Raises if there are none *and* if there are two. For a query you believe returns one
-        row - which is exactly the belief worth having checked.
-        """
-        return self._one_mapped(mapper, self._result.one())
-
-    def fetch_one_or_none[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T | None:
-        """At most one row, or ``None``.
-
-        The difference from :meth:`fetch_first` is what a second row means: here it is an
-        error, there it is ignored. Reach for this when two rows would mean a broken invariant
-        rather than a result to choose from.
+        A second row raises ``MultipleResultsFound``, where jOOQ throws
+        ``TooManyRowsException``. The difference from :meth:`fetch_any` is what a second row
+        means: here it is an error, there it is ignored. Reach for this when two rows would mean
+        a broken invariant rather than a result to choose from.
         """
         row = self._result.one_or_none()
         return self._one_mapped(mapper, row) if row is not None else None
+
+    def fetch_single[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> T:
+        """Exactly one row, or raise - jOOQ's ``fetchSingle``.
+
+        Raises ``NoResultFound`` if there is none *and* ``MultipleResultsFound`` if there are
+        two, where jOOQ throws ``NoDataFoundException`` and ``TooManyRowsException``. For a query
+        you believe returns one row - which is exactly the belief worth having checked.
+        """
+        return self._one_mapped(mapper, self._result.one())
 
     def each[T, R: Mapping[Any, Any]](self, mapper: Callable[[R], T]) -> Iterator[T]:
         """Every row, lazily - so a caller that stops early has not mapped the rest.

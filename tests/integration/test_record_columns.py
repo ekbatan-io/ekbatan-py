@@ -248,7 +248,7 @@ class OddityRepository(ModelRepository[Oddity, OddsRecord, ShardedId[Oddity]]):
 
     def first(self, shard: ShardIdentifier = GLOBAL) -> Oddity | None:
         with self.readonly_db(shard=shard) as conn:
-            return conn.rows(select(ODDS).order_by(ODDS.c["keys"])).fetch_first(self.from_record)
+            return conn.rows(select(ODDS).order_by(ODDS.c["keys"])).fetch_any(self.from_record)
 
     def by_annotated_function(self, shard: ShardIdentifier = GLOBAL) -> list[str]:
         with self.readonly_db(shard=shard) as conn:
@@ -453,7 +453,7 @@ def test_from_record_is_handed_the_record_class_on_every_read_path(odds, sharded
     through("update_all", lambda: repo.update_all(repo.find_all()))
     through("fetch", lambda: repo.by_fetch(shard))
     through("each", lambda: repo.by_each(shard))
-    through("fetch_first", lambda: repo.first(shard))
+    through("fetch_any", lambda: repo.first(shard))
     through("tx.rows", lambda: repo.in_transaction(shard))
 
     assert paths == {name: {OddsRecord} for name in paths}, paths

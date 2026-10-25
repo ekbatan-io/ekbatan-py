@@ -460,19 +460,17 @@ it `from_record`.
 | | |
 | --- | --- |
 | `.fetch(mapper)` | every row, as a `list` |
-| `.fetch_first(mapper)` | the first, or `None` |
-| `.fetch_one(mapper)` | exactly one; raises on none **and** on two |
-| `.fetch_one_or_none(mapper)` | at most one, else `None`; raises on two |
+| `.fetch_any(mapper)` | the first, or `None`; any rows after it are ignored |
+| `.fetch_one(mapper)` | at most one, else `None`; raises on two |
+| `.fetch_single(mapper)` | exactly one; raises on none **and** on two |
 | `.each(mapper)` | every row, lazily - what a scatter-gather comprehension wants |
 | `.yield_per(n)` | read `n` rows at a time; chains ahead of a terminal |
 | `.partitions(mapper, size=None)` | batches of mapped rows, lazily |
 | `.unique(strategy=None)` | drop duplicate rows, before mapping |
 
-The difference between `fetch_first` and `fetch_one_or_none` is what a *second* row means:
-ignored by the first, an error to the second. Pick the one that matches your invariant.
-
-Each name says what it promises: `fetch_one` means exactly one, and a terminal that allows none
-or takes the first of several says so in its name.
+The difference between `fetch_any` and `fetch_one` is what a *second* row means: ignored by
+the first, an error to the second. Pick the one that matches your invariant. `fetch_single` is
+for a query that must return exactly one row: none is an error too.
 
 The mapper is any callable, not only `from_record`, so a projection is the same call with a
 different argument:

@@ -626,7 +626,7 @@ Each terminal hands the mapper the row read by column name, the record `from_rec
 jOOQ hands `fromRecord` the `WalletsRecord` it fetched.
 
 `conn.rows(statement)` returns a `FetchResult`, whose terminals each take the mapper:
-`fetch`, `fetch_first`, `fetch_one`, `fetch_one_or_none`, `each`, plus `yield_per`,
+`fetch`, `fetch_any`, `fetch_one`, `fetch_single`, `each`, plus `yield_per`,
 `partitions` and `unique` for shaping. Full table in
 [`docs/database/repositories.md`](docs/database/repositories.md#examples).
 
@@ -636,9 +636,10 @@ Three things about it are deliberate:
   `exec_driver_sql` and the rest are SQLAlchemy's, unchanged. A query with no rows to map - a
   count, a rowcount, an `EXISTS` - still goes through `execute`, because `rows()` would be
   claiming a shape the answer does not have.
-- **The names are not jOOQ's.** There, `fetchOne` means *at most one, raise if there are two*
-  and `fetchAny` means *the first*. Copying the spellings would give a `fetch_one` that does not
-  mean "fetch one", so these say what they do instead.
+- **The names are jOOQ's**, in snake case (`EKB-0551`, the user's decision 2026-10-25):
+  `fetch_any` is `fetchAny`, `fetch_one` is `fetchOne` - at most one, `None` if there is none -
+  and `fetch_single` is `fetchSingle`, exactly one. They used to follow SQLAlchemy instead, and
+  `fetch_one` then meant exactly one: the opposite of what a Java reader expects.
 - **`FetchResult` holds a `Result`; it does not subclass one.** Subclassing was shorter and was
   rejected: reproducing a `Result` means setting `_real_result`, `_metadata`,
   `_post_creational_filter` and `_unique_filter_state` by hand - four private attributes whose
